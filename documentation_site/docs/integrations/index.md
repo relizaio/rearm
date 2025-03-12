@@ -8,7 +8,7 @@ Generic integrations with ReARM can be done using [ReARM CLI](./rearmcli).
 ## CI Integrations
 1. [GitHub Actions](./githubActions)
 2. [GitLab](./gitlab)
-3. [Azure DevOps](./integrations/ado)
+3. [Azure DevOps](./ado)
 4. [Jenkins](./jenkins)
 
 ## Notification Integrations
