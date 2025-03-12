@@ -1,11 +1,11 @@
-FROM node:18-alpine as build-stage
+FROM node:22-alpine3.20 as build-stage
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY ./ .
 RUN npm run docs:build
 
-FROM nginx:1.23-alpine as artifact-stage
+FROM nginx:1.27.4-alpine as artifact-stage
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
