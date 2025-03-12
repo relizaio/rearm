@@ -1,0 +1,16 @@
+{
+  "name": "rearm-doc-site",
+  "version": "0.1.0",
+  "description": "Rearm Docs on VitePress",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "vitepress": "1.6.3"
+  }
+}
