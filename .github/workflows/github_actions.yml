@@ -38,3 +38,20 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REARM_DOCS_HELM_API_KEY }}
           path: deploy/helm
           reliza_project_id: 5bbcf9be-bddb-4d14-9b98-bf06c36477fb
+  build-ui:
+    name: Build And Push ReARM UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: RelizaHub Build And Submit UI Release
+        uses: relizaio/reliza-docker-action@2.1
+        with:
+          registry_username: ${{ secrets.DOCKER_LOGIN }}
+          registry_password: ${{ secrets.DOCKER_TOKEN }}
+          registry_host: registry.relizahub.com
+          image_namespace: registry.relizahub.com/library
+          image_name: rearm-ui
+          reliza_api_id: ${{ secrets.RELIZA_REARM_UI_API_ID }}
+          reliza_api_key: ${{ secrets.RELIZA_REARM_UI_API_KEY }}
+          path: ui
+          reliza_project_id: 437f0bd5-c957-4d4f-b0d2-753be84eca9d
+          enable_sbom: 'false'
