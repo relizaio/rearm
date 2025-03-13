@@ -1,0 +1,2113 @@
+<template>
+    <div>
+        <h4>Organization Settings</h4>
+        <n-tabs type="line" @update:value="handleTabSwitch">
+            <n-tab-pane name="integrations" tab="Integrations" v-if="isOrgAdmin">
+                <div class="integrationsBlock mt-4">
+                    <h5>Integrations</h5>
+                    <n-space vertical>
+                        <div class="row">
+                            <div v-if="configuredIntegrations.includes('SLACK')">Slack Integration Configured
+                                <vue-feather @click="deleteIntegration('SLACK')" class="clickable" type="trash-2" />
+                            </div>
+                            <div v-else><n-button @click="showOrgSettingsSlackIntegrationModal = true">Add Slack Integration</n-button></div>
+                            <n-modal 
+                                v-model:show="showOrgSettingsSlackIntegrationModal"
+                                preset="dialog"
+                                :show-icon="false" >
+                                <n-card style="width: 600px" size="huge" title="Add slack integration" :bordered="false"
+                                    role="dialog" aria-modal="true">
+
+                                    <n-form>
+                                        <n-form-item id="org_settings_create_slack_integration_secret_group" label="Secret"
+                                            label-for="org_settings_create_slack_integration_secret"
+                                            description="Slack integration secret">
+                                            <n-input type="password" id="org_settings_create_slack_integration_secret"
+                                                v-model:value="createIntegrationObject.secret" required
+                                                placeholder="Enter Slack integration secret" />
+                                        </n-form-item>
+                                        <n-button @click="onAddIntegration('SLACK')" type="success">Submit</n-button>
+                                        <n-button type="error" @click="resetCreateIntegrationObject">Reset</n-button>
+                                    </n-form>
+                                </n-card>
+                            </n-modal>
+                        </div>
+                        <div class="row pt-2">
+                            <div v-if="configuredIntegrations.includes('MSTEAMS')">MS Teams integration configured
+                                <vue-feather @click="deleteIntegration('MSTEAMS')" class="clickable" type="trash-2" />
+                            </div>
+                            <div v-else><n-button @click="showOrgSettingsMsteamsIntegrationModal = true">Add MS Teams Integration</n-button></div>
+                            <n-modal
+                                v-model:show="showOrgSettingsMsteamsIntegrationModal"
+                                preset="dialog"
+                                :show-icon="false" >
+                                <n-card style="width: 600px" size="huge" title="Add MS Teams integration" :bordered="false"
+                                    role="dialog" aria-modal="true">
+                                    <n-form @submit="onAddIntegration('MSTEAMS')">
+                                        <n-form-item id="org_settings_create_msteams_integration_secret_group" label="Secret"
+                                            label-for="org_settings_create_msteams_integration_secret"
+                                            description="MS Teams integration URI">
+                                            <n-input type="password" id="org_settings_create_msteams_integration_secret"
+                                                v-model:value="createIntegrationObject.secret" required
+                                                placeholder="Enter MS Teams integration URI" />
+                                        </n-form-item>
+                                        <n-button @click="onAddIntegration('MSTEAMS')" type="success">Submit</n-button>
+                                        <n-button type="error" @click="resetCreateIntegrationObject">Reset</n-button>
+                                    </n-form>
+                                </n-card>
+                            </n-modal>
+                        </div>
+                        <div class="row pt-2">
+                            <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')"> Dependency Track integration configured
+                                <vue-feather @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
+                            </div>
+                            <div v-else><n-button @click="showOrgSettingsDependencyTrackIntegrationModal = true">Add Dependency Track Integration</n-button></div>
+                            <n-modal
+                                v-model:show="showOrgSettingsDependencyTrackIntegrationModal"
+                                preset="dialog"
+                                :show-icon="false" >
+                                <n-card style="width: 600px" size="huge" title="Add Dependency Track Integration" :bordered="false"
+                                    role="dialog" aria-modal="true">
+                                    <n-form @submit="onAddIntegration('DEPENDENCYTRACK')">
+                                        <n-form-item id="org_settings_create_dependency_track_integration_uri_group" label="Dependency Track API Server URI"
+                                            label-for="org_settings_create_dependency_track_integration_uri"
+                                            description="Dependency Track API Server URI">
+                                            <n-input id="org_settings_create_dependency_track_integration_uri"
+                                                v-model:value="createIntegrationObject.uri" required
+                                                placeholder="Enter Dependency Track API Server URI" />
+                                        </n-form-item>
+                                        <n-form-item id="org_settings_create_dependency_track_integration_frontenduri_group" label="Dependency Track Frontend URI"
+                                            label-for="org_settings_create_dependency_track_integration_frontenduri"
+                                            description="Dependency Track API Server Frontend URI">
+                                            <n-input id="org_settings_create_dependency_track_integration_frontenduri"
+                                                v-model:value="createIntegrationObject.frontendUri" required
+                                                placeholder="Enter Dependency Track Frontend URI" />
+                                        </n-form-item>
+                                        <n-form-item id="org_settings_create_dependency_track_integration_secret_group" label="API Key"
+                                            label-for="org_settings_create_dependency_track_integration_secret"
+                                            description="Dependency Track API Key">
+                                            <n-input type="password" id="org_settings_create_dependency_track_integration_secret"
+                                                v-model:value="createIntegrationObject.secret" required
+                                                placeholder="Enter Dependency Track API Key" />
+                                        </n-form-item>
+                                        <n-button @click="onAddIntegration('DEPENDENCYTRACK')" type="success">Submit</n-button>
+                                        <n-button @click="resetCreateIntegrationObject" type="error">Reset</n-button>
+                                    </n-form>
+                                </n-card>
+                            </n-modal>
+                        </div>
+                        <div class="row" v-if="myUser.installationType !== 'OSS'">
+                            <div v-if="configuredIntegrations.includes('GITHUB')">GitHub Integration Configured
+                                <vue-feather @click="deleteIntegration('GITHUB')" class="clickable" type="trash-2" />
+                            </div>
+                            <div v-else><n-button @click="showOrgSettingsGitHubIntegrationModal = true">Add GitHub Integration</n-button></div>
+                            <n-modal 
+                                v-model:show="showOrgSettingsGitHubIntegrationModal"
+                                preset="dialog"
+                                :show-icon="false" >
+                                <n-card style="width: 600px" size="huge" title="Add GitHub integration" :bordered="false"
+                                    role="dialog" aria-modal="true">
+
+                                    <n-form>
+                                        <n-form-item id="org_settings_create_github_integration_secret_group" label="GitHub Private Key DER Base64"
+                                            label-for="org_settings_create_github_integration_secret"
+                                            description="GitHub Private Key DER Base64">
+                                            <n-input type="textarea" id="org_settings_create_github_integration_secret"
+                                                v-model:value="createIntegrationObject.secret" required
+                                                placeholder="Enter GitHub Private Key Base64, use 'openssl pkcs8 -topk8 -inform PEM -outform DER -in private-key.pem -out key.der -nocrypt | base64 -w 0 key.der' to obtain" />
+                                        </n-form-item>
+                                        <n-form-item id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
+                                            label-for="org_settings_create_github_integration_appid"
+                                            description="GitHub Application ID">
+                                            <n-input type="number" id="org_settings_create_github_integration_appid"
+                                                v-model:value="createIntegrationObject.schedule" required
+                                                placeholder="Enter GitHub Application ID" />
+                                        </n-form-item>
+                                        <n-button @click="onAddIntegration('GITHUB')" type="success">Submit</n-button>
+                                        <n-button type="error" @click="resetCreateIntegrationObject">Reset</n-button>
+                                    </n-form>
+                                </n-card>
+                            </n-modal>
+                        </div>
+                        <div v-if="false && myUser && myUser.installationType !== 'OSS'" class="row pt-2">
+                            <div v-if="!jiraIntegrationData" class="col-3">
+                                <n-button @click="initiateJiraIntegration">Add Jira Integration</n-button>
+                            </div>
+                            <div v-else class="col-3">
+                                <b> Jira Integration: </b> {{ jiraIntegrationData.domain }}
+                                <!-- <n-icon icon="trash" font-scale="1.1" title="Delete Jira Integration" @click="deleteJiraIntegration" class="clickable icons" /> -->
+                            </div>
+                        </div>
+                    </n-space>
+                </div>
+            </n-tab-pane>
+
+            <n-tab-pane name="users" tab="Users">
+                <div class="userBlock mt-4">
+                    <h5>Users</h5>
+                    <n-data-table :columns="userFields" :data="users" class="table-hover">
+                    </n-data-table>
+                    <n-modal
+                        v-model:show="showOrgRegistryTokenModal"
+                        preset="dialog"
+                        :show-icon="false" >
+                        <n-card style="width: 600px" size="huge" title="Organization Registry Token" :bordered="false"
+                            role="dialog" aria-modal="true">
+                            <div><strong>Username: </strong><n-input type="textarea" disabled v-model:value="robotName"
+                                    rows="1" /></div>
+                            <div><strong>Token (only displayed once): </strong><n-input type="textarea" disabled
+                                    v-model:value="botToken" /></div>
+                        </n-card>
+                    </n-modal>
+                    <n-form v-if="isOrgAdmin" class="inviteUserForm" @submit="inviteUser">
+                        <n-input-group class="mt-3">
+                            <n-input id="settings-invite-user-email-input" v-model:value="invitee.email" required
+                                placeholder="User Email" />
+                            <n-select id="settings-invite-permissions-type-input" v-model:value="invitee.type" required
+                                :options="permissionTypeSelections" />
+                            <n-button :loading="processingMode" @click="inviteUser" type="info">Invite</n-button>
+                        </n-input-group>
+                    </n-form>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;" 
+                        v-model:show="showOrgSettingsUserPermissionsModal" 
+                        :title="'User Permissions for ' + selectedUser.email"
+                    >
+                        <n-flex vertical>
+                            <n-space>
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Organization-Wide Permissions:
+                                    </n-text>
+                                </n-h5>
+                                <n-radio-group v-model:value="selectedUser.type" :onUpdate:value ="(value: string) => {selectedUser.type = value}">
+                                    <n-radio-button
+                                        v-for="pt in permissionTypeswAdmin"
+                                        :key="pt"
+                                        :value="pt"
+                                        :disabled="false"
+                                        :label="pt"
+                                    />
+                                </n-radio-group>
+                                
+                            </n-space>
+                            <n-space class="approvalPermissions" v-if="selectedUserType !== 'ADMIN'">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Approval Permissions:
+                                    </n-text>
+                                </n-h5>
+                                <n-checkbox-group id="modal-org-settings-user-permissions-approval-checkboxes"
+                                    v-model:value="selectedUser.approvals"
+                                    :onUpdate:value ="(value: string) => {selectedUser.approvals = value}"
+                                >
+                                    <n-checkbox v-for="a in myorg.approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" ></n-checkbox>
+                                </n-checkbox-group>
+
+                            </n-space>
+                        </n-flex>
+                        <n-space>
+                            <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
+                            <n-button type="warning" @click="editUser(selectedUser.email)">Reset Changes</n-button>
+                        </n-space>
+                        <n-flex v-if="false" v-show="selectedUserType !== 'ADMIN'"  >
+                            <n-h5>
+                                <n-text depth="1">
+                                    Instance Permissions:
+                                </n-text>
+                            </n-h5>
+                            <n-grid cols="12" item-responsive>
+                                <n-gi :span="6">
+                                    <n-input round clearable @input="filterInstances" :style="{ 'max-width': '90%' }" placeholder="Search" >
+                                        <template #suffix>
+                                            <vue-feather type="search"/>
+                                        </template>
+                                    </n-input>  
+                                </n-gi>
+                            </n-grid>
+                                
+                            <n-space vertical>
+                                <n-data-table :columns="userInstancePermissionColumns" :data="instances"/>
+                            </n-space>
+
+                            <n-space vertical>
+                                <n-data-table :columns="userClusterPermissionColumns" :data="clusters" children-key="instanceChildren" :default-expand-all="true"/>
+                            </n-space>
+
+                        </n-flex>
+                    </n-modal>
+                    <h6>Pending Invites</h6>
+                    <n-data-table :columns="inviteeFields" :data="invitees" class="table-hover">
+                    </n-data-table>
+                </div>
+            </n-tab-pane>
+
+            <n-tab-pane name="programmaticAccess" tab="Programmatic Access">
+                <div class="programmaticAccessBlock mt-4">
+                    <h5>Programmatic Access</h5>
+                    <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys"
+                        class="table-hover">
+                    </n-data-table>
+                    <vue-feather v-if="isOrgAdmin" class="clickable" type="plus-circle" @click="genApiKey"
+                        title="Create Api Key" />
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;"
+                        v-model:show="showOrgSettingsProgPermissionsModal">
+                        <n-card size="huge"
+                            :title="'Set approval permissions for key: ' + selectedKey.uuid" :bordered="false" role="dialog"
+                            aria-modal="true">
+
+                            <n-form>
+                                <n-form-item label='Approval Permissions:'>
+                                    <n-checkbox-group id="modal-org-settings-programmatic-permissions-approval-checkboxes"
+                                        v-model:value="selectedKey.approvals">
+                                        <n-checkbox v-for="a in myorg.approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" ></n-checkbox>
+                                    </n-checkbox-group>
+                                </n-form-item>
+                                <n-form-item label='Notes:'>
+                                    <n-input
+                                        v-model:value="selectedKey.notes"
+                                        type="textarea"
+                                        placeholder="Notes"
+                                    />
+                                </n-form-item>
+                                <n-button @click="updateKeyPermissions" type="success">Submit</n-button>
+                            </n-form>
+                        </n-card>
+                    </n-modal>
+                </div>
+            </n-tab-pane>
+
+            <n-tab-pane name="approvalPolicies" tab="Approval Policies" v-if="myUser.installationType !== 'OSS'">
+                <div class="programmaticAccessBlock mt-4">
+                    <h4>Approval Roles:                        
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Role" @click="showCreateApprovalRole = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <n-data-table :columns="approvalRoleFields" :data="myorg.approvalRoles" class="table-hover"></n-data-table>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;" 
+                        v-model:show="showCreateApprovalRole" 
+                        title="Create Approval Role"
+                    >
+                        <n-form :model="newApprovalRole">
+                            <n-form-item path="id" label="Role ID">
+                                <n-input v-model:value="newApprovalRole.id" placeholder="Enter New Approval Role ID"
+                                required />
+                            </n-form-item>
+                            <n-form-item path="displayView" label="Role Display Name">
+                                <n-input v-model:value="newApprovalRole.displayView" required placeholder="Enter New Approval Role Display Name" />
+                            </n-form-item>
+                            <n-space>
+                                <n-button type="success" @click="addApprovalRole">Create</n-button>
+                                <n-button type="warning" @click="newApprovalRole.id = ''; newApprovalRole.displayView = ''">Reset</n-button>
+                            </n-space>
+                        </n-form>
+                    </n-modal>
+
+                    <h4>Approval Entries:
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Entry" @click="showCreateApprovalEntry = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <n-data-table :data="approvalEntryTableData" :columns="approvalEntryFields" :row-key="dataTableRowKey" />
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;" 
+                        v-model:show="showCreateApprovalEntry" 
+                        title="Create Approval Entry"
+                    >
+                        <create-approval-entry 
+                            :orgProp="orgResolved"
+                            :isHideTitle="true" 
+                            @approvalEntryCreated="approvalEntryCreated"/>
+                    </n-modal>
+                    <h4>Approval Policies:
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Policy" @click="showCreateApprovalPolicy = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <n-data-table :data="approvalPolicyTableData" :columns="approvalPolicyFields" :row-key="dataTableRowKey" />
+
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;" 
+                        v-model:show="showCreateApprovalPolicy" 
+                        title="Create Approval Policy"
+                    >
+                        <create-approval-policy
+                            :orgProp="orgResolved" 
+                            :isHideTitle="true"
+                            @approvalPolicyCreated="approvalPolicyCreated"/>
+                    </n-modal>
+                </div>
+            </n-tab-pane>
+
+            <n-tab-pane v-if="false && myUser && myUser.installationType !== 'OSS'" name="protected environments" tab="Protected Environments">
+                <div v-if="resourceGroups && resourceGroups.length" class="approvalMatrixBlock">
+                    <h5>Protected Environments For Resource Group:
+                        <n-dropdown trigger="hover" title="Select Resource Group"
+                            :text="myapp.name" :options="resourceGroupOptions" @select="selectResourceGroup">
+                            <n-button>{{ myapp.name }}</n-button>
+                        </n-dropdown>
+                    </h5>
+                    <div class="container">
+                        <n-form label-placement="left" :style="{maxWidth: '640px'}" size="medium">
+                            <n-checkbox-group v-model:value="protectedEnvironments" :options="environmentOptions">
+                                <n-checkbox v-for="b in environmentOptions" :key="b.value" :value="b.value" :label="b.label"></n-checkbox>
+                            </n-checkbox-group>
+                            <n-button attr-type="submit"  type="success" @click="saveProtectedEnvironments" :disabled="myapp.protectedEnvironments && myapp.protectedEnvironments.toString() === protectedEnvironments.toString()">Save</n-button>
+                            <!-- <n-button attr-type="reset" @click="resetApprovals">Reset</n-button> -->
+                        </n-form>
+                    </div>
+                </div>
+            </n-tab-pane>
+            <n-tab-pane name="registry" tab="Registry" v-if="globalRegistryEnabled">
+                <div class="mt-4">
+                    <h5>Organization Registry</h5>
+                    <div v-if="!orgRegistry">
+                        <div v-if="isOrgAdmin">
+                            Enable Organization Registry :
+                            <vue-feather @click="enableRegistry()" class="clickable icons" type="package"
+                                title="Enable Organization Registry" />
+                        </div>
+                    </div>
+                    <div v-else>Organization Registry Commands:
+                        <vue-feather @click="showRegistryCommands()" class="clickable icons" type="package"
+                            title="Show Organization Registry Commands" />
+                    </div>
+                    <n-modal 
+                        v-model:show="showComponentRegistryModal"
+                        preset="dialog"
+                        style="width: 90%;"
+                        :show-icon="false" >
+                        <n-card size="huge" title="Organization Registry Commands" :bordered="false"
+                            role="dialog" aria-modal="true">
+                            <!-- <div><strong>Username: </strong><n-input type="textarea" disabled v-model:value="robotName" rows="1"/></div>
+                        <div><strong>Token (only displayed once): </strong><n-input type="textarea" disabled v-model:value="botToken" /></div> -->
+                            <!-- <div><strong>Image Repository: </strong><n-input type="textarea" disabled v-model:value="imageRegistry" /></div> -->
+                            <div><span v-html="imageRegistry" /></div>
+                        </n-card>
+                    </n-modal>
+                </div>
+            </n-tab-pane>
+        </n-tabs>
+        <n-modal 
+            v-model:show="showCreateResourceGroupModal"
+            preset="dialog"
+            style="width: 90%; height: 130px;"
+            :show-icon="false" >
+            <n-input-group style="margin-top: 30px;">
+                <n-input v-model:value="newappname" type="text" placeholder="Name of the resourceGroup" />
+                <n-button type="success" @click="createApp">Create resourceGroup</n-button>
+            </n-input-group>
+        </n-modal>
+        <n-modal
+            preset="dialog"
+            :show-icon="false"
+            v-model:show="showOrgApiKeyModal">
+            <n-card style="width: 600px" size="huge" title="Your Organization API Key (shown only once)" :bordered="false"
+                role="dialog" aria-modal="true">
+
+                <p>Please record these data as you will see API key only once (although you can re-generate it at any time):
+                </p>
+                <div><strong>API ID: </strong><n-input type="textarea" disabled v-model:value="apiKeyId" />
+                </div>
+                <div><strong>API Key: </strong><n-input type="textarea" disabled v-model:value="apiKey" />
+                </div>
+                <div><strong>Basic Authentication Header: </strong><n-input type="textarea" disabled
+                        v-model:value="apiKeyHeader" rows="4" />
+                </div>
+            </n-card>
+        </n-modal>
+        <n-modal
+            preset="dialog"
+            :show-icon="false"
+            v-model:show="showUserApiKeyModal" >
+            <n-card style="width: 600px" size="huge" title="Your User API Key (shown only once)" :bordered="false"
+                role="dialog" aria-modal="true">
+
+                <p>Please record these data as you will see API key only once (although you can re-generate it at any time):
+                </p>
+                <div><strong>API ID: </strong><n-input type="textarea" disabled v-model:value="apiKeyId" />
+                </div>
+                <div><strong>API Key: </strong><n-input type="textarea" disabled v-model:value="apiKey" />
+                </div>
+                <div><strong>Basic Authentication Header: </strong><n-input type="textarea" disabled
+                        v-model:value="apiKeyHeader" rows="5" />
+                </div>
+            </n-card>
+        </n-modal>
+    </div>
+</template>
+  
+<script lang="ts" setup>
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns } from 'naive-ui'
+import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
+import type { SelectOption } from 'naive-ui'
+import { useStore } from 'vuex'
+import { useRoute, RouterLink } from 'vue-router'
+import { Edit as EditIcon, Trash, LockOpen, CirclePlus } from '@vicons/tabler'
+import { Info20Regular, Edit24Regular } from '@vicons/fluent'
+import { Icon } from '@vicons/utils'
+import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import axios from '../utils/axios'
+import Swal, { SweetAlertOptions } from 'sweetalert2'
+import { Marked } from '@ts-stack/markdown'
+import gql from 'graphql-tag'
+import graphqlClient from '../utils/graphql'
+import constants from '../utils/constants'
+import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
+import CreateApprovalEntry from './CreateApprovalEntry.vue'
+import { FetchPolicy } from '@apollo/client'
+import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
+
+const route = useRoute()
+const store = useStore()
+const notification = useNotification()
+const notify = async function (type: NotificationType, title: string, content: string) {
+    notification[type]({
+        content: content,
+        meta: title,
+        duration: 3500,
+        keepAliveOnHover: true
+    })
+}
+
+onMounted(() => {
+    if (false && myUser.value.installationType !== 'OSS') {
+        axios.get('/api/manual/v1/isRegistry').then(response => {
+            globalRegistryEnabled.value = response.data.isRegistry
+        })
+        store.dispatch('fetchInstances', orgResolved.value)
+    }
+    store.dispatch('fetchComponents', orgResolved.value)
+    store.dispatch('fetchResourceGroups', orgResolved.value)
+    if (false && myUser.value.installationType !== 'OSS') initializeResourceGroup()
+    loadConfiguredIntegrations(true)
+    if (false && myUser.value.installationType !== 'OSS') loadRegistryHost()
+    isWritable.value = commonFunctions.isWritable(orgResolved.value, myUser.value, 'ORG')
+})
+
+const showOrgApiKeyModal = ref(false)
+
+const showOrgSettingsProgPermissionsModal = ref(false)
+
+const showOrgSettingsUserPermissionsModal = ref(false)
+
+const showUserApiKeyModal = ref(false)
+
+const showOrgRegistryTokenModal = ref(false)
+
+const showOrgSettingsSlackIntegrationModal = ref(false)
+
+const showOrgSettingsMsteamsIntegrationModal = ref(false)
+
+const showOrgSettingsDependencyTrackIntegrationModal = ref(false)
+
+const showOrgSettingsGitHubIntegrationModal = ref(false)
+
+const showComponentRegistryModal = ref(false)
+
+const showCreateResourceGroupModal = ref(false)
+
+const showCreateApprovalPolicy = ref(false)
+const showCreateApprovalEntry = ref(false)
+const showCreateApprovalRole = ref(false)
+
+const approvalRoleFields: any[] = [
+    {
+        key: 'id',
+        title: 'Role ID'
+    },
+    {
+        key: 'displayView',
+        title: 'Display Name'
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => {
+            let els: any[] = []
+            if (isWritable) {
+                const deleteEl = h(NIcon, {
+                        title: 'Delete Approval Role',
+                        class: 'icons clickable',
+                        size: 20,
+                        onClick: () => {
+                            deleteApprovalRole(row.id)
+                        }
+                    }, 
+                    { 
+                        default: () => h(Trash) 
+                    }
+                )
+                els.push(deleteEl)
+            }
+            if (!els.length) els = [h('div'), row.status]
+            return els
+        }
+    }
+]
+
+const orgResolved: Ref<string> = ref('')
+const myorg: ComputedRef<any> = computed((): any => store.getters.orgById(orgResolved.value))
+if (route.params.orguuid) {
+    orgResolved.value = route.params.orguuid.toString()
+} else {
+    orgResolved.value = myorg.value.uuid
+}
+const apiKey: Ref<string> = ref('')
+const apiKeyId: Ref<string> = ref('')
+const apiKeyHeader: Ref<string> = ref('')
+
+const newApprovalRole: Ref<any> = ref({
+    id: '',
+    displayView: ''
+})
+
+const botToken: Ref<string> = ref('')
+const environmentTypes: Ref<string[]> = ref([])
+const globalRegistryEnabled: Ref<boolean> = ref(false)
+const instancePermissions: Ref<any> = ref({})
+const invitee = ref({
+    org: orgResolved.value,
+    email: '',
+    type: ''
+})
+
+function resetInvitee () {
+    invitee.value = {
+        org: orgResolved.value,
+        email: '',
+        type: ''
+    }
+}
+const myapp: Ref<any> = ref({})
+const protectedEnvironments: Ref<any[]> = ref([])
+
+const resourceGroups: ComputedRef<any> = computed((): any => store.getters.allResourceGroups)
+const resourceGroupOptions: ComputedRef<any> = computed((): any => {
+    const apps = store.getters.allResourceGroups.map((app: any) => {
+        return {
+            label: app.name,
+            key: app.uuid
+        }
+    })
+    apps.push({label: 'Create New', key: 'create_new'})
+    return apps
+})
+function selectResourceGroup(key: string) {
+    if (key === 'create_new') {
+        showCreateResourceGroupModal.value = true
+    } else {
+        myapp.value = resourceGroups.value.find((app: any) => app.uuid === key)
+        protectedEnvironments.value = myapp.value.protectedEnvironments
+    }
+}
+
+const newappname: Ref<string> = ref('')
+const permissionTypes: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE']
+const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
+
+    if (permissionTypes.length) {
+        let retSelection: any[] = []
+        permissionTypes.forEach((el: string) => {
+            let retObj = {
+                label: el,
+                value: el
+            }
+            retSelection.push(retObj)
+        })
+        return retSelection
+    } else {
+        return []
+    }
+})
+const permissionTypeswAdmin: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
+const permissionTypeswAdminSelections: ComputedRef<SelectOption[]> = computed((): any => {
+
+    if (permissionTypeswAdmin.length) {
+        let retSelection: SelectOption[] = []
+        permissionTypeswAdmin.forEach((el: string) => {
+            let retObj = {
+                label: el,
+                value: el
+            }
+            retSelection.push(retObj)
+        })
+        return retSelection
+    } else {
+        return []
+    }
+})
+const programmaticAccessFields: Ref<any> = ref([
+    {
+        key: 'uuid',
+        title: 'Internal ID'
+    },
+    {
+        key: 'apiId',
+        title: 'API ID',
+        render: (row: any) => {
+            let keyId = row.type + "__" + row.object
+            if (row.keyOrder) keyId += "__ord__" + row.keyOrder
+            const els: any[] = [
+                h(NTooltip, {
+                        trigger: 'hover'
+                    }, {trigger: () => h(NIcon,
+                            {
+                                // title: keyId,
+                                class: 'icons',
+                                size: 25,
+                            }, { default: () => h(Info20Regular) }),
+                            default: () =>  keyId
+                        }
+                )
+            ]
+            return h('div', els)
+        }
+    },
+    {
+        key: 'createdDate',
+        title: 'Created'
+    },
+    {
+        key: 'accessDate',
+        title: 'Last Accessed'
+    },
+    {
+        key: 'updatedByName',
+        title: 'Updated By'
+    },
+    {
+        key: 'object',
+        title: 'Object',
+        render: (row: any) => {
+            let el = h('div')
+            if (row.type === 'COMPONENT') {
+                el = h(
+                    RouterLink,
+                    {
+                        to: {
+                            name: 'ComponentsOfOrg',
+                            params: {
+                                orguuid: row.org,
+                                compuuid: row.object
+                            }
+                        }
+                    },
+                    { default: () => row.object_val }
+                )
+            }
+            return el
+        }
+    },
+    {
+        key: 'type',
+        title: 'Type'
+    },
+    {
+        key: 'resolvedApprovals',
+        title: 'Approvals',
+        render: (row: any) => {
+            let el = h('div')
+            if(row.type === 'REGISTRY_USER'){
+                el = row.registryRobotLogin.includes('-private') ? h('div', 'Private') : h('div', 'Public')
+            }else{
+                let approval = resolveApprovals(row.permissions)
+                el = h('div', approval)
+            }
+            return el
+        }
+    },
+    {
+        key: 'notes',
+        title: 'Notes'
+    },
+    {
+        key: 'controls',
+        title: 'Manage',
+        render: (row: any) => {
+            let el = h('div')
+            let els: any[] = []
+            if (isOrgAdmin.value) {
+                if (row.type !== 'REGISTRY_USER' && myUser.value.installationType !== 'OSS') {
+                    els.push(
+                        h(
+                            NIcon,
+                            {
+                                title: 'Set Approvals For Key',
+                                class: 'icons clickable',
+                                size: 25,
+                                onClick: () => editKey(row.uuid)
+                            }, { default: () => h(EditIcon) }
+                        )
+                    )
+                }                    
+                els.push(h(
+                    NIcon,
+                    {
+                        title: 'Delete Key',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => deleteKey(row.uuid)
+                    }, { default: () => h(Trash) }
+                ))
+            }
+        
+            el = h('div', els)
+        
+            return el
+
+        }
+    }
+])
+const programmaticAccessKeys: Ref<any[]> = ref([])
+const registryHost: Ref<string> = ref('')
+const robotName: Ref<string> = ref('')
+const selectedKey: Ref<any> = ref({})
+const selectedUser: Ref<any> = ref({})
+const selectedUserType: Ref<string> = ref('')
+const configuredIntegrations: Ref<any[]> = ref([])
+const createIntegrationObject: Ref<any> = ref({
+    org: orgResolved.value,
+    uri: '',
+    frontendUri: '',
+    identifier: 'base',
+    secret: '',
+    type: '',
+    schedule: ''
+})
+
+function resetCreateIntegrationObject() {
+    createIntegrationObject.value = {
+        org: orgResolved.value,
+        uri: '',
+        frontendUri: '',
+        identifier: 'base',
+        secret: '',
+        type: '',
+        schedule: ''
+    }
+}
+
+
+const users: Ref<any[]> = ref([])
+async function loadUsers() {
+    users.value = await store.dispatch('fetchUsers', orgResolved.value)
+    userEmailColumnReactive.sortOrder = 'ascend'
+}
+
+
+const userEmailColumn = 
+    {
+        key: 'email',
+        title: 'Email',
+        sortOrder: ''
+    }
+const userEmailColumnReactive = reactive(userEmailColumn)
+
+const userFields = [
+    userEmailColumn,
+    {
+        key: 'name',
+        title: 'Name'
+    },
+    {
+        key: 'permission',
+        title: 'Org Wide Permissions',
+        render(row: any) {
+            return h('div',
+                extractOrgWidePermission(row)
+            )
+        }
+    },
+    {
+        key: 'approvals',
+        title: 'Approvals',
+        render(row: any) {
+            let approvalContent = ''
+            const permArray = row.permissions.permissions.filter((up: any) =>
+                (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
+            )
+            if (permArray && permArray.length) {
+                const orgWidePerm = permArray[0]
+                if (orgWidePerm.type === 'ADMIN') {
+                    approvalContent = 'Any (as Admin)'
+                } else if (orgWidePerm.approvals && orgWidePerm.approvals.length) {
+                    approvalContent = orgWidePerm.approvals.toString()
+                } else {
+                    approvalContent = 'Not Granted'
+                }
+            }
+            return h('div', approvalContent)
+        }
+    },
+    {
+        key: 'controls',
+        title: 'Manage',
+        render(row: any) {
+            let el = h('div')
+            let els: any[] = []
+            if (isOrgAdmin.value) {
+                if (row.uuid !== myUser.value.uuid) {
+                    els = [
+                        h(
+                            NIcon,
+                            {
+                                title: 'Modify user permissions',
+                                class: 'icons clickable',
+                                size: 25,
+                                onClick: () => editUser(row.email)
+                            }, { default: () => h(EditIcon) }
+                        ),
+                        h(
+                            NIcon,
+                            {
+                                title: 'Remove User From Organization',
+                                class: 'icons clickable',
+                                size: 25,
+                                onClick: () => removeUser(row.uuid)
+                            }, { default: () => h(Trash) }
+                        )
+                    ]
+                }
+            }
+            if(row.uuid === myUser.value.uuid){
+                els.push(
+                    h(
+                        NIcon,
+                        {
+                            title: 'Generate User API Key',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => genUserApiKey()
+                        }, { default: () => h(LockOpen) }
+                    )
+                )
+            }
+            el = h('div', els)
+        
+            return el
+        }
+    }
+]
+const invitees: Ref<any[]> = ref([])
+
+const inviteeFields = [
+    {
+        key: 'email',
+        title: 'Email'
+    },
+    {
+        key: 'type',
+        title: 'Org Wide Permissions'
+    },
+    {
+        key: 'challengeExpiry',
+        title: 'Invitation Expiration'
+    },
+    {
+        key: 'controls',
+        title: 'Manage',
+        render(row: any) {
+            return h('div', [
+                h(
+                    NIcon,
+                    {
+                        title: 'Cancel Invitation',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => cancelInvite(row.email)
+                    }, { default: () => h(Trash) }
+                )
+            ])
+        }
+    }
+]
+
+const props = defineProps<{
+    orguuid?: string
+}>()
+
+const processingMode = ref(false)
+
+async function addApprovalRole () {
+    if (newApprovalRole.value.id) {
+        const updObj = {
+            orgUuid: orgResolved.value,
+            approvalRole: newApprovalRole.value
+        }
+        store.dispatch('addApprovalRole', updObj)
+        showCreateApprovalRole.value = false
+    }
+}
+
+async function deleteApprovalRole (approvalRoleId: string) {
+    const updObj = {
+        orgUuid: orgResolved.value,
+        approvalRoleId       
+    }
+    try {
+        const org = await store.dispatch('deleteApprovalRole', updObj)
+        if (org && org.uuid) {
+            notify('success', 'Deleted', 'Successfully deleted approval role ' + approvalRoleId)
+        } else {
+            notify('error', 'Failed to Delete', 'There was an error deleting approval role')
+        }
+    } catch (err: any) {
+        notify('error', 'Failed to Delete', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+async function deleteApprovalPolicy (policyUuid: string) {
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation archiveApprovalPolicy($approvalPolicyUuid: ID!) {
+                    archiveApprovalPolicy(approvalPolicyUuid: $approvalPolicyUuid) {
+                        uuid
+                        status
+                        policyName
+                    }
+                }`,
+            variables: {
+                approvalPolicyUuid: policyUuid
+            },
+            fetchPolicy: 'no-cache'
+        })
+        if (response.data && response.data.archiveApprovalPolicy && response.data.archiveApprovalPolicy.status === 'ARCHIVED') {
+            notify('success', 'Archived', 'Successfully archived approval policy ' + response.data.archiveApprovalPolicy.policyName)
+            fetchApprovalPolicies()
+        } else {
+            notify('error', 'Failed to Archive', 'There was an error archiving approval policy')
+        }
+    } catch (err: any) {
+        notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+async function deleteApprovalEntry (approvalEntryUuid: string) {
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation archiveApprovalEntry($approvalEntryUuid: ID!) {
+                    archiveApprovalEntry(approvalEntryUuid: $approvalEntryUuid) {
+                        uuid
+                        status
+                        approvalName
+                    }
+                }`,
+            variables: {
+                approvalEntryUuid
+            },
+            fetchPolicy: 'no-cache'
+        })
+        if (response.data && response.data.archiveApprovalEntry && response.data.archiveApprovalEntry.status === 'ARCHIVED') {
+            notify('success', 'Archived', 'Successfully archived approval entry ' + response.data.archiveApprovalEntry.approvalName)
+            fetchApprovalEntries()
+        } else {
+            notify('error', 'Failed to Archive', 'There was an error archiving approval entry')
+        }
+    } catch (err: any) {
+        notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+async function createApp() {
+    if (newappname.value) {
+        let appObj = {
+            name: newappname.value,
+            org: orgResolved.value
+        }
+        await store.dispatch('createResourceGroup', appObj)
+        newappname.value = ''
+        showCreateResourceGroupModal.value = false
+        notify('success', 'Created', 'Successfully created resourceGroup ' + appObj.name)
+    }
+}
+
+async function deleteIntegration(type: string) {
+    await graphqlClient.mutate({
+        mutation: gql`
+                mutation deleteBaseIntegration($org: ID!, $type: IntegrationType!) {
+                    deleteBaseIntegration(org: $org, type: $type)
+                }`,
+        variables: {
+            'org': orgResolved.value,
+            type
+        }
+    })
+    loadConfiguredIntegrations(false)
+}
+
+async function deleteKey(uuid: string) {
+    const onSwalConfirm = async function () {
+        let isSuccess = false
+        try {
+            const resp = await graphqlClient.mutate({
+                mutation: gql`
+                        mutation deleteApiKey($apiKeyUuid: ID!) {
+                            deleteApiKey(apiKeyUuid: $apiKeyUuid)
+                        }`,
+                variables: {
+                    'apiKeyUuid': uuid
+                }
+            })
+            if (resp.data && resp.data.deleteApiKey) isSuccess = true
+        } catch (error: any) {
+            console.error(error)
+        }
+        if (!isSuccess) {
+            Swal.fire(
+                'Error!',
+                'Error when deleting api key.',
+                'error'
+            )
+        }
+        loadProgrammaticAccessKeys(false)
+    }
+    const swalData: SwalData = {
+        questionText: `Are you sure you want to delete the API Key with Internal ID ${uuid}?`,
+        successTitle: 'Deleted!',
+        successText: `The API Key with Internal ID ${uuid} has been deleted.`,
+        dismissText: 'The API Key remains active.'
+    }
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+}
+function editKey(uuid: string) {
+    const key = programmaticAccessKeys.value.filter((k: any) => (k.uuid === uuid))
+    selectedKey.value = commonFunctions.deepCopy(key[0])
+    // locate permission for approvals
+    const perm = selectedKey.value.permissions.permissions.filter((up: any) =>
+        (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
+    )
+    if (perm && perm.length) {
+        selectedKey.value.approvals = perm[0].approvals
+    } else {
+        selectedKey.value.approvals = []
+    }
+    showOrgSettingsProgPermissionsModal.value = true
+}
+function editUser(email: string) {
+    const user = users.value.filter(u => (u.email === email))
+    selectedUser.value = commonFunctions.deepCopy(user[0])
+    // locate permission for approvals and instance permissions
+    let perm: any
+    instancePermissions.value = {}
+    selectedUser.value.permissions.permissions.forEach((up: any) => {
+        if (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value) {
+            perm = up
+        } else if (up.scope === 'INSTANCE' && up.org === orgResolved.value) {
+            instancePermissions.value[up.object] = up.type
+        }
+    })
+
+    selectedUser.value.permissions.permissions.filter((up: any) =>
+        (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
+    )
+    selectedUser.value.approvals = commonFunctions.deepCopy(perm.approvals)
+    selectedUser.value.type = perm.type
+    selectedUserType.value = perm.type
+
+    showOrgSettingsUserPermissionsModal.value = true
+}
+function enableRegistry() {
+    if (!orgRegistry.value) {
+        axios.post('/api/manual/v1/organization/registry/' + orgResolved.value).then(resp => {
+            store.dispatch('fetchMyOrganizations')
+            showRegistryCommands()
+        })
+    }
+}
+function extractOrgWidePermission(user: any) {
+    let perm = user.permissions.permissions.filter((up: any) =>
+        (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
+    )
+    return perm[0].type
+}
+async function genApiKey() {
+    let swalObject: SweetAlertOptions = {
+        title: 'Pick Key Type',
+        text: 'Choose Type For Your New Api Key',
+        icon: 'warning',
+        html:
+            '<textarea id="swal-input-notes" placeholder="Notes" class="swal2-input">' ,
+        input: 'select',
+        inputOptions: ['Org-wide Read Only', 'Org-wide Read-Write', 'Approval and Artifact Upload'],
+        inputPlaceholder: 'Select Key Type',
+        preConfirm: (value: any) => {
+            if(!value){
+                Swal.showValidationMessage('You need to select key type!')
+            }
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Generate it!',
+        cancelButtonText: 'Cancel'
+    }
+    if (orgRegistry.value && globalRegistryEnabled.value) {
+        swalObject.inputOptions = ['Org-wide Read Only', 'Org-wide Read-Write', 'Approval and Artifact Upload', 'Private Registry', 'Public Registry']
+    }
+    const swalResult = await Swal.fire(swalObject)
+    if (swalResult.dismiss === Swal.DismissReason.cancel) {
+        Swal.fire(
+            'Cancelled',
+            'Aborted API Key Generation',
+            'error'
+        )
+    } else {
+        const setKeyPayload = {
+            orgUuid: orgResolved.value,
+            keyOrder: '',
+            apiType: '',
+            notes: (<HTMLInputElement>document.getElementById('swal-input-notes'))!.value
+        }
+        if (swalResult.value === '0') {
+            setKeyPayload.keyOrder = commonFunctions.genUuid()
+            setKeyPayload.apiType = 'ORGANIZATION'
+        } else if (swalResult.value === '1') {
+            setKeyPayload.keyOrder = commonFunctions.genUuid()
+            setKeyPayload.apiType = 'ORGANIZATION_RW'
+        } else if (swalResult.value === '2') {
+            setKeyPayload.apiType = 'APPROVAL'
+        } else if (swalResult.value === '3') {
+            genUserRegistryToken('PRIVATE', setKeyPayload.notes)
+            return
+        } else if (swalResult.value === '4') {
+            genUserRegistryToken('PUBLIC', setKeyPayload.notes)
+            return
+        }
+        const keyResp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setOrgApiKey($orgUuid: ID!, $apiType: ApiTypeEnum!, $keyOrder: String, $notes: String) {
+                    setOrgApiKey(orgUuid: $orgUuid, apiType: $apiType, keyOrder: $keyOrder, notes: $notes) {
+                        id
+                        apiKey
+                        authorizationHeader
+                    }
+                }`,
+            variables: setKeyPayload,
+            fetchPolicy: 'no-cache'
+        })
+        const newKeyMessage = getGeneratedApiKeyHTML(keyResp.data.setOrgApiKey)
+        loadProgrammaticAccessKeys(false)
+        Swal.fire({
+            title: 'Generated!',
+            customClass: 'swal-wide',
+            html: newKeyMessage,
+            icon: 'success'
+        })
+    }
+    
+}
+async function genUserApiKey() {
+    let swalObject: SweetAlertOptions = {
+        title: 'Are you sure?',
+        text: 'A new API Key will be generated, any existing integrations with previous API Key (if exist) will stop working.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, generate it!',
+        cancelButtonText: 'No, cancel it'
+    }
+    const swalResult = await Swal.fire(swalObject)
+    if (swalResult.value) {
+        let path = '/v1/manual/user/setOrgReadApiKey/' + orgResolved.value
+        let axiosResponse = await axios.put(path)
+        let newKeyMessage = getGeneratedApiKeyHTML(axiosResponse.data)      
+        Swal.fire({
+            title: 'Generated!',
+            customClass: 'swal-wide',
+            html: newKeyMessage,
+            icon: 'success'
+        })
+    } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
+        Swal.fire(
+            'Cancelled',
+            'Your existing API Key is safe',
+            'error'
+        )
+    }
+}
+
+function getGeneratedApiKeyHTML(responseData: any) {
+    return `
+            <div style="text-align: left;">
+            <p>Please record these data as you will see API key only once (although you can re-generate it at any time):</p>
+                <table style="width: 95%;">
+                    <tr>
+                        <td>
+                            <strong>API ID:</strong>
+                        </td>
+                        <td>
+                            <textarea style="width: 100%;" disabled>${responseData.id}</textarea>
+                        </td>
+                    </tr>
+                        <td>
+                            <strong>API Key:</strong>
+                        </td>
+                        <td>
+                            <textarea style="width: 100%;" disabled>${responseData.apiKey}</textarea>
+                        </td>
+                    <tr>
+                        <td>
+                            <strong>Header:</strong>
+                        </td>
+                        <td>
+                            <textarea style="width: 100%;" disabled rows="4">${responseData.authorizationHeader}</textarea>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        `
+}
+function getGeneratedRegistryTokenHTML(responseData: any) {
+    return `
+            <div style="text-align: left;">
+            <p>Please record these data as you will see the Organization Registry Token only once (although you can re-generate it at any time):</p>
+                <table style="width: 95%;">
+                    <tr>
+                        <td>
+                            <strong>Username:</strong>
+                        </td>
+                        <td>
+                            <textarea style="width: 100%;" disabled>${responseData.name}</textarea>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <strong>Token:</strong>
+                        </td>
+                        <td>
+                            <textarea style="width: 100%;" disabled>${responseData.secret}</textarea>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        `
+}
+
+async function genUserRegistryToken(type: string, notes: string) {
+
+    let gqlResponse = await graphqlClient.mutate({
+        mutation: gql`
+                mutation setRegistryKey {
+                    setRegistryKey(orgUuid: "${orgResolved.value}",
+                        type: "${type}",
+                        notes: "${notes}"
+                    ) {
+                        secret
+                        id
+                        name
+                        disabled
+                    }
+                }`
+    })
+    loadProgrammaticAccessKeys(false)
+    let newKeyMessage = getGeneratedRegistryTokenHTML(gqlResponse.data.setRegistryKey)      
+    Swal.fire({
+        title: 'Organization Registry Token',
+        customClass: 'swal-wide',
+        html: newKeyMessage,
+        icon: 'success'
+    })
+}
+
+function initiateJiraIntegration() {
+    console.log('redirecting to: ' + '/api/manual/v1/integration/jira/redirect/' + orgResolved.value)
+    window.location.href = '/api/manual/v1/integration/jira/redirect/' + orgResolved.value
+}
+async function inviteUser() {
+    processingMode.value = true
+    let isError = false
+    try {
+        const resp = await graphqlClient.mutate({
+                mutation: gql`
+                            mutation inviteUser($invitationProperties: InviteUserInput!) {
+                                inviteUser(invitationProperties: $invitationProperties) {
+                                    uuid
+                                }
+                            }`,
+                variables: {
+                    invitationProperties: invitee.value
+                }
+            })
+        if (resp.data.inviteUser && resp.data.inviteUser.uuid) {
+            notify('success', 'Invited', 'Successfully invited ' + invitee.value.email)
+            resetInvitee()
+            loadInvitedUsers(false)
+        } else {
+            isError = true
+        }
+    } catch (error: any) {
+        console.error(error)
+        isError = true
+    }
+    processingMode.value = false
+    if (isError) {
+        notify('error', 'Failed to Invite', 'There was an error inviting ' + invitee.value.email)
+    }
+    //    store.dispatch('fetchMyOrganizations')
+}
+
+function initializeResourceGroup() {
+    if (!myapp.value.uuid) {
+        myapp.value = resourceGroups.value.find((app: any) => app.uuid === '00000000-0000-0000-0000-000000000000')
+        protectedEnvironments.value = myapp.value.protectedEnvironments
+    }
+}
+
+async function loadConfiguredIntegrations(useCache: boolean) {
+    let cachePolicy: FetchPolicy = "network-only"
+    if (useCache) cachePolicy = "cache-first"
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                          query configuredBaseIntegrations($org: ID!) {
+                              configuredBaseIntegrations(org: $org)
+                          }`,
+            variables: {
+                org: orgResolved.value
+            },
+            fetchPolicy: cachePolicy
+        })
+        if (resp.data && resp.data.configuredBaseIntegrations) {
+            configuredIntegrations.value = resp.data.configuredBaseIntegrations
+        }
+    } catch (err) { 
+        console.error(err)
+    }
+}
+async function loadProgrammaticAccessKeys(useCache: boolean) {
+    let cachePolicy: FetchPolicy = "network-only"
+    if (useCache) cachePolicy = "cache-first"
+    const resp = await graphqlClient.query({
+            query: gql`
+                          query apiKeys($orgUuid: ID!) {
+                                 apiKeys(orgUuid: $orgUuid) {
+                                    uuid
+                                    object
+                                    type
+                                    keyOrder
+                                    lastUpdatedBy
+                                    accessDate
+                                    createdDate
+                                    notes
+                                    permissions {
+                                        permissions {
+                                            org
+                                            scope
+                                            object
+                                            type
+                                            meta
+                                            approvals
+                                        }
+                                    }
+                                }
+                            }`,
+            variables: {
+                orgUuid: orgResolved.value
+            },
+            fetchPolicy: cachePolicy
+        })
+    if (users.value.length && resp.data.apiKeys.length) {
+        programmaticAccessKeys.value = resp.data.apiKeys.map((key: any) => formatValuesForApiKeys(key))
+    } else if (resp.data.apiKeys.length) {
+        programmaticAccessKeys.value = resp.data.apiKeys
+    }
+}
+
+async function handleTabSwitch(tabName: string) {
+    if (tabName === "users") {
+        await loadUsers()
+        loadInvitedUsers(true)
+    } else if (tabName === "programmaticAccess") {
+        await loadUsers()
+        loadProgrammaticAccessKeys(true)
+    } else if (tabName === "approvalPolicies") {
+        fetchApprovalEntries()
+        fetchApprovalPolicies()
+    }
+}
+
+async function loadInvitedUsers(useCache: boolean) {
+    let cachePolicy: FetchPolicy = "network-only"
+    if (useCache) cachePolicy = "cache-first"
+    const resp = await graphqlClient.query({
+            query: gql`
+                          query adminOrganization($org: ID!) {
+                                 adminOrganization(org: $org) {
+                                    uuid
+                                    invitees {
+                                        email
+                                        type
+                                        challengeExpiry
+                                    }
+                                }
+                            }`,
+            variables: {
+                org: orgResolved.value
+            },
+            fetchPolicy: cachePolicy
+        })
+    invitees.value = resp.data.adminOrganization.invitees
+}
+
+function formatValuesForApiKeys (apiKeyEntry: any) {
+    const updEntry = Object.assign({}, apiKeyEntry)
+    updEntry['createdDate'] = (new Date(apiKeyEntry['createdDate'])).toLocaleString('en-CA')
+    updEntry['accessDate'] = apiKeyEntry['accessDate']? (new Date(apiKeyEntry['accessDate'])).toLocaleString('en-CA') : 'Never'
+    if (apiKeyEntry['lastUpdatedBy'] && users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])) {
+        updEntry['updatedByName'] = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])['name']
+    } else {
+        updEntry['updatedByName'] = ''
+    }
+    return updEntry
+}
+
+function loadRegistryHost() {
+    axios.get('/api/manual/v1/component/repository/host').then(resp => {
+        const { hostname } = new URL(resp.data)
+        registryHost.value = hostname
+    })
+}
+
+async function onAddIntegration(type: string) {
+    createIntegrationObject.value.type = type
+    const resp = await graphqlClient.mutate({
+        mutation: gql`
+                      mutation createIntegration($integration: IntegrationInput!) {
+                          createIntegration(integration: $integration) {
+                              uuid
+                          }
+                      }`,
+        variables: {
+            'integration': createIntegrationObject.value
+        }
+    })
+    
+    if (resp.data.createIntegration && resp.data.createIntegration.uuid) await loadConfiguredIntegrations(false)
+
+    resetCreateIntegrationObject()
+
+    showOrgSettingsSlackIntegrationModal.value = false
+    showOrgSettingsGitHubIntegrationModal.value = false
+    showOrgSettingsMsteamsIntegrationModal.value = false
+    showOrgSettingsDependencyTrackIntegrationModal.value = false
+}
+
+function removeUser(userUuid: string) {
+    let userName = users.value.find(u => (u.uuid === userUuid)).name
+    Swal.fire({
+        title: 'Are you sure you want to remove the user ' + userName + '?',
+        text: 'If you proceed, this user will not be able to access this organization until reinvited.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, remove!',
+        cancelButtonText: 'No, cancel it'
+    }).then((result) => {
+        if (result.value) {
+            axios.delete('/api/manual/v1/organization/removeUser/' + orgResolved.value + '/' + userUuid).then(response => {
+                if (response.data) {
+                    users.value = users.value.filter(u => (u.uuid !== userUuid))
+                }
+            })
+        } else if (result.dismiss === Swal.DismissReason.cancel) {
+            Swal.fire(
+                'Cancelled',
+                'User removal cancelled.',
+                'error'
+            )
+        }
+    })
+}
+
+async function cancelInvite(email: string) {
+    let isSuccess = false
+    try {
+        const resp = await graphqlClient.mutate({
+                mutation: gql`
+                            mutation cancelInvite($org: ID!, $userEmail: String!) {
+                                    cancelInvite(org: $org, userEmail: $userEmail) {
+                                        uuid
+                                    }
+                                }`,
+                variables: {
+                    userEmail: email,
+                    org: orgResolved.value
+                }
+            })
+        if (resp.data.cancelInvite && resp.data.cancelInvite.uuid) isSuccess = true
+        invitees.value = resp.data.cancelInvite.invitees
+    } catch (e: any) {
+        console.error(e)
+    }
+
+    if (isSuccess) {
+        loadInvitedUsers(false)
+        notify('success', 'Cancelled', `Invitation for the user ${email} cancelled successfully!`)
+    } else {
+        notify('error', 'Error', `Error when cancelling invitation for the user ${email}!`)
+    }
+    
+}
+
+function resolveApprovals(permissions: any) {
+    let approvals: any
+    let perm = permissions.permissions.filter((up: any) =>
+        (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
+    )
+    if (perm && perm.length) {
+        approvals = ''
+        perm[0].approvals.forEach((ap: any) => {
+            approvals += ap + ' '
+        })
+    }
+    return approvals
+}
+
+function showRegistryCommands() {
+    showComponentRegistryModal.value = true
+}
+
+async function updateKeyPermissions() {
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                mutation setApprovalsOnApiKey($apiKeyUuid: ID!, $approvals: [String], $notes: String) {
+                    setApprovalsOnApiKey(apiKeyUuid: $apiKeyUuid, approvals: $approvals, notes: $notes) {
+                        uuid
+                        object
+                        type
+                        keyOrder
+                        lastUpdatedBy
+                        accessDate
+                        createdDate
+                        notes
+                        permissions {
+                            permissions {
+                                org
+                                scope
+                                object
+                                type
+                                meta
+                                approvals
+                            }
+                        }
+                    }
+                }`
+            ,
+            variables: { 
+                apiKeyUuid: selectedKey.value.uuid,
+                approvals: selectedKey.value.approvals,
+                notes: selectedKey.value.notes
+            },
+            fetchPolicy: 'no-cache'
+        })
+
+        const updatedApiKey = response.data.setApprovalsOnApiKey
+        formatValuesForApiKeys(updatedApiKey)
+        let updated: boolean = false
+        for (let i = 0; i < programmaticAccessKeys.value.length && !updated; i++) {
+            if (programmaticAccessKeys.value[i].uuid === updatedApiKey.uuid) {
+                programmaticAccessKeys.value[i] = updatedApiKey
+                updated = true
+            }
+        }
+        showOrgSettingsProgPermissionsModal.value = false
+        notify('success', 'Created', 'Saved key permissions successfully!')
+    } catch (e: any) {
+        notify('error', 'Error', e)
+    }
+}
+
+async function updateUserPermissions() {
+    const permissions: any[] = []
+    if (instancePermissions.value && Object.keys(instancePermissions.value).length) {
+        Object.keys(instancePermissions.value).forEach(inst => {
+            const perm = {
+                org: orgResolved.value,
+                scope: 'INSTANCE',
+                type: instancePermissions.value[inst],
+                object: inst
+            }
+            permissions.push(perm)
+        })
+    }
+
+    let isSuccess = true
+
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                    mutation updateUserPermissions($permissions: [PermissionInput], $approvals: [String]) {
+                        updateUserPermissions(orgUuid: "${orgResolved.value}", userUuid: "${selectedUser.value.uuid}",
+                            permissionType: ${selectedUser.value.type}, permissions: $permissions, approvals: $approvals) {
+                            uuid
+                        }
+                    }`,
+            variables: {
+                'permissions': permissions,
+                'approvals': selectedUser.value.approvals
+            }
+        })
+        if (!resp.data.updateUserPermissions || !resp.data.updateUserPermissions.uuid) isSuccess = false
+    } catch (error: any) {
+        console.error(error)
+        isSuccess = false
+    }
+
+    if (isSuccess) {
+        notify('success', 'Saved', `Saved user ${selectedUser.value.email} permissions successfully!`)
+        await loadUsers()
+    } else {
+        notify('error', 'Error', `Failed to save user ${selectedUser.value.email} permissions. Please retry or contact support.`)
+    }
+
+    showOrgSettingsUserPermissionsModal.value = false
+    selectedUser.value = {}
+}
+
+const orgRegistry: ComputedRef<any> = computed((): any => {
+    let orgReg = false
+    if (store.getters.myorg && store.getters.myorg.registryComponents) {
+        orgReg = store.getters.myorg.registryComponents.length
+    }
+    return orgReg
+})
+const InstanceType = constants.InstanceType
+const instances: ComputedRef<any> = computed((): any => {
+    let instances = store.getters.instancesOfOrg(orgResolved.value)
+    if (instances && instances.length) {
+        instances = instances.filter((x: any) => x.revision === -1 && x.instanceType === InstanceType.STANDALONE_INSTANCE)
+        if(instanceSearchString.value != ''){
+            instances = instances.filter((x: any) => x.uri.toLowerCase().includes(instanceSearchString.value) )
+        }
+        // sort - TODO make sort configurable
+        instances.sort((a: any, b: any) => {
+            if (a.uri.toLowerCase() < b.uri.toLowerCase()) {
+                return -1
+            } else if (a.uri.toLowerCase() > b.uri.toLowerCase()) {
+                return 1
+            } else {
+                return 0
+            }
+        })
+    }
+    let spawnInstanceObj = {
+        uri: 'Spawn Instances',
+        uuid: '00000000-0000-0000-0000-000000000002',
+        org: orgResolved.value
+    }
+    instances.push(spawnInstanceObj)
+    return instances
+})
+const clusters: ComputedRef<any> = computed((): any => {
+    let instances = store.getters.instancesOfOrg(orgResolved.value)
+    if (instances && instances.length) {
+        instances = instances.filter((x: any) => x.revision === -1 && x.instanceType === InstanceType.CLUSTER)
+       
+        // sort - TODO make sort configurable
+        instances.sort((a: any, b: any) => {
+            if (a.uri.toLowerCase() < b.uri.toLowerCase()) {
+                return -1
+            } else if (a.uri.toLowerCase() > b.uri.toLowerCase()) {
+                return 1
+            } else {
+                return 0
+            }
+        })
+        instances.forEach((inst: any) => {
+            let instanceChildren: any[] = []
+            if(inst.instances && inst.instances.length)
+                instanceChildren = store.getters.instancesOfOrg(orgResolved.value)
+                    .filter((x: any) => inst.instances.includes(x.uuid))
+                    .sort((a: { uuid: any }, b: { uuid: any }) => inst.instances.indexOf(a.uuid) - inst.instances.indexOf(b.uuid));
+            inst.instanceChildren = instanceChildren
+
+            return inst
+        })
+    }
+    // instances = [{ name: 'All Clusters', uuid: '00000000-0000-0000-0000-000000000003', revision: -1 }, ...instances]
+    return instances
+
+})
+const instanceSearchString: Ref<string> = ref('')
+const filterInstances = async function(value: string){
+    instanceSearchString.value = value
+    console.log('instanceSearchString', instanceSearchString)
+}
+const userInstancePermissionColumns = [
+    {
+        key: 'instance',
+        title: 'Instance',
+        render: (row: any) => {
+            return row.uri
+        }
+    },
+    {
+        key: 'permission',
+        title: 'Permission',
+        render: (row: any) => {
+            let els: any[] = []
+            permissionTypeSelections.value.forEach(pt => {
+                els.push(h(NRadioButton, {value: pt.value}, {default: () => pt.value != 'NONE' ? pt.value : 'USER DEFAULT'}))
+            })
+            
+            return h(NRadioGroup, {
+                value: instancePermissions.value[row.uuid] === '' || !instancePermissions.value[row.uuid] ? 'NONE' : instancePermissions.value[row.uuid],
+                'onUpdate:value': (value: string) => {
+                    instancePermissions.value[row.uuid] = value
+                    updateUserPermissions()
+                }
+            }, {
+                default: () => els
+            })
+            
+        }
+    }
+
+]
+const userClusterPermissionColumns = [
+    {
+        key: 'cluster',
+        title: 'Cluster',
+        render: (row: any) => {
+            return row.uri && row.uri != '' ? row.uri : row.name
+        }
+    },
+    {
+        key: 'ns',
+        title: 'ns',
+        render: (row: any) => {
+            return row.namespace
+        }
+    },
+    {
+        key: 'permission',
+        title: 'Permission',
+        render: (row: any) => {
+            let els: any[] = []
+            let disabled = false
+            if(row.instanceType === InstanceType.CLUSTER_INSTANCE){
+                let cluster = store.getters.instancesOfOrg(orgResolved.value).find((x: any) => x.revision === -1 && x.instanceType === InstanceType.CLUSTER && x.instances.includes(row.uuid))
+                if(cluster && cluster.uuid){
+                    disabled = instancePermissions.value[cluster.uuid] === 'READ_WRITE'
+                }
+            }
+            permissionTypeSelections.value.forEach(pt => {
+                els.push(h(NRadioButton, {value: pt.value}, {default: () => pt.value != 'NONE' ? pt.value : 'USER DEFAULT'}))
+            })
+          
+            return h(NRadioGroup, {
+                value: disabled ? 'READ_WRITE' : instancePermissions.value[row.uuid] === '' || !instancePermissions.value[row.uuid] ? 'NONE' : instancePermissions.value[row.uuid],
+                disabled: disabled,
+                'onUpdate:value': (value: string) => {
+                    instancePermissions.value[row.uuid] = value
+                    updateUserPermissions()
+                }
+            }, {
+                default: () => els
+            })
+            
+        }
+    }
+
+]
+const jiraIntegrationData: ComputedRef<any> = computed((): any => {
+    if (store.getters.myorg && store.getters.myorg.jiraIntegrationData) {
+        return store.getters.myorg.jiraIntegrationData
+    }
+    return false
+})
+const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
+const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
+    let isOrgAdmin = false
+    if (myUser.value && myUser.value.permissions) {
+        let orgPermission = myUser.value.permissions.permissions.find((p: any) => (p.org === orgResolved.value && p.object === orgResolved.value && p.scope === 'ORGANIZATION'))
+        if (orgPermission && orgPermission.type === 'ADMIN') {
+            isOrgAdmin = true
+        }
+    }
+    return isOrgAdmin
+})
+const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
+    return programmaticAccessKeys.value.map((accesKey: any) => {
+        if (accesKey.type === 'ORGANIZATION_RW' || accesKey.type === 'ORGANIZATION') {
+            accesKey.object_val = store.getters.orgById(accesKey.object).name
+        } else if (accesKey.type === 'COMPONENT') {
+            var proj = store.getters.componentById(accesKey.object)
+            if (proj) {
+                accesKey.object_val = proj.name
+                accesKey.object_org = proj.org
+            } else {
+                accesKey.object_val = 'Archived Component'
+            }
+        } else if (accesKey.type === 'INSTANCE') {
+            var inst = store.getters.instanceById(accesKey.object, -1)
+            if (inst) {
+                accesKey.object_val = inst.uri
+                accesKey.object_org = inst.org
+                accesKey.object_val = store.getters.instanceById(accesKey.object, -1).uri
+            } else {
+                accesKey.object_val = 'Archived Instance'
+            }
+        } else if (accesKey.type === 'USER' || accesKey.type === 'REGISTRY_USER') {
+            accesKey.object_val = accesKey.updatedByName
+        }
+        return accesKey
+    })
+})
+const imageRegistry: ComputedRef<any> = computed((): any => {
+    let content = '### OCI Container Images (Suitable for Docker and Helm):\n'
+    content += '##### Image Namespaces: \n'
+    content = content + '```bash\n'
+    content += `${registryHost.value}/${orgResolved.value}-private\n`
+    content += `${registryHost.value}/${orgResolved.value}-public\n`
+    content += '```\n'
+    content += '##### Login To OCI Registry with Docker: \n'
+    content = content + '```bash\n'
+    content += 'docker login ' + registryHost.value + ' -u \'<username>\' -p \'<token>\'\n'
+    content += '```\n'
+    content += '##### Push Image \n'
+    content = content + '```bash\n'
+    content += 'docker push ' + registryHost.value + '/' + orgResolved.value + '-private/<image_name>:<version>\n'
+    content += 'docker push ' + registryHost.value + '/' + orgResolved.value + '-public/<image_name>:<version>\n'
+    content += '```\n'
+    content += '##### Pull Image \n'
+    content = content + '```bash\n'
+    content += 'docker pull ' + registryHost.value + '/' + orgResolved.value + '-private/<image_name>:<version>\n'
+    content += 'docker pull ' + registryHost.value + '/' + orgResolved.value + '-public/<image_name>:<version>\n'
+    content += '```\n'
+    content += '##### Push Helm Chart\n'
+    content = content + '```bash\n'
+    content += `helm registry login -u '<username>' -p 'token' ${registryHost.value}\n`
+    content += `helm package <chartdir>\n`
+    content += 'helm push <chart.tgz> oci://' + registryHost.value + '/' + orgResolved.value + '-private\n'
+    content += 'helm push <chart.tgz> oci://' + registryHost.value + '/' + orgResolved.value + '-public\n'
+    content += '```\n'
+    content += '##### Pull Helm Chart\n'
+    content = content + '```bash\n'
+    content += `helm registry login -u '<username>' -p 'token' ${registryHost.value}\n`
+    content += 'helm pull oci://' + registryHost.value + '/' + orgResolved.value + '-private/<my-chart> --version <my-version>\n'
+    content += 'helm pull oci://' + registryHost.value + '/' + orgResolved.value + '-public/<my-chart> --version <my-version>\n'
+    content += '```\n'
+
+    return Marked.parse(content)
+})
+
+const isWritable: Ref<boolean> = ref(false)
+const userPermission: ComputedRef<any> = computed((): any => commonFunctions.getUserPermission(orgResolved.value, store.getters.myuser).org)
+const environmentOptions: ComputedRef<any[]> = computed((): any => {
+    return environmentTypes.value.map((et: string) => {
+        return { 'label': et, 'value': et }
+    })
+})
+async function saveProtectedEnvironments() {
+
+    if (myapp.value) {
+        const gqlResponse = await store.dispatch('saveProtectedEnvironments', {
+            org: myapp.value.org,
+            uuid: myapp.value.uuid,
+            protectedEnvironments: protectedEnvironments.value
+        })
+        notify('success', 'Updated', 'Successfully updated Protected Environments')            
+    }
+}
+
+const dataTableRowKey = (row: any) => row.uuid
+
+const approvalEntryFields: DataTableColumns<any> = [
+    {
+        key: 'approvalName',
+        title: 'Approval Name'
+    },
+    {
+        key: 'approvalRoles',
+        title: 'Required Approvals'
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => {
+            let els: any[] = []
+            if (isWritable) {
+                const deleteEl = h(NIcon, {
+                        title: 'Delete Approval Entry',
+                        class: 'icons clickable',
+                        size: 20,
+                        onClick: () => {
+                            deleteApprovalEntry(row.uuid)
+                        }
+                    }, 
+                    { 
+                        default: () => h(Trash) 
+                    }
+                )
+                els.push(deleteEl)
+            }
+            if (!els.length) els = [h('div'), row.status]
+            return els
+        }
+    }
+]
+
+const orgApprovalEntries: Ref<ApprovalEntry[]> = ref([])
+
+const approvalEntryTableData: ComputedRef<any[]> = computed((): any => {
+    const data = orgApprovalEntries.value.map(oae => {
+        const approvalRoles = oae.approvalRequirements.map(oaear => oaear.allowedApprovalRoleIdExpanded[0].displayView)
+        return {
+            uuid: oae.uuid,
+            approvalName: oae.approvalName,
+            approvalRoles: approvalRoles.toString()
+        }
+    })
+    return data
+})
+
+async function fetchApprovalEntries () {
+    const response = await graphqlClient.query({
+        query: gql`
+            query approvalEntriesOfOrg($orgUuid: ID!) {
+                approvalEntriesOfOrg(orgUuid: $orgUuid) {
+                    uuid
+                    approvalName
+                    approvalRequirements {
+                        allowedApprovalRoleIdExpanded {
+                            id
+                            displayView
+                        }
+                    }
+                }
+            }`,
+        variables: {
+            'orgUuid': orgResolved.value
+        },
+        fetchPolicy: 'no-cache'
+    })
+
+    orgApprovalEntries.value = response.data.approvalEntriesOfOrg
+}
+
+function approvalEntryCreated () {
+    fetchApprovalEntries()
+    showCreateApprovalEntry.value = false
+}
+
+function approvalPolicyCreated () {
+    fetchApprovalPolicies()
+    showCreateApprovalPolicy.value = false
+}
+
+const approvalPolicyFields: DataTableColumns<any> = [
+    {
+        key: 'policyName',
+        title: 'Policy Name'
+    },
+    {
+        key: 'approvalNames',
+        title: 'Approval Names'
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => {
+            let els: any[] = []
+            if (isWritable) {
+                const deleteEl = h(NIcon, {
+                        title: 'Delete Approval Policy',
+                        class: 'icons clickable',
+                        size: 20,
+                        onClick: () => {
+                            deleteApprovalPolicy(row.uuid)
+                        }
+                    }, 
+                    { 
+                        default: () => h(Trash) 
+                    }
+                )
+                els.push(deleteEl)
+            }
+            if (!els.length) els = [h('div'), row.status]
+            return els
+        }
+    }
+]
+
+const approvalPolicyTableData: Ref<any[]> = ref([])
+
+async function fetchApprovalPolicies () {
+    const response = await graphqlClient.query({
+        query: gql`
+            query approvalPoliciesOfOrg($orgUuid: ID!) {
+                approvalPoliciesOfOrg(orgUuid: $orgUuid) {
+                    uuid
+                    policyName
+                    approvalEntryDetails {
+                        approvalName
+                    }
+                }
+            }`,
+        variables: {
+            'orgUuid': orgResolved.value
+        },
+        fetchPolicy: 'no-cache'
+    })
+    const approvalPolicyResp = response.data.approvalPoliciesOfOrg
+    if (approvalPolicyResp && approvalPolicyResp.length) {
+        approvalPolicyTableData.value = approvalPolicyResp.map((x: any) => {
+            let approvalNames = ''
+            if (x.approvalEntryDetails && x.approvalEntryDetails.length) {
+                x.approvalEntryDetails.forEach((aed: any) => {
+                    approvalNames += aed.approvalName + ', '
+                })
+                approvalNames = approvalNames.substring(0, approvalNames.length - 2)
+            }
+            return {
+                uuid: x.uuid,
+                policyName: x.policyName,
+                approvalNames
+            }
+        })
+    }
+}
+
+</script>
+  
+<style scoped lang="scss">
+.approvalRow:hover {
+    background-color: #d9eef3;
+}
+
+.approvalTypeHeader {
+    writing-mode: vertical-lr;
+    
+}
+.approvalTypeCB {
+    width: 24px;
+    display: block;
+}
+
+.approvalMatrixContainer {
+    max-width: 50%;
+}
+
+.removeFloat {
+    clear: both;
+}
+
+.inviteUserForm {
+    margin-bottom: 10px;
+}
+</style>
+  
