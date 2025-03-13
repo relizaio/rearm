@@ -55,3 +55,19 @@ jobs:
           path: ui
           reliza_project_id: 437f0bd5-c957-4d4f-b0d2-753be84eca9d
           enable_sbom: 'false'
+  build-oci-service:
+    name: Build And Push ReARM OCI Service
+    runs-on: ubuntu-latest
+    steps:
+      - name: RelizaHub Build And Submit UI Release
+        uses: relizaio/reliza-docker-action@2.1
+        with:
+          registry_username: ${{ secrets.DOCKER_LOGIN }}
+          registry_password: ${{ secrets.DOCKER_TOKEN }}
+          registry_host: registry.relizahub.com
+          image_namespace: registry.relizahub.com/library
+          image_name: rearm-oci-artifact-service
+          reliza_api_id: ${{ secrets.RELIZA_REARM_OCI_ARTIFACT_API_ID }}
+          reliza_api_key: ${{ secrets.RELIZA_REARM_OCI_ARTIFACT_API_KEY }}
+          path: oci-artifact-service
+          enable_sbom: 'false'
