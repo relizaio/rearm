@@ -18,6 +18,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Organization;
 import io.reliza.model.Component;
+import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.OrganizationService;
@@ -33,7 +34,7 @@ import io.reliza.service.GetComponentService;
 public class ComponentTest 
 {
 	@Autowired
-    private ComponentService ComponentService;
+    private ComponentService componentService;
 
 	@Autowired
     private GetComponentService getComponentService;
@@ -47,14 +48,14 @@ public class ComponentTest
 	
 	@Test
     public void testProjectRetreival() {
-		ComponentService.listAllComponentData();
+		componentService.listAllComponentData();
         Assertions.assertTrue( true );
     }
 	
 	@Test
 	public void testcreateComponentWithoutNameThrowsIllegalState() throws RelizaException {
 		Assertions.assertThrows(IllegalStateException.class,
-				() -> ComponentService.createComponent(null, null, ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated()));
+				() -> componentService.createComponent(null, null, ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated()));
 	}
 	
 	@Test
@@ -67,21 +68,24 @@ public class ComponentTest
 	@Test
 	public void createAndfindProjectByUuidSuccess() throws RelizaException {
 		Organization org = obtainOrganization();
-		Component p = ComponentService.createComponent("testFindProject", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component p = componentService.createComponent("testFindProject", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		Optional<Component> op = getComponentService.getComponent(p.getUuid());
 		Assertions.assertTrue(op.isPresent());
 		Assertions.assertEquals(p.getUuid(), op.get().getUuid());
 	}
 	
 	@Test
-	public void listProjectsByOrg() throws RelizaException {
+	public void listComponentsByOrg() throws RelizaException {
 		Organization org = obtainOrganization();
+		String c1rand = "testFindComponentList1" + UUID.randomUUID().toString();
+		String c2rand = "testFindComponentList2" + UUID.randomUUID().toString();
 		@SuppressWarnings("unused")
-		Component p1 = ComponentService.createComponent("testFindProjectList1", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component p1 = componentService.createComponent(c1rand, org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
-		Component p2 = ComponentService.createComponent("testFindProjectList2", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
-		List<Component> projectList = ComponentService.listComponentsByOrganization(org.getUuid(), ComponentType.COMPONENT);
-		Assertions.assertEquals(2, projectList.size());
+		Component p2 = componentService.createComponent(c2rand, org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		List<ComponentData> componentList = componentService.listComponentDataByOrganization(org.getUuid(), ComponentType.COMPONENT);
+		Assertions.assertTrue(componentList.stream().filter(x -> x.getName().equals(c1rand)).toList().size() == 1);
+		Assertions.assertTrue(componentList.stream().filter(x -> x.getName().equals(c2rand)).toList().size() == 1);
 	}
 
 }

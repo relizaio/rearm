@@ -7,6 +7,7 @@ package io.reliza.ws;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Organization;
 import io.reliza.model.Component;
+import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.OrganizationService;
@@ -33,7 +35,7 @@ import io.reliza.service.GetComponentService;
 public class ProductTest 
 {
 	@Autowired
-    private ComponentService ComponentService;
+    private ComponentService componentService;
 	@Autowired
     private GetComponentService getComponentService;
 	
@@ -47,7 +49,7 @@ public class ProductTest
 	@Test
 	public void createdAndFindProductByUuidSuccess() throws RelizaException {
 		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testFindProduct", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod = componentService.createComponent("testFindProduct", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
 		Optional<Component> oProd = getComponentService.getComponent(prod.getUuid());
 		Assertions.assertTrue(oProd.isPresent());
 		Assertions.assertEquals(prod.getUuid(), oProd.get().getUuid());
@@ -56,11 +58,14 @@ public class ProductTest
 	@Test
 	public void listProductsByOrg() throws RelizaException {
 		Organization org = obtainOrganization();
+		String p1rand = "testFindProductList1" + UUID.randomUUID().toString();
+		String p2rand = "testFindProductList2" + UUID.randomUUID().toString();
 		@SuppressWarnings("unused")
-		Component prod1 = ComponentService.createComponent("testFindProductList1", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod1 = componentService.createComponent(p1rand, org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
-		Component prod2 = ComponentService.createComponent("testFindProductList2", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
-		List<Component> productList = ComponentService.listComponentsByOrganization(org.getUuid(), ComponentType.PRODUCT);
-		Assertions.assertEquals(2, productList.size());
+		Component prod2 = componentService.createComponent(p2rand, org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		List<ComponentData> productList = componentService.listComponentDataByOrganization(org.getUuid(), ComponentType.PRODUCT);
+		Assertions.assertTrue(productList.stream().filter(x -> x.getName().equals(p1rand)).toList().size() == 1);
+		Assertions.assertTrue(productList.stream().filter(x -> x.getName().equals(p2rand)).toList().size() == 1);
 	}
 }
