@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-documentation
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rearm-documentation
+spec:
+  type: {{ .Values.serviceType }}
+  ports:
+    - port: {{ .Values.servicePort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    servicehook: {{ .Release.Name }}-documentation-service

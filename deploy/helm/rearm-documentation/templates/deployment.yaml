@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-documentation
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rearm-documentation
+    app: rearm-documentation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: rearm-documentation
+  template:
+    metadata:
+      labels:
+        name: rearm-documentation
+        servicehook: {{ .Release.Name }}-documentation-service
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      containers:
+        - name: {{ .Release.Name }}-backend
+          image: "{{ .Values.image.documentation }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP

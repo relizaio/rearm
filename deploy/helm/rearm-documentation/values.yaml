@@ -1,0 +1,12 @@
+image:
+  documentation: registry.relizahub.com/library/rearm-documentation:latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceType: ClusterIP
+servicePort: 8085
+
+useTraefikLe: true
+traefikBehindLb: false
+ingressHost: rearm-documentation.localhost

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: rearm-documentation
+description: A Helm chart to deploy ReARM Documentation site
+
+type: application
+
+version: 0.0.1
+
+appVersion: "0.0.1"
