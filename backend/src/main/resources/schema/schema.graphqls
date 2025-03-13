@@ -1,0 +1,1548 @@
+type Query {
+	user: User
+	organizations: [Organization]
+	adminOrganization(org: ID!): AdminOrganization
+	allOrganizations: [Organization]
+	
+	# changelog
+	getChangelogBetweenReleases(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
+	getComponentChangeLog(componentUuid:ID!,branchUuid:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
+	
+	releaseTagKeys(orgUuid: ID!): [String]
+	component(componentUuid:ID!): Component
+	components(orgUuid:ID!, componentType:ComponentType!): [Component]	
+	branch(branchUuid:ID!): Branch
+	branchesOfComponent(componentUuid:ID!): [Branch]
+	releases(branchFilter:ID, orgFilter:ID, releaseFilter:[ID], numRecords:Int, pullRequestFilter:Int): [Release]
+	getNextVersion(branchUuid:ID!, versionType: VersionType): String
+	vcsRepository(vcs:ID!): VcsRepository
+	listVcsReposOfOrganization(orgUuid:ID!): [VcsRepository]
+	vcsRepositoryTypes: [String]
+	sourceCodeEntry(sceUuid:ID!): SourceCodeEntry
+	artifact(artifactUuid: ID!): Artifact
+	artifactTypes: [String]
+	release(releaseUuid: ID!, orgUuid: ID): Release
+	users(orgUuid: ID!): [OrgUserData]
+	resourceGroups(orgUuid: ID!): [ResourceGroup]
+	releaseAnalytics(orgUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
+	totalsAnalytics(orgUuid: ID!): Object
+	apiKeys(orgUuid: ID!): [ApiKey]
+	marketingRelease(marketingReleaseUuid: ID!): MarketingRelease
+	marketingReleases(componentUuid: ID!): [MarketingRelease]
+	releaseLifecycles: [MarketingReleaseLifecycle]
+	defaultApprovalRoles: [ApprovalRole]
+	approvalPoliciesOfOrg(orgUuid: ID!): [ApprovalPolicy]
+	approvalEntriesOfOrg(orgUuid: ID!): [ApprovalEntry]
+	
+	# Deliverables
+	deliverable(deliverable: ID!): Deliverable
+	listDeliverablesByComponent(componentUuid: ID!): [Deliverable]
+	
+	configuredBaseIntegrations(org: ID!): [IntegrationType]
+	
+	# Analytics
+	mostActiveComponentsOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerComponent]
+	mostActiveBranchesOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerBranch]
+	vulnerabilitiesViolationsOverTime(orgUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	
+	# Programmatic
+	getReleaseByHashProgrammatic(hash: String!, componentId: ID): Release
+	getLatestReleaseProgrammatic(release: GetLatestReleaseInput!): Release
+	
+	organization(orgUuid: ID!): Organization
+	
+	healthCheck: String
+	searchDigestVersion(orgUuid: ID!, query: String): SearchDigestVersionResponse
+	releasesByTags(orgUuid: ID!, branchUuid: ID, tagKey: String!, tagValue:String): [Release]
+	
+	getAllOrganizations: [Organization]
+	
+	getSystemInfoIsSet: SystemInfoIsSet
+}
+
+type Mutation {
+	# user management
+	acceptUserPolicies(tosAccepted: Boolean!, marketingAccepted: Boolean!, email: String): User
+	verifyEmail(secret: String!): User
+	inviteUser(invitationProperties: InviteUserInput!): AdminOrganization
+	joinUserToOrganization(secret: String!): User
+	cancelInvite(org: ID!, userEmail: String!): AdminOrganization
+	updateUserPermissions(orgUuid: ID!, userUuid: ID!, permissionType: PermissionType, permissions: [PermissionInput], approvals: [String]): User
+	updateUserName(name: String!): User
+		
+	# system global
+	unSealSystem(secret: String): Boolean
+	createOrganization(name: String!): Organization
+	setEmailProperties(emailProperties: EmailPropertiesInput!): Boolean
+	setDefaultOrganization(organization: ID!): Boolean
+	
+	# integrations
+	createIntegration(integration: IntegrationInput): Integration
+	deleteBaseIntegration(org: ID!, type: IntegrationType!): Boolean
+	refetchDependencyTrackMetrics(artifact: ID!): Boolean
+	requestRefreshDependencyTrackMetrics(artifact: ID!): Boolean
+	
+	# components and products
+	createComponent(component: CreateComponentInput!): Component
+	updateComponent(component: UpdateComponentInput!): Component
+	createBranch(componentUuid: ID!, name: String!, versionSchema: String): Branch
+	updateBranch(branch: BranchInput!): Branch
+	autoIntegrateFeatureSet(branchUuid: ID!): Boolean
+	archiveBranch(branchUuid: ID!): Boolean
+	archiveComponent(componentUuid: ID!): Boolean
+	
+	createVcsRepository(vcsRepository: VcsRepositoryInput!): VcsRepository
+	updateVcsRepository(vcsUuid: ID!, name: String, uri: String): VcsRepository
+	getNewVersionManual(branchUuid: ID!, action: ActionEnum): Version
+	createSourceCodeEntry(sourceCodeEntry: SourceCodeEntryInput!): SourceCodeEntry
+	addReleaseManual(release: ReleaseInput!): Release
+	setComponentApiKey(componentUuid: ID!): ApiKeyForUser
+	setOrgApiKey(orgUuid: ID!, apiType: ApiTypeEnum!, keyOrder: String, notes: String): ApiKeyForUser
+	updateRelease(release: ReleaseInput!): Release
+	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
+	addMarketingReleaseManual(marketingRelease: MarketingReleaseInput!): MarketingRelease
+	updateMarketingRelease(marketingRelease: MarketingReleaseInput!): MarketingRelease
+	advanceMarketingReleaseLifecycle(marketingReleaseUuid: ID!, newLifecycle: MarketingReleaseLifecycleEnum): MarketingRelease 
+	archiveMarketingRelease(marketingReleaseUuid: ID!): Boolean
+	releaseMarketingRelease(marketingRelease: MarketingReleaseInput!, marketingVersion: String!): MarketingRelease
+	addApprovalRole(orgUuid: ID!, approvalRole: ApprovalRoleInput!): Organization
+	deleteApprovalRole(orgUuid: ID!, approvalRoleId: String!): Organization
+	createApprovalEntry(approvalEntry: ApprovalEntryInput!): ApprovalEntry
+	archiveApprovalEntry(approvalEntryUuid: ID!): ApprovalEntry
+	createApprovalPolicy(approvalPolicy: ApprovalPolicyInput!): ApprovalPolicy
+	archiveApprovalPolicy(approvalPolicyUuid: ID!): ApprovalPolicy
+	
+	approveReleaseManual(release: ID!, approvals: [ReleaseApprovalInput!]): Release
+	
+	addArtifactManual(artifactInput: CreateArtifactInput): Release
+	removeReleaseArtifact(artifactUuid: ID!, releaseUuid: ID!): Boolean
+
+	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
+	releaseSbomExport(release: ID!, tldOnly: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum): String
+
+	# Programmatic
+	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
+	deleteApiKey(apiKeyUuid: ID!): Boolean
+	getNewVersionProgrammatic(newVersionInput: GetNewVersionInput!): Version
+	addReleaseProgrammatic(release: ReleaseInputProg!): Release
+	addOutboundDeliverablesProgrammatic(deliverables: AddODeliverableInput!): Release
+	createComponentProgrammatic(component: CreateComponentInput!): Component
+	addArtifactProgrammatic(artifactInput: AddArtifactInput): Release
+	approveReleaseProgrammatic(releaseApprovals: ReleaseApprovalProgrammaticInput!): Release
+	synchronizeLiveBranches(synchronizeBranchInput: SynchronizeBranchInput!): Boolean
+
+	removeUser(orgUuid: ID!, userUuid: ID!): Boolean
+
+
+	archiveOrganization(orgUuid: ID!): Boolean
+	
+	createResourceGroup(orgUuid: ID!, name: String!): ResourceGroup
+
+	acceptPolicies(acceptTos: Boolean!, acceptMarketing: Boolean!, email: String): User
+	logout: Boolean
+	updateEmailAddress(oldEmail: String!, newEmail: String!, makePrimary: Boolean!, acceptMarketing: Boolean!): Boolean
+	resendEmailVerification: Boolean
+	setUserOrgApiKey(orgUuid: ID!): Object
+}
+
+type Deliverable {
+	uuid: ID
+	name: String
+	org: ID
+	displayIdentifier: String
+	identities: [BomIdentity]
+	branch: ID
+	type: String
+	notes: String
+	tags: [TagRecord]
+	version: String
+	publisher: String
+	group: String
+	supportedOs: [OSEnum]
+	supportedCpuArchitectures: [CPUArchitectureEnum]
+	softwareMetadata: SoftwareMetadata
+	artifacts: [ID]
+	artifactDetails: [Artifact]
+}
+type SoftwareMetadata {
+	buildId: String
+	buildUri: String
+	cicdMeta: String
+	digests: [String]
+	dateFrom: DateTime
+	dateTo: DateTime
+	duration: Long
+	packageType: PackageType
+	downloadLinks: [Downloadlink]
+}
+
+type Component {
+	uuid: ID
+	name: String
+	org: ID
+	resourceGroup: ID
+	type: ComponentType
+	versionSchema: String
+	marketingVersionSchema: String
+	versionType: VersionType
+	vcs: ID
+	vcsRepositoryDetails: VcsRepository
+	featureBranchVersioning: String
+	repositoryEnabled: Int
+	status: Status
+	apiKeyId: String
+	apiKey: String
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	defaultConfig: String
+	visibilitySetting: VisibilitySetting
+	approvalPolicy: ID
+	approvalPolicyDetails: ApprovalPolicy
+	releaseInputTriggers: [ReleaseInputEvent]
+	outputTriggers: [ReleaseOutputEvent]
+}
+
+type SystemInfoIsSet {
+	emailDetailsSet: Boolean
+	defaultOrg: ID
+	defaultOrgDetails: Organization
+}
+
+type Organization {
+	uuid: ID
+	name: String
+	approvalRoles: [ApprovalRole]
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+type AdminOrganization {
+	uuid: ID
+	name: String
+	approvalRoles: [ApprovalRole]
+	invitees: [InvitedObject]
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+type InvitedObject {
+	email: String
+	type: PermissionType
+	challengeExpiry: DateTime
+}
+
+type ApiKey {
+	uuid: ID
+	org: ID
+	permissions: Permissions
+	object: ID
+	type: ApiTypeEnum
+	keyOrder: String
+	lastUpdatedBy: ID
+	accessDate: DateTime
+	createdDate: DateTime
+	notes: String
+}
+
+type User {
+	uuid: ID
+	name: String
+	email: String
+	allEmails: [EmailObject]
+	githubId: String
+	oauthId: String
+	oauthType: OAuthType
+	organizations: [ID]
+	policiesAccepted: Boolean
+	permissions: Permissions
+	publicSshKeys: [SshKey]
+	systemSealed: Boolean
+	installationType: String
+	isGlobalAdmin: Boolean
+}
+
+type EmailObject {
+	email: String
+	isPrimary: Boolean
+	isVerified: Boolean
+	isAcceptMarketing: Boolean
+}
+
+type SshKey {
+	uuid: ID
+	name: String
+}
+
+type OrgUserData {
+	uuid: ID
+	name: String
+	email: String
+	githubId: String
+	permissions: Permissions
+}
+
+type Permissions {
+	permissions: [UserPermission]	
+}
+
+type UserPermission {
+	org: ID
+	scope: PermissionScope
+	object: ID
+	type: PermissionType
+	meta: String
+	approvals: [String]
+}
+
+type KeyValue {
+	key: String
+	value: String
+	lastUpdated: Int
+}
+
+
+type ResourceGroup {
+	uuid: ID
+	org: ID
+	name: String
+	createdType: ProgrammaticType
+	protectedEnvironments: [String]
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+type ComponentChangeLog {
+	uuid: ID
+	name: String
+	org: ID
+	firstRelease: ReleaseChangeLog
+	lastRelease: ReleaseChangeLog
+	tickets: [TicketChangeLog]
+	releases: [ReleaseChangeLog]
+	changes: [ChangeChangeLog]
+	components: [ComponentChangeLog]
+	branches: [ComponentChangeLog]
+}
+
+
+type Ticket {
+	uuid: ID
+	identifier: String
+	status: TicketStatus
+	org: ID
+	summary: String
+	content: String
+	doneInRelease: ID
+	dateDone: DateTime
+	uri: String
+}
+
+type TicketChangeLog {
+	ticketSubject: String
+	changes: [ChangeChangeLog]
+}
+
+type ReleaseChangeLog {
+	uuid: ID
+	version: String
+	changes: [ChangeChangeLog]
+}
+
+type ChangeChangeLog {
+	changeType: String
+	commitRecords: [CommitChangeLog]
+}
+
+type CommitChangeLog {
+	linkifiedText: String
+	rawText: String
+	commitAuthor: String
+	commitEmail: String
+}
+
+type VcsRepository {
+	uuid: ID
+	name: String
+	org: ID
+	uri: String
+	type: String
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+type Branch {
+	uuid: ID
+	name: String
+	component: ID
+	componentDetails: Component
+	components: [ID]
+	status: Status
+	type: BranchType
+	vcs: ID
+	vcsBranch: String
+	dependencies: [ChildComponent]
+	org: ID
+	versionSchema: String
+	marketingVersionSchema: String
+	versionType: VersionType
+	metadata: String
+	hasChildren: Boolean
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	autoIntegrate: AutoIntegrateState
+	vcsRepositoryDetails: VcsRepository
+	pullRequests: [PullRequestData]
+}
+
+type ChildComponent {
+	uuid: ID
+	status: Status
+	branch: ID
+	release: ID
+	componentDetails: Component
+	branchDetails: Branch
+	releaseDetails: Release
+	isFollowVersion: Boolean
+}
+
+
+type Release {
+	uuid: ID
+	version: String
+	marketingVersion: String
+	status: Status
+	lifecycle: ReleaseLifecycleEnum
+	org: ID
+	orgDetails: Organization
+	component: ID
+	componentDetails: Component
+	branch: ID
+	branchDetails: Branch
+	parentReleases: [ParentRelease]
+	sourceCodeEntry: ID
+	sourceCodeEntryDetails: SourceCodeEntry
+	commits: [ID]
+	commitTime: DateTime
+	commitsDetails: [SourceCodeEntry]
+	artifacts: [ID]
+	artifactDetails: [Artifact]
+	inboundDeliverables: [ID]
+	inboundDeliverableDetails: [Deliverable]
+	tickets: [ID]
+	ticketDetails: [Ticket]
+	notes: String
+	decoratedVersionString: String
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	endpoint: String
+	inProducts: [Release]
+	vcsRepository: VcsRepository
+	tags: [TagRecord]
+	reboms: Object
+	approvalEvents: [ReleaseApprovalEvent]
+	variantDetails: [Variant]
+	updateEvents: [ReleaseUpdateEvent]
+	metrics: DependencyTrackMetrics
+}
+
+type Variant {
+	uuid: ID
+	identifier: String
+	identifierPrefix: String
+	order: Int
+	version: String
+	marketingVersion: String
+	sku: String
+	type: VariantType
+	org: ID
+	orgDetails: Organization
+	release: ID
+	outboundDeliverables: [ID]
+	outboundDeliverableDetails: [Deliverable]
+	notes: String
+	endpoint: String
+	tags: [TagRecord] 
+}
+
+type MarketingRelease {
+	uuid: ID
+	version: String
+	status: Status
+	org: ID
+	orgDetails: Organization
+	component: ID
+	componentDetails: Component
+	notes: String
+	tags: [TagRecord]
+	lifecycle: MarketingReleaseLifecycleEnum
+	integrateType: IntegrateType
+	integrateBranch: ID
+	integrateBranchDetails: Branch
+	devReleasePointer: ID
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	devReleaseDetails: Release
+	events: [MarketingReleaseEvent]
+}
+
+type MarketingReleaseEvent {
+	release: String
+	releaseDetails: Release
+	lifecycle: MarketingReleaseLifecycleEnum
+	date: DateTime
+	wu: WhoUpdated
+}
+
+type WhoUpdated {
+	createdType: ProgrammaticType
+	lastUpdatedBy: String
+}
+
+type ParentRelease {
+	org: ID
+	release: ID
+	releaseDetails: Release
+}
+
+type SourceCodeEntry {
+	uuid: ID
+	branch: ID
+	vcsUuid: ID
+	vcsBranch: String
+	vcsRepository: VcsRepository
+	commit: String
+	commits: String
+	commitMessage: String
+	commitAuthor: String
+	commitEmail: String
+	vcsTag: String
+	notes: String
+	org: ID
+	dateActual: DateTime
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	reboms: [Object]
+	artifacts: [ID]
+	artifactDetails: [Artifact]
+}
+
+type PullRequestData {
+	state: String
+	targetBranch: String
+	endpoint: String
+	number: Int
+	title: String
+	createdDate: DateTime
+	closedDate: DateTime
+	mergedDate: DateTime
+	commits: [ID]
+}
+
+type Artifact {
+	uuid: ID
+	displayIdentifier: String
+	org: ID
+	branch: ID
+	buildId: String
+	buildUri: String
+	cicdMeta: String
+	digests: [String]
+	isInternal: ArtifactBelonging
+	type: ArtifactType
+	bomFormat: BomFormat
+	notes: String
+	tags: [TagRecord]
+	tagRecords: [TagRecord]
+	dateFrom: DateTime
+	dateTo: DateTime
+	duration: Long
+	packageType: PackageType
+	version: String
+	publisher: String
+	group: String
+	dependencies: [ID]
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	reboms: Object
+	internalBom: InternalBom
+	identities: [BomIdentity]
+	downloadLinks: [Downloadlink]
+
+	metrics: DependencyTrackMetrics
+}
+
+type DependencyTrackMetrics {
+	dependencyTrackFullUri: String
+    lastScanned: DateTime
+    critical: Int
+   	high: Int
+    medium: Int
+    low: Int
+    unassigned: Int
+    vulnerabilities: Int
+    vulnerableComponents: Int
+    components: Int
+    suppressed: Int
+    findingsTotal: Int
+    findingsAudited: Int
+    findingsUnaudited: Int
+    inheritedRiskScore: Int
+    policyViolationsFail: Int
+    policyViolationsWarn: Int
+    policyViolationsInfo: Int
+    policyViolationsTotal: Int
+    policyViolationsAudited: Int
+    policyViolationsUnaudited: Int
+    policyViolationsSecurityTotal: Int
+    policyViolationsSecurityAudited: Int
+    policyViolationsSecurityUnaudited: Int
+    policyViolationsLicenseTotal: Int
+    policyViolationsLicenseAudited: Int
+    policyViolationsLicenseUnaudited: Int
+    policyViolationsOperationalTotal: Int
+    policyViolationsOperationalAudited: Int
+    policyViolationsOperationalUnaudited: Int
+}
+
+type InternalBom {
+	id: ID
+	belongsTo: String
+}
+
+type ExternalBom {
+	identifier: String
+	version: String
+	downloadLinks: [Downloadlink]
+	inventoryTypes: [InventoryType]
+	bomFormat: String
+	date: String
+	type: String
+	identities: [BomIdentity]
+	documentType: String
+}
+type BomIdentity {
+	identityType: String
+	identity: String
+}
+type Downloadlink {
+	uri: String
+	content: String
+}
+
+type TagRecord {
+	key: String
+	value: String
+	removable: RemvovableType
+}
+
+type Version {
+	version: String
+	dockerTagSafeVersion: String
+	changelog: String
+}
+
+type MarketingReleaseLifecycle {
+	lifecycle: MarketingReleaseLifecycleEnum
+	suffix: String
+	prettyName: String
+	ordinal: Int
+}
+
+type ApiKeyForUser {
+	apiKey: String
+	id: String
+	authorizationHeader: String
+}
+
+type ApprovalRole {
+	id: String
+	displayView: String
+}
+
+type ApprovalPolicy {
+	uuid: String
+	org: String
+	policyName: String
+	resourceGroup: String
+	approvalMappings: [ApprovalMapping]
+	approvalEntries: [ID]
+	approvalEntryDetails: [ApprovalEntry]
+	status: Status
+}
+
+type ApprovalMapping {
+	mappingClass: ApprovalMappingClass
+	mapTo: String
+	approvalEntries: [ID]
+}
+
+type ApprovalEntry {
+	uuid: ID
+	org: ID
+	approvalRequirements: [ApprovalRequirement]
+	approvalName: String
+	status: Status
+}
+
+type ApprovalRequirement {
+	org: ID
+	allowedApprovalRoleIds: [ID]
+	allowedApprovalRoleIdExpanded: [ApprovalRole]
+	requiredNumberOfApprovals: Int
+	permittedNumberOfDisapprovals: Int
+}
+
+type ReleaseApprovalEvent {
+	approvalEntry: ID
+	approvalRoleId: ID
+	state: ApprovalState
+	date: DateTime
+	wu: WhoUpdated
+}
+
+type ReleaseUpdateEvent {
+	rus: ReleaseUpdateScopeEnum
+	rua: ReleaseUpdateActionEnum
+	oldValue: String
+	newValue: String
+	objectId: ID
+	date: DateTime
+	wu: WhoUpdated
+}
+
+type Integration {
+	uuid: ID
+	identifier: String
+	org: ID
+	type: IntegrationType
+	uri: String
+	frontendUri: String
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+type ReleaseInputEvent {
+	uuid: ID
+	name: String
+	conditionGroup: ConditionGroup
+	outputEvents: [ID]
+}
+
+type ReleaseOutputEvent {
+	uuid: ID
+	name: String
+	type: EventType
+	toReleaseLifecycle: ReleaseLifecycleEnum
+	integration: ID
+	users: [ID]
+	notificationMessage: String
+}
+
+type ApprovalEntryState {
+	approvalEntry: ID
+	approvalState: ApprovalState
+}
+
+type ReleasesPerComponent {
+	componentuuid: ID
+	componentname: String
+	componenttype: ComponentType
+	rlzcount: Int
+}
+
+type ReleasesPerBranch {
+	componentuuid: ID
+	componentname: String
+	componenttype: ComponentType
+	branchuuid: ID
+	branchname: String
+	rlzcount: Int
+}
+
+type VegaDateValue {
+	date: String
+	num: Int
+}
+
+type VulnerabilityViolationChart {
+	createdDate: DateTime
+	num: Int
+	type: String
+}
+
+type SearchDigestVersionResponse {
+	commitReleases: [Release]
+}
+
+type ConditionGroup {
+	conditionGroups: [ConditionGroup]
+	matchOperator: MatchOperator
+	conditions: [Condition]
+}
+
+type Condition {
+	type: ConditionType!
+	approvalEntry: ID
+	approvalState: ApprovalState
+	possibleLifecycles: [ReleaseLifecycleEnum]
+	possibleBranchTypes: [BranchType]
+	metricsType: MetricsType
+	comparisonSign: ComparisonSign
+	metricsValue: Int
+}
+
+input ApprovalPolicyInput {
+	org: ID
+	resourceGroup: String
+	policyName: String
+	approvalMappings: [ApprovalMappingInput]
+	approvalEntries: [ID]
+}
+
+input ApprovalMappingInput {
+	mappingClass: ApprovalMappingClass
+	mapTo: String
+	approvalEntries: [ID]
+}
+
+input ApprovalEntryInput {
+	org: ID
+	approvalRequirements: [ApprovalRequirementInput]
+	approvalName: String
+}
+
+input ApprovalRequirementInput {
+	allowedApprovalRoleIds: [ID]
+	requiredNumberOfApprovals: Int
+	permittedNumberOfDisapprovals: Int
+}
+
+input ApprovalRoleInput {
+	id: String
+	displayView: String
+}
+
+input PermissionInput {
+	org: ID
+	object: ID
+	type: PermissionType
+	scope: PermissionScope
+}
+
+input CreateComponentInput {
+	org: ID
+	name: String!
+	type: ComponentType!
+	defaultBranch: String
+	versionSchema: String
+	marketingVersionSchema: String
+	versionType: VersionType
+	featureBranchVersioning: String
+	vcs: ID
+	vcsRepository: VcsRepositoryInput
+	includeApi: Boolean
+	approvalPolicy: ID
+}
+
+input UpdateComponentInput {
+	uuid: ID
+	name: String!
+	versionSchema: String
+	marketingVersionSchema: String
+	versionType: VersionType
+	featureBranchVersioning: String
+	vcsRepositoryUuid: ID
+	vcs: ID
+	approvalPolicy: ID
+	releaseInputTriggers: [ReleaseInputEventInput]
+	outputTriggers: [ReleaseOutputEventInput]
+}
+
+input VcsRepositoryInput {
+	org: ID
+	name: String
+	uri: String
+	type: String
+}
+
+input BranchInput {
+	uuid: ID
+	name: String
+	components: [String]
+	vcs: ID
+	vcsBranch: String
+	versionSchema: String
+	metadata: String
+	dependencies: [ChildComponentInput]
+	autoIntegrate: AutoIntegrateState
+	type: BranchType
+	marketingVersionSchema: String
+}
+
+input ChildComponentInput {
+	uuid: ID
+	status: Status
+	branch: ID
+	release: ID
+	isFollowVersion: Boolean
+}
+
+input SourceCodeEntryInput {
+	branch: ID
+	vcs: ID
+	organizationUuid: ID
+	uri: String
+	type: String
+	commit: String
+	commits: [String]
+	commitMessage: String
+	commitAuthor: String
+	commitEmail: String
+	vcsTag: String
+	dateActual: String
+	vcsBranch: String
+	notes: String
+	artifacts: [ArtifactInput]
+}
+
+input ReleaseInput {
+	uuid: ID
+	version: String
+	lifecycle: ReleaseLifecycleEnum
+	org: ID!
+	project: ID
+	branch: ID
+	parentReleases: [ParentReleaseInput]
+	sourceCodeEntry: ID
+	artifacts: [ID]
+	notes: String
+	endpoint: String
+	commits: [ID]
+	tags: [TagRecordInput]
+}
+
+input ParentReleaseInput {
+	release: ID!
+	artifact: ID
+}
+
+input TagRecordInput {
+	key: String
+	value: String
+}
+
+input DeliverableInput {
+	name: String
+	displayIdentifier: String
+	identities: [BomIdentityInput]
+	branch: ID
+	type: CdxType
+	notes: String
+	tags: [TagRecordInput]
+	version: String
+	publisher: String
+	group: String
+	supportedOs: [OSEnum]
+	supportedCpuArchitectures: [CPUArchitectureEnum]
+	softwareMetadata: SoftwareMetadataInput
+	artifacts: [ArtifactInput]
+}
+
+input SoftwareMetadataInput {
+	buildId: String
+	buildUri: String
+	cicdMeta: String
+	digests: [String]
+	dateFrom: DateTime
+	dateTo: DateTime
+	duration: Long
+	packageType: PackageType
+	downloadLinks: [LinkInput]
+}
+
+input CreateArtifactInput {
+	release: ID
+	component: ID
+	deliverable: ID
+	releaseVersion: String
+	artifact: ArtifactInput
+	sce: ID
+	belongsTo: ArtifactBelongsToEnum
+}
+
+input ArtifactInput {
+	type: String
+	displayIdentifier: String
+	identities: [BomIdentityInput]
+	downloadLinks: [LinkInput]
+	inventoryTypes: [InventoryType]
+	bomFormat: String
+	storedIn: String
+	digests: [String]
+	tags: [TagRecordInput]
+	status: String
+	version: String
+	file: Upload
+	fileSce: Upload
+}
+
+input ExternalBomInput {
+	identifier: String
+	version: String
+	downloadLinks: [LinkInput]
+	inventoryTypes: [InventoryType]
+	bomFormat: String
+	date: String
+	type: String
+	identities: [BomIdentityInput]
+	documentType: String
+}
+
+input GetNewVersionInput {
+	component: ID
+	branch: String!
+	modifier: String
+	action: String
+	metadata: String
+	versionSchema: String
+	lifecycle: ReleaseLifecycleEnum
+	onlyVersion: Boolean
+	sourceCodeEntry: SourceCodeEntryInput
+	commits: [SourceCodeEntryInput]
+}
+
+input ReleaseInputProg {
+	version: String!
+	lifecycle: ReleaseLifecycleEnum
+	component: ID
+	branch: String
+	sourceCodeEntry: SourceCodeEntryInput
+	artifacts: [ArtifactInput]
+	inboundDeliverables: [DeliverableInput]
+	outboundDeliverables: [DeliverableInput]
+	endpoint: String
+	commits: [SourceCodeEntryInput]
+	sceArts: [ArtifactInput]
+}
+
+input AddArtifactInput {
+	release: ID
+	component: ID
+	version: String
+	artifacts: [ArtifactInput]
+}
+input AddODeliverableInput {
+	release: ID
+	component: ID
+	variant: ID
+	version: String
+	deliverables: [DeliverableInput]
+}
+input AddDeliverableInput {
+	release: ID
+	variant: ID
+	deliverables: [DeliverableInput]
+}
+
+input BomIdentityInput {
+	identityType: String
+	identity: String
+}
+
+input LinkInput {
+	uri: String
+	content: String
+}
+
+input MarketingReleaseInput {
+	uuid: String
+	version: String
+	status: Status
+	org: ID
+	component: ID
+	notes: String
+	tags: [TagRecordInput]
+	lifecycle: MarketingReleaseLifecycleEnum
+	integrateType: IntegrateType
+	integrateBranch: ID
+	devReleasePointer: ID
+}
+
+input ReleaseApprovalInput {
+	approvalEntry: ID!
+	approvalRoleId: String!
+	state: ApprovalState!
+}
+
+input EmailPropertiesInput {
+	sendGridKey: String
+	fromEmail: String
+	smtpProps: SmtpPropsInput
+	emailSendType: EmailSendType
+}
+
+input SmtpPropsInput {
+	userName: String
+	password: String
+	smtpHost: String
+	port: Int
+	isStarttls: Boolean
+	isSsl: Boolean 
+}
+
+input InviteUserInput {
+	org: ID!,
+	email: String!,
+	type: PermissionType!
+}
+
+input ReleaseApprovalProgrammaticInput {
+	approvals: [ReleaseApprovalInput]
+	release: ID
+	component: ID
+	version: String
+}
+
+input IntegrationInput {
+	org: ID!
+	uri: String
+	identifier: String!
+	secret: String!
+	type: IntegrationType!
+	schedule: String
+	frontendUri: String
+}
+
+input ReleaseSbomExportInput {
+	release: ID
+	tldOnly: Boolean
+	structure: BomStructureType
+	belongsTo: ArtifactBelongsToEnum
+}
+
+input ReleaseOutputEventInput {
+	uuid: ID
+	name: String
+	type: EventType
+	toReleaseLifecycle: ReleaseLifecycleEnum
+	integrationObject: TriggerIntegrationInput
+	integration: ID
+	users: [ID]
+	notificationMessage: String
+}
+
+input TriggerIntegrationInput {
+	vcs: ID
+	secret: String
+	type: IntegrationType
+	schedule: String
+	uri: String
+	frontendUri: String
+	parameters: TriggerIntegrationParametersInput
+}
+
+input TriggerIntegrationParametersInput {
+	eventName: String
+	clientPayload: String
+	tenant: String
+	client: String
+}
+
+input ReleaseInputEventInput {
+	uuid: ID
+	name: String
+	conditionGroup: ConditionGroupInput
+	outputEvents: [ID]
+}
+
+input GetLatestReleaseInput {
+	component: ID
+	product: ID
+	branch: String
+	tags: [TagRecordInput]
+	lifecycle: ReleaseLifecycleEnum
+	conditions: ConditionGroupOnGetLatestReleaseInput
+}
+
+input ConditionGroupOnGetLatestReleaseInput {
+	matchOperator: MatchOperator
+	conditions: [ConditionOnGetLatestReleaseInput]
+}
+
+input ConditionOnGetLatestReleaseInput {
+	approvalEntry: String
+	approvalState: ApprovalState
+}
+
+input ConditionGroupInput {
+	conditionGroups: [ConditionGroupInput]
+	matchOperator: MatchOperator
+	conditions: [ConditionInput]
+}
+
+input ConditionInput {
+	type: ConditionType!
+	approvalEntry: ID
+	approvalState: ApprovalState
+	possibleLifecycles: [ReleaseLifecycleEnum]
+	possibleBranchTypes: [BranchType]
+	metricsType: MetricsType
+	comparisonSign: ComparisonSign
+	metricsValue: Int
+}
+
+input ActiveComponentsInput {
+	organization: ID
+	cutOffDate: DateTime
+	componentType: ComponentType
+	maxComponents: Int
+}
+
+input SynchronizeBranchInput {
+	component: String!
+	liveBranches: [String]
+}
+
+enum MatchOperator {
+	OR
+	AND
+}
+
+enum EventType {
+	RELEASE_LIFECYCLE_CHANGE
+	MARKETING_RELEASE_LIFECYCLE_CHANGE
+	INTEGRATION_TRIGGER
+	EMAIL_NOTIFICATION
+}
+
+enum BomStructureType{
+	FLAT
+	HIERARCHICAL
+}
+
+
+
+enum EmailSendType {
+	UNSET
+	SMTP
+	SENDGRID
+}
+
+enum ApprovalState {
+	APPROVED
+	DISAPPROVED
+	UNSET
+}
+
+enum ComponentType {
+	COMPONENT
+	PRODUCT
+	ANY
+}
+
+enum ApiTypeEnum {
+	APPROVAL
+	INSTANCE
+	COMPONENT
+	ORGANIZATION
+	ORGANIZATION_RW
+	USER
+	VERSION_GEN
+	REGISTRY_ORG
+	REGISTRY_USER
+}
+
+enum OAuthType {
+	GITHUB
+	GOOGLE
+	MICROSOFT
+}
+enum PermissionType {
+	ADMIN
+	READ_ONLY
+	WRITE_ONLY
+	READ_WRITE
+	NONE
+}
+
+enum PermissionScope {
+	ORGANIZATION
+	PROJECT
+	BRANCH
+	INSTANCE
+}
+
+enum ProgrammaticType {
+	MANUAL
+	AUTO
+	MANUAL_AND_AUTO
+	API
+	TEST
+}
+
+enum ReleaseLifecycleEnum {
+	PENDING
+    DRAFT
+	CANCELLED
+	ASSEMBLED
+	REJECTED
+	GENERAL_AVAILABILITY
+	END_OF_SUPPORT
+}
+
+enum ArtifactBelongsToEnum {
+	DELIVERABLE
+	RELEASE
+	SCE
+}
+enum Status {
+	ACTIVE
+	APPROVED
+	ARCHIVED
+	COMPLETE
+	DRAFT
+	IGNORED
+	OPTIONAL
+	PENDING
+	REJECTED
+	REQUIRED
+	TRANSIENT
+}
+
+enum VisibilitySetting {
+	PUBLIC
+	ORG_INTERNAL
+	ADMIN_INVITATION
+}
+
+enum VersionType{
+	DEV
+	MARKETING
+}
+
+enum AggregationType {
+	NONE
+	AGGREGATED
+	AGGREGATED_BY_TICKET
+}
+
+enum BranchType {
+	BASE
+	FEATURE
+	REGULAR
+	RELEASE
+	PULL_REQUEST
+	DEVELOP
+	HOTFIX
+}
+
+enum ConditionType {
+	APPROVAL_ENTRY
+	LIFECYCLE
+	BRANCH_TYPE
+	METRICS	
+}
+
+enum MetricsType {
+    CRITICAL_VULNS
+	HIGH_VULNS
+	MEDIUM_VULNS
+	LOW_VULNS
+	UNASSIGNED_VULNS
+	SECURITY_VIOLATIONS
+	OPERATIONAL_VIOLATIONS
+	LICENSE_VIOLATIONS
+}
+
+enum ComparisonSign {
+	EQUALS
+	GREATER
+	LOWER
+	GREATER_OR_EQUALS
+	LOWER_OR_EQUALS
+}
+
+enum TicketStatus {
+	BACKLOG
+	TODO
+	IN_PROGRESS
+	TESTING
+	DEPLOYING
+	DONE
+}
+
+enum AutoIntegrateState {
+	ENABLED
+	DISABLED
+}
+
+enum ArtifactBelonging {
+	INTERNAL
+	EXTERNAL
+}
+
+enum RemvovableType{
+	YES
+	NO
+}
+
+enum PackageType {
+	MAVEN
+	NPM
+	NUGET
+	GEM
+	PYPI
+	CONTAINER
+}
+
+enum ActionEnum {
+	BUMP
+	BUMP_PATCH
+	BUMP_MINOR
+	BUMP_MAJOR
+	BUMP_DATE
+}
+
+enum ReleaseStatus {
+	COMPLETE
+	PENDING
+	REJECTED
+}
+
+enum MarketingReleaseLifecycleEnum {
+    FIRST_MENTION
+    ALPHA_TESTING
+    BETA_TESTING
+    RELEASE_CANDIDATE
+    GENERAL_AVAILABILITY
+    END_OF_LIFE
+}
+
+enum IntegrateType {
+	FOLLOW
+	TARGET
+}
+
+enum CPUArchitectureEnum {
+	AMD64
+	I386
+	PPC
+	ARMV7
+	ARMV8
+	IA32
+	MIPS
+	RISCV64
+	S390
+	S390X
+	OTHER
+}
+
+enum OSEnum {
+	WINDOWS
+	MACOS
+	LINUX
+	ANDROID
+	CHROMEOS
+	IOS
+	OTHER
+}
+
+enum CdxType {
+	CONTAINER
+	PLATFORM
+	FILE
+	LIBRARY
+	APPLICATION
+	FRAMEWORK
+	OPERATING_SYSTEM
+	DEVICE
+	DEVICE_DRIVER
+	FIRMWARE
+	MACHINE_LEARNING_MODEL
+	DATA
+	CRYPTOGRAPHIC_ASSET
+}
+
+enum InventoryType {
+	SOFTWARE
+	HARDWARE
+	CRYPTOGRAPHY
+	SERVICE
+	VULNERABILITY
+}
+
+enum ApprovalMappingClass {
+	RELEASE_LIFECYCLE
+	MARKETING_RELEASE_LIFECYCLE
+	ENVIRONMENT_TYPE
+}
+
+enum IntegrationType {
+	GITHUB
+	GITLAB
+	JENKINS
+	ADO
+	SLACK
+	MSTEAMS
+	DEPENDENCYTRACK
+}
+
+enum ArtifactType {
+	BOM
+    ATTESTATION
+    VDR
+    VEX
+    USER_DOCUMENT
+    DEVELOPMENT_DOCUMENT
+    PROJECT_DOCUMENT
+    MARKETING_DOCUMENT
+    TEST_REPORT
+    SARIF
+    OTHER
+}
+
+enum BomFormat {
+	CYCLONEDX
+	SPDX
+}
+
+enum VariantType {
+	BASE
+	CUSTOM
+}
+
+enum ReleaseUpdateScopeEnum {
+	RELEASE_CREATED
+	LIFECYCLE
+	SOURCE_CODE_ENTRY
+	PARENT_RELEASE
+	ARTIFACT
+	INBOUND_DELIVERY
+	OUTBOUND_DELIVERY
+	VARIANT
+	VERSION
+	NOTES
+	TAGS
+	MARKETING_VERSION
+	TRIGGER
+}
+
+enum ReleaseUpdateActionEnum {
+	ADDED
+	REMOVED
+	CHANGED
+}
+
+scalar Object
+scalar DateTime
+scalar Long
+scalar Upload

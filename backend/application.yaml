@@ -1,0 +1,69 @@
+server:
+  port: 8086
+  use-forward-headers: true
+  forward-headers-strategy: native
+  error:
+    include-message: always
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5440}/postgres
+    username: postgres
+    password: ${PG_PASS:relizaPass}
+    test-on-borrow: true
+    validationQuery: SELECT 1
+  jpa:
+#    show-sql: true
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+#        format_sql: true
+        jdbc:
+          lob:
+            non_contextual_creation: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:3000}/kauth/realms/Reliza
+          jwk-set-uri: ${KEYCLOAK_SET_URI:http://localhost:9080}/kauth/realms/Reliza/protocol/openid-connect/certs
+  servlet:
+    multipart: 
+      max-file-size: ${MAX_UPLOAD_SIZE:50MB}
+      max-request-size: ${MAX_UPLOAD_SIZE:50MB}
+# logging:
+#   level:
+#    root: DEBUG
+#logging:
+#  level:
+#    org:
+#      hibernate:
+#        SQL: DEBUG
+#        type:
+#          descriptor:
+#            sql:
+#              BasicBinder: TRACE
+    
+relizaprops:
+  protocol: ${PROJECT_PROTOCOL:http}
+  baseuri: ${PROJECT_PROTOCOL:http}://${PROJECT_HOST:localhost:3000}
+  rebom:
+    url: ${RELIZAPROP_REBOM_URI:http://[::1]:4000/}
+  encryption:
+    password: ${RELIZAPROP_PASS:pleasechange}
+    salt: ${RELIZAPROP_SALT:aaaaaaaa}
+    oldpassword: ${RELIZAPROP_PASS_OLD:pleasechange}
+    oldsalt: ${RELIZAPROP_SALT_OLD:aaaaaaaa}
+  rejectPendingReleasesRate: ${RELIZAPROP_REJECT_PENDING_RELEASES_RATE:PT15M} #ISO 8601
+  maxApiKeyAccessRecords: ${RELIZAPROP_MAX_API_KEY_ACCESS_RECORDS:3}
+  installationSecret: ${RELIZAPROP_INSTALLATION_SECRET:r3liza}
+  installationType: OSS
+#spring.jpa.show-sql=true
+#spring.jpa.properties.hibernate.format_sql=true
+#logging.level.org.hibernate.SQL=DEBUG
+#logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE
+  ociArtifacts:
+    registry: ${RELIZAPROP_OCIARTIFACTS_REGISTRY_HOST:my.registry}
+    namespace: ${RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE:mynamespace}
+    serviceUrl: ${RELIZAPROP_OCIARTIFACTS_SERVICE_HOST:http://[::1]:8083/}
