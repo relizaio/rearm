@@ -1,0 +1,162 @@
+version: '3.8'
+services:
+  rearm-core:
+    image: registry.relizahub.com/library/rearm-backend
+    environment:
+     - PG_HOST=rearm-postgresql
+     - PG_PORT=5432
+     - PROJECT_PROTOCOL=http
+     - PROJECT_HOST=localhost:8092
+     - KEYCLOAK_ISSUER_URI=http://localhost:8092
+     - KEYCLOAK_SET_URI=http://keycloak:9080
+     - RELIZAPROP_REBOM_URI=http://rebom-backend:4000/
+     - RELIZAPROP_OCIARTIFACTS_SERVICE_HOST=oci-artifact-service
+     - RELIZAPROP_OCIARTIFACTS_REGISTRY_HOST=registry.relizahub.com
+     - RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE=430fcdde-d7bc-4542-ad5b-4f534f4942f0-private
+     - MAX_UPLOAD_SIZE=50MB
+    depends_on:
+     - rearm-postgresql
+     - keycloak
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 10s
+  rearm-ui:
+    image: registry.relizahub.com/library/rearm-ui
+    ports:
+     - "8092:80"
+    environment:
+     - MAX_BODY_SIZE=50M
+     - HUB_HOST=rearm-core
+     - HUB_PORT=8086
+     - PROJECT_ORIGIN=http://localhost:8092
+     - KEYCLOAK_HOST=keycloak
+     - KEYCLOAK_PORT=9080
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 10s
+    depends_on:
+     - rearm-core
+  rearm-postgresql:
+    image: postgres:17.4-alpine3.21
+    ports:
+     - "5440:5432"
+    environment:
+     - POSTGRES_PASSWORD=relizaPass
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - "rearm-postgres-data:/var/lib/postgresql/data"
+  keycloak:
+    image: registry.relizahub.com/library/rearm-keycloak
+    # build: ../../keycloak
+    ports:
+     - "9080:9080"
+    environment:
+     - KC_DB=postgres
+     - KC_DB_SCHEMA=reliza_keycloak
+     - KC_DB_USERNAME=postgres
+     - KC_DB_PASSWORD=relizaPass
+     - KC_DB_URL=jdbc:postgresql://keycloak-postgres:5432/postgres
+     - KEYCLOAK_ADMIN=admin
+     - KEYCLOAK_ADMIN_PASSWORD=admin
+     - KC_HTTP_RELATIVE_PATH=kauth
+     - KC_HEALTH_ENABLED=true
+    entrypoint:
+     - /bin/sh
+     - -c
+     - /opt/keycloak/bin/kc.sh start --import-realm --http-enabled true --hostname-strict false --http-host 0.0.0.0 --http-port 9080 --hostname http://localhost:8092/kauth
+    depends_on:
+     - keycloak-postgres
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 10s
+  keycloak-postgres:
+    image: postgres:17.4-alpine3.21
+    environment:
+     - POSTGRES_PASSWORD=relizaPass
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - ./postgres-keycloak-init.sql:/docker-entrypoint-initdb.d/init.sql
+      - "rearm-keycloak-postgres-data:/var/lib/postgresql/data"
+  oci-artifact-service:
+    image: registry.relizahub.com/library/rearm-oci-artifact-service
+    environment:
+     - REGISTRY_HOST=registry.relizahub.com
+     - REGISTRY_USERNAME=rh_430fcdde-d7bc-4542-ad5b-4f534f4942f0
+     - REGISTRY_TOKEN=changeme
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 10s
+  rebom-backend:
+    image: registry.relizahub.com/library/rebom-backend
+    environment:
+     - POSTGRES_HOST=rebom-postgresql
+     - POSTGRES_PORT=5432
+     - POSTGRES_PASSWORD=relizaPass
+     - OCIARTIFACTS_REGISTRY_HOST=https://registry.relizahub.com
+     - OCIARTIFACTS_REGISTRY_NAMESPACE=430fcdde-d7bc-4542-ad5b-4f534f4942f0-private
+     - OCI_STORAGE_ENABLED=true
+     - OCI_ARTIFACT_SERVICE_HOST=http://oci-artifact-service:8083
+    depends_on:
+     - rebom-postgresql
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 10s
+  rebom-postgresql:
+    image: postgres:17.4-alpine3.21
+    environment:
+     - POSTGRES_PASSWORD=relizaPass
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - "rebom-postgres-data:/var/lib/postgresql/data"
+  rebom-postgres-init:
+    image: 'flyway/flyway:9-alpine'
+    restart: on-failure
+    depends_on:
+      - rebom-postgresql
+    command:
+      [
+        '-url=jdbc:postgresql://rebom-postgresql:5432/postgres',
+        '-user=postgres',
+        '-password=relizaPass',
+        '-defaultSchema=rebom',
+        '-schemas=rebom',
+        'migrate'
+      ]
+    volumes:
+      - ./rebom-migrations:/flyway/sql
+volumes:
+  rearm-keycloak-postgres-data:
+    driver: local
+  rearm-postgres-data:
+    driver: local
+  rebom-postgres-data:
+    driver: local    
