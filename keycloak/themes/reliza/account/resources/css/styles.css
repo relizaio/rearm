@@ -1,0 +1,9 @@
+.login-pf body {
+    background: DimGrey none;
+    background-image: url('../img/reliza_in_sand_right_corner.jpg');
+    background-size: cover;
+}
+
+.card-pf {
+    opacity: 0.9;
+}

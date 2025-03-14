@@ -1,0 +1,1 @@
+CREATE SCHEMA reliza_keycloak;
