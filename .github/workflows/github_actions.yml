@@ -84,3 +84,19 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REARM_OCI_ARTIFACT_API_KEY }}
           path: oci-artifact-service
           enable_sbom: 'false'
+  build-keycloak:
+    name: Build And Push ReARM Keycloak
+    runs-on: ubuntu-latest
+    steps:
+      - name: RelizaHub Build And Submit ReARM Keycloak Release
+        uses: relizaio/reliza-docker-action@2.1
+        with:
+          registry_username: ${{ secrets.DOCKER_LOGIN }}
+          registry_password: ${{ secrets.DOCKER_TOKEN }}
+          registry_host: registry.relizahub.com
+          image_namespace: registry.relizahub.com/library
+          image_name: rearm-keycloak
+          reliza_api_id: ${{ secrets.RELIZA_REARM_KEYCLOAK_API_ID }}
+          reliza_api_key: ${{ secrets.RELIZA_REARM_KEYCLOAK_API_KEY }}
+          path: keycloak
+          enable_sbom: 'false'
