@@ -313,7 +313,7 @@ public class ReleaseService {
 	 * @param orgUuid - organization UUID - will only search for this org + external org
 	 * @return
 	 */
-	public Optional<Release> getReleaseByDeliverable (UUID deliverableUuid, UUID orgUuid) {
+	public Optional<ReleaseData> getReleaseByOutboundDeliverable (UUID deliverableUuid, UUID orgUuid) {
 		Optional<Release> or = Optional.empty();
 		List<Release> releases = repository.findReleasesByDeliverable(deliverableUuid.toString(), orgUuid.toString());
 		if (null != releases && !releases.isEmpty()) {
@@ -322,35 +322,33 @@ public class ReleaseService {
 				log.warn("More than one release returned per deliverable uuid = " + deliverableUuid);
 			}
 		}
-		return or;
+		Optional<ReleaseData> ord = Optional.empty();
+		if (or.isPresent()) ord = Optional.of(ReleaseData.dataFromRecord(or.get()));
+		return ord;
 	}
 	
 	public List<Release> findReleasesByArtifact (UUID artifactUuid, UUID orgUuid) {
 		return repository.findReleasesByArtifact(artifactUuid.toString(), orgUuid.toString());
 	}
 	
-	public Optional<ReleaseData> getReleaseDataByDigest (String digest, UUID orgUuid) {
-		Optional<ReleaseData> rd = Optional.empty();
+	public Optional<ReleaseData> getReleaseDataByOutboundDeliverableDigest (String digest, UUID orgUuid) {
+		Optional<ReleaseData> ord = Optional.empty();
 		Optional<DeliverableData> oad = deliverableService.getDeliverableDataByDigest(digest, orgUuid);
 		if (oad.isPresent()) {
 			// locate lowest level release referencing this artifact
 			// note that org uuid may be external that's why it may be different
-			Optional<Release> or = getReleaseByDeliverable(oad.get().getUuid(), oad.get().getOrg());
-			if (or.isPresent()) {
-				rd = Optional.of(ReleaseData.dataFromRecord(or.get()));
-			}
+			ord = getReleaseByOutboundDeliverable(oad.get().getUuid(), oad.get().getOrg());
 		}
-		return rd;
+		return ord;
 	}
 	
 	public List<ReleaseData> listReleaseDataByBuildId (String query, UUID orgUuid) {
 		List<ReleaseData> releases = new LinkedList<>();
 		List<DeliverableData> deliverables = deliverableService.getDeliverableDataByBuildId(query, orgUuid);
 		deliverables.forEach(d -> {
-			Optional<Release> or = getReleaseByDeliverable(d.getUuid(), d.getOrg());
-			if (or.isPresent()) {
-				var rd = ReleaseData.dataFromRecord(or.get());
-				releases.add(rd);
+			Optional<ReleaseData> ord = getReleaseByOutboundDeliverable(d.getUuid(), d.getOrg());
+			if (ord.isPresent()) {
+				releases.add(ord.get());
 			}
 		});
 		return releases;

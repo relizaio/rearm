@@ -353,7 +353,7 @@ public class ReleaseDatafetcher {
 	
 	
 	@DgsData(parentType = "Query", field = "getReleaseByHashProgrammatic")
-	public ReleaseData getReleaseByHash(DgsDataFetchingEnvironment dfe,
+	public Optional<ReleaseData> getReleaseByHash(DgsDataFetchingEnvironment dfe,
 			@InputArgument("hash") String hash, @InputArgument("componentId") String componentIdStr) {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
@@ -383,14 +383,11 @@ public class ReleaseDatafetcher {
 		authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, orgId, CallType.READ, ro);
 		
 		Optional<Deliverable> od = deliverableService.getDeliverableByDigestAndComponent(hash, componentId);
-		ReleaseData rd = null;	
 		// locate lowest level release referencing this artifact
 		// we pass component from artifact since we already scoped artifact search to only this component in getArtifactByDigestAndComponent
-		Optional<Release> or = releaseService.getReleaseByDeliverable(od.get().getUuid(), orgId);
-		if (or.isPresent()) {
-			rd = ReleaseData.dataFromRecord(or.get());
-		}
-		return rd;
+		Optional<ReleaseData> ord = Optional.empty();
+		if (od.isPresent()) ord = releaseService.getReleaseByOutboundDeliverable(od.get().getUuid(), orgId);
+		return ord;
 	}
 	
 	public static record GetLatestReleaseInput (UUID component, UUID product, String branch,
@@ -780,7 +777,7 @@ public class ReleaseDatafetcher {
 				query = query.split("@")[1];
 			}
 			
-			Optional<ReleaseData> optArtSearchRd = releaseService.getReleaseDataByDigest(query, orgUuid);
+			Optional<ReleaseData> optArtSearchRd = releaseService.getReleaseDataByOutboundDeliverableDigest(query, orgUuid);
 			if (optArtSearchRd.isPresent()) {
 				retList.add(optArtSearchRd.get());
 			} else {

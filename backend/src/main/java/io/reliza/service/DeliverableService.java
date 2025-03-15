@@ -147,8 +147,8 @@ public class DeliverableService {
 		return getDeliverablesByBuildId(query, orgUuid).stream().map(DeliverableData::dataFromRecord).collect(Collectors.toList());
 	}
 	
-	public Optional<Deliverable> getDeliverableByDigestAndComponent (String digest, UUID projectUuid) {
-		return repository.findDeliverableByDigestAndComponent(digest, projectUuid.toString());
+	public Optional<Deliverable> getDeliverableByDigestAndComponent (String digest, UUID compUuid) {
+		return repository.findDeliverableByDigestAndComponent(digest, compUuid.toString());
 	}
 	
 	public Optional<DeliverableData> getDeliverableDataByDigestAndProject (String digest, UUID projectUuid) {

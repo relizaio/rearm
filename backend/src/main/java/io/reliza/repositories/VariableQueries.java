@@ -1,7 +1,6 @@
 /**
 * Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
 */
-
 package io.reliza.repositories;
 
 import io.reliza.common.CommonVariables;
@@ -173,11 +172,13 @@ class VariableQueries {
 			CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
 			+ " and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)";
 	
-	protected static final String FIND_DELIVERABLE_BY_DIGEST_AND_COMPONENT = "select * from rearm.deliverables a"
-			+ " where jsonb_contains(a.record_data, jsonb_build_object('digests', jsonb_build_array(:digest)))"
-			+ " and cast (a.record_data->>'" + CommonVariables.BRANCH_FIELD + "' as UUID) in (select uuid from rearm.branches where"
-			+ " record_data->>'" + CommonVariables.COMPONENT_FIELD + "' = :compUuidAsStr)"
-			+ " and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)";
+	protected static final String FIND_DELIVERABLE_BY_DIGEST_AND_COMPONENT = """
+			SELECT * FROM rearm.deliverables a
+				WHERE jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digests', jsonb_build_array(:digest)))
+				AND cast (a.record_data->>'branch' as UUID) in (select uuid from rearm.branches where
+				record_data->>'component' = :compUuidAsStr)
+				AND (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
+			""";
 	
 	protected static final String LIST_DELIVERABLES_BY_COMPONENT = "select * from rearm.deliverables a"
 			+ " where cast (a.record_data->>'" + CommonVariables.BRANCH_FIELD + "' as UUID) in"
@@ -188,7 +189,7 @@ class VariableQueries {
 	protected static final String LIST_DELIVERABLES_BY_ORG = "select * from rearm.deliverables a where a.record_data->>'org' = :orgUuidAsString";
 
 	protected static final String FIND_DELIVERABLE_BY_BUILD_ID = "select * from rearm.deliverables a"
-			+ " where a.record_data-->'softwareMetadata'->>'buildId' = :query AND a.record_data->>'" + 
+			+ " where a.record_data->'softwareMetadata'->>'buildId' = :query AND a.record_data->>'" + 
 			CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
 			+ " and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)";
 	
@@ -299,9 +300,9 @@ class VariableQueries {
 			+ CommonVariables.COMPONENT_FIELD + "' = :compUuidAsString AND r.record_data->>'" + CommonVariables.TYPE_FIELD + "' = 'PLACEHOLDER'";
 	
 	protected static final String FIND_RELEASES_BY_DELIVERABLE_AND_ORG = """
-			select * from rearm.releases
-			WHERE jsonb_contains(record_data, jsonb_build_object('deliverables', jsonb_build_array(:deliverableUuidAsString)))
-			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+			select * from rearm.releases where uuid = (select cast (record_data->>'release' as UUID) from rearm.variants
+			WHERE jsonb_contains(record_data, jsonb_build_object('outboundDeliverables', jsonb_build_array(:deliverableUuidAsString)))
+			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000'))
 			""";
 	
 	protected static final String FIND_RELEASES_BY_ARTIFACT_AND_ORG = """
