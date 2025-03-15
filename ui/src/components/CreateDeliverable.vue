@@ -81,6 +81,13 @@
                     </template>
                 </n-dynamic-input>
             </n-form-item>
+            <n-form-item
+                        path ="softwareMetadata.digests"
+                        label="Deliverable Digests">
+                <n-dynamic-input
+                    v-model:value="deliverable.softwareMetadata.digests"
+                    placeholder="Enter digest, i.e. sha256:digest" />
+            </n-form-item>
             <n-space>
                 <n-button type="success" @click="onSubmit">Add Deliverable</n-button>
                 <n-button type="warning" @click="onReset">Reset Deliverable Input</n-button>
@@ -198,7 +205,6 @@ const onSubmit = async () => {
         },
         fetchPolicy: 'no-cache'
     })
-    console.log(response)
     emit('addDeliverable')
 }
 

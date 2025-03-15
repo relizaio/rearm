@@ -381,6 +381,8 @@
                 <create-deliverable v-if="updatedRelease.orgDetails"
                     :inputOrgUuid="updatedRelease.orgDetails.uuid"
                     :inputRelease="updatedRelease.uuid"
+                    :inputBranch="updatedRelease.branch"
+                    @addDeliverable="addArtifact"
                  />
             </n-card>
         </n-modal>

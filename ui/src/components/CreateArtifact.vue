@@ -90,6 +90,13 @@
                     </template>
                 </n-dynamic-input>
             </n-form-item>
+            <n-form-item
+                        path ="digests"
+                        label="Artifact Digests">
+                <n-dynamic-input
+                    v-model:value="artifact.digests"
+                    placeholder="Enter digest, i.e. sha256:digest" />
+            </n-form-item>
             <n-button type="success" @click="onSubmit">Add Artifact</n-button>
             <n-button type="warning" @click="onReset">Reset Artifact Input</n-button>
         </n-form>
@@ -134,18 +141,20 @@ interface Artifact {
     identities: Identity[],
     downloadLinks: DownloadLink[],
     inventoryTypes: string[],
+    digests: string[],
     bomFormat: string,
     storedIn: string,
     status: string,
     version: string,
 }
-const artifact :Ref<any>= ref({
+const artifact: Ref<any>= ref({
     displayIdentifier: '',
     tags: [],
     type: '',
     identities: [],
     downloadLinks: [],
     inventoryTypes: [],
+    digests: [],
     bomFormat: null,
     storedIn: '',
     status: 'ANY',
