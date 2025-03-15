@@ -138,7 +138,7 @@ interface Deliverable {
 }
 
 interface SoftwareMetadata {
-    packageType: string,
+    packageType: null | string,
     downloadLinks: DownloadLink[],
     digests: string[]
 }
@@ -154,7 +154,7 @@ const deliverable: Ref<Deliverable>= ref({
     tags: [],
     supportedCpuArchitectures: [],
     softwareMetadata: {
-        packageType: '',
+        packageType: null,
         digests: [],
         downloadLinks: [],
     }
@@ -172,7 +172,7 @@ function onReset () {
         tags: [],
         supportedCpuArchitectures: [],
         softwareMetadata: {
-            packageType: '',
+            packageType: null,
             digests: [],
             downloadLinks: [],
         }

@@ -1190,6 +1190,7 @@ async function addArtifact () {
     showReleaseAddProducesArtifactModal.value = false
     showSCEAddArtifactModal.value = false
     showDeliverableAddArtifactModal.value = false
+    showReleaseAddDeliverableModal.value = false
 }
 
 function setArtifactBelongsTo (art: any, belongsTo: string, belongsToId?: string) {
