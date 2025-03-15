@@ -367,7 +367,7 @@ public class ReleaseDatafetcher {
 		UUID orgId = null;
 		if (ApiTypeEnum.COMPONENT == ahp.getType()) {
 			componentId = ahp.getObjUuid();
-		} else if (ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
+		} else {
 			try {
 				orgId = ahp.getObjUuid();
 				componentId = UUID.fromString(componentIdStr);
