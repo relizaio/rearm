@@ -14,6 +14,9 @@ services:
      - RELIZAPROP_OCIARTIFACTS_REGISTRY_HOST=registry.relizahub.com
      - RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE=430fcdde-d7bc-4542-ad5b-4f534f4942f0-private
      - MAX_UPLOAD_SIZE=50MB
+    env_file:
+     - path: ./core.env
+       required: false
     depends_on:
      - rearm-postgresql
      - keycloak
@@ -101,6 +104,9 @@ services:
      - REGISTRY_HOST=registry.relizahub.com
      - REGISTRY_USERNAME=rh_430fcdde-d7bc-4542-ad5b-4f534f4942f0
      - REGISTRY_TOKEN=changeme
+    env_file:
+     - path: ./oci.env
+       required: false
     deploy:
       replicas: 1
       restart_policy:
@@ -118,6 +124,9 @@ services:
      - OCIARTIFACTS_REGISTRY_NAMESPACE=430fcdde-d7bc-4542-ad5b-4f534f4942f0-private
      - OCI_STORAGE_ENABLED=true
      - OCI_ARTIFACT_SERVICE_HOST=http://oci-artifact-service:8083
+    env_file:
+     - path: ./rebom.env
+       required: false
     depends_on:
      - rebom-postgresql
     deploy:
