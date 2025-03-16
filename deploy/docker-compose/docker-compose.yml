@@ -94,7 +94,7 @@ services:
         condition: on-failure
     volumes:
       - ./postgres-keycloak-init.sql:/docker-entrypoint-initdb.d/init.sql
-      - "rearm-keycloak-postgres-data:/var/lib/postgresql/data"
+      - "rearm-keycloak-compose-postgres-data:/var/lib/postgresql/data"
   oci-artifact-service:
     image: registry.relizahub.com/library/rearm-oci-artifact-service
     environment:
@@ -154,7 +154,7 @@ services:
     volumes:
       - ./rebom-migrations:/flyway/sql
 volumes:
-  rearm-keycloak-postgres-data:
+  rearm-keycloak-compose-postgres-data:
     driver: local
   rearm-postgres-data:
     driver: local
