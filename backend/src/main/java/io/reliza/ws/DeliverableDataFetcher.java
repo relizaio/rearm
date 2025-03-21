@@ -163,7 +163,7 @@ public class DeliverableDataFetcher {
 	
 	@DgsData(parentType = "Mutation", field = "addOutboundDeliverablesProgrammatic")
 	@Transactional
-	public Boolean addOutboundDeliverablesProgrammatic(DgsDataFetchingEnvironment dfe) throws RelizaException {
+	public ReleaseData addOutboundDeliverablesProgrammatic(DgsDataFetchingEnvironment dfe) throws RelizaException {
 				DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
@@ -226,7 +226,10 @@ public class DeliverableDataFetcher {
 		}
 
 		releaseService.reconcileMergedSbomRoutine(ord.get(), wu);
-		return variantService.addOutboundDeliverables(deliverables, ovd.get().getUuid(), wu);
+
+		variantService.addOutboundDeliverables(deliverables, ovd.get().getUuid(), wu);
+
+		return ord.get();
 		
 	}
 

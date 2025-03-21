@@ -202,7 +202,10 @@ class VariableQueries {
 			select * from rearm.artifacts a where a.record_data->'metrics'->>'lastScanned' is null 
 			and record_data->'metrics'->>'uploadToken' is not null
 		""";
-	
+
+
+	protected static final String FIND_ARTIFACTS_BY_STORED_DIGEST = "select * from rearm.artifacts a where jsonb_contains(record_data, jsonb_build_object('digests', jsonb_build_array(:digest)))";
+ 
 	/*
 	 * Branches and Feature Sets
 	 */

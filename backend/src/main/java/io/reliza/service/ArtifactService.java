@@ -108,6 +108,14 @@ public class ArtifactService {
 	public List<Artifact> listArtifactsByOrg (UUID org) {
 		return repository.listArtifactsByOrg(org.toString());
 	}
+	public Optional<Artifact> findArtifactByStoredDigest (String digest) {
+		Optional<Artifact> a = Optional.empty();
+		List<Artifact> artifacts = repository.findArtifactsByStoredDigest(digest);
+		if( null != artifacts && artifacts.size() > 0){
+			a = Optional.of(artifacts.get(0));
+		}
+		return a;
+	}
 	
 	@Transactional
 	public Artifact createArtifact(ArtifactDto artifactDto, WhoUpdated wu) throws RelizaException{
@@ -161,11 +169,13 @@ public class ArtifactService {
 
 	@Transactional
 	public UUID uploadArtifact(ArtifactDto artifactDto, UUID orgUuid, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws Exception{
-		artifactDto.setUuid(UUID.randomUUID());
+
 		artifactDto.setOrg(orgUuid);
-		String tag = artifactDto.getUuid().toString();
+		String tag= "";
 		ArtifactUploadResponseDto artifactUploadResponse = null;
 		DependencyTrackUploadResult dtur = null;
+		Artifact art = null;
+
 		if(artifactDto.getStoredIn().equals(StoredIn.REARM)){
 			if( artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) && (
 				artifactDto.getType().equals(ArtifactType.BOM)
@@ -174,16 +184,29 @@ public class ArtifactService {
 				|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
 			)){
 				var bomJson = Utils.readJsonFromResource(file);
+				
+				var rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions);
+				artifactDto.setInternalBom(new InternalBom(rebomResponse.uuid(), rebomOptions.belongsTo()));
+				artifactUploadResponse = rebomResponse.bom();
+				if(null != rebomResponse.duplicate() && rebomResponse.duplicate() ){
+					//find existing artifact and use its uuid, then create / update art
+					// find artifact by bom digest?
+					var a = findArtifactByStoredDigest(artifactUploadResponse.getDigest());
+					if(a.isPresent()){
+						art = a.get();
+						artifactDto.setUuid(art.getUuid());
+					}
+				}
+				if(null == artifactDto.getUuid()){
+					artifactDto.setUuid(UUID.randomUUID());
+				}
 				if (artifactDto.getType().equals(ArtifactType.BOM)) {
 					String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
 					UploadableBom ub = new UploadableBom(bomJson, null, false);
 					dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
 					artifactDto.setDtur(dtur);
 				}
-				var rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions);
-				artifactDto.setInternalBom(new InternalBom(rebomResponse.uuid(), rebomOptions.belongsTo()));
-				log.info("RGDEBUG: Saved bom on the artifact: {}", artifactDto.getInternalBom());
-				artifactUploadResponse = rebomResponse.bom();
+				tag = artifactDto.getUuid().toString();
 			}else {
 				artifactUploadResponse = uploadFileToConfiguredOci(file, tag);
 			}
@@ -197,8 +220,10 @@ public class ArtifactService {
             new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
             new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
         ));
-        Artifact art = createArtifact(artifactDto, wu);
-        log.debug("artifactcreated: {}", art);
+		if(null == art){
+			art = createArtifact(artifactDto, wu);
+		}
+        // log.debug("artifactcreated: {}", art);
         return art.getUuid();
     }
 

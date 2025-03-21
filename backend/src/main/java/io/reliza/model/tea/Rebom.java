@@ -41,7 +41,7 @@ public class Rebom {
         }
     }
 
-    public record RebomResponse(UUID uuid, ArtifactUploadResponseDto bom, RebomOptions meta) {}
+    public record RebomResponse(UUID uuid, ArtifactUploadResponseDto bom, RebomOptions meta, Boolean duplicate) {}
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record InternalBom (UUID id, ArtifactBelongsTo belongsTo){}
 

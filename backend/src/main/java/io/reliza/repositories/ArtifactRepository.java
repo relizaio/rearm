@@ -22,4 +22,8 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 			value = VariableQueries.LIST_INITIAL_ARTIFACTS_PENDING_DEPENDENCY_TRACK,
 			nativeQuery = true)
 	List<Artifact> listInitialArtifactsPendingOnDependencyTrack();
+	@Query(
+			value = VariableQueries.FIND_ARTIFACTS_BY_STORED_DIGEST,
+			nativeQuery = true)
+	List<Artifact> findArtifactsByStoredDigest(String digest);
 }

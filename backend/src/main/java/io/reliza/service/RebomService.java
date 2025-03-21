@@ -85,6 +85,7 @@ public class RebomService {
                     uuid
                     meta
                     bom
+                    duplicate
                 }
             }""";
         
