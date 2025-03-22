@@ -25,5 +25,5 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_BY_STORED_DIGEST,
 			nativeQuery = true)
-	List<Artifact> findArtifactsByStoredDigest(String digest);
+	List<Artifact> findArtifactsByStoredDigest(String orgUuidAsString, String digest);
 }

@@ -204,7 +204,8 @@ class VariableQueries {
 		""";
 
 
-	protected static final String FIND_ARTIFACTS_BY_STORED_DIGEST = "select * from rearm.artifacts a where jsonb_contains(record_data, jsonb_build_object('digests', jsonb_build_array(:digest)))";
+	protected static final String FIND_ARTIFACTS_BY_STORED_DIGEST = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString" 
+	+ " and jsonb_contains(record_data, jsonb_build_object('digests', jsonb_build_array(:digest)))";
  
 	/*
 	 * Branches and Feature Sets

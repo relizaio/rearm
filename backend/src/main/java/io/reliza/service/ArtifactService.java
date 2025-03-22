@@ -108,9 +108,9 @@ public class ArtifactService {
 	public List<Artifact> listArtifactsByOrg (UUID org) {
 		return repository.listArtifactsByOrg(org.toString());
 	}
-	public Optional<Artifact> findArtifactByStoredDigest (String digest) {
+	public Optional<Artifact> findArtifactByStoredDigest (UUID orgUuid, String digest) {
 		Optional<Artifact> a = Optional.empty();
-		List<Artifact> artifacts = repository.findArtifactsByStoredDigest(digest);
+		List<Artifact> artifacts = repository.findArtifactsByStoredDigest(orgUuid.toString(), digest);
 		if( null != artifacts && artifacts.size() > 0){
 			a = Optional.of(artifacts.get(0));
 		}
@@ -191,7 +191,7 @@ public class ArtifactService {
 				if(null != rebomResponse.duplicate() && rebomResponse.duplicate() ){
 					//find existing artifact and use its uuid, then create / update art
 					// find artifact by bom digest?
-					var a = findArtifactByStoredDigest(artifactUploadResponse.getDigest());
+					var a = findArtifactByStoredDigest(orgUuid, artifactUploadResponse.getDigest());
 					if(a.isPresent()){
 						art = a.get();
 						artifactDto.setUuid(art.getUuid());
