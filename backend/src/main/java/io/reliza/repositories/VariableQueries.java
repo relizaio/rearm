@@ -443,23 +443,6 @@ class VariableQueries {
 			""";
 	
 	/*
-	 * Marketing Releases 
-	 */
-	protected static final String LIST_MARKETING_RELEASES_OF_COMPONENT = """
-			SELECT * FROM rearm.marketing_releases mr where mr.record_data->>'component' = :componentIdAsStr
-		""";
-	
-	protected static final String LIST_MARKETING_RELEASES_OF_COMPONENT_WITH_STATUS = """
-				SELECT * FROM rearm.marketing_releases mr where mr.record_data->>'component' = :componentIdAsStr
-				AND mr.record_data->>'status' = :statusStr
-			""";
-	
-	protected static final String LIST_MARKETING_RELEASES_FOLLOWING_INTEGRATION_BRANCH = """
-			SELECT * FROM rearm.marketing_releases mr where mr.record_data->>'integrateBranch' = :branchIdAsStr
-			AND mr.record_data->>'integrateType' = 'FOLLOW'
-		""";
-	
-	/*
 	 * Variants 
 	 */
 	protected static final String FIND_ALL_VARIANTS_OF_RELEASE = """
@@ -570,51 +553,6 @@ class VariableQueries {
 			+ " (select count(*) as commits from rearm.source_code_entries where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString) as sce_count,"
 			+ " (select count(*) as branches from rearm.branches where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString) as branch_count"
 			;
-	
-	/*
-	 * Approval Policies
-	 */
-	
-	protected static final String GET_APPROVAL_POLICY_WITH_ORG = """
-			SELECT * FROM rearm.approval_policies ap 
-			WHERE ap.uuid = :approvalPolicyId AND ap.record_data->>'org' = :orgUuidAsString
-			AND ap.record_data->>'status' != 'ARCHIVED'
-		""";
-	
-	protected static final String LIST_APPROVAL_POLICIES_BY_ORG = """
-			SELECT * FROM rearm.approval_policies ap 
-			WHERE ap.record_data->>'org' = :orgUuidAsString
-			AND ap.record_data->>'status' != 'ARCHIVED'
-		""";
-	
-	protected static final String  LIST_APPROVAL_POLICIES_BY_APPROVAL_ENTRY = """
-			SELECT * FROM rearm.approval_policies ap 
-			WHERE jsonb_contains(record_data, jsonb_build_object('approvalEntries', jsonb_build_array(:approvalEntryUuidAsString))) 
-			AND ap.record_data->>'status' != 'ARCHIVED'
-		""";
-	
-	protected static final String GET_APPROVAL_ENTRY_WITH_ORG = """
-			SELECT * FROM rearm.approval_entries ae 
-			WHERE ae.uuid = :approvalEntryId AND ae.record_data->>'org' = :orgUuidAsString
-			AND ae.record_data->>'status' != 'ARCHIVED'
-		""";
-	
-	protected static final String LIST_APPROVAL_ENTRIES_BY_ORG = """
-			SELECT * FROM rearm.approval_entries ae
-			WHERE ae.record_data->>'org' = :orgUuidAsString
-			AND ae.record_data->>'status' != 'ARCHIVED'
-		""";
-	
-	protected static final String LIST_APPROVAL_ENTRIES_BY_APPROVAL_ROLE = """
-			WITH approvalRolePerEntry(uuid, roles) AS (SELECT uuid, 
-				jsonb_array_elements(record_data->'approvalRequirements')->'allowedApprovalRoleIds' 
-				FROM rearm.approval_entries)
-			SELECT ae.* from rearm.approval_entries ae, approvalRolePerEntry arpe
-				WHERE jsonb_contains(arpe.roles, jsonb_build_array(:approvalRole))
-				AND arpe.uuid = ae.uuid
-				AND ae.record_data->>'org' = :orgUuidAsString
-				AND ae.record_data->>'status' != 'ARCHIVED'
-		""";
 
 	/*
 	 * Analytical Queries
