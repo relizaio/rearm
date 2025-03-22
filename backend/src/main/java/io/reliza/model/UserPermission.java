@@ -25,7 +25,8 @@ public class UserPermission {
 	public enum PermissionScope {
 		ORGANIZATION,
 		COMPONENT,
-		BRANCH
+		BRANCH,
+		INSTANCE
 		;
 		
 		private PermissionScope () {}

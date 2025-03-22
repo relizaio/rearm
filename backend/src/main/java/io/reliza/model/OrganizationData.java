@@ -5,8 +5,6 @@
 package io.reliza.model;
 
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
@@ -24,7 +22,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ApprovalRole;
-import io.reliza.common.CommonVariables.RegistryProjectStatus;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionType;
@@ -65,21 +62,6 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		}
 	}
 
-	@Data()
-	public static class RegistryProject {
-		@JsonProperty(CommonVariables.REGISTRY_PROJECT_ID_FIELD)
-		private Integer registryProjectId;
-		@JsonProperty(CommonVariables.NAME_FIELD)
-		private String name;
-		@JsonProperty(CommonVariables.VISIBILITY_FIELD)
-        private RegistryProjectStatus visibility;
-
-		public static RegistryProject registryProjectFactory(){
-			RegistryProject rp = new RegistryProject();
-			return rp;
-		}
-	}
-
 
 	@JsonProperty
 	private UUID uuid;
@@ -87,26 +69,10 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	private String name;
 	@JsonProperty(CommonVariables.INVITEES_FIELD)
 	private Set<InvitedObject> invitees = new LinkedHashSet<>();
-	@JsonProperty(CommonVariables.REGISTRY_PROJECTS_FIELD)
-	private List<RegistryProject> registryProjects = new ArrayList<RegistryProject>();
 	@JsonProperty(CommonVariables.STATUS_FIELD)
 	private StatusEnum status;
 	@JsonProperty
 	private List<ApprovalRole> approvalRoles = new LinkedList<>();
-
-	public void addRegistryProject(RegistryProject project){
-		// make sure we only have unique list of registry projects
-		var regProjects = new HashMap<Integer, RegistryProject>();
-		registryProjects.forEach(rp -> {
-			regProjects.put(rp.registryProjectId, rp);
-		});
-		regProjects.put(project.registryProjectId, project);
-		registryProjects = new ArrayList<>(regProjects.values());
-	}
-	
-	public List<RegistryProject> getRegistryProjects(){
-		return new ArrayList<>(registryProjects);
-	}
 
 	public void removeInvitee(String email, UUID whoInvited){
 		boolean found = false;

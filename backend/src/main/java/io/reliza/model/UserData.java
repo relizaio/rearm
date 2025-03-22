@@ -5,7 +5,6 @@
 package io.reliza.model;
 
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -33,7 +32,6 @@ import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserPermission.Permissions;
 import io.reliza.model.dto.EmailWebDto;
 import io.reliza.model.dto.UserWebDto;
-import lombok.Builder;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class UserData extends RelizaDataParent implements AuthPrincipal {
@@ -106,18 +104,6 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 			return email;
 		}
 	}
-
-	@Builder()	
-	public static class SshKey{
-		@JsonProperty(CommonVariables.UUID_FIELD)
-		private UUID uuid;
-		@JsonProperty(CommonVariables.NAME_FIELD)
-		private String name;
-		
-		@JsonProperty(CommonVariables.KEY_FIELD)
-		private String key;
-	}
-
 	private UUID uuid;
 	@JsonProperty(CommonVariables.NAME_FIELD)
 	private String name;
@@ -141,19 +127,12 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	private Permissions permissions = new Permissions();
 	@JsonProperty(CommonVariables.STATUS_FIELD)
 	private UserStatus status = UserStatus.ACTIVE;
-	// @JsonProperty(CommonVariables.ALL_HAROBR_ROBOTS_FIELD)
-	// private Map<UUID, Integer> allHarborUsers = new HashMap<>();
-	// @JsonProperty(CommonVariables.ALL_HAROBR_USERS_FIELD)
-	// private Map<UUID, Integer> allHarborUsers = new HashMap<>();
 	@JsonProperty(CommonVariables.REGISTRY_USER_ID_FIELD)
 	private Integer registryUserId;
-	
+
 	@JsonIgnore
 	private String remoteIp;
 
-	@JsonProperty(CommonVariables.PUBLIC_SSH_KEYS_FIELD)
-	private List<SshKey> publicSshKeys = new ArrayList<>();
-	
 	private UserData () {}
 	
 	public UUID getUuid() {
@@ -176,18 +155,6 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 
 	public Integer getRegistryUserId() {
 		return this.registryUserId;
-	}
-
-	public List<SshKey> getPublicSshKeys(){
-		return this.publicSshKeys;
-	}
-
-	public void addSshKey(SshKey sshKey){
-		this.publicSshKeys.add(sshKey);
-	}
-
-	public void removeSshKey(UUID uuid){
-		this.publicSshKeys.removeIf(key -> key.uuid.equals(uuid));
 	}
 
 	public void setRegistryUser(Integer registryUserId)
@@ -233,7 +200,7 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 		}
 		return orgEo;
 	}
-
+	
 	private void setEmail(String email, boolean primary, boolean verified, UUID emailOrgUuid, boolean acceptMarketing) {
 		this.email = email;
 		Optional<EmailObject> existingEo = this.allEmails.stream().filter(eo -> eo.getEmail().equalsIgnoreCase(email)).findAny();
@@ -587,15 +554,5 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	@JsonIgnore
 	public void setRemoteIp(String ip) {
 		this.remoteIp = ip;
-	}
-	
-	@JsonIgnore
-	public String getSshKey() {
-		String sshKey = "";
-		var keys = this.getPublicSshKeys();
-		if (null != keys && !keys.isEmpty()) {
-			sshKey = keys.get(0).key;
-		}
-		return sshKey;
 	}
 }
