@@ -46,6 +46,15 @@ public class AdminDataFetcher {
 	SystemInfoService systemInfoService;
 
 	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "getSystemInfoIsSet")
+	public SystemInfoDto getSystemInfoIsSet() {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);
+		return systemInfoService.getSystemInfoIsSet();
+	}
+	
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "unSealSystem")
 	public Boolean unSealSystem(DgsDataFetchingEnvironment dfe,
 			@InputArgument("secret") String secret) throws RuntimeException {
@@ -57,14 +66,5 @@ public class AdminDataFetcher {
 		} catch (RelizaException re) {
 			throw new AccessDeniedException(re.getMessage());
 		}
-	}
-	
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Query", field = "getSystemInfoIsSet")
-	public SystemInfoDto getSystemInfoIsSet() {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);
-		return systemInfoService.getSystemInfoIsSet();
 	}
 }

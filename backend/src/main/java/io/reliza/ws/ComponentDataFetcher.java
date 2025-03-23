@@ -473,12 +473,6 @@ public class ComponentDataFetcher {
 
 /* Sub-fields */
 	
-	@DgsData(parentType = "Component", field = "approvalPolicyDetails")
-	public Optional<String> approvalPolicyDetailsOfComponent (DgsDataFetchingEnvironment dfe) {
-		// throw new RuntimeException("Currently, not part of ReARM CE");
-		return Optional.empty();
-	}
-	
 	@DgsData(parentType = "Component", field = "vcsRepositoryDetails")
 	public VcsRepositoryData vcsRepoOfProject (DgsDataFetchingEnvironment dfe) {
 		VcsRepositoryData vrd = null;

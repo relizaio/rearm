@@ -63,15 +63,6 @@ public class UserDataFetcher {
 			boolean adminForExternalOrg = false;
 			InstallationType systemInstallationType = userService.getInstallationType();
 			if (InstallationType.OSS != systemInstallationType && ud.isGlobalAdmin()) adminForExternalOrg = true;
-//			if (InstallationType.OSS == systemInstallationType) {
-//				var uOrgPerm = ud.getPermission(UserService.USER_ORG, PermissionScope.ORGANIZATION, UserService.USER_ORG);
-//				if (uOrgPerm.isPresent() && uOrgPerm.get().getType() == PermissionType.ADMIN) {
-//					// inject permission for external org
-//					adminForExternalOrg = true;
-//				}
-//			} else if (ud.isGlobalAdmin()) {
-//				adminForExternalOrg = true;
-//			}
 			if (adminForExternalOrg) {
 				var permissions = udWebDto.getPermissions();
 				permissions.setPermission(CommonVariables.EXTERNAL_PROJ_ORG_UUID, PermissionScope.ORGANIZATION,
