@@ -13,8 +13,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
@@ -28,8 +26,7 @@ import io.reliza.model.Component;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.BranchService;
-import io.reliza.service.OrganizationService;
-import io.reliza.service.UserService;
+import io.reliza.ws.oss.TestInitializer;
 import io.reliza.service.ComponentService;
 
 @ExtendWith(SpringExtension.class)
@@ -41,21 +38,15 @@ public class FeatureSetTest
     private BranchService branchService;
 	
 	@Autowired
-    private ComponentService ComponentService;
-	
+    private ComponentService componentService;
+
 	@Autowired
-    private OrganizationService organizationService;
-	
-	private static final Logger log = LoggerFactory.getLogger(FeatureSetTest.class);
-	
-	private Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
-	}
+	private TestInitializer testInitializer;
 	
 	@Test
 	public void testCreateFeatureSetProper() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProductForFeaturSet", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProductForFeaturSet", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
 		Branch fs = branchService.createBranch("testFeatureSet", prod.getUuid(),
 																BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
 		Branch fsSaved = branchService.getBranch(fs.getUuid()).get();
@@ -64,8 +55,8 @@ public class FeatureSetTest
 	
 	@Test
 	public void testListFeatureSetsOfProduct() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProductForFeaturSetList", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProductForFeaturSetList", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
 		Branch fs1 = branchService.createBranch("testFeatureSet1", prod.getUuid(),
 				BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
@@ -85,11 +76,11 @@ public class FeatureSetTest
 	@Test
 	@Disabled // TODO switch to dependencies field
 	public void addComponentToFeatureSet() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProductForFeaturSet ws ", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProductForFeaturSet ws ", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
 		Branch fs = branchService.createBranch("testFeatureSet ws", prod.getUuid(),
 				BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
-		Component proj = ComponentService.createComponent("test project ws feature set", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component proj = componentService.createComponent("test project ws feature set", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		
 		Branch br = branchService.createBranch("test branch ws feature set", 
 															proj.getUuid(), BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());

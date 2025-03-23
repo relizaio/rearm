@@ -13,8 +13,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -29,11 +27,10 @@ import io.reliza.model.VersionAssignment;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.service.BranchService;
-import io.reliza.service.OrganizationService;
-import io.reliza.service.UserService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.VersionAssignmentService;
 import io.reliza.versioning.VersionApi.ActionEnum;
+import io.reliza.ws.oss.TestInitializer;
 import io.reliza.versioning.VersionType;
 
 /**
@@ -45,10 +42,7 @@ public class VersionAssignmentTest
 {
 	
 	@Autowired
-    private ComponentService ComponentService;
-	
-	@Autowired
-    private OrganizationService organizationService;
+    private ComponentService componentService;
 	
 	@Autowired
     private BranchService branchService;
@@ -56,16 +50,13 @@ public class VersionAssignmentTest
 	@Autowired
     private VersionAssignmentService versionAssignmetService;
 	
-	private static final Logger log = LoggerFactory.getLogger(VersionAssignmentTest.class);
-	
-	private Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
-	}
+	@Autowired
+	private TestInitializer testInitializer;
 	
 	@Test
 	public void testObtainVersionAssignment1Semver() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProjectForVersionAssignmentSemver", org.getUuid(), ComponentType.COMPONENT, "semver", null, 
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProjectForVersionAssignmentSemver", org.getUuid(), ComponentType.COMPONENT, "semver", null, 
 				WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto1 = BranchDto.builder()
@@ -88,8 +79,8 @@ public class VersionAssignmentTest
 	
 	@Test
 	public void testObtainVersionAssignment2Calver() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProjectForVersionAssignmentCalver", org.getUuid(), ComponentType.COMPONENT, 
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProjectForVersionAssignmentCalver", org.getUuid(), ComponentType.COMPONENT, 
 				VersionType.CALVER_RELIZA_2020.getSchema(), null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto = BranchDto.builder()
@@ -105,8 +96,8 @@ public class VersionAssignmentTest
 	
 	@Test
 	public void dbPreventsDuplicateVersions() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProjectForVersionAssignmentRecovery", org.getUuid(), ComponentType.COMPONENT, "semver", 
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProjectForVersionAssignmentRecovery", org.getUuid(), ComponentType.COMPONENT, "semver", 
 				null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto = BranchDto.builder()
@@ -122,8 +113,8 @@ public class VersionAssignmentTest
 
 	@Test
 	public void testNextVersion() throws Exception {
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProjectForNextVersion", org.getUuid(), ComponentType.COMPONENT, "semver", 
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProjectForNextVersion", org.getUuid(), ComponentType.COMPONENT, "semver", 
 				null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto = BranchDto.builder()
@@ -151,8 +142,8 @@ public class VersionAssignmentTest
 		String CURRENT_YEAR_LONG = String.valueOf(date.getYear());
 		String CURRENT_YEAR_SHORT = CURRENT_YEAR_LONG.substring(2);
 		
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProjectForNextVersion", org.getUuid(), ComponentType.COMPONENT, VersionType.CALVER_UBUNTU.getSchema(), 
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProjectForNextVersion", org.getUuid(), ComponentType.COMPONENT, VersionType.CALVER_UBUNTU.getSchema(), 
 				null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto = BranchDto.builder()

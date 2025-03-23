@@ -22,8 +22,7 @@ import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.WhoUpdated;
-import io.reliza.service.OrganizationService;
-import io.reliza.service.UserService;
+import io.reliza.ws.oss.TestInitializer;
 import io.reliza.service.ComponentService;
 import io.reliza.service.GetComponentService;
 
@@ -36,19 +35,16 @@ public class ProductTest
 {
 	@Autowired
     private ComponentService componentService;
+
 	@Autowired
     private GetComponentService getComponentService;
 	
 	@Autowired
-    private OrganizationService organizationService;
-	
-	private Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
-	}
+	private TestInitializer testInitializer;
 	
 	@Test
 	public void createdAndFindProductByUuidSuccess() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		Component prod = componentService.createComponent("testFindProduct", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
 		Optional<Component> oProd = getComponentService.getComponent(prod.getUuid());
 		Assertions.assertTrue(oProd.isPresent());
@@ -57,7 +53,7 @@ public class ProductTest
 	
 	@Test
 	public void listProductsByOrg() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		String p1rand = "testFindProductList1" + UUID.randomUUID().toString();
 		String p2rand = "testFindProductList2" + UUID.randomUUID().toString();
 		@SuppressWarnings("unused")

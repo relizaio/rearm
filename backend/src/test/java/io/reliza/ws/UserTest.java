@@ -21,8 +21,8 @@ import io.reliza.model.Organization;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.service.OrganizationService;
 import io.reliza.service.UserService;
+import io.reliza.ws.oss.TestInitializer;
 
 /**
  * Unit test related to Component functionality
@@ -31,19 +31,17 @@ import io.reliza.service.UserService;
 @SpringBootTest
 public class UserTest 
 {
-	@Autowired
-    private OrganizationService organizationService;
-	
+
 	@Autowired
     private UserService userService;
+	
+	@Autowired
+	private TestInitializer testInitializer;
    
-	private Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
-	}
 	
 	@Test
 	public void testCreateUserProper() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		User u = userService.createUser("Test User 1", "1test@reliza.io", false, List.of(org.getUuid()), "test_githubid", OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());
 		UserData uSaved = userService.getUserData(u.getUuid()).get();
 		Assertions.assertEquals(u.getUuid(), uSaved.getUuid());
@@ -58,7 +56,7 @@ public class UserTest
 	
 	@Test
 	public void findUserByUuidSuccess() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		User u = userService.createUser("Test User 4", "4test@reliza.io", false,
 								List.of(org.getUuid()), "test_githubid", OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());
 		UserData uRet = userService.getUserData(u.getUuid()).get();
@@ -68,7 +66,7 @@ public class UserTest
 	@Test
 	public void findUserByEmail() throws RelizaException {
 		// TODO: it fails bc we don't have yet constraint on having no more than one same email
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		Long timestamp = System.currentTimeMillis();
 		User u = userService.createUser("Test User 5", timestamp + "5test@reliza.io", false,
 													List.of(org.getUuid()), "test_githubid", OauthType.GITHUB, WhoUpdated.getTestWhoUpdated());

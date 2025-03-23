@@ -33,11 +33,10 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.service.BranchService;
-import io.reliza.service.OrganizationService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedReleaseService;
-import io.reliza.service.UserService;
+import io.reliza.ws.oss.TestInitializer;
 
 @ExtendWith(SpringExtension.class)
 @SpringBootTest
@@ -48,20 +47,16 @@ public class BranchTest
     private BranchService branchService;
 	
 	@Autowired
-    private OrganizationService organizationService;
-	
-	@Autowired
     private ComponentService ComponentService;
 	
 	@Autowired
     private ReleaseService releaseService;
+	
 	@Autowired
     private SharedReleaseService sharedReleaseService;
 	
-	
-	private Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
-	}
+	@Autowired
+	private TestInitializer testInitializer;
 	
 	@Test
 	public void testCreateBranchWithoutReqFieldsThrowsIllegalState() throws RelizaException {
@@ -71,7 +66,7 @@ public class BranchTest
 	
 	@Test
 	public void testCreateBranchProper() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		Component p = ComponentService.createComponent("testProjectForBranch", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		Branch b = branchService.createBranch("testBranch", p.getUuid(), BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
 		Branch bSaved = branchService.getBranch(b.getUuid()).get();
@@ -80,7 +75,7 @@ public class BranchTest
 	
 	@Test
 	public void testListBranchesOfComponent() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		Component p = ComponentService.createComponent("testProjectForBranchList", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
 		Branch b1 = branchService.createBranch("testBranch1", p.getUuid(), BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
@@ -97,7 +92,7 @@ public class BranchTest
 	@Test
 	@Disabled // TODO - switch to dependencies field test
 	public void addProjectToBranchAsDependency() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		Component projTarget = ComponentService.createComponent("test project branch add proj target", org.getUuid(), ComponentType.COMPONENT, 
 				WhoUpdated.getTestWhoUpdated());
 
@@ -121,7 +116,7 @@ public class BranchTest
 	
 	@Test
 	public void testRetrieveLatestBranchRelease() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		Component prod = ComponentService.createComponent("testProductForLatestRlz", org.getUuid(), 
 				ComponentType.PRODUCT, "semver", null, WhoUpdated.getTestWhoUpdated());
 		// get base feature set of product
@@ -152,6 +147,5 @@ public class BranchTest
 				UUID.fromString("d18c04f2-f0b6-4dc0-b419-d2ed4deeee58"));
 		Assertions.assertEquals(UUID.fromString("28c6b0d0-5396-4f17-b3bb-072f52cc3500"), bdList.get(0).getUuid());
 	}
-	
 	
 }

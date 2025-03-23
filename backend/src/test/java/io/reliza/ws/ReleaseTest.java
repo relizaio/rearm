@@ -10,8 +10,6 @@ import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
@@ -26,10 +24,9 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.service.BranchService;
-import io.reliza.service.OrganizationService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.ReleaseService;
-import io.reliza.service.UserService;
+import io.reliza.ws.oss.TestInitializer;
 
 /**
  * Unit test for Release-related functionality.
@@ -38,24 +35,18 @@ import io.reliza.service.UserService;
 @SpringBootTest
 public class ReleaseTest 
 {
-	
 	@Autowired
-    private ComponentService ComponentService;
-	
-	@Autowired
-    private OrganizationService organizationService;
-	
+    private ComponentService componentService;
+
 	@Autowired
     private BranchService branchService;
 	
 	@Autowired
     private ReleaseService releaseService;
 	
-	private static final Logger log = LoggerFactory.getLogger(ReleaseTest.class);
+	@Autowired
+	private TestInitializer testInitializer;
 	
-	private Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
-	}
 	
 	@Test
 	public void testCreateReleaseWOReqFieldsThrowsIllegalState() throws RelizaException {
@@ -68,8 +59,8 @@ public class ReleaseTest
 	
 	@Test
 	public void testCreateProductReleaseProper() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component prod = ComponentService.createComponent("testProductForRelease", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component prod = componentService.createComponent("testProductForRelease", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
 		Branch fs = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		ReleaseDto releaseDto = ReleaseDto.builder()
 				.version("0.0.1-junit-test")
@@ -83,8 +74,8 @@ public class ReleaseTest
 	
 	@Test
 	public void testCreateProjectReleaseProper() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component proj = ComponentService.createComponent("testProjectForRelease", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component proj = componentService.createComponent("testProjectForRelease", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDto = ReleaseDto.builder()
 				.version("0.0.1-junit-test")
@@ -99,8 +90,8 @@ public class ReleaseTest
 	
 	@Test
 	public void testSearchReleaseDataByVersion() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component proj = ComponentService.createComponent("testProjectForReleaseSearch2", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component proj = componentService.createComponent("testProjectForReleaseSearch2", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDto = ReleaseDto.builder()
 				.version("0.0.3-junit-version-search-test")
@@ -116,8 +107,8 @@ public class ReleaseTest
 	
 	@Test
 	public void testSearchReleaseDataByVersionEmptyQuery() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component proj = ComponentService.createComponent("testProjectForReleaseSearch4", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component proj = componentService.createComponent("testProjectForReleaseSearch4", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDto = ReleaseDto.builder()
 				.version("0.0.4-junit-version-search-test")
@@ -129,11 +120,12 @@ public class ReleaseTest
 		List<ReleaseData> rdList = releaseService.listReleaseDataByVersion("", org.getUuid());
 		Assertions.assertEquals(0, rdList.size());
 	}
+
 	
 	@Test
 	public void locateReleasesByIds() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component proj = ComponentService.createComponent("testProjectForListRlzByIds", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component proj = componentService.createComponent("testProjectForListRlzByIds", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDtoProj1 = ReleaseDto.builder()
 				.version("0.0.1-listrlz-junit-test")
@@ -161,8 +153,8 @@ public class ReleaseTest
 	
 	@Test
 	public void retrieveReleasesBetweenReleasesByDates() throws RelizaException {
-		Organization org = obtainOrganization();
-		Component proj = ComponentService.createComponent("testProjectRlzComparison", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Organization org = testInitializer.obtainOrganization();
+		Component proj = componentService.createComponent("testProjectRlzComparison", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDtoProj1 = ReleaseDto.builder()
 				.version("0.0.1-listrlz-junit-test")

@@ -21,8 +21,7 @@ import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.WhoUpdated;
-import io.reliza.service.OrganizationService;
-import io.reliza.service.UserService;
+import io.reliza.ws.oss.TestInitializer;
 import io.reliza.service.ComponentService;
 import io.reliza.service.GetComponentService;
 
@@ -40,11 +39,7 @@ public class ComponentTest
     private GetComponentService getComponentService;
 	
 	@Autowired
-    private OrganizationService organizationService;
-	
-	private Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
-	}
+	private TestInitializer testInitializer;
 	
 	@Test
     public void testProjectRetreival() {
@@ -67,7 +62,7 @@ public class ComponentTest
 	
 	@Test
 	public void createAndfindProjectByUuidSuccess() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		Component p = componentService.createComponent("testFindProject", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		Optional<Component> op = getComponentService.getComponent(p.getUuid());
 		Assertions.assertTrue(op.isPresent());
@@ -76,7 +71,7 @@ public class ComponentTest
 	
 	@Test
 	public void listComponentsByOrg() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		String c1rand = "testFindComponentList1" + UUID.randomUUID().toString();
 		String c2rand = "testFindComponentList2" + UUID.randomUUID().toString();
 		@SuppressWarnings("unused")

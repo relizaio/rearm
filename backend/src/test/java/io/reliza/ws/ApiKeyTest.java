@@ -20,8 +20,7 @@ import io.reliza.model.Component;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.ApiKeyService;
-import io.reliza.service.OrganizationService;
-import io.reliza.service.UserService;
+import io.reliza.ws.oss.TestInitializer;
 import io.reliza.service.ComponentService;
 
 /**
@@ -35,18 +34,14 @@ public class ApiKeyTest
     private ComponentService ComponentService;
 	
 	@Autowired
-    private OrganizationService organizationService;
-	
-	@Autowired
 	private ApiKeyService apiKeyService;
 	
-	private Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
-	}
+	@Autowired
+	private TestInitializer testInitializer;
 	
 	@Test
 	public void setApiKeyToProject() throws RelizaException {
-		Organization org = obtainOrganization();
+		Organization org = testInitializer.obtainOrganization();
 		Component p = ComponentService.createComponent("testApiKeyProj", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
 		String apiKey = apiKeyService.setObjectApiKey(p.getUuid(), ApiTypeEnum.COMPONENT, null, null, null, WhoUpdated.getTestWhoUpdated());
 		// verify api key
