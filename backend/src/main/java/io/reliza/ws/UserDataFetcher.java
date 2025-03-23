@@ -52,33 +52,7 @@ public class UserDataFetcher {
 	
 	@Autowired
 	SystemInfoService systemInfoService;
-
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Query", field = "user")
-	public UserWebDto user() {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		try {
-			UserData ud = userService.resolveUser(auth);
-			var udWebDto = UserData.toWebDto(ud);
-			boolean adminForExternalOrg = false;
-			InstallationType systemInstallationType = userService.getInstallationType();
-			if (InstallationType.OSS != systemInstallationType && ud.isGlobalAdmin()) adminForExternalOrg = true;
-			if (adminForExternalOrg) {
-				var permissions = udWebDto.getPermissions();
-				permissions.setPermission(CommonVariables.EXTERNAL_PROJ_ORG_UUID, PermissionScope.ORGANIZATION,
-						CommonVariables.EXTERNAL_PROJ_ORG_UUID, PermissionType.ADMIN, null);
-				udWebDto.setPermissions(permissions);
-			}
-			if(systemInfoService.isSystemSealed()){
-				udWebDto.setSystemSealed(true);
-			}
-			udWebDto.setInstallationType(systemInstallationType.toString());
-			return udWebDto;
-		} catch (RelizaException re) {
-			throw new AccessDeniedException(re.getMessage());
-		}
-	}
-
+	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "acceptUserPolicies")
 	public UserWebDto acceptUserPolicies (

@@ -342,16 +342,6 @@ public class ReleaseDatafetcher {
 		return releaseService.getReleaseData(releaseDto.getUuid()).get();
 	}
 	
-	@Transactional
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "approveReleaseManual")
-	public void approveReleaseManual(DgsDataFetchingEnvironment dfe,
-		@InputArgument("release") String releaseUuidStr
-	) {
-		throw new RuntimeException("Currently not part of ReARM CE");
-	}
-	
-	
 	@DgsData(parentType = "Query", field = "getReleaseByHashProgrammatic")
 	public Optional<ReleaseData> getReleaseByHash(DgsDataFetchingEnvironment dfe,
 			@InputArgument("hash") String hash, @InputArgument("componentId") String componentIdStr) {
@@ -393,70 +383,6 @@ public class ReleaseDatafetcher {
 	public static record GetLatestReleaseInput (UUID component, UUID product, String branch,
 			TagRecord tags, ReleaseLifecycle lifecycle, InputConditionGroup conditions) {}
 
-	@DgsData(parentType = "Query", field = "getLatestReleaseProgrammatic")
-	public Optional<ReleaseData> getLatestRelease(DgsDataFetchingEnvironment dfe) {
-		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
-		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
-		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
-		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
-		
-		Map<String, String> latestReleaseInput = dfe.getArgument("release");
-		GetLatestReleaseInput glri = Utils.OM.convertValue(latestReleaseInput, GetLatestReleaseInput.class);
-		
-		// TODO respect tags
-		
-		String branch = glri.branch();
-		UUID componentUuid = null;
-		UUID productUuid = glri.product();
-		UUID orgId = null;
-		ComponentData cd;
-		
-		if (ApiTypeEnum.COMPONENT == ahp.getType() && null == glri.component()) {
-			componentUuid = ahp.getObjUuid();
-		} else if (null != glri.component()) {
-			componentUuid = glri.component();
-		}
-		
-		if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
-			orgId = ahp.getObjUuid();
-		}
-
-		cd = getComponentService.getComponentData(componentUuid).get();
-		RelizaObject ro = cd;
-		if (null == orgId) orgId = cd.getOrg();
-		
-		if (null != productUuid) {
-			Optional<ComponentData> obd = getComponentService.getComponentData(productUuid);
-			if (obd.isPresent()) {
-				if (null == ro) ro = obd.get();
-				if (null == orgId) orgId = obd.get().getOrg();
-				if (!obd.get().getOrg().equals(cd.getOrg())) {
-					throw new AccessDeniedException("org mismatch");
-				}
-			}
-		}
-		
-		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION, 
-				ApiTypeEnum.ORGANIZATION_RW);
-		
-		authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, orgId, CallType.READ, ro);
-		
-		Optional<ReleaseData> optRd = Optional.empty();
-		
-		if (StringUtils.isNotEmpty(branch)) {
-			branch = Utils.cleanBranch(branch);
-		}
-			
-		try {
-			ConditionGroup cg = null;
-			optRd = releaseService.getReleasePerProductComponent(orgId, componentUuid, productUuid, branch, glri.lifecycle(), cg);
-		} catch (RelizaException re) {
-			throw new RuntimeException(re.getMessage());
-		}
-		
-		return optRd;
-	}
-	
 	private BranchData resolveAddReleaseProgrammaticBranchData (final UUID componentId, final String suppliedBranchStr, WhoUpdated wu) {
 		UUID branchUuid = null;
 		
@@ -630,13 +556,6 @@ public class ReleaseDatafetcher {
 		} catch (RelizaException re) {
 			throw new AccessDeniedException(re.getMessage());
 		}
-	}
-	
-	
-	@Transactional
-	@DgsData(parentType = "Mutation", field = "approveReleaseProgrammatic")
-	public ReleaseData approveReleaseProgrammatic(DgsDataFetchingEnvironment dfe) {
-		throw new RuntimeException("Currently not part of ReARM CE");
 	}
 	
 	@Transactional

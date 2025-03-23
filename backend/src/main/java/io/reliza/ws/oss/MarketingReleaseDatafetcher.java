@@ -1,7 +1,7 @@
 /**
 * Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
 */
-package io.reliza.ws;
+package io.reliza.ws.oss;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
