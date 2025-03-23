@@ -101,11 +101,6 @@ public class IntegrationService {
 			.defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
 			.build();
 	
-	private final WebClient genericWebClient = WebClient
-			.builder()
-			.build();
-	
-	
 	IntegrationService(IntegrationRepository repository) {
 	    this.repository = repository;
 	}

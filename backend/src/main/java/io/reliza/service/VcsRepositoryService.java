@@ -1,5 +1,5 @@
 /**
-* Copyright Reliza Incorporated. 2019 - 2025. All rights reserved.
+* Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
 */
 package io.reliza.service;
 

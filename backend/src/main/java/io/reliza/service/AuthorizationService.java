@@ -206,7 +206,7 @@ public class AuthorizationService {
 		return ar;
 	}
 	
-	private void gqlValidateAuthorizationResponse(AuthorizationResponse ar) {
+	public void gqlValidateAuthorizationResponse(AuthorizationResponse ar) {
 		if (!AuthorizationResponse.isAllowed(ar)) {
 			if (ar.getHttpStatus() == HttpStatus.FORBIDDEN || ar.getHttpStatus() == HttpStatus.EXPECTATION_FAILED) {
 				throw new AccessDeniedException(ar.getMessage());

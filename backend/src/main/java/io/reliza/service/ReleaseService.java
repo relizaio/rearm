@@ -2237,31 +2237,6 @@ public class ReleaseService {
 		repository.saveAll(releases);
 	}
 	
-	@Transactional
-	private boolean setReleaseMarketingVersion(UUID releaseUuid, String versionString, WhoUpdated wu){
-		Release r = getRelease(releaseUuid).orElseThrow();
-		ReleaseData rd = ReleaseData.dataFromRecord(r);
-
-		if(rd.getLifecycle() != ReleaseLifecycle.ASSEMBLED)
-			throw new RuntimeException("Only ASSEBMLED releases can be assigned with marketing verison");
-
-		ComponentData pd = getComponentService.getComponentData(rd.getComponent()).orElseThrow();
-		BranchData bd = branchService.getBranchData(rd.getBranch()).orElseThrow();
-		
-		if(!pd.getVersionType().equals(VersionTypeEnum.MARKETING))
-			throw new RuntimeException("Component must have marketing version enabled");
-		
-		Optional<VersionAssignment> ova = versionAssignmentService.getVersionAssignment(pd.getUuid(), versionString, VersionTypeEnum.MARKETING);
-		if(ova.isPresent())
-			throw new RuntimeException("Version arleady consumed by a release");
-
-		Optional<VersionAssignment> assignedOva = versionAssignmentService.createNewVersionAssignment(bd.getUuid(), versionString, rd.getUuid(), VersionTypeEnum.MARKETING);
-		rd.setMarketingVersion(versionString);
-		Map<String,Object> recordData = Utils.dataToRecord(rd);
-		r = saveRelease(r, recordData, wu);
-		return true;
-	}
-	
 	public ComponentJsonDto getComponentChangeLog (UUID branch, UUID org, AggregationType aggregated, String userTimeZone) {
 		ComponentJsonDto changelog = null;
 		List<ReleaseData> releases = sharedReleaseService.listReleaseDataOfBranch(branch, true);
