@@ -33,7 +33,7 @@ public class EncryptionService {
 		return teNew.encrypt(plainText);
 	}
 	
-	protected String decrypt (String cypherText) {
+	public String decrypt (String cypherText) {
 		String plainText = null;
 		try {
 			plainText = teNew.decrypt(cypherText);

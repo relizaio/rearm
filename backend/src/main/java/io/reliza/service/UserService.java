@@ -43,7 +43,6 @@ import io.reliza.model.OrganizationData.InvitedObject;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
 import io.reliza.model.UserData.OrgUserData;
-import io.reliza.model.UserData.SshKey;
 import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -703,40 +702,6 @@ public class UserService {
 			uwd = UserData.toWebDto(ud);
 		}
 		return uwd;
-	}
-
-	public boolean addUserSshKey(UserData ud, String name, String key){
-		SshKey sshKey = SshKey.builder().name(name).key(key).uuid(UUID.randomUUID()).build();
-		var ou = getUser(ud.getUuid());
-		if(ou.isPresent()){
-			ud = UserData.dataFromRecord(ou.get());
-			ud.addSshKey(sshKey);
-			saveUser(ou.get(), Utils.dataToRecord(ud), WhoUpdated.getWhoUpdated(ud));
-			return true;
-		}
-		return false;
-	}
-
-	public boolean removeUserSshKey(UserData ud, UUID keyId){
-		var ou = getUser(ud.getUuid());
-		if(ou.isPresent()){
-			ud = UserData.dataFromRecord(ou.get());
-			ud.removeSshKey(keyId);
-			saveUser(ou.get(), Utils.dataToRecord(ud), WhoUpdated.getWhoUpdated(ud));
-			return true;
-		}
-		return false;
-	}
-	
-	public String getUserSshKey(UUID userId){
-		String sshKey = "";
-		if (null != userId) {
-			var oud = getUserData(userId);
-			if(oud.isPresent()){
-				sshKey = oud.get().getSshKey();
-			}
-		}
-		return sshKey;
 	}
 
 	public void markUserLogout(UUID userId) {
