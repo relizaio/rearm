@@ -49,6 +49,7 @@ import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ReleaseService;
+import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
 import lombok.extern.slf4j.Slf4j;
@@ -83,6 +84,9 @@ public class DeliverableDataFetcher {
 	
 	@Autowired
 	ReleaseService releaseService;
+	
+	@Autowired
+	SharedReleaseService sharedReleaseService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "deliverable")
@@ -119,7 +123,7 @@ public class DeliverableDataFetcher {
 		Optional<ReleaseData> ord = Optional.empty();
 		Optional<VariantData> ovd = Optional.empty();
 		
-		if (null != addDeliverablesInput.release()) ord = releaseService.getReleaseData(addDeliverablesInput.release());
+		if (null != addDeliverablesInput.release()) ord = sharedReleaseService.getReleaseData(addDeliverablesInput.release());
 		if (null != addDeliverablesInput.variant()) ovd = variantService.getVariantData(addDeliverablesInput.variant());
 		
 		if (ord.isEmpty() && ovd.isEmpty()) {
@@ -139,7 +143,7 @@ public class DeliverableDataFetcher {
 		}
 		
 		if (ord.isEmpty()) {
-			ord = releaseService.getReleaseData(ovd.get().getRelease());
+			ord = sharedReleaseService.getReleaseData(ovd.get().getRelease());
 		}
 		
 		boolean branchMatch = true;
@@ -179,7 +183,7 @@ public class DeliverableDataFetcher {
 		String releaseUuidStr = (String) addDeliverablesInputMap.get(CommonVariables.RELEASE_FIELD);
 		String variantUuidStr = (String) addDeliverablesInputMap.get("variant");
 
-		if (StringUtils.isNotEmpty(releaseUuidStr)) ord = releaseService.getReleaseData(UUID.fromString(releaseUuidStr));
+		if (StringUtils.isNotEmpty(releaseUuidStr)) ord = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
 		if (ord.isEmpty() && StringUtils.isNotEmpty(version) && null != componentId) ord = releaseService.getReleaseDataByComponentAndVersion(componentId, version);
 
 		if(!ord.isEmpty() && null == componentId)
@@ -207,7 +211,7 @@ public class DeliverableDataFetcher {
 		}
 		
 		if (ord.isEmpty()) {
-			ord = releaseService.getReleaseData(ovd.get().getRelease());
+			ord = sharedReleaseService.getReleaseData(ovd.get().getRelease());
 		}
 		
 		BranchData bd = branchService.getBranchData(ord.get().getBranch()).get();

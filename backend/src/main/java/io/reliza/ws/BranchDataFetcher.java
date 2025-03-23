@@ -46,6 +46,7 @@ import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.ReleaseService;
+import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
 import io.reliza.service.VersionAssignmentService;
@@ -70,6 +71,9 @@ public class BranchDataFetcher {
 	
 	@Autowired
 	ReleaseService releaseService;
+	
+	@Autowired
+	SharedReleaseService sharedReleaseService;
 	
 	@Autowired
 	VersionAssignmentService versionAssignmentService;
@@ -247,7 +251,7 @@ public class BranchDataFetcher {
 		ChildComponent cp = dfe.getSource();
 		Optional<ReleaseData> ord = Optional.empty();
 		if (null != cp.getRelease()) {
-			ord = releaseService.getReleaseData(cp.getRelease());
+			ord = sharedReleaseService.getReleaseData(cp.getRelease());
 		}
 		return ord;
 	}

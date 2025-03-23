@@ -26,6 +26,8 @@ import io.reliza.model.dto.ReleaseDto;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.ReleaseService;
+import io.reliza.service.SharedReleaseService;
+import io.reliza.service.oss.OssReleaseService;
 import io.reliza.ws.oss.TestInitializer;
 
 /**
@@ -45,6 +47,12 @@ public class ReleaseTest
     private ReleaseService releaseService;
 	
 	@Autowired
+    private SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+    private OssReleaseService ossReleaseService;
+	
+	@Autowired
 	private TestInitializer testInitializer;
 	
 	
@@ -54,7 +62,7 @@ public class ReleaseTest
 											
 											.build();
 		Assertions.assertThrows(IllegalStateException.class,
-				() -> releaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated()));
+				() -> ossReleaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated()));
 	}
 	
 	@Test
@@ -67,8 +75,8 @@ public class ReleaseTest
 				.branch(fs.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release r = releaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
-		Release rSaved = releaseService.getRelease(r.getUuid()).get();
+		Release r = ossReleaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
+		Release rSaved = sharedReleaseService.getRelease(r.getUuid()).get();
 		Assertions.assertEquals(r.getUuid(), rSaved.getUuid());
 	}
 	
@@ -83,8 +91,8 @@ public class ReleaseTest
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release r = releaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
-		Release rSaved = releaseService.getRelease(r.getUuid()).get();
+		Release r = ossReleaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
+		Release rSaved = sharedReleaseService.getRelease(r.getUuid()).get();
 		Assertions.assertEquals(r.getUuid(), rSaved.getUuid());
 	}
 	
@@ -99,7 +107,7 @@ public class ReleaseTest
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		releaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
+		ossReleaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
 		List<ReleaseData> rdList = releaseService.listReleaseDataByVersion("0.0.3-junit-version-search-test", org.getUuid());
 		Assertions.assertEquals(1, rdList.size());
 		Assertions.assertEquals("0.0.3-junit-version-search-test", rdList.get(0).getVersion());
@@ -116,7 +124,7 @@ public class ReleaseTest
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		releaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
+		ossReleaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
 		List<ReleaseData> rdList = releaseService.listReleaseDataByVersion("", org.getUuid());
 		Assertions.assertEquals(0, rdList.size());
 	}
@@ -132,22 +140,22 @@ public class ReleaseTest
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release rProj1 = releaseService.createRelease(releaseDtoProj1, WhoUpdated.getTestWhoUpdated());
+		Release rProj1 = ossReleaseService.createRelease(releaseDtoProj1, WhoUpdated.getTestWhoUpdated());
 		ReleaseDto releaseDtoProj2 = ReleaseDto.builder()
 				.version("0.0.2-listrlz-junit-test")
 				
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release rProj2 = releaseService.createRelease(releaseDtoProj2, WhoUpdated.getTestWhoUpdated());
+		Release rProj2 = ossReleaseService.createRelease(releaseDtoProj2, WhoUpdated.getTestWhoUpdated());
 		ReleaseDto releaseDtoProj3 = ReleaseDto.builder()
 				.version("0.0.3-listrlz-junit-test")
 				
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release rProj3 = releaseService.createRelease(releaseDtoProj3, WhoUpdated.getTestWhoUpdated());
-		var foundRlzs = releaseService.getReleaseDataList(List.of(rProj1.getUuid(), rProj2.getUuid()), org.getUuid());
+		Release rProj3 = ossReleaseService.createRelease(releaseDtoProj3, WhoUpdated.getTestWhoUpdated());
+		var foundRlzs = sharedReleaseService.getReleaseDataList(List.of(rProj1.getUuid(), rProj2.getUuid()), org.getUuid());
 		Assertions.assertEquals(2,  foundRlzs.size());
 	}
 	
@@ -161,29 +169,29 @@ public class ReleaseTest
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release rProj1 = releaseService.createRelease(releaseDtoProj1, WhoUpdated.getTestWhoUpdated());
+		Release rProj1 = ossReleaseService.createRelease(releaseDtoProj1, WhoUpdated.getTestWhoUpdated());
 		ReleaseDto releaseDtoProj2 = ReleaseDto.builder()
 				.version("0.0.2-listrlz-junit-test")
 				
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release rProj2 = releaseService.createRelease(releaseDtoProj2, WhoUpdated.getTestWhoUpdated());
+		Release rProj2 = ossReleaseService.createRelease(releaseDtoProj2, WhoUpdated.getTestWhoUpdated());
 		ReleaseDto releaseDtoProj3 = ReleaseDto.builder()
 				.version("0.0.3-listrlz-junit-test")
 				
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release rProj3 = releaseService.createRelease(releaseDtoProj3, WhoUpdated.getTestWhoUpdated());
+		Release rProj3 = ossReleaseService.createRelease(releaseDtoProj3, WhoUpdated.getTestWhoUpdated());
 		ReleaseDto releaseDtoProj4 = ReleaseDto.builder()
 				.version("0.0.4-listrlz-junit-test")
 				
 				.branch(baseBranch.getUuid())
 				.org(org.getUuid())
 				.build();
-		Release rProj4 = releaseService.createRelease(releaseDtoProj4, WhoUpdated.getTestWhoUpdated());		
-		var rlzBetweenReleases = releaseService.listAllReleasesBetweenReleases(rProj1.getUuid(), rProj4.getUuid());
+		Release rProj4 = ossReleaseService.createRelease(releaseDtoProj4, WhoUpdated.getTestWhoUpdated());		
+		var rlzBetweenReleases = sharedReleaseService.listAllReleasesBetweenReleases(rProj1.getUuid(), rProj4.getUuid());
 		Assertions.assertEquals(4,  rlzBetweenReleases.size());
 	}
 }

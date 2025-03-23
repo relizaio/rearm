@@ -29,6 +29,7 @@ import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.service.VersionAssignmentService.GetNewVersionDto;
+import io.reliza.service.oss.OssReleaseService;
 import io.reliza.versioning.VersionApi.ActionEnum;
 import lombok.extern.slf4j.Slf4j;
 
@@ -50,7 +51,10 @@ public class ReleaseVersionService {
 	
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
-	
+
+	@Autowired
+	private OssReleaseService ossReleaseService;
+
 	@Autowired
     private SourceCodeEntryService sourceCodeEntryService;
 	
@@ -100,11 +104,11 @@ public class ReleaseVersionService {
 			// else check for action from sce or commits
 			try {
 				// retrieve commits of previously rejected releases to prevent improper bump
-				Optional<ReleaseData> latestRelease = releaseService.getReleasePerProductComponent(bd.getOrg(), bd.getComponent(), null, bd.getName(), null);
+				Optional<ReleaseData> latestRelease = ossReleaseService.getReleasePerProductComponent(bd.getOrg(), bd.getComponent(), null, bd.getName(), null);
 				List<ReleaseData> currentRelease = sharedReleaseService.listReleaseDataOfBranch(bd.getUuid(), 1, true);
 				Set<String> rejectedCommits = new HashSet<>();
 				if (latestRelease.isPresent() && !currentRelease.isEmpty()) {
-					rejectedCommits = releaseService.listAllReleasesBetweenReleases(currentRelease.get(0).getUuid(), latestRelease.get().getUuid()).stream()
+					rejectedCommits = sharedReleaseService.listAllReleasesBetweenReleases(currentRelease.get(0).getUuid(), latestRelease.get().getUuid()).stream()
 							.flatMap(release -> sourceCodeEntryService.getSceDataList(release.getAllCommits(), Collections.singleton(pd.getOrg())).stream()
 									.map(sce -> sce.getCommit())
 									.collect(Collectors.toList())
@@ -121,7 +125,7 @@ public class ReleaseVersionService {
 			// default to action if present, otherwise if requesting new version for a product, check components for new releases
 			try {
 				// This product bump functionality is a placeholder, not currently being used at the moment - 2021-08-11 - Christos
-				bumpAction = releaseService.getLargestActionFromComponents(pd.getUuid(), bd.getUuid());
+				bumpAction = ossReleaseService.getLargestActionFromComponents(pd.getUuid(), bd.getUuid());
 			} catch (RelizaException re) {
 				throw new RuntimeException(re.getMessage());
 			}

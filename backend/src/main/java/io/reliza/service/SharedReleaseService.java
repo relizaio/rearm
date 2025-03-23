@@ -1,27 +1,47 @@
 /**
 * Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
 */
+
 package io.reliza.service;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import io.reliza.common.CommonVariables;
+import io.reliza.common.Utils;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.GenericReleaseData;
+import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.SourceCodeEntryData;
+import io.reliza.model.VcsRepositoryData;
+import io.reliza.model.BranchData.ChildComponent;
+import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseVersionComparator;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.service.ReleaseService.CommitRecord;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -34,7 +54,10 @@ public class SharedReleaseService {
 	@Autowired
 	GetComponentService getComponentService;
 	
-	protected final static Integer DEFAULT_NUM_RELEASES = 300;
+	@Autowired
+	SourceCodeEntryService sourceCodeEntryService;
+	
+	public final static Integer DEFAULT_NUM_RELEASES = 300;
 	private final static Integer DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE = 20;
 	
 	private final ReleaseRepository repository;
@@ -157,7 +180,7 @@ public class SharedReleaseService {
 		return rdList;
 	}
 	
-	protected List<GenericReleaseData> listReleaseDataOfBranch (UUID branchUuid, UUID orgUuid, ReleaseLifecycle lifecycle, Integer limit) {
+	public List<GenericReleaseData> listReleaseDataOfBranch (UUID branchUuid, UUID orgUuid, ReleaseLifecycle lifecycle, Integer limit) {
 		List<Release> releases = listReleasesOfBranch(branchUuid, limit, 0);
 		List<GenericReleaseData> retList = releases
 						.stream()
@@ -204,4 +227,279 @@ public class SharedReleaseService {
 		}
 		return releases;
 	}
+	
+	/**
+	 * This method recursively checks all release components, then components of those releases and finally flattens all that to a list
+	 * @param releaseUuid
+	 * @return List of releases that are dependencies to the release we are unwinding
+	 */
+	public Set<ReleaseData> unwindReleaseDependencies (ReleaseData rd) {
+		Set<ReleaseData> retListOfReleases = new LinkedHashSet<>();
+		Set<UUID> retListOfUuids = new HashSet<>(); // needed to check for circular links
+		List<UUID> dependencies = rd.getParentReleases().stream().map(ParentRelease::getRelease).collect(Collectors.toList());
+		// base case - no dependencies
+		if (dependencies.isEmpty()) {
+			return retListOfReleases;
+		} else {
+			List<ReleaseData> depsFromDb = getReleaseDataList(dependencies, rd.getOrg());
+			depsFromDb.forEach(depData -> {
+				// check we're not going in circles
+				if (!retListOfUuids.contains(depData.getUuid())) {
+					retListOfUuids.add(depData.getUuid());
+					retListOfReleases.add(depData);
+					// security check - org must either match base release of be known external org
+					if (!depData.getOrg().equals(rd.getOrg()) && !depData.getOrg().equals(CommonVariables.EXTERNAL_PROJ_ORG_UUID)) {
+						log.error("Security: Release from another organization with id " + depData.getUuid() + " is detected among dependencies of release " + rd.getUuid());
+						throw new IllegalStateException("Security: Detected release from a different organization");
+					} else {
+						Set<ReleaseData> recursiveSet = unwindReleaseDependencies(depData);
+						recursiveSet.forEach(recRl -> {
+							if (!retListOfUuids.contains(recRl.getUuid())) {
+								retListOfUuids.add(recRl.getUuid());
+								retListOfReleases.add(recRl);
+							}
+						});
+					}
+				}
+			});
+		}
+		
+		return retListOfReleases;
+	}
+	
+	public List<ReleaseData> getReleaseDataList (Collection<UUID> uuidList, UUID org) {
+		var rlzList = new LinkedList<ReleaseData>();
+		uuidList.forEach(uuid -> {
+			try {
+				var rlzO = getReleaseData(uuid, org);
+				if (rlzO.isPresent()) {
+					rlzList.add(rlzO.get());
+				} else {
+					log.warn("Could not locate releaze with UUID = " + uuid + " from org = " + org);
+				}
+			} catch (RelizaException re) {
+				log.error("exception on get release data", re);
+			}
+		});
+		return rlzList;
+	}
+	
+	/**
+	 * This method will locate release products with only 1st level depth, without recursion
+	 * Much more efficient than locateAllProductsOfRelease
+	 * @param rd
+	 * @return
+	 */
+	public Set<ReleaseData> greedylocateProductsOfRelease (ReleaseData rd) {
+		return greedylocateProductsOfRelease(rd, null, true);
+	}
+	
+	
+	protected Set<ReleaseData> greedylocateProductsOfReleaseCollection (Collection<ReleaseData> inputRds, UUID myOrg) {
+		var inputSet = inputRds.stream().map(x -> x.getUuid()).collect(Collectors.toSet());
+		// construct string for postgres query
+		String inputArrStr = constructGreedyProductLocateQueryFromReleaseSet(inputSet);
+		List<Release> releaseSet = repository.findProductsByReleases(myOrg.toString(), inputArrStr);
+		log.debug("Size of product release set = " + releaseSet.size());
+		return releaseSet.stream().map(ReleaseData::dataFromRecord).collect(Collectors.toSet());
+	}
+
+	private String constructGreedyProductLocateQueryFromReleaseSet(Set<UUID> inputSet) {
+		StringBuilder inputArrStringBuilder = new StringBuilder();
+		inputArrStringBuilder.append("[");
+		var inputIterator = inputSet.iterator();
+		int i=0;
+		while (inputIterator.hasNext()) {
+			if (i==0) {
+				inputArrStringBuilder.append("\"");
+			} else {
+				inputArrStringBuilder.append(",\"");
+			}
+			inputArrStringBuilder.append(inputIterator.next().toString());
+			inputArrStringBuilder.append("\"");
+			++i;
+		}
+		inputArrStringBuilder.append("]");
+		String inputArrStr = inputArrStringBuilder.toString();
+		log.debug("String to query for products = " + inputArrStr);
+		return inputArrStr;
+	}
+	
+	/**
+	 * 
+	 * @param rd
+	 * @param myOrg - used in case we're dealing with external organization to pin to our org
+	 * @return
+	 */
+	public Set<ReleaseData> greedylocateProductsOfRelease (ReleaseData rd, UUID myOrg, boolean sorted) {
+		ReleaseData processingRd = null;
+		if (null != myOrg) {
+			try {
+				var ord = getReleaseData(rd.getUuid(), myOrg);
+				if (ord.isPresent()) processingRd = ord.get();
+			} catch (RelizaException re) {
+				log.error("Exception on getting releaxe on locate product", re);
+			}
+		} else {
+			// legacy callers not supplying myorg or auth
+			processingRd = rd;
+			myOrg = rd.getOrg();
+		}
+		if (null != processingRd) {
+			List<Release> wipProducts = this.repository.findProductsByRelease(myOrg.toString(),
+					processingRd.getUuid().toString());
+			var rdSet = wipProducts.stream().map(ReleaseData::dataFromRecord).collect(Collectors.toSet());
+
+			if (sorted) {
+				List<ReleaseData> sortedRdList = new LinkedList<>(rdSet);
+				Collections.sort(sortedRdList, new ReleaseDateComparator());
+				rdSet = new LinkedHashSet<>(sortedRdList);
+			}
+			return rdSet;
+		} else {
+			return Set.of();
+		}
+	}
+
+	public Set<ParentRelease> getCurrentProductParentRelease(UUID branchUuid, ReleaseLifecycle lifecycle){
+		return getCurrentProductParentRelease(branchUuid, null, lifecycle);
+	}
+
+	public Set<ParentRelease> getCurrentProductParentRelease(UUID branchUuid, ReleaseData triggeringRelease, ReleaseLifecycle lifecycle){
+		BranchData bd = branchService.getBranchData(branchUuid).get();
+		Set<ParentRelease> parentReleases = new HashSet<>();
+		List<ChildComponent> dependencies = bd.getDependencies();
+		boolean requirementsMet = true;
+		var cpIter = dependencies.iterator();
+		while (requirementsMet && cpIter.hasNext()) {
+			var cp = cpIter.next();
+			if (!cp.getUuid().equals(bd.getComponent()) && (cp.getStatus() == StatusEnum.REQUIRED || cp.getStatus() == StatusEnum.TRANSIENT)) {
+				// if release present in cp, use that release
+				Optional<ReleaseData> ord = Optional.empty();
+				if (null != cp.getRelease()) {
+					ord = getReleaseData(cp.getRelease());
+				} else if (triggeringRelease != null && cp.getBranch().equals(triggeringRelease.getBranch())) {
+					ord = Optional.of(triggeringRelease);
+				} else {
+					// obtain latest release - TODO - consider more complicated configurable logic later here
+					ord = getReleaseDataOfBranch(bd.getOrg(), cp.getBranch(), lifecycle);
+				}
+				if (ord.isPresent()) {
+					// TODO handle proper deliverable selection
+					ParentRelease dr = ParentRelease.minimalParentReleaseFactory(ord.get().getUuid(), null);
+					parentReleases.add(dr);
+				} else if (cp.getStatus() == StatusEnum.REQUIRED){
+					requirementsMet = false;
+				}
+			}
+		}
+		if(!requirementsMet){
+			return new HashSet<>();
+		}
+		return parentReleases;
+	}
+	
+	public List<SourceCodeEntryData> getSceDataListFromReleases(List<ReleaseData> releases, UUID org){
+		List<UUID> commitIds = releases
+			.stream()
+			.map(release -> release.getAllCommits())
+			.flatMap(x -> x.stream())
+			.map(x -> (null == x) ? new UUID(0,0) : x)
+			.collect(Collectors.toList());
+		List<SourceCodeEntryData> sces = new ArrayList<>();
+		if(null!= commitIds && commitIds.size() > 0)
+		{
+			sces = sourceCodeEntryService.getSceDataList(commitIds, List.of(org, CommonVariables.EXTERNAL_PROJ_ORG_UUID));
+		}
+		return sces;
+	}
+	
+	public List<ReleaseData> listAllReleasesBetweenReleases(UUID uuid1, UUID uuid2) throws RelizaException{
+		List<ReleaseData> rds = new LinkedList<ReleaseData>();
+
+		boolean proceed = false;
+		Optional<ReleaseData> or1 = getReleaseData(uuid1);
+		Optional<ReleaseData> or2 = getReleaseData(uuid2);
+		ReleaseData r1 = null;
+		ReleaseData r2 = null;
+
+		proceed = or1.isPresent() && or2.isPresent();
+
+		if(proceed){
+			List<Release> releases = new LinkedList<>();
+			
+			r1 = or1.get();
+			r2 = or2.get();
+			boolean onSameBranch = r1.getBranch().equals(r2.getBranch());
+			var rdc = new ReleaseDateComparator();
+			int comparision = rdc.compare(r1, r2);
+			
+			if(onSameBranch){
+				if(comparision >= 0){
+					releases = listReleasesOfBranchBetweenDates(
+						r1.getBranch(), 
+						r1.getCreatedDate(),
+						r2.getCreatedDate()
+					);
+				} else {
+					releases = listReleasesOfBranchBetweenDates(
+						r1.getBranch(), 
+						r2.getCreatedDate(),
+						r1.getCreatedDate()
+					);
+				}
+				if(releases.size() > 0)
+					rds = releases
+						.stream()
+						.map(ReleaseData::dataFromRecord)
+						.collect(Collectors.toList());
+			} else if (comparision >= 0){
+				rds.add(r1);
+				rds.add(r2);
+			} else {
+				rds.add(r2);
+				rds.add(r1);
+			}
+		}
+
+		return rds;
+	}
+	
+	//both dates are inclusive
+	private List<Release> listReleasesOfBranchBetweenDates (UUID branchUuid,  ZonedDateTime fromDateTime, ZonedDateTime toDateTime) {
+		return repository.findReleasesOfBranchBetweenDates(branchUuid.toString(), Utils.stringifyZonedDateTimeForSql(fromDateTime),
+				Utils.stringifyZonedDateTimeForSql(toDateTime));
+	}
+	
+
+	/**
+	 * This method attempts to prepare a map of commit id to message for all commits
+	 * @param sces - List of sce data
+	 * @param org - UUID of the org
+	 * @param commitIdToMessageMap - Map of commit id to commit, message, and uri for all commits in the releases
+	 * @return Map of commit id to message for all commits
+	 */
+	public Map<UUID, CommitRecord> getCommitMessageMapForSceDataList(List<SourceCodeEntryData> sces, List<VcsRepositoryData> vrds, UUID org){
+		
+		Map<UUID, CommitRecord> commitIdToMessageMap = new HashMap<UUID, CommitRecord>();
+		// List<SourceCodeEntryData> sces = getSceDataListFromReleases(releases, org);
+		if(null!= sces && sces.size() > 0)
+		{
+			sces
+			.stream()
+			.filter(Objects::nonNull)
+			.forEach(sce -> {
+				String msg = StringUtils.isNotEmpty(sce.getCommitMessage()) ? sce.getCommitMessage() : "(No commit message)";
+				List<VcsRepositoryData> vcsRepo = vrds.stream().filter(vrd -> vrd.getUuid().equals(sce.getVcs())).collect(Collectors.toList());
+				String commitUri = vcsRepo.size() > 0 ? vcsRepo.get(0).getUri() : "";
+				commitIdToMessageMap.put(sce.getUuid(), new CommitRecord(commitUri, sce.getCommit(), msg, sce.getCommitAuthor(), sce.getCommitEmail()));
+			});  // Collectors.toMap throws npe on null values - JDK-8148463(https://bugs.openjdk.java.net/browse/JDK-8148463) 
+				// .collect(Collectors.toMap(
+				// 	SourceCodeEntryData::getUuid, 
+				// 	SourceCodeEntryData::getCommitMessage
+				// ));
+		}
+		return commitIdToMessageMap;
+	}
+
 }

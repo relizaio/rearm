@@ -81,6 +81,7 @@ import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
 import io.reliza.service.VcsRepositoryService;
+import io.reliza.service.oss.OssReleaseService;
 import io.reliza.service.RebomService.BomStructureType;
 import lombok.extern.slf4j.Slf4j;
 
@@ -93,6 +94,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+	OssReleaseService ossReleaseService;
 	
 	@Autowired
 	BranchService branchService;
@@ -147,7 +151,7 @@ public class ReleaseDatafetcher {
 		
 		RelizaObject ro = null;
 		if (StringUtils.isNoneEmpty(releaseUuidStr)) {
-			var rlzOpt = releaseService.getReleaseData(UUID.fromString(releaseUuidStr));
+			var rlzOpt = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
 			if (rlzOpt.isPresent()) {
 				ro = rlzOpt.get();
 				org = rlzOpt.get().getOrg();
@@ -187,7 +191,7 @@ public class ReleaseDatafetcher {
 		
 		RelizaObject ro = null;
 		if (StringUtils.isNoneEmpty(releaseUuidStr)) {
-			var rlzOpt = releaseService.getReleaseData(UUID.fromString(releaseUuidStr));
+			var rlzOpt = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
 			if (rlzOpt.isPresent()) {
 				ro = rlzOpt.get();
 			}
@@ -250,7 +254,7 @@ public class ReleaseDatafetcher {
 			// TODO: combination of branchfilter and releasefilter
 		} else if (null != orgFilter) {
 			if (null != releaseFilter) {
-				retRel = releaseService.getReleaseDataList(releaseFilter, orgFilter); 
+				retRel = sharedReleaseService.getReleaseDataList(releaseFilter, orgFilter); 
 			} else {
 				retRel = releaseService.listReleaseDataOfOrg(orgFilter, false);
 			}
@@ -293,7 +297,7 @@ public class ReleaseDatafetcher {
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), List.of(robranch, roorg), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		try {
-			return ReleaseData.dataFromRecord(releaseService.createRelease(releaseDto, wu));
+			return ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDto, wu));
 		} catch (RelizaException re) {
 			throw new AccessDeniedException(re.getMessage());
 		}
@@ -307,7 +311,7 @@ public class ReleaseDatafetcher {
 			@InputArgument("newLifecycle") ReleaseLifecycle newLifecycle) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		Optional<ReleaseData> ord = releaseService.getReleaseData(releaseId);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
 		if (ord.isEmpty()) throw new RuntimeException("Wrong release");
 		CallType ct = CallType.ADMIN;
 		ReleaseLifecycle oldLifecycle = ord.get().getLifecycle();
@@ -315,7 +319,7 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = ord.get();
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, ct);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		var r = releaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu);
+		var r = ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu);
 		return ReleaseData.dataFromRecord(r);
 	}
 	
@@ -327,17 +331,17 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> updateReleaseInput = dfe.getArgument("release");
 		ReleaseDto releaseDto = Utils.OM.convertValue(updateReleaseInput, ReleaseDto.class);
-		Optional<ReleaseData> ord = releaseService.getReleaseData(releaseDto.getUuid());
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseDto.getUuid());
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		try {
-			releaseService.updateRelease(releaseDto, wu);
+			ossReleaseService.updateRelease(releaseDto, wu);
 		} catch (RelizaException e) {
 			log.error("Exception on updateRelease", e);
 			throw new RuntimeException(e.getMessage());
 		}
-		return releaseService.getReleaseData(releaseDto.getUuid()).get();
+		return sharedReleaseService.getReleaseData(releaseDto.getUuid()).get();
 	}
 	
 	@DgsData(parentType = "Query", field = "getReleaseByHashProgrammatic")
@@ -541,7 +545,7 @@ public class ReleaseDatafetcher {
 							.artifacts(artifacts)
 							.lifecycle(lifecycle)
 							.endpoint(endpoint);
-			var rd = ReleaseData.dataFromRecord(releaseService.createRelease(releaseDtoBuilder.build(),
+			var rd = ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDtoBuilder.build(),
 					ar.getWhoUpdated()));
 			log.info("release created: {}", rd);
 			if (null != outboundDeliverablesList && !outboundDeliverablesList.isEmpty()) {
@@ -569,7 +573,7 @@ public class ReleaseDatafetcher {
 		Map<String, Object> artifact = (Map<String, Object>) artifactInput.get("artifact");
 
 				
-		Optional<ReleaseData> ord = releaseService.getReleaseData(UUID.fromString((String)artifactInput.get("release")));
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(UUID.fromString((String)artifactInput.get("release")));
 
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		UUID orgUuid = ord.isPresent() ? ord.get().getOrg() : null;
@@ -616,7 +620,7 @@ public class ReleaseDatafetcher {
 		}
 
 		
-		return releaseService.getReleaseData(ord.get().getUuid()).get();
+		return sharedReleaseService.getReleaseData(ord.get().getUuid()).get();
 		// TODO
 		// return releaseService.addArtifacts(ord.get(), addArtifactDto.getArtifacts(), wu);
 	}
@@ -646,7 +650,7 @@ public class ReleaseDatafetcher {
 		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
 		
 		Optional<ReleaseData> ord = Optional.empty();
-		if (null != addArtifactDto.getRelease()) ord = releaseService.getReleaseData(addArtifactDto.getRelease());
+		if (null != addArtifactDto.getRelease()) ord = sharedReleaseService.getReleaseData(addArtifactDto.getRelease());
 		if (ord.isEmpty()) ord = releaseService.getReleaseDataByComponentAndVersion(componentId, addArtifactDto.getVersion());
 		return null;
 		// TODO
@@ -666,7 +670,7 @@ public class ReleaseDatafetcher {
 		UUID artifactUuid = UUID.fromString(artifactUuidStr);
 		UUID releaseUuid = UUID.fromString(releaseUuidStr);
 		
-		Optional<ReleaseData> ord = releaseService.getReleaseData(releaseUuid);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
@@ -720,7 +724,7 @@ public class ReleaseDatafetcher {
 				List<ReleaseData> retListWithBundles = new LinkedList<>();
 				retList.forEach(rlz -> {
 					retListWithBundles.addAll(
-						releaseService.greedylocateProductsOfRelease(rlz, orgUuid, true)
+						sharedReleaseService.greedylocateProductsOfRelease(rlz, orgUuid, true)
 					);
 				});
 				
@@ -774,7 +778,7 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Release", field = "inProducts")
 	public Set<ReleaseData> productsofRelease (DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
-		return releaseService.greedylocateProductsOfRelease(rd);
+		return sharedReleaseService.greedylocateProductsOfRelease(rd);
 	}
 	
 	@DgsData(parentType = "Release", field = "componentDetails")

@@ -45,6 +45,7 @@ import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
 import io.reliza.service.VcsRepositoryService;
+import io.reliza.service.oss.OssReleaseService;
 import io.reliza.ws.ReleaseDatafetcher.GetLatestReleaseInput;
 import lombok.extern.slf4j.Slf4j;
 
@@ -57,6 +58,9 @@ public class OssReleaseDatafetcher {
 	
 	@Autowired
 	SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+	OssReleaseService ossReleaseService;
 	
 	@Autowired
 	BranchService branchService;
@@ -162,7 +166,7 @@ public class OssReleaseDatafetcher {
 			
 		try {
 			ConditionGroup cg = null;
-			optRd = releaseService.getReleasePerProductComponent(orgId, componentUuid, productUuid, branch, glri.lifecycle(), cg);
+			optRd = ossReleaseService.getReleasePerProductComponent(orgId, componentUuid, productUuid, branch, glri.lifecycle(), cg);
 		} catch (RelizaException re) {
 			throw new RuntimeException(re.getMessage());
 		}

@@ -36,6 +36,7 @@ import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.oss.OssReleaseService;
 import io.reliza.ws.oss.TestInitializer;
 
 @ExtendWith(SpringExtension.class)
@@ -54,6 +55,9 @@ public class BranchTest
 	
 	@Autowired
     private SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+    private OssReleaseService ossReleaseService;
 	
 	@Autowired
 	private TestInitializer testInitializer;
@@ -130,11 +134,11 @@ public class BranchTest
 				.branch(fs.getUuid())
 				.org(org.getUuid())
 				.lifecycle(ReleaseLifecycle.ASSEMBLED);
-		Release r1 = releaseService.createRelease(releaseDtoBuilder.version("0.0.0").build(), WhoUpdated.getTestWhoUpdated());
-		Release r2 = releaseService.createRelease(releaseDtoBuilder.version("0.0.1+testRlz").build(), WhoUpdated.getTestWhoUpdated());
-		Release r3 = releaseService.createRelease(releaseDtoBuilder.version("0.0.7+test.Rlz").lifecycle(ReleaseLifecycle.ASSEMBLED).build(), WhoUpdated.getTestWhoUpdated());
-		Release r4 = releaseService.createRelease(releaseDtoBuilder.version("0.0.8+test.Rlz").lifecycle(ReleaseLifecycle.DRAFT).build(), WhoUpdated.getTestWhoUpdated());
-		Release r5 = releaseService.createRelease(releaseDtoBuilder.version("2020.01").build(), WhoUpdated.getTestWhoUpdated());
+		Release r1 = ossReleaseService.createRelease(releaseDtoBuilder.version("0.0.0").build(), WhoUpdated.getTestWhoUpdated());
+		Release r2 = ossReleaseService.createRelease(releaseDtoBuilder.version("0.0.1+testRlz").build(), WhoUpdated.getTestWhoUpdated());
+		Release r3 = ossReleaseService.createRelease(releaseDtoBuilder.version("0.0.7+test.Rlz").lifecycle(ReleaseLifecycle.ASSEMBLED).build(), WhoUpdated.getTestWhoUpdated());
+		Release r4 = ossReleaseService.createRelease(releaseDtoBuilder.version("0.0.8+test.Rlz").lifecycle(ReleaseLifecycle.DRAFT).build(), WhoUpdated.getTestWhoUpdated());
+		Release r5 = ossReleaseService.createRelease(releaseDtoBuilder.version("2020.01").build(), WhoUpdated.getTestWhoUpdated());
 
 		ReleaseData latestRd = sharedReleaseService.getReleaseDataOfBranch(org.getUuid(), fs.getUuid(), ReleaseLifecycle.ASSEMBLED).get();
 		Assertions.assertEquals("0.0.7+test.Rlz", latestRd.getVersion());
