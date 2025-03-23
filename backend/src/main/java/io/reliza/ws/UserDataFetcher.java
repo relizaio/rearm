@@ -8,7 +8,6 @@ import java.io.UnsupportedEncodingException;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -18,13 +17,10 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables;
-import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
-import io.reliza.model.UserPermission.PermissionScope;
-import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.UserWebDto;
 import io.reliza.service.ApiKeyService;
