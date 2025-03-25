@@ -1,0 +1,166 @@
+{{- if .Values.keycloak.enabled}}
+
+{{- if eq .Values.keycloak.create_secret_in_chart "regular"}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-keycloak
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+data:
+  POSTGRES_PASSWORD: {{ .Values.keycloak.secrets.pgpassword | b64enc | quote }}
+  ADMIN_PASSWORD: {{ .Values.keycloak.secrets.adminpassword | b64enc | quote }}
+---
+{{- else if eq .Values.keycloak.create_secret_in_chart "sealed"}}
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: {{ .Release.Name }}-keycloak
+  namespace: {{ .Release.Namespace }}
+  {{- if eq .Values.keycloak.sealed_secrets_scope "namespace-wide"}}
+  annotations:
+    sealedsecrets.bitnami.com/namespace-wide: "true"
+  {{- else if eq .Values.keycloak.sealed_secrets_scope "cluster-wide"}}
+  annotations:
+    sealedsecrets.bitnami.com/cluster-wide: "true"
+  {{- end }}
+spec:
+  encryptedData:
+    POSTGRES_PASSWORD: {{ .Values.keycloak.secrets.pgpassword | quote }}
+    ADMIN_PASSWORD: {{ .Values.keycloak.secrets.adminpassword | quote }}
+---
+{{- end}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-keycloak
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+    name: rearm-keycloak
+spec:
+  replicas: 1
+  serviceName: "rearm-keycloak"
+  selector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-keycloak
+  template:
+    metadata:
+      labels:
+        {{- include "rearm.selectorLabels" . | nindent 8 }}
+        servicehook: {{ .Release.Name }}-keycloak
+        name: rearm-keycloak
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}-keycloak
+          image: "{{ .Values.image.keycloakImage }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.keycloak.strict_host }}
+          command: [
+            "/bin/sh", "-c",
+            "/opt/keycloak/bin/kc.sh start --import-realm --http-enabled true --hostname {{ .Values.projectHost }} --http-host 0.0.0.0 --http-port 9080 --proxy-headers xforwarded --proxy-trusted-addresses=127.0.0.0/8,10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16"
+          ]   
+          {{- else }}
+          command: [
+            "/bin/sh", "-c",
+            "/opt/keycloak/bin/kc.sh start --import-realm --http-enabled true --hostname-strict false --http-host 0.0.0.0 --http-port 9080 --proxy-headers xforwarded --proxy-trusted-addresses=127.0.0.0/8,10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.0.0.0/24,192.168.0.0/16"
+          ]
+          {{- end }}
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_SCHEMA
+              value: reliza_keycloak
+            - name: KC_DB_USERNAME
+              value: postgres
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-keycloak
+                  key: POSTGRES_PASSWORD
+            - name: KC_DB_URL
+              value: jdbc:postgresql://keycloak-postgres:5432/postgres
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-keycloak
+                  key: ADMIN_PASSWORD
+            - name: KC_HTTP_RELATIVE_PATH
+              value: "/kauth"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: PROJECT_ORIGIN
+              value: {{ .Values.projectProtocol }}://{{ .Values.projectHost }}
+            - name: REARM_URIS
+              value: {{ .Values.keycloak.rearmUris }}
+            - name: DTRACK_URIS
+              value: {{ .Values.keycloak.dtrackUris }}
+            - name: ALLOWED_IDENTITY_PROVIDERS
+              value: {{ .Values.keycloak.identityProviders }}
+          ports:
+            - name: kport
+              containerPort: 9080
+              protocol: TCP
+            - name: management-port
+              containerPort: 9000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /kauth/health/live
+              port: management-port
+            failureThreshold: 4
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /kauth/health/ready
+              port: management-port
+            failureThreshold: 1
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /kauth/health
+              port: management-port
+            failureThreshold: 45
+            periodSeconds: 10
+      volumes:
+        - name: init-volume
+          configMap:
+            name: keycloak-postgres-init
+        - name: dshm
+          emptyDir:
+            medium: Memory
+     {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: keycloak-postgres-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ $.Values.keycloak.postgresStorage }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+    name: rearm-keycloak
+spec:
+  selector:
+    {{- include "rearm.selectorLabels" . | nindent 4 }}
+    name: rearm-keycloak
+  ports:
+    - protocol: TCP
+      port: 9080
+      targetPort: 9080
+{{- end}}

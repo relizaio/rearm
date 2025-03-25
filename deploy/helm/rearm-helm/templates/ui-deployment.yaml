@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rearm-ui
+    app: rearm
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.uiReplicaCount }}
+  selector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-ui-pod
+  template:
+    metadata:
+      labels:
+        {{- include "rearm.selectorLabels" . | nindent 8 }}
+        servicehook: {{ .Release.Name }}-ui
+        name: rearm-ui-pod
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}-ui
+          image: "{{ .Values.image.uiImage }}"
+          env:
+            - name: HUB_HOST
+              value: "{{ .Release.Name }}-backend-service"
+            - name: HUB_PORT
+              value: {{ .Values.backendService.port | quote }}
+            - name: PROJECT_ORIGIN
+              value: {{ .Values.projectProtocol }}://{{ .Values.projectHost }}
+            {{- if .Values.keycloak.enabled}}
+            - name: KEYCLOAK_HOST
+              value: keycloak
+            - name: KEYCLOAK_PORT
+              value: "9080"
+            - name: MAX_BODY_SIZE
+              value: {{ .Values.max_upload_size_in_MB }}M
+            {{- end}}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /error_pages/generic.html
+              port: http
+            failureThreshold: 1
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.uiService.resources | nindent 12 }}

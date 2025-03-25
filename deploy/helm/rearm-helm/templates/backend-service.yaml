@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-backend-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rearm-backend-service
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.backendService.type }}
+  ports:
+    - port: {{ .Values.backendService.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "rearm.selectorLabels" . | nindent 4 }}
+    servicehook: {{ .Release.Name }}-backend

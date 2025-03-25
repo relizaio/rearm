@@ -1,0 +1,98 @@
+backendReplicaCount: 1
+uiReplicaCount: 1
+ociArtifactReplicaCount: 1
+
+image:
+  backEndImage: registry.relizahub.com/library/rearm-backend:latest
+  uiImage: registry.relizahub.com/library/rearm-ui:latest
+  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:latest
+  keycloakImage: registry.relizahub.com/library/rearm-keycloak:latest
+  postgresImage: bitnami/postgresql:16.6.0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: [ {"name":"regcred"} ]
+nameOverride: ""
+fullnameOverride: ""
+
+projectProtocol: http
+projectHost: rearm.localhost
+useDefaultSecrets: true
+max_upload_size_in_MB: 50
+
+keycloak:
+  enabled: true
+  postgresStorage: 4G
+  create_secret_in_chart: regular # regular, none, sealed; sealed supported by Reliza Hub
+  sealed_secrets_scope: namespace-wide # namespace-wide, cluster-wide, strict
+  strict_host: false
+  issuer_uri: http://rearm.localhost/kauth/realms/Reliza
+  set_uri: http://rearm-keycloak
+  secrets:
+    pgpassword: VKKlL0ZxfCjPWElRMjFpHg # change for prod use
+    adminpassword: wGCDbCQ2WFaxl4OMmdI2Sg # change for prod use
+
+backendService:
+  type: ClusterIP
+  port: 8085
+  resources:
+    requests:
+      memory: "300Mi"
+      cpu: "10m"
+    limits:
+      memory: "4000Mi"
+      cpu: "4000m"
+
+uiService:
+  type: ClusterIP
+  port: 80
+  targetPort: 80
+  nodePort: 30001
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "10m"
+    limits:
+      memory: "1000Mi"
+      cpu: "1000m"
+
+ociArtifactService:
+  enabled: true
+  registryHost: registry.relizahub.com/123-private # change
+  registryUser: changeme
+  registryToken: changeme
+
+useTraefikLe: true
+traefikBehindLb: false
+leHost: rearm.local
+
+postgresql:
+  image:
+    registry: docker.io
+    repository: bitnami/postgresql
+    tag: 16.6.0
+    digest: ""
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+    debug: false
+  auth:
+    enablePostgresUser: true
+    postgresPassword: relizaPass
+  persistence:
+    size: 4Gi
+  primary:
+    resources:
+      requests:
+        memory: "300Mi"
+        cpu: "10m"
+      limits:
+        memory: "4000Mi"
+        cpu: "4000m"
+
+rebom:
+  enabled: true
+  backend:
+    image: registry.relizahub.com/library/rebom-backend
+  postgresql:
+    image: "bitnami/postgresql:16.6.0"
+  ingress:
+    minimalIngressEnabled: false

@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rearm-backend
+    app: rearm
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backendReplicaCount }}
+  selector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-backend-pod
+  template:
+    metadata:
+      labels:
+        {{- include "rearm.selectorLabels" . | nindent 8 }}
+        name: rearm-backend-pod
+        servicehook: {{ .Release.Name }}-backend
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      containers:
+        - name: {{ .Release.Name }}-backend
+          image: "{{ .Values.image.backEndImage }}"
+          env:
+            - name: RELIZAPROP_REBOM_URI
+              value: http://{{ .Release.Name }}-rebom-backend-service:4000/
+            - name: RELIZAPROP_REBOM_ENABLED
+              value: {{ .Values.rebom.enabled | quote }}
+            - name: RELIZAPROP_OCI_ARTIFACT_SERVICE_HOST
+              value: http://{{ .Release.Name }}-oci-artifact
+            - name: RELIZAPROP_INSTALLATION_TYPE
+              value: "OSS"
+            - name: PG_HOST
+              value: {{ .Release.Name }}-postgresql
+            - name: PG_PORT
+              value: "5432"
+            - name: PROJECT_PROTOCOL
+              value: {{ .Values.projectProtocol }}
+            - name: PROJECT_HOST
+              value: {{ .Values.projectHost }}
+            - name: MAX_UPLOAD_SIZE
+              value: {{ .Values.max_upload_size_in_MB }}MB
+              # aws account below is used for secret storage if enabled
+            - name: RELIZAPROP_INSTALLATION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: system-secret
+                  key: systemSecret
+            - name: KEYCLOAK_ISSUER_URI
+              value: {{ .Values.keycloak.issuer_uri }}
+            - name: KEYCLOAK_SET_URI
+              value: {{ .Values.keycloak.set_uri }}
+{{- if not .Values.useDefaultSecrets}}
+            - name: PG_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: pgpassword
+                  key: postgresql-password
+            - name: RELIZAPROP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: reliza-props
+                  key: encryption-pass
+            - name: RELIZAPROP_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: reliza-props
+                  key: encryption-salt
+            - name: RELIZAPROP_PASS_OLD
+              valueFrom:
+                secretKeyRef:
+                  name: reliza-props
+                  key: encryption-pass-old
+            - name: RELIZAPROP_SALT_OLD
+              valueFrom:
+                secretKeyRef:
+                  name: reliza-props
+                  key: encryption-salt-old
+{{- end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8086
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.backendService.resources | nindent 12 }}
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: system-secret
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+data:
+  systemSecret: {{ randAlphaNum 24 | nospace | b64enc | quote }}

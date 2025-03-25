@@ -1,0 +1,89 @@
+{{- if .Values.keycloak.enabled}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-postgres-init
+  namespace: {{ .Release.Namespace }}
+data:
+{{ (.Files.Glob "mounted_files/keycloak_postgres/*").AsConfig | indent 2 }}
+
+--- 
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-keycloak-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+    name: rearm-keycloak-postgres
+spec:
+  replicas: 1
+  serviceName: "rearm-keycloak-postgres"
+  selector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-keycloak-postgres
+  template:
+    metadata:
+      labels:
+        {{- include "rearm.selectorLabels" . | nindent 8 }}
+        servicehook: {{ .Release.Name }}-keycloak-postgres
+        name: rearm-keycloak-postgres
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}-keycloak-postgres
+          image: "{{ .Values.image.postgresImage }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-keycloak
+                  key: POSTGRES_PASSWORD
+          ports:
+            - name: pgport
+              containerPort: 5432
+              protocol: TCP
+          volumeMounts:
+          - mountPath: "/bitnami/postgresql"
+            name: keycloak-postgres-data
+          - mountPath: "/docker-entrypoint-initdb.d"
+            name: init-volume
+          - mountPath: "/dev/shm"
+            name: dshm
+      volumes:
+        - name: init-volume
+          configMap:
+            name: keycloak-postgres-init
+        - name: dshm
+          emptyDir:
+            medium: Memory
+  volumeClaimTemplates:
+    - metadata:
+        name: keycloak-postgres-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ $.Values.keycloak.postgresStorage }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+    name: rearm-keycloak-postgres
+spec:
+  selector:
+    {{- include "rearm.selectorLabels" . | nindent 4 }}
+    name: rearm-keycloak-postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+{{- end}}

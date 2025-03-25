@@ -1,0 +1,60 @@
+{{- if .Values.useTraefikLe}}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: web-ingressroute
+  namespace: {{ .Release.Namespace }}
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`{{ .Values.leHost}}`)
+    kind: Rule
+    services:
+    - name: {{ .Release.Name }}-ui-service
+      port: {{ .Values.uiService.port }}
+    middlewares:
+      - name: redirect
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: websecure-ingressroute
+  namespace: {{ .Values.namespace }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`{{ .Values.leHost}}`)
+    kind: Rule
+    services:
+    - name: {{ .Release.Name }}-ui-service
+      port: {{ .Values.uiService.port }}
+  tls:
+    certResolver: le
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect
+  namespace: {{ .Values.namespace }}
+spec:
+  redirectScheme:
+    scheme: https
+{{- end}}
+{{- if .Values.traefikBehindLb}}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: web-ingressroute
+  namespace: {{ .Release.Namespace }}
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`{{ .Values.leHost}}`)
+    kind: Rule
+    services:
+    - name: {{ .Release.Name }}-ui-service
+      port: {{ .Values.uiService.port }}
+{{- end}}

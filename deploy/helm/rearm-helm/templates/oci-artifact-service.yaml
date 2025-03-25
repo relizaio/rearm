@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-oci-artifact
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rearm-oci-artifact-service
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8083
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "rearm.selectorLabels" . | nindent 4 }}
+    servicehook: {{ .Release.Name }}-oci-artifact

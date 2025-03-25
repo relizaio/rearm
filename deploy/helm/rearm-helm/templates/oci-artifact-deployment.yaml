@@ -1,0 +1,74 @@
+{{- if .Values.ociArtifactService.enabled}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-oci-artifact
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+    name: rearm-oci-artifact
+spec:
+  replicas: {{ .Values.ociArtifactReplicaCount }}
+  selector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-oci-artifact-pod
+  template:
+    metadata:
+      labels:
+        {{- include "rearm.selectorLabels" . | nindent 8 }}
+        servicehook: {{ .Release.Name }}-oci-artifact
+        name: rearm-oci-artifact-pod
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}-oci-artifact
+          image: "{{ .Values.image.ociArtifactImage }}"
+          env: 
+            - name: REGISTRY_HOST
+              value: {{ .Values.ociArtifactService.registryHost }}
+            - name: REGISTRY_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: oci-registry-secrets
+                  key: REGISTRY_USERNAME
+                  optional: true
+            - name: REGISTRY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: oci-registry-secrets
+                  key: REGISTRY_TOKEN
+                  optional: true
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8083
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 4
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 1
+            periodSeconds: 10
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oci-registry-secrets
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+data:
+  REGISTRY_USERNAME: {{ .Values.ociArtifactService.registryUser | nospace | b64enc | quote }}
+  REGISTRY_TOKEN: {{ .Values.ociArtifactService.registryToken | nospace | b64enc | quote }}
+{{- end}}
