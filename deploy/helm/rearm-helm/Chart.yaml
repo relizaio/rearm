@@ -13,5 +13,5 @@ dependencies:
   version: "11.9.13"
   repository: "https://charts.bitnami.com/bitnami"
 - name: rebom
-  version: ">=0.1.15"
+  version: ">=0.2.1"
   repository: "oci://registry.relizahub.com/library"

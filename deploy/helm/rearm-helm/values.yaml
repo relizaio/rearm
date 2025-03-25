@@ -25,11 +25,11 @@ keycloak:
   create_secret_in_chart: regular # regular, none, sealed; sealed supported by Reliza Hub
   sealed_secrets_scope: namespace-wide # namespace-wide, cluster-wide, strict
   strict_host: false
-  issuer_uri: http://rearm.localhost/kauth/realms/Reliza
-  set_uri: http://rearm-keycloak
+  issuer_uri: http://rearm.localhost
+  set_uri: http://keycloak:9080
   secrets:
     pgpassword: VKKlL0ZxfCjPWElRMjFpHg # change for prod use
-    adminpassword: wGCDbCQ2WFaxl4OMmdI2Sg # change for prod use
+    adminpassword: admin # change for prod use
 
 backendService:
   type: ClusterIP
@@ -58,12 +58,12 @@ uiService:
 ociArtifactService:
   enabled: true
   registryHost: registry.relizahub.com/123-private # change
-  registryUser: changeme
-  registryToken: changeme
+  registryUser: changeme # change
+  registryToken: changeme # change
 
 useTraefikLe: true
 traefikBehindLb: false
-leHost: rearm.local
+leHost: rearm.localhost
 
 postgresql:
   image:
@@ -76,7 +76,7 @@ postgresql:
     debug: false
   auth:
     enablePostgresUser: true
-    postgresPassword: relizaPass
+    postgresPassword: relizaPass # change for prod use
   persistence:
     size: 4Gi
   primary:
@@ -92,7 +92,7 @@ rebom:
   enabled: true
   backend:
     image: registry.relizahub.com/library/rebom-backend
-  postgresql:
-    image: "bitnami/postgresql:16.6.0"
+  postgres:
+    image: bitnami/postgresql:16.6.0
   ingress:
     minimalIngressEnabled: false

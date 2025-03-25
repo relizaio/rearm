@@ -13,8 +13,10 @@ spec:
     services:
     - name: {{ .Release.Name }}-ui-service
       port: {{ .Values.uiService.port }}
+{{- if eq .Values.projectProtocol "https" }}
     middlewares:
       - name: redirect
+{{- end }}
 ---
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute

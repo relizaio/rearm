@@ -40,7 +40,7 @@ metadata:
     name: rearm-keycloak
 spec:
   replicas: 1
-  serviceName: "rearm-keycloak"
+  serviceName: "keycloak"
   selector:
     matchLabels:
       {{- include "rearm.selectorLabels" . | nindent 6 }}
