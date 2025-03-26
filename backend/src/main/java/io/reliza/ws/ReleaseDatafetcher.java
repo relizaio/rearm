@@ -5,6 +5,7 @@ package io.reliza.ws;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -44,6 +45,8 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
+import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
@@ -590,18 +593,57 @@ public class ReleaseDatafetcher {
 		ArtifactBelongsTo belongsTo = ArtifactBelongsTo.RELEASE;
 		if(artifactInput.containsKey("belongsTo") && StringUtils.isNotEmpty((String)artifactInput.get("belongsTo")))
 			belongsTo = ArtifactBelongsTo.valueOf((String)artifactInput.get("belongsTo"));
+		
+		MultipartFile multipartFile = null;
+		if (artifact != null && artifact.containsKey("file")) {
+			multipartFile = (MultipartFile) artifact.get("file");
+			
+		}
 
+		if (artifact != null && multipartFile != null) {
+			artifact.remove("file");
+		}
+
+		ArtifactDto artDto = Utils.OM.convertValue(artifact, ArtifactDto.class);
+
+		// validations
+		List<String> validationErrors =  new ArrayList<>();
+
+		if(null == artDto.getType()){
+			validationErrors.add("Artifact Type is required.");
+		}
+
+		if(null == artDto.getDisplayIdentifier()){
+			validationErrors.add("Display Identifier is required.");
+		}
+		// if(artDto.getBomFormat())
+		if(ArtifactType.BOM.equals(artDto.getType())
+			|| ArtifactType.VEX.equals(artDto.getType())
+			|| ArtifactType.VDR.equals(artDto.getType())
+			|| ArtifactType.ATTESTATION.equals(artDto.getType())
+		){
+			if(null == artDto.getBomFormat())
+			{
+				validationErrors.add("Bom Format must be specified");
+			}
+		}
+		
+		if(StoredIn.EXTERNALLY.equals(artDto.getStoredIn())
+			&& artDto.getDownloadLinks().isEmpty())
+		{
+			validationErrors.add("External Artifacts must specify atleast one Download Link");
+		}
+
+		if(!validationErrors.isEmpty()){
+			throw new RelizaException(validationErrors.stream().collect(Collectors.joining(", ")));
+		}
 
 		if (artifact != null && artifact.containsKey("file")) {
-			MultipartFile multipartFile = (MultipartFile) artifact.get("file");
 			if (multipartFile != null) {
-				artifact.remove("file");
-				ArtifactDto artDto = Utils.OM.convertValue(artifact, ArtifactDto.class);
 				String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
 				artId = artifactService.uploadArtifact(artDto, orgUuid, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash), wu);
 			}
 		}else{
-			ArtifactDto artDto = Utils.OM.convertValue(artifact, ArtifactDto.class);
 			artId = artifactService.createArtifact(artDto, wu).getUuid();
 		}
 

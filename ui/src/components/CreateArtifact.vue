@@ -115,6 +115,9 @@ import { FormInst, NButton, NDynamicInput, NForm, NFormItem, NInput, NRadioButto
 import { computed, ComputedRef, ref, Ref } from 'vue'
 import { useStore } from 'vuex'
 import { Tag, DownloadLink, Identity} from '@/utils/commonTypes'
+import Swal from 'sweetalert2'
+import commonFunctions from '../utils/commonFunctions'
+
 
 const props = defineProps<{
     inputOrgUuid: string,
@@ -204,19 +207,28 @@ const onSubmit = async () => {
         belongsTo: props.inputBelongsTo,
     }
 
-    const response = await graphqlClient.mutate({
-        mutation: gql`
-            mutation addArtifactManual($artifactInput: CreateArtifactInput) {
-                addArtifactManual(artifactInput: $artifactInput) {
-                    uuid
-                }
-            }`,
-        variables: {
-            'artifactInput': createArtifactInput
-        },
-        fetchPolicy: 'no-cache'
-    })
-    emit('addArtifact')
+
+    try{
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation addArtifactManual($artifactInput: CreateArtifactInput) {
+                    addArtifactManual(artifactInput: $artifactInput) {
+                        uuid
+                    }
+                }`,
+            variables: {
+                'artifactInput': createArtifactInput
+            },
+            fetchPolicy: 'no-cache'
+        })
+        emit('addArtifact')
+    }   catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    }
 };
 const onCreateDownloadLinks = () => {
     return {
