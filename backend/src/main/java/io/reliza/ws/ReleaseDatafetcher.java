@@ -638,12 +638,10 @@ public class ReleaseDatafetcher {
 			throw new RelizaException(validationErrors.stream().collect(Collectors.joining(", ")));
 		}
 
-		if (artifact != null && artifact.containsKey("file")) {
-			if (multipartFile != null) {
-				String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
-				artId = artifactService.uploadArtifact(artDto, orgUuid, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash), wu);
-			}
-		}else{
+		if (multipartFile != null) {
+			String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
+			artId = artifactService.uploadArtifact(artDto, orgUuid, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash), wu);
+		} else {
 			artId = artifactService.createArtifact(artDto, wu).getUuid();
 		}
 
