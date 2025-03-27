@@ -729,8 +729,10 @@ public class UserService {
 				String email = creds.getClaimAsString("email");
 				User u;
 				if (InstallationType.OSS == getInstallationType()) {
+					boolean isFirstUser = !repository.findAll().iterator().hasNext();
+					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.NONE;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
-					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, PermissionType.ADMIN, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
+					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 				} else if (InstallationType.MANAGED_SERVICE == getInstallationType()) {
 					UUID defaultOrg = systemInfoService.getDefaultOrg();
 					if ( null == defaultOrg && !repository.findAll().iterator().hasNext() ) {
