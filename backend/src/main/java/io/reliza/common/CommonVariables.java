@@ -560,6 +560,7 @@ public class CommonVariables {
 	}
 	
 	public enum InstallationType {
+		DEMO,
 		OSS,
 		SAAS,
 		MANAGED_SERVICE;

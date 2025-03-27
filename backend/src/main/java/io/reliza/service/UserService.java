@@ -733,6 +733,11 @@ public class UserService {
 					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.NONE;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
+				} else if (InstallationType.DEMO == getInstallationType()) {
+					boolean isFirstUser = !repository.findAll().iterator().hasNext();
+					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.READ_ONLY;
+					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
+					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 				} else if (InstallationType.MANAGED_SERVICE == getInstallationType()) {
 					UUID defaultOrg = systemInfoService.getDefaultOrg();
 					if ( null == defaultOrg && !repository.findAll().iterator().hasNext() ) {
@@ -763,6 +768,8 @@ public class UserService {
 			it = InstallationType.OSS;
 		} else if ("MANAGED_SERVICE".equals(relizaConfigProps.getInstallationType())) {
 			it = InstallationType.MANAGED_SERVICE;
+		} else if ("DEMO".equals(relizaConfigProps.getInstallationType())) {
+			it = InstallationType.DEMO;
 		}
 		return it;
 	}
