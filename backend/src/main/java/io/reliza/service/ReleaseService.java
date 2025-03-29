@@ -1596,7 +1596,7 @@ public class ReleaseService {
 			rmd.mergeWithByContent(ad.get().getMetrics());
 		});
 		rmd.mergeWithByContent(rollUpProductReleaseMetrics(rd));
-		if (!rmd.equals(originalMetrics)) {
+		if (null == originalMetrics.getLastScanned() || !rmd.equals(originalMetrics)) {
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			rmd.setLastScanned(lastScanned);
 			rd.setMetrics(rmd);
