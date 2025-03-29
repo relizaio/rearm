@@ -252,24 +252,27 @@ public class DeliverableService {
 			DeliverableDto deliverableDto = Utils.OM.convertValue(deliverableItem,DeliverableDto.class);
 			deliverableDto.cleanDigests();
 			
-			List<UUID> artIds = arts.stream().map((Map<String, Object> artMap) -> {
-				MultipartFile file = (MultipartFile) artMap.get("file");
-				artMap.remove("file");
-				// validations
-				if(!artMap.containsKey("storedIn") || StringUtils.isEmpty((String)artMap.get("storedIn"))){
-					artMap.put("storedIn", "REARM");
-				}
-				ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
-
-				// artDto.setFile(file);
-				UUID artId = null;
-				try {
-					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest()),wu);
-				} catch (Exception e) {
-					throw new RuntimeException(e); // Re-throw the exception
-				}
-				return artId;
-			}).filter(Objects::nonNull).toList();
+			List<UUID> artIds = new LinkedList<>();
+			if (null != arts && !arts.isEmpty()) {
+				artIds = arts.stream().map((Map<String, Object> artMap) -> {
+					MultipartFile file = (MultipartFile) artMap.get("file");
+					artMap.remove("file");
+					// validations
+					if(!artMap.containsKey("storedIn") || StringUtils.isEmpty((String)artMap.get("storedIn"))){
+						artMap.put("storedIn", "REARM");
+					}
+					ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
+	
+					// artDto.setFile(file);
+					UUID artId = null;
+					try {
+						artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest()),wu);
+					} catch (Exception e) {
+						throw new RuntimeException(e); // Re-throw the exception
+					}
+					return artId;
+				}).filter(Objects::nonNull).toList();
+			}
 			deliverableDto.setArtifacts(artIds);
 			// TODO: for now always create artifacts from programmatic - later add logic to parse digests and uris
 			
