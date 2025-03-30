@@ -205,6 +205,25 @@ public class BranchDataFetcher {
 		return true;
 	}
 	
+	@DgsData(parentType = "Mutation", field = "setNextVersion")
+	public boolean setNextVersion (
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("versionString") String versionString,
+			@InputArgument("versionType") String versionTypeStr
+		) {
+		
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
+		RelizaObject ro = obd.isPresent() ? obd.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		VersionTypeEnum versionType = VersionTypeEnum.DEV;
+		if(StringUtils.isNotEmpty(versionTypeStr)){
+			versionType = VersionTypeEnum.valueOf(versionTypeStr);
+		}
+		return versionAssignmentService.setNextVesion(branchUuid, versionString, versionType);
+	}
+	
 	@DgsData(parentType = "Mutation", field = "synchronizeLiveBranches")
 	public Boolean synchronizeLiveBranches(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
@@ -229,7 +248,10 @@ public class BranchDataFetcher {
 		}
 		return true;
 	}
-
+	
+	
+	/** Subfields **/
+	
 	@DgsData(parentType = "ChildComponent", field = "componentDetails")
 	public ComponentData componentOfChildComponent(DgsDataFetchingEnvironment dfe) {
 		ChildComponent cp = dfe.getSource();
@@ -267,9 +289,6 @@ public class BranchDataFetcher {
 		}
 		return vrdo;
 	}
-
-	
-	/** Subfields **/
 	
 	@DgsData(parentType = "Branch", field = "componentDetails")
 	public ComponentData projectOfBranch(DgsDataFetchingEnvironment dfe) {

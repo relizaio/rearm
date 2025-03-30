@@ -90,6 +90,7 @@ type Mutation {
 	autoIntegrateFeatureSet(branchUuid: ID!): Boolean
 	archiveBranch(branchUuid: ID!): Boolean
 	archiveComponent(componentUuid: ID!): Boolean
+	setNextVersion(branchUuid: ID!, versionString: String!, versionType: VersionType): Boolean
 	
 	createVcsRepository(vcsRepository: VcsRepositoryInput!): VcsRepository
 	updateVcsRepository(vcsUuid: ID!, name: String, uri: String): VcsRepository
