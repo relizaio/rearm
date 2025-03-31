@@ -1,0 +1,46 @@
+.title {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 600;
+  font-size: 64px;
+  line-height: 81px;
+  text-align: center;
+  color: #18214d;
+  margin-bottom: 37px;
+}
+
+.text {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 157%;
+  text-align: center;
+  color: #5c6077;
+  margin: 0;
+}
+
+.heading {
+  display: none;
+}
+
+@media screen and (max-width: 576px) {
+  .title {
+    font-size: 34px;
+    line-height: 126%;
+    margin-bottom: 16px;
+  }
+  .heading {
+    display: block;
+    font-size: 12px;
+    line-height: 34px;
+    text-align: center;
+    letter-spacing: 2.57px;
+    margin-bottom: 10px;
+    color: var(--btn_getStarted-color);
+  }
+  .text {
+    font-size: 13px;
+    line-height: 157%;
+  }
+}

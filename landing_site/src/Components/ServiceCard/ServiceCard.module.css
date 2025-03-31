@@ -1,0 +1,35 @@
+.appCard {
+  border-radius: 10px;
+  background-color: var(--integration-appCard-backgroundColor) !important;
+  transition: all ease-in-out 300ms;
+  padding: 50px 64px;
+  box-shadow: rgba(0, 0, 0, 0.02) 0px 1px 3px 0px,
+rgba(0, 11, 51, 1) 0px 0px 0px 0.25px;
+}
+.appCard:hover {
+  box-shadow: -6px 6px 60px rgba(0, 0, 0, 0.08);
+}
+
+.appCard_type {
+  color: var(--integration-appCard-type_Color);
+}
+
+.appCard .title {
+  font-family: "HK Grotesk";
+  font-style: normal;
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 130%;
+  text-align: center;
+  color: #000b33;
+}
+.appCard .text {
+  font-family: "HK Grotesk";
+  font-style: normal;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 162%;
+  text-align: center;
+  color: #000b33;
+  opacity: 0.7;
+}

@@ -1,0 +1,92 @@
+.container1 {
+  margin-bottom: 90px;
+  padding-top: 100px;
+}
+.container2 {
+  margin-bottom: 146px;
+}
+.container3 {
+  margin-bottom: 80px;
+  border-bottom: 1px dashed #e2e2e2;
+}
+.C3Title1 {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 22px;
+  text-align: center;
+  letter-spacing: 0.18px;
+  text-align: center;
+  color: #3b3a40;
+}
+.container4 {
+  margin-top: 80px;
+  margin-bottom: 80px;
+}
+.C4Title1 {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-size: 52px;
+  line-height: 119%;
+  letter-spacing: -0.938889px;
+  color: #1a1a1a;
+}
+.C4Text1 {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 160%;
+  color: #64626a;
+}
+.C4Text1 a {
+  color: var(--btn_getStarted-color);
+}
+
+.brandImage {
+  max-width: 20%;
+}
+
+@media screen and (max-width: 576px) {
+  .container1 {
+    padding-top: 20px;
+    margin-bottom: 40px;
+  }
+  .container2 {
+    margin-bottom: 60px;
+  }
+  .container3 {
+    border-bottom: none;
+    margin-bottom: 50px;
+  }
+  .C3Title1 {
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 1.18px;
+    color: var(--btn_getStarted-color);
+    max-width: 258px;
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 30px;
+  }
+  .container4 {
+    margin-top: 80px;
+    margin-bottom: 80px;
+  }
+  .C4Title1 {
+    font-size: 34px;
+    line-height: 46px;
+    text-align: center;
+    letter-spacing: 0.591304px;
+    margin-bottom: 12px;
+  }
+  .C4Text1 {
+    font-size: 14px;
+    line-height: 22px;
+    text-align: center;
+    letter-spacing: 0.0777778px;
+    color: #64626a;
+  }
+}

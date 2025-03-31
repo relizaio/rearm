@@ -114,3 +114,19 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REARM_KEYCLOAK_API_KEY }}
           path: keycloak
           enable_sbom: 'false'
+  build-rearm-landing:
+    name: Build And Push ReARM Landing Website rearmhq.com
+    runs-on: ubuntu-latest
+    steps:
+      - name: RelizaHub Build And Submit ReARM Landing Release
+        uses: relizaio/reliza-docker-action@2.1
+        with:
+          registry_username: ${{ secrets.DOCKER_LOGIN }}
+          registry_password: ${{ secrets.DOCKER_TOKEN }}
+          registry_host: registry.relizahub.com
+          image_namespace: registry.relizahub.com/library
+          image_name: rearm-landing
+          reliza_api_id: ${{ secrets.RELIZA_REARM_LANDING_API_ID }}
+          reliza_api_key: ${{ secrets.RELIZA_REARM_LANDING_API_KEY }}
+          path: landing_site
+          enable_sbom: 'false'

@@ -1,0 +1,18 @@
+.container1 {
+  padding-top: 100px;
+  margin-bottom: 100px;
+}
+
+.container2{
+    margin-bottom: 80px;
+}
+
+@media screen and (max-width: 576px) {
+  .container1 {
+    padding-top: 20px;
+    margin-bottom: 30px;
+  }
+  .container2{
+    margin-bottom: 0px;
+}
+}
