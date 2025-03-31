@@ -266,7 +266,7 @@ public class DeliverableService {
 					// artDto.setFile(file);
 					UUID artId = null;
 					try {
-						artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest()),wu);
+						artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), artDto.getStripBom()),wu);
 					} catch (Exception e) {
 						throw new RuntimeException(e); // Re-throw the exception
 					}

@@ -77,6 +77,9 @@ public class ArtifactDto {
 	
 	@JsonProperty("org")
 	private UUID org;
+
+	@JsonProperty("stripBom")
+	private Boolean stripBom;
 	
 	@JsonProperty
 	private DependencyTrackUploadResult dtur; 

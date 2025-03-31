@@ -526,7 +526,7 @@ public class ReleaseDatafetcher {
 				ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
 				UUID artId = null;
 				try {
-					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null), ar.getWhoUpdated());
+					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, artDto.getStripBom()), ar.getWhoUpdated());
 				} catch (Exception e) {
 					throw new RuntimeException(e); // Re-throw the exception
 				}
@@ -640,7 +640,7 @@ public class ReleaseDatafetcher {
 
 		if (multipartFile != null) {
 			String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
-			artId = artifactService.uploadArtifact(artDto, orgUuid, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash), wu);
+			artId = artifactService.uploadArtifact(artDto, orgUuid, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom()), wu);
 		} else {
 			artId = artifactService.createArtifact(artDto, wu).getUuid();
 		}

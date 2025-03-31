@@ -717,7 +717,7 @@ public class ReleaseService {
 		if(bomIds.size() > 0){
 			ComponentData pd = getComponentService.getComponentData(rd.getComponent()).get();
 			OrganizationData od = organizationService.getOrganizationData(rd.getOrg()).get();
-			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes() );
+			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), true );
 			rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions);
 			
 			addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions), wu);
@@ -773,7 +773,7 @@ public class ReleaseService {
 						retRebomId = bomIds.getFirst();
 					} else {
 						var od = organizationService.getOrganizationData(rd.getOrg()).get();
-						var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(),  rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes());
+						var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(),  rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), true);
 						UUID rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions);
 						addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions), wu);
 						retRebomId = rebomId;
@@ -983,7 +983,7 @@ public class ReleaseService {
 				// artDto.setFile(file);
 				UUID artId = null;
 				try {
-					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit()), wu);
+					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), artDto.getStripBom()), wu);
 				} catch (Exception e) {
 					log.error("Exception on uploading artifact", e);
 					throw new RuntimeException(e); // Re-throw the exception
