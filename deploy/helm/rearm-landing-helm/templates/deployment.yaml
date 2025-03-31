@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-landing
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rearm-landing
+    app: rearm-landing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: rearm-landing
+  template:
+    metadata:
+      labels:
+        name: rearm-landing
+        servicehook: {{ .Release.Name }}-landing-service
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      containers:
+        - name: {{ .Release.Name }}-landing
+          image: "{{ .Values.image.landing }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP

@@ -1,0 +1,12 @@
+image:
+  landing: registry.relizahub.com/library/rearm-landing:latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceType: ClusterIP
+servicePort: 8085
+
+useTraefikLe: true
+traefikBehindLb: false
+ingressHost: rearm-landing.localhost

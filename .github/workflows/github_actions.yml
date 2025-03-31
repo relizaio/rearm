@@ -36,6 +36,20 @@ jobs:
           reliza_api_id: ${{ secrets.RELIZA_REARM_DOCS_HELM_API_ID }}
           reliza_api_key: ${{ secrets.RELIZA_REARM_DOCS_HELM_API_KEY }}
           path: deploy/helm
+  build-landing-helm:
+    name: Build And Push ReARM Landing Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: RelizaHub Build And Submit ReARM Landing Helm metadata action
+        uses: relizaio/reliza-helm-action@2.2
+        with:
+          registry_username: ${{ secrets.DOCKER_LOGIN }}
+          registry_password: ${{ secrets.DOCKER_TOKEN }}
+          registry_host: registry.relizahub.com/library
+          helm_chart_name: rearm-landing-helm
+          reliza_api_id: ${{ secrets.RELIZA_REARM_LANDING_HELM_API_ID }}
+          reliza_api_key: ${{ secrets.RELIZA_REARM_LANDING_HELM_API_KEY }}
+          path: deploy/helm
   build-rearm-helm:
     name: Build And Push Rearm Helm Chart
     runs-on: ubuntu-latest
