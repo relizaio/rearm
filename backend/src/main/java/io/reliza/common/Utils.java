@@ -430,4 +430,8 @@ public class Utils {
 		RELEASE,
 		SCE,
 	}
+	public static enum StripBom {
+		TRUE,
+		FALSE,
+	}
 }

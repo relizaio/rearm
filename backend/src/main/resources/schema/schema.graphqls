@@ -994,7 +994,7 @@ input ArtifactInput {
 	version: String
 	file: Upload
 	fileSce: Upload
-	stripBom: Boolean
+	stripBom: StripBomEnum
 }
 
 input ExternalBomInput {
@@ -1299,6 +1299,11 @@ enum ReleaseLifecycleEnum {
 	REJECTED
 	GENERAL_AVAILABILITY
 	END_OF_SUPPORT
+}
+
+enum StripBomEnum {
+	TRUE
+	FALSE
 }
 
 enum ArtifactBelongsToEnum {

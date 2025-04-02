@@ -16,6 +16,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
+import io.reliza.common.Utils.StripBom;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.Identity;
@@ -79,7 +80,7 @@ public class ArtifactDto {
 	private UUID org;
 
 	@JsonProperty("stripBom")
-	private Boolean stripBom;
+	private StripBom stripBom;
 	
 	@JsonProperty
 	private DependencyTrackUploadResult dtur; 
