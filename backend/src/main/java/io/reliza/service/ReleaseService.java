@@ -79,6 +79,7 @@ import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
+import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.VersionAssignment;
 import io.reliza.model.WhoUpdated;
@@ -693,12 +694,13 @@ public class ReleaseService {
 		if(null == typeFilter || typeFilter.equals(ArtifactBelongsTo.SCE)){
 			List<UUID> sceRebomIds  = null;
 			if(null != rd.getSourceCodeEntry())
-			sceRebomIds = sourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get().getArtifacts().stream()
-			.map(a -> artifactService.getArtifactData(a))
-			.filter(art -> art.isPresent() && null != art.get().getInternalBom())
-			.map(a -> a.get().getInternalBom().id())
-			.distinct()
-			.toList();
+				sceRebomIds = sourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get().getArtifacts().stream()
+				.filter(scea -> rd.getComponent().equals(scea.componentUuid()))
+				.map(scea -> artifactService.getArtifactData(scea.artifactUuid()))
+				.filter(art -> art.isPresent() && null != art.get().getInternalBom())
+				.map(a -> a.get().getInternalBom().id())
+				.distinct()
+				.toList();
 			if(null != sceRebomIds && sceRebomIds.size() > 0) bomIds.addAll(sceRebomIds);
 		}
 		
@@ -1002,7 +1004,9 @@ public class ReleaseService {
 			String version,
 			WhoUpdated wu) throws IOException {
 		UUID orgUuid = bd.getOrg();
-		sceDto.setArtifacts(artIds);
+		List<SCEArtifact> sceArts= new LinkedList<>();
+		if (null != artIds) sceArts = artIds.stream().map(x -> new SCEArtifact(x, bd.getComponent())).toList();
+		sceDto.setArtifacts(sceArts);
 		sceDto.setBranch(bd.getUuid());
 		sceDto.setOrganizationUuid(orgUuid);
 		sceDto.setVcsBranch(branchStr);
@@ -1558,7 +1562,8 @@ public class ReleaseService {
 		Set<UUID> artifactIds = new HashSet<>(rd.getArtifacts());
 		if (null != rd.getSourceCodeEntry()) {
 			var sce = sourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get();
-			artifactIds.addAll(sce.getArtifacts());
+			List<UUID> sceArtIds = sce.getArtifacts().stream().filter(scea -> rd.getComponent().equals(scea.componentUuid())).map(scea -> scea.artifactUuid()).toList();
+			artifactIds.addAll(sceArtIds);
 		}
 		// skip inbound deliverables
 //		if (null != rd.getInboundDeliverables() && !rd.getInboundDeliverables().isEmpty()) {
