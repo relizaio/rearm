@@ -411,7 +411,7 @@ class VariableQueries {
 	    SELECT ra.uuid from lastComputedRlz, rearm.artifacts ra where coalesce(cast (record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal ),
 	  unprocessedSces (uuid) AS (
 	    SELECT sce.uuid from unprocessedArts, rearm.source_code_entries sce
-	      WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(unprocessedArts.uuid))))
+	      WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(jsonb_build_object('artifactUuid', unprocessedArts.uuid)))))
 	  SELECT rlzs.* FROM unprocessedSces, rearm.releases rlzs
 	    WHERE record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text);
 	""";
