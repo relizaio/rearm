@@ -60,6 +60,7 @@ import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SourceCodeEntryData;
+import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.changelog.entry.AggregationType;
@@ -652,7 +653,8 @@ public class ReleaseDatafetcher {
 				deliverableService.addArtifact(deliverableId, artId, wu);
 			} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
 				UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
-				sourceCodeEntryService.addArtifact(sceUuid, artId, wu);
+				SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+				sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
 			} else { //default case, attach to the release
 				releaseService.addArtifact(artId, ord.get().getUuid(),  wu);
 			}
