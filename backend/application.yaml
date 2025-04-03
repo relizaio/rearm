@@ -22,6 +22,10 @@ spring:
         jdbc:
           lob:
             non_contextual_creation: true
+      jakarta:
+        persistence:
+          query:
+            timeout: 10000
   security:
     oauth2:
       resourceserver:

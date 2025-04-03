@@ -87,9 +87,11 @@ public class SourceCodeEntryData extends RelizaDataParent implements RelizaObjec
 
 	@Setter()
 	@JsonProperty(CommonVariables.ARTIFACTS_FIELD)
-	private List<UUID> artifacts = new ArrayList<>();
+	private List<SCEArtifact> artifacts = new ArrayList<>();
 	
 	private SourceCodeEntryData () {}
+	
+	public record SCEArtifact (UUID artifactUuid, UUID componentUuid) {}
 
 	public static SourceCodeEntryData scEntryDataFactory(SceDto sceDto) {
 		SourceCodeEntryData sced = new SourceCodeEntryData();

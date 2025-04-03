@@ -4,7 +4,9 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +29,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
+import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
@@ -116,7 +119,7 @@ public class SourceCodeEntryService {
 		return branches.stream().map(SourceCodeEntryData::dataFromRecord).collect(Collectors.toList());
 	}
 
-
+	@Transactional
 	public Optional<SourceCodeEntryData> populateSourceCodeEntryByVcsAndCommit(
 		SceDto sceDto,
 		boolean createIfMissing,
@@ -130,7 +133,7 @@ public class SourceCodeEntryService {
 			BranchData bd = obd.get();
 			// check vs branch vcs and return error if doesn't match
 			UUID vcsUuidFromBranch = bd.getVcs();
-			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepository(vcsUuidFromBranch);
+			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepositoryWriteLocked(vcsUuidFromBranch);
 			String vcsUri = sceDto.getUri();
 			if (StringUtils.isNotEmpty(vcsUri) && ovr.isPresent() && !Utils.uriEquals(vcsUri, VcsRepositoryData.dataFromRecord(ovr.get()).getUri())) {
 				throw new AccessDeniedException("Current vcs repository in branch does not match the supplied one, manual fix required");
@@ -155,22 +158,41 @@ public class SourceCodeEntryService {
 			// construct source code entry itself
 			sceDto.setBranch(bd.getUuid());
 			sceDto.setVcs(ovr.get().getUuid());
-			Optional<SourceCodeEntry> osce =  populateSourceCodeEntryByVcsAndCommitRoutine(sceDto, true, wu);
+			Optional<SourceCodeEntry> osce = populateSourceCodeEntryByVcsAndCommitRoutine(sceDto, createIfMissing, wu);
 			if (osce.isPresent()) osced = Optional.of(SourceCodeEntryData.dataFromRecord(osce.get()));
 			return osced;
 	}
 	
+	@Transactional
 	private Optional<SourceCodeEntry> populateSourceCodeEntryByVcsAndCommitRoutine (SceDto sceDto, boolean createIfMissing, WhoUpdated wu) {
 		// log.info("getSourceCodeEntryByVcsAndCommit - createIfMissing: {}", createIfMissing);
 		Optional<SourceCodeEntry> osce = repository.findByCommitAndVcs(sceDto.getCommit(), sceDto.getVcs().toString());
 		if (osce.isEmpty() && createIfMissing) {
-			// log.info("osce is empty creating new ...");
+			log.debug("osce is empty creating new ...");
 			osce = Optional.of(createSourceCodeEntry(sceDto, wu));
-		}else{
+		} else {
 			var sce = osce.get();
-			log.info("Existing sce found, updating ...: {}", osce.get());
-			// need to add or update to the existing entry?
+			log.debug("Existing sce found, updating ...: {}", osce.get());
+			SourceCodeEntryData existingSceData = SourceCodeEntryData.dataFromRecord(sce);
 			SourceCodeEntryData sced = SourceCodeEntryData.scEntryDataFactory(sceDto);
+			if (null != existingSceData.getArtifacts() && !existingSceData.getArtifacts().isEmpty()) {
+				Set<String> dedupArts = new HashSet<>();
+				if (null != sced.getArtifacts() && !sced.getArtifacts().isEmpty()) {
+					var dedupList = sced.getArtifacts().stream()
+						.map(x -> x.artifactUuid().toString() + x.componentUuid()).toList();
+					dedupArts.addAll(dedupList);
+					for (var esda : existingSceData.getArtifacts()) {
+						String dedupKey = esda.artifactUuid().toString() + esda.componentUuid();
+						if (!dedupList.contains(dedupKey)) {
+							List<SCEArtifact> updArts = new ArrayList<>(sced.getArtifacts());
+							updArts.add(esda);
+							sced.setArtifacts(updArts);
+						}
+					}
+				} else {
+					sced.setArtifacts(existingSceData.getArtifacts());
+				}
+			}
 			Map<String,Object> recordData = Utils.dataToRecord(sced);
 			osce = Optional.of(saveSourceCodeEntry(sce, recordData, wu));
 		}
@@ -215,11 +237,11 @@ public class SourceCodeEntryService {
 	}
 
 	@Transactional
-	public boolean addArtifact(UUID sceUuid, UUID artifactUuid, WhoUpdated wu) throws RelizaException{
+	public boolean addArtifact(UUID sceUuid, SCEArtifact art, WhoUpdated wu) throws RelizaException{
 		SourceCodeEntry sce = getSourceCodeEntry(sceUuid).get();
 		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
-		List<UUID> artifacts = sced.getArtifacts();
-		artifacts.add(artifactUuid);
+		List<SCEArtifact> artifacts = sced.getArtifacts();
+		artifacts.add(art);
 		sced.setArtifacts(artifacts);
 		Map<String,Object> recordData = Utils.dataToRecord(sced);
 		saveSourceCodeEntry(sce, recordData, wu);

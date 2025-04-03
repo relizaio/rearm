@@ -58,6 +58,11 @@ public class VcsRepositoryService {
 		return vcsData;
 	}
 	
+	@Transactional
+	public Optional<VcsRepository> getVcsRepositoryWriteLocked (UUID uuid) {
+		return repository.findByIdWriteLocked(uuid);
+	}
+	
 	public Optional<VcsRepository> getVcsRepositoryByUri (UUID orgUuid, String uri, VcsType type, boolean createIfMissing, WhoUpdated wu) {
 		Optional<VcsRepository> ovr = repository.findByOrgAndUri(orgUuid.toString(), uri);
 		if (ovr.isEmpty() && createIfMissing) {
