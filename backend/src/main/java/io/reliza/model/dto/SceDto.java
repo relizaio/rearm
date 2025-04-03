@@ -18,6 +18,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.DateDeserializer;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
+import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import lombok.Builder;
 import lombok.Data;
 
@@ -65,7 +66,7 @@ public class SceDto {
 	private UUID ticket;
 
 	@JsonProperty(CommonVariables.ARTIFACTS_FIELD)
-	private List<UUID> artifacts;
+	private List<SCEArtifact> artifacts;
 
 	/**
 	 * This is vcs uri - not part of actual sce
