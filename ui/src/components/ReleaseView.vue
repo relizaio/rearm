@@ -1208,7 +1208,10 @@ const artifacts: ComputedRef<any> = computed((): any => {
             artifacts.push.apply(artifacts, updatedRelease.value.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, 'Release')))
         }
         if(updatedRelease.value.sourceCodeEntryDetails && updatedRelease.value.sourceCodeEntryDetails.artifactDetails && updatedRelease.value.sourceCodeEntryDetails.artifactDetails.length) {
-            artifacts.push.apply(artifacts, updatedRelease.value.sourceCodeEntryDetails.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, 'Source Code Entry')))
+            artifacts.push.apply(artifacts,
+                updatedRelease.value.sourceCodeEntryDetails.artifactDetails
+                    .filter((ad: any) => ad.componentUuid === updatedRelease.value.componentDetails.uuid)
+                    .map((ad: any) => setArtifactBelongsTo(ad, 'Source Code Entry')))
         }
         
         updatedRelease.value.variantDetails.forEach ((vd: any) => {

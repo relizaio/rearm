@@ -178,6 +178,7 @@ const ARTIFACT_DETAIL_DATA = `
         uri
         content
     }
+    componentUuid
 `
 const DELIVERABLE_DETAIL_DATA = `
     uuid

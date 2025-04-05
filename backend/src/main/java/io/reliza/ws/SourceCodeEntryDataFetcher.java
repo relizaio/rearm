@@ -33,6 +33,7 @@ import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
+import io.reliza.model.dto.ArtifactWebDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
@@ -99,26 +100,15 @@ public class SourceCodeEntryDataFetcher {
 	}
 
 	@DgsData(parentType = "SourceCodeEntry", field = "artifactDetails")
-	public List<ArtifactData> artifactsOfSourceCodeEntryWithDep(DgsDataFetchingEnvironment dfe)  {
+	public List<ArtifactWebDto> artifactsOfSourceCodeEntryWithDep(DgsDataFetchingEnvironment dfe)  {
 		SourceCodeEntryData sced = dfe.getSource();
-		ReleaseData rd = null;
-		
-		try {
-			String releaseIdStr = (String) dfe.getVariables().get("releaseID");
-			UUID releaseId = UUID.fromString(releaseIdStr);
-			rd = sharedReleaseService.getReleaseData(releaseId, sced.getOrg()).get();
-		} catch (Exception e) {
-			log.error("Error retrieving SCE artifact details", e);
-			throw new AccessDeniedException(e.getMessage());
-		}
-		List<ArtifactData> artList = new LinkedList<>();
+		List<ArtifactWebDto> artList = new LinkedList<>();
 		if (null != sced.getArtifacts()) {
 			for (SCEArtifact scea : sced.getArtifacts()) {
-				if (rd.getComponent().equals(scea.componentUuid())) {
-					artList.add(artifactService
-												.getArtifactData(scea.artifactUuid())
-												.get());
-				}
+				ArtifactWebDto awd = ArtifactWebDto.fromData(artifactService
+						.getArtifactData(scea.artifactUuid())
+						.get(), scea.componentUuid());
+				artList.add(awd);
 			}
 		}
 		return artList;

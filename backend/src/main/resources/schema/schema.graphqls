@@ -576,8 +576,8 @@ type Artifact {
 	internalBom: InternalBom
 	identities: [BomIdentity]
 	downloadLinks: [Downloadlink]
-
 	metrics: DependencyTrackMetrics
+	componentUuid: ID
 }
 
 type DependencyTrackMetrics {
