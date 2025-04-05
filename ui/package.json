@@ -44,7 +44,7 @@
     "@vue/eslint-config-typescript": "^11.0.2",
     "eslint": "^8.32.0",
     "eslint-plugin-vue": "^9.9.0",
-    "naive-ui": "^2.38.2",
+    "naive-ui": "^2.41.0",
     "sass": "^1.57.0",
     "typescript": "~4.9.4",
     "vfonts": "^0.0.3",
