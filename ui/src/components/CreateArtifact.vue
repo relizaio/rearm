@@ -11,10 +11,10 @@
                             <n-radio-button
                                 key='REARM'
                                 value='REARM'
-                                label='ReArm'
+                                label='ReARM'
                             />
                         </template>
-                        Artifact is to be uploaded and stored on ReArm Internally.
+                        Artifact is to be uploaded and stored on ReARM Internally.
                         
                     </n-tooltip>
                     <n-tooltip trigger="hover">
