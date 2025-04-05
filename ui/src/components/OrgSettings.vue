@@ -58,37 +58,37 @@
                             </n-modal>
                         </div>
                         <div class="row pt-2">
-                            <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')"> Dependency Track integration configured
+                            <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')"> Dependency-Track integration configured
                                 <vue-feather @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
                             </div>
-                            <div v-else><n-button @click="showOrgSettingsDependencyTrackIntegrationModal = true">Add Dependency Track Integration</n-button></div>
+                            <div v-else><n-button @click="showOrgSettingsDependencyTrackIntegrationModal = true">Add Dependency-Track Integration</n-button></div>
                             <n-modal
                                 v-model:show="showOrgSettingsDependencyTrackIntegrationModal"
                                 preset="dialog"
                                 :show-icon="false" >
-                                <n-card style="width: 600px" size="huge" title="Add Dependency Track Integration" :bordered="false"
+                                <n-card style="width: 600px" size="huge" title="Add Dependency-Track Integration" :bordered="false"
                                     role="dialog" aria-modal="true">
                                     <n-form @submit="onAddIntegration('DEPENDENCYTRACK')">
-                                        <n-form-item id="org_settings_create_dependency_track_integration_uri_group" label="Dependency Track API Server URI"
+                                        <n-form-item id="org_settings_create_dependency_track_integration_uri_group" label="Dependency-Track API Server URI"
                                             label-for="org_settings_create_dependency_track_integration_uri"
-                                            description="Dependency Track API Server URI">
+                                            description="Dependency-Track API Server URI">
                                             <n-input id="org_settings_create_dependency_track_integration_uri"
                                                 v-model:value="createIntegrationObject.uri" required
-                                                placeholder="Enter Dependency Track API Server URI" />
+                                                placeholder="Enter Dependency-Track API Server URI" />
                                         </n-form-item>
-                                        <n-form-item id="org_settings_create_dependency_track_integration_frontenduri_group" label="Dependency Track Frontend URI"
+                                        <n-form-item id="org_settings_create_dependency_track_integration_frontenduri_group" label="Dependency-Track Frontend URI"
                                             label-for="org_settings_create_dependency_track_integration_frontenduri"
-                                            description="Dependency Track API Server Frontend URI">
+                                            description="Dependency-Track API Server Frontend URI">
                                             <n-input id="org_settings_create_dependency_track_integration_frontenduri"
                                                 v-model:value="createIntegrationObject.frontendUri" required
-                                                placeholder="Enter Dependency Track Frontend URI" />
+                                                placeholder="Enter Dependency-Track Frontend URI" />
                                         </n-form-item>
                                         <n-form-item id="org_settings_create_dependency_track_integration_secret_group" label="API Key"
                                             label-for="org_settings_create_dependency_track_integration_secret"
-                                            description="Dependency Track API Key">
+                                            description="Dependency-Track API Key">
                                             <n-input type="password" id="org_settings_create_dependency_track_integration_secret"
                                                 v-model:value="createIntegrationObject.secret" required
-                                                placeholder="Enter Dependency Track API Key" />
+                                                placeholder="Enter Dependency-Track API Key" />
                                         </n-form-item>
                                         <n-button @click="onAddIntegration('DEPENDENCYTRACK')" type="success">Submit</n-button>
                                         <n-button @click="resetCreateIntegrationObject" type="error">Reset</n-button>

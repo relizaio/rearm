@@ -1801,7 +1801,7 @@ const artifactsTableFields: DataTableColumns<any> = [
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
                 const dtrackElIcon = h(NIcon,
                     {
-                        title: 'Open Dependency Track Project in New Window',
+                        title: 'Open Dependency-Track Project in New Window',
                         class: 'icons clickable',
                         size: 25
                     }, { default: () => h(Link) })
@@ -1810,7 +1810,7 @@ const artifactsTableFields: DataTableColumns<any> = [
 
                 const dtrackRescanEl = h(NIcon,
                     {
-                        title: 'Request Refresh of Dependency Track Metrics',
+                        title: 'Request Refresh of Dependency-Track Metrics',
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
@@ -1819,7 +1819,7 @@ const artifactsTableFields: DataTableColumns<any> = [
 
                 const dtrackRefetchEl = h(NIcon,
                     {
-                        title: 'Refetch Dependency Track Metrics',
+                        title: 'Refetch Dependency-Track Metrics',
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => refetchDependencyTrackMetrics(row.uuid)
@@ -2130,10 +2130,10 @@ async function refetchDependencyTrackMetrics (artifact: string) {
         fetchPolicy: 'no-cache'
     })
     if (resp.data && resp.data.refetchDependencyTrackMetrics) {
-        notify('success', 'Metrics Refetched', 'Metrics refetched for the artifact from Dependency Track.')
+        notify('success', 'Metrics Refetched', 'Metrics refetched for the artifact from Dependency-Track.')
         fetchRelease()
     } else {
-        notify('error', 'Failed to Refetch Metrics', 'Could not refetch Dependency Track metrics. Please try again later or contact support.')
+        notify('error', 'Failed to Refetch Metrics', 'Could not refetch Dependency-Track metrics. Please try again later or contact support.')
     }
 }
 
@@ -2148,9 +2148,9 @@ async function requestRefreshDependencyTrackMetrics (artifact: string) {
         fetchPolicy: 'no-cache'
     })
     if (resp.data && resp.data.requestRefreshDependencyTrackMetrics) {
-        notify('success', 'Refresh Requested', 'Dependency Track metrics refresh requested.')
+        notify('success', 'Refresh Requested', 'Dependency-Track metrics refresh requested.')
     } else {
-        notify('error', 'Failed to Request Refresh', 'Could not request refresh of Dependency Track metrics. Please try again later or contact support.')
+        notify('error', 'Failed to Request Refresh', 'Could not request refresh of Dependency-Track metrics. Please try again later or contact support.')
     }
 }
 
