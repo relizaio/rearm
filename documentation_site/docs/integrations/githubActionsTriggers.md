@@ -1,6 +1,6 @@
 # Trigger GitHub Actions Workflow from ReARM
 
-N.B. This functinality is not part of ReARM Community Edition.
+N.B. This functinality is not part of ReARM Community Edition and is only available on Enterprise Edition.
 
 ## GitHub Part
 1. You need to register a GitHub application that would trigger events in your repositories. To do so, refer to instructions [here](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app#registering-a-github-app).

@@ -15,8 +15,8 @@ Generic integrations with ReARM can be done using [ReARM CLI](./rearmcli).
 1. [Slack](./slack)
 2. [Microsoft Teams](./msteams)
 
-## Integration with Cyber-Security Tools
-1. [Dependency Track](./dtrack)
+## Integrations with Cyber-Security Tools
+1. [Dependency-Track](./dtrack)
 
 ## Identity Provider Integrations
-1. [Microsoft](./identityProviders/microsoft)
+1. [Microsoft Azure](./identityProviders/microsoft)

@@ -14,6 +14,7 @@ function navbar() {
 function sidebar() {
     return [
         {text: 'Getting Started', link: '/get-started/'},
+        {text: 'Installation', link: '/installation/'},
         {text: 'Concepts', link: '/concepts/'},        
         {text: 'Bundling', link: '/bundling/'},
         {text: 'Configure', link: '/configure/'},
@@ -43,7 +44,7 @@ function sidebar() {
             },
             {text: 'Slack', link: '/integrations/slack'},
             {text: 'Microsoft Teams', link: '/integrations/msteams'},
-            {text: 'Dependency Track', link: '/integrations/dtrack'},
+            {text: 'Dependency-Track', link: '/integrations/dtrack'},
             {text: 'Identity Providers', link: '/integrations/identityProviders',
               items: [
                 {text: 'Microsoft', link: '/integrations/identityProviders/microsoft'}

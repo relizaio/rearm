@@ -8,7 +8,7 @@ hero:
   tagline: System to Manage Releases, SBOMs, xBOMs
   actions:
     - text: Get Started →
-      link: /concepts/
+      link: /get-started/
       type: primary
 features:
 - title: BOM Management

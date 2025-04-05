@@ -1,6 +1,6 @@
 # Trigger Jenkins Pipeline from ReARM
 
-N.B. This functinality is not part of ReARM Community Edition.
+N.B. This functinality is not part of ReARM Community Edition and is only available on Enterprise Edition.
 
 ## Jenkins Part
 
