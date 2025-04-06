@@ -2066,6 +2066,39 @@ const parentReleaseTableFields: DataTableColumns<any> = [
         }
     },
     {
+        key: 'vulnerabilities',
+        title: 'Vulnerabilities',
+        render: (row: any) => {
+            let els: any[] = []
+            console.log(row)
+            if (row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: help;'}, row.releaseDetails.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: help;'}, row.releaseDetails.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: help;'}, row.releaseDetails.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: help;'}, row.releaseDetails.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: help;'}, row.releaseDetails.metrics.unassigned)
+                els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
+            }
+            if (!els.length) els = [h('div'), 'N/A']
+            return els
+        }
+    },
+    {
+        key: 'violations',
+        title: 'Violations',
+        render: (row: any) => {
+            let els: any[] = []
+            if (row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: help;'}, row.releaseDetails.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: help;'}, row.releaseDetails.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: help;'}, row.releaseDetails.metrics.policyViolationsOperationalTotal)
+                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
+            }
+            if (!els.length) els = [h('div'), 'N/A']
+            return els
+        }
+    },
+    {
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
