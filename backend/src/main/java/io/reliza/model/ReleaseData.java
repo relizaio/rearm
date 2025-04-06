@@ -151,6 +151,10 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	
 	@JsonProperty
 	private List<UUID> inboundDeliverables = new LinkedList<>();
+	
+	public List<UUID> getInboundDeliverables () {
+		return new LinkedList<>(this.inboundDeliverables);
+	}
 
 	@JsonProperty(CommonVariables.NOTES_FIELD)
 	private String notes = null;
