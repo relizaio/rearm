@@ -31,7 +31,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Hash.Algorithm;
 import org.cyclonedx.model.Metadata;
+import org.cyclonedx.model.OrganizationalContact;
 import org.cyclonedx.model.OrganizationalEntity;
+import org.cyclonedx.model.Component.Type;
+import org.cyclonedx.model.ExternalReference;
 import org.cyclonedx.model.metadata.ToolInformation;
 import org.springframework.core.io.Resource;
 import org.springframework.security.access.AccessDeniedException;
@@ -337,22 +340,38 @@ public class Utils {
         return linkifiedCommit;
 	}
 	
-	public static void setRelizaBomMetadata (Bom bom, String orgName, org.cyclonedx.model.Component bomComponent) {
+	public static void setRearmBomMetadata (Bom bom, String orgName, org.cyclonedx.model.Component bomComponent) {
 		Metadata bomMeta = new Metadata();
-		OrganizationalEntity bomManufacturer = new OrganizationalEntity();
-		bomManufacturer.setName(orgName);
 		ToolInformation rearmTool = new ToolInformation();
 		org.cyclonedx.model.Component rearmComponent = new org.cyclonedx.model.Component();
 		rearmComponent.setName("ReARM");
-		OrganizationalEntity relizaOrg = new OrganizationalEntity();
-		relizaOrg.setName("Reliza Incorporated");
-		rearmComponent.setManufacturer(relizaOrg);
+		rearmComponent.setType(Type.APPLICATION);
+		rearmComponent.setGroup("io.reliza");
+		OrganizationalEntity oe = new OrganizationalEntity();
+		oe.setName("Reliza Incorporated");
+		oe.setUrls(List.of("https://reliza.io", "https://rearmhq.com"));
+		OrganizationalContact oc = new OrganizationalContact();
+		oc.setName("Reliza Incorporated");
+		oc.setEmail("info@reliza.io");
+		oe.setContacts(List.of(oc));
+		rearmComponent.setSupplier(oe);
+		rearmComponent.setAuthors(List.of(oc));
+		rearmComponent.setDescription("System to Manage Releases, SBOMs, xBOMs");
+		ExternalReference erRelizaVcs = new ExternalReference();
+		erRelizaVcs.setType(org.cyclonedx.model.ExternalReference.Type.VCS);
+		erRelizaVcs.setUrl("ssh://git@github.com/relizaio/rearm.git");
+		ExternalReference erRelizaUrl = new ExternalReference();
+		erRelizaUrl.setType(org.cyclonedx.model.ExternalReference.Type.WEBSITE);
+		erRelizaUrl.setUrl("https://rearmhq.com");
+		ExternalReference erRelizaDocs = new ExternalReference();
+		erRelizaDocs.setType(org.cyclonedx.model.ExternalReference.Type.DOCUMENTATION);
+		erRelizaDocs.setUrl("https://docs.rearmhq.com");
+		rearmComponent.setExternalReferences(List.of(erRelizaUrl, erRelizaVcs, erRelizaDocs));
 		rearmTool.setComponents(List.of(rearmComponent));
 		// TODO set ReARM version
 		ZonedDateTime zdt = ZonedDateTime.now();
 		bomMeta.setTimestamp(Date.from(zdt.toInstant()));
 		if (null != bomComponent) bomMeta.setComponent(bomComponent);
-		bomMeta.setManufacturer(bomManufacturer);
 		bomMeta.setToolChoice(rearmTool);
 		bom.setMetadata(bomMeta);
 	}

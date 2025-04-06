@@ -723,6 +723,19 @@ public class ReleaseDatafetcher {
 	
 	public static record SearchDigestVersionResponse (List<ReleaseData> commitReleases) {}
 	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "exportAsObomManual")
+	public String exportAsObomManual(DgsDataFetchingEnvironment dfe,
+			@InputArgument("releaseUuid") UUID releaseUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		return releaseService.exportReleaseAsObom(releaseUuid).toString();
+	}
+	
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchDigestVersion")
 	public SearchDigestVersionResponse searchDigestVersion(
 			@InputArgument("orgUuid") UUID orgUuid,
@@ -789,6 +802,7 @@ public class ReleaseDatafetcher {
 		return new SearchDigestVersionResponse(retList);
 	}
 	
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "releasesByTags")
 	public List<ReleaseData> getReleases(DgsDataFetchingEnvironment dfe,
 			@InputArgument("orgUuid") UUID orgUuid,

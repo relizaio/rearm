@@ -20,51 +20,58 @@
             </n-modal>
             <n-modal
                 v-model:show="showExportSBOMModal"
-                title='Export Release SBOM'
+                title='Export Release BOM'
                 preset="dialog"
                 :show-icon="false" >
-                <ul>
-                    <n-form>
-                        <n-form-item label="Select SBOM configuration for export">
-                            
-                            <n-radio-group v-model:value="selectedRebomType" name="rebomTypesRG">
-                                <n-radio-button
-                                    v-for="abtn in rebomTypes"
-                                    :key="abtn.value"
-                                    :value="abtn.value"
-                                    :label="abtn.key"
-                                />
-                            </n-radio-group>
-                        </n-form-item>
-                            <n-form-item label="Select structure">
-                            
-                            <n-radio-group v-model:value="selectedBomStructureType" name="bomStructureType">
-                                <n-radio-button
-                                    v-for="abtn in bomStructureTypes"
-                                    :key="abtn.value"
-                                    :value="abtn.value"
-                                    :label="abtn.key"
-                                />
-                            </n-radio-group>
-                        </n-form-item>
-                        <n-form-item>
-                            Top Level Dependency only: <n-switch v-model:value="tldOnly"/>
-                        </n-form-item>
-                        <n-spin :show="bomExportPending" small style="margin-top: 5px;">
-                            <n-button type="success" 
-                                :disabled="bomExportPending"
-                                @click="exportReleaseSbom(releaseUuid, tldOnly, selectedBomStructureType, selectedRebomType)">
-                                <span v-if="bomExportPending" class="ml-2">Exporting...</span>
-                                <span v-else>Export</span>
-                            </n-button>
-                        </n-spin>
-
-                        <!-- <a :href="'/api/manual/v1/release/sbom/export/' + releaseUuid + bomExportQuery" target="_blank" rel="noopener noreferrer">
-                            <n-button type="success">Export</n-button>
-                        </a> -->
+                <n-form-item label="Select xBOM Type">
+                    <n-radio-group v-model:value="exportBomType" name="xBomType">
+                        <n-radio-button value="SBOM">
+                            SBOM
+                        </n-radio-button>
+                        <n-radio-button value="OBOM">
+                            OBOM
+                        </n-radio-button>
+                    </n-radio-group>
+                </n-form-item>
+                <n-form v-if="exportBomType === 'SBOM'">
+                    <n-form-item label="Select SBOM configuration for export">
+                        <n-radio-group v-model:value="selectedRebomType" name="rebomTypesRG">
+                            <n-radio-button
+                                v-for="abtn in rebomTypes"
+                                :key="abtn.value"
+                                :value="abtn.value"
+                                :label="abtn.key"
+                            />
+                        </n-radio-group>
+                    </n-form-item>
+                        <n-form-item label="Select structure">
                         
-                    </n-form>
-                </ul>
+                        <n-radio-group v-model:value="selectedBomStructureType" name="bomStructureType">
+                            <n-radio-button
+                                v-for="abtn in bomStructureTypes"
+                                :key="abtn.value"
+                                :value="abtn.value"
+                                :label="abtn.key"
+                            />
+                        </n-radio-group>
+                    </n-form-item>
+                    <n-form-item>
+                        Top Level Dependency only: <n-switch v-model:value="tldOnly"/>
+                    </n-form-item>
+                    <n-spin :show="bomExportPending" small style="margin-top: 5px;">
+                        <n-button type="success" 
+                            :disabled="bomExportPending"
+                            @click="exportReleaseSbom(tldOnly, selectedBomStructureType, selectedRebomType)">
+                            <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                            <span v-else>Export</span>
+                        </n-button>
+                    </n-spin>
+                </n-form>
+                <n-button v-if="exportBomType === 'OBOM'" type="success" 
+                    @click.prevent="exportReleaseObom">
+                    <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                    <span v-else>Export</span>
+                </n-button>
             </n-modal>
             <div v-if="release && release.componentDetails">
                 <h3 style="color: #537985; display: inline;">                  
@@ -120,11 +127,7 @@
                 <router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
                     <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
                 </router-link>
-                <a :href="'/api/manual/v1/release/exportAsBom/' + releaseUuid" target="_blank"
-                    rel="noopener noreferrer">
-                    <Icon class="clickable" style="margin-left:10px;" size="16" title="Show OBOM as CycloneDX JSON"><Download/></Icon>
-                </a>
-                <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release SBOM" ><FileInvoice/></Icon>
+                <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                 <Icon v-if="release.lifecycle === 'ASSEMBLED'" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
                 <span class="lifecycle" style="float: right; margin-right: 80px;">
                     <span v-if="userPermission !== 'READ_ONLY'">
@@ -447,7 +450,7 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputGroup, NModal, NRadioButton, NRadioGroup, NSelect, NSpin, NSpace, NSwitch, NTabPane, NTabs, NTag, NFlex, NTooltip, NUpload, NotificationType, useNotification, DataTableColumns } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NIcon, NInput, NInputGroup, NModal, NRadio, NRadioButton, NRadioGroup, NSelect, NSpin, NSpace, NSwitch, NTabPane, NTabs, NTag, NFlex, NTooltip, NUpload, NotificationType, useNotification, DataTableColumns } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -604,6 +607,7 @@ const rebomTypes: ComputedRef<any[]> = computed((): any[] => {
     )
     return types
 })
+const exportBomType: Ref<string> = ref('SBOM')
 const selectedRebomType: Ref<string> = ref('')
 const tldOnly: Ref<boolean> = ref(true)
 const selectedBomStructureType: Ref<string> = ref('FLAT')
@@ -1312,7 +1316,7 @@ const downloadArtifact = async (art: any) => {
     })
 }
 
-async function exportReleaseSbom (release: string, tldOnly: boolean, selectedBomStructureType: string, selectedRebomType: string) {
+async function exportReleaseSbom (tldOnly: boolean, selectedBomStructureType: string, selectedRebomType: string) {
     try {
         bomExportPending.value = true
         const gqlResp: any = await graphqlClient.mutate({
@@ -1322,7 +1326,7 @@ async function exportReleaseSbom (release: string, tldOnly: boolean, selectedBom
                 }
             `,
             variables: {
-                release: release,
+                release: updatedRelease.value.uuid,
                 tldOnly: tldOnly,
                 structure: selectedBomStructureType,
                 belongsTo: selectedRebomType ? selectedRebomType : null
@@ -1331,6 +1335,37 @@ async function exportReleaseSbom (release: string, tldOnly: boolean, selectedBom
         })
         const fileName = release + '.json'
         const blob = new Blob([gqlResp.data.releaseSbomExport], { type: 'application/json' })
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = updatedRelease.value.uuid + '-sbom.json'
+        link.click()
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    } finally {
+        bomExportPending.value = false
+    }
+}
+
+async function exportReleaseObom () {
+    try {
+        bomExportPending.value = true
+        const gqlResp: any = await graphqlClient.query({
+            query: gql`
+                query exportAsObomManual($releaseUuid: ID!) {
+                    exportAsObomManual(releaseUuid: $releaseUuid)
+                }
+            `,
+            variables: {
+                releaseUuid: updatedRelease.value.uuid
+            },
+            fetchPolicy: 'no-cache'
+        })
+        const fileName = updatedRelease.value.uuid + '-obom.json'
+        const blob = new Blob([gqlResp.data.exportAsObomManual], { type: 'application/json' })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
         link.download = fileName

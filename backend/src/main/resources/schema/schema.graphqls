@@ -58,6 +58,8 @@ type Query {
 	getAllOrganizations: [Organization]
 	
 	getSystemInfoIsSet: SystemInfoIsSet
+	
+	exportAsObomManual(releaseUuid: ID!): String
 }
 
 type Mutation {

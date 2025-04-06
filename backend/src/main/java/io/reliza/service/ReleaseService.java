@@ -606,13 +606,12 @@ public class ReleaseService {
 		return products;
 	}
 
-	public JsonNode exportReleaseAsBom(UUID releaseUuid) {
+	public JsonNode exportReleaseAsObom(UUID releaseUuid) {
 		JsonNode output = null;
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		if (ord.isPresent()) {
 			List<Component> components = parseReleaseIntoCycloneDxComponents(releaseUuid);
 			Set<ReleaseData> dependencies = sharedReleaseService.unwindReleaseDependencies(ord.get());
-			// TODO leverage artifacts in deployed releases correctly
 			for (ReleaseData dependency : dependencies) {
 				components.addAll(parseReleaseIntoCycloneDxComponents(dependency.getUuid()));
 			}
@@ -620,15 +619,14 @@ public class ReleaseService {
 			for (Component c : components) {
 				bom.addComponent(c);
 			}
-			// set component and metadata
 			var orgData = organizationService.getOrganizationData(ord.get().getOrg()).get();
-			var projData = getComponentService.getComponentData(ord.get().getComponent()).get();
+			var cData = getComponentService.getComponentData(ord.get().getComponent()).get();
 			Component bomComponent = new Component();
-			bomComponent.setName(projData.getName());
+			bomComponent.setName(cData.getName());
 			bomComponent.setType(Type.APPLICATION);
 			bomComponent.setVersion(ord.get().getVersion());
-			Utils.setRelizaBomMetadata(bom, orgData.getName(), bomComponent);
-			BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_15, bom);
+			Utils.setRearmBomMetadata(bom, orgData.getName(), bomComponent);
+			BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
 			try {
 				output = generator.toJsonNode();
 			} catch (Exception e) {
