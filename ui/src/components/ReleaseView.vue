@@ -74,74 +74,93 @@
                 </n-button>
             </n-modal>
             <div v-if="release && release.componentDetails">
-                <h3 style="color: #537985; display: inline;">                  
-                    <router-link
-                        style="text-decoration: none; color: rgb(39 179 223);"
-                        :to="{name: isComponent ? 'ComponentsOfOrg' : 'ProductsOfOrg', params: { orguuid: release.orgDetails.uuid, compuuid: release.componentDetails.uuid } }">{{
-                        release.componentDetails.name }} </router-link>
-                    <span style="margin-left: 6px;">{{words.componentFirstUpper}} Release {{ updatedRelease ? updatedRelease.version : '' }}</span>
-                </h3>
-                <n-tooltip trigger="hover">
-                    <template #trigger>
-                        <Icon class="clickable" style="margin-left:10px;" size="16"><Info20Regular/></Icon>
-                    </template>
-                    <strong>UUID: </strong> {{ releaseUuid }}
-                    <div><strong>Marketing Version: </strong>{{ updatedRelease && updatedRelease.marketingVersion ? updatedRelease.marketingVersion : 'Not Set' }}</div>
-                    <div class=""><strong>Organization:</strong> {{ release.orgDetails.name }}</div>
-                    <div class="" v-if="updatedRelease.endpoint">
-                        <strong>Test endpoint: </strong>
-                        <a :href="updatedRelease.endpoint">{{ updatedRelease.endpoint }}</a>
-                    </div>
-                    <div>
-                        <strong>{{ words.branchFirstUpper }}: </strong>
-                        <router-link
-                            style="color: white;"
-                            :to="{ name: isComponent ? 'ComponentsOfOrg' : 'ProductsOfOrg', params: { orguuid: release.orgDetails.uuid, compuuid: release.componentDetails.uuid, branchuuid: release.branchDetails.uuid } }">
-                            {{ release.branchDetails.name }}
+                <n-grid x-gap="2" :cols="4">
+                    <n-gi span="2">
+                        <h3 style="color: #537985; display: inline;">                  
+                            <router-link
+                                style="text-decoration: none; color: rgb(39 179 223);"
+                                :to="{name: isComponent ? 'ComponentsOfOrg' : 'ProductsOfOrg', params: { orguuid: release.orgDetails.uuid, compuuid: release.componentDetails.uuid } }">{{
+                                release.componentDetails.name }} </router-link>
+                            <span style="margin-left: 6px;">{{words.componentFirstUpper}} Release {{ updatedRelease ? updatedRelease.version : '' }}</span>
+                        </h3>
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <Icon class="clickable" style="margin-left:10px;" size="16"><Info20Regular/></Icon>
+                            </template>
+                            <strong>UUID: </strong> {{ releaseUuid }}
+                            <div><strong>Marketing Version: </strong>{{ updatedRelease && updatedRelease.marketingVersion ? updatedRelease.marketingVersion : 'Not Set' }}</div>
+                            <div class=""><strong>Organization:</strong> {{ release.orgDetails.name }}</div>
+                            <div class="" v-if="updatedRelease.endpoint">
+                                <strong>Test endpoint: </strong>
+                                <a :href="updatedRelease.endpoint">{{ updatedRelease.endpoint }}</a>
+                            </div>
+                            <div>
+                                <strong>{{ words.branchFirstUpper }}: </strong>
+                                <router-link
+                                    style="color: white;"
+                                    :to="{ name: isComponent ? 'ComponentsOfOrg' : 'ProductsOfOrg', params: { orguuid: release.orgDetails.uuid, compuuid: release.componentDetails.uuid, branchuuid: release.branchDetails.uuid } }">
+                                    {{ release.branchDetails.name }}
+                                </router-link>
+                            </div>
+                            <div><strong>Created: </strong>{{ updatedRelease ? (new
+                                Date(updatedRelease.createdDate)).toLocaleString('en-CA') : '' }}
+                            </div>
+                            <div v-if="release.componentDetails.type === 'COMPONENT' && pullRequest !== null && pullRequest.number">
+                                <strong>
+                                    <span>Pull Request</span>:
+                                </strong>
+                                <router-link
+                                    :to="{ name: 'ComponentsOfOrg', params: { orguuid: release.orgDetails.uuid, compuuid: release.componentDetails.uuid, branchuuid: release.branchDetails.uuid, prnumber: pullRequest.number } }">
+                                    #{{ pullRequest.number }} {{ pullRequest.title }}
+                                </router-link>
+                                <a :href="pullRequest.endpoint">
+                                    <Icon class="clickable" size="25" title="Permanent Link"><Link/></Icon>
+                                </a>
+                            </div>
+                        </n-tooltip>
+                        <vue-feather v-if="userPermission !== 'READ_ONLY' && release.componentDetails.type === 'PRODUCT'"
+                            size="16px"
+                            class="clickable icons versionIcon"
+                            type="copy"
+                            title="Create Feature Set From Release"
+                            @click="cloneReleaseToFs(releaseUuid, release.version)"
+                            style="margin-left:10px;"
+                        />
+                        <router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
+                            <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
                         </router-link>
-                    </div>
-                    <div><strong>Created: </strong>{{ updatedRelease ? (new
-                        Date(updatedRelease.createdDate)).toLocaleString('en-CA') : '' }}
-                    </div>
-                    <div v-if="release.componentDetails.type === 'COMPONENT' && pullRequest !== null && pullRequest.number">
-                        <strong>
-                            <span>Pull Request</span>:
-                        </strong>
-                        <router-link
-                            :to="{ name: 'ComponentsOfOrg', params: { orguuid: release.orgDetails.uuid, compuuid: release.componentDetails.uuid, branchuuid: release.branchDetails.uuid, prnumber: pullRequest.number } }">
-                            #{{ pullRequest.number }} {{ pullRequest.title }}
-                        </router-link>
-                        <a :href="pullRequest.endpoint">
-                            <Icon class="clickable" size="25" title="Permanent Link"><Link/></Icon>
-                        </a>
-                    </div>
-                </n-tooltip>
-                <vue-feather v-if="userPermission !== 'READ_ONLY' && release.componentDetails.type === 'PRODUCT'"
-                    size="16px"
-                    class="clickable icons versionIcon"
-                    type="copy"
-                    title="Create Feature Set From Release"
-                    @click="cloneReleaseToFs(releaseUuid, release.version)"
-                    style="margin-left:10px;"
-                />
-                <router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
-                    <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
-                </router-link>
-                <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
-                <Icon v-if="release.lifecycle === 'ASSEMBLED'" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
-                <span class="lifecycle" style="float: right; margin-right: 80px;">
-                    <span v-if="userPermission !== 'READ_ONLY'">
-                        <n-dropdown v-if="updatedRelease.lifecycle" trigger="hover" :options="lifecycleOptions" @select="lifecycleChange">
-                            <n-tag type="success">{{updatedRelease.lifecycle}}</n-tag>
-                        </n-dropdown>
-                    </span>
-                    <span v-if="userPermission === 'READ_ONLY'">
-                        <n-tag type="success">{{ updatedRelease.lifecycle }}</n-tag>
-                    </span>
-                </span>
+                        <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
+                        <Icon v-if="release.lifecycle === 'ASSEMBLED'" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
+                    </n-gi>
+                    <n-gi>
+                        <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
+                            <span title="Criticial Severity Vulnerabilities" class="circle" style="background: #f86c6b; cursor: help;">{{ updatedRelease.metrics.critical }}</span>    
+                            <span title="High Severity Vulnerabilities" class="circle" style="background: #fd8c00; cursor: help;">{{ updatedRelease.metrics.high }}</span>
+                            <span title="Medium Severity Vulnerabilities" class="circle" style="background: #ffc107; cursor: help;">{{ updatedRelease.metrics.medium }}</span>
+                            <span title="Low Severity Vulnerabilities" class="circle" style="background: #4dbd74; cursor: help;">{{ updatedRelease.metrics.low }}</span>
+                            <span title="Vulnerabilities with Unassigned Severity" class="circle" style="background: #777; cursor: help;">{{ updatedRelease.metrics.unassigned }}</span>
+                            <div style="width: 30px;"></div>
+                            <span title="Licensing Policy Violations" class="circle" style="background: blue; cursor: help;">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
+                            <span title="Security Policy Violations" class="circle" style="background: red; cursor: help;">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
+                            <span title="Operational Policy Violations" class="circle" style="background: grey; cursor: help;">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
+                        </n-space>
+                    </n-gi>
+                    <n-gi>
+                        <span class="lifecycle" style="float: right; margin-right: 80px;">
+                            <span v-if="userPermission !== 'READ_ONLY'">
+                                <n-dropdown v-if="updatedRelease.lifecycle" trigger="hover" :options="lifecycleOptions" @select="lifecycleChange">
+                                    <n-tag type="success">{{updatedRelease.lifecycle}}</n-tag>
+                                </n-dropdown>
+                            </span>
+                            <span v-if="userPermission === 'READ_ONLY'">
+                                <n-tag type="success">{{ updatedRelease.lifecycle }}</n-tag>
+                            </span>
+                        </span>
+                    </n-gi>
+                </n-grid>
             </div>
         </div>
-       
+
         <div class="row" v-if="release && release.orgDetails && updatedRelease && updatedRelease.orgDetails">
             <n-tabs style="padding-left:2%;" type="line" @update:value="handleTabSwitch">
                 <n-tab-pane name="components" tab="Components">
@@ -450,7 +469,7 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NIcon, NInput, NInputGroup, NModal, NRadio, NRadioButton, NRadioGroup, NSelect, NSpin, NSpace, NSwitch, NTabPane, NTabs, NTag, NFlex, NTooltip, NUpload, NotificationType, useNotification, DataTableColumns } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NIcon, NInput, NInputGroup, NModal, NRadioButton, NRadioGroup, NSelect, NSpin, NSpace, NSwitch, NTabPane, NTabs, NTag, NFlex, NTooltip, NUpload, NotificationType, useNotification, DataTableColumns, NGrid, NGi } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
