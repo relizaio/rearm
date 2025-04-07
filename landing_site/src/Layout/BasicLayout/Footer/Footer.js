@@ -82,7 +82,7 @@ const Footer = () => {
         </div>
         <div className="d-flex justify-content-between align-items-center mt-4">
           <img src={Logo} alt='Logo' style={{ width: "20%" }} />
-          <span className="footer_rights">© 2019-2023 All rights reserved</span>
+          <span className="footer_rights">© 2019-2025 All rights reserved</span>
         </div>
       </div>
     </div>

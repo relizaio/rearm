@@ -19,7 +19,7 @@ const Component1 = ({ details, index }) => {
       <div className={`col-12 col-sm-6 ${styles.imageCard}`}>
         <img src={details?.image} alt="" style={{ width: "100%" }} />
       </div>
-      <div className='d-flex'><a href='https://app.relizahub.com' target="_blank" style={{ textDecoration: "none" }}><button className={`d-block d-sm-none ${styles.btn_usingFree}`}>Start using for free</button></a></div>
+      {/* <div className='d-flex'><a href='https://app.relizahub.com' target="_blank" style={{ textDecoration: "none" }}><button className={`d-block d-sm-none ${styles.btn_usingFree}`}>Start using for free</button></a></div> */}
     </div>
   )
 }

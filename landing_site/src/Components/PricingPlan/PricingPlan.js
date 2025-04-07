@@ -91,7 +91,7 @@ const PricingPlan = () => {
         dots: true,
         slidesToShow: monthlyPlan?.length >= 3 ? 3 : monthlyPlan?.length,
         slidesToScroll: 1,
-        initialSlide: 1,
+        initialSlide: 0,
         infinite: false,
         centerMode: true,
         className: "center",
