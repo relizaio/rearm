@@ -3,10 +3,10 @@
   padding-top: 100px;
 }
 .videoContainer {
-  max-width: 800px;
-  height: 500px;
+  max-width: 888px;
   border-radius: 20px;
   margin-bottom: 200px;
+  aspect-ratio: 16/9;
 }
 .C1_title {
   font-family: "Inter";
@@ -258,7 +258,7 @@
   }
   .videoContainer {
     max-width: 800px;
-    height: 410px;
+    aspect-ratio: 16/9;
     border-radius: 0px;
     margin-bottom: 70px;
   }
