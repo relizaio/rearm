@@ -24,7 +24,19 @@ const PricingPlan = () => {
         },
         {
             id: 1,
-            title: "Basic Plan",
+            title: "Startup Plan",
+            icon: starterPlan,
+            amount: "$190",
+            type: "Per Month",
+            space: "Up to 3 team members",
+            yearSupport: "Premium support",
+            querries: "Approvals and Triggers",
+            statistics: "Marketing Release Workflow",
+            trial: "Free 90 day trial"
+        },
+        {
+            id: 2,
+            title: "Standard Plan",
             icon: basicPlan,
             amount: "$1490",
             type: "Per Month",
@@ -36,7 +48,7 @@ const PricingPlan = () => {
             trial: "Free 90 day trial"
         },
         {
-            id: 2,
+            id: 3,
             title: "Enterprise Plan",
             icon: premiumPlan,
             amount: "Contact",
@@ -89,7 +101,7 @@ const PricingPlan = () => {
     ]
     const settings = {
         dots: true,
-        slidesToShow: monthlyPlan?.length >= 3 ? 3 : monthlyPlan?.length,
+        slidesToShow: monthlyPlan?.length,
         slidesToScroll: 1,
         initialSlide: 0,
         infinite: false,
