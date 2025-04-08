@@ -1,6 +1,6 @@
 ![Build Status](https://github.com/relizaio/rearm/actions/workflows/github_actions.yml/badge.svg?branch=main)
 
-# ReARM SBOM / xBOM and Release Management - Community Edition
+# ReARM - SBOM / xBOM and Release Manager - Community Edition
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
