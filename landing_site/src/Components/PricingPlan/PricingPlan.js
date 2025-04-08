@@ -20,7 +20,8 @@ const PricingPlan = () => {
             type: "Forever",
             space: "Self-Hosted",
             yearSupport: "Community support",
-            querries: "All base SBOM / xBOM storage and retrieval features"
+            querries: "All base SBOM / xBOM storage and retrieval features",
+            statistics: "Vulnerabilities and Violations via self-managed Dependency-Track Integration"
         },
         {
             id: 1,
@@ -30,8 +31,8 @@ const PricingPlan = () => {
             type: "Per Month",
             space: "Up to 3 team members",
             yearSupport: "Premium support",
-            querries: "Approvals and Triggers",
-            statistics: "Marketing Release Workflow",
+            querries: "Managed Dependency-Track Integration",
+            statistics: "Approvals, Triggers and Marketing Releases",
             trial: "Free 90 day trial"
         },
         {
@@ -42,8 +43,8 @@ const PricingPlan = () => {
             type: "Per Month",
             space: "Up to 20 team members",
             yearSupport: "Premium support",
-            querries: "Approvals and Triggers",
-            statistics: "Marketing Release Workflow",
+            querries: "Managed Dependency-Track Integration",
+            statistics: "Approvals, Triggers and Marketing Releases",
             domain: "Managed Service with SSO",
             trial: "Free 90 day trial"
         },
@@ -55,8 +56,8 @@ const PricingPlan = () => {
             type: "us",
             space: "More than 20 team members",
             yearSupport: "Premium Support",
-            querries: "Approvals and Triggers",
-            statistics: "Marketing Release Workflow",
+            querries: "Managed Dependency-Track Integration",
+            statistics: "Approvals, Triggers and Marketing Releases",
             domain: "Managed Service with SSO, including on-prem install",
             trial: "Free 90 day trial"
         },
