@@ -10,7 +10,9 @@ ReARM is an abbreviation for "Reliza's Awesome Release Manager". It is a DevSecO
 
 ReARM is developed by [Reliza](https://reliza.io). 
 
-## Important links
+## Project links
+ReARM CLI: https://github.com/relizaio/rearm-cli
+
 Project ReARM web-site: https://rearmhq.com
 
 Documentation: https://docs.rearmhq.com
