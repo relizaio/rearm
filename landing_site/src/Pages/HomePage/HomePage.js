@@ -223,9 +223,11 @@ const HomePage = () => {
             </div>
           </div>
           <div className='d-flex justify-content-center'>
-          <a href='https://demo.rearmhq.com' target="_blank" style={{textDecoration:"none"}}><button className={styles.btn_usingFree}>Try Public Demo</button></a>
-            
+            <a href='https://demo.rearmhq.com' target="_blank" style={{textDecoration:"none"}}><button className={styles.btn_usingFree}>Try Public Demo</button></a>
           </div>
+        </div>
+        <div className={`d-flex justify-content-center`}>
+          <iframe className={`${styles.videoContainer}`} src="https://github-production-user-asset-6210df.s3.amazonaws.com/3857268/431359564-a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVCODYLSA53PQK4ZA%2F20250408%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250408T121333Z&X-Amz-Expires=300&X-Amz-Signature=77fd419c98b4b121fa7ddfbeffdf7fa77217ceb71512fd8d224b27328666e277&X-Amz-SignedHeaders=host" width="100%" height="100%" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen title="ReARM Demo Walkthrough"></iframe>
         </div>
         <div className={`container-fluid ${styles.container2}`}>
           <div className='row'>
