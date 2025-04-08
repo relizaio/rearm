@@ -85,7 +85,7 @@ const HomePage = () => {
     },
     {
       image: auto_integrate,
-      title: "Automated Bundling into Producs",
+      title: "Automated Bundling into Products",
       texts: [
         { text: "ReARM automatically bundles your Components into Products and supports multi-level nesting." }
       ]
