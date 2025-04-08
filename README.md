@@ -1,6 +1,8 @@
 # ReARM
 ReARM SBOM / xBOM and Release Management - Community Edition
 
+https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
+
 ## About
 ReARM is an abbreviation for "Reliza's Awesome Release Manager". It is a DevSecOps and Supply Chain Security tool to organize product releases with their metadata, including various Bills of Materials (SBOMs / xBOMs).
 
