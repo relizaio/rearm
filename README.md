@@ -9,19 +9,31 @@ ReARM is an abbreviation for "Reliza's Awesome Release Manager". It is a DevSecO
 
 ReARM stores xBOMs on OCI-compatible storage via Reliza's [Rebom](https://github.com/relizaio/rebom) project.
 
-ReARM is developed by [Reliza](https://reliza.io). 
+ReARM is developed by [Reliza](https://reliza.io).
+
+## Motivation
+ReARM is a xBOM management system that allows organizations to maintain compliance within the framework of [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) as well as US Executive Orders [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity) and [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity).
+
+While highlighting regulatory pressure, we strive to make sure that ReARM bears minimum or no overhead on developers and more so provides real value in terms of managing technology releases and their metadata. In other words, our goal is creating a product that would be useful for developers and managers, while also solving the compliance problem.
+
+Creators of ReARM are part of [Transparency Exchange API](https://github.com/CycloneDX/transparency-exchange-api/) workgroup that aims to build standard API for exchanging supply chain artifacts and intelligence.
 
 ## Project links
+Documentation: https://docs.rearmhq.com
+
 ReARM CLI: https://github.com/relizaio/rearm-cli
 
 Project ReARM web-site: https://rearmhq.com
-
-Documentation: https://docs.rearmhq.com
 
 Public Demo: https://demo.rearmhq.com
 
 ## Public Demo
 Public Demo is available at https://demo.rearmhq.com. When you register for the demo, you get read-only account for the Demo organization and can browse several existing demo Components, Products, Releases. You may then also create your own organization and try organizing storage for your own release metadata (Documentation for this coming soon). Note, that while your data on Public Demo is private, it is subject to deletion at any time and without notice.
+
+## Installation, Tutorials, Documentation
+Refer to the project documentation: https://docs.rearmhq.com
+
+This documentation is built using vitepress and checked in to this repository under `documentation_site`. If you spot any issues or would like to propose additions, please open issues or Pull Requests accordingly.
 
 ## Developing ReARM
 
