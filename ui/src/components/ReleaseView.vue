@@ -463,7 +463,7 @@ import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular } from '@vicons/fluent'
-import { Box, CirclePlus, ClipboardCheck, Download, FileInvoice, GitCompare, Link, Trash, Refresh, Upload } from '@vicons/tabler'
+import { Box, CirclePlus, ClipboardCheck, Download, FileDownload, FileInvoice, GitCompare, Link, Trash, Refresh, Upload } from '@vicons/tabler'
 import { CancelOutlined } from '@vicons/material'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular } from '@vicons/fluent'
@@ -1334,6 +1334,21 @@ const downloadArtifact = async (art: any) => {
         link.click()
     })
 }
+const downloadRawArtifact = async (art: any) => {
+    axios({
+        method: 'get',
+        url: '/api/manual/v1/artifact/' + art.uuid + '/rawdownload',
+        responseType: 'arraybuffer',
+    }).then(function (response) {
+        const artType = art.tags.find((tag: any) => tag.key === 'mediaType')?.value
+        const fileName = art.tags.find((tag: any) => tag.key === 'fileName')?.value
+        let blob = new Blob([response.data], { type: artType })
+        let link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = fileName
+        link.click()
+    })
+}
 
 async function exportReleaseSbom (tldOnly: boolean, selectedBomStructureType: string, selectedRebomType: string) {
     try {
@@ -1853,6 +1868,16 @@ const artifactsTableFields: DataTableColumns<any> = [
                         size: 25,
                         onClick: () => downloadArtifact(row)
                     }, { default: () => h(Download) })
+                els.push(downloadEl)
+            }
+            if (isDownloadable) {
+                const downloadEl = h(NIcon,
+                    {
+                        title: 'Download Raw Artifact',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => downloadRawArtifact(row)
+                    }, { default: () => h(FileDownload) })
                 els.push(downloadEl)
             }
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
