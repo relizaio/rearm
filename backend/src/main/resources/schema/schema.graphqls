@@ -584,35 +584,35 @@ type Artifact {
 
 type DependencyTrackMetrics {
 	dependencyTrackFullUri: String
-    lastScanned: DateTime
-    critical: Int
-   	high: Int
-    medium: Int
-    low: Int
-    unassigned: Int
-    vulnerabilities: Int
-    vulnerableComponents: Int
-    components: Int
-    suppressed: Int
-    findingsTotal: Int
-    findingsAudited: Int
-    findingsUnaudited: Int
-    inheritedRiskScore: Int
-    policyViolationsFail: Int
-    policyViolationsWarn: Int
-    policyViolationsInfo: Int
-    policyViolationsTotal: Int
-    policyViolationsAudited: Int
-    policyViolationsUnaudited: Int
-    policyViolationsSecurityTotal: Int
-    policyViolationsSecurityAudited: Int
-    policyViolationsSecurityUnaudited: Int
-    policyViolationsLicenseTotal: Int
-    policyViolationsLicenseAudited: Int
-    policyViolationsLicenseUnaudited: Int
-    policyViolationsOperationalTotal: Int
-    policyViolationsOperationalAudited: Int
-    policyViolationsOperationalUnaudited: Int
+	lastScanned: DateTime
+	critical: Int
+	high: Int
+	medium: Int
+	low: Int
+	unassigned: Int
+	vulnerabilities: Int
+	vulnerableComponents: Int
+	components: Int
+	suppressed: Int
+	findingsTotal: Int
+	findingsAudited: Int
+	findingsUnaudited: Int
+	inheritedRiskScore: Int
+	policyViolationsFail: Int
+	policyViolationsWarn: Int
+	policyViolationsInfo: Int
+	policyViolationsTotal: Int
+	policyViolationsAudited: Int
+	policyViolationsUnaudited: Int
+	policyViolationsSecurityTotal: Int
+	policyViolationsSecurityAudited: Int
+	policyViolationsSecurityUnaudited: Int
+	policyViolationsLicenseTotal: Int
+	policyViolationsLicenseAudited: Int
+	policyViolationsLicenseUnaudited: Int
+	policyViolationsOperationalTotal: Int
+	policyViolationsOperationalAudited: Int
+	policyViolationsOperationalUnaudited: Int
 }
 
 type InternalBom {
@@ -1295,7 +1295,7 @@ enum ProgrammaticType {
 
 enum ReleaseLifecycleEnum {
 	PENDING
-    DRAFT
+	DRAFT
 	CANCELLED
 	ASSEMBLED
 	REJECTED
@@ -1362,7 +1362,7 @@ enum ConditionType {
 }
 
 enum MetricsType {
-    CRITICAL_VULNS
+	CRITICAL_VULNS
 	HIGH_VULNS
 	MEDIUM_VULNS
 	LOW_VULNS
@@ -1428,12 +1428,12 @@ enum ReleaseStatus {
 }
 
 enum MarketingReleaseLifecycleEnum {
-    FIRST_MENTION
-    ALPHA_TESTING
-    BETA_TESTING
-    RELEASE_CANDIDATE
-    GENERAL_AVAILABILITY
-    END_OF_LIFE
+	FIRST_MENTION
+	ALPHA_TESTING
+	BETA_TESTING
+	RELEASE_CANDIDATE
+	GENERAL_AVAILABILITY
+	END_OF_LIFE
 }
 
 enum IntegrateType {
@@ -1507,16 +1507,16 @@ enum IntegrationType {
 
 enum ArtifactType {
 	BOM
-    ATTESTATION
-    VDR
-    VEX
-    USER_DOCUMENT
-    DEVELOPMENT_DOCUMENT
-    PROJECT_DOCUMENT
-    MARKETING_DOCUMENT
-    TEST_REPORT
-    SARIF
-    OTHER
+	ATTESTATION
+	VDR
+	VEX
+	USER_DOCUMENT
+	DEVELOPMENT_DOCUMENT
+	PROJECT_DOCUMENT
+	MARKETING_DOCUMENT
+	TEST_REPORT
+	SARIF
+	OTHER
 }
 
 enum BomFormat {
