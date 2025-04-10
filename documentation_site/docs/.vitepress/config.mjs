@@ -52,7 +52,10 @@ function sidebar() {
             },
           ]
         },
-        {text: 'Tutorials', link: '/tutorials/'}
+        {text: 'Tutorials', link: '/tutorials/', items: [
+          {text: 'Upload First BOM', link: '/tutorials/first-bom'},
+          {text: 'Docker on GitHub Actions', link: '/tutorials/github-actions-docker'}
+        ]}
     ]
 }
 

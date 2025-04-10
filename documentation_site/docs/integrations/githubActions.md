@@ -6,7 +6,9 @@ Use the [rearm-docker-action](https://github.com/relizaio/rearm-docker-action).
 
 This GitHub Action also supports pushing container images to AWS ECR repositories - simply pass your IAM ID and Key as registry_username and registry_password parameters.
 
-For sample usage, refer to our [Demo workflow](https://github.com/Reliza-Demos/rebom-demo-on-rearm/blob/master/.github/workflows/github_actions.yml).
+Refer to our [tutorial](/tutorials/github-actions-docker) for detailed walk through.
+
+Also, for sample usage, refer to another sample in our [Demo workflow](https://github.com/Reliza-Demos/rebom-demo-on-rearm/blob/master/.github/workflows/github_actions.yml).
 
 ## 2. Build and push Helm chart on GitHub Actions
 
