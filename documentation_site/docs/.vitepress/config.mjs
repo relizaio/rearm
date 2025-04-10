@@ -69,6 +69,10 @@ export default defineConfig ({
     },
     search: {
       provider: 'local'
-    }
+    },
+    socialLinks: [
+      {icon: 'github', link: 'https://github.com/relizaio/rearm'}
+    ],
+    logo: { src: '/logo.png' }
   }
 })

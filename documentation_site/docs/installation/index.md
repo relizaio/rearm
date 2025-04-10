@@ -4,14 +4,16 @@ Open-source ReARM Community Edition (Licensed per AGPL 3.0) may be deployed usin
 ## Local Installation Via Docker Compose
 Time it takes: 5 minutes.
 
-#### Pre-requisites:
+#### Pre-requisites
 1. You need to have an operational Docker engine with Docker Compose version 2.24.0 or newer on your local machine.
 2. ReARM uses [OCI](https://opencontainers.org/) compatible storage to store xBOM files and other artifacts. Examples include Docker Hub, ACR, ECR, GCR. One of the quickest options is to use Reliza Hub product which gives you 1GB of free storage - see instructions how to set up [here](https://docs.relizahub.com/registry/). You would need an account with push permissions, so you would need to know OCI repository `login`, `password`, `uri` and `namespace` (optional) property. `Namespace` means relative location of your storage, i.e. if you are planning to store artifacts under `https://registry.relizahub.com/430fcdde-d7bc-4542-ad5b-4f534f4942f0-private`, then your `uri` property is `https://registry.relizahub.com` and your `namespace` property is `430fcdde-d7bc-4542-ad5b-4f534f4942f0-private`. Samples are given in our docker compose file and would be further clarified below.
-3. Clone ReARM git repository:
+
+#### Prepare Installation
+1. Clone ReARM git repository:
 ```
 git clone https://github.com/relizaio/rearm.git
 ```
-4. In your terminal, cd into compose directory under your git clone:
+2. In your terminal, cd into compose directory under your git clone:
 ```
 cd deploy/docker-compose
 ```

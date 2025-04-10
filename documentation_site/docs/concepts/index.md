@@ -1,7 +1,7 @@
 # Concepts
 
 ## ReARM
-ReARM is an abbreviation for "Reliza's Awesome Release Manager". It is a DevSecOps and Supply Chain Security tool to organize product releases with their metadata, including various Bills of Materials (xBOMs).
+ReARM is an abbreviation for "Reliza's Awesome Release Manager". It is a DevSecOps and Supply Chain Security tool to organize product releases with their metadata, including various Bills of Materials (xBOMs). ReARM allows organizations to maintain compliance within the framework of [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) as well as US Executive Orders [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity) and [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity).
 
 ## Component
 Component refers to software or hardware that is being developed or used by an organization and in case of software usually maps to a version control system (VCS) repository (i.e., this could be a Git repository). In other words, if you are working on a software which has its own Version Control repository or is a component in a Monorepo - that would be a Component.
@@ -33,7 +33,7 @@ Feature Set is a part of a *Product*. It is understood as specific set of functi
 
 ## Deliverable
 Deliverable may be a binary resource, container image, a collection of directories and/or files or a piece of hardware.
-We support Deliverable types as per CycloneDX specification of *Component Type* resource - currently using [CycloneDX schema v1.6](https://github.com/CycloneDX/specification/blob/master/schema/bom-1.6.schema.json).
+ReARM supports Deliverable types as per CycloneDX specification of *Component Type* resource - currently using [CycloneDX schema v1.6](https://github.com/CycloneDX/specification/blob/master/schema/bom-1.6.schema.json).
 
 We assume that 2 software Deliverables are equal if they are of the same type and their known digests (such as sha256 or sha512) are equal.
 
