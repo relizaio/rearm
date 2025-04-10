@@ -20,5 +20,5 @@ sidebarDepth: 2
 - Unpack executable from downloaded Reliza CLI archive and add to your system path.
 - Login with your programmatic access key and id using following command:
 ```
-rearm login -i YOUR_PERSONAL_API_ID -k YOUR_PERSONAL_API_KEY
+rearm login -u YOUR_REARM_URI -i YOUR_PERSONAL_API_ID -k YOUR_PERSONAL_API_KEY
 ```
