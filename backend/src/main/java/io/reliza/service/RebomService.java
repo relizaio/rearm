@@ -114,6 +114,20 @@ public class RebomService {
         return bomJson;
 
     }
+    public JsonNode findRawBomById(UUID bomId) throws JsonProcessingException{
+        String query = """
+            query rawBomId ($id: ID) {
+                rawBomId(id: $id)
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("id", bomId.toString());
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var br = response.get("rawBomId");
+        JsonNode bomJson = Utils.OM.valueToTree(br);
+        return bomJson;
+
+    }
 
 
     public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride)  throws RelizaException{

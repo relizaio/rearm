@@ -112,6 +112,19 @@ public class SharedArtifactService {
 
 		return monoResponseEntity;
     }
+	public Mono<ResponseEntity<byte[]>> downloadRawArtifact(ArtifactData ad) throws Exception{
+		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
+
+		if(null != ad.getInternalBom()){
+			String rebom = rebomService.findRawBomById(ad.getInternalBom().id()).toString();
+			byte[] byteArray = rebom.getBytes();
+			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
+			monoResponseEntity = Mono.just(responseEntity);
+		}else {
+			throw new RelizaException("No Raw Downloadable object associated with artifact: " + ad.getUuid().toString());
+		}
+		return monoResponseEntity;
+    }
 
 	@Transactional
 	protected void updateArtifactFromDtur(ArtifactData ad, DependencyTrackUploadResult dtur) {

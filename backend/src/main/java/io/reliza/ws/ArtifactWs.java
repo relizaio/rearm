@@ -76,5 +76,29 @@ public class ArtifactWs {
         return sharedArtifactService.downloadArtifact(oad.get());
         
     }
+    @GetMapping("api/manual/v1/artifact/{uuid}/rawdownload")
+    public Mono<ResponseEntity<byte[]>> downloadRawArtifact(
+    	@RequestHeader HttpHeaders headers,
+        @PathVariable("uuid") UUID uuid,
+        ServletWebRequest request,
+        @AuthenticationPrincipal OAuth2User oAuth2User,
+        HttpServletResponse response
+    ) throws Exception {
+        JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+        var oud = userService.getUserDataByAuth(auth);
+		Optional<ArtifactData> oad = artifactService.getArtifactData(uuid);
+        log.debug("oad is present? {}", oad.isPresent());
+        log.debug("oad is  {}", oad.get());
+		RelizaObject ro = oad.isPresent() ? oad.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		
+		if (response.isCommitted()) return null;
+		if (oad.isEmpty()) {
+            throw new RelizaException("Artifact not found; uuid: " + uuid.toString());
+        }
+        
+        return sharedArtifactService.downloadRawArtifact(oad.get());
+        
+    }
     
 }
