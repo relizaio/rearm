@@ -523,35 +523,7 @@ async function genApiKeyRoutine (type : string, compUuid : string) {
             },
             fetchPolicy: 'no-cache'
         })
-        const newKeyMessage = `
-            <div style="text-align: left;">
-            <p>Please record these data as you will see API key only once (although you can re-generate it at any time):</p>
-                <table style="width: 95%;">
-                    <tr>
-                        <td>
-                            <strong>API ID:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled>${keyResp.data.setComponentApiKey.id}</textarea>
-                        </td>
-                    </tr>
-                        <td>
-                            <strong>API Key:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled>${keyResp.data.setComponentApiKey.apiKey}</textarea>
-                        </td>
-                    <tr>
-                        <td>
-                            <strong>Header:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled rows="4">${keyResp.data.setComponentApiKey.authorizationHeader}</textarea>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-        `
+        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setComponentApiKey)
 
         Swal.fire({
             title: 'Generated!',

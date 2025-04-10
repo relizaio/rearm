@@ -198,10 +198,9 @@ public class ComponentDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "setComponentApiKey")
-	public ApiKeyForUserDto setApiKey(@InputArgument("componentUuid") String componentUuidStr) {
+	public ApiKeyForUserDto setApiKey(@InputArgument("componentUuid") UUID componentUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID componentUuid = UUID.fromString(componentUuidStr);		
 		Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
 		RelizaObject ro = opd.isPresent() ? opd.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);

@@ -4,10 +4,12 @@
 package io.reliza.ws;
 
 import java.io.UnsupportedEncodingException;
-
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -17,11 +19,16 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.RelizaObject;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.ApiKey.ApiTypeEnum;
+import io.reliza.model.dto.ApiKeyForUserDto;
 import io.reliza.model.dto.UserWebDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
@@ -85,11 +92,33 @@ public class UserDataFetcher {
 		}
 	}
 	
-	// @PreAuthorize("permitAll()")
 	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setUserOrgApiKey")
+	public ApiKeyForUserDto setUserOrgApiKey(@InputArgument("orgUuid") UUID orgUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<OrganizationData> ood = organizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = ood.isPresent() ? ood.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		
+		String apiKey = apiKeyService.setObjectApiKey(oud.get().getUuid(), ApiTypeEnum.USER, ood.get().getUuid(), null, null, wu);
+		String apiId = ApiTypeEnum.USER.toString() + "__" + oud.get().getUuid().toString() +
+				"__" + ApiTypeEnum.ORGANIZATION.toString() + "__" + ood.get().getUuid().toString();
+		
+		ApiKeyForUserDto retKey = ApiKeyForUserDto.builder()
+				.apiKey(apiKey)
+				.id(apiId)
+				.authorizationHeader("Basic " + HttpHeaders.encodeBasicAuth(apiId, apiKey, StandardCharsets.UTF_8))
+				.build();
+		
+		return retKey;
+	}
+	
+	@PreAuthorize("permitAll()")
 	@DgsData(parentType = "Query", field = "healthCheck")
 	public String getHealthCheck() {
-		log.info("in healthcheck query");
+		log.trace("in healthcheck query");
 		Optional<OrganizationData> ood = organizationService.getOrganizationData(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
 		if (ood.isPresent() && ood.get().getUuid().equals(CommonVariables.EXTERNAL_PROJ_ORG_UUID)) {
 			return "OK";
@@ -97,7 +126,5 @@ public class UserDataFetcher {
 			throw new RuntimeException("HealthCheck Failed");
 		}
 	}
-	
-	
 		
 }

@@ -193,8 +193,41 @@ function resolveWords (isComponent: boolean) {
     }
 }
 
+function getGeneratedApiKeyHTML(responseData: any) {
+    return `
+            <div style="text-align: left;">
+            <p>Please record these data as you will see API key only once (although you can re-generate it at any time):</p>
+                <table style="width: 95%;">
+                    <tr>
+                        <td>
+                            <strong>API ID:</strong>
+                        </td>
+                        <td>
+                            <textarea style="width: 100%;" disabled>${responseData.id}</textarea>
+                        </td>
+                    </tr>
+                        <td>
+                            <strong>API Key:</strong>
+                        </td>
+                        <td>
+                            <textarea style="width: 100%;" disabled>${responseData.apiKey}</textarea>
+                        </td>
+                    <tr>
+                        <td>
+                            <strong>Header:</strong>
+                        </td>
+                        <td>
+                            <textarea style="width: 100%;" disabled rows="4">${responseData.authorizationHeader}</textarea>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        `
+}
+
 
 export default {
+    getGeneratedApiKeyHTML,
     getUserPermission,
     deepCopy,
     fetchChangelogBetweenReleases,

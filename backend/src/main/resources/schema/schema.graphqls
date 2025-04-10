@@ -101,6 +101,7 @@ type Mutation {
 	addReleaseManual(release: ReleaseInput!): Release
 	setComponentApiKey(componentUuid: ID!): ApiKeyForUser
 	setOrgApiKey(orgUuid: ID!, apiType: ApiTypeEnum!, keyOrder: String, notes: String): ApiKeyForUser
+	setUserOrgApiKey(orgUuid: ID!): ApiKeyForUser
 	updateRelease(release: ReleaseInput!): Release
 	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
 	addMarketingReleaseManual(marketingRelease: MarketingReleaseInput!): MarketingRelease
@@ -145,7 +146,6 @@ type Mutation {
 	logout: Boolean
 	updateEmailAddress(oldEmail: String!, newEmail: String!, makePrimary: Boolean!, acceptMarketing: Boolean!): Boolean
 	resendEmailVerification: Boolean
-	setUserOrgApiKey(orgUuid: ID!): Object
 }
 
 type Deliverable {

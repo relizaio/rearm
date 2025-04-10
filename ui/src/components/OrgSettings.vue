@@ -1199,7 +1199,7 @@ async function genApiKey() {
             variables: setKeyPayload,
             fetchPolicy: 'no-cache'
         })
-        const newKeyMessage = getGeneratedApiKeyHTML(keyResp.data.setOrgApiKey)
+        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setOrgApiKey)
         loadProgrammaticAccessKeys(false)
         Swal.fire({
             title: 'Generated!',
@@ -1221,9 +1221,21 @@ async function genUserApiKey() {
     }
     const swalResult = await Swal.fire(swalObject)
     if (swalResult.value) {
-        let path = '/v1/manual/user/setOrgReadApiKey/' + orgResolved.value
-        let axiosResponse = await axios.put(path)
-        let newKeyMessage = getGeneratedApiKeyHTML(axiosResponse.data)      
+        const keyResp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setUserOrgApiKey($orgUuid: ID!) {
+                    setUserOrgApiKey(orgUuid: $orgUuid) {
+                        id
+                        apiKey
+                        authorizationHeader
+                    }
+                }`,
+            variables: {
+                orgUuid: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setUserOrgApiKey)      
         Swal.fire({
             title: 'Generated!',
             customClass: 'swal-wide',
@@ -1239,37 +1251,6 @@ async function genUserApiKey() {
     }
 }
 
-function getGeneratedApiKeyHTML(responseData: any) {
-    return `
-            <div style="text-align: left;">
-            <p>Please record these data as you will see API key only once (although you can re-generate it at any time):</p>
-                <table style="width: 95%;">
-                    <tr>
-                        <td>
-                            <strong>API ID:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled>${responseData.id}</textarea>
-                        </td>
-                    </tr>
-                        <td>
-                            <strong>API Key:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled>${responseData.apiKey}</textarea>
-                        </td>
-                    <tr>
-                        <td>
-                            <strong>Header:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled rows="4">${responseData.authorizationHeader}</textarea>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-        `
-}
 function getGeneratedRegistryTokenHTML(responseData: any) {
     return `
             <div style="text-align: left;">
