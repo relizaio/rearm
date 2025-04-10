@@ -77,5 +77,8 @@ export default defineConfig ({
       {icon: 'github', link: 'https://github.com/relizaio/rearm'}
     ],
     logo: { src: '/logo.png' }
+  },
+  sitemap: {
+    hostname: 'https://docs.rearmhq.com'
   }
 })
