@@ -24,6 +24,7 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ResourceGroupData;
 import io.reliza.model.OrganizationData;
@@ -81,7 +82,12 @@ public class OrganizationDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		Optional<OrganizationData> od = organizationService.getOrganizationData(orgUuid);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		InstallationType systemInstallationType = userService.getInstallationType();
+		CallType ct = CallType.READ;
+		if (InstallationType.DEMO == systemInstallationType) {
+			ct = CallType.ADMIN;
+		}
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, ct);
 		return userService.listOrgUserDataByOrg(od.get().getUuid());
 	}
 	
