@@ -1708,22 +1708,21 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                             indeterminate: isDisapproved,
                             disabled: isDisabled,
                             title,
+                            style: isDisapproved ? "--n-color-checked: red; --n-color-disabled: red;" : "",
                             size: 'large',
                             onClick: (e: any, i: any) => {
                                 e.preventDefault()
-                                if (isApproved) {
+                                if (!isDisabled && isApproved) {
                                     updateMatrixCheckbox('DISAPPROVED', {uuid: row.uuid, approval: aid})
-                                } else if (isDisapproved) {
+                                } else if (!isDisabled && isDisapproved) {
                                     updateMatrixCheckbox('UNSET', {uuid: row.uuid, approval: aid})
-                                } else {
+                                } else if (!isDisabled) {
                                     updateMatrixCheckbox('APPROVED', {uuid: row.uuid, approval: aid})
                                 }
                             }
                         }
                     )
-                    const retEls = isDisabled ? checkBoxEl : h(NSpace, {}, () => {return [checkBoxEl]})
-                    return retEls
-                    
+                    return h(NSpace, {}, () => {return [checkBoxEl]})
                 } else {
                     return h('div')
                 }
