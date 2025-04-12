@@ -551,6 +551,10 @@ const COMPONENT_FULL_DATA = `
         integration
         users
         notificationMessage
+        vcs
+        eventType
+        clientPayload
+        schedule
     }
     releaseInputTriggers {
         uuid

@@ -4,7 +4,7 @@
         <n-tabs type="line" @update:value="handleTabSwitch">
             <n-tab-pane name="integrations" tab="Integrations" v-if="isOrgAdmin">
                 <div class="integrationsBlock mt-4">
-                    <h5>Integrations</h5>
+                    <h5>Organization-Wide Integrations</h5>
                     <n-space vertical>
                         <div class="row">
                             <div v-if="configuredIntegrations.includes('SLACK')">Slack Integration Configured
@@ -96,50 +96,75 @@
                                 </n-card>
                             </n-modal>
                         </div>
-                        <div class="row" v-if="myUser.installationType !== 'OSS'">
-                            <div v-if="configuredIntegrations.includes('GITHUB')">GitHub Integration Configured
-                                <vue-feather @click="deleteIntegration('GITHUB')" class="clickable" type="trash-2" />
-                            </div>
-                            <div v-else><n-button @click="showOrgSettingsGitHubIntegrationModal = true">Add GitHub Integration</n-button></div>
-                            <n-modal 
-                                v-model:show="showOrgSettingsGitHubIntegrationModal"
-                                preset="dialog"
-                                :show-icon="false" >
-                                <n-card style="width: 600px" size="huge" title="Add GitHub integration" :bordered="false"
-                                    role="dialog" aria-modal="true">
-
-                                    <n-form>
-                                        <n-form-item id="org_settings_create_github_integration_secret_group" label="GitHub Private Key DER Base64"
-                                            label-for="org_settings_create_github_integration_secret"
-                                            description="GitHub Private Key DER Base64">
-                                            <n-input type="textarea" id="org_settings_create_github_integration_secret"
-                                                v-model:value="createIntegrationObject.secret" required
-                                                placeholder="Enter GitHub Private Key Base64, use 'openssl pkcs8 -topk8 -inform PEM -outform DER -in private-key.pem -out key.der -nocrypt | base64 -w 0 key.der' to obtain" />
-                                        </n-form-item>
-                                        <n-form-item id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
-                                            label-for="org_settings_create_github_integration_appid"
-                                            description="GitHub Application ID">
-                                            <n-input type="number" id="org_settings_create_github_integration_appid"
-                                                v-model:value="createIntegrationObject.schedule" required
-                                                placeholder="Enter GitHub Application ID" />
-                                        </n-form-item>
-                                        <n-button @click="onAddIntegration('GITHUB')" type="success">Submit</n-button>
-                                        <n-button type="error" @click="resetCreateIntegrationObject">Reset</n-button>
-                                    </n-form>
-                                </n-card>
-                            </n-modal>
-                        </div>
-                        <div v-if="false && myUser && myUser.installationType !== 'OSS'" class="row pt-2">
-                            <div v-if="!jiraIntegrationData" class="col-3">
-                                <n-button @click="initiateJiraIntegration">Add Jira Integration</n-button>
-                            </div>
-                            <div v-else class="col-3">
-                                <b> Jira Integration: </b> {{ jiraIntegrationData.domain }}
-                                <!-- <n-icon icon="trash" font-scale="1.1" title="Delete Jira Integration" @click="deleteJiraIntegration" class="clickable icons" /> -->
-                            </div>
-                        </div>
                     </n-space>
+                    <h5>CI Integrations</h5>
+                    <n-data-table :columns="ciIntegrationTableFields" :data="ciIntegrations" :row-key="dataTableRowKey"></n-data-table>
+                    <n-button @click="showCIIntegrationModal=true">Add CI Integration</n-button>
                 </div>
+                <n-modal
+                    v-model:show="showCIIntegrationModal"
+                    preset="dialog"
+                    :show-icon="false"
+                    style="width: 90%"
+                >
+                    <n-form :model="createIntegrationObject">
+                        <h2>Add or Update CI Integration</h2>
+                        <n-space vertical size="large">
+                            <n-form-item label="Description" path="note">
+                                <n-input v-model:value="createIntegrationObject.note" required placeholder="Enter Description" />
+                            </n-form-item>
+                            <n-form-item label="CI Type" path="createIntegrationObject.type">
+                                <n-radio-group v-model:value="createIntegrationObject.type" name="ciIntegrationType">
+                                    <n-radio-button label="GitHub" value="GITHUB" />
+                                    <n-radio-button label="GitLab" value="GITLAB" />
+                                    <n-radio-button label="Jenkins" value="JENKINS" />
+                                    <n-radio-button label="Azure DevOps" value="ADO" />
+                                </n-radio-group>
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" id="org_settings_create_github_integration_secret_group" label="GitHub Private Key DER Base64"
+                                label-for="org_settings_create_github_integration_secret"
+                                description="GitHub Private Key DER Base64">
+                                <n-input type="textarea" id="org_settings_create_github_integration_secret"
+                                    v-model:value="createIntegrationObject.secret" required
+                                    placeholder="Enter GitHub Private Key Base64, use 'openssl pkcs8 -topk8 -inform PEM -outform DER -in private-key.pem -out key.der -nocrypt | base64 -w 0 key.der' to obtain" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
+                                label-for="org_settings_create_github_integration_appid"
+                                description="GitHub Application ID">
+                                <n-input type="number" id="org_settings_create_github_integration_appid"
+                                    v-model:value="createIntegrationObject.schedule" required
+                                    placeholder="Enter GitHub Application ID" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'GITLAB'" label="GitLab Authentication Token" path="createIntegrationObject.secret">
+                                <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter GitLab Authentication Token" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'INTEGRATION_TRIGGER' && createIntegrationObject.type === 'JENKINS'" label="Jenkins Token" path="createIntegrationObject.secret">
+                                <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter Jenkins Token" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'JENKINS'" label="Jenkins URI" path="createIntegrationObject.uri">
+                                <n-input v-model:value="createIntegrationObject.uri" required placeholder="Jenkins Home URI (i.e. https://jenkins.localhost)" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Client ID" path="createIntegrationObject.client">
+                                <n-input v-model:value="createIntegrationObject.client" required placeholder="Enter Client ID" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Client Secret" path="createIntegrationObject.secret">
+                                <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter Client Secret" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Tenant ID" path="createIntegrationObject.tenant">
+                                <n-input v-model:value="createIntegrationObject.tenant" required placeholder="Enter Tenant ID" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Azure DevOps Organization Name" path="integrationObject.uri">
+                                <n-input v-model:value="createIntegrationObject.uri" required placeholder="Enter Azure DevOps organization name" />
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Azure DevOps Project Name" path="integrationObject.frontendUri">
+                                <n-input v-model:value="createIntegrationObject.frontendUri" required placeholder="Enter Azure DevOps project name" />
+                            </n-form-item>
+                            <n-button @click="addCiIntegration" type="success">
+                                Save
+                            </n-button>
+                        </n-space>
+                    </n-form>
+                </n-modal>
             </n-tab-pane>
 
             <n-tab-pane name="users" tab="Users">
@@ -484,17 +509,11 @@ const notify = async function (type: NotificationType, title: string, content: s
 }
 
 onMounted(() => {
-    if (false && myUser.value.installationType !== 'OSS') {
-        axios.get('/api/manual/v1/isRegistry').then(response => {
-            globalRegistryEnabled.value = response.data.isRegistry
-        })
-        store.dispatch('fetchInstances', orgResolved.value)
-    }
     store.dispatch('fetchComponents', orgResolved.value)
     store.dispatch('fetchResourceGroups', orgResolved.value)
     if (false && myUser.value.installationType !== 'OSS') initializeResourceGroup()
     loadConfiguredIntegrations(true)
-    if (false && myUser.value.installationType !== 'OSS') loadRegistryHost()
+    loadCiIntegrations(true)
     isWritable.value = commonFunctions.isWritable(orgResolved.value, myUser.value, 'ORG')
 })
 
@@ -523,6 +542,8 @@ const showCreateResourceGroupModal = ref(false)
 const showCreateApprovalPolicy = ref(false)
 const showCreateApprovalEntry = ref(false)
 const showCreateApprovalRole = ref(false)
+
+const showCIIntegrationModal = ref(false)
 
 const approvalRoleFields: any[] = [
     {
@@ -779,6 +800,7 @@ const selectedKey: Ref<any> = ref({})
 const selectedUser: Ref<any> = ref({})
 const selectedUserType: Ref<string> = ref('')
 const configuredIntegrations: Ref<any[]> = ref([])
+const ciIntegrations: Ref<any[]> = ref([])
 const createIntegrationObject: Ref<any> = ref({
     org: orgResolved.value,
     uri: '',
@@ -786,6 +808,9 @@ const createIntegrationObject: Ref<any> = ref({
     identifier: 'base',
     secret: '',
     type: '',
+    note: '',
+    tenant: '',
+    client: '',
     schedule: ''
 })
 
@@ -797,6 +822,9 @@ function resetCreateIntegrationObject() {
         identifier: 'base',
         secret: '',
         type: '',
+        note: '',
+        tenant: '',
+        client: '',
         schedule: ''
     }
 }
@@ -933,6 +961,17 @@ const inviteeFields = [
                 )
             ])
         }
+    }
+]
+
+const ciIntegrationTableFields = [
+    {
+        key: 'note',
+        title: 'Description'
+    },
+    {
+        key: 'type',
+        title: 'Type'
     }
 ]
 
@@ -1368,6 +1407,36 @@ async function loadConfiguredIntegrations(useCache: boolean) {
         console.error(err)
     }
 }
+
+async function loadCiIntegrations(useCache: boolean) {
+    let cachePolicy: FetchPolicy = "network-only"
+    if (useCache) cachePolicy = "cache-first"
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                          query ciIntegrations($org: ID!) {
+                                ciIntegrations(org: $org) {
+                                	uuid
+                                    identifier
+                                    org
+                                    isEnabled
+                                    type
+                                    note
+                              }
+                          }`,
+            variables: {
+                org: orgResolved.value
+            },
+            fetchPolicy: cachePolicy
+        })
+        if (resp.data && resp.data.ciIntegrations) {
+            ciIntegrations.value = resp.data.ciIntegrations
+        }
+    } catch (err) { 
+        console.error(err)
+    }
+}
+
 async function loadProgrammaticAccessKeys(useCache: boolean) {
     let cachePolicy: FetchPolicy = "network-only"
     if (useCache) cachePolicy = "cache-first"
@@ -1484,6 +1553,26 @@ async function onAddIntegration(type: string) {
     showOrgSettingsGitHubIntegrationModal.value = false
     showOrgSettingsMsteamsIntegrationModal.value = false
     showOrgSettingsDependencyTrackIntegrationModal.value = false
+}
+
+async function addCiIntegration() {
+    const resp = await graphqlClient.mutate({
+        mutation: gql`
+                      mutation createTriggerIntegration($integration: IntegrationInput!) {
+                          createTriggerIntegration(integration: $integration) {
+                              uuid
+                          }
+                      }`,
+        variables: {
+            'integration': createIntegrationObject.value
+        }
+    })
+    
+    if (resp.data.createIntegration && resp.data.createIntegration.uuid) await loadConfiguredIntegrations(false)
+
+    resetCreateIntegrationObject()
+
+    showCIIntegrationModal.value = false
 }
 
 function removeUser(userUuid: string) {

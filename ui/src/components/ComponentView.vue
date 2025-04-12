@@ -94,6 +94,7 @@
                             animated
                             style="margin: 0 -4px"
                             pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
+                            @update:value="handleTabSwitch"
                         >
                             <n-tab-pane name="Core Settings">
                                 <div class="componentNameBlock" v-if="updatedComponent && componentData">
@@ -180,7 +181,7 @@
                                     <div v-else>{{ resolvedVisibilityLabel }}</div>
                                 </div>
                             </n-tab-pane>
-                            <n-tab-pane name="Output Triggers" v-if="myUser.installationType !== 'OSS'">
+                            <n-tab-pane name="outputTriggers" tab="Output Triggers" v-if="myUser.installationType !== 'OSS'">
                                 <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
                                 <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Trigger" @click="showCreateOutputTriggerModal = true">
                                     <CirclePlus />
@@ -205,60 +206,58 @@
                                             <n-form-item v-if="outputTrigger.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
                                                 <n-select v-model:value="outputTrigger.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Sub-Type" path="integrationObject.type">
-                                                <n-radio-group v-model:value="outputTrigger.integrationObject.type" name="ciIntegrationType">
-                                                    <n-radio label="GitHub" value="GITHUB" />
-                                                    <n-radio label="GitLab" value="GITLAB" />
-                                                    <n-radio label="Jenkins" value="JENKINS" />
-                                                    <n-radio label="Azure DevOps" value="ADO" />
-                                                </n-radio-group>
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
+                                                <n-select
+                                                    v-model:value="outputTrigger.integration"
+                                                    placeholder="Select Integration"
+                                                    :options="ciIntegrationsForSelect" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'GITHUB'" label="Installation ID" path="integrationObject.secret">
-                                                <n-input v-model:value="outputTrigger.integrationObject.secret" required placeholder="Enter GitHub Installation ID" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
+                                                <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'GITHUB'" label="Name of GitHub Actions Event" path="integrationObject.parameters.eventName">
-                                                <n-input v-model:value="outputTrigger.integrationObject.parameters.eventName" placeholder="Enter Name of GitHub Actions Event" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Name of GitHub Actions Event" path="eventType">
+                                                <n-input v-model:value="outputTrigger.eventType" placeholder="Enter Name of GitHub Actions Event" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'GITHUB'" label="Optional Client Payload JSON" path="integrationObject.parameters.clientPayload">
-                                                <n-input v-model:value="outputTrigger.integrationObject.parameters.clientPayload" required placeholder="Enter Additional Optional Client Payload JSON" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
+                                                <n-input v-model:value="outputTrigger.clientPayload" required placeholder="Enter Additional Optional Client Payload JSON" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'GITLAB'" label="GitLab Authentication Token" path="integrationObject.secret">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Authentication Token" path="integrationObject.secret">
                                                 <n-input v-model:value="outputTrigger.integrationObject.secret" required placeholder="Enter GitLab Authentication Token" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'GITLAB'" label="GitLab Schedule Id" path="integrationObject.schedule">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="integrationObject.schedule">
                                                 <n-input type="number" v-model:value="outputTrigger.integrationObject.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && (outputTrigger.integrationObject.type === 'GITHUB' || outputTrigger.integrationObject.type === 'GITLAB')" label="CI Repository" path="integrationObject.vcs">
-                                                <span v-if="!selectNewIntegrationRepo && outputTrigger.integrationObject.vcs">{{ getVcsRepoObjById(outputTrigger.integrationObject.vcs).uri }} </span>
-                                                <span v-if="!selectNewIntegrationRepo && !outputTrigger.integrationObject.vcs">Not Set</span>
-                                                <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.integrationObject.vcs" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && (selectedCiIntegration.type === 'GITHUB' || selectedCiIntegration.type === 'GITLAB')" label="CI Repository" path="vcs">
+                                                <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>
+                                                <span v-if="!selectNewIntegrationRepo && !outputTrigger.vcs">Not Set</span>
+                                                <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
                                                 <vue-feather v-if="!selectNewIntegrationRepo" type="edit" class="clickable" @click="async () => {await fetchVcsRepos(); selectNewIntegrationRepo = true;}" title="Select New Integration Repository" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'JENKINS'" label="Jenkins Token" path="integrationObject.secret">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Token" path="integrationObject.secret">
                                                 <n-input v-model:value="outputTrigger.integrationObject.secret" required placeholder="Enter Jenkins Token" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'JENKINS'" label="Jenkins URI" path="integrationObject.uri">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins URI" path="integrationObject.uri">
                                                 <n-input v-model:value="outputTrigger.integrationObject.uri" required placeholder="Jenkins URI (ends with token=)" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'ADO'" label="Client ID" path="integrationObject.parameters.client">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Client ID" path="integrationObject.parameters.client">
                                                 <n-input v-model:value="outputTrigger.integrationObject.parameters.client" required placeholder="Enter Client ID" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'ADO'" label="Client Secret" path="integrationObject.secret">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Client Secret" path="integrationObject.secret">
                                                 <n-input v-model:value="outputTrigger.integrationObject.secret" required placeholder="Enter Client Secret" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'ADO'" label="Tenant ID" path="integrationObject.parameters.tenant">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Tenant ID" path="integrationObject.parameters.tenant">
                                                 <n-input v-model:value="outputTrigger.integrationObject.parameters.tenant" required placeholder="Enter Tenant ID" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'ADO'" label="Azure DevOps Organization Name" path="integrationObject.uri">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Organization Name" path="integrationObject.uri">
                                                 <n-input v-model:value="outputTrigger.integrationObject.uri" required placeholder="Enter Azure DevOps organization name" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'ADO'" label="Azure DevOps Project Name" path="integrationObject.frontendUri">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="integrationObject.frontendUri">
                                                 <n-input v-model:value="outputTrigger.integrationObject.frontendUri" required placeholder="Enter Azure DevOps project name" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'ADO'" label="Pipeline ID" path="integrationObject.schedule">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Pipeline ID" path="integrationObject.schedule">
                                                 <n-input v-model:value="outputTrigger.integrationObject.schedule" required placeholder="Enter Pipeline ID" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && outputTrigger.integrationObject.type === 'ADO'" label="Optional Parameters" path="integrationObject.parameters.clientPayload">
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Optional Parameters" path="integrationObject.parameters.clientPayload">
                                                 <n-input v-model:value="outputTrigger.integrationObject.parameters.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
                                             </n-form-item>
                                             <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
@@ -610,6 +609,14 @@ const genApiKey = function (type : string) {
     genApiKeyRoutine(type, componentUuid)
 }
 
+const ciIntegrations: Ref<any[]> = ref([])
+const ciIntegrationsForSelect: ComputedRef<any[]> = computed((): any => {
+    return ciIntegrations.value.map((x: any) => {return {label: x.note, value: x.uuid}})
+})
+const selectedCiIntegration: ComputedRef<any> = computed((): any => {
+    return ciIntegrations.value.find((x: any) => x.uuid === outputTrigger.value.integration)
+})
+
 const showCloneBranchModal : Ref<boolean> = ref(false)
 const showComponentAnalyticsModal : Ref<boolean> = ref(false)
 const showComponentChangelogModal : Ref<boolean> = ref(false)
@@ -658,6 +665,35 @@ async function fetchApprovalPolicies () {
         })
     }
 }
+
+
+async function fetchCiIntegrations() {
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                          query ciIntegrations($org: ID!) {
+                                ciIntegrations(org: $org) {
+                                	uuid
+                                    identifier
+                                    org
+                                    isEnabled
+                                    type
+                                    note
+                              }
+                          }`,
+            variables: {
+                org: orguuid.value
+            },
+            fetchPolicy: "network-only"
+        })
+        if (resp.data && resp.data.ciIntegrations) {
+            ciIntegrations.value = resp.data.ciIntegrations
+        }
+    } catch (err) { 
+        console.error(err)
+    }
+}
+
 
 const visibilities = [
     {
@@ -808,20 +844,10 @@ const outputTrigger = ref({
     integration: '',
     users: [],
     notificationMessage: '',
-    integrationObject: {
-        vcs: '',
-        secret: '',
-        type: 'GITHUB',
-        schedule: '',
-        uri: '',
-        frontendUri: '',
-        parameters: {
-            client: '',
-            tenant: '',
-            eventName: '',
-            clientPayload: ''
-        }
-    }
+    vcs: '',
+    eventType: '',
+    clientPayload: '',
+    schedule: ''
 })
 
 function resetOutputTrigger () {
@@ -832,20 +858,10 @@ function resetOutputTrigger () {
         integration: '',
         users: [],
         notificationMessage: '',
-        integrationObject: {
-            vcs: '',
-            secret: '',
-            type: 'GITHUB',
-            schedule: '',
-            uri: '',
-            frontendUri: '',
-            parameters: {
-                client: '',
-                tenant: '',
-                eventName: '',
-                clientPayload: ''
-            }
-        }
+        vcs: '',
+        eventType: '',
+        clientPayload: '',
+        schedule: ''
     }
 }
 
@@ -1666,6 +1682,12 @@ async function initLoad() {
     isComponent = updatedComponent.value.type === 'COMPONENT'
     if (selectedBranchUuid.value === ''){
         if (mainBranch.value) selectBranch(mainBranch.value)
+    }
+}
+
+async function handleTabSwitch(tabName: string) {
+    if (tabName === "outputTriggers") {
+        await fetchCiIntegrations()
     }
 }
 
