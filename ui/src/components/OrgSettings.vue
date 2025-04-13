@@ -159,9 +159,6 @@
                             <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Azure DevOps Organization Name" path="integrationObject.uri">
                                 <n-input v-model:value="createIntegrationObject.uri" required placeholder="Enter Azure DevOps organization name" />
                             </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Azure DevOps Project Name" path="integrationObject.frontendUri">
-                                <n-input v-model:value="createIntegrationObject.frontendUri" required placeholder="Enter Azure DevOps project name" />
-                            </n-form-item>
                             <n-button @click="addCiIntegration" type="success">
                                 Save
                             </n-button>

@@ -233,26 +233,14 @@
                                             <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
                                                 <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Client ID" path="integrationObject.parameters.client">
-                                                <n-input v-model:value="outputTrigger.integrationObject.parameters.client" required placeholder="Enter Client ID" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="eventType">
+                                                <n-input v-model:value="outputTrigger.eventType" required placeholder="Enter Azure DevOps project name" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Client Secret" path="integrationObject.secret">
-                                                <n-input v-model:value="outputTrigger.integrationObject.secret" required placeholder="Enter Client Secret" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Pipeline Definition ID" path="schedule">
+                                                <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter Pipeline Definition ID" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Tenant ID" path="integrationObject.parameters.tenant">
-                                                <n-input v-model:value="outputTrigger.integrationObject.parameters.tenant" required placeholder="Enter Tenant ID" />
-                                            </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Organization Name" path="integrationObject.uri">
-                                                <n-input v-model:value="outputTrigger.integrationObject.uri" required placeholder="Enter Azure DevOps organization name" />
-                                            </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="integrationObject.frontendUri">
-                                                <n-input v-model:value="outputTrigger.integrationObject.frontendUri" required placeholder="Enter Azure DevOps project name" />
-                                            </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Pipeline ID" path="integrationObject.schedule">
-                                                <n-input v-model:value="outputTrigger.integrationObject.schedule" required placeholder="Enter Pipeline ID" />
-                                            </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Optional Parameters" path="integrationObject.parameters.clientPayload">
-                                                <n-input v-model:value="outputTrigger.integrationObject.parameters.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
+                                                <n-input v-model:value="outputTrigger.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
                                             </n-form-item>
                                             <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
                                                 <n-select v-model:value="outputTrigger.users" tag multiple required :options="users" />
