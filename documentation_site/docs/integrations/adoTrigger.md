@@ -39,34 +39,50 @@ In the image above, the definition (pipeline) ID would be `2`.
 Note, that you may want to refine these permissions based on your organization policies. Setting Azure permissions may be quite complex, if you need to tune permissions, start with the base documentation [here](https://learn.microsoft.com/en-us/azure/devops/integrate/get-started/authentication/service-principal-managed-identity?view=azure-devops).
 
 
+
 ## ReARM Part
 
-1. Integration triggers on approval policy events, for which you would need an Approval Policy configured or on vulnerabilities or policy violations, for which you need [Dependency Track integration configured](./dtrack).
+Note that for integration triggers firing on approval policy events, you would need an Approval Policy configured; for firing on vulnerabilities or policy violations, you would need [Dependency Track integration configured](./dtrack).
 
-2. You need to set up a ReARM component that will have corresponding triggers configured. Once your component is created, open it and click on the tool icon to toggle component settings:
+### Organization-Wide CI Integration Part (requires Organization Admin permissions)
+
+1. In ReARM, open **Organization Settings** menu. Under **Integrations** tab, in the `CI Integrations` sub-section, click on `Add CI Integration`.
+
+2. Enter description (try to make this descriptive as this will be used to identify integration).
+
+3. Choose `Azure DevOps` as CI Type. 
+
+4. Enter your App (client) Id noted above in the `Client ID` field.
+
+5. Enter your Client Secret noted above in the `Client Secret` field.
+
+6. Enter your Directory (tenant) Id noted above in the `Tenant ID` field.
+
+7. Enter your Azure DevOps Organization name noted above in the `Azure DevOps Organization Name` field.
+
+8. Click `Save`. Your CI Integration is now created.
+
+
+### Component Part (requires User with Write permissions)
+
+1. You need to set up a ReARM component that will have corresponding triggers configured. Once your component is created, open it and click on the tool icon to toggle component settings:
 ![Toggle Component Settings in Reliza Hub UI](images/component-settings-icon.png)
 
-3. If you are setting triggers based on approvals, make sure you have Approval Policy selected under **Core Settings** tab.
+2. If you are setting triggers based on approvals, make sure you have Approval Policy selected under **Core Settings** tab.
 
-4. Open **Output Triggers** tab and click on `Add Output Trigger`.
+3. Open **Output Triggers** tab and click on `Add Output Trigger`.
 
-5. Enter name for your trigger, i.e. `Trigger Azure DevOps Pipeline`.
+4. Enter name for your trigger, i.e. `Trigger Azure DevOps Pipeline`.
 
-6. Select `External Integration` as *Type* and `Azure DevOps` as *Sub-Type*.
+5. Select `External Integration` as *Type*.
 
-7. Enter your Service Principal's Client ID as noted above.
+6. Choose your previously created Azure DevOps Integration in the `Choose CI Integration` field.
 
-8. Enter your Service Principal's Client Secret as noted above.
+7. Enter your Azure DevOps Project Name as noted above in the `Azure DevOps Project Name` field.
 
-9. Enter your Service Principal's Tenant ID as noted above.
+8. Enter your Azure DevOps Pipeline Definition ID as noted above in the `Pipeline Definition ID` field.
 
-10. Enter your Azure DevOps Organization Name as noted above.
-
-11. Enter your Azure DevOps Project Name as noted above.
-
-12. Enter your Azure DevOps Pipeline ID as noted above.
-
-13. If needed, enter Optional Parameters json values, that contain Azure variables and may be set as JSON and be distributed as `parameters` in Azure call as described in Azure API documentation [here](https://learn.microsoft.com/en-us/rest/api/azure/devops/build/builds/queue?view=azure-devops-rest-7.1).
+9. If needed, enter Optional Parameters json values, that contain Azure variables and may be set as JSON and be distributed as `parameters` in Azure call as described in Azure API documentation [here](https://learn.microsoft.com/en-us/rest/api/azure/devops/build/builds/queue?view=azure-devops-rest-7.1).
 
 In example, this may be set to
 
@@ -74,6 +90,33 @@ In example, this may be set to
 {"param1":  "value1", "param2":  "value2"}
 ```
 
-14. Click on 'Save', your trigger is now created.
+You may also use predefined variable `$releaseversion` to pass triggering release version, in example this can be:
 
-15. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).
+```
+{"myparam": "$releaseversion"}
+```
+
+With sample pipeline may be looking as:
+
+
+```
+parameters:
+  - name: myparam
+    type: string
+    default: myvaldefault    
+
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - bash: echo ${{ parameters.myparam }}
+```
+
+Note that if using optional parameters, your pipeline must declare these parameters in the `parameters` block, otherwise runs will result in errors.
+
+10. Click on 'Save', your trigger is now created.
+
+11. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).

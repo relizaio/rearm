@@ -51,7 +51,7 @@ Note that for integration triggers firing on approval policy events, you would n
 
 6. Select `External Integration` as *Type*.
 
-7. Choose your previously created GitHub Integration in the `Choose CI Integration` field.
+7. Choose your previously created Jenkins Integration in the `Choose CI Integration` field.
 
 8. Enter the name of your Jenkins job in the `Jenkins Job Name` field.
 

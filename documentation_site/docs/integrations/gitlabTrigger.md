@@ -59,10 +59,12 @@ Note that for integration triggers firing on approval policy events, you would n
 
 6. Select `External Integration` as *Type*.
 
-7. Enter your GitLab Schedule ID in the `GitLab Schedule Id` field as noted above.
+7. Choose your previously created GitLab Integration in the `Choose CI Integration` field.
 
-8. Under *CI Repository* click on the Edit icon and select your GitLab repository containing desired CI workflow set up above.
+8. Enter your GitLab Schedule ID in the `GitLab Schedule Id` field as noted above.
 
-9. Click on 'Save', your trigger is now created.
+9. Under *CI Repository* click on the Edit icon and select your GitLab repository containing desired CI workflow set up above.
 
-10. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).
+10. Click on 'Save', your trigger is now created.
+
+11. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).
