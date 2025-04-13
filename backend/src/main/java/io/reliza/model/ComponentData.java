@@ -112,6 +112,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	
 	@Data
 	@Builder
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class ReleaseOutputEvent {
 		private UUID uuid;
 		private String name;
@@ -120,6 +121,10 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		private UUID integration;
 		private Set<UUID> users;
 		private String notificationMessage;
+		private UUID vcs;
+		private String schedule;
+		private String clientPayload; // i.e. additional GitHub parameters
+		private String eventType;
 	}
 	
 	@JsonProperty

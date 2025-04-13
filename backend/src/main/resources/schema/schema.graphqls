@@ -39,6 +39,7 @@ type Query {
 	listDeliverablesByComponent(componentUuid: ID!): [Deliverable]
 	
 	configuredBaseIntegrations(org: ID!): [IntegrationType]
+	ciIntegrations(org: ID!): [CiIntegration]
 	
 	# Analytics
 	mostActiveComponentsOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerComponent]
@@ -79,7 +80,8 @@ type Mutation {
 	setDefaultOrganization(organization: ID!): Boolean
 	
 	# integrations
-	createIntegration(integration: IntegrationInput): Integration
+	createIntegration(integration: IntegrationInput!): Integration
+	createTriggerIntegration(integration: IntegrationInput!): Integration
 	deleteBaseIntegration(org: ID!, type: IntegrationType!): Boolean
 	refetchDependencyTrackMetrics(artifact: ID!): Boolean
 	requestRefreshDependencyTrackMetrics(artifact: ID!): Boolean
@@ -733,6 +735,15 @@ type Integration {
 	createdDate: DateTime
 }
 
+type CiIntegration {
+	uuid: ID
+	identifier: String
+	org: ID
+	isEnabled: Boolean
+	type: IntegrationType
+	note: String
+}
+
 type ReleaseInputEvent {
 	uuid: ID
 	name: String
@@ -748,6 +759,10 @@ type ReleaseOutputEvent {
 	integration: ID
 	users: [ID]
 	notificationMessage: String
+  	vcs: ID
+    eventType: String
+    clientPayload: String
+    schedule: String
 }
 
 type ApprovalEntryState {
@@ -1122,8 +1137,11 @@ input IntegrationInput {
 	identifier: String!
 	secret: String!
 	type: IntegrationType!
-	schedule: String
 	frontendUri: String
+	tenant: String
+	client: String
+	note: String
+	schedule: String
 }
 
 input ReleaseSbomExportInput {
@@ -1138,27 +1156,13 @@ input ReleaseOutputEventInput {
 	name: String
 	type: EventType
 	toReleaseLifecycle: ReleaseLifecycleEnum
-	integrationObject: TriggerIntegrationInput
 	integration: ID
 	users: [ID]
 	notificationMessage: String
-}
-
-input TriggerIntegrationInput {
 	vcs: ID
-	secret: String
-	type: IntegrationType
-	schedule: String
-	uri: String
-	frontendUri: String
-	parameters: TriggerIntegrationParametersInput
-}
-
-input TriggerIntegrationParametersInput {
-	eventName: String
+	eventType: String
 	clientPayload: String
-	tenant: String
-	client: String
+	schedule: String
 }
 
 input ReleaseInputEventInput {

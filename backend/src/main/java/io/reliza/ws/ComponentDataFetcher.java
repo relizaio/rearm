@@ -11,6 +11,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -49,6 +50,8 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.EventType;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
+import io.reliza.model.IntegrationData;
+import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
@@ -239,10 +242,13 @@ public class ComponentDataFetcher {
 				.getVcsRepositoryData(ocd.get().getVcs()).get());
 		if (null != ucdto.getOutputTriggers() && !ucdto.getOutputTriggers().isEmpty()) {
 			for (var trigger : ucdto.getOutputTriggers()) {
-				if (null != trigger.getIntegrationObject() && null != trigger.getIntegrationObject().getVcs()) {
-					orgCheckList.add(vcsRepositoryService
-							.getVcsRepositoryData(trigger.getIntegrationObject().getVcs()).get());
+				if (null != trigger.getIntegration()) {
+					orgCheckList.add(integrationService.getIntegrationData(trigger.getIntegration()).get());
 				}
+  				if (null != trigger.getVcs()) {
+					orgCheckList.add(vcsRepositoryService
+							.getVcsRepositoryData(trigger.getVcs()).get());
+  				}
 				if (null != trigger.getUsers() && trigger.getUsers().isEmpty()) {
 					authorizationService.doUsersBelongToOrg(trigger.getUsers(), ro.getOrg());
 				}
@@ -257,27 +263,30 @@ public class ComponentDataFetcher {
 			List<ReleaseOutputEvent> processedOutputTriggers = new LinkedList<>();
 			if (null != ucdto.getOutputTriggers() && !ucdto.getOutputTriggers().isEmpty()) {
 				for (var trigger : ucdto.getOutputTriggers()) {
-					UUID integration = trigger.getIntegration();
-					if (trigger.getType() == EventType.INTEGRATION_TRIGGER && null == integration) {
-						var createdIntegration = integrationService.createIntegration(ocd.get(),
-								trigger.getIntegrationObject(), wu);
-						integration = createdIntegration.getUuid();
+					IntegrationType it = null;
+					if (trigger.getType() == EventType.INTEGRATION_TRIGGER) {
+						Set<IntegrationType> supportedTypes = Set.of(IntegrationType.ADO, IntegrationType.GITHUB,
+								IntegrationType.GITLAB, IntegrationType.JENKINS);
+						IntegrationData id = integrationService.getIntegrationData(trigger.getIntegration()).get();
+						if (!supportedTypes.contains(id.getType())) {
+							throw new RuntimeException("Unsupported trigger type");
+						}
+						it = id.getType();
 					}
-					var processedTrigger = UpdateComponentDto
-							.convertReleaseOutputEventFromInput(trigger, integration);
-					processedOutputTriggers.add(processedTrigger);
+					try {
+						var processedTrigger = UpdateComponentDto
+								.convertReleaseOutputEventFromInput(trigger, it);
+						processedOutputTriggers.add(processedTrigger);
+					} catch (Exception e) {
+						log.error("Error on processing output trigger on component update", e);
+						throw new RuntimeException("Error on processing output trigger");
+					}
 				}
 			}
 			ComponentDto cdto = UpdateComponentDto.convertToComponentDto(ucdto, processedOutputTriggers);
 			return ComponentData.dataFromRecord(componentService.updateComponent(cdto, wu));
 		} catch (RelizaException re) {
 			throw new AccessDeniedException(re.getMessage());
-		} catch (JsonMappingException e) {
-			log.error("Error on update component df", e);
-			throw new AccessDeniedException("Wrong input");
-		} catch (JsonProcessingException e) {
-			log.error("Error on update component df", e);
-			throw new AccessDeniedException("Wrong input");
 		}
 	}
 	

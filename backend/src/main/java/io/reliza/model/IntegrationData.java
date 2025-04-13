@@ -15,6 +15,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
+import io.reliza.model.dto.IntegrationWebDto;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -66,8 +67,20 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private UUID vcs;
 	@JsonProperty
-	private Map<String,Object> parameters = new LinkedHashMap<>(); // i.e. custom parameters for GitHub Actions
+	private Map<String,Object> parameters = new LinkedHashMap<>(); // custom parameters for providers
+	@JsonProperty
+	private String note;
 
+	public IntegrationWebDto toWebDto() {
+		return IntegrationWebDto.builder()
+				.uuid(this.uuid)
+				.identifier(this.identifier)
+				.isEnabled(this.isEnabled)
+				.org(this.org)
+				.type(this.type)
+				.note(this.note)
+				.build();
+	}
 	
 	public static IntegrationData integrationDataFactory(String identifier, UUID org, IntegrationType type, URI uri, String secret, URI frontendUri) {
 		IntegrationData id = new IntegrationData();

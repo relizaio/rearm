@@ -4,15 +4,23 @@
 
 package io.reliza.model.dto;
 
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.apache.commons.lang3.StringUtils;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.common.Utils;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.EventType;
@@ -35,25 +43,14 @@ public class UpdateComponentDto {
 		private String name;
 		private EventType type;
 		private ReleaseLifecycle toReleaseLifecycle;
-		private TriggerIntegrationInput integrationObject;
 		private UUID integration;
 		private Set<UUID> users;
 		private String notificationMessage;
-	}
-	
-	@Data
-	public static class TriggerIntegrationInput {
 		private UUID vcs;
-		private String secret;
-		private IntegrationType type;
 		private String schedule;
-		private String uri;
-		private String frontendUri;
-		private TriggerIntegrationParametersInput parameters;
+		private String clientPayload; // i.e. additional GitHub parameters
+		private String eventType;
 	}
-	
-	public static record TriggerIntegrationParametersInput(String eventName, String clientPayload,
-			String tenant, String client) {}
 	
 	@JsonProperty(CommonVariables.UUID_FIELD)
 	private UUID uuid;
@@ -95,16 +92,24 @@ public class UpdateComponentDto {
 	private List<ReleaseOutputEventInput> outputTriggers;
 	
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
-			UUID integration) {
-		return ReleaseOutputEvent.builder()
-									.integration(integration)
+			IntegrationType it) throws JsonMappingException, JsonProcessingException {
+		var builder = ReleaseOutputEvent.builder()
+									.integration(roei.getIntegration())
 									.name(roei.getName())
 									.uuid(roei.getUuid())
 									.type(roei.getType())
 									.users(roei.getUsers())
 									.notificationMessage(roei.getNotificationMessage())
-									.toReleaseLifecycle(roei.getToReleaseLifecycle())
-									.build();
+									.vcs(roei.getVcs())
+									.schedule(roei.getSchedule())
+									.eventType(roei.getEventType())
+									.toReleaseLifecycle(roei.getToReleaseLifecycle());
+		if (it == IntegrationType.GITHUB || it == IntegrationType.ADO) {
+			if (StringUtils.isNotEmpty(roei.getClientPayload())) {
+				builder.clientPayload(roei.getClientPayload());
+			}
+		}
+		return builder.build();
 	}
 	
 	public static ComponentDto convertToComponentDto (UpdateComponentDto ucd,

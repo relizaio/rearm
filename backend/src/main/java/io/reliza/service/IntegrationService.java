@@ -45,7 +45,6 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
-import io.reliza.model.ComponentData;
 import io.reliza.model.EventPayload;
 import io.reliza.model.EventPayload.EventEntry;
 import io.reliza.model.Integration;
@@ -53,11 +52,12 @@ import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.TextPayload;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.IntegrationWebDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationType;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
-import io.reliza.model.dto.UpdateComponentDto.TriggerIntegrationInput;
+import io.reliza.model.dto.TriggerIntegrationInputDto;
 import io.reliza.repositories.IntegrationRepository;
 import lombok.Data;
 
@@ -158,6 +158,15 @@ public class IntegrationService {
 				.collect(Collectors.toSet());
 	}
 	
+	public List<IntegrationWebDto> listCiIntegrationsPerOrg (UUID org) {
+		var integrations = listIntegrationsByOrg(org);
+		return integrations.stream()
+				.map(IntegrationData::dataFromRecord)
+				.filter(id -> StringUtils.isNotEmpty(id.getIdentifier()) && id.getIdentifier().startsWith("TRIGGER_"))
+				.map(IntegrationData::toWebDto)
+				.toList();
+	}
+	
 	public void deleteIntegration (UUID uuid) {
 		repository.deleteById(uuid);
 	}
@@ -212,17 +221,16 @@ public class IntegrationService {
 	}
 
 	@Transactional
-	public Integration createIntegration (ComponentData cd, TriggerIntegrationInput tii, WhoUpdated wu) 
+	public Integration createIntegration (TriggerIntegrationInputDto tii, WhoUpdated wu) 
 			throws JsonMappingException, JsonProcessingException {
 		Integration i = new Integration();
 		String encryptedSecret = encryptionService.encrypt(tii.getSecret());
 		IntegrationData id = new IntegrationData();
-		id.setComponent(cd.getUuid());
-		id.setOrg(cd.getOrg());
-		id.setIdentifier("COMPONENT_TRIGGER_" + UUID.randomUUID().toString());
+		id.setOrg(tii.getOrg());
+		id.setIdentifier("TRIGGER_" + UUID.randomUUID().toString());
 		id.setType(tii.getType());
-		if (null != tii.getVcs()) id.setVcs(tii.getVcs());
 		id.setSecret(encryptedSecret);
+		id.setNote(tii.getNote());
 		if (StringUtils.isNotEmpty(tii.getSchedule())) id.setSchedule(tii.getSchedule());
 		if (StringUtils.isNotEmpty(tii.getUri())) {
 			URI uri = null;
@@ -234,27 +242,10 @@ public class IntegrationService {
 			id.setUri(uri);
 		}
 		if (StringUtils.isNotEmpty(tii.getFrontendUri())) id.setFrontendUri(adoUrlEncode(tii.getFrontendUri()));
-		if (tii.getType() == IntegrationType.GITHUB) {
-			String eventName = "";
-			Map<String, String> clientPayload = new HashMap<>();
-			if (StringUtils.isNotEmpty(tii.getParameters().eventName())) {
-				eventName = tii.getParameters().eventName();
-			}
-			if (StringUtils.isNotEmpty(tii.getParameters().clientPayload())) {
-				clientPayload = Utils.OM.readValue(tii.getParameters().clientPayload(), Map.class);
-			}
-			Map<String, Object> githubParams = Map.of("event_type", eventName, 
-					"client_payload", clientPayload);
-			id.setParameters(githubParams);
-		}
 		if (tii.getType() == IntegrationType.ADO) {
 			Map<String, Object> adoParams = new HashMap<>();
-			adoParams.put("client", tii.getParameters().client());
-			adoParams.put("tenant", tii.getParameters().tenant());
-			if (StringUtils.isNotEmpty(tii.getParameters().clientPayload())) {
-				var payloadMap = Utils.OM.readValue(tii.getParameters().clientPayload(), Map.class);
-				adoParams.put("clientPayload", payloadMap);
-			}
+			adoParams.put("client", tii.getClient());
+			adoParams.put("tenant", tii.getTenant());
 			id.setParameters(adoParams);
 		}
 		return saveIntegration(i, Utils.dataToRecord(id), wu);
