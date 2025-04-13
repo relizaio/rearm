@@ -29,27 +29,40 @@ build-job:
 
 ## ReARM Part
 
+Note that for integration triggers firing on approval policy events, you would need an Approval Policy configured; for firing on vulnerabilities or policy violations, you would need [Dependency Track integration configured](./dtrack).
+
+### Organization-Wide CI Integration Part (requires Organization Admin permissions)
+
+1. In ReARM, open **Organization Settings** menu. Under **Integrations** tab, in the `CI Integrations` sub-section, click on `Add CI Integration`.
+
+2. Enter description (try to make this descriptive as this will be used to identify integration).
+
+3. Choose `GitLab` as CI Type. 
+
+4. Enter your GitLab Access Token noted above in the `GitLab Authentication Token` field.
+
+5. Click `Save`. Your CI Integration is now created.
+
+
+### Component Part (requires User with Write permissions)
+
 1. In ReARM, make sure you register your VCS repository that contains desired GitLab CI/CD script either via Component creation or via **VCS** menu item and the plus-circle icon.
 
-2. Integration triggers on approval policy events, for which you would need an Approval Policy configured or on vulnerabilities or policy violations, for which you need [Dependency Track integration configured](./dtrack).
-
-3. You need to set up a ReARM component that will have corresponding triggers configured. Once your component is created, open it and click on the tool icon to toggle component settings:
+2. You need to set up a ReARM component that will have corresponding triggers configured. Once your component is created, open it and click on the tool icon to toggle component settings:
 ![Toggle Component Settings in Reliza Hub UI](images/component-settings-icon.png)
 
-4. If you are setting triggers based on approvals, make sure you have Approval Policy selected under **Core Settings** tab.
+3. If you are setting triggers based on approvals, make sure you have Approval Policy selected under **Core Settings** tab.
 
-5. Open **Output Triggers** tab and click on `Add Output Trigger`.
+4. Open **Output Triggers** tab and click on `Add Output Trigger`.
 
-6. Enter name for your trigger, i.e. `Trigger GitLab CI/CD`.
+5. Enter name for your trigger, i.e. `Trigger GitLab CI/CD`.
 
-7. Select `External Integration` as *Type* and `GitLab` as *Sub-Type*.
+6. Select `External Integration` as *Type*.
 
-8. Enter your GitLab Personal token as noted above.
+7. Enter your GitLab Schedule ID in the `GitLab Schedule Id` field as noted above.
 
-9. Enter your GitLab Schedule ID as noted above.
+8. Under *CI Repository* click on the Edit icon and select your GitLab repository containing desired CI workflow set up above.
 
-10. Under *CI Repository* click on the Edit icon and select your GitHub repository containing desired GitHub Actions workflow set up above.
+9. Click on 'Save', your trigger is now created.
 
-11. Click on 'Save', your trigger is now created.
-
-12. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).
+10. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).

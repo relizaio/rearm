@@ -221,11 +221,8 @@
                                             <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
                                                 <n-input v-model:value="outputTrigger.clientPayload" required placeholder="Enter Additional Optional Client Payload JSON" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Authentication Token" path="integrationObject.secret">
-                                                <n-input v-model:value="outputTrigger.integrationObject.secret" required placeholder="Enter GitLab Authentication Token" />
-                                            </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="integrationObject.schedule">
-                                                <n-input type="number" v-model:value="outputTrigger.integrationObject.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
+                                                <n-input type="number" v-model:value="outputTrigger.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
                                             </n-form-item>
                                             <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && (selectedCiIntegration.type === 'GITHUB' || selectedCiIntegration.type === 'GITLAB')" label="CI Repository" path="vcs">
                                                 <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>

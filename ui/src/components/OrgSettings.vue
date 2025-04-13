@@ -1571,7 +1571,7 @@ async function addCiIntegration() {
         }
     })
     
-    if (resp.data.createIntegration && resp.data.createIntegration.uuid) await loadConfiguredIntegrations(false)
+    if (resp.data.createTriggerIntegration && resp.data.createTriggerIntegration.uuid) await loadCiIntegrations(false)
 
     resetCreateIntegrationObject()
 
