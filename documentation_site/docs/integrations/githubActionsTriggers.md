@@ -53,7 +53,7 @@ Note that for integration triggers firing on approval policy events, you would n
 
 ### Organization-Wide CI Integration Part (requires Organization Admin permissions)
 
-1. In ReARM, open **Organization Settings** menu. Under **Integrations** tab, in the `CI Integrations` sub-section, click on `Add CI Integration` (note that only organization Admin may add CI integrations). 
+1. In ReARM, open **Organization Settings** menu. Under **Integrations** tab, in the `CI Integrations` sub-section, click on `Add CI Integration`. 
 
 2. Enter description (try to make this descriptive as this will be used to identify integration).
 
