@@ -51,29 +51,35 @@ In your script, you may also make use of client payload as described in the GitH
 
 1. In ReARM, make sure you register your VCS repository that contains desired GitHub Actions script either via Component creation or via **VCS** menu item and the plus-circle icon.
 
-2. In ReARM, open **Organization Settings** menu. Under **Integrations** tab, click on `Add GitHub Integration`. In the corresponding fields, paste your Base64 encoded key noted above and GitHub Application ID, also noted above. Then click `Submit`.
+2. In ReARM, open **Organization Settings** menu. Under **Integrations** tab, in the `CI Integrations` sub-section, click on `Add CI Integration` (note that only organization Admin may add CI integrations). 
 
-3. Integration triggers on approval policy events, for which you would need an Approval Policy configured or on vulnerabilities or policy violations, for which you need [Dependency Track integration configured](./dtrack).
+3. Enter description (try to make this descriptive as this will be used to identify integration).
 
-4. You need to set up a ReARM component that will have corresponding triggers configured. Once your component is created, open it and click on the tool icon to toggle component settings:
+4. Choose `GitHub` as CI Type. Then in the corresponding fields, paste your Base64 encoded key noted above and GitHub Application ID, also noted above. Then click `Save`.
+
+5. Integration triggers on approval policy events, for which you would need an Approval Policy configured or on vulnerabilities or policy violations, for which you need [Dependency Track integration configured](./dtrack).
+
+6. You need to set up a ReARM component that will have corresponding triggers configured. Once your component is created, open it and click on the tool icon to toggle component settings:
 ![Toggle Component Settings in Reliza Hub UI](images/component-settings-icon.png)
 
-5. If you are setting triggers based on approvals, make sure you have Approval Policy selected under **Core Settings** tab.
+7. If you are setting triggers based on approvals, make sure you have Approval Policy selected under **Core Settings** tab.
 
-6. Open **Output Triggers** tab and click on `Add Output Trigger`.
+8. Open **Output Triggers** tab and click on the `plus-circle icon` in the bottom left (Add Output Trigger).
 
-7. Enter name for your trigger, i.e. `Trigger GitHub Actions Approval Workflow`.
+9. Enter name for your trigger, i.e. `Trigger GitHub Actions Approval Workflow`.
 
-8. Select `External Integration` as *Type* and `GitHub` as *Sub-Type*.
+10. Select `External Integration` as *Type*.
 
-9. Enter your GitHub App's Installation ID as noted above.
+11. Choose your previously created GitHub Integration in the `Choose CI Integration` field
 
-10. Enter name of your GitHub Actions event as referenced in your GitHub Actions script (the event name used in these instructions was `reliza-build-event`).
+12. Enter your GitHub App's Installation ID as noted above.
 
-11. If you require any additional client payload, enter it in the JSON format in the *Optional Client Payload JSON* field.
+13. Enter name of your GitHub Actions event as referenced in your GitHub Actions script (the event name used in these instructions was `reliza-build-event`).
 
-12. Under *CI Repository* click on the Edit icon and select your GitHub repository containing desired GitHub Actions workflow set up above.
+14. If you require any additional client payload, enter it in the JSON format in the *Optional Client Payload JSON* field.
 
-13. Click on 'Save', your trigger is now created.
+15. Under *CI Repository* click on the Edit icon and select your GitHub repository containing desired GitHub Actions workflow set up above.
 
-14. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).
+16. Click on 'Save', your trigger is now created.
+
+17. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).
