@@ -144,6 +144,9 @@
                             <n-form-item v-if="createIntegrationObject.type === 'JENKINS'" label="Jenkins URI" path="createIntegrationObject.uri">
                                 <n-input v-model:value="createIntegrationObject.uri" required placeholder="Jenkins Home URI (i.e. https://jenkins.localhost)" />
                             </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'JENKINS'" label="Jenkins Token" path="createIntegrationObject.secret">
+                                <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter Jenkins Token" />
+                            </n-form-item>
                             <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Client ID" path="createIntegrationObject.client">
                                 <n-input v-model:value="createIntegrationObject.client" required placeholder="Enter Client ID" />
                             </n-form-item>

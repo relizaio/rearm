@@ -233,11 +233,8 @@
                                                 <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
                                                 <vue-feather v-if="!selectNewIntegrationRepo" type="edit" class="clickable" @click="async () => {await fetchVcsRepos(); selectNewIntegrationRepo = true;}" title="Select New Integration Repository" />
                                             </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Token" path="integrationObject.secret">
-                                                <n-input v-model:value="outputTrigger.integrationObject.secret" required placeholder="Enter Jenkins Token" />
-                                            </n-form-item>
-                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins URI" path="integrationObject.uri">
-                                                <n-input v-model:value="outputTrigger.integrationObject.uri" required placeholder="Jenkins URI (ends with token=)" />
+                                            <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
+                                                <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
                                             </n-form-item>
                                             <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Client ID" path="integrationObject.parameters.client">
                                                 <n-input v-model:value="outputTrigger.integrationObject.parameters.client" required placeholder="Enter Client ID" />
