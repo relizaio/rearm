@@ -20,8 +20,8 @@
                             v-if="!myUser.policiesAccepted"
                             v-model:checked="userPostSignup.tosAccepted"
                         />
-                        <span style="margin-left:7px;">Accept <a target="_blank" rel="noopener noreferrer" href="https://relizahub.com/tos.html">Terms Of Service</a> and
-                            <a target="_blank" rel="noopener noreferrer" href="https://relizahub.com/privacy.html">Privacy Policy</a>.
+                        <span style="margin-left:7px;">Accept <a target="_blank" rel="noopener noreferrer" href="https://rearmhq.com/tos.html">Terms Of Service</a> and
+                            <a target="_blank" rel="noopener noreferrer" href="https://rearmhq.com/privacy.html">Privacy Policy</a>.
                         </span>
                     </n-form-item>
                     <n-form-item

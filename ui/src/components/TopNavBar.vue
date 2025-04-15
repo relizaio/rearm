@@ -3,10 +3,6 @@
         <div class="topNavBar">
             <div><router-link to="/"><img id="relizaLogo" src="/logo_svg_no_tag_3.svg" /></router-link></div>
             <div class="publicSupport">
-                <span v-if="isPlayground">
-                    This is a read-only <a href="https://itnext.io/building-kubernetes-cicd-pipeline-with-github-actions-argocd-and-reliza-hub-e7120b9be870">demo</a>.
-                    Live App is <a href="https://app.relizahub.com">here</a>!
-                </span>
                 <span v-if="version" class="version">Version: {{version}} </span>
             </div>
             <div class="horizontalNavElement horizontalNavElementOrg">
@@ -33,7 +29,7 @@
                     <router-link :to="{ name: 'systemSettings'}"><vue-feather class="clickable" type="settings" title="Global Admin Settings" /></router-link>
                 </span>
                 <span>
-                    <a href="https://docs.relizahub.com" target="_blank">
+                    <a href="https://docs.rearmhq.com" rel="noopener noreferrer" target="_blank">
                         <vue-feather class="clickable" type="help-circle" title="Documentation" />
                     </a>
                 </span>
