@@ -167,4 +167,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<Release> findProductReleasesForMetricsCompute();
 	
+	@Query(
+			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE,
+			nativeQuery = true)
+	List<Release> findReleasesForMetricsComputeByUpdate();
+	
+	
+	
 }
