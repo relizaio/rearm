@@ -27,19 +27,20 @@ public class Rebom {
         Boolean tldOnly,
         BomStructureType structure,
         String notes,
-        StripBom stripBom
+        StripBom stripBom,
+        String serialNumber
     ) {
           // Overloaded constructor
           // create opts
           public RebomOptions() {
-            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE);
+            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "");
         }
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, StripBom stripBom) {
-            this(name, group,  version, belongsTo, hash, false, BomStructureType.FLAT, "sent from ReArm", stripBom);
+            this(name, group,  version, belongsTo, hash, false, BomStructureType.FLAT, "sent from ReArm", stripBom, "");
         }
         // merge opts
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly,  BomStructureType structure) {
-            this(null, null,  null, belongsTo, null, tldOnly, structure, "sent from ReArm", StripBom.TRUE);
+            this(null, null,  null, belongsTo, null, tldOnly, structure, "sent from ReArm", StripBom.TRUE, "");
         }
     }
 

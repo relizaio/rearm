@@ -41,6 +41,7 @@ import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ArtifactUploadResponseDto;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.Rebom.RebomResponse;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.service.IntegrationService.UploadableBom;
@@ -185,8 +186,19 @@ public class ArtifactService {
 			)){
 				var bomJson = Utils.readJsonFromResource(file);
 				
-				var rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions);
-				artifactDto.setInternalBom(new InternalBom(rebomResponse.uuid(), rebomOptions.belongsTo()));
+				RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions);
+				// UUID internalBomId = rebomOptions.serialNumber();
+				UUID internalBomId;
+				try{
+					String bomSerialNumber = rebomResponse.meta().serialNumber();
+					if(bomSerialNumber.startsWith("urn")){
+						bomSerialNumber = bomSerialNumber.replace("urn:uuid:","");
+					}
+					internalBomId = UUID.fromString(bomSerialNumber);
+				}catch (Exception e){
+					throw new RelizaException("Error uploading BOM: " + e.getMessage());
+				}
+				artifactDto.setInternalBom(new InternalBom(internalBomId, rebomOptions.belongsTo()));
 				artifactUploadResponse = rebomResponse.bom();
 				if(null != rebomResponse.duplicate() && rebomResponse.duplicate() ){
 					//find existing artifact and use its uuid, then create / update art
@@ -229,6 +241,9 @@ public class ArtifactService {
 
 	public ArtifactUploadResponseDto uploadFileToConfiguredOci(Resource file, String tag){
 		MultiValueMap<String, Object> formData = new LinkedMultiValueMap<>();
+		if(!tag.startsWith("rearm")){
+			tag = "rearm" + tag;
+		}
 		formData.add("registry", this.registryHost);
         formData.add("repo", this.ociRepository);
         formData.add("file", file);

@@ -718,7 +718,7 @@ public class ReleaseService {
 		if(bomIds.size() > 0){
 			ComponentData pd = getComponentService.getComponentData(rd.getComponent()).get();
 			OrganizationData od = organizationService.getOrganizationData(rd.getOrg()).get();
-			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE );
+			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE,"" );
 			rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions);
 			
 			addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions), wu);
@@ -774,7 +774,7 @@ public class ReleaseService {
 						retRebomId = bomIds.getFirst();
 					} else {
 						var od = organizationService.getOrganizationData(rd.getOrg()).get();
-						var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(),  rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE);
+						var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(),  rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE, "");
 						UUID rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions);
 						addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions), wu);
 						retRebomId = rebomId;
