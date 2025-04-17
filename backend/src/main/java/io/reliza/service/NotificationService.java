@@ -192,7 +192,8 @@ public class NotificationService {
 			var oud = userService.getUserData(rd.getLastUpdatedBy());
 			if(oud.isPresent()) {
 				payloadWrapper.add(new TextPayload(" by ", null));
-				payloadWrapper.add(new TextPayload(oud.get().getName(), URI.create("mailto:" + oud.get().getEmail())));
+				String name = (StringUtils.isNotEmpty(oud.get().getName())) ? oud.get().getName() : oud.get().getEmail();
+				payloadWrapper.add(new TextPayload(name, URI.create("mailto:" + oud.get().getEmail())));
 			}
 		}
 

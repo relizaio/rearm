@@ -7,7 +7,6 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -27,9 +26,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.lang.NonNull;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -45,8 +42,6 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
-import io.reliza.model.EventPayload;
-import io.reliza.model.EventPayload.EventEntry;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.IntegrationType;
@@ -297,21 +292,66 @@ public class IntegrationService {
 				if (oidteams.isPresent()) {
 					String secret = encryptionService.decrypt(oidteams.get().getSecret());
 					StringBuilder payloadStrTeamsSb = parseTextPayloadForMsteams(payload, true);
-					Map<String, String> payloadMap = Map.of("text", payloadStrTeamsSb.toString());
-					teamsWebClient.post().uri(secret).bodyValue(payloadMap).retrieve()
-						.toEntity(String.class)
-						.subscribe(
-							successValue -> {},
-							error -> {
-								log.error(error.getMessage());
-							}
-						);
+					try {
+						Map<String, Object> payloadMap = wrapTeamsPayloadInActionCard(payloadStrTeamsSb.toString());
+						URI teamsUri = URI.create(secret);
+						var twc = teamsWebClient.post().uri(teamsUri);
+						    twc.bodyValue(payloadMap).retrieve()
+							.toEntity(String.class)
+							.subscribe(
+								successValue -> {},
+								error -> {
+									log.error(error.getMessage());
+								}
+							);
+					} catch (Exception e) {
+						log.error("Error on submitting Teams notification", e);
+					}
 				}
 				break;
 			default:
 				break;
 			}
 		}
+	}
+	
+	private Map<String, Object> wrapTeamsPayloadInActionCard (String payload) throws JsonMappingException, JsonProcessingException {
+		String cardSample = """
+	    {
+	       "type":"message",
+	       "attachments":[
+	          {
+	             "contentType":"application/vnd.microsoft.card.adaptive",
+	             "contentUrl":null,
+	             "content":{
+					  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+					  "type": "AdaptiveCard",
+					  "version": "1.5",
+					  "body": [
+					    {
+					      "type": "TextBlock",
+					      "text": ""
+					    }
+					  ],
+					  "msteams": {
+					  	"width": "Full"
+					  }
+				 }
+	         }
+	       ]
+	    }
+				""";
+		@SuppressWarnings("unchecked")
+		Map<String, Object> cardSampleParsed = Utils.OM.readValue(cardSample, Map.class);
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> attArr = (List<Map<String, Object>>) cardSampleParsed.get("attachments");
+		@SuppressWarnings("unchecked")
+		Map<String, Object> contentMap = (Map<String, Object>) attArr.get(0).get("content");
+		@SuppressWarnings("unchecked")
+		List<Map<String, String>> bodyArr = (List<Map<String, String>>) contentMap.get("body");
+		Map<String, String> bodyTextMap = bodyArr.get(0);
+		bodyTextMap.put("text", payload);
+		return cardSampleParsed;
 	}
 	
 	private StringBuilder parseTextPayloadForMsteams(List<TextPayload> payload, boolean withUris) {
@@ -347,11 +387,11 @@ public class IntegrationService {
 			} else {
 				String addTextUri = p.text();
 				if (":package:".equals(addTextUri)) addTextUri = "&#x1F4E6;";
-				payloadStrTeamsSb.append("<a href=\"");
-				payloadStrTeamsSb.append(p.uri());
-				payloadStrTeamsSb.append("\">");
+				payloadStrTeamsSb.append("[");
 				payloadStrTeamsSb.append(addTextUri);
-				payloadStrTeamsSb.append("</a>");
+				payloadStrTeamsSb.append("](");
+				payloadStrTeamsSb.append(p.uri());
+				payloadStrTeamsSb.append(")");
 			}
 		}
 		return payloadStrTeamsSb;
@@ -371,74 +411,6 @@ public class IntegrationService {
 			}
 		}
 		return payloadStrSlackSb;
-	}
-	
-	@Async
-	@Transactional(propagation = Propagation.NOT_SUPPORTED)
-	public void sendNotification (UUID orgUuid, IntegrationType notificationType, String channelIdentifier, EventPayload payload) {
-		if (null != payload) {
-			switch (notificationType) {
-			case SLACK:
-				// retrieve notification secret
-				Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(orgUuid, notificationType, channelIdentifier);
-				if (oid.isPresent()) {
-					String secret = encryptionService.decrypt(oid.get().getSecret());
-					List<Map<String, ?>> slackElements = new LinkedList<>();
-					Map<String, Object> slackBlockMap = Map.of("blocks", slackElements);
-					String welcomeMsg = parseTextPayloadForSlack(payload.getTitle()).toString();
-					Map<String, Object> welcomeMap = Map.of("type", "section", "text", Map.of("type", "mrkdwn", "text", welcomeMsg));
-					Map<String, String> dividerMap = Map.of("type", "divider");
-					String dateStr = payload.getDate().format(DateTimeFormatter.RFC_1123_DATE_TIME);
-					Map<String, Object> dateMap = Map.of("type", "section", "text", Map.of("type", "mrkdwn", "text", dateStr));
-					
-					slackElements.add(dividerMap);
-					slackElements.add(welcomeMap);
-					slackElements.add(dateMap);
-
-					for (var ee : payload.getEvents()) {
-						String msgStr = ee.key() + " " + parseTextPayloadForSlack(ee.event()).toString();
-						Map<String, Object> msgMap = Map.of("type", "section", "text", Map.of("type", "mrkdwn", "text", msgStr));
-						slackElements.add(msgMap);
-					}
-					
-					slackWebClient.post().uri(secret).bodyValue(slackBlockMap)
-						.retrieve()
-						.toEntity(String.class)
-						.subscribe(
-							successValue -> {},
-							error -> {
-								log.error(error.getMessage());
-							}
-						);
-				}
-				break;
-			case MSTEAMS:
-				// retrieve notification secret
-				Optional<IntegrationData> oidteams = getIntegrationDataByOrgTypeIdentifier(orgUuid, notificationType, channelIdentifier);
-				if (oidteams.isPresent()) {
-					String secret = encryptionService.decrypt(oidteams.get().getSecret());
-					
-					StringBuilder payloadStrTeamsSb = parseTextPayloadForMsteams(payload.getTitle(), false);
-					String teamsFinalPayload = getAdaptiveCardForTeams(payloadStrTeamsSb.toString(),
-							payload.getDate(), payload.getEvents(), payload.getMainUri());
-					
-					// Map<String, String> payloadMap = Map.of("text", payloadStrTeamsSb.toString());
-					
-					log.debug(teamsFinalPayload);
-					teamsWebClient.post().uri(secret).bodyValue(teamsFinalPayload).retrieve()
-						.toEntity(String.class)
-						.subscribe(
-							successValue -> {},
-							error -> {
-								log.error(error.getMessage());
-							}
-						);
-				}
-				break;
-			default:
-				break;
-			}
-		}
 	}
 	
 	public record DependencyTrackBomPayload (UUID project, String bom) {}
@@ -707,87 +679,4 @@ public class IntegrationService {
 			}
 		});
 	}
-	
-	private String getAdaptiveCardForTeams(String title, ZonedDateTime date, List<EventEntry> events, URI mainUri) {
-		String dateStr = date.format(DateTimeFormatter.RFC_1123_DATE_TIME);
-		String eventStr = "";
-		try {
-			eventStr = stringifyEventsForTeams(events);
-		} catch (Exception e) {
-			log.error("Error parsing events for teams", e);
-		}
-		String adaptiveCard = String.format("""
-		{ 
-		
-		      "type": "message", 
-		
-		      "attachments": [ 
-		
-		        { 
-		
-		          "contentType": "application/vnd.microsoft.card.adaptive", 
-		
-		          "content": 		
-					{
-					    "type": "AdaptiveCard",
-					    "body": [
-					        {
-					            "type": "TextBlock",
-					            "size": "medium",
-					            "weight": "bolder",
-					            "text": "%s"
-					        },
-					        {
-					            "type": "ColumnSet",
-					            "columns": [
-					                {
-					                    "type": "Column",
-					                    "items": [
-					                        {
-					                            "type": "TextBlock",
-					                            "spacing": "None",
-					                            "text": "%s",
-					                            "isSubtle": true,
-					                            "wrap": true
-					                         }
-					                    ],
-					                    "width": "stretch"
-					                }
-					            ]
-					        },
-					        {
-					            "type": "FactSet",
-					            "facts": %s
-					        }
-					    ],
-					    "actions": [
-					        {
-					            "type": "Action.OpenUrl",
-					            "title": "View Instance",
-					            "url": "%s"
-					        }
-					    ],
-					    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-					    "version": "1.5"
-					}
-		
-		        }] 
-		
-		}
-		""", title, dateStr, eventStr, mainUri.toString());
-		
-		return adaptiveCard;
-		
-	}
-	
-	private String stringifyEventsForTeams(List<EventEntry> events) throws JsonProcessingException {
-		List<Map<String,String>> eventFacts = new LinkedList<>();
-		for (var e : events) {
-			Map<String,String> eMap = Map.of("title", e.key(),
-					"value", parseTextPayloadForMsteams(e.event(), false).toString());
-			eventFacts.add(eMap);
-		}
-		return Utils.OM.writeValueAsString(eventFacts);
-	}
-
 }

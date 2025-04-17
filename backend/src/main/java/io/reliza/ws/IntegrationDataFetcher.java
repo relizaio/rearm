@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
@@ -69,6 +70,7 @@ public class IntegrationDataFetcher {
 		return integrationService.listConfiguredBaseIntegrationTypesPerOrg(orgUuid);
 	}
 	
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record CreateIntegrationInput (UUID org, String identifier, String secret, IntegrationType type, URI uri, String schedule, URI frontendUri) {}
 	
 	@PreAuthorize("isAuthenticated()")
