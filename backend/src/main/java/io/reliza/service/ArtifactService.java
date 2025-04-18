@@ -242,7 +242,7 @@ public class ArtifactService {
 	public ArtifactUploadResponseDto uploadFileToConfiguredOci(Resource file, String tag){
 		MultiValueMap<String, Object> formData = new LinkedMultiValueMap<>();
 		if(!tag.startsWith("rearm")){
-			tag = "rearm" + tag;
+			tag = "rearm-" + tag;
 		}
 		formData.add("registry", this.registryHost);
         formData.add("repo", this.ociRepository);
