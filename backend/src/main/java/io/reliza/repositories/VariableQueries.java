@@ -300,9 +300,6 @@ class VariableQueries {
 	protected static final String FIND_ALL_RELEASES_OF_ORG = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString";
 	
-	protected static final String FIND_PLACEHOLDER_RELEASE_OF_COMPONENT = "select * from rearm.releases r where r.record_data->>'"
-			+ CommonVariables.COMPONENT_FIELD + "' = :compUuidAsString AND r.record_data->>'" + CommonVariables.TYPE_FIELD + "' = 'PLACEHOLDER'";
-	
 	protected static final String FIND_RELEASES_BY_DELIVERABLE_AND_ORG = """
 			select * from rearm.releases where uuid = (select cast (record_data->>'release' as UUID) from rearm.variants
 			WHERE jsonb_contains(record_data, jsonb_build_object('outboundDeliverables', jsonb_build_array(:deliverableUuidAsString)))

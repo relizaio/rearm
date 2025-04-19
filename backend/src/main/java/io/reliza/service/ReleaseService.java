@@ -389,14 +389,6 @@ public class ReleaseService {
 		return changelog;
 	}
 	
-	public ReleaseData getComponentPlaceholderRelease (UUID projUuid) {
-		List<Release> r = repository.findPlaceholderReleaseOfComponent(projUuid.toString());
-		if (null == r || r.size() != 1) {
-			throw new IllegalStateException("Illegal size of placeholder release list for project uuid = " + projUuid);
-		}
-		return ReleaseData.dataFromRecord(r.get(0));
-	}
-	
 	public Optional<ReleaseData> matchReleaseGroupsToProductRelease(UUID featureSet, List<Set<UUID>> releaseGroups) {
 		Optional<ReleaseData> ord = Optional.empty();
 		var rgIterator = releaseGroups.iterator();
@@ -1625,33 +1617,53 @@ public class ReleaseService {
 	
 	protected void computeMetricsForAllUnprocessedReleases () {
 		ZonedDateTime lastScanned = ZonedDateTime.now();
-//		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect();
-//		var releasesBySce = repository.findReleasesForMetricsComputeBySce();
-//		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables();
-//		var productReleases = repository.findProductReleasesForMetricsCompute();
-//		Set<UUID> dedupProcessedReleases = new HashSet<>();
-//		computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases, lastScanned);
-//		computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases, lastScanned);
-//		computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases, lastScanned);
-//		computeMetricsForReleaseList(productReleases, dedupProcessedReleases, lastScanned);
+		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect();
+		var releasesBySce = repository.findReleasesForMetricsComputeBySce();
+		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables();
+		var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate();
+		Set<UUID> dedupProcessedReleases = new HashSet<>();
+		computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases, lastScanned);
+		computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases, lastScanned);
+		computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases, lastScanned);
+		computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases, lastScanned);
+		log.info("PSDEBUG: processed releases size = " + dedupProcessedReleases.size());
 		
-		var releasesToComputeMetrics = repository.findReleasesForMetricsComputeByUpdate();
-		computeMetricsForReleaseList(releasesToComputeMetrics, lastScanned);
-	}
-
-	private void computeMetricsForReleaseList(List<Release> releaseList, ZonedDateTime lastScanned) {
-		releaseList.forEach(r -> computeReleaseMetrics(r, lastScanned));
+		var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases);
+		computeMetricsForReleaseList(productReleases, dedupProcessedReleases, lastScanned);
+		
+		log.info("PSDEBUG: processed product releases size = " + productReleases.size());
 	}
 	
-//	private void computeMetricsForReleaseList(List<Release> releaseList,
-//			Set<UUID> dedupProcessedReleases, ZonedDateTime lastScanned) {
-//		releaseList.forEach(r -> {
-//			if (!dedupProcessedReleases.contains(r.getUuid())) {
-//				computeReleaseMetrics(r, lastScanned);
-//				dedupProcessedReleases.add(r.getUuid());
-//			}
-//		});
-//	}
+	private List<Release> findProductReleasesFromComponentsForMetrics (Set<UUID> dedupProcessedReleases) {
+		Set<UUID> dedupReleases = new HashSet<>();
+		List<Release> productReleases = new LinkedList<>();
+		if (null != dedupProcessedReleases && !dedupProcessedReleases.isEmpty()) {
+			dedupProcessedReleases.forEach(dpr -> {
+				ReleaseData rd = sharedReleaseService.getReleaseData(dpr).get();
+				List<Release> wipProducts = repository.findProductsByRelease(rd.getOrg().toString(),
+						rd.getUuid().toString());
+				if (null != wipProducts && !wipProducts.isEmpty()) {
+					wipProducts.forEach(p -> {
+						if (!dedupProcessedReleases.contains(p.getUuid()) && !dedupReleases.contains(p.getUuid())) {
+							productReleases.add(p);
+							dedupReleases.add(p.getUuid());
+						}
+					});
+				}
+			});
+		}
+		return productReleases;
+	}
+
+	private void computeMetricsForReleaseList(List<Release> releaseList,
+			Set<UUID> dedupProcessedReleases, ZonedDateTime lastScanned) {
+		releaseList.forEach(r -> {
+			if (!dedupProcessedReleases.contains(r.getUuid())) {
+				computeReleaseMetrics(r, lastScanned);
+				dedupProcessedReleases.add(r.getUuid());
+			}
+		});
+	}
 	
 	@Async
 	public void reconcileMergedSbomRoutine(ReleaseData rd, WhoUpdated wu) {

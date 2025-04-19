@@ -43,11 +43,6 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG,
 			nativeQuery = true)
 	List<Release> findReleasesOfOrg(String orgUuidAsString);
-	
-	@Query(
-			value = VariableQueries.FIND_PLACEHOLDER_RELEASE_OF_COMPONENT,
-			nativeQuery = true)
-	List<Release> findPlaceholderReleaseOfComponent(String compUuidAsString);
 
 	@Query(
 			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG_AFTER_CREATE_DATE,
@@ -94,7 +89,7 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_RELEASE_BY_COMPONENT_AND_VERSION,
 			nativeQuery = true)
 	Optional<Release> findByComponentAndVersion(String compUuidAsString, String version);
-
+	
 	@Query(
 			value = VariableQueries.FIND_PRODUCTS_THAT_HAVE_THIS_RELEASE,
 			nativeQuery = true)
