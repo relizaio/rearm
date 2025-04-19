@@ -570,7 +570,7 @@ public class IntegrationService {
 	
 	private List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject) throws JsonMappingException, JsonProcessingException {
-		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject);
+		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject + "?pageNumber=1&pageSize=10000");
 		var resp = dtrackWebClient
 				.get()
 				.uri(dtrackUri)
@@ -593,7 +593,7 @@ public class IntegrationService {
 	
 	private List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject) throws JsonMappingException, JsonProcessingException {
-		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject);
+		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject + "?pageNumber=1&pageSize=10000");
 		var resp = dtrackWebClient
 				.get()
 				.uri(dtrackUri)
