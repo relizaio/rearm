@@ -1,0 +1,189 @@
+parameters:
+  - name: name
+    type: string
+  - name: imageRepository
+    type: string
+  - name: containerRegistry
+    type: string
+  - name: dockerfilePath
+    type: string
+  - name: tag
+    type: string
+  - name: branch
+    type: string
+  - name: commit
+    type: string
+  - name: buildUri
+    type: string
+  - name: vmImageName
+    type: string
+  - name: dockerRegistryServiceConnection
+    type: string
+  - name: rearmUrl
+    type: string
+  - name: rearmApiKey
+    type: string
+  - name: rearmApiKeyId
+    type: string
+  - name: componentID
+    type: string
+  - name: buildPath
+    type: string
+  - name: pushLatestTag
+    type: string
+  - name: enableSbom
+    type: string
+  - name: sbomType
+    type: string
+  - name: rearmCliVersion
+    type: string
+
+
+jobs:
+- job: Build_${{ parameters.name }}
+  displayName: Build ${{ parameters.name }}
+  pool:
+    vmImage: ${{ parameters.vmImageName }}
+  steps:
+  # Record build start
+  - bash: |
+      BUILD_START=$(date -Iseconds)
+      echo "##vso[task.setvariable variable=BUILD_START]$BUILD_START"
+  # Checkout current repository
+  - checkout: self
+    fetchDepth: "0"
+  - bash: |
+      ls
+  - task: gitversion/setup@3.1.1
+    displayName: Install GitVersion
+    inputs:
+      versionSpec: '6.0.x'
+  - task: gitversion/execute@3.1.1
+    displayName: Determine Version
+    inputs:
+      useConfigFile: true
+      configFilePath: ./GitVersion.yml
+  - bash: |
+      echo "Full GitVersion Semver: $(GitVersion_FullSemVer)"
+      echo "Short Semver: $(GitVersion_SemVer)"
+      mkdir -p $(Pipeline.Workspace)/variables
+      echo -n "$(GitVersion_FullSemVer)" > $(Pipeline.Workspace)/variables/RLZ_FULL_VER
+      echo -n "$(GitVersion_SemVer)" > $(Pipeline.Workspace)/variables/RLZ_SHORT_VER
+    displayName: Store version data for future use
+  - bash: |
+      echo -n "syncbranches -k $REARM_API_KEY -i $REARM_API_KEY_ID -u "${{ parameters.rearmUrl }}" --component "${{ parameters.componentID }}" --livebranches $(git branch -r --format="%(refname)" | base64 -w 0)" > $(Pipeline.Workspace)/variables/SYNC_BRANCH_COMMAND
+      # echo "DEBUG sync branch command: $(cat $(Pipeline.Workspace)/variables/SYNC_BRANCH_COMMAND)"
+      docker run --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} $(cat $(Pipeline.Workspace)/variables/SYNC_BRANCH_COMMAND)
+    displayName: Synchronize Branches
+    env: 
+      REARM_API_KEY: ${{ parameters.rearmApiKey }}
+      REARM_API_KEY_ID: ${{ parameters.rearmApiKeyId }}
+  - bash: echo "--lifecycle REJECTED " > $(Pipeline.Workspace)/variables/REARM_COMMAND
+    displayName: Instantiate Reliza lifecycle as Rejected to handle possible build failure
+  - task: Docker@2
+    displayName: Login to Container Registry
+    inputs:
+      command: login
+      containerRegistry: ${{ parameters.dockerRegistryServiceConnection }}
+  - task: UseNode@1
+    inputs:
+      version: '20.x'
+    displayName: 'Install Node.js'
+  - bash: npm install --global @cyclonedx/cyclonedx-npm
+    condition: ${{ eq(parameters.sbomType, 'npm') }}
+    displayName: 'Install cyclonedx npm'
+  - task: UseDotNet@2
+    condition: ${{ eq(parameters.sbomType, 'dotnet') }}
+    inputs:
+      version: '9.0.100'
+    displayName: 'Install .NET SDK'
+  - bash: dotnet tool install --global CycloneDX
+    condition: ${{ eq(parameters.sbomType, 'dotnet') }}
+    displayName: 'Install cyclonedx .NET'
+  - bash: npm install -g @cyclonedx/cdxgen@11.0.10
+    displayName: 'Install cdxgen cli'
+  - bash: |
+      exit_code=0
+      set -e
+      set -x
+      dirtybranch=${{ parameters.branch }}
+      cleanedbranch="${dirtybranch/'refs/heads/'/''}"
+      cleanedbranch="${cleanedbranch/'/'/'-'}"
+      cd ${{ parameters.buildPath }}
+      case $cleanedbranch in
+
+        master | main)
+          latest_tag=latest
+          ;;
+
+        *)
+          latest_tag=$cleanedbranch
+          ;;
+      esac
+
+      tags="-t ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)"
+      tags+=" -t ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$latest_tag"
+
+      echo "tags=" $tags
+      # push branch tag for main or master
+      if [ "$latest_tag" != "$cleanedbranch" ]
+      then
+        tags+=" -t ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$cleanedbranch"
+      fi
+
+      docker_sha_256=""
+      docker buildx build --push \
+        $tags \
+        --build-arg CI_ENV=azuredevops${{ parameters.tag }} --build-arg GIT_COMMIT=${{ parameters.commit }} --build-arg GIT_BRANCH=${{ parameters.branch }} \
+        --build-arg VERSION=$(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) -f ./Dockerfile \
+        .
+
+      if [[ $exit_code -eq 0 ]]
+      then
+          docker_sha_256=$(docker buildx imagetools inspect --format "{{json .Manifest}}" ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER) | jq -r '.digest')
+          # set reliza release lifecycle to ASSEMBLED
+          echo "--lifecycle DRAFT " > $(Pipeline.Workspace)/variables/REARM_COMMAND
+      fi
+
+      last_commit=$(docker run --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} getlatestrelease -k $REARM_API_KEY -i $REARM_API_KEY_ID -u "${{ parameters.rearmUrl }}" --component "${{ parameters.componentID }}" --branch "${{ parameters.branch }}" | jq -r ".sourceCodeEntryDetails.commit")
+      echo "Last Commit: $last_commit"
+      if [ ! -z "$last_commit" ] && [ "null" != "$last_commit" ]
+      then
+        echo -n "--commits $(git log -100 $last_commit..${{ parameters.commit }} --date=iso-strict --pretty='%H|||%ad|||%s|||%an|||%ae' -- ./ | base64 -w 0) " > $(Pipeline.Workspace)/variables/REARM_COMMAND
+      fi
+      echo -n "--commit ${{ parameters.commit }} --commitmessage \"$(git log -1 --pretty='%s')\" --date $(git log -1 --date=iso-strict --pretty='%ad') --vcstype git " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      
+      #generate sboms
+      if [ "${{ parameters.enableSbom }}" = "true" ]; then
+        if [ "${{ parameters.sbomType }}" = "dotnet" ]; then
+        	dotnet-CycloneDX ./src/NopCommerce.sln -o ./ -fn fs.cdx.bom.json -j
+        elif [ "${{ parameters.sbomType }}" = "npm" ]; then
+        	npm install
+        	cyclonedx-npm > fs.cdx.bom.json
+        else
+        	cdxgen ./ --project-version "$(GitVersion_FullSemVer)" -o fs.cdx.bom.json
+        fi
+        echo -n "--scearts '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/fs.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+        cdxgen -t docker -o docker.cdx.bom.json --project-version $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)
+        echo -n "--odelartsjson '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/docker.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      fi
+
+      echo -n "--odelid ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:latest " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--odelbuildid azuredevops${{ parameters.tag }} " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--odelbuilduri ${{ parameters.buildUri }} " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--odelcimeta azuredevops " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--odeltype CONTAINER " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--odeldigests $(echo $docker_sha_256) " >>  $(Pipeline.Workspace)/variables/REARM_COMMAND
+
+      echo -n "-b ${{ parameters.branch }} -k $REARM_API_KEY -i $REARM_API_KEY_ID -v $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) -u "${{ parameters.rearmUrl }}" --component "${{ parameters.componentID }}" " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--datestart $BUILD_START " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--dateend $(date -Iseconds) " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      # debug
+      echo "DEBUG reliza command: $(cat $(Pipeline.Workspace)/variables/REARM_COMMAND)"
+      # send data to Rearm
+      echo docker run --rm -v $(pwd)/:/data registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} addrelease $(cat $(Pipeline.Workspace)/variables/REARM_COMMAND) > $(Pipeline.Workspace)/variables/RLZ_CMD_EXEC
+      eval $(cat $(Pipeline.Workspace)/variables/RLZ_CMD_EXEC)
+    displayName: 'SBOM and ReARM metadata'
+    env: 
+      REARM_API_KEY: ${{ parameters.rearmApiKey }}
+      REARM_API_KEY_ID: ${{ parameters.rearmApiKeyId }}
