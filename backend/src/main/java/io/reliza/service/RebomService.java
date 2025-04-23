@@ -52,7 +52,7 @@ public class RebomService {
                                 ).build();
 	}
 
-    public record BomInput(JsonNode bom, RebomOptions rebomOptions) {}
+    public record BomInput(JsonNode bom, RebomOptions rebomOptions, UUID org) {}
 
     public record GraphQLResponse<T>(T data, List<Object> errors) {}
 
@@ -78,7 +78,7 @@ public class RebomService {
                 return gqlResp;
             });
     }   
-    private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions){
+    private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions, UUID org){
         String mutation = """
             mutation addBom ($bomInput: BomInput!) {
                 addBom(bomInput: $bomInput) {
@@ -90,7 +90,7 @@ public class RebomService {
             }""";
         
         Map<String, Object> variables = new HashMap<>();
-        BomInput bomInput = new BomInput(bomJson, rebomOptions);
+        BomInput bomInput = new BomInput(bomJson, rebomOptions, org);
         variables.put("bomInput", bomInput);
         Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
         //TODO: deserialize bom response as an object of ArtifactUploadRseponseDTO
@@ -100,28 +100,30 @@ public class RebomService {
         RebomResponse bomResponse = clonedMapper.convertValue(response.get("addBom"), RebomResponse.class);
         return bomResponse;
     }
-    public JsonNode findBomById(UUID bomId) throws JsonProcessingException{
+    public JsonNode findBomById(UUID bomId, UUID org) throws JsonProcessingException{
         String query = """
-            query bomById ($id: ID) {
-                bomById(id: $id)
+            query bomById ($id: ID, $org: ID) {
+                bomById(id: $id, org: $org)
             }""";
         
         Map<String, Object> variables = new HashMap<>();
         variables.put("id", bomId.toString());
+        variables.put("org", org.toString());
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         var br = response.get("bomById");
         JsonNode bomJson = Utils.OM.valueToTree(br);
         return bomJson;
 
     }
-    public JsonNode findRawBomById(UUID bomId) throws JsonProcessingException{
+    public JsonNode findRawBomById(UUID bomId, UUID org) throws JsonProcessingException{
         String query = """
-            query rawBomId ($id: ID) {
-                rawBomId(id: $id)
+            query rawBomId ($id: ID, $org: ID) {
+                rawBomId(id: $id, org: $org)
             }""";
         
         Map<String, Object> variables = new HashMap<>();
         variables.put("id", bomId.toString());
+        variables.put("org", org.toString());
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         var br = response.get("rawBomId");
         JsonNode bomJson = Utils.OM.valueToTree(br);
@@ -130,45 +132,45 @@ public class RebomService {
     }
 
 
-    public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride)  throws RelizaException{
-        return uploadRebomRequest(bomJson, rebomOverride);
+    public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride, UUID org)  throws RelizaException{
+        return uploadRebomRequest(bomJson, rebomOverride, org);
     }
 
-    public JsonNode mergeBoms(List<UUID> bomIds, RebomOptions rebomOptions) throws RelizaException{ 
-        if(bomIds.size() < 1){
-            throw new RelizaException("Merge Error: Need atleast two bomIds in the list to merge!");
-        }
-        String mergedBomString = mergeBomsRequest(bomIds, rebomOptions);
-        JsonNode mergedBomJsonNode;
-        try {
-            mergedBomJsonNode = Utils.OM.readTree(mergedBomString);
-        } catch (JsonProcessingException e) {
-            throw new RelizaException(e.getMessage());
-        }
-        return mergedBomJsonNode;
-    }
+    // public JsonNode mergeBoms(List<UUID> bomIds, RebomOptions rebomOptions) throws RelizaException{ 
+    //     if(bomIds.size() < 1){
+    //         throw new RelizaException("Merge Error: Need atleast two bomIds in the list to merge!");
+    //     }
+    //     String mergedBomString = mergeBomsRequest(bomIds, rebomOptions);
+    //     JsonNode mergedBomJsonNode;
+    //     try {
+    //         mergedBomJsonNode = Utils.OM.readTree(mergedBomString);
+    //     } catch (JsonProcessingException e) {
+    //         throw new RelizaException(e.getMessage());
+    //     }
+    //     return mergedBomJsonNode;
+    // }
 
-    private String mergeBomsRequest(List<UUID> bomIds, RebomOptions rebomOptions) {
-        String query = """
-            query mergeBoms ($ids: [ID]!, $rebomOptions: RebomOptions!) {
-                mergeBoms(ids: $ids, rebomOptions: $rebomOptions)
-            }""";
+    // private String mergeBomsRequest(List<UUID> bomIds, RebomOptions rebomOptions) {
+    //     String query = """
+    //         query mergeBoms ($ids: [ID]!, $rebomOptions: RebomOptions!) {
+    //             mergeBoms(ids: $ids, rebomOptions: $rebomOptions)
+    //         }""";
         
-        Map<String, Object> variables = new HashMap<>();
-        variables.put("ids", bomIds);
-        variables.put("rebomOptions", rebomOptions);
+    //     Map<String, Object> variables = new HashMap<>();
+    //     variables.put("ids", bomIds);
+    //     variables.put("rebomOptions", rebomOptions);
        
-        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
-        String mergedBom = Utils.OM.convertValue(response.get("mergeBoms"), String.class);
+    //     Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+    //     String mergedBom = Utils.OM.convertValue(response.get("mergeBoms"), String.class);
         
-        return mergedBom;
+    //     return mergedBom;
 
-    }
+    // }
 
-    public UUID mergeAndStoreBoms(List<UUID> bomIds, RebomOptions rebomOptions) {
+    public UUID mergeAndStoreBoms(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) {
         String query = """
-            mutation mergeAndStoreBoms ($ids: [ID]!, $rebomOptions: RebomOptions!) {
-                mergeAndStoreBoms(ids: $ids, rebomOptions: $rebomOptions){
+            mutation mergeAndStoreBoms ($ids: [ID]!, $rebomOptions: RebomOptions!, $org: ID!) {
+                mergeAndStoreBoms(ids: $ids, rebomOptions: $rebomOptions, org: $org){
                     uuid
                     meta
                 }
@@ -177,10 +179,19 @@ public class RebomService {
         Map<String, Object> variables = new HashMap<>();
         variables.put("ids", bomIds);
         variables.put("rebomOptions", rebomOptions);
+        variables.put("org", org);
        
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        ObjectMapper clonedMapper = Utils.OM.copy();
+        // Configure the cloned ObjectMapper to ignore unknown properties
+        clonedMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    
         @SuppressWarnings("unchecked")
-		Map<String, Object> bomResponse = Utils.OM.convertValue(response.get("mergeAndStoreBoms"), Map.class);
-        return UUID.fromString(bomResponse.get("uuid").toString());
+        RebomResponse bomResponse = clonedMapper.convertValue(response.get("mergeAndStoreBoms"), RebomResponse.class);
+        String bomSerialNumber = bomResponse.meta().serialNumber();
+        if(bomSerialNumber.startsWith("urn")){
+            bomSerialNumber = bomSerialNumber.replace("urn:uuid:","");
+        }
+        return UUID.fromString(bomSerialNumber);
     }
 }

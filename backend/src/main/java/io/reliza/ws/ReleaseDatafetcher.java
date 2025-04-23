@@ -205,7 +205,7 @@ public class ReleaseDatafetcher {
 		ReleaseData rd = (ReleaseData) ro;
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
-		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, belongsTo, structure, wu);
+		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, belongsTo, structure, rd.getOrg(), wu);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

@@ -186,7 +186,7 @@ public class ArtifactService {
 			)){
 				var bomJson = Utils.readJsonFromResource(file);
 				
-				RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions);
+				RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, orgUuid);
 				// UUID internalBomId = rebomOptions.serialNumber();
 				UUID internalBomId;
 				try{

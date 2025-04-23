@@ -76,7 +76,7 @@ public class SharedArtifactService {
         log.info("download artifacts for ad: {}", ad);
 
 		if(null != ad.getInternalBom()){
-			String rebom = rebomService.findBomById(ad.getInternalBom().id()).toString();
+			String rebom = rebomService.findBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
 			byte[] byteArray = rebom.getBytes();
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);
@@ -116,7 +116,7 @@ public class SharedArtifactService {
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
 
 		if(null != ad.getInternalBom()){
-			String rebom = rebomService.findRawBomById(ad.getInternalBom().id()).toString();
+			String rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
 			byte[] byteArray = rebom.getBytes();
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);

@@ -649,14 +649,14 @@ public class ReleaseService {
 		return deliverableService.getDeliverableDataList(deliverableUuids);
 	}
 
-	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, ArtifactBelongsTo belongsTo, BomStructureType structure, WhoUpdated wu) throws RelizaException, JsonProcessingException{
+	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu) throws RelizaException, JsonProcessingException{
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElseThrow();
 		RebomOptions mergeOptions = new RebomOptions(belongsTo, tldOnly, structure);
 		UUID releaseBomId = matchOrGenerateSingleBomForRelease(rd, mergeOptions, wu);
 		if(null == releaseBomId){
 			throw new RelizaException("No SBOMs found!");
 		}
-		JsonNode mergedBomJsonNode = rebomService.findBomById(releaseBomId);
+		JsonNode mergedBomJsonNode = rebomService.findBomById(releaseBomId, org);
 		String mergedBom = mergedBomJsonNode.toString();
 	
 		return mergedBom;
@@ -711,7 +711,7 @@ public class ReleaseService {
 			ComponentData pd = getComponentService.getComponentData(rd.getComponent()).get();
 			OrganizationData od = organizationService.getOrganizationData(rd.getOrg()).get();
 			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE,"" );
-			rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions);
+			rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions, od.getUuid());
 			
 			addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions), wu);
 		}else if (bomIds.size() > 0){
@@ -767,7 +767,7 @@ public class ReleaseService {
 					} else {
 						var od = organizationService.getOrganizationData(rd.getOrg()).get();
 						var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(),  rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE, "");
-						UUID rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions);
+						UUID rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions, od.getUuid());
 						addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions), wu);
 						retRebomId = rebomId;
 					}
