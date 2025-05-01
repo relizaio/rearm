@@ -35,6 +35,9 @@ parameters:
     type: string
   - name: sbomType
     type: string
+  - name: dotnetSlnFilePath
+    type: string
+    default: placeholder
   - name: rearmCliVersion
     type: string
 
@@ -156,15 +159,18 @@ jobs:
       #generate sboms
       if [ "${{ parameters.enableSbom }}" = "true" ]; then
         if [ "${{ parameters.sbomType }}" = "dotnet" ]; then
-        	dotnet-CycloneDX ./src/NopCommerce.sln -o ./ -fn fs.cdx.bom.json -j
+            dotnet-CycloneDX ${{ parameters.dotnetSlnFilePath }} -o ./ -fn fs.cdx.bom.json -j
         elif [ "${{ parameters.sbomType }}" = "npm" ]; then
-        	npm install
-        	cyclonedx-npm > fs.cdx.bom.json
+            npm install
+            cyclonedx-npm > fs.cdx.bom.json
         else
-        	cdxgen ./ --project-version "$(GitVersion_FullSemVer)" -o fs.cdx.bom.json
+            cdxgen ./ --project-version "$(GitVersion_FullSemVer)" -o fs.cdx.bom.json
         fi
         echo -n "--scearts '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/fs.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-        cdxgen -t docker -o docker.cdx.bom.json --project-version $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)
+        cdxgen -t docker -o docker.cdx.bom.tmp.json --project-version $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)
+        # touch docker.cdx.bom.json
+        # docker run --rm -v $(pwd)/:/data registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixocipurl -f /data/docker.cdx.bom.tmp.json -o /data/docker.cdx.bom.json --ociimage ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}@$(echo $docker_sha_256)
+        cat docker.cdx.bom.tmp.json | docker run -i --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixocipurl --ociimage ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}@$(echo $docker_sha_256) > docker.cdx.bom.json
         echo -n "--odelartsjson '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/docker.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       fi
 
