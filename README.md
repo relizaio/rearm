@@ -16,16 +16,21 @@ ReARM is a xBOM management system that allows organizations to maintain complian
 
 While highlighting regulatory pressure, we strive to make sure that ReARM bears minimum or no overhead on developers and more so provides real value in terms of managing technology releases and their metadata. In other words, our goal is creating a product that would be useful for developers and managers, while also solving the compliance problem.
 
-Creators of ReARM are part of [Transparency Exchange API](https://github.com/CycloneDX/transparency-exchange-api/) workgroup that aims to build standard API for exchanging supply chain artifacts and intelligence.
+## Transparency Exchange API
+Creators of ReARM are part of active maintainers of [Transparency Exchange API](https://github.com/CycloneDX/transparency-exchange-api/) (TEA) that aims to build standard API for exchanging supply chain artifacts and intelligence.
+
+ReARM will be supporting TEA is an overlay when the standard is ready. Preliminary work to have support for TEA Beta 1 has already started.
 
 ## Project links
-Documentation: https://docs.rearmhq.com
+- Documentation: https://docs.rearmhq.com
+- ReARM CLI: https://github.com/relizaio/rearm-cli
+- Project ReARM web-site: https://rearmhq.com
+- Public Demo: https://demo.rearmhq.com
 
-ReARM CLI: https://github.com/relizaio/rearm-cli
-
-Project ReARM web-site: https://rearmhq.com
-
-Public Demo: https://demo.rearmhq.com
+## Related Projects
+- ReARM CLI: https://github.com/relizaio/rearm-cli - CLI tool to interact with ReARM for humans and automation bots
+- Rebom: https://github.com/relizaio/rebom - ReARM is using Rebom as a layer to perform actual storage of certain metadata artifacts
+- BEAR (BOM Enrichment and Augmentation by Reliza): https://github.com/relizaio/bear - BEAR may be used for BOM enrichment before uploading to ReARM
 
 ## Public Demo
 Public Demo is available at https://demo.rearmhq.com. When you register for the demo, you get read-only account for the Demo organization and can browse several existing demo Components, Products, Releases. You may then also create your own organization and try organizing storage for your own release metadata (Documentation for this coming soon). Note, that while your data on Public Demo is private, it is subject to deletion at any time and without notice.
