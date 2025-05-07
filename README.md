@@ -17,6 +17,15 @@ ReARM is a xBOM management system that allows organizations to maintain complian
 
 While highlighting regulatory pressure, we strive to make sure that ReARM bears minimum or no overhead on developers and more so provides real value in terms of managing technology releases and their metadata. In other words, our goal is creating a product that would be useful for developers and managers, while also solving the compliance problem.
 
+## Capabilities
+1. Storage and retrieval of SBOMs / xBOMs
+2. Maintaining representation of organization's products and components with branches and releases
+3. Automated creation of release versions and changelogs between releases
+4. Close integration with [Dependency-Track](https://dependencytrack.org/) for analysis of vulnerabilities and policies, including license policy
+5. Integration with various CI systems (including GitHub Actions, Azure DevOps, Jenkins, GitLab CI and others) to produce BOMs and upload them with other release metadata to ReARM
+6. Release approval logic (Commercial Edition only)
+7. Marketing release workflow (Commercial Edition only)
+
 ## Transparency Exchange API
 Creators of ReARM are part of active maintainers of [Transparency Exchange API](https://github.com/CycloneDX/transparency-exchange-api/) (TEA) that aims to build standard API for exchanging supply chain artifacts and intelligence.
 
