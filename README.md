@@ -27,6 +27,7 @@ ReARM will be supporting TEA is an overlay when the standard is ready. Prelimina
 - ReARM CLI: https://github.com/relizaio/rearm-cli
 - Project ReARM web-site: https://rearmhq.com
 - Public Demo: https://demo.rearmhq.com
+- Reliza Website: https://reliza.io
 
 ## Related Projects
 - ReARM CLI: https://github.com/relizaio/rearm-cli - CLI tool to interact with ReARM for humans and automation bots
