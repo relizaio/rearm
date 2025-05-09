@@ -53,6 +53,27 @@ This documentation is built using vitepress and checked in to this repository un
 
 ## Developing ReARM
 
+### Generate TEA-overlay from TEA OpenAPI spec
+OpenAPI Spec can be found here - https://github.com/CycloneDX/transparency-exchange-api/blob/main/spec/openapi.yaml
+
+And then copied into tea-spec/ directory in this repository as well.
+
+To generate initial tea-server spring service, run
+
+```
+npx @openapitools/openapi-generator-cli generate -i tea-spec/openapi.yaml -g spring -o tea-server/ --additional-properties=useSpringBoot3=true
+```
+
+Then rename model files to Tea prefix (from ReARM repo root directory):
+
+```bash
+./scripts/rename_with_tea.sh ./tea-server/src/main/java/org/openapitools/model
+```
+
+
+
+### Local Development
+
 1. Create a docker container for database:
 ```
 docker run --name rearm-postgres -d -p 5440:5432 -e POSTGRES_PASSWORD=relizaPass postgres:16

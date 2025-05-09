@@ -1,0 +1,692 @@
+# $schema: https://spec.openapis.org/oas/3.1/schema-base/2025-02-13
+openapi: 3.1.1
+jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
+info:
+  title: Transparency Exchange API
+  summary: The OWASP Transparency Exchange API specification for consumers and publishers
+  description: TBC
+  contact:
+    name: TEA Working Group
+    email: tbc@somewhere.tld
+    url: https://github.com/CycloneDX/transparency-exchange-api
+  license:
+    name: Apache 2.0
+    url: https://github.com/CycloneDX/transparency-exchange-api/blob/main/LICENSE
+  version: 0.0.3
+servers:
+  - url: http://localhost/tea/v1
+    description: Local development
+paths:
+  /product/{uuid}:
+    get:
+      description: Returns the corresponding TEA components for a given TEA product UUID.
+      operationId: getTeaProductByUuid
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of the TEA product in the TEA server
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Requested TEA Product found and returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/product"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Product
+  /products:
+    get:
+      description: Returns a list of TEA products. Note that multiple products may
+        match.
+      operationId: getTeaProductByIdentifier
+      parameters:
+        - $ref: "#/components/parameters/page-offset"
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/id-type"
+        - $ref: "#/components/parameters/id-value"
+      responses:
+        '200':
+          $ref: "#/components/responses/paginated-product"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+      tags:
+        - TEA Product
+  /component/{uuid}:
+    get:
+      description: Get a TEA Component
+      operationId: getTeaComponentById
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Component in the TEA server
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Requested TEA Component found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/component"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Component
+  /component/{uuid}/releases:
+    get:
+      description: Get releases of the component
+      operationId: getReleasesByComponentId
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Component in the TEA server
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Requested Releases of TEA Component found and returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/release"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Component
+  /release/{uuid}/collection:
+    get:
+      description: Get the latest TEA Collection belonging to the TEA Release
+      operationId: getLatestCollectionByReleaseId
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Release in the TEA server
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Requested TEA Collection found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/collection"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Release
+  /release/{uuid}/collections:
+    get:
+      description: Get the TEA Collections belonging to the TEA Release
+      operationId: getCollectionsByReleaseId
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Release in the TEA server
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Requested TEA Collection found and returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/collection"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Release
+  /release/{uuid}/collection/{version}:
+    get:
+      description: Get all versions of a TEA Collection by its UUID
+      operationId: getTeaCollectionVersionByCollectionIdAndVersion
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Collection in the TEA server
+          schema:
+            "$ref": "#/components/schemas/uuid"
+        - name: version
+          in: path
+          required: true
+          description: Version of TEA Collection
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Requested TEA Collection Version found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/collection"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Release
+  /artifact/{uuid}:
+    get:
+      description: Get metadata for specific TEA artifact
+      operationId: getArtifact
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Artifact in the TEA server
+          schema:
+            "$ref": "#/components/schemas/uuid"
+      responses:
+        '200':
+          description: Requested TEA Artifact metadata found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/artifact"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Artifact
+components:
+  schemas:
+    #
+    # Definitions reused in multiple domain objects
+    #
+    date-time:
+      type: string
+      description: Timestamp
+      format: date-time
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      example: '2024-03-20T15:30:00Z'
+    identifier:
+      type: object
+      description: An identifier with a specified type
+      properties:
+        idType:
+          description: Type of identifier, e.g. `tei`, `purl`, `cpe`
+          "$ref": "#/components/schemas/identifier-type"
+        idValue:
+          description: Identifier value
+          type: string
+    identifier-type:
+      type: string
+      description: Enumeration of identifiers types
+      enum:
+        - cpe
+        - tei
+        - purl
+    uuid:
+      type: string
+      description: A UUID
+      format: uuid
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+
+    #
+    # TEA Product
+    #
+    product:
+      type: object
+      description: A TEA product
+      properties:
+        uuid:
+          description: A unique identifier for the TEA product
+          "$ref": "#/components/schemas/uuid"
+        name:
+          type: string
+          description: Product name
+        identifiers:
+          type: array
+          description: List of identifiers for the product
+          items:
+            "$ref": "#/components/schemas/identifier"
+        components:
+          type: array
+          description: List of TEA components for the product
+          items:
+            description: Unique identifier of the TEA component
+            "$ref": "#/components/schemas/uuid"
+      required:
+        - uuid
+        - name
+        - identifiers
+        - components
+      examples:
+        - uuid: 09e8c73b-ac45-4475-acac-33e6a7314e6d
+          name: Apache Log4j 2
+          identifiers:
+            - idType: cpe
+              idValue: cpe:2.3:a:apache:log4j
+            - idType: purl
+              idValue: pkg:maven/org.apache.logging.log4j/log4j-api
+            - idType: purl
+              idValue: pkg:maven/org.apache.logging.log4j/log4j-core
+            - idType: purl
+              idValue: pkg:maven/org.apache.logging.log4j/log4j-layout-template-json
+          components:
+            - 3910e0fd-aff4-48d6-b75f-8bf6b84687f0
+            - b844c9bd-55d6-478c-af59-954a932b6ad3
+            - d6d3f754-d4f4-4672-b096-b994b064ca2d
+
+    #
+    # TEA Component and related objects
+    #
+    component:
+      type: object
+      description: A TEA component
+      properties:
+        uuid:
+          description: A unique identifier for the TEA component
+          "$ref": "#/components/schemas/uuid"
+        name:
+          type: string
+          description: Component name
+        identifiers:
+          type: array
+          description: List of identifiers for the component
+          items:
+            "$ref": "#/components/schemas/identifier"
+      required:
+        - uuid
+        - name
+        - identifiers
+        - versions
+      examples:
+        - uuid: 3910e0fd-aff4-48d6-b75f-8bf6b84687f0
+          name: Apache Log4j API
+          identifiers:
+            - idType: purl
+              idValue: pkg:maven/org.apache.logging.log4j/log4j-api
+        - uuid: b844c9bd-55d6-478c-af59-954a932b6ad3
+          name: Apache Log4j Core
+          identifiers:
+            - idType: cpe
+              idValue: cpe:2.3:a:apache:log4j
+            - idType: purl
+              idValue: pkg:maven/org.apache.logging.log4j/log4j-core
+
+    #
+    # TEA Release and related objects
+    #
+    release:
+      type: object
+      properties:
+        uuid:
+          description: A unique identifier for the TEA Component Release
+          "$ref": "#/components/schemas/uuid"
+        version:
+          description: Version number
+          type: string
+          example: 1.2.3
+        releaseDate:
+          description: Timestamp of the release (for sorting purposes)
+          "$ref": "#/components/schemas/date-time"
+        preRelease:
+          type: boolean
+          description: |
+            A flag indicating pre-release (or beta) status.
+            May be disabled after the creation of the release object, but can't be enabled after creation of an object.
+        identifiers:
+          type: array
+          description: List of identifiers for the component
+          items:
+            "$ref": "#/components/schemas/identifier"
+        # add lifecycle here
+      required:
+        - uuid
+        - version
+        - releaseDate
+      examples:
+        # Apache Tomcat 11.0.6
+        - uuid: 605d0ecb-1057-40e4-9abf-c400b10f0345
+          version: "11.0.6"
+          releaseDate: 2025-04-01T15:43:00Z
+          identifiers:
+            - idType: purl
+              idValue: pkg:maven/org.apache.tomcat/tomcat@11.0.6
+        # Different release of Apache Tomcat
+        - uuid: da89e38e-95e7-44ca-aa7d-f3b6b34c7fab
+          version: "10.1.40"
+          releaseDate: 2025-04-01T18:20:00Z
+          identifiers:
+            - idType: purl
+              idValue: pkg:maven/org.apache.tomcat/tomcat@10.1.40
+        # A pre-release of Apache Tomcat
+        - uuid: 95f481df-f760-47f4-b2f2-f8b76d858450
+          version: "11.0.0-M26"
+          releaseDate: 2024-09-13T17:49:00Z
+          preRelease: true
+          identifiers:
+            - idType: purl
+              idValue: pkg:maven/org.apache.tomcat/tomcat@11.0.0-M26
+
+    #
+    # TEA Collection and related objects
+    #
+    collection:
+      type: object
+      description: A collection of security-related documents
+      properties:
+        uuid:
+          description: |
+            UUID of the TEA Collection object.
+            Note that this is equal to the UUID of the associated TEA Component Release object.
+            When updating a collection, only the `version` is changed.
+          "$ref": "#/components/schemas/uuid"
+        version:
+          type: integer
+          description: |
+            TEA Collection version, incremented each time its content changes.
+            Versions start with 1.
+        date:
+          description: The date when the TEA Collection version was created.
+          "$ref": "#/components/schemas/date-time"
+        updateReason:
+          description: Reason for the update/release of the TEA Collection object.
+          "$ref": "#/components/schemas/collection-update-reason"
+        artifacts:
+          type: array
+          description: List of TEA artifact objects.
+          items:
+            "$ref": "#/components/schemas/artifact"
+      examples:
+        # Documents in the latest release of Log4j Core
+        - uuid: 4c72fe22-9d83-4c2f-8eba-d6db484f32c8
+          version: 3
+          date: 2024-12-13T00:00:00Z
+          updateReason:
+            type: ARTIFACT_UPDATED
+            comment: VDR file updated
+          artifacts:
+            - uuid: 1cb47b95-8bf8-3bad-a5a4-0d54d86e10ce
+              name: Build SBOM
+              type: bom
+              formats:
+                - mime_type: application/vnd.cyclonedx+xml
+                  description: CycloneDX SBOM (XML)
+                  url: https://repo.maven.apache.org/maven2/org/apache/logging/log4j/log4j-core/2.24.3/log4j-core-2.24.3-cyclonedx.xml
+                  signature_url: https://repo.maven.apache.org/maven2/org/apache/logging/log4j/log4j-core/2.24.3/log4j-core-2.24.3-cyclonedx.xml.asc
+                  checksums:
+                    - algType: MD5
+                      algValue: 2e1a525afc81b0a8ecff114b8b743de9
+                    - algType: SHA-1
+                      algValue: 5a7d4caef63c5c5ccdf07c39337323529eb5a770
+            - uuid: dfa35519-9734-4259-bba1-3e825cf4be06
+              name: Vulnerability Disclosure Report
+              type: vulnerability-assertion
+              formats:
+                - mime_type: application/vnd.cyclonedx+xml
+                  description: CycloneDX VDR (XML)
+                  url: https://logging.apache.org/cyclonedx/vdr.xml
+                  checksums:
+                    - algType: SHA-256
+                      algValue: 75b81020b3917cb682b1a7605ade431e062f7a4c01a412f0b87543b6e995ad2a
+
+    collection-update-reason:
+      type: object
+      description: Reason for the update to the TEA collection
+      properties:
+        type:
+          description: Type of update reason.
+          "$ref": "#/components/schemas/collection-update-reason-type"
+        comment:
+          type: string
+          description: Free text description
+    collection-update-reason-type:
+      type: string
+      description: Type of TEA collection update
+      enum:
+        - INITIAL_RELEASE
+        - VEX_UPDATED
+        - ARTIFACT_UPDATED
+        - ARTIFACT_ADDED
+        - ARTIFACT_REMOVED
+
+    #
+    # TEA Artifact and related objects
+    #
+    artifact:
+      type: object
+      description: A security-related document
+      properties:
+        uuid:
+          description: UUID of the TEA Artifact object.
+          "$ref": "#/components/schemas/uuid"
+        name:
+          type: string
+          description: Artifact name
+        type:
+          description: Type of artifact
+          "$ref": "#/components/schemas/artifact-type"
+        formats:
+          type: array
+          description: |
+            List of objects with the same content, but in different formats.
+            The order of the list has no significance.
+          items:
+            "$ref": "#/components/schemas/artifact-format"
+    artifact-type:
+      type: string
+      description: Specifies the type of external reference.
+      enum:
+        - ATTESTATION
+        - BOM
+        - BUILD_META
+        - CERTIFICATION
+        - FORMULATION
+        - LICENSE
+        - RELEASE_NOTES
+        - SECURITY_TXT
+        - THREAT_MODEL
+        - VULNERABILITIES
+        - OTHER
+    artifact-format:
+      type: object
+      description: A security-related document in a specific format
+      properties:
+        mime_type:
+          type: string
+          description: The MIME type of the document
+        description:
+          type: string
+          description: A free text describing the artifact
+        url:
+          type: string
+          description: Direct download URL for the artifact
+          format: url
+        signatureUrl:
+          type: string
+          description: Direct download URL for an external signature of the artifact
+          format: url
+        checksums:
+          type: array
+          description: List of checksums for the artifact
+          items:
+            "$ref": "#/components/schemas/artifact-checksum"
+    artifact-checksum:
+      type: object
+      properties:
+        algType:
+          description: Checksum algorithm
+          "$ref": "#/components/schemas/artifact-checksum-type"
+        algValue:
+          type: string
+          description: Checksum value
+    artifact-checksum-type:
+      type: string
+      description: Checksum algorithm
+      enum:
+        - MD5
+        - SHA-1
+        - SHA-256
+        - SHA-384
+        - SHA-512
+        - SHA3-256
+        - SHA3-384
+        - SHA3-512
+        - BLAKE2b-256
+        - BLAKE2b-384
+        - BLAKE2b-512
+        - BLAKE3
+    #
+    # Types used in API responses
+    #
+    pagination-details:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: '2024-03-20T15:30:00Z'
+        pageStartIndex:
+          type: integer
+          format: int64
+          default: 0
+        pageSize:
+          type: integer
+          format: int64
+          default: 100
+        totalResults:
+          type: integer
+          format: int64
+      required:
+        - timestamp
+        - pageStartIndex
+        - pageSize
+        - totalResults
+  responses:
+    204-common-delete:
+      description: Object deleted successfully
+      content:
+        application/json: {}
+    400-invalid-request:
+      description: Request was Invalid
+      content:
+        application/json: {}
+    401-unauthorized:
+      description: Authentication required
+      content:
+        application/json: {}
+    404-object-by-id-not-found:
+      description: Object requested by identifier not found
+      content:
+        application/json: {}
+    paginated-product:
+      description: A paginated response containing TEA Products
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/pagination-details"
+              - type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/product"
+  parameters:
+    # Pagination
+    page-offset:
+      name: pageOffset
+      description: Pagination offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+        default: 0
+    page-size:
+      name: pageSize
+      description: Pagination offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int64
+        default: 100
+    #
+    # Query by identifier
+    #
+    # Since OpenAPI 3.0 it is possible to use RFC 6570-based serialization for JSON parameters of type array or object:
+    #   https://swagger.io/docs/specification/v3_0/serialization/
+    #
+    # Unfortunately many tools don't support it, for example,
+    # the `openapi-generator` for Java does not handle this correctly.
+    #   https://github.com/OpenAPITools/openapi-generator/issues/4808
+    #
+    # This can be uncommented, when RFC 6570-base serialization reaches a wider adoption:
+    #
+    # identifier-param:
+    #   name: identifierParam
+    #   description: If present, only the objects with the given identifier will be returned.
+    #   in: query
+    #   schema:
+    #     $ref: "#/components/schemas/identifier"
+    #   style: form
+    #   explode: true
+    #
+    # In the meantime we explode the object manually:
+    id-type:
+      # To allow RFC 6570 in the future without breaking changes to the HTTP API,
+      # the name of this parameter should be identical to the equivalent property in /components/schemas/identifier
+      name: idType
+      description: Type of identifier specified in the `idValue` parameter
+      in: query
+      schema:
+        $ref: "#/components/schemas/identifier-type"
+    id-value:
+      # To allow RFC 6570 in the future without breaking changes to the HTTP API,
+      # the name of this parameter should be identical to the equivalent property in /components/schemas/identifier
+      name: idValue
+      description: If present, only the objects with the given identifier value will be returned.
+      in: query
+      schema:
+        type: string
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    basicAuth:
+      type: http
+      scheme: basic
+security:
+  - bearerAuth: []
+  - basicAuth: []
+tags:
+  - name: TEA Product
+  - name: TEA Component
+  - name: TEA Release
+  - name: TEA Artifact
+externalDocs:
+  description: Transparency Exchange API specification
+  url: https://github.com/CycloneDX/transparency-exchange-api
