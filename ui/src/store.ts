@@ -789,7 +789,8 @@ const storeObject : any = {
                 versionType: component.versionType,
                 approvalPolicy: component.approvalPolicy,
                 outputTriggers: component.outputTriggers,
-                releaseInputTriggers: component.releaseInputTriggers
+                releaseInputTriggers: component.releaseInputTriggers,
+                identifiers: component.identifiers
             }
             console.log(compUpdObject)
             const data = await graphqlClient.mutate({

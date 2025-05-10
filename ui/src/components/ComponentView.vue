@@ -173,6 +173,22 @@
                                     <vue-feather v-if="selectNewVcsRepo && isWritable" type="check" class="clickable" @click="save(); selectNewVcsRepo = false;" title="Save New VCS Repository" />
                                     <vue-feather v-if="selectNewVcsRepo && isWritable" class="clickable" @click="updatedComponent.vcsRepository = componentData.vcsRepository; selectNewVcsRepo = false;" type="x" title="Discard VCS Repository Change" />
                                 </div>
+                                <div class="identifierBlock" v-if="updatedComponent && componentData">
+                                    <label>Identifiers</label>
+                                    <n-dynamic-input v-if="isWritable" v-model:value="updatedComponent.identifiers" :on-create="onCreateIdentifier">
+                                        <template #create-button-default>
+                                            Add Identifier
+                                        </template>
+                                        <template #default="{ value }">
+                                            <n-select style="width: 200px;" v-model:value="value.idType"
+                                                :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
+                                            <n-input type="text" minlength="100" v-model:value="value.idValue" />
+                                        </template>
+                                    </n-dynamic-input>
+                                    <vue-feather class="clickable versionIcon reject" v-if="JSON.stringify(updatedComponent.identifiers) !== JSON.stringify(componentData.identifiers) && isWritable" @click="updatedComponent.identifiers = componentData.identifiers" type="x" title="Discard Changes" />
+                                    <vue-feather class="clickable versionIcon accept" v-if="JSON.stringify(updatedComponent.identifiers) !== JSON.stringify(componentData.identifiers) && isWritable" @click="save" type="check" title="Save Changes" />
+                                    <!-- div v-else>{{ resolvedVisibilityLabel }}</div -->
+                                </div>
                                 <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
                                     <label>Approval Policy</label>
                                     <n-select
@@ -970,6 +986,13 @@ function onCreateInputTriggerConditionGroup () {
         conditionGroups: [],
         conditions: [],
         matchOperator: ''
+    }
+}
+
+function onCreateIdentifier () {
+    return {
+        idType: '',
+        idValue: ''
     }
 }
 
@@ -1796,6 +1819,37 @@ async function handleTabSwitch(tabName: string) {
         color: darkred;
     }
 }
+
+.identifierBlock {
+    padding-top: 15px;
+    padding-bottom: 15px;
+    label {
+        display: block;
+        font-weight: bold;
+        width: 60%
+    }
+    .n-select {
+        display: inline-block;
+        width: 60%;
+    }
+    select {
+        display: inline-block;
+        width: 60%;
+    }
+    .accept {
+        color: green;
+    }
+    .accept:hover {
+        color: darkgreen;
+    }
+    .reject {
+        color: red;
+    }
+    .reject:hover {
+        color: darkred;
+    }
+}
+
 .selectedBranch {
     background-color: #c4c4c4;
 }

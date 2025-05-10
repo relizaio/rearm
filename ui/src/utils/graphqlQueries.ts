@@ -577,6 +577,10 @@ const COMPONENT_FULL_DATA = `
         }
         outputEvents
     }
+    identifiers {
+        idType
+        idValue
+    }
 `
 
 const COMPONENT_TITLE_GQL_DATA = `
@@ -785,6 +789,10 @@ const COMPONENT_SHORT_DATA = `
     type
     versionSchema
     featureBranchVersioning
+    identifiers {
+        idType
+        idValue
+    }
 `
 
 const MARKETING_RELEASE_GQL_DATA = `
