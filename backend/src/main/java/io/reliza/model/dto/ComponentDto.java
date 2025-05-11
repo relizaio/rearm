@@ -17,6 +17,7 @@ import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.ReleaseInputEvent;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
+import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
 
@@ -62,4 +63,6 @@ public class ComponentDto {
 	private List<ReleaseInputEvent> releaseInputTriggers;
 	@JsonProperty
 	private List<ReleaseOutputEvent> outputTriggers;
+	@JsonProperty
+	private List<TeaIdentifier> identifiers;
 }

@@ -4,10 +4,7 @@
 
 package io.reliza.model.dto;
 
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -20,7 +17,6 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
-import io.reliza.common.Utils;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.EventType;
@@ -29,6 +25,7 @@ import io.reliza.model.ComponentData.ReleaseOutputEvent;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
+import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
 
@@ -90,6 +87,8 @@ public class UpdateComponentDto {
 	private List<ReleaseInputEvent> releaseInputTriggers;
 	@JsonProperty
 	private List<ReleaseOutputEventInput> outputTriggers;
+	@JsonProperty
+	private List<TeaIdentifier> identifiers;
 	
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
 			IntegrationType it) throws JsonMappingException, JsonProcessingException {
@@ -135,6 +134,7 @@ public class UpdateComponentDto {
 								.approvalPolicy(ucd.getApprovalPolicy())
 								.releaseInputTriggers(ucd.getReleaseInputTriggers())
 								.outputTriggers(triggers)
+								.identifiers(ucd.getIdentifiers())
 								.build();
 		return cdto;
 	}

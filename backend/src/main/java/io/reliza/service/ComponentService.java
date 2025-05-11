@@ -264,6 +264,7 @@ public class ComponentService {
 			if (null != cdto.getStatus()) {
 				cd.setStatus(cdto.getStatus());
 			}
+			if (null != cdto.getIdentifiers()) cd.setIdentifiers(cdto.getIdentifiers());
 			Map<String,Object> componentData = Utils.dataToRecord(cd);
 			comp = saveComponent(comp, componentData, wu);
 		}

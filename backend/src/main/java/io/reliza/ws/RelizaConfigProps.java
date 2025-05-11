@@ -18,4 +18,6 @@ public class RelizaConfigProps {
 	private String rejectPendingReleasesRate;
 	
 	private String installationType;
+	
+	private String enableBetaTea;
 }

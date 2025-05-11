@@ -228,6 +228,45 @@ public class SharedReleaseService {
 		return releases;
 	}
 	
+	public List<ReleaseData> listReleaseDatasOfComponent (UUID componentUuid, Integer limit, Integer offset) {
+		String limitAsStr = null;
+		if (null == limit || limit < 1) {
+			limitAsStr = "ALL";
+		} else {
+			limitAsStr = limit.toString();
+		}
+		String offsetAsStr = null;
+		if (null == offset || offset < 0) {
+			offsetAsStr = "0";
+		} else {
+			offsetAsStr = offset.toString();
+		}
+		var releases = repository.findReleasesOfComponent(componentUuid.toString(), limitAsStr, offsetAsStr);
+		return releases.stream().map(ReleaseData::dataFromRecord).toList();
+	}
+	
+	/**
+	 * This method parses 10 most recent releases of a product (could be a component as well) to establish component level dependencies
+	 * @param componentUuid
+	 * @return
+	 */
+	public Set<UUID> obtainComponentsOfProductOrComponent (UUID componentUuid, Set<UUID> dedupComponents) {
+		Set<UUID> components = new LinkedHashSet<>();
+		var latestReleases = listReleaseDatasOfComponent(componentUuid, 10, 0);
+		if (!latestReleases.isEmpty()) {
+			Set<ReleaseData> releaseDeps = new LinkedHashSet<>();
+			latestReleases.forEach(x -> releaseDeps.addAll(unwindReleaseDependencies(x)));
+			releaseDeps.forEach(rd -> {
+				if (!dedupComponents.contains(rd.getComponent())) {
+					components.add(rd.getComponent());
+					var recursiveComps = obtainComponentsOfProductOrComponent(rd.getComponent(), components);
+					components.addAll(recursiveComps);
+				}
+			});
+		}
+		return components;
+	}
+	
 	/**
 	 * This method recursively checks all release components, then components of those releases and finally flattens all that to a list
 	 * @param releaseUuid

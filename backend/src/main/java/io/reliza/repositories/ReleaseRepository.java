@@ -43,6 +43,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG,
 			nativeQuery = true)
 	List<Release> findReleasesOfOrg(String orgUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_ALL_RELEASES_OF_COMPONENT,
+			nativeQuery = true)
+	List<Release> findReleasesOfComponent(String componentUuidAsString, String limitAsStr, String offsetAsStr);
 
 	@Query(
 			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG_AFTER_CREATE_DATE,

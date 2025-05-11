@@ -4,9 +4,11 @@
 package io.reliza.ws;
 
 import java.io.IOException;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -41,7 +43,7 @@ import jakarta.servlet.http.HttpServletResponse;
 @EnableScheduling
 @EnableWebSecurity
 @EnableMethodSecurity
-@ComponentScan({"io.reliza.model", "io.reliza.ws", "io.reliza.repositories", "io.reliza.service", "io.reliza.common"})
+@ComponentScan({"io.reliza.model", "io.reliza.ws", "io.reliza.repositories", "io.reliza.service", "io.reliza.common", "io.reliza.ws.tea"})
 @EnableJpaRepositories("io.reliza.repositories")
 @EnableTransactionManagement
 @EntityScan("io.reliza.model") 
@@ -49,6 +51,13 @@ public class App {
 	
 	private static final Logger log = LoggerFactory.getLogger(App.class);
 
+	private RelizaConfigProps relizaConfigProps;
+
+	@Autowired
+    public void setProps(RelizaConfigProps relizaConfigProps) {
+        this.relizaConfigProps = relizaConfigProps;
+    }
+	
 	public static void main(String[] args) {
 		SpringApplication.run(App.class, args);
 	}
@@ -75,13 +84,23 @@ public class App {
 				}
 	        })
 	  	)
-	  	.authorizeHttpRequests(authz -> 
+	  	.authorizeHttpRequests(authz -> {
+	  		if ("true".equalsIgnoreCase(relizaConfigProps.getEnableBetaTea())) {
 	  			authz
-	  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
-	  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
-	  				.anyRequest().authenticated()
-	  			)
-		  	;
+		  				// .anyRequest().permitAll()
+		  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
+		  				.requestMatchers("/tea/**").permitAll() // TODO adjust with auth coming to TEA
+		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
+		  				.anyRequest().authenticated(); 
+	  		} else {
+	  			authz
+		  				// .anyRequest().permitAll()
+		  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
+		  				.requestMatchers("/tea/**").denyAll() // TODO adjust with auth coming to TEA
+		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
+		  				.anyRequest().authenticated(); 
+	  		}
+	  	});
 	  	return http.build();
 	}
 

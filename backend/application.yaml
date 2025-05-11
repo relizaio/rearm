@@ -63,6 +63,7 @@ relizaprops:
   maxApiKeyAccessRecords: ${RELIZAPROP_MAX_API_KEY_ACCESS_RECORDS:3}
   installationSecret: ${RELIZAPROP_INSTALLATION_SECRET:r3liza}
   installationType: OSS
+  enableBetaTea: ${RELIZAPROP_ENABLE_BETA_TEA:false}
 #spring.jpa.show-sql=true
 #spring.jpa.properties.hibernate.format_sql=true
 #logging.level.org.hibernate.SQL=DEBUG

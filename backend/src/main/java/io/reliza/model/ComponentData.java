@@ -4,6 +4,7 @@
 
 package io.reliza.model;
 
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,6 +22,7 @@ import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.dto.CreateComponentDto;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.versioning.VersionType;
 import lombok.Builder;
 import lombok.Data;
@@ -176,6 +178,13 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private List<ReleaseOutputEvent> outputTriggers;
 	
+	@JsonProperty
+	private List<TeaIdentifier> identifiers = new LinkedList<>();
+	
+	public List<TeaIdentifier> getIdentifiers () {
+		return new LinkedList<>(this.identifiers);
+	}
+	
 	public static ComponentData componentDataFactory(CreateComponentDto cpd) {
 		ComponentData cd = new ComponentData();
 		cd.setName(cpd.getName());
@@ -188,6 +197,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		cd.setFeatureBranchVersioning(cpd.getFeatureBranchVersioning());
 		cd.setVcs(cpd.getVcs());
 		cd.setParent(cpd.getParent());
+		if (null != cpd.getIdentifiers()) cd.setIdentifiers(cpd.getIdentifiers());
 		if (null != cpd.getKind()) cd.setKind(cpd.getKind());
 		return cd;
 	}

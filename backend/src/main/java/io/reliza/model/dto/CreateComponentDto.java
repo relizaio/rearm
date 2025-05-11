@@ -4,6 +4,7 @@
 
 package io.reliza.model.dto;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -12,6 +13,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.reliza.common.CommonVariables;
 import io.reliza.model.ComponentData.DefaultBranchName;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import lombok.Builder;
@@ -43,6 +45,8 @@ public class CreateComponentDto {
 	private UUID vcs;
 	private UUID parent;
 	private UUID approvalPolicy;
+	
+	private List<TeaIdentifier> identifiers;
 	
 	private CreateVcsRepositoryDto vcsRepository; // to set repository
 	
