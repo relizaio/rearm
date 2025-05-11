@@ -1,6 +1,7 @@
 backendReplicaCount: 1
 uiReplicaCount: 1
 ociArtifactReplicaCount: 1
+enableBetaTea: false
 
 image:
   backEndImage: registry.relizahub.com/library/rearm-backend:latest

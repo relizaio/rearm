@@ -36,6 +36,8 @@ spec:
               value: http://{{ .Release.Name }}-oci-artifact
             - name: RELIZAPROP_INSTALLATION_TYPE
               value: "OSS"
+            - name: RELIZAPROP_ENABLE_BETA_TEA
+              value: {{ .Values.enableBetaTea | default "false" | quote }}
             - name: PG_HOST
               value: {{ .Release.Name }}-postgresql
             - name: PG_PORT
