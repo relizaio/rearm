@@ -1,22 +1,24 @@
 <template>
     <div>
-        <n-notification-provider>
-            <n-space vertical v-if="!showSignUpFlow">
-                <n-layout>
-                    <n-layout-content >
-                        <top-nav-bar />
-                    </n-layout-content>
-                </n-layout>
-                <n-layout>
-                    <n-layout-content >
-                        <left-nav-bar />
-                    </n-layout-content>
-                </n-layout>
-            </n-space>
-            <sign-up-flow v-if="showSignUpFlow === 'signup'" />
-            <verify-email v-if="showSignUpFlow === 'verifyEmail'" />
-            <join-organization v-if="showSignUpFlow === 'joinOrganization'" />
-        </n-notification-provider>
+        <n-config-provider>
+            <n-notification-provider>
+                <n-space vertical v-if="!showSignUpFlow">
+                    <n-layout>
+                        <n-layout-content >
+                            <top-nav-bar />
+                        </n-layout-content>
+                    </n-layout>
+                    <n-layout>
+                        <n-layout-content >
+                            <left-nav-bar />
+                        </n-layout-content>
+                    </n-layout>
+                </n-space>
+                <sign-up-flow v-if="showSignUpFlow === 'signup'" />
+                <verify-email v-if="showSignUpFlow === 'verifyEmail'" />
+                <join-organization v-if="showSignUpFlow === 'joinOrganization'" />
+            </n-notification-provider>
+        </n-config-provider>
     </div>
 </template>
 <script lang="ts">
@@ -26,7 +28,7 @@ export default {
 </script>
 <script lang="ts" setup>
 import { ref, ComputedRef, computed } from 'vue'
-import { NLayout, NSpace, NLayoutContent, NNotificationProvider } from 'naive-ui'
+import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider } from 'naive-ui'
 import TopNavBar from './TopNavBar.vue'
 import LeftNavBar from './LeftNavBar.vue'
 import { useStore } from 'vuex'
