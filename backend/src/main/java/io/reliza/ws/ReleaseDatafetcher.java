@@ -816,6 +816,20 @@ public class ReleaseDatafetcher {
 		return releaseService.findReleasesByTags(orgUuid, branchUuid, tagKey, tagValue);
 	}
 	
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "updateComponentReleasesIdentifiers")
+	public Boolean updateComponentReleasesIdentifiers(@InputArgument("componentUuid") UUID compUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ComponentData> ocd = getComponentService.getComponentData(compUuid);
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		ossReleaseService.updateComponentReleasesWithIdentifiers(compUuid, wu);
+		return true;
+	}
+	
 	
 	/** Sub-fields **/
 	

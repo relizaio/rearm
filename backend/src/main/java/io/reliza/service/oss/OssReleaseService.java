@@ -225,6 +225,26 @@ public class OssReleaseService {
 	}
 	
 	@Transactional
+	public ReleaseData updateReleaseIdentifiersFromComponent (ReleaseData rd, WhoUpdated wu) {
+		if (null == rd.getIdentifiers() || rd.getIdentifiers().isEmpty()) {
+			Release r = sharedReleaseService.getRelease(rd.getUuid()).get();
+			var identifiers = sharedReleaseService.resolveReleaseIdentifiersFromComponent(rd);
+			if (null != identifiers && !identifiers.isEmpty()) {
+				rd.setIdentifiers(identifiers);
+				Map<String,Object> recordData = Utils.dataToRecord(rd);
+				r = saveRelease(r, recordData, wu, false);
+				rd = ReleaseData.dataFromRecord(r);
+			}
+		}
+		return rd;
+	}
+	
+	public void updateComponentReleasesWithIdentifiers (UUID componentUuid, WhoUpdated wu) {
+		var compRDs = sharedReleaseService.listReleaseDatasOfComponent(componentUuid, 100000, 0);
+		compRDs.forEach(rd -> updateReleaseIdentifiersFromComponent(rd, wu));
+	}
+	
+	@Transactional
 	public Release updateRelease (ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
 		return updateRelease(releaseDto, false, wu);
 	}

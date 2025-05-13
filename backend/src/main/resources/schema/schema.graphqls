@@ -95,6 +95,7 @@ type Mutation {
 	archiveBranch(branchUuid: ID!): Boolean
 	archiveComponent(componentUuid: ID!): Boolean
 	setNextVersion(branchUuid: ID!, versionString: String!, versionType: VersionType): Boolean
+	updateComponentReleasesIdentifiers(componentUuid: ID!): Boolean
 	
 	createVcsRepository(vcsRepository: VcsRepositoryInput!): VcsRepository
 	updateVcsRepository(vcsUuid: ID!, name: String, uri: String): VcsRepository

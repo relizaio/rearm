@@ -545,6 +545,11 @@ public class SharedReleaseService {
 		return commitIdToMessageMap;
 	}
 	
+	public List<TeaIdentifier> resolveReleaseIdentifiersFromComponent(ReleaseData rd) {
+		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).get();
+		return resolveReleaseIdentifiersFromComponent(rd.getVersion(), cd);
+	}
+	
 	public List<TeaIdentifier> resolveReleaseIdentifiersFromComponent(String releaseVersion, ComponentData cd) {
 		List<TeaIdentifier> releaseIdentifier = new LinkedList<>();
 		try {
