@@ -1758,14 +1758,12 @@ const releaseApprovalTableData: ComputedRef<any[]> = computed((): any[] => {
 })
 
 const purl: ComputedRef<string | undefined> = computed((): string | undefined => {
-    console.log('in here')
     let purl = undefined
     if (release.value && release.value.identifiers && release.value.identifiers.length) {
         const purlObj = release.value.identifiers.find((id: any) => id.idType === 'PURL')
         console.log(purlObj)
         if (purlObj) {
             purl = purlObj.idValue
-            console.log(purl)
         }
     }
     return purl

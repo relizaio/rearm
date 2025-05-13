@@ -188,6 +188,7 @@
                                     <vue-feather class="clickable versionIcon reject" v-if="JSON.stringify(updatedComponent.identifiers) !== JSON.stringify(componentData.identifiers) && isWritable" @click="updatedComponent.identifiers = componentData.identifiers" type="x" title="Discard Changes" />
                                     <vue-feather class="clickable versionIcon accept" v-if="JSON.stringify(updatedComponent.identifiers) !== JSON.stringify(componentData.identifiers) && isWritable" @click="save" type="check" title="Save Changes" />
                                     <!-- div v-else>{{ resolvedVisibilityLabel }}</div -->
+                                    <n-button type="warning" style="margin-top:10px;" v-if="isWritable && updatedComponent.identifiers" @click="populateMissingComponentReleaseIdentifiers">Propagate To Releases With Missing Identifiers</n-button>
                                 </div>
                                 <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
                                     <label>Approval Policy</label>
@@ -556,6 +557,24 @@ async function loadSecrets (orgUuid: string) {
         return {label: x.name, value: x.uuid}
     })
     return secrets
+}
+
+async function populateMissingComponentReleaseIdentifiers () {
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateComponentReleasesIdentifiers($componentUuid: ID!) {
+                    updateComponentReleasesIdentifiers(componentUuid: $componentUuid)
+                }`,
+            variables: {
+                componentUuid: updatedComponent.value.uuid
+            }
+        })
+        notify('info', 'Propagated', `Identifier Data Propagated to Releases`)
+    } catch (error) {
+        notify('error', 'Error', `Error on Propagating Identifier Data to Releases`)
+        console.error(error)
+    }
 }
 
 
