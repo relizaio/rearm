@@ -24,6 +24,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.github.packageurl.PackageURL;
+
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.common.CommonVariables.StatusEnum;
@@ -40,6 +42,8 @@ import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseVersionComparator;
+import io.reliza.model.tea.TeaIdentifier;
+import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.service.ReleaseService.CommitRecord;
 import lombok.extern.slf4j.Slf4j;
@@ -539,6 +543,27 @@ public class SharedReleaseService {
 				// ));
 		}
 		return commitIdToMessageMap;
+	}
+	
+	public List<TeaIdentifier> resolveReleaseIdentifiersFromComponent(String releaseVersion, ComponentData cd) {
+		List<TeaIdentifier> releaseIdentifier = new LinkedList<>();
+		try {
+			var compIdentifiers = cd.getIdentifiers();
+			if (!compIdentifiers.isEmpty()) {
+				Optional<TeaIdentifier> purlIdentifier = compIdentifiers.stream().filter(x -> x.getIdType() == TeaIdentifierType.PURL).findFirst();
+				if (purlIdentifier.isPresent()) {
+					PackageURL purlObj = new PackageURL(purlIdentifier.get().getIdValue());
+					PackageURL versionedPurl = Utils.setVersionOnPurl(purlObj, releaseVersion);
+					TeaIdentifier teaPurl = new TeaIdentifier();
+					teaPurl.setIdType(TeaIdentifierType.PURL);
+					teaPurl.setIdValue(versionedPurl.canonicalize());
+					releaseIdentifier.add(teaPurl);
+				}
+			}
+		} catch (Exception e) {
+			log.error("Error on resolving release identifiers from component", e);
+		}
+		return releaseIdentifier;
 	}
 
 }

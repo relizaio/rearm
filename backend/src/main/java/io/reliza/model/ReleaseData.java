@@ -31,6 +31,7 @@ import io.reliza.common.Utils;
 import io.reliza.common.ValidationResult;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseDto;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.versioning.Version;
 import io.reliza.versioning.VersionUtils;
@@ -155,6 +156,13 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	public List<UUID> getInboundDeliverables () {
 		return new LinkedList<>(this.inboundDeliverables);
 	}
+	
+	@JsonProperty
+	private List<TeaIdentifier> identifiers = new LinkedList<>();
+	
+	public List<TeaIdentifier> getIdentifiers () {
+		return new LinkedList<>(this.identifiers);
+	}
 
 	@JsonProperty(CommonVariables.NOTES_FIELD)
 	private String notes = null;
@@ -243,6 +251,9 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		}
 		if(null != releaseDto.getInboundDeliverables()){
 			rd.setInboundDeliverables(releaseDto.getInboundDeliverables());
+		}
+		if (null != releaseDto.getIdentifiers()) {
+			rd.setIdentifiers(releaseDto.getIdentifiers());
 		}
 		return rd;
 	}

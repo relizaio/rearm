@@ -41,9 +41,13 @@ import org.springframework.security.access.AccessDeniedException;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.packageurl.MalformedPackageURLException;
+import com.github.packageurl.PackageURL;
+import com.github.packageurl.PackageURLBuilder;
 
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.TagRecord;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.BranchData;
@@ -442,6 +446,26 @@ public class Utils {
 			});
 		}
 		return diffResults;
+	}
+	
+	public static PackageURL setVersionOnPurl (PackageURL origPurl, String version) throws RelizaException {
+		try {
+			var purlBuilder = PackageURLBuilder.aPackageURL()
+				.withType(origPurl.getType())
+				.withName(origPurl.getName())
+				.withVersion(version);
+			
+			if (StringUtils.isNotEmpty(origPurl.getNamespace())) purlBuilder.withNamespace(origPurl.getNamespace());
+			if (null != origPurl.getQualifiers() && !origPurl.getQualifiers().isEmpty()) {
+				origPurl.getQualifiers().entrySet().forEach(q -> {
+					purlBuilder.withQualifier(q.getKey(), q.getValue());
+				});
+			}
+			if (StringUtils.isNotEmpty(origPurl.getSubpath())) purlBuilder.withSubpath(origPurl.getSubpath());
+			return purlBuilder.build();
+		} catch (MalformedPackageURLException e) {
+			throw new RelizaException(e.getMessage());
+		}
 	}
 	
 	public static enum ArtifactBelongsTo {

@@ -206,6 +206,12 @@ type Component {
 	approvalPolicyDetails: ApprovalPolicy
 	releaseInputTriggers: [ReleaseInputEvent]
 	outputTriggers: [ReleaseOutputEvent]
+	identifiers: [Identifier]
+}
+
+type Identifier {
+	idType: IdentifierType
+	idValue: String
 }
 
 type SystemInfoIsSet {
@@ -454,6 +460,7 @@ type Release {
 	variantDetails: [Variant]
 	updateEvents: [ReleaseUpdateEvent]
 	metrics: DependencyTrackMetrics
+	identifiers: [Identifier]
 }
 
 type Variant {
@@ -883,6 +890,7 @@ input UpdateComponentInput {
 	approvalPolicy: ID
 	releaseInputTriggers: [ReleaseInputEventInput]
 	outputTriggers: [ReleaseOutputEventInput]
+	identifiers: [IdentifierInput]
 }
 
 input VcsRepositoryInput {
@@ -946,6 +954,7 @@ input ReleaseInput {
 	endpoint: String
 	commits: [ID]
 	tags: [TagRecordInput]
+	identifiers: [IdentifierInput]
 }
 
 input ParentReleaseInput {
@@ -1051,6 +1060,7 @@ input ReleaseInputProg {
 	endpoint: String
 	commits: [SourceCodeEntryInput]
 	sceArts: [ArtifactInput]
+	identifiers: [IdentifierInput]
 }
 
 input AddArtifactInput {
@@ -1218,6 +1228,11 @@ input ActiveComponentsInput {
 input SynchronizeBranchInput {
 	component: String!
 	liveBranches: [String]
+}
+
+input IdentifierInput {
+	idType: IdentifierType
+	idValue: String
 }
 
 enum MatchOperator {
@@ -1553,6 +1568,12 @@ enum ReleaseUpdateActionEnum {
 	ADDED
 	REMOVED
 	CHANGED
+}
+
+enum IdentifierType {
+	PURL
+	CPE
+	TEI
 }
 
 scalar Object

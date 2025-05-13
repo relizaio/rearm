@@ -5,6 +5,7 @@
 package io.reliza.model.dto;
 
 import java.net.URI;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -18,6 +19,7 @@ import io.reliza.model.ParentRelease;
 import io.reliza.model.ReleaseData.ReleaseBom;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseStatus;
+import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
 
@@ -61,6 +63,9 @@ public class ReleaseDto {
 
 	@JsonProperty(CommonVariables.REBOMS_FIELD)
 	private List<ReleaseBom> reboms;
+	
+	@JsonProperty
+	private List<TeaIdentifier> identifiers;
 
 	@JsonProperty
 	private List<UUID> inboundDeliverables;

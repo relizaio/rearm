@@ -48,6 +48,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.github.packageurl.PackageURL;
 
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
@@ -94,7 +95,9 @@ import io.reliza.model.dto.ComponentJsonDto.ComponentJsonDtoBuilder;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.SceDto;
+import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.service.RebomService.BomStructureType;
 import io.reliza.service.oss.OssReleaseService;
@@ -325,11 +328,12 @@ public class ReleaseService {
 		Optional<SourceCodeEntryData> osced = Optional.empty();
 		// also check if commits (base64 encoded) are present and if so add to release
 		List<UUID> commits = new LinkedList<>();
-
+		
+		ComponentData cd = getComponentService.getComponentData(bd.getComponent()).get();
+		
 		if (sourceCodeEntry != null || commitList != null) {
 			// parse list of associated commits obtained via git log with previous CI build if any (note this may include osce)
 			if (commitList != null) {
-				ComponentData cd = getComponentService.getComponentData(bd.getComponent()).get();
 				for (var com : commitList) {
 					var parsedCommit = parseSceFromReleaseCreate(com, List.of(), bd, bd.getName(), nextVersion, wu);
 					if (parsedCommit.isPresent()) {
@@ -373,8 +377,10 @@ public class ReleaseService {
 		
 		Release release = null;
 		try {
+			List<TeaIdentifier> releaseIdentifiers = sharedReleaseService.resolveReleaseIdentifiersFromComponent(nextVersion, cd);
 			releaseDtoBuilder.version(nextVersion)
-							.lifecycle(lifecycleResolved);
+							.lifecycle(lifecycleResolved)
+							.identifiers(releaseIdentifiers);
 			release = ossReleaseService.createRelease(releaseDtoBuilder.build(), wu);
 		} catch (RelizaException re) {
 			throw new AccessDeniedException(re.getMessage());

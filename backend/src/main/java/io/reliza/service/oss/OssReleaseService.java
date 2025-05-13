@@ -319,6 +319,9 @@ public class OssReleaseService {
 		if (null != releaseDto.getReboms()) {
 			rData.setReboms(releaseDto.getReboms());
 		}
+		if (null != releaseDto.getIdentifiers()) {
+			rData.setIdentifiers(releaseDto.getIdentifiers());
+		}
 		Map<String,Object> recordData = Utils.dataToRecord(rData);
 		log.debug("saving release with recordData: {}", recordData);
 		r = saveRelease(r, recordData, wu);
@@ -351,7 +354,8 @@ public class OssReleaseService {
 			}
 		}
 	}
-
+	
+	
 	private void autoIntegrateFeatureSetProduct(BranchData bd, ReleaseData rd) {
 		List<ChildComponent> dependencies = bd.getDependencies();
 		final Map<UUID, ChildComponent> componentsWBranches = dependencies.stream().collect(Collectors.toMap(x -> x.getUuid(), Function.identity()));
@@ -622,7 +626,13 @@ public class OssReleaseService {
 			if(!tickets.isEmpty()){
 				releaseDto.setTickets(tickets);
 			}
-		}		
+		}
+		
+		if (null == releaseDto.getIdentifiers() || releaseDto.getIdentifiers().isEmpty()) {
+			ComponentData cd = getComponentService.getComponentData(releaseDto.getComponent()).get();
+			List<TeaIdentifier> releaseIdentifiers = sharedReleaseService.resolveReleaseIdentifiersFromComponent(releaseDto.getVersion(), cd);
+			releaseDto.setIdentifiers(releaseIdentifiers);
+		}
 
 		ReleaseData rData = ReleaseData.releaseDataFactory(releaseDto);
 		ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.RELEASE_CREATED, ReleaseUpdateAction.ADDED, null, null, null,
