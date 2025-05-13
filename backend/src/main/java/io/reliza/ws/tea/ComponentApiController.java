@@ -7,25 +7,23 @@ import java.util.UUID;
 
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.CookieValue;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.multipart.MultipartFile;
+
+import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.tea.TeaComponent;
+import io.reliza.model.tea.TeaRelease;
+import io.reliza.service.GetComponentService;
+import io.reliza.service.SharedReleaseService;
+import io.reliza.service.tea.TeaTransformerService;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+
 import org.springframework.web.context.request.NativeWebRequest;
 
-import jakarta.validation.constraints.*;
-import jakarta.validation.Valid;
-
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
@@ -34,6 +32,15 @@ import jakarta.annotation.Generated;
 @RequestMapping("${openapi.transparencyExchange.base-path:/tea/v1}")
 public class ComponentApiController implements ComponentApi {
 
+	@Autowired
+	GetComponentService getComponentService;
+	
+	@Autowired
+	TeaTransformerService teaTransformerService;
+	
+	@Autowired
+	SharedReleaseService sharedReleaseService;
+	
     private final NativeWebRequest request;
 
     @Autowired
@@ -45,5 +52,33 @@ public class ComponentApiController implements ComponentApi {
     public Optional<NativeWebRequest> getRequest() {
         return Optional.ofNullable(request);
     }
+    
+    
+    @Override
+    public ResponseEntity<List<TeaRelease>> getReleasesByComponentId(
+            @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+        ) {
+    		var ocd = getComponentService.getComponentData(uuid);
+    		if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT) {
+	        	return ResponseEntity.notFound().build();
+	        } else {
+	    		var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, 300, 0); // TODO - TEA - pagination
+	    		var teaReleases = releases.stream().map(rd -> teaTransformerService.transformReleaseToTea(rd)).toList();
+	    		return ResponseEntity.ok(teaReleases);
+	        }
 
+        }
+    
+    @Override
+    public ResponseEntity<TeaComponent> getTeaComponentById(
+            @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+        ) {
+	        var ocd = getComponentService.getComponentData(uuid);
+	        if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT) {
+	        	return ResponseEntity.notFound().build();
+	        } else {
+	        	TeaComponent tc = teaTransformerService.transformComponentToTea(ocd.get());
+	        	return ResponseEntity.ok(tc);
+	        }
+        }
 }

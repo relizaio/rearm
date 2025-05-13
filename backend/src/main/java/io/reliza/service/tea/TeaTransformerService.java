@@ -3,6 +3,9 @@
 */
 package io.reliza.service.tea;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 
@@ -11,7 +14,10 @@ import org.springframework.stereotype.Service;
 
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ReleaseData;
+import io.reliza.model.tea.TeaComponent;
 import io.reliza.model.tea.TeaProduct;
+import io.reliza.model.tea.TeaRelease;
 import io.reliza.service.SharedReleaseService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,6 +38,28 @@ public class TeaTransformerService {
 		tp.setIdentifiers(rearmCD.getIdentifiers());
 		tp.setComponents(new LinkedList<>(sharedReleaseService.obtainComponentsOfProductOrComponent(rearmCD.getUuid(), new LinkedHashSet<>())));
 		return tp;
+	}
+	
+	public TeaComponent transformComponentToTea(ComponentData rearmCD) {
+		if (rearmCD.getType() != ComponentType.COMPONENT) {
+			throw new RuntimeException("Wrong component type");
+		}
+		TeaComponent tc = new TeaComponent();
+		tc.setUuid(rearmCD.getUuid());
+		tc.setName(rearmCD.getName());
+		tc.setIdentifiers(rearmCD.getIdentifiers());
+		return tc;
+	}
+	
+	public TeaRelease transformReleaseToTea(ReleaseData rearmRD) {
+		TeaRelease tr = new TeaRelease();
+		tr.setUuid(rearmRD.getUuid());
+		tr.setVersion(rearmRD.getVersion());
+		tr.setPreRelease(false);
+		OffsetDateTime releaseDate = rearmRD.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
+		tr.setReleaseDate(releaseDate);
+		tr.setIdentifiers(null); // TODO
+		return tr;
 	}
     
 }
