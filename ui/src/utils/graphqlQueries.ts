@@ -372,6 +372,10 @@ const singleReleaseDataNoParent = `
         policyViolationsLicenseTotal
         policyViolationsOperationalTotal
     }
+    identifiers {
+        idType
+        idValue
+    }
 `
 
 const singleReleaseDataParentLast = `

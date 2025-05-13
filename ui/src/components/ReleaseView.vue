@@ -88,6 +88,7 @@
                                 <Icon class="clickable" style="margin-left:10px;" size="16"><Info20Regular/></Icon>
                             </template>
                             <strong>UUID: </strong> {{ releaseUuid }}
+                            <div v-if="purl"><strong>PURL:</strong> {{ purl }}</div>
                             <div><strong>Marketing Version: </strong>{{ updatedRelease && updatedRelease.marketingVersion ? updatedRelease.marketingVersion : 'Not Set' }}</div>
                             <div class=""><strong>Organization:</strong> {{ release.orgDetails.name }}</div>
                             <div class="" v-if="updatedRelease.endpoint">
@@ -1754,6 +1755,20 @@ const releaseApprovalTableData: ComputedRef<any[]> = computed((): any[] => {
         })
     }
     return approvalData
+})
+
+const purl: ComputedRef<string | undefined> = computed((): string | undefined => {
+    console.log('in here')
+    let purl = undefined
+    if (release.value && release.value.identifiers && release.value.identifiers.length) {
+        const purlObj = release.value.identifiers.find((id: any) => id.idType === 'PURL')
+        console.log(purlObj)
+        if (purlObj) {
+            purl = purlObj.idValue
+            console.log(purl)
+        }
+    }
+    return purl
 })
 
 const artifactsRowKey = (row: any) => row.uuid
