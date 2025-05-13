@@ -631,6 +631,7 @@ public class OssReleaseService {
 					+ " and branch = " + releaseDto.getBranch());
 			}
 		}
+		if (null == releaseDto.getComponent()) throw new IllegalStateException("Component or Product is required on release creation");
 		if (null == releaseDto.getStatus()) releaseDto.setStatus(ReleaseStatus.ACTIVE);
 		if (null == releaseDto.getLifecycle()) releaseDto.setLifecycle(ReleaseLifecycle.DRAFT);
 
