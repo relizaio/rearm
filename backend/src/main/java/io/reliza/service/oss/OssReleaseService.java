@@ -37,6 +37,7 @@ import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ConditionGroup;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
