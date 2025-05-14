@@ -17,6 +17,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.RelizaObject;
@@ -77,7 +78,7 @@ public class ArtifactDataFetcher {
 	@DgsData(parentType = "Query", field = "artifactBomLatestVersion")
 	public String getArtifactBomLatestVersion(
 			@InputArgument("artUuid") String artifactUuidStr)
-			throws Exception
+			throws RelizaException
 	{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);

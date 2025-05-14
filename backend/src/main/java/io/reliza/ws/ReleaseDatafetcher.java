@@ -567,7 +567,7 @@ public class ReleaseDatafetcher {
 	@Transactional
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "addArtifactManual")
-	public ReleaseData addArtifactManual(DgsDataFetchingEnvironment dfe) throws Exception {
+	public ReleaseData addArtifactManual(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 

@@ -4,6 +4,7 @@
 
 package io.reliza.service;
 
+import java.io.IOException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -24,6 +25,9 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.Removable;
@@ -180,7 +184,7 @@ public class ArtifactService {
 	}
 
 	@Transactional
-	public UUID uploadArtifact(ArtifactDto artifactDto, UUID orgUuid, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws Exception{
+	public UUID uploadArtifact(ArtifactDto artifactDto, UUID orgUuid, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException{
 
 		artifactDto.setOrg(orgUuid);
 		String tag= "";
@@ -195,7 +199,13 @@ public class ArtifactService {
 				|| artifactDto.getType().equals(ArtifactType.VEX) 
 				|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
 			)){
-				var bomJson = Utils.readJsonFromResource(file);
+				JsonNode bomJson;
+				try {
+					bomJson = Utils.readJsonFromResource(file);
+				} catch (IOException e) {
+					log.error("Error reading Json", e);
+					throw new RelizaException(e.getMessage());
+				}
 				//case of update
 				if(artifactDto.getUuid() != null){
 					// find the existing artifact data
@@ -334,8 +344,15 @@ public class ArtifactService {
 		return true;
 	}
 
-	public String getArtifactBomLatestVersion(UUID id, UUID org) throws Exception{
-		var bom = rebomService.findBomById(id, org);
+	public String getArtifactBomLatestVersion(UUID id, UUID org) throws RelizaException{
+		JsonNode bom;
+		try {
+			bom = rebomService.findBomById(id, org);
+		} catch (JsonProcessingException e) {
+			log.error("Error finding bom by ID", e);
+			throw new RelizaException(e.getMessage());
+		}
+		//
 		return bom.get("version").toString();
 	}
 	// public void updateArtifactManual(ArtifactData ad ,ArtifactDto artifactDto, UUID orgUuid, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws Exception{

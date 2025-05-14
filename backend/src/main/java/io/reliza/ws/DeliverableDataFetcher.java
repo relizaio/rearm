@@ -167,7 +167,7 @@ public class DeliverableDataFetcher {
 	
 	@DgsData(parentType = "Mutation", field = "addOutboundDeliverablesProgrammatic")
 	@Transactional
-	public ReleaseData addOutboundDeliverablesProgrammatic(DgsDataFetchingEnvironment dfe) throws Exception {
+	public ReleaseData addOutboundDeliverablesProgrammatic(DgsDataFetchingEnvironment dfe) throws RelizaException {
 				DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);

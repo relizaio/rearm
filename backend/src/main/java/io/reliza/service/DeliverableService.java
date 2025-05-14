@@ -226,12 +226,12 @@ public class DeliverableService {
 	}
 	
 	public List<UUID> prepareListofDeliverables(List<Map<String, Object>> deliverablesList,
-			UUID branchUUID, String version, WhoUpdated wu) throws Exception{
+			UUID branchUUID, String version, WhoUpdated wu) throws RelizaException{
 		return prepareListofDeliverables(deliverablesList, branchUUID, version, false, wu);
 	}
 	
 	public List<UUID> prepareListofDeliverables(List<Map<String, Object>> deliverablesList, UUID branchUUID,
-			String version, Boolean addOnComplete, WhoUpdated wu) throws Exception {
+			String version, Boolean addOnComplete, WhoUpdated wu) throws RelizaException {
 		List<UUID> deliverables = new LinkedList<>();
 		
 		var bd = branchService.getBranchData(branchUUID).orElseThrow();

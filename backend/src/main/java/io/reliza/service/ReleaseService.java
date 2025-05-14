@@ -968,7 +968,7 @@ public class ReleaseService {
 	
 	@Transactional
 	public List<UUID> uploadSceArtifacts (List<Map<String, Object>> arts, OrganizationData od, SceDto sceDto,
-			ComponentData cd, String version, WhoUpdated wu) throws Exception {
+			ComponentData cd, String version, WhoUpdated wu) throws RelizaException {
 		List<UUID> artIds = new ArrayList<>();
 		if(null != arts && !arts.isEmpty()){
 			for (Map<String, Object> artMap : arts) {
@@ -1319,7 +1319,7 @@ public class ReleaseService {
 	}
 	
 	public ReleaseData addInboundDeliverables(ReleaseData releaseData, List<Map<String, Object>> deliverableDtos,
-			WhoUpdated wu) throws Exception {
+			WhoUpdated wu) throws RelizaException {
 		List<UUID> currentDeliverables = releaseData.getInboundDeliverables();
 		boolean isAllowed = ReleaseLifecycle.isAssemblyAllowed(releaseData.getLifecycle());
 		if (!isAllowed) {
