@@ -58,7 +58,7 @@ public class TeaTransformerService {
 		tr.setPreRelease(false);
 		OffsetDateTime releaseDate = rearmRD.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
 		tr.setReleaseDate(releaseDate);
-		tr.setIdentifiers(null); // TODO
+		tr.setIdentifiers(rearmRD.getIdentifiers());
 		return tr;
 	}
     
