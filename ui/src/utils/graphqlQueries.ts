@@ -178,6 +178,10 @@ const ARTIFACT_DETAIL_DATA = `
         uri
         content
     }
+    internalBom {
+        id
+        belongsTo
+    }    
     componentUuid
 `
 const DELIVERABLE_DETAIL_DATA = `

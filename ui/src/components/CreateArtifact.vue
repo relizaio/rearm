@@ -2,7 +2,7 @@
     <div class="createArtifact">
         <div>Create Artifact</div>
         <n-form ref="createArtifactForm" :model="artifact" :rules="rules">
-            <n-form-item
+            <n-form-item v-if="!isUpdateExistingBom"
                         path="storedIn"
                         label="Storage Type">
                 <n-radio-group  v-model:value="artifact.storedIn" >
@@ -125,6 +125,8 @@ const props = defineProps<{
     inputDeliverarble?: string,
     inputSce?: string,
     inputBelongsTo?: string
+    isUpdateExistingBom?: boolean
+    updateArtifact?: any
 }>()
 
 const emit = defineEmits(['addArtifact'])
@@ -151,18 +153,22 @@ interface Artifact {
     version: string,
 }
 const artifact: Ref<any>= ref({
-    displayIdentifier: '',
-    tags: [],
-    type: '',
-    identities: [],
+    displayIdentifier: props.isUpdateExistingBom ? props.updateArtifact.displayIdentifier : '',
+    tags: props.isUpdateExistingBom ? props.updateArtifact.tags :[],
+    type:  props.isUpdateExistingBom ? props.updateArtifact.type : '',
+    identities: props.isUpdateExistingBom ? props.updateArtifact.identities : [],
     downloadLinks: [],
-    inventoryTypes: [],
-    digests: [],
-    bomFormat: null,
-    storedIn: '',
+    inventoryTypes: props.isUpdateExistingBom ? props.updateArtifact.inventoryTypes : [],
+    digests: props.isUpdateExistingBom ? props.updateArtifact.digests : [],
+    bomFormat: props.isUpdateExistingBom ? props.updateArtifact.bomFormat : null,
+    storedIn: props.isUpdateExistingBom ? 'REARM' : '',
     status: 'ANY',
     version: '',
 })
+if(props.isUpdateExistingBom && props.updateArtifact){
+    artifact.value.storedIn = 'REARM'
+    artifact.value.digests = []
+}
 const downloadLinks: Ref<DownloadLink[]> = ref([])
 const identities: Ref<Idenitity[]> = ref([])
 
@@ -209,19 +215,37 @@ const onSubmit = async () => {
 
 
     try{
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation addArtifactManual($artifactInput: CreateArtifactInput) {
-                    addArtifactManual(artifactInput: $artifactInput) {
-                        uuid
-                    }
-                }`,
-            variables: {
-                'artifactInput': createArtifactInput
-            },
-            fetchPolicy: 'no-cache'
-        })
-        emit('addArtifact')
+        if(props.isUpdateExistingBom){
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateArtifactManual($artifactInput: CreateArtifactInput, $artifactUuid: ID!) {
+                        addArtifactManual(artifactInput: $artifactInput, artifactUuid: $artifactUuid) {
+                            uuid
+                        }
+                    }`,
+                variables: {
+                    'artifactInput': createArtifactInput,
+                    'artifactUuid': props.updateArtifact.uuid
+                },
+                fetchPolicy: 'no-cache'
+            })
+            emit('addArtifact')
+        }else {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation addArtifactManual($artifactInput: CreateArtifactInput) {
+                        addArtifactManual(artifactInput: $artifactInput) {
+                            uuid
+                        }
+                    }`,
+                variables: {
+                    'artifactInput': createArtifactInput
+                },
+                fetchPolicy: 'no-cache'
+            })
+            emit('addArtifact')
+        }
+
     }   catch (err: any) {
         Swal.fire(
             'Error!',

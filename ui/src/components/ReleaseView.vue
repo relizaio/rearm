@@ -391,9 +391,27 @@
                 <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
                     :inputOrgUuid="updatedRelease.orgDetails.uuid"
                     :inputRelease="updatedRelease.uuid"
-                    :inputDeliveable="deliverableAddArtifactSceId"
+                    :inputDeliverarble="deliverableAddArtifactSceId"
                     :inputBelongsTo="'DELIVERABLE'" />
             </n-card>
+        </n-modal>
+        <n-modal
+            v-model:show="showAddNewBomVersionModal"
+            style="width: 90%;"
+            preset="dialog"
+            :show-icon="false" >
+            <n-card title="Update Bom" :hide-footer="true">
+                <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
+                    :inputOrgUuid="updatedRelease.orgDetails.uuid"
+                    :inputRelease="updatedRelease.uuid"
+                    :inputSce="deliverableAddArtifactSceId"
+                    :inputDeliverarble="deliverableAddArtifactSceId"
+                    :inputBelongsTo="addNewBomBelongsTo"
+                    :isUpdateExistingBom="true"
+                    :updateArtifact="artifactToUpdate"
+                    />
+            </n-card>
+           
         </n-modal>
         <n-modal
             v-model:show="showReleaseAddDeliverableModal"
@@ -461,10 +479,10 @@ import axios from '../utils/axios'
 import * as vegaEmbed from 'vega-embed'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
-import commonFunctions from '@/utils/commonFunctions'
+import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular } from '@vicons/fluent'
-import { Box, CirclePlus, ClipboardCheck, Download, FileDownload, FileInvoice, GitCompare, Link, Trash, Refresh, Upload } from '@vicons/tabler'
+import { Box, CirclePlus, ClipboardCheck, Download, Edit, FileDownload, FileInvoice, GitCompare, Link, Trash, Refresh, Upload } from '@vicons/tabler'
 import { CancelOutlined } from '@vicons/material'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular } from '@vicons/fluent'
@@ -477,8 +495,6 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { Tag, DownloadLink, Identity} from '@/utils/commonTypes'
-
-
 
 const route = useRoute()
 const router = useRouter()
@@ -1168,8 +1184,11 @@ const showReleaseAddProducesArtifactModal: Ref<boolean> = ref(false)
 const showSCEAddArtifactModal: Ref<boolean> = ref(false)
 const sceAddArtifactSceId: Ref<string> = ref('')
 const showDeliverableAddArtifactModal: Ref<boolean> = ref(false)
+const showAddNewBomVersionModal: Ref<boolean> = ref(false)
 const deliverableAddArtifactSceId: Ref<string> = ref('')
 const showReleaseAddDeliverableModal: Ref<boolean> = ref(false)
+const addNewBomBelongsTo: Ref<string> = ref('')
+const artifactToUpdate: Ref<any> = ref({})
 
 function deleteArtifact (artifactUuid: string, releaseUuid: string) {
     Swal.fire({
@@ -1215,12 +1234,15 @@ async function addArtifact () {
     showSCEAddArtifactModal.value = false
     showDeliverableAddArtifactModal.value = false
     showReleaseAddDeliverableModal.value = false
+    showAddNewBomVersionModal.value = false
+
 }
 
-function setArtifactBelongsTo (art: any, belongsTo: string, belongsToId?: string) {
+function setArtifactBelongsTo (art: any, belongsTo: string, belongsToId?: string,  belongsToUUID?: string) {
     const adc = commonFunctions.deepCopy(art)
     adc.belongsTo = belongsTo
     adc.belongsToId = belongsToId
+    adc.belongsToUUID = belongsToUUID
     return adc
 }
 
@@ -1229,20 +1251,21 @@ const artifacts: ComputedRef<any> = computed((): any => {
 
     if (updatedRelease.value) {
         if(updatedRelease.value.artifactDetails && updatedRelease.value.artifactDetails.length) {
-            artifacts.push.apply(artifacts, updatedRelease.value.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, 'Release')))
+            artifacts.push.apply(artifacts, updatedRelease.value.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, 'Release', '', updatedRelease.value.uuid)))
         }
         if(updatedRelease.value.sourceCodeEntryDetails && updatedRelease.value.sourceCodeEntryDetails.artifactDetails && updatedRelease.value.sourceCodeEntryDetails.artifactDetails.length) {
+            const cursce = updatedRelease.value.sourceCodeEntryDetails
             artifacts.push.apply(artifacts,
                 updatedRelease.value.sourceCodeEntryDetails.artifactDetails
                     .filter((ad: any) => ad.componentUuid === updatedRelease.value.componentDetails.uuid)
-                    .map((ad: any) => setArtifactBelongsTo(ad, 'Source Code Entry')))
+                    .map((ad: any) => setArtifactBelongsTo(ad, 'Source Code Entry', '', cursce.uuid)))
         }
         
         updatedRelease.value.variantDetails.forEach ((vd: any) => {
             if (vd.outboundDeliverableDetails && vd.outboundDeliverableDetails.length) {
                 vd.outboundDeliverableDetails.forEach ((odd: any) => {
                     if (odd.artifactDetails && odd.artifactDetails.length) {
-                        artifacts.push.apply(artifacts, odd.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, 'Deliverable', odd.displayIdentifier)))
+                        artifacts.push.apply(artifacts, odd.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, 'Deliverable', odd.displayIdentifier, odd.uuid)))
                     }
                 })
             }
@@ -1251,7 +1274,7 @@ const artifacts: ComputedRef<any> = computed((): any => {
         if(updatedRelease.value.inboundDeliverableDetails && updatedRelease.value.inboundDeliverableDetails.length) {
             updatedRelease.value.inboundDeliverableDetails.forEach ((id: any) => {
                 if (id.artifactDetails && id.artifactDetails.length) {
-                    artifacts.push.apply(artifacts, id.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, 'Deliverable', id.displayIdentifier)))
+                    artifacts.push.apply(artifacts, id.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, 'Deliverable', id.displayIdentifier, id.uuid)))
                 }
             })
         }
@@ -1334,6 +1357,72 @@ const downloadArtifact = async (art: any) => {
         link.download = fileName
         link.click()
     })
+}
+
+const findReleasesSharedByArtifact = async(id: string) => {
+    const response = await graphqlClient.query({
+        query: gql`
+            query FetchArtifactReleases($artUuid: ID!) {
+                artifactReleases(artUuid: $artUuid) {
+                    uuid
+                    version
+                    createdDate
+                    sourceCodeEntryDetails {
+                        uuid
+                        commit
+                    }
+                }
+            }`,
+        variables: { artUuid: id }
+    })
+    return response.data.artifactReleases
+}
+const getBomVersion = async(id: string) => {
+    const response = await graphqlClient.query({
+        query: gql`
+            query FetchArtifactBomSerial($artUuid: ID!) {
+                artifactBomLatestVersion(artUuid: $artUuid)
+            }`,
+        variables: { artUuid: id }
+    })
+    return response.data.artifactBomLatestVersion
+}
+const uploadNewBomVersion = async (art: any) => {
+    
+    const releasesSharingThisArtifact = await findReleasesSharedByArtifact(art.uuid)
+   
+    const latestBomVersion: string = await getBomVersion(art.uuid)
+    let questionText = ''
+    if(releasesSharingThisArtifact && releasesSharingThisArtifact.length > 1){
+        const releaseVersions = releasesSharingThisArtifact.map(function(r: any){
+            return r.version;
+        }).join(", ");
+        questionText = `This BOM has serial number \`${art.internalBom.id}\` and version \`${latestBomVersion}\` is currently shared with the following releases - <${releaseVersions}> - if you upload a new BOM version with the same serial number and incremented version, it will be updated for all these releases. If instead you upload a new BOM version with a new serial number, this release will be switched to the BOM you are uploading, while all other mentioned releases will be unaffected. `
+    }else {
+        questionText = `This BOM has serial number: \`${art.internalBom.id}\`. \nIf you upload a new BOM version with the same serial number, it will be recorded as a new version of the same BOM (recommended).\nIf instead you upload a new BOM version with a new serial number, the BOM reference will be switched to the BOM you are uploading.`
+    }
+  
+    const swalResult = await Swal.fire({
+        title: 'Update Artifact BOM',
+        text: questionText,
+        showCancelButton: true,
+        confirmButtonText: 'Confirm',
+        cancelButtonText: 'Cancel'
+    })
+    
+    if (swalResult.isConfirmed) {
+        showAddNewBomVersionModal.value = true
+        artifactToUpdate.value = art
+        addNewBomBelongsTo.value = art?.internalBom?.belongsTo
+        deliverableAddArtifactSceId.value = art.belongsToUUID
+    }else{
+        Swal.fire(
+            'Cancelled',
+            'Cancelled BOM Update',
+            'error'
+        )
+    }
+    
 }
 const downloadRawArtifact = async (art: any) => {
     axios({
@@ -1871,6 +1960,17 @@ const artifactsTableFields: DataTableColumns<any> = [
         title: 'Actions',
         render: (row: any) => {
             let els: any[] = []
+            if (row.type === 'BOM'){
+                const uploadEl = h(NIcon,
+                    {
+                        title: 'Upload New Bom Version',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => uploadNewBomVersion(row)
+                    }, { default: () => h(Edit) })
+                els.push(uploadEl)
+            }
+            
             const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
             if (isDownloadable) {
                 const downloadEl = h(NIcon,
