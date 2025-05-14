@@ -169,7 +169,7 @@
 
             <n-tab-pane name="users" tab="Users">
                 <div class="userBlock mt-4">
-                    <h5>Users</h5>
+                    <h5>Users ({{ users.length }})</h5>
                     <n-data-table :columns="userFields" :data="users" class="table-hover">
                     </n-data-table>
                     <n-modal
