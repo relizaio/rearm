@@ -218,7 +218,7 @@ const onSubmit = async () => {
         if(props.isUpdateExistingBom){
             const response = await graphqlClient.mutate({
                 mutation: gql`
-                    mutation updateArtifactManual($artifactInput: CreateArtifactInput, $artifactUuid: ID!) {
+                    mutation addArtifactManual($artifactInput: CreateArtifactInput, $artifactUuid: ID!) {
                         addArtifactManual(artifactInput: $artifactInput, artifactUuid: $artifactUuid) {
                             uuid
                         }
