@@ -172,6 +172,13 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<Release> findReleasesForMetricsComputeByUpdate();
 	
-	
+	@Query(
+		value = VariableQueries.FIND_RELEASES_SHARING_SCE_ARTIFACT,
+		nativeQuery = true)
+		List<Release> findReleasesSharingSceArtifact(String artUuidAsString);
+	@Query(
+		value = VariableQueries.FIND_RELEASES_SHARING_DELIVRABLE_ARTIFACT,
+		nativeQuery = true)
+		List<Release> findReleasesSharingDeliverableArtifact(String artUuidAsString);
 	
 }

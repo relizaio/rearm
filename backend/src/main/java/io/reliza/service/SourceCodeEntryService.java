@@ -247,6 +247,18 @@ public class SourceCodeEntryService {
 		saveSourceCodeEntry(sce, recordData, wu);
 		return true;
 	}
+	@Transactional
+	public boolean replaceArtifact(UUID sceUuid, SCEArtifact replaceArt, SCEArtifact art, WhoUpdated wu) throws RelizaException{
+		SourceCodeEntry sce = getSourceCodeEntry(sceUuid).get();
+		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
+		List<SCEArtifact> artifacts = sced.getArtifacts();
+		artifacts.remove(replaceArt);
+		artifacts.add(art);
+		sced.setArtifacts(artifacts);
+		Map<String,Object> recordData = Utils.dataToRecord(sced);
+		saveSourceCodeEntry(sce, recordData, wu);
+		return true;
+	}
 	
 	@Transactional
 	private SourceCodeEntry saveSourceCodeEntry (SourceCodeEntry sce, Map<String,Object> recordData, WhoUpdated wu) {

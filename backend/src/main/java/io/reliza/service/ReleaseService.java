@@ -968,7 +968,7 @@ public class ReleaseService {
 	
 	@Transactional
 	public List<UUID> uploadSceArtifacts (List<Map<String, Object>> arts, OrganizationData od, SceDto sceDto,
-			ComponentData cd, String version, WhoUpdated wu) {
+			ComponentData cd, String version, WhoUpdated wu) throws Exception {
 		List<UUID> artIds = new ArrayList<>();
 		if(null != arts && !arts.isEmpty()){
 			for (Map<String, Object> artMap : arts) {
@@ -981,12 +981,14 @@ public class ReleaseService {
 				ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
 				// artDto.setFile(file);
 				UUID artId = null;
-				try {
-					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), artDto.getStripBom()), wu);
-				} catch (Exception e) {
-					log.error("Exception on uploading artifact", e);
-					throw new RuntimeException(e); // Re-throw the exception
-				}
+				artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), artDto.getStripBom()), wu);
+
+				// try {
+				// 	artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), artDto.getStripBom()), wu);
+				// } catch (Exception e) {
+				// 	log.error("Exception on uploading artifact", e);
+				// 	throw new RuntimeException(e); // Re-throw the exception
+				// }
 				if (null != artId) artIds.add(artId);
 			}
 		}
@@ -1317,7 +1319,7 @@ public class ReleaseService {
 	}
 	
 	public ReleaseData addInboundDeliverables(ReleaseData releaseData, List<Map<String, Object>> deliverableDtos,
-			WhoUpdated wu) throws RelizaException {
+			WhoUpdated wu) throws Exception {
 		List<UUID> currentDeliverables = releaseData.getInboundDeliverables();
 		boolean isAllowed = ReleaseLifecycle.isAssemblyAllowed(releaseData.getLifecycle());
 		if (!isAllowed) {
@@ -1399,6 +1401,25 @@ public class ReleaseService {
 		if (null != artifactUuid && rOpt.isPresent()) {
 			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
 				List<UUID> artifacts = rd.getArtifacts();
+				artifacts.add(artifactUuid);
+				rd.setArtifacts(artifacts);
+				ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.ARTIFACT, ReleaseUpdateAction.ADDED,
+						null, null, artifactUuid, ZonedDateTime.now(), wu);
+				rd.addUpdateEvent(rue);
+				Map<String,Object> recordData = Utils.dataToRecord(rd);
+				ossReleaseService.saveRelease(rOpt.get(), recordData, wu);
+				added = true;			
+		}
+		return added;
+	}
+	@Transactional
+	public Boolean replaceArtifact(UUID replaceArtifactUuid ,UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
+		Boolean added = false;
+		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);
+		if (null != artifactUuid && rOpt.isPresent()) {
+			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
+				List<UUID> artifacts = rd.getArtifacts();
+				artifacts.remove(replaceArtifactUuid);
 				artifacts.add(artifactUuid);
 				rd.setArtifacts(artifacts);
 				ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.ARTIFACT, ReleaseUpdateAction.ADDED,
@@ -1577,6 +1598,22 @@ public class ReleaseService {
 			}
 		});
 		return artifactIds;
+	}
+
+	public Set<UUID> gatherReleaseIdsForArtifact(UUID artifactUuid, UUID orgUuid){
+		Set<UUID> releases = new HashSet<>();
+		Set<UUID> allDirectReleases = findReleasesByArtifact(artifactUuid, orgUuid).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
+		Set<UUID> allSceReleases = repository.findReleasesSharingSceArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
+		Set<UUID> allDeliverableReleases = repository.findReleasesSharingDeliverableArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
+		releases.addAll(allDirectReleases);
+		releases.addAll(allSceReleases);
+		releases.addAll(allDeliverableReleases);
+		return releases;
+	}
+
+	public List<ReleaseData> gatherReleasesForArtifact(UUID artifactUuid, UUID orgUuid){
+		Set<UUID> releaseIds = gatherReleaseIdsForArtifact(artifactUuid, orgUuid);
+		return sharedReleaseService.getReleaseDataList(releaseIds, orgUuid);
 	}
 	
 	public void computeReleaseMetrics (UUID releaseId) {

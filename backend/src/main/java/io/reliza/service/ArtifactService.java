@@ -118,9 +118,20 @@ public class ArtifactService {
 		return a;
 	}
 	
+	//Creates or Updates existing artifact
 	@Transactional
 	public Artifact createArtifact(ArtifactDto artifactDto, WhoUpdated wu) throws RelizaException{
-		Artifact a = new Artifact();
+		log.debug("RGDEBUG: create Artifact called: {}", artifactDto);
+		Artifact a;
+		Optional<Artifact> oa = Optional.empty();
+		if(null != artifactDto.getUuid()){
+			oa = sharedArtifactService.getArtifact(artifactDto.getUuid());
+		}
+		if(oa.isEmpty()){
+			a = new Artifact();
+		}else {
+			a = oa.get();
+		}
 		if(null == artifactDto.getType())
 			throw new RelizaException("Artifact must have type!");
 		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto);
@@ -185,8 +196,35 @@ public class ArtifactService {
 				|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
 			)){
 				var bomJson = Utils.readJsonFromResource(file);
-				
+				//case of update
+				if(artifactDto.getUuid() != null){
+					// find the existing artifact data
+					ArtifactData existingAd = getArtifactData(artifactDto.getUuid()).get();
+					Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg()));		
+					String oldBomSerial = existingAd.getInternalBom().id().toString();
+			
+
+					String newBomSerial = bomJson.get("serialNumber").textValue();
+					if(newBomSerial.startsWith("urn")){
+						newBomSerial = newBomSerial.replace("urn:uuid:","");
+					}
+					String newbomVerString = bomJson.get("version").toString();
+					Integer newBomVersion = Integer.valueOf(newbomVerString);
+
+					//validate and proceed accordingly
+
+							// compare if lesser
+					// reject
+					if(oldBomSerial.equals(newBomSerial)){
+						if(newBomVersion <= oldBomVersion)
+							throw new RelizaException("Uploaded bom should have an incremented version");
+					}else{
+						artifactDto.setUuid(UUID.randomUUID());
+					}
+				}
+
 				RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, orgUuid);
+
 				// UUID internalBomId = rebomOptions.serialNumber();
 				UUID internalBomId;
 				try{
@@ -223,16 +261,26 @@ public class ArtifactService {
 				artifactUploadResponse = uploadFileToConfiguredOci(file, tag);
 			}
 		}
+		//early return in case when art is not null; i.e. a duplicate artifact?
+		if(null != art){
+			return art.getUuid();
+		}
 		// artifactDto.setDisplayIdentifier(this.registryHost + "/" + this.ociRepository);
-		artifactDto.setDigests(Set.of(artifactUploadResponse.getDigest()));
-		artifactDto.setTags(List.of(
+		if(null!=artifactUploadResponse){
+			if(null != artifactUploadResponse.getDigest())
+			artifactDto.setDigests(Set.of(artifactUploadResponse.getDigest()));
+
+			artifactDto.setTags(List.of(
             new TagRecord(CommonVariables.SIZE_FEILD, artifactUploadResponse.getSize(), Removable.NO),
             new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, artifactUploadResponse.getArtifactType(), Removable.NO),
             new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
             new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
             new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
         ));
+		}
+		
 		if(null == art){
+			//handle case of update downstream if needed
 			art = createArtifact(artifactDto, wu);
 		}
         // log.debug("artifactcreated: {}", art);
@@ -286,4 +334,50 @@ public class ArtifactService {
 		return true;
 	}
 
+	public String getArtifactBomLatestVersion(UUID id, UUID org) throws Exception{
+		var bom = rebomService.findBomById(id, org);
+		return bom.get("version").toString();
+	}
+	// public void updateArtifactManual(ArtifactData ad ,ArtifactDto artifactDto, UUID orgUuid, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws Exception{
+
+	// 	var newBom = Utils.readJsonFromResource(file);
+		
+	// 	String newBomSerial = newBom.get("serialNumber").textValue();
+		
+	// 	log.info("newBomSerial: {}", newBomSerial);
+	// 	if(newBomSerial.startsWith("urn")){
+	// 		newBomSerial = newBomSerial.replace("urn:uuid:","");
+	// 	}
+	// 	String newbomVerString = newBom.get("version").toString();
+
+	// 	log.info("newbomVerString: {}", newbomVerString);
+	// 	Integer newBomVersion = Integer.valueOf(newbomVerString);
+
+	// 	log.info("newBomVersion: {}", newBomVersion);
+
+	// 	Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(ad.getInternalBom().id(), ad.getOrg()));		
+	// 	String oldBomSerial = ad.getInternalBom().id().toString();
+
+	// 	// compare if lesser
+	// 	// reject
+	// 	if(oldBomSerial.equals(newBomSerial)){
+	// 		if(newBomVersion <= oldBomVersion)
+	// 			throw new RelizaException("Uploaded bom should have an incremented version");
+	// 		else{
+	// 			rebomService.uploadSbom(newBom, rebomOptions, orgUuid);
+	// 		}
+	// 	}else {
+	// 		rebomService.uploadSbom(newBom, rebomOptions, orgUuid);
+	// 		artifactDto.setInternalBom(new InternalBom(UUID.fromString(newBomSerial), ad.getInternalBom().belongsTo()));
+	// 		// upload and update the linkage
+	// 	}
+
+
+	// 	ArtifactData nad = ArtifactData.artifactDataFactory(artifactDto);
+	// 	//call saveArtifact
+	// 	Artifact a = sharedArtifactService.getArtifact(ad.getUuid()).get();
+	// 	Map<String, Object> recordData = Utils.dataToRecord(nad);
+	// 	a = sharedArtifactService.saveArtifact(a, recordData, wu);
+
+	// }
 }

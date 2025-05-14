@@ -449,6 +449,27 @@ class VariableQueries {
 		SELECT * FROM rearm.releases 
 			 WHERE last_updated_date - interval '15 seconds' > to_timestamp(coalesce(cast (record_data->'metrics'->>'lastScanned' as float), 0));
 	""";
+
+	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACT = """
+		WITH
+		unprocessedSces (uuid) AS (
+			SELECT sce.uuid from rearm.source_code_entries sce
+			WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(jsonb_build_object('artifactUuid', :artUuidAsString)))))
+		SELECT rlzs.* FROM unprocessedSces, rearm.releases rlzs
+		WHERE record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text);
+		""";
+
+	protected static final String FIND_RELEASES_SHARING_DELIVRABLE_ARTIFACT = """
+		WITH
+			unprocessedDeliverables (uuid) AS (
+				SELECT del.uuid from rearm.deliverables del
+				WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(:artUuidAsString)))),
+			unprocessedRlzIds (uuid) AS (
+				SELECT distinct var.record_data->>'release' from unprocessedDeliverables, rearm.variants var
+				WHERE jsonb_contains(record_data, jsonb_build_object('outboundDeliverables', jsonb_build_array(unprocessedDeliverables.uuid))))
+			SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
+				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
+		""";
 	
 	/*
 	 * Variants 

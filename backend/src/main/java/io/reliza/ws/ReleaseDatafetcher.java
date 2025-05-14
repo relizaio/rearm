@@ -421,7 +421,7 @@ public class ReleaseDatafetcher {
 
 	@DgsData(parentType = "Mutation", field = "addReleaseProgrammatic")
 	@Transactional
-	public ReleaseData addReleaseProgrammatic(DgsDataFetchingEnvironment dfe) throws IOException, RelizaException {
+	public ReleaseData addReleaseProgrammatic(DgsDataFetchingEnvironment dfe) throws IOException, RelizaException, Exception {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
@@ -576,6 +576,12 @@ public class ReleaseDatafetcher {
 		Map<String, Object> artifactInput = (Map<String, Object>) variables.get("artifactInput");
 		Map<String, Object> artifact = (Map<String, Object>) artifactInput.get("artifact");
 
+
+		UUID inputArtifactUuid = null;
+		if(variables.containsKey("artifactUuid")){
+			String artifactUuidStr = (String) variables.get("artifactUuid");
+			inputArtifactUuid = UUID.fromString(artifactUuidStr);
+		}
 				
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(UUID.fromString((String)artifactInput.get("release")));
 
@@ -606,7 +612,10 @@ public class ReleaseDatafetcher {
 		}
 
 		ArtifactDto artDto = Utils.OM.convertValue(artifact, ArtifactDto.class);
-
+		if(null!= inputArtifactUuid){
+			artDto.setUuid(inputArtifactUuid);
+			// artDto = artifactService.getArtifactData(artifactUuid);
+		}
 		// validations
 		List<String> validationErrors =  new ArrayList<>();
 
@@ -646,18 +655,39 @@ public class ReleaseDatafetcher {
 			artId = artifactService.createArtifact(artDto, wu).getUuid();
 		}
 
-
+		//new artifact created now attach
+		// here cross check and logic for the case when the id is getting replace
+		// so 1. if null != artId != inputArtifactUuid means artifact is replaced
+		// if 2. null == inputArtifactUuid != artId means a new artifact created
+		// if 3. null != inputArtifactUuid == artId means artifact was replaced in place, nothing needs to be done.
 		if(null != artId){
-			if(ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable")){
-				UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
-				deliverableService.addArtifact(deliverableId, artId, wu);
-			} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
-				UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
-				SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
-				sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
-			} else { //default case, attach to the release
-				releaseService.addArtifact(artId, ord.get().getUuid(),  wu);
+			if(null == inputArtifactUuid){
+				if(ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable")){
+					UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
+					deliverableService.addArtifact(deliverableId, artId, wu);
+				} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
+					UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
+					SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+					sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
+				} else { //default case, attach to the release
+					releaseService.addArtifact(artId, ord.get().getUuid(),  wu);
+				}
+			}else if(!inputArtifactUuid.equals(artId)) {
+
+				// replace the exisiting artifact here
+				if(ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable")){
+					UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
+					deliverableService.replaceArtifact(deliverableId,inputArtifactUuid, artId, wu);
+				} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
+					UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
+					SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+					SCEArtifact replaceArt = new SCEArtifact(inputArtifactUuid, cd.getUuid());
+					sourceCodeEntryService.replaceArtifact(sceUuid, replaceArt, sceArt, wu);
+				} else { //default case, attach to the release
+					releaseService.replaceArtifact(inputArtifactUuid, artId, ord.get().getUuid(),  wu);
+				}
 			}
+			
 			releaseService.reconcileMergedSbomRoutine(rd, wu);
 		}
 
@@ -946,5 +976,20 @@ public class ReleaseDatafetcher {
 										.get());
 		}
 		return artList;
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "artifactReleases")
+	public List<ReleaseData> getArtifactReleases(
+			@InputArgument("artUuid") String artifactUuidStr)
+	{
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		UUID artifactUuid = UUID.fromString(artifactUuidStr);
+		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
+		RelizaObject ro = oad.isPresent() ? oad.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		return releaseService.gatherReleasesForArtifact(artifactUuid, ro.getOrg());
 	}
 }

@@ -48,4 +48,9 @@ public interface SourceCodeEntryRepository extends CrudRepository<SourceCodeEntr
 		value = VariableQueries.FIND_SCE_BY_TICKET_AND_ORG,
 		nativeQuery = true)
 	Optional<SourceCodeEntry> findByTicketAndOrg(String ticket, String org);
+
+	@Query(
+		value = VariableQueries.FIND_SCE_BY_TICKET_AND_ORG,
+		nativeQuery = true)
+	Optional<SourceCodeEntry> findSourceCodeEntriesByArtifact(String ticket, String org);
 }

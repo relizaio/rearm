@@ -13,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.InputArgument;
@@ -26,6 +25,7 @@ import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.OrganizationService;
+import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -50,6 +50,9 @@ public class ArtifactDataFetcher {
 	
 	@Autowired
 	OrganizationService organizationService;
+
+	@Autowired
+	SharedReleaseService sharedReleaseService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifact")
@@ -69,5 +72,103 @@ public class ArtifactDataFetcher {
 		var valList = Arrays.asList(ArtifactType.values());
 		return valList.stream().map(v -> v.toString()).collect(Collectors.toSet());
 	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "artifactBomLatestVersion")
+	public String getArtifactBomLatestVersion(
+			@InputArgument("artUuid") String artifactUuidStr)
+			throws Exception
+	{
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		UUID artifactUuid = UUID.fromString(artifactUuidStr);
+		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
+		RelizaObject ro = oad.isPresent() ? oad.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		return artifactService.getArtifactBomLatestVersion(oad.get().getInternalBom().id(), oad.get().getOrg());
+	}
+
+	// @Transactional
+	// @PreAuthorize("isAuthenticated()")
+	// @DgsData(parentType = "Mutation", field = "updateArtifactManual")
+	// public void updateArtifactManual(DgsDataFetchingEnvironment dfe) throws Exception {
+	// 	JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+	// 	var oud = userService.getUserDataByAuth(auth);
+
+
+	// 	Map<String, Object> variables = dfe.getVariables();
+	// 	Map<String, Object> artifactInput = (Map<String, Object>) variables.get("artifactInput");
+	// 	String artifactUuidStr = (String) variables.get("artifactUuid");
+	// 	UUID artifactUuid = UUID.fromString(artifactUuidStr);
+
+	// 	Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(UUID.fromString((String)artifactInput.get("release")));
+	// 	ReleaseData rd = ord.get();
+	// 	RelizaObject ro = ord.isPresent() ? ord.get() : null;
+	// 	UUID orgUuid = ord.isPresent() ? ord.get().getOrg() : null;
+
+	// 	var oad = artifactService.getArtifactData(artifactUuid);
+
+	// 	WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+
+	// 	authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+
+
+	// 	ComponentData cd = getComponentService.getComponentData(rd.getComponent()).orElseThrow();
+	// 	OrganizationData od = organizationService.getOrganizationData(rd.getOrg()).orElseThrow();
+		
+	// 	Map<String, Object> artifact = (Map<String, Object>) artifactInput.get("artifact");
+	// 	MultipartFile multipartFile = null;
+	// 	if (artifact != null && artifact.containsKey("file")) {
+	// 		multipartFile = (MultipartFile) artifact.get("file");
+			
+	// 	}
+
+	// 	if (artifact != null && multipartFile != null) {
+	// 		artifact.remove("file");
+	// 	}
+
+	// 	ArtifactDto artDto = Utils.OM.convertValue(artifact, ArtifactDto.class);
+	// 	List<String> validationErrors =  new ArrayList<>();
+
+	// 	if(null == artDto.getType()){
+	// 		validationErrors.add("Artifact Type is required.");
+	// 	}
+
+	// 	if(null == artDto.getDisplayIdentifier()){
+	// 		validationErrors.add("Display Identifier is required.");
+	// 	}
+			
+	// 	if(ArtifactType.BOM.equals(artDto.getType())
+	// 		|| ArtifactType.VEX.equals(artDto.getType())
+	// 		|| ArtifactType.VDR.equals(artDto.getType())
+	// 		|| ArtifactType.ATTESTATION.equals(artDto.getType())
+	// 	){
+	// 		if(null == artDto.getBomFormat())
+	// 		{
+	// 			validationErrors.add("Bom Format must be specified");
+	// 		}
+	// 	}
+		
+	// 	if(StoredIn.EXTERNALLY.equals(artDto.getStoredIn())
+	// 		&& artDto.getDownloadLinks().isEmpty())
+	// 	{
+	// 		validationErrors.add("External Artifacts must specify atleast one Download Link");
+	// 	}
+
+	// 	if(!validationErrors.isEmpty()){
+	// 		throw new RelizaException(validationErrors.stream().collect(Collectors.joining(", ")));
+	// 	}
+
+	// 	if (multipartFile != null) {
+	// 		String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
+	// 		artifactService.updateArtifactManual(oad.get(), artDto, orgUuid, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), oad.get().getInternalBom().belongsTo(), hash, artDto.getStripBom()), wu);
+	// 	}
+
+
+	// 	// lessen the validations
+	// 	// copy the artifacy objecy
+	// 	// 
+	// }
 
 }

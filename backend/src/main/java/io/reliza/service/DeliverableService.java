@@ -226,12 +226,12 @@ public class DeliverableService {
 	}
 	
 	public List<UUID> prepareListofDeliverables(List<Map<String, Object>> deliverablesList,
-			UUID branchUUID, String version, WhoUpdated wu) throws RelizaException{
+			UUID branchUUID, String version, WhoUpdated wu) throws Exception{
 		return prepareListofDeliverables(deliverablesList, branchUUID, version, false, wu);
 	}
 	
 	public List<UUID> prepareListofDeliverables(List<Map<String, Object>> deliverablesList, UUID branchUUID,
-			String version, Boolean addOnComplete, WhoUpdated wu) throws RelizaException {
+			String version, Boolean addOnComplete, WhoUpdated wu) throws Exception {
 		List<UUID> deliverables = new LinkedList<>();
 		
 		var bd = branchService.getBranchData(branchUUID).orElseThrow();
@@ -243,8 +243,11 @@ public class DeliverableService {
 		// if(typeNotSet){
 		// 	throw new RelizaException("Deliverables must have type!");
 		// }
-		deliverablesList.stream().forEach( 
-			handlingConsumerWrapper((Map<String, Object> deliverableItem) -> {
+		for (Map<String, Object> deliverableItem : deliverablesList) {
+			
+		// }
+		// deliverablesList.stream().forEach( 
+		// 	handlingConsumerWrapper((Map<String, Object> deliverableItem) -> {
 			
 			//extract arts
 			var arts = (List<Map<String, Object>>) deliverableItem.get("artifacts");
@@ -254,7 +257,7 @@ public class DeliverableService {
 			
 			List<UUID> artIds = new LinkedList<>();
 			if (null != arts && !arts.isEmpty()) {
-				artIds = arts.stream().map((Map<String, Object> artMap) -> {
+				for (Map<String, Object> artMap : arts) {
 					MultipartFile file = (MultipartFile) artMap.get("file");
 					artMap.remove("file");
 					// validations
@@ -265,13 +268,15 @@ public class DeliverableService {
 	
 					// artDto.setFile(file);
 					UUID artId = null;
-					try {
-						artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), artDto.getStripBom()),wu);
-					} catch (Exception e) {
-						throw new RuntimeException(e); // Re-throw the exception
-					}
-					return artId;
-				}).filter(Objects::nonNull).toList();
+					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), artDto.getStripBom()),wu);
+
+					// try {
+					// 	artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), artDto.getStripBom()),wu);
+					// } catch (Exception e) {
+					// 	throw new RuntimeException(e); // Re-throw the exception
+					// }
+					artIds.add(artId);
+				}
 			}
 			deliverableDto.setArtifacts(artIds);
 			// TODO: for now always create artifacts from programmatic - later add logic to parse digests and uris
@@ -326,7 +331,7 @@ public class DeliverableService {
 				Deliverable d = createDeliverable(deliverableDto, wu);
 				deliverables.add(d.getUuid());
 			}
-		},RelizaException.class));
+		}
 		return deliverables;
 	}
 
@@ -348,6 +353,18 @@ public class DeliverableService {
 		Deliverable deliverable = getDeliverable(deliverableId).get();
 		DeliverableData dd = DeliverableData.dataFromRecord(deliverable);
 		List<UUID> artifacts = dd.getArtifacts();
+		artifacts.add(artifactUuid);
+		dd.setArtifacts(artifacts);
+		Map<String,Object> recordData = Utils.dataToRecord(dd);
+		saveDeliverable(deliverable, recordData, wu);
+		return true;
+	}
+	@Transactional
+	public boolean replaceArtifact(UUID deliverableId, UUID artifactIdToReplace, UUID artifactUuid, WhoUpdated wu) throws RelizaException{
+		Deliverable deliverable = getDeliverable(deliverableId).get();
+		DeliverableData dd = DeliverableData.dataFromRecord(deliverable);
+		List<UUID> artifacts = dd.getArtifacts();
+		artifacts.remove(artifactIdToReplace);
 		artifacts.add(artifactUuid);
 		dd.setArtifacts(artifacts);
 		Map<String,Object> recordData = Utils.dataToRecord(dd);
