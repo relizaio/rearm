@@ -90,8 +90,8 @@ const routes : any[] = [
         component: () => import('@/components/JoinOrganization.vue')
     },
     {
-        path: '/downloadArtifact/raw/:artuuid',
-        name: 'JoinOrganization',
+        path: '/downloadArtifact/:arttype/:artuuid',
+        name: 'DownloadTeaArtifact',
         component: () => import('@/components/DownloadTeaArtifactView.vue')
     },
     // {
