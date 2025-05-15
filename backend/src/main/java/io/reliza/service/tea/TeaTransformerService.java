@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import io.reliza.common.CommonVariables;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ReleaseData;
@@ -194,13 +195,38 @@ public class TeaTransformerService {
 		ta.setType(tat);
 		ta.setName(rearmAD.getDisplayIdentifier());
 		
-		TeaArtifactFormat taf = new TeaArtifactFormat();
-		var mediaTypeTag = rearmAD.getTags().stream().filter(t -> CommonVariables.MEDIA_TYPE_FIELD.equals(t.key())).findAny();
-		if (mediaTypeTag.isPresent()) taf.setMimeType(mediaTypeTag.get().value());
-		taf.setChecksums(transformDigestsToTea(rearmAD.getDigests()));
-		taf.setUrl(relizaConfigProps.getBaseuri() + "/api/manual/v1/artifact/" + rearmAD.getUuid() + "/rawdownload");
-		taf.setSignatureUrl(null); // TODO
-		ta.setFormats(List.of(taf));
+		List<TeaArtifactFormat> tafList = new LinkedList<>();
+		if (rearmAD.getStoredIn() == StoredIn.REARM) {
+			TeaArtifactFormat taf = new TeaArtifactFormat();
+			taf.setDescription("Raw Artifact as uploaded to ReARM");
+			var mediaTypeTag = rearmAD.getTags().stream().filter(t -> CommonVariables.MEDIA_TYPE_FIELD.equals(t.key())).findAny();
+			if (mediaTypeTag.isPresent()) taf.setMimeType(mediaTypeTag.get().value());
+			// taf.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO: digest is currently from Rebom OCI
+			taf.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + rearmAD.getUuid());
+			taf.setSignatureUrl(null); // TODO
+			tafList.add(taf);
+			
+			if (rearmAD.getType() == ArtifactType.BOM || rearmAD.getType() == ArtifactType.VDR || rearmAD.getType() == ArtifactType.VEX || rearmAD.getType() == ArtifactType.ATTESTATION) {
+				TeaArtifactFormat tafAugmented = new TeaArtifactFormat();
+				tafAugmented.setDescription("Augmented Artifact uploaded to ReARM");
+				if (mediaTypeTag.isPresent()) tafAugmented.setMimeType(mediaTypeTag.get().value());
+				// tafAugmented.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO
+				tafAugmented.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/augmented/" + rearmAD.getUuid());
+				tafAugmented.setSignatureUrl(null); // TODO
+				tafList.add(tafAugmented);
+			}
+		} else {
+			for (var dlink : rearmAD.getDownloadLinks()) {
+				TeaArtifactFormat taf = new TeaArtifactFormat();
+				taf.setDescription("External Artifact linked from ReARM");
+				taf.setMimeType(dlink.getContent().getContentString());
+				taf.setChecksums(transformDigestsToTea(rearmAD.getDigests()));
+				taf.setUrl(dlink.getUri());
+				taf.setSignatureUrl(null); // TODO
+				tafList.add(taf);
+			}
+		}
+		ta.setFormats(tafList);
 		return ta;
 	}
     

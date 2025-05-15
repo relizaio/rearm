@@ -18,10 +18,20 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class Link {
   public enum ContentEnum {
-		OCI,
-		PLAIN_JSON,
-		OCTET_STREAM,
-		PLAIN_XML
+	  	OCI("application/vnd.oci.image.manifest.v1+json"),
+		PLAIN_JSON("application/json"),
+		OCTET_STREAM("application/octet-stream"),
+		PLAIN_XML("application/xml");
+		
+	    private String contentString = "";
+		
+		private ContentEnum(String contentString) {
+			this.contentString = contentString;
+		}
+		
+		public String getContentString() {
+			return this.contentString;
+		}
   }
 
 	  
