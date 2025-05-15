@@ -89,6 +89,11 @@ const routes : any[] = [
         name: 'JoinOrganization',
         component: () => import('@/components/JoinOrganization.vue')
     },
+    {
+        path: '/downloadArtifact/raw/:artuuid',
+        name: 'JoinOrganization',
+        component: () => import('@/components/DownloadTeaArtifactView.vue')
+    },
     // {
     //     path: '/jira-integration',
     //     name: 'JiraIntegration',
