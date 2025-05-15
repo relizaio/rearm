@@ -6,6 +6,7 @@ package io.reliza.service;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -107,7 +108,9 @@ public class AuthorizationService {
 	}
 
 	public AuthorizationResponse isUserAuthorizedOrgWideGraphQLWithObject(UserData ud, RelizaObject ro, CallType ct) {
-		return isUserAuthorizedOrgWideGraphQLWithObjects(ud, List.of(ro), ct);
+		List<RelizaObject> ros = new LinkedList<>();
+		if (null != ro) ros.add(ro);
+		return isUserAuthorizedOrgWideGraphQLWithObjects(ud, ros, ct);
 	}
 	
 	public AuthorizationResponse doUsersBelongToOrg (Collection<UUID> users, final UUID org) {
