@@ -19,6 +19,16 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
+
+import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.tea.TeaArtifact;
+import io.reliza.model.tea.TeaComponent;
+import io.reliza.service.ArtifactService;
+import io.reliza.service.UserService;
+import io.reliza.service.tea.TeaTransformerService;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+
 import org.springframework.web.context.request.NativeWebRequest;
 
 import jakarta.validation.constraints.*;
@@ -34,6 +44,12 @@ import jakarta.annotation.Generated;
 @RequestMapping("${openapi.transparencyExchange.base-path:/tea/v1}")
 public class ArtifactApiController implements ArtifactApi {
 
+	@Autowired
+	ArtifactService artifactService;
+	
+	@Autowired
+	TeaTransformerService teaTransformerService;
+	
     private final NativeWebRequest request;
 
     @Autowired
@@ -44,6 +60,20 @@ public class ArtifactApiController implements ArtifactApi {
     @Override
     public Optional<NativeWebRequest> getRequest() {
         return Optional.ofNullable(request);
+    }
+    
+    @Override
+    public ResponseEntity<TeaArtifact> getArtifact(
+            @Parameter(name = "uuid", description = "UUID of TEA Artifact in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+        ) {
+    		
+        var oad = artifactService.getArtifactData(uuid);
+        if (oad.isEmpty() || !UserService.USER_ORG.equals(oad.get().getOrg())) {
+        	return ResponseEntity.notFound().build();
+        } else {
+        	TeaArtifact ta = teaTransformerService.transformArtifactToTea(oad.get());
+        	return ResponseEntity.ok(ta);
+        }
     }
 
 }

@@ -17,6 +17,7 @@ import io.reliza.model.tea.TeaComponent;
 import io.reliza.model.tea.TeaRelease;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.UserService;
 import io.reliza.service.tea.TeaTransformerService;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
@@ -59,7 +60,7 @@ public class ComponentApiController implements ComponentApi {
             @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
         ) {
     		var ocd = getComponentService.getComponentData(uuid);
-    		if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT) {
+    		if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
 	        	return ResponseEntity.notFound().build();
 	        } else {
 	    		var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, 300, 0); // TODO - TEA - pagination
@@ -74,7 +75,7 @@ public class ComponentApiController implements ComponentApi {
             @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
         ) {
 	        var ocd = getComponentService.getComponentData(uuid);
-	        if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT) {
+	        if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
 	        	return ResponseEntity.notFound().build();
 	        } else {
 	        	TeaComponent tc = teaTransformerService.transformComponentToTea(ocd.get());

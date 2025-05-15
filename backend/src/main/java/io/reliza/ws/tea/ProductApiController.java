@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.tea.TeaProduct;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.UserService;
 import io.reliza.service.tea.TeaTransformerService;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
@@ -52,7 +53,7 @@ public class ProductApiController implements ProductApi {
             @Parameter(name = "uuid", description = "UUID of the TEA product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
         ) {
             var opd = getComponentService.getComponentData(uuid);
-            if (opd.isEmpty() || opd.get().getType() != ComponentType.PRODUCT) {
+            if (opd.isEmpty() || opd.get().getType() != ComponentType.PRODUCT  || !UserService.USER_ORG.equals(opd.get().getOrg())) {
             	return ResponseEntity.notFound().build();
             } else {
             	TeaProduct tp = teaTransformerService.transformProductToTea(opd.get());

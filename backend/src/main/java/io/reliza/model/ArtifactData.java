@@ -42,6 +42,13 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         MARKETING_DOCUMENT,
         TEST_REPORT,
         SARIF,
+        BUILD_META,
+        CERTIFICATION,
+        FORMULATION,
+        LICENSE,
+        RELEASE_NOTES,
+        SECURITY_TXT,
+        THREAT_MODEL,
         OTHER
     }
     
