@@ -70,7 +70,7 @@ import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseApprovalProgrammaticInput;
-import io.reliza.model.ReleaseData.ReleaseBom;
+import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.ReleaseData.ReleaseDataExtended;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -144,6 +144,9 @@ public class ReleaseService {
 
 	@Autowired
 	private OssReleaseService ossReleaseService;
+
+	@Autowired
+	private ReleaseRebomService releaseRebomService;
 
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
@@ -736,10 +739,10 @@ public class ReleaseService {
 	private UUID matchOrGenerateSingleBomForRelease(ReleaseData rd, RebomOptions rebomMergeOptions, Boolean forced, UUID componentFilter, WhoUpdated wu) throws RelizaException {
 		// for component structure and 
 		UUID retRebomId = null;
+		List<ReleaseBom> reboms = releaseRebomService.getReleaseBoms(rd);
 		// match with request
 		// log.info("rebomMergeOptions: {}",rebomMergeOptions);
-		// log.info("rdReboms: {}",rd.getReboms() );
-		ReleaseBom matchedBom = rd.getReboms().stream()
+		ReleaseBom matchedBom = reboms.stream()
 			.filter(rb -> 	
 			Objects.equals(rb.rebomMergeOptions().belongsTo(), rebomMergeOptions.belongsTo()) 
 				&& rb.rebomMergeOptions().tldOnly().equals(rebomMergeOptions.tldOnly()) 
@@ -1338,9 +1341,9 @@ public class ReleaseService {
 		return ReleaseData.dataFromRecord(release);
 	}
 	
-	private ReleaseData addRebom(ReleaseData releaseData, ReleaseBom rebom, WhoUpdated wu) throws RelizaException {
+	private void addRebom(ReleaseData releaseData, ReleaseBom rebom, WhoUpdated wu) throws RelizaException {
 		List<ReleaseBom> newBoms = new ArrayList<>(); 
-		List<ReleaseBom> currentBoms = releaseData.getReboms();
+		List<ReleaseBom> currentBoms = releaseRebomService.getReleaseBoms(releaseData);
 		var currentBomSize = currentBoms.size();
 		// find and replace existing bom matching the current merge crieteria
 		// TODO: delete replaced boms
@@ -1350,10 +1353,9 @@ public class ReleaseService {
 		newBoms.addAll(filteredBoms);
 		newBoms.add(rebom);
 		log.info("RGDEBUG: add rebom on release: {}, new Bom: {}, replaced: {}", releaseData.getUuid(), rebom.rebomId(), currentBomSize  == newBoms.size());
-		releaseData.setReboms(newBoms);
-		ReleaseDto releaseDto = Utils.OM.convertValue(Utils.dataToRecord(releaseData), ReleaseDto.class);
-		Release release = ossReleaseService.updateRelease(releaseDto, true, wu);
-		return ReleaseData.dataFromRecord(release);
+		releaseRebomService.setReboms(releaseData, newBoms, wu);
+		// ReleaseDto releaseDto = Utils.OM.convertValue(Utils.dataToRecord(releaseData), ReleaseDto.class);
+		// ossReleaseService.updateRelease(releaseDto, true, wu);
 	}
 	
 	public Set<String> findDistinctReleaseTagKeysOfOrg(UUID org) {
@@ -1717,8 +1719,9 @@ public class ReleaseService {
 		// Set<ReleaseData> allRds = locateAllProductsOfRelease(rd, new HashSet<>());
 		// log.info("allRds rds: {}", allRds);
 		for (ReleaseData r : rds) {
-			if(null != r.getReboms() && r.getReboms().size() > 0){
-				for (ReleaseBom releaseBom : r.getReboms()) {
+			List<ReleaseBom> reboms = releaseRebomService.getReleaseBoms(rd);
+			if(null != reboms && reboms.size() > 0){
+				for (ReleaseBom releaseBom : reboms) {
 					try {
 						matchOrGenerateSingleBomForRelease(r, releaseBom.rebomMergeOptions(), true, rd.getUuid(), wu);
 					} catch (RelizaException e) {
@@ -1729,13 +1732,6 @@ public class ReleaseService {
 		}
 		log.info("Reconcile Routine end");
 
-		// rds.stream().forEach((ReleaseData r) -> {
-		// 	if(null != r.getReboms() && r.getReboms().size() > 0){
-		// 		r.getReboms().stream().forEach(bom -> {
-		// 			matchOrGenerateSingleBomForRelease(r, bom.rebomMergeOptions(), wu);
-		// 		});
-		// 	}
-		// });
 	}
 	
 }

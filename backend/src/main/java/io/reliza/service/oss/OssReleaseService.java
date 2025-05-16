@@ -337,9 +337,7 @@ public class OssReleaseService {
 			inboundDelDiff.forEach(idd -> rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.INBOUND_DELIVERY, idd.diffAction(),
 					null, null, idd.object(), ZonedDateTime.now(), wu)));
 		}
-		if (null != releaseDto.getReboms()) {
-			rData.setReboms(releaseDto.getReboms());
-		}
+	
 		if (null != releaseDto.getIdentifiers()) {
 			rData.setIdentifiers(releaseDto.getIdentifiers());
 		}

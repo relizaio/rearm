@@ -387,6 +387,7 @@ public class CommonVariables {
 		ORGANIZATIONS("organizations"),
 		PROPERTIES(CommonVariables.PROPERTIES_FIELD),
 		RELEASES(CommonVariables.RELEASES_FIELD),
+		RELEASE_REBOMS("release_reboms"),
 		TICKETS(CommonVariables.TICKETS_FIELD),
 		SECRETS("secrets"),
 		SOURCE_CODE_ENTRIES("source_code_entries"),

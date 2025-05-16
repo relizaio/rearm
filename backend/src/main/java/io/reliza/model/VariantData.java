@@ -26,7 +26,6 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.common.ValidationResult;
-import io.reliza.model.ReleaseData.ReleaseBom;
 import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.dto.VariantDto;
@@ -115,8 +114,6 @@ public class VariantData extends RelizaDataParent implements RelizaObject, Gener
 	@JsonProperty(CommonVariables.REBOM_UUID_FIELD)
 	private UUID rebomUuid;
 
-	@JsonProperty
-	private List<ReleaseBom> reboms = new ArrayList<>();
 	
 	private List<ReleaseUpdateEvent> updateEvents = new LinkedList<>();
 

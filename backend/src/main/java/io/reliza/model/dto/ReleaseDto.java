@@ -16,7 +16,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.model.ParentRelease;
-import io.reliza.model.ReleaseData.ReleaseBom;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.tea.TeaIdentifier;
@@ -60,9 +59,6 @@ public class ReleaseDto {
 	
 	@JsonProperty
 	private ReleaseLifecycle lifecycle;
-
-	@JsonProperty(CommonVariables.REBOMS_FIELD)
-	private List<ReleaseBom> reboms;
 	
 	@JsonProperty
 	private List<TeaIdentifier> identifiers;

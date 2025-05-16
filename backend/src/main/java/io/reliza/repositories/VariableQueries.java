@@ -273,6 +273,17 @@ class VariableQueries {
 			""";
 			
 	/*
+	 * ReleaseReboms
+	 */
+
+	 protected static final String FIND_RELEASE_REBOM_BY_RELEASE_AND_ORG = """
+		SELECT * from rearm.release_reboms r where r.record_data->>'release' = :releaseUuidAsString
+		AND r.record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+		""";
+
+
+
+	/*
 	 * Releases
 	 */
 
