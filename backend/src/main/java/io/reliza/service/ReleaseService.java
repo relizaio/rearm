@@ -110,10 +110,16 @@ public class ReleaseService {
 	private DeliverableService deliverableService;
 	
 	@Autowired
+	private GetDeliverableService getDeliverableService;
+	
+	@Autowired
 	private BranchService branchService;
 	
 	@Autowired
 	private SourceCodeEntryService sourceCodeEntryService;
+	
+	@Autowired
+	private GetSourceCodeEntryService getSourceCodeEntryService;
 	
 	@Autowired
 	private GetComponentService getComponentService;
@@ -147,6 +153,9 @@ public class ReleaseService {
 
 	@Autowired
 	private ReleaseRebomService releaseRebomService;
+	
+	@Autowired
+	private ArtifactGatherService artifactGatherService;
 
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
@@ -238,10 +247,10 @@ public class ReleaseService {
 	
 	private List<Release> getReleasesByCommitOrTag (String commit, UUID orgUuid) {
 		List<Release> releases = new LinkedList<>();
-		List<SourceCodeEntry> sceList = sourceCodeEntryService.getSourceCodeEntriesByCommitTag(orgUuid, commit);
+		List<SourceCodeEntry> sceList = getSourceCodeEntryService.getSourceCodeEntriesByCommitTag(orgUuid, commit);
 		// TODO see if we can query db by array later
 		sceList.forEach(sce -> {
-			releases.addAll(repository.findReleaseBySce(sce.getUuid().toString(), orgUuid.toString()));
+			releases.addAll(sharedReleaseService.findReleasesBySce(sce.getUuid(), orgUuid));
 		});
 		return releases;
 	}
@@ -264,7 +273,7 @@ public class ReleaseService {
 		Optional<Release> or = Optional.empty();
 		
 		//Find the latest commit which references the ticket
-		Optional<SourceCodeEntry> osce = sourceCodeEntryService.findLatestSceWithTicketAndOrg(ticket, org);
+		Optional<SourceCodeEntry> osce = getSourceCodeEntryService.findLatestSceWithTicketAndOrg(ticket, org);
 		
 		//Find the commit's Release
 		if(osce.isPresent())
@@ -275,46 +284,23 @@ public class ReleaseService {
 		
 		return ord;
 	}
-	/**
-	 * We expect no more than one release here, but will log warn if not
-	 * @param deliverableUuid
-	 * @param orgUuid - organization UUID - will only search for this org + external org
-	 * @return
-	 */
-	public Optional<ReleaseData> getReleaseByOutboundDeliverable (UUID deliverableUuid, UUID orgUuid) {
-		Optional<Release> or = Optional.empty();
-		List<Release> releases = repository.findReleasesByDeliverable(deliverableUuid.toString(), orgUuid.toString());
-		if (null != releases && !releases.isEmpty()) {
-			or = Optional.of(releases.get(0));
-			if (releases.size() > 1) {
-				log.warn("More than one release returned per deliverable uuid = " + deliverableUuid);
-			}
-		}
-		Optional<ReleaseData> ord = Optional.empty();
-		if (or.isPresent()) ord = Optional.of(ReleaseData.dataFromRecord(or.get()));
-		return ord;
-	}
-	
-	public List<Release> findReleasesByArtifact (UUID artifactUuid, UUID orgUuid) {
-		return repository.findReleasesByArtifact(artifactUuid.toString(), orgUuid.toString());
-	}
 	
 	public Optional<ReleaseData> getReleaseDataByOutboundDeliverableDigest (String digest, UUID orgUuid) {
 		Optional<ReleaseData> ord = Optional.empty();
-		Optional<DeliverableData> oad = deliverableService.getDeliverableDataByDigest(digest, orgUuid);
+		Optional<DeliverableData> oad = getDeliverableService.getDeliverableDataByDigest(digest, orgUuid);
 		if (oad.isPresent()) {
 			// locate lowest level release referencing this artifact
 			// note that org uuid may be external that's why it may be different
-			ord = getReleaseByOutboundDeliverable(oad.get().getUuid(), oad.get().getOrg());
+			ord = sharedReleaseService.getReleaseByOutboundDeliverable(oad.get().getUuid(), oad.get().getOrg());
 		}
 		return ord;
 	}
 	
 	public List<ReleaseData> listReleaseDataByBuildId (String query, UUID orgUuid) {
 		List<ReleaseData> releases = new LinkedList<>();
-		List<DeliverableData> deliverables = deliverableService.getDeliverableDataByBuildId(query, orgUuid);
+		List<DeliverableData> deliverables = getDeliverableService.getDeliverableDataByBuildId(query, orgUuid);
 		deliverables.forEach(d -> {
-			Optional<ReleaseData> ord = getReleaseByOutboundDeliverable(d.getUuid(), d.getOrg());
+			Optional<ReleaseData> ord = sharedReleaseService.getReleaseByOutboundDeliverable(d.getUuid(), d.getOrg());
 			if (ord.isPresent()) {
 				releases.add(ord.get());
 			}
@@ -655,7 +641,7 @@ public class ReleaseService {
 			deliverableUuids = rd.getInboundDeliverables();
 			deliverableUuids.addAll(variantService.getBaseVariantForRelease(rd).getOutboundDeliverables());
 		}
-		return deliverableService.getDeliverableDataList(deliverableUuids);
+		return getDeliverableService.getDeliverableDataList(deliverableUuids);
 	}
 
 	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu) throws RelizaException, JsonProcessingException{
@@ -693,7 +679,7 @@ public class ReleaseService {
 		if(null == typeFilter || typeFilter.equals(ArtifactBelongsTo.SCE)){
 			List<UUID> sceRebomIds  = null;
 			if(null != rd.getSourceCodeEntry())
-				sceRebomIds = sourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get().getArtifacts().stream()
+				sceRebomIds = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get().getArtifacts().stream()
 				.filter(scea -> rd.getComponent().equals(scea.componentUuid()))
 				.map(scea -> artifactService.getArtifactData(scea.artifactUuid()))
 				.filter(art -> art.isPresent() && null != art.get().getInternalBom())
@@ -831,7 +817,7 @@ public class ReleaseService {
 		// locate own sce if present
 		UUID sourceCodeEntryUuid = rd.releaseData().getSourceCodeEntry();
 		if (null != sourceCodeEntryUuid) {
-			Optional<SourceCodeEntryData> osced = sourceCodeEntryService.getSourceCodeEntryData(sourceCodeEntryUuid);
+			Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(sourceCodeEntryUuid);
 			if (osced.isPresent()) {
 				VcsRepositoryData vcsrd = vcsRepositoryService.getVcsRepositoryData(osced.get().getVcs()).get();
 				Commit commit = new Commit();
@@ -852,7 +838,7 @@ public class ReleaseService {
 		if (pd.getType() == ComponentType.PRODUCT) {
 			retComponents.add(parseProductReleaseIntoCycloneDxComponent(rd));
 		} else if (null != deliverableUuids) {
-			List<DeliverableData> dds = deliverableService.getDeliverableDataList(deliverableUuids);
+			List<DeliverableData> dds = getDeliverableService.getDeliverableDataList(deliverableUuids);
 			for (DeliverableData dd : dds) {
 				var tags = dd.getTags();
 				Boolean addedOnComplete = tags.stream().anyMatch(tr -> tr.key().equals(CommonVariables.ADDED_ON_COMPLETE) && tr.value().equalsIgnoreCase("true"));
@@ -947,7 +933,7 @@ public class ReleaseService {
 		Optional<SourceCodeEntryData> osced = Optional.empty();
 
 		if(rd.getSourceCodeEntry() != null)
-			osced = sourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
+			osced = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
 		
 		if(osced.isPresent())
 			commitDate = osced.get().getDateActual();
@@ -1386,7 +1372,7 @@ public class ReleaseService {
 		if (removed) {
 			Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
 			if (oad.isPresent()) {
-				List<Release> or = findReleasesByArtifact(artifactUuid, oad.get().getOrg());
+				List<Release> or = sharedReleaseService.findReleasesByArtifact(artifactUuid, oad.get().getOrg());
 				if (or.isEmpty()) {
 					// archive artifact
 					artifactService.archiveArtifact(artifactUuid, wu);
@@ -1577,47 +1563,6 @@ public class ReleaseService {
 		return ord;
 	}
 	
-	private Set<UUID> gatherReleaseArtifacts (ReleaseData rd) {
-		Set<UUID> artifactIds = new HashSet<>(rd.getArtifacts());
-		if (null != rd.getSourceCodeEntry()) {
-			var sce = sourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get();
-			List<UUID> sceArtIds = sce.getArtifacts().stream().filter(scea -> rd.getComponent().equals(scea.componentUuid())).map(scea -> scea.artifactUuid()).toList();
-			artifactIds.addAll(sceArtIds);
-		}
-		// skip inbound deliverables
-//		if (null != rd.getInboundDeliverables() && !rd.getInboundDeliverables().isEmpty()) {
-//			rd.getInboundDeliverables().forEach(inbd -> {
-//				var arts = deliverableService.getDeliverableData(inbd).get().getArtifacts();
-//				if (null != arts && !arts.isEmpty()) artifactIds.addAll(arts);
-//			});		
-//		}
-		variantService.getVariantsOfRelease(rd.getUuid()).forEach(rvd -> {
-			if (null != rvd.getOutboundDeliverables() && !rvd.getOutboundDeliverables().isEmpty()) {
-				rvd.getOutboundDeliverables().forEach(outbd -> {
-					var arts = deliverableService.getDeliverableData(outbd).get().getArtifacts();
-					if (null != arts && !arts.isEmpty()) artifactIds.addAll(arts);
-				});
-			}
-		});
-		return artifactIds;
-	}
-
-	public Set<UUID> gatherReleaseIdsForArtifact(UUID artifactUuid, UUID orgUuid){
-		Set<UUID> releases = new HashSet<>();
-		Set<UUID> allDirectReleases = findReleasesByArtifact(artifactUuid, orgUuid).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
-		Set<UUID> allSceReleases = repository.findReleasesSharingSceArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
-		Set<UUID> allDeliverableReleases = repository.findReleasesSharingDeliverableArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
-		releases.addAll(allDirectReleases);
-		releases.addAll(allSceReleases);
-		releases.addAll(allDeliverableReleases);
-		return releases;
-	}
-
-	public List<ReleaseData> gatherReleasesForArtifact(UUID artifactUuid, UUID orgUuid){
-		Set<UUID> releaseIds = gatherReleaseIdsForArtifact(artifactUuid, orgUuid);
-		return sharedReleaseService.getReleaseDataList(releaseIds, orgUuid);
-	}
-	
 	public void computeReleaseMetrics (UUID releaseId) {
 		Optional<Release> or = sharedReleaseService.getRelease(releaseId);
 		if (or.isPresent()) {
@@ -1631,7 +1576,7 @@ public class ReleaseService {
 		var rd = ReleaseData.dataFromRecord(r);
 		var originalMetrics = null != rd.getMetrics() ? rd.getMetrics().clone() : null;
 		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
-		var allReleaseArts = gatherReleaseArtifacts(rd);
+		var allReleaseArts = artifactGatherService.gatherReleaseArtifacts(rd);
 		allReleaseArts.forEach(aid -> {
 			var ad = artifactService.getArtifactData(aid);
 			rmd.mergeWithByContent(ad.get().getMetrics());
@@ -1712,7 +1657,6 @@ public class ReleaseService {
 	
 	@Async
 	public void reconcileMergedSbomRoutine(ReleaseData rd, WhoUpdated wu) {
-		// rd
 		log.info("RGDEBUG: Reconcile Merged Sboms Routine started for release: {}", rd.getUuid());
 		Set<ReleaseData> rds = sharedReleaseService.greedylocateProductsOfRelease(rd);
 		// log.info("greedy located rds: {}", rds);

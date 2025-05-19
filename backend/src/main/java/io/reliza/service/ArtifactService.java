@@ -182,6 +182,24 @@ public class ArtifactService {
 	public void saveAll(List<Artifact> artifacts){
 		repository.saveAll(artifacts);
 	}
+	
+	public boolean isRebomStoreable (ArtifactDto artifactDto) {
+		return artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) && (
+				artifactDto.getType().equals(ArtifactType.BOM)
+				|| artifactDto.getType().equals(ArtifactType.VDR) 
+				|| artifactDto.getType().equals(ArtifactType.VEX) 
+				|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
+			);
+	}
+	
+	public boolean isRebomStoreable (ArtifactData artifactData) {
+		return artifactData.getBomFormat().equals(BomFormat.CYCLONEDX) && (
+				artifactData.getType().equals(ArtifactType.BOM)
+				|| artifactData.getType().equals(ArtifactType.VDR) 
+				|| artifactData.getType().equals(ArtifactType.VEX) 
+				|| artifactData.getType().equals(ArtifactType.ATTESTATION)
+			);
+	}
 
 	@Transactional
 	public UUID uploadArtifact(ArtifactDto artifactDto, UUID orgUuid, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException{
@@ -193,12 +211,7 @@ public class ArtifactService {
 		Artifact art = null;
 
 		if(artifactDto.getStoredIn().equals(StoredIn.REARM)){
-			if( artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) && (
-				artifactDto.getType().equals(ArtifactType.BOM)
-				|| artifactDto.getType().equals(ArtifactType.VDR) 
-				|| artifactDto.getType().equals(ArtifactType.VEX) 
-				|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
-			)){
+			if(isRebomStoreable(artifactDto)){
 				JsonNode bomJson;
 				try {
 					bomJson = Utils.readJsonFromResource(file);

@@ -38,6 +38,7 @@ import io.reliza.model.dto.SceDto;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
@@ -53,6 +54,9 @@ public class SourceCodeEntryDataFetcher {
 	
 	@Autowired
 	SourceCodeEntryService sourceCodeEntryService;
+	
+	@Autowired
+	GetSourceCodeEntryService getSourceCodeEntryService;
 
 	@Autowired
 	ArtifactService artifactService;
@@ -76,7 +80,7 @@ public class SourceCodeEntryDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		UUID sceUuid = UUID.fromString(sceUuidStr);
 		
-		Optional<SourceCodeEntryData> osced = sourceCodeEntryService.getSourceCodeEntryData(sceUuid);
+		Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(sceUuid);
 		RelizaObject ro = osced.isPresent() ? osced.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		return osced.get();

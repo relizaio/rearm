@@ -637,4 +637,13 @@ class VariableQueries {
 				WHERE am.record_data->>'org' = :orgUuidAsString
 				AND am.record_data->>'dateKey' = :dateKey
 			""";
+
+	/*
+	 * Artifact Collections
+	 */
+	public static final String FIND_ACOLLECTIONS_BY_RELEASE = """
+			SELECT * from rearm.acollections a
+			    WHERE a.record_data->>'release' = :releaseUuidAsString
+			    ORDER BY a.record_data->'version' DESC
+			""";
 }

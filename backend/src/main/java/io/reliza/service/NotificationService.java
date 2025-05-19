@@ -42,13 +42,13 @@ public class NotificationService {
 	private BranchService branchService;
 	
 	@Autowired
-	private SourceCodeEntryService sourceCodeEntryService;
+	private GetSourceCodeEntryService getSourceCodeEntryService;
 	
 	@Autowired
 	private VcsRepositoryService vcsRepositoryService;
 
 	@Autowired
-	private DeliverableService deliverableService;
+	private GetDeliverableService getDeliverableService;
 	
 	private RelizaConfigProps relizaConfigProps;
 	
@@ -155,7 +155,7 @@ public class NotificationService {
 		//		">, version <" + releaseUri + "|" + rd.getVersion() + ">";
 
 		if(rd.getSourceCodeEntry() != null && pd.getVcs() != null){
-			var osced = sourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
+			var osced = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
 			var ovcsrd = vcsRepositoryService.getVcsRepositoryData(pd.getVcs());
 			if(osced.isPresent() && ovcsrd.isPresent()) {
 				payloadWrapper.add(new TextPayload(", commit ", null));
@@ -170,7 +170,7 @@ public class NotificationService {
 		if (rd.getArtifacts().size() != 0) {
 			List<TextPayload> buildUris = new ArrayList<>();
 			for (UUID uuid : rd.getArtifacts()) {
-				var odd = deliverableService.getDeliverableData(uuid);
+				var odd = getDeliverableService.getDeliverableData(uuid);
 				if (odd.isPresent() && !ObjectUtils.isEmpty(odd.get().getSoftwareMetadata()) &&
 						!ObjectUtils.isEmpty(odd.get().getSoftwareMetadata().getBuildUri())) {
 					buildUris.add(

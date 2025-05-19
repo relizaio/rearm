@@ -47,6 +47,7 @@ import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.GetDeliverableService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedReleaseService;
@@ -63,6 +64,9 @@ public class DeliverableDataFetcher {
 	
 	@Autowired
 	DeliverableService deliverableService;
+	
+	@Autowired
+	GetDeliverableService getDeliverableService;
 	
 	@Autowired
 	UserService userService;
@@ -94,7 +98,7 @@ public class DeliverableDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID deliverable = UUID.fromString(deliverableUuidStr);
-		Optional<DeliverableData> oad = deliverableService.getDeliverableData(deliverable);
+		Optional<DeliverableData> oad = getDeliverableService.getDeliverableData(deliverable);
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		return oad.get();
@@ -109,7 +113,7 @@ public class DeliverableDataFetcher {
 		Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
 		RelizaObject ro = opd.isPresent() ? opd.get() : null;
         authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
-		return deliverableService.listDeliverableDataByComponent(componentUuid);
+		return getDeliverableService.listDeliverableDataByComponent(componentUuid);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

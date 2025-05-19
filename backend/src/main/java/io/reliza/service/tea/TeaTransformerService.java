@@ -10,14 +10,17 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.model.AcollectionData;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
@@ -27,9 +30,13 @@ import io.reliza.model.tea.TeaArtifactChecksum;
 import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.model.tea.TeaArtifactFormat;
 import io.reliza.model.tea.TeaArtifactType;
+import io.reliza.model.tea.TeaCollection;
+import io.reliza.model.tea.TeaCollectionUpdateReason;
+import io.reliza.model.tea.TeaCollectionUpdateReasonType;
 import io.reliza.model.tea.TeaComponent;
 import io.reliza.model.tea.TeaProduct;
 import io.reliza.model.tea.TeaRelease;
+import io.reliza.service.ArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.ws.RelizaConfigProps;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +47,9 @@ public class TeaTransformerService {
 	
 	@Autowired
 	SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+	ArtifactService artifactService;
 	
 	private RelizaConfigProps relizaConfigProps;
 	
@@ -188,6 +198,18 @@ public class TeaTransformerService {
 		return tacList;
 	}
 	
+	private String resolveMediaType(BomFormat bomFormat, String initialType) {
+		String resolvedType;
+		if ("application/json".equals(initialType) && bomFormat == BomFormat.CYCLONEDX) {
+			resolvedType = "vnd.cyclonedx+json";
+		} else if ("application/xml".equals(initialType) && bomFormat == BomFormat.CYCLONEDX){
+			resolvedType = "vnd.cyclonedx+xml";
+		} else {
+			resolvedType = initialType;
+		}
+		return resolvedType;
+	}
+	
 	public TeaArtifact transformArtifactToTea(ArtifactData rearmAD) {
 		TeaArtifact ta = new TeaArtifact();
 		ta.setUuid(rearmAD.getUuid());
@@ -200,7 +222,7 @@ public class TeaTransformerService {
 			TeaArtifactFormat taf = new TeaArtifactFormat();
 			taf.setDescription("Raw Artifact as uploaded to ReARM");
 			var mediaTypeTag = rearmAD.getTags().stream().filter(t -> CommonVariables.MEDIA_TYPE_FIELD.equals(t.key())).findAny();
-			if (mediaTypeTag.isPresent()) taf.setMimeType(mediaTypeTag.get().value());
+			if (mediaTypeTag.isPresent()) taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
 			// taf.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO: digest is currently from Rebom OCI
 			taf.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + rearmAD.getUuid());
 			taf.setSignatureUrl(null); // TODO
@@ -209,7 +231,7 @@ public class TeaTransformerService {
 			if (rearmAD.getType() == ArtifactType.BOM || rearmAD.getType() == ArtifactType.VDR || rearmAD.getType() == ArtifactType.VEX || rearmAD.getType() == ArtifactType.ATTESTATION) {
 				TeaArtifactFormat tafAugmented = new TeaArtifactFormat();
 				tafAugmented.setDescription("Augmented Artifact uploaded to ReARM");
-				if (mediaTypeTag.isPresent()) tafAugmented.setMimeType(mediaTypeTag.get().value());
+				if (mediaTypeTag.isPresent()) tafAugmented.setMimeType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
 				// tafAugmented.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO
 				tafAugmented.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/augmented/" + rearmAD.getUuid());
 				tafAugmented.setSignatureUrl(null); // TODO
@@ -219,7 +241,7 @@ public class TeaTransformerService {
 			for (var dlink : rearmAD.getDownloadLinks()) {
 				TeaArtifactFormat taf = new TeaArtifactFormat();
 				taf.setDescription("External Artifact linked from ReARM");
-				taf.setMimeType(dlink.getContent().getContentString());
+				taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), dlink.getContent().getContentString()));
 				taf.setChecksums(transformDigestsToTea(rearmAD.getDigests()));
 				taf.setUrl(dlink.getUri());
 				taf.setSignatureUrl(null); // TODO
@@ -229,5 +251,39 @@ public class TeaTransformerService {
 		ta.setFormats(tafList);
 		return ta;
 	}
+	
+	public TeaCollection transformAcollectionToTea(AcollectionData acd) {
+		TeaCollection tc = new TeaCollection();
+		tc.setUuid(acd.getRelease());
+		tc.setVersion(Integer.getInteger(acd.getVersion().toString()));
+		TeaCollectionUpdateReason tcur = new TeaCollectionUpdateReason();
+		tcur.setType(acd.getUpdateReason());
+		tc.setUpdateReason(tcur);
+		OffsetDateTime collectionDate = acd.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
+		tc.setDate(collectionDate);
+		List<TeaArtifact> teaArtifacts = acd.getArtifacts().stream().map(x -> {
+			Optional<ArtifactData> oad = artifactService.getArtifactData(x.artifactUuid());
+			if (oad.isEmpty() || !acd.getOrg().equals(oad.get().getOrg())) {
+				log.error("Mismatching org: ace uuid = " + acd.getUuid() + ", art UUID = " + x.artifactUuid());
+				throw new IllegalStateException("Incorrect Artifact Data, Please contact administrator");
+			}
+			return transformArtifactToTea(oad.get());
+		}).toList();
+		tc.setArtifacts(teaArtifacts);
+		return tc;
+	}
+	
+//	public TeaCollection obtainTeaCollectionFromRelease(ReleaseData rearmRD) {
+//		TeaCollection tc = new TeaCollection();
+//		tc.setUuid(rearmRD.getUuid());
+//		tc.setVersion(1); // TODO
+//		TeaCollectionUpdateReason tcur = new TeaCollectionUpdateReason();
+//		tcur.setType(TeaCollectionUpdateReasonType.INITIAL_RELEASE); // TODO
+//		tc.setUpdateReason(tcur);
+//		
+//		tc.setDate(OffsetDateTime.now()); // TODO
+//		tc.setArtifacts(null); // TODO
+//		
+//	}
     
 }

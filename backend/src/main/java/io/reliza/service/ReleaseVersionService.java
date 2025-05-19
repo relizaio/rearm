@@ -58,6 +58,9 @@ public class ReleaseVersionService {
 	@Autowired
     private SourceCodeEntryService sourceCodeEntryService;
 	
+	@Autowired
+    private GetSourceCodeEntryService getSourceCodeEntryService;
+	
 	@Transactional
 	public VersionResponse getNewVersionWrapper(GetNewVersionDto getNewVersionDto, WhoUpdated wu) throws Exception{
 		VersionResponse vr = null;
@@ -109,7 +112,7 @@ public class ReleaseVersionService {
 				Set<String> rejectedCommits = new HashSet<>();
 				if (latestRelease.isPresent() && !currentRelease.isEmpty()) {
 					rejectedCommits = sharedReleaseService.listAllReleasesBetweenReleases(currentRelease.get(0).getUuid(), latestRelease.get().getUuid()).stream()
-							.flatMap(release -> sourceCodeEntryService.getSceDataList(release.getAllCommits(), Collections.singleton(pd.getOrg())).stream()
+							.flatMap(release -> getSourceCodeEntryService.getSceDataList(release.getAllCommits(), Collections.singleton(pd.getOrg())).stream()
 									.map(sce -> sce.getCommit())
 									.collect(Collectors.toList())
 									.stream()

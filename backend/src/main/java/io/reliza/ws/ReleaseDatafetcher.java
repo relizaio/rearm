@@ -71,12 +71,16 @@ import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.service.AcollectionService;
 import io.reliza.service.ApiKeyService;
+import io.reliza.service.ArtifactGatherService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.GetDeliverableService;
+import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.RebomService;
 import io.reliza.service.ReleaseService;
@@ -115,16 +119,19 @@ public class ReleaseDatafetcher {
 	SourceCodeEntryService sourceCodeEntryService;
 	
 	@Autowired
+	GetSourceCodeEntryService getSourceCodeEntryService;
+	
+	@Autowired
 	DeliverableService deliverableService;
+	
+	@Autowired
+	GetDeliverableService getDeliverableService;
 	
 	@Autowired
 	ArtifactService artifactService;
 	
 	@Autowired
 	GetComponentService getComponentService;
-
-	@Autowired
-	SourceCodeEntryService sceService;
 	
 	@Autowired
 	AuthorizationService authorizationService;
@@ -140,6 +147,12 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	VariantService variantService;
+	
+	@Autowired
+	ArtifactGatherService artifactGatherService;
+	
+	@Autowired
+	AcollectionService acollectionService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "release")
@@ -378,11 +391,11 @@ public class ReleaseDatafetcher {
 		if (ApiTypeEnum.COMPONENT == ahp.getType() && ocd.isPresent()) orgId = ocd.get().getOrg(); 
 		authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, orgId, CallType.READ, ro);
 		
-		Optional<Deliverable> od = deliverableService.getDeliverableByDigestAndComponent(hash, componentId);
+		Optional<Deliverable> od = getDeliverableService.getDeliverableByDigestAndComponent(hash, componentId);
 		// locate lowest level release referencing this artifact
 		// we pass component from artifact since we already scoped artifact search to only this component in getArtifactByDigestAndComponent
 		Optional<ReleaseData> ord = Optional.empty();
-		if (od.isPresent()) ord = releaseService.getReleaseByOutboundDeliverable(od.get().getUuid(), orgId);
+		if (od.isPresent()) ord = sharedReleaseService.getReleaseByOutboundDeliverable(od.get().getUuid(), orgId);
 		return ord;
 	}
 	
@@ -641,7 +654,7 @@ public class ReleaseDatafetcher {
 		if(StoredIn.EXTERNALLY.equals(artDto.getStoredIn())
 			&& artDto.getDownloadLinks().isEmpty())
 		{
-			validationErrors.add("External Artifacts must specify atleast one Download Link");
+			validationErrors.add("External Artifacts must specify at least one Download Link");
 		}
 
 		if(!validationErrors.isEmpty()){
@@ -686,6 +699,9 @@ public class ReleaseDatafetcher {
 				} else { //default case, attach to the release
 					releaseService.replaceArtifact(inputArtifactUuid, artId, ord.get().getUuid(),  wu);
 				}
+			} else {
+				var releases = sharedReleaseService.findReleasesByArtifact(artId, orgUuid);
+				releases.forEach(r -> acollectionService.resolveReleaseCollection(r.getUuid(), wu));
 			}
 			
 			releaseService.reconcileMergedSbomRoutine(rd, wu);
@@ -726,6 +742,7 @@ public class ReleaseDatafetcher {
 		if (ord.isEmpty()) ord = releaseService.getReleaseDataByComponentAndVersion(componentId, addArtifactDto.getVersion());
 		return null;
 		// TODO
+		// also need to check for whether explicitly recompute collections here
 		// return releaseService.addArtifacts(ord.get(), addArtifactDto.getArtifacts(), ar.getWhoUpdated());
 	}
 
@@ -893,7 +910,7 @@ public class ReleaseDatafetcher {
 		if (rd.getSourceCodeEntry() == null) {
 			return null;
 		}
-		return sourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get();
+		return getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get();
 	}
 	
 	@DgsData(parentType = "Release", field = "commitsDetails")
@@ -902,7 +919,7 @@ public class ReleaseDatafetcher {
 		if (rd.getCommits() == null || rd.getCommits().isEmpty()) {
 			return new LinkedList<>();
 		}
-		return rd.getCommits().stream().map(c -> sourceCodeEntryService.getSourceCodeEntryData(c).get()).collect(Collectors.toList());
+		return rd.getCommits().stream().map(c -> getSourceCodeEntryService.getSourceCodeEntryData(c).get()).collect(Collectors.toList());
 	}
 	
 	@DgsData(parentType = "Release", field = "artifactDetails")
@@ -925,7 +942,7 @@ public class ReleaseDatafetcher {
 
 		List<DeliverableData> artList = new LinkedList<>();
 		for (UUID delUuid : rd.getInboundDeliverables()) {
-			artList.add(deliverableService
+			artList.add(getDeliverableService
 										.getDeliverableData(delUuid)
 										.get());
 		}
@@ -971,7 +988,7 @@ public class ReleaseDatafetcher {
 
 		List<DeliverableData> artList = new LinkedList<>();
 		for (UUID delUuid : vd.getOutboundDeliverables()) {
-			artList.add(deliverableService
+			artList.add(getDeliverableService
 										.getDeliverableData(delUuid)
 										.get());
 		}
@@ -990,6 +1007,6 @@ public class ReleaseDatafetcher {
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
-		return releaseService.gatherReleasesForArtifact(artifactUuid, ro.getOrg());
+		return sharedReleaseService.gatherReleasesForArtifact(artifactUuid, ro.getOrg());
 	}
 }

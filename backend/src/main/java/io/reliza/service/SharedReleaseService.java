@@ -59,7 +59,7 @@ public class SharedReleaseService {
 	GetComponentService getComponentService;
 	
 	@Autowired
-	SourceCodeEntryService sourceCodeEntryService;
+	GetSourceCodeEntryService getSourceCodeEntryService;
 	
 	public final static Integer DEFAULT_NUM_RELEASES = 300;
 	private final static Integer DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE = 20;
@@ -452,7 +452,7 @@ public class SharedReleaseService {
 		List<SourceCodeEntryData> sces = new ArrayList<>();
 		if(null!= commitIds && commitIds.size() > 0)
 		{
-			sces = sourceCodeEntryService.getSceDataList(commitIds, List.of(org, CommonVariables.EXTERNAL_PROJ_ORG_UUID));
+			sces = getSourceCodeEntryService.getSceDataList(commitIds, List.of(org, CommonVariables.EXTERNAL_PROJ_ORG_UUID));
 		}
 		return sces;
 	}
@@ -569,6 +569,54 @@ public class SharedReleaseService {
 			log.error("Error on resolving release identifiers from component", e);
 		}
 		return releaseIdentifier;
+	}
+	
+	public Set<UUID> gatherReleaseIdsForArtifact(UUID artifactUuid, UUID orgUuid){
+		Set<UUID> releases = new HashSet<>();
+		Set<UUID> allDirectReleases = findReleasesByArtifact(artifactUuid, orgUuid).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
+		Set<UUID> allSceReleases = repository.findReleasesSharingSceArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
+		Set<UUID> allDeliverableReleases = repository.findReleasesSharingDeliverableArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
+		releases.addAll(allDirectReleases);
+		releases.addAll(allSceReleases);
+		releases.addAll(allDeliverableReleases);
+		return releases;
+	}
+
+	public List<ReleaseData> gatherReleasesForArtifact(UUID artifactUuid, UUID orgUuid){
+		Set<UUID> releaseIds = gatherReleaseIdsForArtifact(artifactUuid, orgUuid);
+		return getReleaseDataList(releaseIds, orgUuid);
+	}
+	
+	public List<Release> findReleasesByArtifact (UUID artifactUuid, UUID orgUuid) {
+		return repository.findReleasesByArtifact(artifactUuid.toString(), orgUuid.toString());
+	}
+	
+	/**
+	 * We expect no more than one release here, but will log warn if not
+	 * @param deliverableUuid
+	 * @param orgUuid - organization UUID - will only search for this org + external org
+	 * @return
+	 */
+	public Optional<ReleaseData> getReleaseByOutboundDeliverable (UUID deliverableUuid, UUID orgUuid) {
+		Optional<Release> or = Optional.empty();
+		List<Release> releases = repository.findReleasesByDeliverable(deliverableUuid.toString(), orgUuid.toString());
+		if (null != releases && !releases.isEmpty()) {
+			or = Optional.of(releases.get(0));
+			if (releases.size() > 1) {
+				log.warn("More than one release returned per deliverable uuid = " + deliverableUuid);
+			}
+		}
+		Optional<ReleaseData> ord = Optional.empty();
+		if (or.isPresent()) ord = Optional.of(ReleaseData.dataFromRecord(or.get()));
+		return ord;
+	}
+	
+	public List<Release> findReleasesBySce(UUID sce, UUID org) {
+		return repository.findReleaseBySce(sce.toString(), org.toString());
+	}
+	
+	public List<ReleaseData> findReleaseDatasBySce(UUID sce, UUID org) {
+		return findReleasesBySce(sce,org).stream().map(ReleaseData::dataFromRecord).toList();
 	}
 
 }

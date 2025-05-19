@@ -45,6 +45,9 @@ import lombok.extern.slf4j.Slf4j;
 public class SourceCodeEntryService {
 	
 	@Autowired
+	private AcollectionService acollectionService;
+	
+	@Autowired
 	private AuditService auditService;
 	
 	@Autowired
@@ -54,69 +57,18 @@ public class SourceCodeEntryService {
 	private GetComponentService getComponentService;
 	
 	@Autowired
+	private GetSourceCodeEntryService getSourceCodeEntryService;
+
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
+	
+	@Autowired
 	private VcsRepositoryService vcsRepositoryService;
 	
 	private final SourceCodeEntryRepository repository;
 	
 	SourceCodeEntryService(SourceCodeEntryRepository repository) {
 	    this.repository = repository;
-	}
-	
-	private Optional<SourceCodeEntry> getSourceCodeEntry (UUID uuid) {
-		return repository.findById(uuid);
-	}
-	
-	public Optional<SourceCodeEntryData> getSourceCodeEntryData (UUID uuid) {
-		Optional<SourceCodeEntryData> rData = Optional.empty();
-		Optional<SourceCodeEntry> r = getSourceCodeEntry(uuid);
-		if (r.isPresent()) {
-			rData = Optional
-							.of(
-								SourceCodeEntryData
-									.dataFromRecord(r
-										.get()
-								));
-		}
-		return rData;
-	}
-	
-	private List<SourceCodeEntry> getSceList (Collection<UUID> uuidList, Collection<UUID> orgs) {
-		// return (List<Release>) repository.findAllById(uuidList);
-		return repository.findScesOfOrgsByIds(uuidList, orgs);
-	}
-	
-	public List<SourceCodeEntryData> getSceDataList (Collection<UUID> uuidList, Collection<UUID> orgs) {
-		// check if list includes null uuid - in which case include placeholder sce
-		Set<UUID> uuidListToResolve;
-		boolean includesNull = false;
-		if (uuidList.contains(new UUID(0,0)) || uuidList.contains(null)) {
-			uuidListToResolve = uuidList.stream().filter(x -> null != x && !x.equals(new UUID(0,0)))
-												.collect(Collectors.toSet());
-			includesNull = true;
-		} else {
-			uuidListToResolve = new LinkedHashSet<>(uuidList);
-		}
-		List<SourceCodeEntry> sces = getSceList(uuidListToResolve, orgs);
-		List<SourceCodeEntryData> sceds = sces
-				.stream()
-				.map(SourceCodeEntryData::dataFromRecord)
-				.collect(Collectors.toList());
-		if (includesNull) {
-			// construct null sced
-			var nullSced = SourceCodeEntryData.obtainNullSceData();
-			sceds.add(nullSced);
-		}
-		
-		return sceds;
-	}
-
-	public List<SourceCodeEntry> getSourceCodeEntrys (Iterable<UUID> uuids) {
-		return (List<SourceCodeEntry>) repository.findAllById(uuids);
-	}
-	
-	public List<SourceCodeEntryData> getSourceCodeEntryDataList (Iterable<UUID> uuids) {
-		List<SourceCodeEntry> branches = getSourceCodeEntrys(uuids);
-		return branches.stream().map(SourceCodeEntryData::dataFromRecord).collect(Collectors.toList());
 	}
 
 	@Transactional
@@ -199,22 +151,6 @@ public class SourceCodeEntryService {
 		return osce;
 	}
 
-	public List<SourceCodeEntry> getSourceCodeEntriesByVcsAndCommits (UUID vcsUuid, List<String> commits) {
-		return repository.findByCommitsAndVcs(commits, vcsUuid.toString());
-	}
-	
-	public List<SourceCodeEntry> getSourceCodeEntriesByCommitTag (UUID orgUuid, String commit) {
-		return repository.findByCommitOrTag(orgUuid.toString(), commit + "%", commit);
-	}
-	
-	public List<SourceCodeEntry> listSceByComponent (UUID projUuid) {
-		return repository.findByComponent(projUuid.toString());
-	}
-	
-	public List<SourceCodeEntry> listSceByOrg (UUID orgUuid) {
-		return repository.findByOrg(orgUuid.toString());
-	}
-	
 	@Transactional
 	public SourceCodeEntry createSourceCodeEntry (SceDto sceDto, WhoUpdated wu) {
 		SourceCodeEntry sce = new SourceCodeEntry();
@@ -238,7 +174,7 @@ public class SourceCodeEntryService {
 
 	@Transactional
 	public boolean addArtifact(UUID sceUuid, SCEArtifact art, WhoUpdated wu) throws RelizaException{
-		SourceCodeEntry sce = getSourceCodeEntry(sceUuid).get();
+		SourceCodeEntry sce = getSourceCodeEntryService.getSourceCodeEntry(sceUuid).get();
 		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
 		List<SCEArtifact> artifacts = sced.getArtifacts();
 		artifacts.add(art);
@@ -249,7 +185,7 @@ public class SourceCodeEntryService {
 	}
 	@Transactional
 	public boolean replaceArtifact(UUID sceUuid, SCEArtifact replaceArt, SCEArtifact art, WhoUpdated wu) throws RelizaException{
-		SourceCodeEntry sce = getSourceCodeEntry(sceUuid).get();
+		SourceCodeEntry sce = getSourceCodeEntryService.getSourceCodeEntry(sceUuid).get();
 		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
 		List<SCEArtifact> artifacts = sced.getArtifacts();
 		artifacts.remove(replaceArt);
@@ -264,7 +200,7 @@ public class SourceCodeEntryService {
 	private SourceCodeEntry saveSourceCodeEntry (SourceCodeEntry sce, Map<String,Object> recordData, WhoUpdated wu) {
 		// let's add some validation here
 		// TODO: add validation
-		Optional<SourceCodeEntry> osce = getSourceCodeEntry(sce.getUuid());
+		Optional<SourceCodeEntry> osce = getSourceCodeEntryService.getSourceCodeEntry(sce.getUuid());
 		if (osce.isPresent()) {
 			auditService.createAndSaveAuditRecord(TableName.SOURCE_CODE_ENTRIES, sce);
 			sce.setRevision(sce.getRevision() + 1);
@@ -272,7 +208,17 @@ public class SourceCodeEntryService {
 		}
 		sce.setRecordData(recordData);
 		sce = (SourceCodeEntry) WhoUpdated.injectWhoUpdatedData(sce, wu);
-		return repository.save(sce);
+		sce = repository.save(sce);
+		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
+		Set<UUID> affectedReleases = new HashSet<>();
+		var sceReleases = sharedReleaseService.findReleasesBySce(sce.getUuid(), sced.getOrg());
+		sceReleases.forEach(r -> affectedReleases.add(r.getUuid()));
+		sced.getArtifacts().forEach(a -> {
+			var releases = sharedReleaseService.findReleasesByArtifact(a.artifactUuid(), sced.getOrg());
+			releases.forEach(r -> affectedReleases.add(r.getUuid()));
+		});
+		affectedReleases.forEach(r -> acollectionService.resolveReleaseCollection(r, wu));
+		return sce;
 	}
 	
 //	public boolean moveScesOfComponentToNewOrg (UUID projectUuid, UUID newOrg, WhoUpdated wu) {
@@ -290,17 +236,6 @@ public class SourceCodeEntryService {
 //		}
 //		return moved;
 //	}
-	
-	public List<SourceCodeEntryData> listSceDataByComponent(UUID projUuid){
-		List<SourceCodeEntry> sceList = listSceByComponent(projUuid);
-		return sceList
-		.stream()
-		.map(SourceCodeEntryData::dataFromRecord)
-		.collect(Collectors.toList());
-	}
-	
-	
-
 	
 	/**
 	 * Mutates commits
@@ -378,21 +313,7 @@ public class SourceCodeEntryService {
 			return null;
 		}
 	}
-
-	public Set<UUID> getTicketsList (Collection<UUID> uuidList, Collection<UUID> orgs) {
-		List<SourceCodeEntryData> sces = getSceDataList(uuidList, orgs);
-		return sces
-				.stream()
-				.map(SourceCodeEntryData::getTicket)
-				.filter(Objects::nonNull)
-				.collect(Collectors.toSet());
-	}
-
-	public Optional<SourceCodeEntry> findLatestSceWithTicketAndOrg(UUID ticket, UUID org) {
-		return repository.findByTicketAndOrg(ticket.toString(), org.toString());
-	}
-
-
+	
 	public void saveAll(List<SourceCodeEntry> sourceCodeEntries){
 		repository.saveAll(sourceCodeEntries);
 	}

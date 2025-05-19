@@ -3,28 +3,20 @@
 */
 package io.reliza.model.tea;
 
-import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-import io.reliza.model.Artifact;
-import io.reliza.model.tea.TeaCollectionUpdateReason;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.lang.Nullable;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
-import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
@@ -46,7 +38,7 @@ public class TeaCollection {
   private @Nullable TeaCollectionUpdateReason updateReason;
 
   @Valid
-  private List<@Valid Artifact> artifacts = new ArrayList<>();
+  private List<@Valid TeaArtifact> artifacts = new ArrayList<>();
 
   public TeaCollection uuid(UUID uuid) {
     this.uuid = uuid;
@@ -128,12 +120,12 @@ public class TeaCollection {
     this.updateReason = updateReason;
   }
 
-  public TeaCollection artifacts(List<@Valid Artifact> artifacts) {
+  public TeaCollection artifacts(List<@Valid TeaArtifact> artifacts) {
     this.artifacts = artifacts;
     return this;
   }
 
-  public TeaCollection addArtifactsItem(Artifact artifactsItem) {
+  public TeaCollection addArtifactsItem(TeaArtifact artifactsItem) {
     if (this.artifacts == null) {
       this.artifacts = new ArrayList<>();
     }
@@ -148,11 +140,11 @@ public class TeaCollection {
   @Valid 
   @Schema(name = "artifacts", description = "List of TEA artifact objects.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("artifacts")
-  public List<@Valid Artifact> getArtifacts() {
+  public List<@Valid TeaArtifact> getArtifacts() {
     return artifacts;
   }
 
-  public void setArtifacts(List<@Valid Artifact> artifacts) {
+  public void setArtifacts(List<@Valid TeaArtifact> artifacts) {
     this.artifacts = artifacts;
   }
 

@@ -53,9 +53,11 @@ import io.reliza.model.VersionAssignment.AssignmentTypeEnum;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.service.AcollectionService;
 import io.reliza.service.AuditService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.NotificationService;
 import io.reliza.service.ReleaseService.CommitRecord;
 import io.reliza.service.SharedReleaseService;
@@ -92,7 +94,7 @@ public class OssReleaseService {
 	private VersionAssignmentService versionAssignmentService;
 	
 	@Autowired
-	private SourceCodeEntryService sourceCodeEntryService;
+	private GetSourceCodeEntryService getSourceCodeEntryService;
 	
 	@Autowired
 	private VcsRepositoryService vcsRepositoryService;
@@ -100,6 +102,8 @@ public class OssReleaseService {
 	@Autowired
 	private VariantService variantService;
 		
+	@Autowired
+	private AcollectionService acollectionService;
 	private final ReleaseRepository repository;
 	
 	OssReleaseService(ReleaseRepository repository) {
@@ -152,6 +156,7 @@ public class OssReleaseService {
 		log.debug("setting release recordData:{}", recordData);
 		r = (Release) WhoUpdated.injectWhoUpdatedData(r, wu);
 		r = repository.save(r);
+		acollectionService.resolveReleaseCollection(r.getUuid(), wu);
 		return r;
 	}
 	
@@ -642,7 +647,7 @@ public class OssReleaseService {
 			allCommits.addAll(releaseDto.getCommits());
 		//handle tickets
 		if(!allCommits.isEmpty()){
-			Set<UUID> tickets = sourceCodeEntryService.getTicketsList(allCommits, List.of(releaseDto.getOrg(), CommonVariables.EXTERNAL_PROJ_ORG_UUID));
+			Set<UUID> tickets = getSourceCodeEntryService.getTicketsList(allCommits, List.of(releaseDto.getOrg(), CommonVariables.EXTERNAL_PROJ_ORG_UUID));
 			if(!tickets.isEmpty()){
 				releaseDto.setTickets(tickets);
 			}

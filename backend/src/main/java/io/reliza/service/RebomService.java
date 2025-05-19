@@ -16,6 +16,7 @@ import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -100,14 +101,14 @@ public class RebomService {
         RebomResponse bomResponse = clonedMapper.convertValue(response.get("addBom"), RebomResponse.class);
         return bomResponse;
     }
-    public JsonNode findBomById(UUID bomId, UUID org) throws JsonProcessingException{
+    public JsonNode findBomById(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
         String query = """
             query bomById ($id: ID, $org: ID) {
                 bomById(id: $id, org: $org)
             }""";
         
         Map<String, Object> variables = new HashMap<>();
-        variables.put("id", bomId.toString());
+        variables.put("id", bomSerialNumber.toString());
         variables.put("org", org.toString());
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         var br = response.get("bomById");
@@ -115,21 +116,47 @@ public class RebomService {
         return bomJson;
 
     }
-    public JsonNode findRawBomById(UUID bomId, UUID org) throws JsonProcessingException{
+    public JsonNode findRawBomById(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
         String query = """
             query rawBomId ($id: ID, $org: ID) {
                 rawBomId(id: $id, org: $org)
             }""";
         
         Map<String, Object> variables = new HashMap<>();
-        variables.put("id", bomId.toString());
+        variables.put("id", bomSerialNumber.toString());
         variables.put("org", org.toString());
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         var br = response.get("rawBomId");
         JsonNode bomJson = Utils.OM.valueToTree(br);
         return bomJson;
-
     }
+    
+    public record BomMeta (String name, String group, String bomVersion, String hash, String belongsTo, Boolean tldOnly, String structure,
+    		String notes, String stripBom, String serialNumber) {}
+    
+    public List<BomMeta> resolveBomMetas(UUID bomSerialNumber, UUID org) {
+        String query = """
+                query bomMetaBySerialNumber ($serialNumber: ID!, $org: ID!) {
+                    bomMetaBySerialNumber(serialNumber: $serialNumber, org: $org) {
+                   	    name
+					    group
+					    bomVersion
+					    hash
+					    belongsTo
+					    tldOnly
+					    serialNumber
+                    }
+                }""";
+            
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("serialNumber", bomSerialNumber.toString());
+        variables.put("org", org.toString());
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var br = response.get("bomMetaBySerialNumber");
+        List<BomMeta> bomMetas = Utils.OM.convertValue(br, new TypeReference<List<BomMeta>>() {});
+        return bomMetas;
+    }
+    
 
 
     public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride, UUID org)  throws RelizaException{
