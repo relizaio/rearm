@@ -148,3 +148,35 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REARM_LANDING_API_KEY }}
           path: landing_site
           enable_sbom: 'false'
+  build-rebom-frontend:
+    name: Build And Push Rebom UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: RelizaHub Build And Submit UI Release
+        uses: relizaio/reliza-docker-action@2.1
+        with:
+          registry_username: ${{ secrets.DOCKER_LOGIN }}
+          registry_password: ${{ secrets.DOCKER_TOKEN }}
+          registry_host: registry.relizahub.com
+          image_namespace: registry.relizahub.com/library
+          image_name: rebom-frontend
+          reliza_api_id: ${{ secrets.RELIZA_REBOM_FRONTEND_API_ID }}
+          reliza_api_key: ${{ secrets.RELIZA_REBOM_FRONTEND_API_KEY }}
+          path: rebom-frontend
+          enable_sbom: 'false'
+  build-rebom-backend:
+    name: Build And Push Rebom UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: RelizaHub Build And Submit UI Release
+        uses: relizaio/reliza-docker-action@2.1
+        with:
+          registry_username: ${{ secrets.DOCKER_LOGIN }}
+          registry_password: ${{ secrets.DOCKER_TOKEN }}
+          registry_host: registry.relizahub.com
+          image_namespace: registry.relizahub.com/library
+          image_name: rebom-backend
+          reliza_api_id: ${{ secrets.RELIZA_REBOM_BACKEND_API_ID }}
+          reliza_api_key: ${{ secrets.RELIZA_REBOM_BACKEND_API_KEY }}
+          path: rebom-backend
+          enable_sbom: 'false'

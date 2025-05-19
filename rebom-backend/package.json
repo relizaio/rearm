@@ -1,0 +1,51 @@
+{
+  "name": "rebom-backend",
+  "version": "0.1.0",
+  "description": "Reliza SBOM repository backend",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "test",
+    "start": "ts-node src/index.ts",
+    "js": "node src/index.js",
+    "dev": "nodemon src/index.ts",
+    "build": "tsc -p ./tsconfig.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/relizaio/rebom.git"
+  },
+  "keywords": [
+    "sbom",
+    "bom",
+    "repository"
+  ],
+  "author": "Reliza Incorporated",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/relizaio/rebom/issues"
+  },
+  "homepage": "https://github.com/relizaio/rebom#readme",
+  "dependencies": {
+    "@apollo/server": "^4.6.0",
+    "@cyclonedx/cyclonedx-library": "^6.9.5",
+    "ajv": "^8.13.0",
+    "ajv-formats": "^3.0.1",
+    "ajv-formats-draft2019": "^1.6.1",
+    "axios": "^1.7.3",
+    "canonicalize": "^2.0.0",
+    "express": "^4.18.2",
+    "form-data": "^4.0.0",
+    "graphql": "^16.6.0",
+    "graphql-tag": "^2.12.6",
+    "packageurl-js": "^2.0.1",
+    "pg": "^8.11.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "typescript": "^5.0.4",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@tsconfig/recommended": "^1.0.2",
+    "@types/pino": "^7.0.5"
+  }
+}

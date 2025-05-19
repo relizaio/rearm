@@ -1,0 +1,8 @@
+node_modules
+.git
+**/node_modules
+**/.git
+get_version_command
+get_version_exec
+reliza_command
+dist
