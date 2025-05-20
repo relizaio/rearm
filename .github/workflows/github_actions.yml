@@ -80,6 +80,10 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REARM_UI_API_KEY }}
           path: ui
           enable_sbom: 'false'
+          push_to_rearm: 'true'
+          rearm_api_id: ${{ secrets.REARM_REARM_UI_API_ID }}
+          rearm_api_key: ${{ secrets.REARM_REARM_UI_API_KEY }}
+          source_code_sbom_type: 'npm'
   build-backend:
     name: Build And Push ReARM Backend
     runs-on: ubuntu-latest
