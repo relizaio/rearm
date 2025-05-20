@@ -255,7 +255,8 @@ public class TeaTransformerService {
 	public TeaCollection transformAcollectionToTea(AcollectionData acd) {
 		TeaCollection tc = new TeaCollection();
 		tc.setUuid(acd.getRelease());
-		tc.setVersion(Integer.getInteger(acd.getVersion().toString()));
+		Integer cVersion = acd.getVersion().intValue();
+		tc.setVersion(cVersion);
 		TeaCollectionUpdateReason tcur = new TeaCollectionUpdateReason();
 		tcur.setType(acd.getUpdateReason());
 		tc.setUpdateReason(tcur);

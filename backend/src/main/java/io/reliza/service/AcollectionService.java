@@ -10,7 +10,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -101,7 +100,12 @@ public class AcollectionService {
 			if (ad.getStoredIn() == StoredIn.REARM && artifactService.isRebomStoreable(ad)) {
 				var bomMetas = rebomService.resolveBomMetas(ad.getInternalBom().id(), rd.getOrg());
 				var verOpt = bomMetas.stream().map(x -> Long.valueOf(x.bomVersion())).max(Long::compareTo);
-				version = verOpt.get();
+				if (verOpt.isPresent()) {
+					version = verOpt.get();
+				} else {
+					log.warn("Missing bom version on rebom for artid = " + ad.getInternalBom().id());
+					version = Long.valueOf(1);
+				}
 			} else {
 				// TODO
 				version = Long.valueOf(1);
