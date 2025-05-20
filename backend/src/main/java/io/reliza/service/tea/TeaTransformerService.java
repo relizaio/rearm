@@ -272,18 +272,5 @@ public class TeaTransformerService {
 		tc.setArtifacts(teaArtifacts);
 		return tc;
 	}
-	
-//	public TeaCollection obtainTeaCollectionFromRelease(ReleaseData rearmRD) {
-//		TeaCollection tc = new TeaCollection();
-//		tc.setUuid(rearmRD.getUuid());
-//		tc.setVersion(1); // TODO
-//		TeaCollectionUpdateReason tcur = new TeaCollectionUpdateReason();
-//		tcur.setType(TeaCollectionUpdateReasonType.INITIAL_RELEASE); // TODO
-//		tc.setUpdateReason(tcur);
-//		
-//		tc.setDate(OffsetDateTime.now()); // TODO
-//		tc.setArtifacts(null); // TODO
-//		
-//	}
     
 }
