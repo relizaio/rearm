@@ -177,7 +177,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@2.1
+        uses: relizaio/reliza-docker-action@3.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -188,3 +188,7 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REBOM_BACKEND_API_KEY }}
           path: rebom-backend
           enable_sbom: 'false'
+          push_to_rearm: 'true'
+          rearm_api_id: ${{ secrets.REARM_REBOM_BACKEND_API_ID }}
+          rearm_api_key: ${{ secrets.REARM_REBOM_BACKEND_API_KEY }}
+          source_code_sbom_type: 'npm'
