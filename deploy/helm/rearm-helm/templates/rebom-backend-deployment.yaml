@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-rebom-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: rebom-backend
+    app: rebom
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.rebom.backend.replicaCount }}
+  selector:
+    matchLabels:
+      app: rebom
+      name: rebom-backend
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: rebom-backend
+        app: rebom
+        {{- include "rearm.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: rebom-backend-container
+        image: {{ .Values.image.rebomBackend }}
+        env:
+        - name: POSTGRES_HOST
+          value: {{ .Release.Name }}-rebom-postgres
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Release.Name }}-rebom-pgpassword
+              key: password
+        - name: OCI_STORAGE_ENABLED
+          value: {{ .Values.rebom.backend.oci.enabled | quote }}
+        - name: OCI_ARTIFACT_SERVICE_HOST
+          value: {{ .Values.rebom.backend.oci.serviceHost }}
+        - name: OCIARTIFACTS_REGISTRY_HOST
+          value: {{ .Values.rebom.backend.oci.registryHost }}
+        - name: OCIARTIFACTS_REGISTRY_NAMESPACE
+          value: {{ .Values.rebom.backend.oci.registryNamespace }}
+        ports:
+        - containerPort: 4000
+      initContainers:
+      - name: rebom-backend-init
+        image: {{ .Values.image.rebomBackend }}
+        command: ["cp", "-r", "/app/migrations/.", "/flyway/sql"]
+        volumeMounts:
+        - mountPath: /flyway/sql
+          name: migrations-sql
+      - name: rebom-backend-migrations
+        image: {{ .Values.image.flywayImage }}
+        env:
+        - name: POSTGRES_JDBC
+          value: jdbc:postgresql://{{ .Release.Name }}-rebom-postgres:5432/postgres
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Release.Name }}-rebom-pgpassword
+              key: password
+        command: ['/bin/sh', '-c', "/flyway/flyway -url=$POSTGRES_JDBC -user=$POSTGRES_USER -password=$POSTGRES_PASSWORD -defaultSchema=rebom -schemas=rebom migrate"]
+        volumeMounts:
+          - mountPath: "/flyway/sql"
+            name: migrations-sql
+      volumes:
+        - name: migrations-sql
+          emptyDir: {}

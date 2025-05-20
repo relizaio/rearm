@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-rebom-backend-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: rebom
+    name: rebom-backend
+  ports:
+    - protocol: TCP
+      port: 4000
+      targetPort: 4000

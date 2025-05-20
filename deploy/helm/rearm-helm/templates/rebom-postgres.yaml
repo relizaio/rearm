@@ -1,0 +1,80 @@
+{{- if .Values.useDefaultSecrets }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-rebom-pgpassword
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+type: Opaque
+data:
+  password: cGFzc3dvcmQ=
+
+---
+
+{{- end }}
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-rebom-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: rebom
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: rebom
+    name: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-rebom-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: rebom
+      name: postgres
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+  replicas: 1
+  serviceName: {{ .Release.Name }}-rebom-postgres
+  template:
+    metadata:
+      labels:
+        name: postgres
+        app: rebom
+        {{- include "rearm.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres-container
+          image: {{ .Values.image.postgresImage }}
+          env:
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Release.Name }}-rebom-pgpassword
+                key: password
+          ports:
+          - containerPort: 5432
+          volumeMounts:
+          - mountPath: "/var/lib/postgresql/data"
+            name: postgres-data
+            subPath: postgres
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ .Values.rebom.postgresStorage }}

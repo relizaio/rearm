@@ -9,6 +9,8 @@ image:
   ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:latest
   keycloakImage: registry.relizahub.com/library/rearm-keycloak:latest
   postgresImage: bitnami/postgresql:16.6.0
+  rebomBackend: registry.relizahub.com/library/rebom-backend
+  flywayImage: flyway/flyway:11-alpine
   pullPolicy: IfNotPresent
 
 imagePullSecrets: [ {"name":"regcred"} ]
@@ -90,10 +92,11 @@ postgresql:
         cpu: "4000m"
 
 rebom:
-  enabled: true
+  postgresStorage: 5Gi
   backend:
-    image: registry.relizahub.com/library/rebom-backend
-  postgres:
-    image: bitnami/postgresql:16.6.0
-  ingress:
-    minimalIngressEnabled: false
+    replicaCount: 1
+    oci:
+      enabled: "true"
+      serviceHost: http://rearm-oci-artifact
+      registryHost: registry.relizahub.com
+      registryNamespace: 123-placeholder

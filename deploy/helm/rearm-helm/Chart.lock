@@ -2,8 +2,5 @@ dependencies:
 - name: postgresql
   repository: https://charts.bitnami.com/bitnami
   version: 11.9.13
-- name: rebom
-  repository: oci://registry.relizahub.com/library
-  version: 0.2.1
-digest: sha256:3409a1007ce34544ba524e46374e39c28eb7bc6584136ec3a5099e2d4411444d
-generated: "2025-03-25T08:45:32.7209627-04:00"
+digest: sha256:c16bf201546beaa66e177d27f5298b558f9922008b3ab1fc763a0990717c1424
+generated: "2025-05-19T20:17:42.2880834-04:00"
