@@ -215,7 +215,8 @@ public class TeaTransformerService {
 		ta.setUuid(rearmAD.getUuid());
 		TeaArtifactType tat = transformArtifactTypeToTea(rearmAD.getType());
 		ta.setType(tat);
-		ta.setName(rearmAD.getDisplayIdentifier());
+		String name = StringUtils.isNotEmpty(rearmAD.getDisplayIdentifier()) ? rearmAD.getDisplayIdentifier() : rearmAD.getUuid().toString();  
+		ta.setName(name);
 		
 		List<TeaArtifactFormat> tafList = new LinkedList<>();
 		if (rearmAD.getStoredIn() == StoredIn.REARM) {
