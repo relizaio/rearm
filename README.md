@@ -12,6 +12,11 @@ ReARM stores xBOMs on OCI-compatible storage via Reliza's [Rebom](https://github
 
 ReARM is developed by [Reliza](https://reliza.io).
 
+## ReARM Product Status Information
+ReARM itself - Public Beta
+Transparency Exchange API (TEA) implementation - in the process of implementation of TEA Beta 1 - Public Alpha available on ReARM Demo Instance (see below for details)
+ReARM Release Information will be available on ReARM Demo Instance (see below for details) - this is work in progress, expected to be available by the end of May 2025
+
 ## Motivation
 ReARM is a xBOM management system that allows organizations to maintain compliance within the framework of [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) as well as US Executive Orders [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity) and [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity).
 
@@ -42,7 +47,6 @@ ReARM will be supporting TEA when the standard is ready. Preliminary work to hav
 
 ## Related Projects
 - ReARM CLI: https://github.com/relizaio/rearm-cli - CLI tool to interact with ReARM for humans and automation bots
-- Rebom: https://github.com/relizaio/rebom - ReARM is using Rebom as a layer to perform actual storage of certain metadata artifacts
 - BEAR (BOM Enrichment and Augmentation by Reliza): https://github.com/relizaio/bear - BEAR may be used for BOM enrichment before uploading to ReARM
 
 ## Public Demo
