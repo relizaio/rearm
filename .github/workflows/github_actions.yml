@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Keycloak Release
-        uses: relizaio/reliza-docker-action@2.1
+        uses: relizaio/reliza-docker-action@3.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -140,6 +140,10 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REARM_KEYCLOAK_API_KEY }}
           path: keycloak
           enable_sbom: 'false'
+          push_to_rearm: 'true'
+          rearm_api_id: ${{ secrets.REARM_REARM_KEYCLOAK_API_ID }}
+          rearm_api_key: ${{ secrets.REARM_REARM_KEYCLOAK_API_KEY }}
+          source_code_sbom_type: 'none'
   build-rearm-landing:
     name: Build And Push ReARM Landing Website rearmhq.com
     runs-on: ubuntu-latest
