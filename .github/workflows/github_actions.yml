@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@2.2
+        uses: relizaio/reliza-helm-action@master
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -64,6 +64,9 @@ jobs:
           reliza_api_id: ${{ secrets.RELIZA_REARM_HELM_API_ID }}
           reliza_api_key: ${{ secrets.RELIZA_REARM_HELM_API_KEY }}
           path: deploy/helm
+          push_to_rearm: 'true'
+          rearm_api_id: ${{ secrets.REARM_REARM_HELM_API_ID }}
+          rearm_api_key: ${{ secrets.REARM_REARM_HELM_API_KEY }}
   build-ui:
     name: Build And Push ReARM UI
     runs-on: ubuntu-latest
