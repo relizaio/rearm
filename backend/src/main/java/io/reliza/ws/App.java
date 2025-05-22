@@ -90,6 +90,7 @@ public class App {
 		  				// .anyRequest().permitAll()
 		  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
 		  				.requestMatchers("/tea/**").permitAll() // TODO adjust with auth coming to TEA
+		  				.requestMatchers("/.well-known/tea/**").permitAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 		  				.anyRequest().authenticated(); 
 	  		} else {
@@ -97,6 +98,7 @@ public class App {
 		  				// .anyRequest().permitAll()
 		  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
 		  				.requestMatchers("/tea/**").denyAll() // TODO adjust with auth coming to TEA
+		  				.requestMatchers("/.well-known/tea/**").denyAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 		  				.anyRequest().authenticated(); 
 	  		}
