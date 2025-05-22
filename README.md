@@ -39,7 +39,7 @@ Creators of ReARM are part of [active contributors](https://github.com/CycloneDX
 
 A lot of core ReARM ideas are shared as a part of the TEA workgroup with permissive Open Source licensing.
 
-ReARM currently supports most of TEA Beta 1 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/).
+ReARM currently supports most of TEA Beta 1 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/index.html).
 
 ## Project links
 - Documentation: https://docs.rearmhq.com
