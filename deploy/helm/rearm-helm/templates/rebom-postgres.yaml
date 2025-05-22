@@ -67,7 +67,7 @@ spec:
           ports:
           - containerPort: 5432
           volumeMounts:
-          - mountPath: "/var/lib/postgresql/data"
+          - mountPath: "/bitnami/postgresql"
             name: postgres-data
             subPath: postgres
   volumeClaimTemplates:

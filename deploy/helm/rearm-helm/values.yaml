@@ -4,13 +4,13 @@ ociArtifactReplicaCount: 1
 enableBetaTea: false
 
 image:
-  backEndImage: registry.relizahub.com/library/rearm-backend:latest
-  uiImage: registry.relizahub.com/library/rearm-ui:latest
-  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:latest
-  keycloakImage: registry.relizahub.com/library/rearm-keycloak:latest
-  postgresImage: bitnami/postgresql:16.6.0
-  rebomBackend: registry.relizahub.com/library/rebom-backend
-  flywayImage: flyway/flyway:11-alpine
+  backEndImage: registry.relizahub.com/library/rearm-backend:25.05.17
+  uiImage: registry.relizahub.com/library/rearm-ui:25.05.10
+  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:25.03.2
+  keycloakImage: registry.relizahub.com/library/rearm-keycloak:25.03.1
+  postgresImage: bitnami/postgresql:17.5.0-debian-12-r4
+  rebomBackend: registry.relizahub.com/library/rebom-backend:0.1.4
+  flywayImage: redgate/flyway:11.8.2-alpine
   pullPolicy: IfNotPresent
 
 imagePullSecrets: [ {"name":"regcred"} ]

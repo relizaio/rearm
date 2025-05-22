@@ -41,6 +41,8 @@ spec:
               value: "9080"
             - name: MAX_BODY_SIZE
               value: {{ .Values.max_upload_size_in_MB }}M
+            - name: KEYCLOAK_ADMIN_ACCESS
+              value: ""
             {{- end}}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
