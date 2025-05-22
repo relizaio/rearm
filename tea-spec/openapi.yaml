@@ -12,7 +12,7 @@ info:
   license:
     name: Apache 2.0
     url: https://github.com/CycloneDX/transparency-exchange-api/blob/main/LICENSE
-  version: 0.0.3
+  version: 0.1.0-beta.1
 servers:
   - url: http://localhost/tea/v1
     description: Local development
@@ -233,7 +233,7 @@ components:
       description: An identifier with a specified type
       properties:
         idType:
-          description: Type of identifier, e.g. `tei`, `purl`, `cpe`
+          description: Type of identifier, e.g. `TEI`, `PURL`, `CPE`
           "$ref": "#/components/schemas/identifier-type"
         idValue:
           description: Identifier value
@@ -242,9 +242,9 @@ components:
       type: string
       description: Enumeration of identifiers types
       enum:
-        - cpe
-        - tei
-        - purl
+        - CPE
+        - TEI
+        - PURL
     uuid:
       type: string
       description: A UUID
@@ -284,13 +284,13 @@ components:
         - uuid: 09e8c73b-ac45-4475-acac-33e6a7314e6d
           name: Apache Log4j 2
           identifiers:
-            - idType: cpe
+            - idType: CPE
               idValue: cpe:2.3:a:apache:log4j
-            - idType: purl
+            - idType: PURL
               idValue: pkg:maven/org.apache.logging.log4j/log4j-api
-            - idType: purl
+            - idType: PURL
               idValue: pkg:maven/org.apache.logging.log4j/log4j-core
-            - idType: purl
+            - idType: PURL
               idValue: pkg:maven/org.apache.logging.log4j/log4j-layout-template-json
           components:
             - 3910e0fd-aff4-48d6-b75f-8bf6b84687f0
@@ -324,14 +324,14 @@ components:
         - uuid: 3910e0fd-aff4-48d6-b75f-8bf6b84687f0
           name: Apache Log4j API
           identifiers:
-            - idType: purl
+            - idType: PURL
               idValue: pkg:maven/org.apache.logging.log4j/log4j-api
         - uuid: b844c9bd-55d6-478c-af59-954a932b6ad3
           name: Apache Log4j Core
           identifiers:
-            - idType: cpe
+            - idType: CPE
               idValue: cpe:2.3:a:apache:log4j
-            - idType: purl
+            - idType: PURL
               idValue: pkg:maven/org.apache.logging.log4j/log4j-core
 
     #
@@ -371,14 +371,14 @@ components:
           version: "11.0.6"
           releaseDate: 2025-04-01T15:43:00Z
           identifiers:
-            - idType: purl
+            - idType: PURL
               idValue: pkg:maven/org.apache.tomcat/tomcat@11.0.6
         # Different release of Apache Tomcat
         - uuid: da89e38e-95e7-44ca-aa7d-f3b6b34c7fab
           version: "10.1.40"
           releaseDate: 2025-04-01T18:20:00Z
           identifiers:
-            - idType: purl
+            - idType: PURL
               idValue: pkg:maven/org.apache.tomcat/tomcat@10.1.40
         # A pre-release of Apache Tomcat
         - uuid: 95f481df-f760-47f4-b2f2-f8b76d858450
@@ -386,7 +386,7 @@ components:
           releaseDate: 2024-09-13T17:49:00Z
           preRelease: true
           identifiers:
-            - idType: purl
+            - idType: PURL
               idValue: pkg:maven/org.apache.tomcat/tomcat@11.0.0-M26
 
     #
@@ -429,7 +429,7 @@ components:
           artifacts:
             - uuid: 1cb47b95-8bf8-3bad-a5a4-0d54d86e10ce
               name: Build SBOM
-              type: bom
+              type: BOM
               formats:
                 - mime_type: application/vnd.cyclonedx+xml
                   description: CycloneDX SBOM (XML)
