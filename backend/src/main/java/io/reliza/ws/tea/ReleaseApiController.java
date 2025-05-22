@@ -29,7 +29,7 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v1}")
+@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.1.0-beta.1}")
 @Slf4j
 public class ReleaseApiController implements ReleaseApi {
 
