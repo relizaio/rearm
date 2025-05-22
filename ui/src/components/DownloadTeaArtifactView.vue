@@ -49,7 +49,7 @@ async function downloadArtifact () {
             const art = await getArtifact()
             const axiosResp = await axios({
                 method: 'get',
-                url: '/api/manual/v1/artifact/' +  route.params.artuuid.toString() + '/rawdownload',
+                url: '/api/manual/v1/artifact/' +  route.params.artuuid.toString() + pathSuffix,
                 responseType: 'arraybuffer',
             })
             const artType = art.tags.find((tag: any) => tag.key === 'mediaType')?.value
