@@ -7,7 +7,7 @@ function navbar() {
         { text: 'Getting Started', link: '/get-started/' },
         { text: 'Configure ReARM', link: '/configure/' },
         { text: 'Integrations', link: '/integrations/' },
-        { text: 'Tutorials', link: '/tutorials/' }
+        { text: 'Tutorials', link: '/tutorials/' },
     ]
 }
 
@@ -18,6 +18,7 @@ function sidebar() {
         {text: 'Concepts', link: '/concepts/'},        
         {text: 'Bundling', link: '/bundling/'},
         {text: 'Configure', link: '/configure/'},
+        {text: 'Transparency Exchange API', link: '/tea/' },
         {text: 'Integrations', link: '/integrations/',
           items: [
             {text: 'ReARM CLI', link: '/integrations/rearmcli'},

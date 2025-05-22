@@ -31,12 +31,15 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 6. Release approval logic (Commercial Edition only)
 7. Marketing release workflow (Commercial Edition only)
 
+## Releases
+Refer to [ReARM Community Edition Product](https://demo.rearmhq.com/productsOfOrg/00000000-0000-0000-0000-000000000001/eab985e6-f4f1-42db-95ba-5d9d1d695348) on [ReARM Demo Instance](https://demo.rearmhq.com) for the constantly updated list of ReARM releases. Major releases are also published under [GitHub Releases](https://github.com/relizaio/rearm/releases) in this repository.
+
 ## Transparency Exchange API
 Creators of ReARM are part of [active contributors](https://github.com/CycloneDX/transparency-exchange-api/blob/main/contributors.md) of [Transparency Exchange API](https://github.com/CycloneDX/transparency-exchange-api/) (TEA) that aims to build standard API for exchanging supply chain artifacts and intelligence.
 
 A lot of core ReARM ideas are shared as a part of the TEA workgroup with permissive Open Source licensing.
 
-ReARM will be supporting TEA when the standard is ready. Preliminary work to have support for TEA Beta 1 has already started.
+ReARM currently supports most of TEA Beta 1 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/).
 
 ## Project links
 - Documentation: https://docs.rearmhq.com
