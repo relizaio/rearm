@@ -13,6 +13,7 @@ import analytics from "../../Assets/Home/analytics.svg"
 import Component1 from './components/Component1/Component1'
 import rearm_release from "../../Assets/Home/rearm_release.png"
 import create_component from "../../Assets/Home/create_component.png"
+import compliance_image from "../../Assets/Home/compliance.png"
 import rearm_analytics from "../../Assets/Home/rearm_analytics.png"
 import auto_integrate from "../../Assets/Home/auto_integrate.png"
 import rearm_approvals from "../../Assets/Home/rearm_approvals.png"
@@ -66,14 +67,14 @@ const HomePage = () => {
       image: rearm_release,
       title: "Storage for SBOMs / xBOMs, Release Metadata",
       texts: [
-        { text: "ReARM provides organized storage for Release Artifacts and Metadata, including SBOMs / xBOMs, attestations, test reports." }
+        { text: "ReARM provides organized storage for Release Artifacts and Metadata, including SBOMs / xBOMs and Attestations." }
       ]
     },
     {
-      image: create_component,
-      title: "Automated Versioning and Change Logs for your Releases",
+      image: compliance_image,
+      title: "Regulatory Compliance",
       texts: [
-        { text: "Choose desired versioning schema, connect to your CI and let ReARM do the rest!" }
+        { text: "ReARM ensures supply chain security compliance with various regulations, including EU CRA, NIS2, DORA, US Executive Orders 14028, 14144, Section 524B of the FD&C Act." }
       ]
     },
     {
@@ -81,6 +82,13 @@ const HomePage = () => {
       title: "Track Vulnerabilities and Violations across your Supply Chain",
       texts: [
         { text: "ReARM integrates with OWASP Dependency-Track to present real-time view of the state of your supply chain." }
+      ]
+    },
+    {
+      image: create_component,
+      title: "Automated Versioning and Change Logs for your Releases",
+      texts: [
+        { text: "Choose desired versioning schema, connect to your CI and let ReARM do the rest!" }
       ]
     },
     {
