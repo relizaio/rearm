@@ -1,0 +1,36 @@
+.appCard {
+  border-radius: 20px;
+  background-color: var(--integration-appCard-backgroundColor) !important;
+  transition: all ease-in-out 300ms;
+  padding: 35px 20px;
+  box-shadow: -6px 6px 60px rgba(0, 0, 0, 0.06),
+    rgba(0, 11, 51, 1) 0px 0px 0px 0.25px;
+}
+.appCard:hover {
+  box-shadow: -6px 6px 60px rgba(0, 0, 0, 0.06);
+}
+
+.appCard_type {
+  color: var(--integration-appCard-type_Color);
+}
+
+.title {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 32px;
+  color: #3c434a;
+  text-align: center;
+}
+.text {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 25px;
+  text-align: center;
+  color: #595f67;
+  text-align: center;
+  margin-bottom: 0;
+}

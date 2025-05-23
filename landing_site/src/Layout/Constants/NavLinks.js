@@ -1,3 +1,4 @@
+import Blog from "../../Pages/Blog/Blog";
 // import AboutPage from "../../Pages/AboutPage/AboutPage";
 // import ContactUs from "../../Pages/ContactUs/ContactUs";
 // import Customers from "../../Pages/Customers/Customers";
@@ -6,6 +7,11 @@
 import Services from "../../Pages/Services/Services";
 
 export const navLinks = [
+    {
+        title: 'Blog',
+        path: "/blog",
+        element:<Blog/>
+    }
 ] 
 /*
 [
