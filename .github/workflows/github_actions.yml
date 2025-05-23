@@ -180,10 +180,10 @@ jobs:
           path: rebom-frontend
           enable_sbom: 'false'
   build-rebom-backend:
-    name: Build And Push Rebom UI
+    name: Build And Push Rebom Backend
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit UI Release
+      - name: RelizaHub Build And Submit Rebom Backend Release
         uses: relizaio/reliza-docker-action@3.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
