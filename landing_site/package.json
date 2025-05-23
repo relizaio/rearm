@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "bootstrap": "^5.3.3",
+    "bootstrap": "^5.3.6",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-icons": "^5.5.0",
@@ -11,7 +11,7 @@
     "react-scripts": "5.0.1",
     "react-slick": "^0.30.3",
     "slick-carousel": "^1.8.1",
-    "web-vitals": "^4.2.4"
+    "web-vitals": "^5.0.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^5.16.2",
