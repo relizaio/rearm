@@ -18,7 +18,7 @@
                         <vue-feather type="box" :id="'artifacts' + release.uuid" />
                     </template>
                     <p v-for="art in release.artifactDetails" :key=art.uuid>
-                        {{ art.displayIdentifier + (art.digests.length ?  '@' + art.digests[0] : '') }}
+                        {{ art.displayIdentifier + (art.digestRecords.length ?  '@' + art.digestRecords[0].value : '') }}
                     </p>
                 </n-tooltip>
             </span>

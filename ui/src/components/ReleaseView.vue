@@ -1902,7 +1902,7 @@ const artifactsTableFields: DataTableColumns<any> = [
             factContent.push(h('li', `UUID: ${row.uuid}`))
             row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
             if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
-            if (row.digests && row.digests.length) row.digests.forEach((d: string) => factContent.push(h('li', `digest: ${d}`)))
+            if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: string) => factContent.push(h('li', `digest(${d.scope}): ${d.algo}:${d.digest}`)))
             if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`)))) 
             if (row.identities && row.identities.length) factContent.push(h('li', 'Identities:'), h('ul', row.identities.map((id: Identity) => h('li', `${id.identityType}: ${id.identity}`)))) 
 
@@ -1960,16 +1960,16 @@ const artifactsTableFields: DataTableColumns<any> = [
         title: 'Actions',
         render: (row: any) => {
             let els: any[] = []
-            if (row.type === 'BOM'){
-                const uploadEl = h(NIcon,
-                    {
-                        title: 'Upload New Bom Version',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => uploadNewBomVersion(row)
-                    }, { default: () => h(Edit) })
-                els.push(uploadEl)
-            }
+           
+            const uploadEl = h(NIcon,
+                {
+                    title: 'Upload New Bom Version',
+                    class: 'icons clickable',
+                    size: 25,
+                    onClick: () => uploadNewBomVersion(row)
+                }, { default: () => h(Edit) })
+            els.push(uploadEl)
+            
             
             const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
             if (isDownloadable) {

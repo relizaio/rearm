@@ -11,6 +11,7 @@ import (
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gin-gonic/gin"
+	ociSpecv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 func main() {
@@ -30,9 +31,16 @@ func setGinConfigurations(router *gin.Engine) {
 }
 
 type Form struct {
-	File *multipart.FileHeader `form:"file" binding:"required"`
-	Repo string                `form:"repo"`
-	Tag  string                `form:"tag"`
+	File        *multipart.FileHeader `form:"file" binding:"required"`
+	Repo        string                `form:"repo"`
+	Tag         string                `form:"tag"`
+	InputDigest string                `form:"inputDigest"`
+}
+
+type OASResponse struct {
+	OciResponse ociSpecv1.Descriptor `json:"ociResponse"`
+	//File digest calculated by
+	FileSHA256Digest string `json:"fileSHA256Digest"`
 }
 
 func uploadFile(c *gin.Context) {
@@ -67,14 +75,29 @@ func uploadFile(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Error creating oras client: ", err)
 		return
 	}
-	resp, err := oc.PushArtifact(c, tempFile, form.Tag)
-
+	tempFile, checksum, err := CalculateSHA256(tempFile)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "Error Pushing Artifact: ", err)
+		c.String(http.StatusInternalServerError, "Error Calculating Checksum: ", err)
 		return
 	}
 
-	c.JSON(200, resp)
+	//verify integrity
+	if len(form.InputDigest) > 0 && form.InputDigest != "" && checksum != form.InputDigest {
+		log.Panic("File Integrity Check Failed: ", err)
+		c.String(http.StatusBadRequest, "File Integrity Check Failed")
+	}
+
+	resp, err := oc.PushArtifact(c, tempFile, form.Tag)
+	if err != nil {
+		log.Panic("Error Pushing Artifact: ", err)
+		c.String(http.StatusBadRequest, "Error Pushing Artifact: ", err)
+		return
+	}
+
+	c.JSON(200, &OASResponse{
+		OciResponse:      resp,
+		FileSHA256Digest: checksum,
+	})
 
 }
 func downloadFile(c *gin.Context) {

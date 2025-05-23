@@ -1,7 +1,7 @@
 import { isSupportedSpdxId } from '@cyclonedx/cyclonedx-library/dist.d/spdx';
 import * as BomRepository from './bomRespository';
 import { logger } from './logger';
-import { fetchFromOci, pushToOci } from './ociService';
+import { fetchFromOci, OASResponse, pushToOci } from './ociService';
 import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, HIERARCHICHAL, RebomOptions, SearchObject } from './types';
 import validateBom from './validateBom';
 const canonicalize = require ('canonicalize')
@@ -499,13 +499,16 @@ function computeRootDepIndex (bom: any) : number {
     rebomOptions.bomVersion = bomObj.version
     const newUuid = uuidv4(); 
     // find bom by digest
+    let oasResponse: OASResponse 
     let bomRows: BomRecord[]
     let bomRecord: BomRecord
     bomRows = await BomRepository.bomByOrgAndDigest(bomSha, bomInput.bomInput.org)
     if (!bomRows || !bomRows.length){
       if(process.env.OCI_STORAGE_ENABLED){
-        bomObj = await pushToOci(newUuid, bomObj)
+        oasResponse = await pushToOci(newUuid, bomObj)
         rebomOptions.storage = 'oci'
+      }else {
+        throw new Error("OCI Storage not enabled")
       }
   
       rebomOptions.mod = 'raw'
@@ -513,7 +516,7 @@ function computeRootDepIndex (bom: any) : number {
       // similarly it works for version, component group, component name, component version
       // check if urn is set on bom
       let queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization) VALUES ($1, $2, $3, $4, $5) RETURNING *'
-      let queryParams = [newUuid, rebomOptions, bomObj, bomInput.bomInput.tags, bomInput.bomInput.org]
+      let queryParams = [newUuid, rebomOptions, oasResponse, bomInput.bomInput.tags, bomInput.bomInput.org]
       if (rebomOptions.serialNumber) {
         let bomSearch: BomSearch = {
           bomSearch: {
@@ -536,7 +539,7 @@ function computeRootDepIndex (bom: any) : number {
   
         if (bomDtos && bomDtos.length && bomDtos[0].uuid) {
           queryText = 'UPDATE rebom.boms SET meta = $1, bom = $2, tags = $3 WHERE uuid = $4 RETURNING *'
-          queryParams = [rebomOptions, bomObj, bomInput.bomInput.tags, bomDtos[0].uuid]
+          queryParams = [rebomOptions, oasResponse, bomInput.bomInput.tags, bomDtos[0].uuid]
         }
       }
   

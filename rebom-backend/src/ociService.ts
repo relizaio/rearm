@@ -31,21 +31,25 @@ export async function fetchFromOci(tag: string): Promise<Object>{
     return bom
 }
 
-interface OciResponse {
+export type OASResponse = {
+    ociResponse?: OciResponse,
+    fileSHA256Digest?: string
+}
+export type OciResponse = {
     mediaType?: string,
     digest?: string,
     size?: string,
     artifactType?: string
 }
 
-export async function pushToOci(tag: string, bom: any): Promise<OciResponse>{
+export async function pushToOci(tag: string, bom: any): Promise<OASResponse>{
     if(tag.startsWith("urn")){
         tag = tag.replace("urn:uuid:","")
     }
     if(!tag.startsWith('rebom')){
         tag = 'rebom-' + tag
     }
-    let resp: OciResponse = {}
+    let resp: OASResponse = {}
     const formData = new FormData();
     formData.append('registry', registryHost)
     formData.append('repo', repository)

@@ -91,11 +91,17 @@
                 </n-dynamic-input>
             </n-form-item>
             <n-form-item
-                        path ="digests"
+                        path ="digestRecords"
                         label="Artifact Digests">
-                <n-dynamic-input
-                    v-model:value="artifact.digests"
-                    placeholder="Enter digest, i.e. sha256:digest" />
+                        <n-dynamic-input
+                    v-model:value="artifact.digestRecords"
+                    :on-create="onCreateDigests"
+                 >
+                    <template #default="{ value }">
+                        <n-select  :options="teaArtifactChecksumTypes" v-model:value="value.algo"  placeholder='Select Algo'/>
+                        <n-input v-model:value="value.digest" type="text" placeholder='digest'/>
+                    </template>
+                    </n-dynamic-input>
             </n-form-item>
             <n-button type="success" @click="onSubmit">Add Artifact</n-button>
             <n-button type="warning" @click="onReset">Reset Artifact Input</n-button>
@@ -139,6 +145,13 @@ const compuuid = ref('')
 const createArtifactForm = ref<FormInst | null>(null)
 
 const artifactTags: Ref<Tag[]> = ref([])
+
+type DigestRecord = {
+    algo: string,
+    digest: string
+}
+
+
 interface Artifact {
     displayIdentifier: string,
     tags: Tag[],
@@ -146,7 +159,7 @@ interface Artifact {
     identities: Identity[],
     downloadLinks: DownloadLink[],
     inventoryTypes: string[],
-    digests: string[],
+    digestRecords: DigestRecord[],
     bomFormat: string,
     storedIn: string,
     status: string,
@@ -159,7 +172,7 @@ const artifact: Ref<any>= ref({
     identities: props.isUpdateExistingBom ? props.updateArtifact.identities : [],
     downloadLinks: [],
     inventoryTypes: props.isUpdateExistingBom ? props.updateArtifact.inventoryTypes : [],
-    digests: props.isUpdateExistingBom ? props.updateArtifact.digests : [],
+    digestRecords: [],
     bomFormat: props.isUpdateExistingBom ? props.updateArtifact.bomFormat : null,
     storedIn: props.isUpdateExistingBom ? 'REARM' : '',
     status: 'ANY',
@@ -167,7 +180,6 @@ const artifact: Ref<any>= ref({
 })
 if(props.isUpdateExistingBom && props.updateArtifact){
     artifact.value.storedIn = 'REARM'
-    artifact.value.digests = []
 }
 const downloadLinks: Ref<DownloadLink[]> = ref([])
 const identities: Ref<Idenitity[]> = ref([])
@@ -265,6 +277,12 @@ const onCreateIdentities = () => {
         identity: '',
         identityType: ''
     }
+}
+const onCreateDigests = () => {
+    return {
+        algo: '',
+        digest: ''
+    } as DigestRecord
 }
 const branches: ComputedRef<any> = computed((): any => {
     let branches = []
@@ -405,6 +423,36 @@ const identityTypes = [
     {value: 'GMN', label: 'GMN'},
     {value: 'MANUFACTURER_VERSION', label: 'Manufacturer Version'},
     {value: 'UID', label: 'UID'}
+]
+
+enum TeaArtifactChecksumType {
+    MD5,
+    SHA_1,
+    SHA_256,
+    SHA_384,
+    SHA_512,
+    SHA3_256,
+    SHA3_384,
+    SHA3_512,
+    BLAKE2B_256,
+    BLAKE2B_384,
+    BLAKE2B_512,
+    BLAKE3,
+}
+
+const teaArtifactChecksumTypes = [
+    {value: 'MD5', label: 'MD5'},
+    {value: 'SHA-1', label: 'SHA_1'},
+    {value: 'SHA-256', label: 'SHA_256'},
+    {value: 'SHA-384', label: 'SHA_384'},
+    {value: 'SHA-512', label: 'SHA_512'},
+    {value: 'SHA3-256', label: 'SHA3_256'},
+    {value: 'SHA3-384', label: 'SHA3_384'},
+    {value: 'SHA3-512', label: 'SHA3_512'},
+    {value: 'BLAKE2B-256', label: 'BLAKE2B_256'},
+    {value: 'BLAKE2B-384', label: 'BLAKE2B_384'},
+    {value: 'BLAKE2B-512', label: 'BLAKE2B_512'},
+    {value: 'BLAKE3', label: 'BLAKE3'},
 ]
 
 </script>

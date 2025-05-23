@@ -150,7 +150,11 @@ const ARTIFACT_DETAIL_DATA = `
     buildId
     buildUri
     cicdMeta
-    digests
+    digestRecords{
+        algo
+        digest
+        scope
+    }
     type
     bomFormat
     tags{
@@ -455,7 +459,11 @@ const MULTI_RELEASE_GQL_DATA = `
     artifactDetails {
         uuid
         displayIdentifier
-        digests
+        digestRecords{
+            algo
+            digest
+            scope
+        }
         type
         tags {
             key

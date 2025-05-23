@@ -1582,7 +1582,7 @@ const deployedReleaseFeilds: any[] = [
                     ))
             }
             if(row.artifact !== 'Not Set'){
-                const artSha = row.artifact.identifier + (row.artifact.digests.length ?  '@' + row.artifact.digests[0] : '')
+                const artSha = row.artifact.identifier + (row.artifact.digestRecords.length ?  '@' + row.artifact.digestRecords[0].value : '')
                 els.push(h(NTooltip, {
                     trigger: 'hover'
                 }, {
