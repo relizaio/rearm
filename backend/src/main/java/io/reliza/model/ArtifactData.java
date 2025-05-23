@@ -15,6 +15,7 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
@@ -23,6 +24,7 @@ import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.tea.Link;
 import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.tea.TeaArtifactChecksumType;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -81,7 +83,23 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		SPDX
 	}
 
+	public enum DigestScope {
+		ORIGINAL_FILE, //user provided
+		OCI_STORAGE
+	}
+
     public record Identity(IdentityType identityType, String identity) {}
+
+	public record DigestRecord(
+		TeaArtifactChecksumType algo, 
+		String digest, 
+		@JsonProperty(defaultValue = "ORIGINAL_FILE")
+		DigestScope scope
+	) {
+		public DigestRecord(TeaArtifactChecksumType algo, String digest){
+			this(algo, digest, DigestScope.ORIGINAL_FILE);
+		}
+	}
     
     @Data
     @EqualsAndHashCode(callSuper = true)
@@ -108,7 +126,9 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	private ZonedDateTime date;
 	private StoredIn storedIn; 
 	private InternalBom internalBom; // GENERATE
+	@Deprecated
 	private Set<String> digests = new LinkedHashSet<>(); // GENERATE FOR INTERNAL
+	private Set<DigestRecord> digestRecords = new LinkedHashSet<>();
 	private List<TagRecord> tags = new ArrayList<>();
 	private StatusEnum status; // HOW TO ASSIGN, ANY FOR NOW
 	private String version; // FIGURE OUT VERSIONING 
@@ -153,7 +173,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		ad.setDate(artifactDto.getDate());
 		ad.setStoredIn(artifactDto.getStoredIn());
 		ad.setInternalBom(artifactDto.getInternalBom());
-		if (null != artifactDto.getDigests()) ad.setDigests(new LinkedHashSet<>(artifactDto.getDigests()));
+		if (null != artifactDto.getDigestRecords()) ad.setDigestRecords(new LinkedHashSet<>(artifactDto.getDigestRecords()));;
 		if (null != artifactDto.getTags()) ad.setTags(new ArrayList<>(artifactDto.getTags()));
 		ad.setStatus(artifactDto.getStatus());
 		ad.setVersion(artifactDto.getVersion());

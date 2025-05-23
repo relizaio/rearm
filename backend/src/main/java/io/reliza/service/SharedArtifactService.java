@@ -149,10 +149,18 @@ public class SharedArtifactService {
 	
 	@Transactional
 	protected Artifact saveArtifact (Artifact a, Map<String, Object> recordData, WhoUpdated wu) {
+		if(recordData.get("uuid").toString().equals(a.getUuid().toString())){
+			log.info("record and object ids equal");
+		}else{
+			log.info("unequal record and object id");
+			log.info("record data: {}", recordData);
+			log.info("art object: {}", a);
+		}
 		// let's add some validation here
 		// TODO: add validation
 		Optional<Artifact> oa = getArtifact(a.getUuid());
 		if (oa.isPresent()) {
+			log.info("existing a object: {}", oa.get());
 			auditService.createAndSaveAuditRecord(TableName.ARTIFACTS, a);
 			a.setRevision(a.getRevision() + 1);
 			a.setLastUpdatedDate(ZonedDateTime.now());

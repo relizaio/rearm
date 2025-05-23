@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -39,10 +40,14 @@ import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
+import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ArtifactUploadResponseDto;
+import io.reliza.model.dto.OASResponseDto;
+import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
@@ -182,14 +187,24 @@ public class ArtifactService {
 	public void saveAll(List<Artifact> artifacts){
 		repository.saveAll(artifacts);
 	}
+
+	// if( null!= artifactDto.getBomFormat() && null != artifactDto.getType() && artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) && (
+	// 			artifactDto.getType().equals(ArtifactType.BOM)
+	// 			|| artifactDto.getType().equals(ArtifactType.VDR) 
+	// 			|| artifactDto.getType().equals(ArtifactType.VEX) 
+	// 			|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
+	// 		))
 	
 	public boolean isRebomStoreable (ArtifactDto artifactDto) {
-		return artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) && (
-				artifactDto.getType().equals(ArtifactType.BOM)
-				|| artifactDto.getType().equals(ArtifactType.VDR) 
-				|| artifactDto.getType().equals(ArtifactType.VEX) 
-				|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
-			);
+		return null!= artifactDto.getBomFormat() 
+				&& null != artifactDto.getType() 
+				&& artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) 
+				&& (
+					artifactDto.getType().equals(ArtifactType.BOM)
+					|| artifactDto.getType().equals(ArtifactType.VDR) 
+					|| artifactDto.getType().equals(ArtifactType.VEX) 
+					|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
+				);
 	}
 	
 	public boolean isRebomStoreable (ArtifactData artifactData) {
@@ -206,7 +221,7 @@ public class ArtifactService {
 
 		artifactDto.setOrg(orgUuid);
 		String tag= "";
-		ArtifactUploadResponseDto artifactUploadResponse = null;
+		OASResponseDto artifactUploadResponse = null;
 		DependencyTrackUploadResult dtur = null;
 		Artifact art = null;
 
@@ -264,7 +279,7 @@ public class ArtifactService {
 				if(null != rebomResponse.duplicate() && rebomResponse.duplicate() ){
 					//find existing artifact and use its uuid, then create / update art
 					// find artifact by bom digest?
-					var a = findArtifactByStoredDigest(orgUuid, artifactUploadResponse.getDigest());
+					var a = findArtifactByStoredDigest(orgUuid, artifactUploadResponse.getOciResponse().getDigest());
 					if(a.isPresent()){
 						art = a.get();
 						artifactDto.setUuid(art.getUuid());
@@ -281,7 +296,9 @@ public class ArtifactService {
 				}
 				tag = artifactDto.getUuid().toString();
 			}else {
-				artifactUploadResponse = uploadFileToConfiguredOci(file, tag);
+				DigestRecord sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaArtifactChecksumType.SHA_256)).findFirst().orElse(null);
+				String sha256Digest = (null != sha256Dr) ? sha256Dr.digest() : null;
+				artifactUploadResponse = uploadFileToConfiguredOci(file, tag, sha256Digest);
 			}
 		}
 		//early return in case when art is not null; i.e. a duplicate artifact?
@@ -290,12 +307,19 @@ public class ArtifactService {
 		}
 		// artifactDto.setDisplayIdentifier(this.registryHost + "/" + this.ociRepository);
 		if(null!=artifactUploadResponse){
-			if(null != artifactUploadResponse.getDigest())
-			artifactDto.setDigests(Set.of(artifactUploadResponse.getDigest()));
+			Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
+			String ociDigest = artifactUploadResponse.getOciResponse().getDigest();
+			if(StringUtils.isNotEmpty(ociDigest)){
+				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, ociDigest, DigestScope.OCI_STORAGE));
+			}
+			if(StringUtils.isNotEmpty(artifactUploadResponse.getFileSHA256Digest())){
+				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
+			}
+			artifactDto.setDigestRecords(digestRecords);
 
 			artifactDto.setTags(List.of(
-            new TagRecord(CommonVariables.SIZE_FEILD, artifactUploadResponse.getSize(), Removable.NO),
-            new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, artifactUploadResponse.getArtifactType(), Removable.NO),
+            new TagRecord(CommonVariables.SIZE_FEILD, artifactUploadResponse.getOciResponse().getSize(), Removable.NO),
+            new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, artifactUploadResponse.getOciResponse().getArtifactType(), Removable.NO),
             new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
             new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
             new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
@@ -310,7 +334,7 @@ public class ArtifactService {
         return art.getUuid();
     }
 
-	public ArtifactUploadResponseDto uploadFileToConfiguredOci(Resource file, String tag){
+	public OASResponseDto uploadFileToConfiguredOci(Resource file, String tag, String sha256Digest){
 		MultiValueMap<String, Object> formData = new LinkedMultiValueMap<>();
 		if(!tag.startsWith("rearm")){
 			tag = "rearm-" + tag;
@@ -319,18 +343,21 @@ public class ArtifactService {
         formData.add("repo", this.ociRepository);
         formData.add("file", file);
         formData.add("tag", tag);
+		
+		if(StringUtils.isNotEmpty(sha256Digest))
+        	formData.add("inputDigest", sha256Digest);
 
-		Mono<ArtifactUploadResponseDto> resp = this.webClient.post().uri("/push")
+		Mono<OASResponseDto> resp = this.webClient.post().uri("/push")
 		.contentType(MediaType.MULTIPART_FORM_DATA)
 		.body(BodyInserters.fromMultipartData(formData))
 		.exchangeToMono(response -> {
 			if (response.statusCode().equals(HttpStatus.OK)) {
-				return response.bodyToMono(ArtifactUploadResponseDto.class);
+				return response.bodyToMono(OASResponseDto.class);
 			} else {
 				return response.createError();
 			}
 		});
-		ArtifactUploadResponseDto artifactUploadResponse = resp.block();
+		OASResponseDto artifactUploadResponse = resp.block();
 		return artifactUploadResponse;
 	}
 	

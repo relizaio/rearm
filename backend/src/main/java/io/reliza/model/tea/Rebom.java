@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.model.dto.ArtifactUploadResponseDto;
+import io.reliza.model.dto.OASResponseDto;
 import io.reliza.service.RebomService.BomStructureType;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Rebom {
@@ -44,7 +45,7 @@ public class Rebom {
         }
     }
 
-    public record RebomResponse(UUID uuid, ArtifactUploadResponseDto bom, RebomOptions meta, Boolean duplicate) {}
+    public record RebomResponse(UUID uuid, OASResponseDto bom, RebomOptions meta, Boolean duplicate) {}
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record InternalBom (UUID id, ArtifactBelongsTo belongsTo){}
 

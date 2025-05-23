@@ -559,6 +559,12 @@ type PullRequestData {
 	commits: [ID]
 }
 
+type DigestRecord{
+	algo: String
+	digest: String
+	scope: String
+}
+
 type Artifact {
 	uuid: ID
 	displayIdentifier: String
@@ -567,9 +573,9 @@ type Artifact {
 	buildId: String
 	buildUri: String
 	cicdMeta: String
-	digests: [String]
+	digestRecords: [DigestRecord]
 	isInternal: ArtifactBelonging
-	type: ArtifactType
+	type: String
 	bomFormat: BomFormat
 	notes: String
 	tags: [TagRecord]
@@ -1016,13 +1022,19 @@ input ArtifactInput {
 	inventoryTypes: [InventoryType]
 	bomFormat: String
 	storedIn: String
-	digests: [String]
 	tags: [TagRecordInput]
 	status: String
 	version: String
 	file: Upload
 	fileSce: Upload
 	stripBom: StripBomEnum
+	digestRecords: [DigestRecordInput]
+}
+
+input DigestRecordInput {
+	algo: String
+	digest: String
+	scope: String
 }
 
 input ExternalBomInput {
@@ -1462,6 +1474,7 @@ enum IntegrateType {
 	TARGET
 }
 
+
 enum CPUArchitectureEnum {
 	AMD64
 	I386
@@ -1524,20 +1537,6 @@ enum IntegrationType {
 	SLACK
 	MSTEAMS
 	DEPENDENCYTRACK
-}
-
-enum ArtifactType {
-	BOM
-	ATTESTATION
-	VDR
-	VEX
-	USER_DOCUMENT
-	DEVELOPMENT_DOCUMENT
-	PROJECT_DOCUMENT
-	MARKETING_DOCUMENT
-	TEST_REPORT
-	SARIF
-	OTHER
 }
 
 enum BomFormat {

@@ -5,6 +5,7 @@
 package io.reliza.model.dto;
 
 import java.time.ZonedDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -19,6 +20,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
+import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.Identity;
 import io.reliza.model.ArtifactData.InventoryType;
 import io.reliza.model.ArtifactData.StoredIn;
@@ -65,7 +67,13 @@ public class ArtifactDto {
 	private InternalBom internalBom;
 
 	@JsonProperty("digests")
+	@Deprecated
 	private Set<String> digests;
+
+	@Builder.Default
+	@JsonInclude(JsonInclude.Include.NON_EMPTY)
+	@JsonProperty("digestRecords")
+	private Set<DigestRecord> digestRecords = new HashSet<>();
 	
 	@JsonProperty("tags")
 	private List<TagRecord> tags;

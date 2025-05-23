@@ -37,7 +37,7 @@ public class ArtifactWebDto extends ArtifactData {
 		awd.setDate(ad.getDate());
 		awd.setStoredIn(ad.getStoredIn());
 		awd.setInternalBom(ad.getInternalBom());
-		awd.setDigests(new LinkedHashSet<>(ad.getDigests()));
+		awd.setDigestRecords(new LinkedHashSet<>(ad.getDigestRecords()));
 		awd.setTags(new LinkedList<>(ad.getTags()));
 		awd.setStatus(ad.getStatus());
 		awd.setVersion(ad.getVersion());
