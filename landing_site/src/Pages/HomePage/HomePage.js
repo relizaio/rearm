@@ -7,6 +7,7 @@ import gitlab from "../../Assets/Home/gitlab.png"
 import jenkins from "../../Assets/Home/jenkins.png"
 import ado from "../../Assets/Home/ado.png"
 import dtrack from "../../Assets/Home/dtrack.png"
+import tealogo from "../../Assets/Home/tealogo.png"
 import analyse from "../../Assets/Home/analyse.svg"
 import colab from "../../Assets/Home/colab.svg"
 import analytics from "../../Assets/Home/analytics.svg"
@@ -236,6 +237,15 @@ const HomePage = () => {
         </div>
         <div className={`d-flex justify-content-center`}>
           <iframe className={`${styles.videoContainer}`} src="https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.mp4" width="100%" height="100%" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen title="ReARM Demo Walkthrough"></iframe>
+        </div>
+        <div className={`container-fluid ${styles.container2}`}>
+          <div className='row'>
+            <h3 className={`text-center ${styles.C2_title}`}>Supports</h3>
+            <p className={styles.C2_text}>OWASP Transparency Exchange API</p>
+            <div className={`d-flex justify-content-center ${styles.integrationsFlexWrap}`}>
+              <img src={tealogo} alt="OWASP Transparency Exchange API Logo" className={styles.favAppIcons} />
+            </div>
+          </div>
         </div>
         <div className={`container-fluid ${styles.container2}`}>
           <div className='row'>
