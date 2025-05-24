@@ -3,6 +3,11 @@
   margin-bottom: 100px;
 }
 
+.containerHeader {
+  padding-top: 100px;
+  margin-bottom: -70px;
+}
+
 .C1_title1 {
   font-family: "Inter";
   font-style: normal;

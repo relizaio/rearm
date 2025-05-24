@@ -32,51 +32,26 @@ const Blog = () => {
 
   return (
     <BasicLayout>
-      <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-        <h1>Blog Posts</h1>
-        <ul>
-          {posts.map((post) => (
-            <li key={post.slug}>
-              <a href={`/blog/${post.slug}`}>{post.title}</a>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="p-8 max-w-2xl mx-auto">
-        <h1>{data.title}</h1>
-        <p><em>{data.date}</em></p>
-        <ReactMarkdown>{content}</ReactMarkdown>
-      </div>
-      <div className={`${styles.container1} container-fluid`}>
+      <div className={`${styles.containerHeader} container-fluid`}>
         <div className='row'>
           <div className={`col-12 col-sm-7`}>
             <div className={`mainPaddingContainer_sm_7`}>
-              <h3 className={styles.C1_title1}>About Us</h3>
-              <h3 className={styles.C1_title2}>Reliza - Future of DevOps</h3>
-              <p className={styles.C1_text1}>Reliza was established in 2019 to help companies navigate modern DevOps practices and transition to GoalOps. Our mission is to connect whole tech organization - from Developers to Marketing and Sales - around the common Goal. <hr style={{ height: "0", margin: "5px 0" }} />Reliza Hub is currently working in a public preview mode free of charge! You may start using it here - no registration required to try! Reliza Hub is a GoalOps SaaS platform that provides single pane of glass view for your releases, instances and deployments. Whether you're following a mono-repo or multi-repo, monolith or microservices, Git or SVN, Reliza Hub is there to help organize everything.</p>
-            </div>
-          </div>
-          <div className='col-12 col-sm-5 p-0'>
-            <div className={styles.C1_right}>
-              <div className={styles.C1_right1}><img src={about1} alt='' style={{ width: "100%" }} /></div>
-              <div className={styles.C1_right2}><img src={about2_1} alt='' style={{ width: "100%" }} /></div>
-              <div className={styles.C1_right3}><img src={about2_2} alt='' style={{ width: "100%" }} /></div>
+              <h3 className={styles.C1_title2}>ReARM Blog</h3>
             </div>
           </div>
         </div>
       </div>
-      <div className="mainPaddingContainer">
-        <div className={`container-fluid ${styles.container2}`}>
-          <Experience />
-        </div>
-        <div className={`container-fluid ${styles.container3}`}>
+      <div className={`${styles.container1} container-fluid`}>
+        {posts.map((post) => (
           <div className='row'>
-            <div className='col-12 col-md-6'>
-              <h3 className={styles.C1_title1}>Why Choose Us</h3>
-              <h3 className={styles.C1_title2}>A Tool For Futur Of Developer Work</h3>
+            <div className={`col-12 col-sm-7`}>
+              <div className={`mainPaddingContainer_sm_7`}>
+                <a href={`/blog/${post.slug}`}><h3 className={styles.C1_title1}>{post.title}</h3></a>
+                <h3 className={styles.C1_text1}>{post.date}</h3>
+              </div>
             </div>
           </div>
-        </div>
+        ))}  
       </div>
       <LastContainer1 />
     </BasicLayout >
