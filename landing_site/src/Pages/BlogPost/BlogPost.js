@@ -18,10 +18,14 @@ const BlogPost = () => {
     <BasicLayout>
       <div className={`${styles.container1} container-fluid`}>
         <div className="p-8 max-w-2xl mx-auto">
+          <h1 className={styles.C1_title1}>{post.title}</h1>
+          <h3 className={styles.C1_text1}><em>{post.date}</em></h3>
+          <div className={styles.C1_text1}>
+            <ReactMarkdown>
+              {post.content}
+            </ReactMarkdown>
+          </div>
           <Link to="/blog">← Back to Blog</Link>
-          <h1>{post.title}</h1>
-          <p><em>{post.date}</em></p>
-          <ReactMarkdown>{post.content}</ReactMarkdown>
         </div>
       </div>
       <LastContainer1 />

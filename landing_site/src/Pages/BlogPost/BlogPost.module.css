@@ -1,7 +1,32 @@
 .container1 {
   padding-top: 100px;
   margin-bottom: 100px;
+  width: 60%;
 }
+
+h2 {
+  margin-bottom: 15px;
+}
+
+h3 {
+  margin-top: 30px;
+  margin-bottom: 10px;
+}
+
+blockquote {
+  font-style: italic;
+  color: #555;
+  border-left: 4px solid #ccc;
+  padding: 0.75em 1em;
+  margin: 1.5em 0;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+blockquote p {
+  margin: 0;
+}
+
 
 .C1_title1 {
   font-family: "Inter";
@@ -30,7 +55,7 @@
   text-align: justify;
   font-weight: 400;
   font-size: 18px;
-  line-height: 156%;
+  line-height: 200%;
   color: #5d6180;
   margin-bottom: 54px;
 }

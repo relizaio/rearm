@@ -1,16 +1,3 @@
-// import matter from "gray-matter"
-
-// const context = require.context("../posts", false, /\.md$/)
-
-// export function getPosts() {
-//   return context.keys().map((key) => {
-//     const raw = context(key).default || context(key)
-//     const { data, content } = matter(raw)
-//     const slug = key.replace(/^.\//, "").replace(/\.md$/, "")
-//     return { slug, ...data, content }
-//   })
-// }
-
 import { Buffer } from 'buffer'
 import matter from "gray-matter"
 
@@ -28,7 +15,15 @@ function importAll(r) {
   })
 }
 
-// webpack's require.context - grab all .md files
 const posts = importAll(require.context("../posts", false, /\.md$/))
+
+posts.sort((a, b) => {
+    if (a.date > b.date) {
+        return -1
+    } else if (a.date < b.date) {
+        return 1
+    }
+    return 0
+})
 
 export default posts

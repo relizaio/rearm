@@ -1,3 +1,7 @@
+a {
+  text-decoration: none;
+}
+
 .container1 {
   padding-top: 100px;
   margin-bottom: 100px;
@@ -35,7 +39,7 @@
   text-align: justify;
   font-weight: 400;
   font-size: 18px;
-  line-height: 156%;
+  line-height: 200%;
   color: #5d6180;
   margin-bottom: 54px;
 }
