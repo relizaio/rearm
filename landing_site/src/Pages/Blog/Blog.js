@@ -1,159 +1,51 @@
 import React from 'react'
+import ReactMarkdown from 'react-markdown'
+import { useEffect, useState } from 'react'
+// import fs from 'fs'
+// import path from 'path'
+import { getPosts } from "../../utils/LoadPosts"
+import grayMatter from 'gray-matter'
 import BasicLayout from '../../Layout/BasicLayout/BasicLayout'
 import styles from "./Blog.module.css"
 import about1 from "../../Assets/AboutUs/about1.png"
 import about2_1 from "../../Assets/AboutUs/about2_1.png"
 import about2_2 from "../../Assets/AboutUs/about2_2.png"
-import ChooseUsCard from './Components/ChooseUsCard/ChooseUsCard'
-import Deployment from "../../Assets/AboutUs/Deployment.png"
-import Changes from "../../Assets/AboutUs/Changes.png"
-import Audit from "../../Assets/AboutUs/Audit.png"
-import team_profile1 from "../../Assets/AboutUs/profilePics/team/team_profile1.png"
-import team_profile2 from "../../Assets/AboutUs/profilePics/team/team_profile2.png"
-import team_profile3 from "../../Assets/AboutUs/profilePics/team/team_profile3.png"
-import board_profile1 from "../../Assets/AboutUs/profilePics/board/board_profile1.png"
-import board_profile2 from "../../Assets/AboutUs/profilePics/board/board_profile2.png"
-import board_profile3 from "../../Assets/AboutUs/profilePics/board/board_profile3.png"
-import aribnb from "../../Assets/AboutUs/teamworkSoftware/aribnb.png"
-import fedex from "../../Assets/AboutUs/teamworkSoftware/fedex.png"
-import google from "../../Assets/AboutUs/teamworkSoftware/google.png"
-import hubspot from "../../Assets/AboutUs/teamworkSoftware/hubspot.png"
-import microsoft from "../../Assets/AboutUs/teamworkSoftware/microsoft.png"
-import walmart from "../../Assets/AboutUs/teamworkSoftware/walmart.png"
 import LastContainer1 from '../../Components/LastContainer/LastContainer1'
 import Experience from '../../Components/Experience/Experience'
 
+// const Post = ({ postName }) => {
+//   const [content, setContent] = useState('');
+//   const [meta, setMeta] = useState({});
 
-const AboutPage = () => {
-  const chooseUsArray = [
-    {
-      icon: Deployment,
-      title: "Deployments",
-      text: "Know exactly what versions of your Bundles and Projects are deployed in each Environment."
-    },
-    {
-      icon: Changes,
-      title: "Changes",
-      text: 'Do queries like "What are all the changes that happened across my instances between 5am and 7am UTC last Tuesday?"'
-    },
-    {
-      icon: Audit,
-      title: "Audit",
-      text: "Reliza Hub is built for auditability. Every change is recorded."
-    },
-  ]
-  const ourTeam = {
-    title: "Meet Our  Team",
-    text: "Leadership at Reliza comes from all over. Here is the team at the helm of the ship.",
-    profileArray: [
-      {
-        profilePic: team_profile1,
-        name: "Samuel Willson",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: team_profile2,
-        name: "Angelina Hellhop",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: team_profile3,
-        name: "Kyle Generale",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: team_profile1,
-        name: "Samuel Willson",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: team_profile2,
-        name: "Angelina Hellhop",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: team_profile3,
-        name: "Kyle Generale",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: team_profile1,
-        name: "Samuel Willson",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: team_profile2,
-        name: "Angelina Hellhop",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: team_profile3,
-        name: "Kyle Generale",
-        designation: "Digital Artist"
-      },
-    ]
-  }
-  const ourBoard = {
-    title: "Meet Our  Advisory board",
-    text: "Leadership at Reliza comes from all over. Here is the team at the helm of the ship.",
-    profileArray: [
-      {
-        profilePic: board_profile1,
-        name: "Samuel Willson",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: board_profile2,
-        name: "Angelina Hellhop",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: board_profile3,
-        name: "Kyle Generale",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: board_profile1,
-        name: "Samuel Willson",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: board_profile2,
-        name: "Angelina Hellhop",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: board_profile3,
-        name: "Kyle Generale",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: board_profile1,
-        name: "Samuel Willson",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: board_profile2,
-        name: "Angelina Hellhop",
-        designation: "Digital Artist"
-      },
-      {
-        profilePic: board_profile3,
-        name: "Kyle Generale",
-        designation: "Digital Artist"
-      },
-    ]
-  }
-  const teamWorkSoftware = [
-    { icon: aribnb },
-    { icon: hubspot },
-    { icon: google },
-    { icon: microsoft },
-    { icon: walmart },
-    { icon: fedex },
-  ]
+//   useEffect(() => {
+//       const filePath = path.join('src/posts', `${postName}.md`);
+//       const fileContent = fs.readFileSync(filePath, 'utf8');
+//       const { data, content } = grayMatter(fileContent);
+//       setMeta(data);
+//       setContent(content);
+//   }, [postName]);
+
+const posts = getPosts()
+
+const Blog = () => {
+  const [selectedSlug, setSelectedSlug] = useState(posts[0].slug)
+  const post = posts.find((p) => p.slug === selectedSlug)
+
   return (
     <BasicLayout>
+    <div className="p-8 max-w-2xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6">My Markdown Blog</h1>
+      <div className="flex gap-4 mb-6">
+        {posts.map((p) => (
+          <button key={p.slug} onClick={() => setSelectedSlug(p.slug)} className="underline">
+            {p.title}
+          </button>
+        ))}
+      </div>
+      <article className="prose">
+        <ReactMarkdown>{post?.content}</ReactMarkdown>
+      </article>
+    </div>
       <div className={`${styles.container1} container-fluid`}>
         <div className='row'>
           <div className={`col-12 col-sm-7`}>
@@ -182,15 +74,6 @@ const AboutPage = () => {
               <h3 className={styles.C1_title1}>Why Choose Us</h3>
               <h3 className={styles.C1_title2}>A Tool For Futur Of Developer Work</h3>
             </div>
-            <div className={`row ${styles.cardGap}`}>
-              {chooseUsArray?.map((item) => {
-                return (
-                  <div className='col-12 col-sm-6 col-md-4'>
-                    <ChooseUsCard item={item} />
-                  </div>
-                )
-              })}
-            </div>
           </div>
         </div>
       </div>
@@ -199,4 +82,4 @@ const AboutPage = () => {
   )
 }
 
-export default AboutPage
+export default Blog
