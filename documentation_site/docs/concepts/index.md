@@ -1,7 +1,7 @@
 # Concepts
 
 ## ReARM
-ReARM is an abbreviation for "Reliza's Awesome Release Manager". It is a DevSecOps and Supply Chain Security tool to organize product releases with their metadata, including various Bills of Materials (xBOMs). ReARM allows organizations to maintain compliance within the framework of [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) as well as US Executive Orders [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity) and [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity).
+ReARM is an abbreviation for "Reliza's Artifact and Release Management". It is a DevSecOps and Supply Chain Security tool to organize product releases with their metadata, including various Bills of Materials (xBOMs). ReARM allows organizations to maintain compliance within the framework of [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) as well as US Executive Orders [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity) and [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity).
 
 ## Component
 Component refers to software or hardware that is being developed or used by an organization and in case of software usually maps to a version control system (VCS) repository (i.e., this could be a Git repository). In other words, if you are working on a software which has its own Version Control repository or is a component in a Monorepo - that would be a Component.
