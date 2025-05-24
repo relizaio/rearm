@@ -1,10 +1,9 @@
 import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useEffect, useState } from 'react'
-// import fs from 'fs'
-// import path from 'path'
 import { getPosts } from "../../utils/LoadPosts"
 import grayMatter from 'gray-matter'
+import rearmHistoryPost from '../../posts/rearm-history.md'
 import BasicLayout from '../../Layout/BasicLayout/BasicLayout'
 import styles from "./Blog.module.css"
 import about1 from "../../Assets/AboutUs/about1.png"
@@ -12,6 +11,9 @@ import about2_1 from "../../Assets/AboutUs/about2_1.png"
 import about2_2 from "../../Assets/AboutUs/about2_2.png"
 import LastContainer1 from '../../Components/LastContainer/LastContainer1'
 import Experience from '../../Components/Experience/Experience'
+import { Buffer } from 'buffer'
+
+window.Buffer = Buffer
 
 // const Post = ({ postName }) => {
 //   const [content, setContent] = useState('');
@@ -28,24 +30,15 @@ import Experience from '../../Components/Experience/Experience'
 const posts = getPosts()
 
 const Blog = () => {
-  const [selectedSlug, setSelectedSlug] = useState(posts[0].slug)
-  const post = posts.find((p) => p.slug === selectedSlug)
+  const { data, content } = grayMatter(rearmHistoryPost)
 
   return (
     <BasicLayout>
-    <div className="p-8 max-w-2xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6">My Markdown Blog</h1>
-      <div className="flex gap-4 mb-6">
-        {posts.map((p) => (
-          <button key={p.slug} onClick={() => setSelectedSlug(p.slug)} className="underline">
-            {p.title}
-          </button>
-        ))}
+      <div className="p-8 max-w-2xl mx-auto">
+        <h1>{data.title}</h1>
+        <p><em>{data.date}</em></p>
+        <ReactMarkdown>{content}</ReactMarkdown>
       </div>
-      <article className="prose">
-        <ReactMarkdown>{post?.content}</ReactMarkdown>
-      </article>
-    </div>
       <div className={`${styles.container1} container-fluid`}>
         <div className='row'>
           <div className={`col-12 col-sm-7`}>

@@ -6,9 +6,11 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { BrowserRouter } from 'react-router-dom';
 import ScrollToTop from './Components/ScrollToTop/ScrollToTop';
+import { Buffer } from 'buffer'
 
 const rootElement = document.getElementById('root');
 const root = createRoot(rootElement);
+window.Buffer = Buffer
 
 root.render(
   <React.StrictMode>
