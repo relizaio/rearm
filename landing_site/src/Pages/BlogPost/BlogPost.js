@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import grayMatter from 'gray-matter'
 import rearmHistoryPost from '../../posts/rearm-history.md'
 import BasicLayout from '../../Layout/BasicLayout/BasicLayout'
-import styles from "./Blog.module.css"
+import styles from "./BlogPost.module.css"
 import about1 from "../../Assets/AboutUs/about1.png"
 import about2_1 from "../../Assets/AboutUs/about2_1.png"
 import about2_2 from "../../Assets/AboutUs/about2_2.png"
@@ -12,6 +12,7 @@ import LastContainer1 from '../../Components/LastContainer/LastContainer1'
 import Experience from '../../Components/Experience/Experience'
 import { Buffer } from 'buffer'
 import posts from "../../utils/LoadPosts"
+import { useParams, Link } from "react-router-dom"
 
 window.Buffer = Buffer
 
@@ -27,25 +28,20 @@ window.Buffer = Buffer
 //       setContent(content);
 //   }, [postName]);
 
-const Blog = () => {
-  const { data, content } = grayMatter(rearmHistoryPost)
+const BlogPost = () => {
+  const { slug } = useParams()
+  const post = posts.find((p) => p.slug === slug)
+  console.log(posts)
+  if (!post) return <p>Post not found. <Link to="/">Go back</Link></p>
+  // const { data, content } = grayMatter(rearmHistoryPost)
 
   return (
     <BasicLayout>
-      <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-        <h1>Blog Posts</h1>
-        <ul>
-          {posts.map((post) => (
-            <li key={post.slug}>
-              <a href={`/blog/${post.slug}`}>{post.title}</a>
-            </li>
-          ))}
-        </ul>
-      </div>
       <div className="p-8 max-w-2xl mx-auto">
-        <h1>{data.title}</h1>
-        <p><em>{data.date}</em></p>
-        <ReactMarkdown>{content}</ReactMarkdown>
+        <Link to="/">← Back to posts</Link>
+        <h1>{post.title}</h1>
+        <p><em>{post.date}</em></p>
+        <ReactMarkdown>{post.content}</ReactMarkdown>
       </div>
       <div className={`${styles.container1} container-fluid`}>
         <div className='row'>
@@ -83,4 +79,4 @@ const Blog = () => {
   )
 }
 
-export default Blog
+export default BlogPost
