@@ -442,16 +442,16 @@ enum TeaArtifactChecksumType {
 
 const teaArtifactChecksumTypes = [
     {value: 'MD5', label: 'MD5'},
-    {value: 'SHA-1', label: 'SHA_1'},
-    {value: 'SHA-256', label: 'SHA_256'},
-    {value: 'SHA-384', label: 'SHA_384'},
-    {value: 'SHA-512', label: 'SHA_512'},
-    {value: 'SHA3-256', label: 'SHA3_256'},
-    {value: 'SHA3-384', label: 'SHA3_384'},
-    {value: 'SHA3-512', label: 'SHA3_512'},
-    {value: 'BLAKE2B-256', label: 'BLAKE2B_256'},
-    {value: 'BLAKE2B-384', label: 'BLAKE2B_384'},
-    {value: 'BLAKE2B-512', label: 'BLAKE2B_512'},
+    {value: 'SHA1', label: 'SHA1'},
+    {value: 'SHA_256', label: 'SHA_256'},
+    {value: 'SHA_384', label: 'SHA_384'},
+    {value: 'SHA_512', label: 'SHA_512'},
+    {value: 'SHA3_256', label: 'SHA3_256'},
+    {value: 'SHA3_384', label: 'SHA3_384'},
+    {value: 'SHA3_512', label: 'SHA3_512'},
+    {value: 'BLAKE2B_256', label: 'BLAKE2B_256'},
+    {value: 'BLAKE2B_384', label: 'BLAKE2B_384'},
+    {value: 'BLAKE2B_512', label: 'BLAKE2B_512'},
     {value: 'BLAKE3', label: 'BLAKE3'},
 ]
 
