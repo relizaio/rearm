@@ -560,9 +560,9 @@ type PullRequestData {
 }
 
 type DigestRecord{
-	algo: String
+	algo: TeaArtifactChecksumType
 	digest: String
-	scope: String
+	scope: DigestScope
 }
 
 type Artifact {
@@ -1032,9 +1032,9 @@ input ArtifactInput {
 }
 
 input DigestRecordInput {
-	algo: String
+	algo: TeaArtifactChecksumType
 	digest: String
-	scope: String
+	scope: DigestScope
 }
 
 input ExternalBomInput {
@@ -1575,6 +1575,26 @@ enum IdentifierType {
 	PURL
 	CPE
 	TEI
+}
+
+enum TeaArtifactChecksumType {
+	MD5
+	SHA1
+	SHA_256
+	SHA_384
+	SHA_512
+	SHA3_256
+	SHA3_384
+	SHA3_512
+	BLAKE2B_256
+	BLAKE2B_384
+	BLAKE2B_512
+	BLAKE3
+}
+
+enum DigestScope {
+	ORIGINAL_FILE
+	OCI_STORAGE
 }
 
 scalar Object

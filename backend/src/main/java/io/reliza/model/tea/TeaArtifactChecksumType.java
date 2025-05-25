@@ -28,25 +28,25 @@ public enum TeaArtifactChecksumType {
   
   MD5("MD5"),
   
-  SHA_1("SHA-1"),
+  SHA1("SHA1"),
   
-  SHA_256("SHA-256"),
+  SHA_256("SHA_256"),
   
-  SHA_384("SHA-384"),
+  SHA_384("SHA_384"),
   
-  SHA_512("SHA-512"),
+  SHA_512("SHA_512"),
   
-  SHA3_256("SHA3-256"),
+  SHA3_256("SHA3_256"),
   
-  SHA3_384("SHA3-384"),
+  SHA3_384("SHA3_384"),
   
-  SHA3_512("SHA3-512"),
+  SHA3_512("SHA3_512"),
   
-  BLAKE2B_256("BLAKE2b-256"),
+  BLAKE2B_256("BLAKE2b_256"),
   
-  BLAKE2B_384("BLAKE2b-384"),
+  BLAKE2B_384("BLAKE2b_384"),
   
-  BLAKE2B_512("BLAKE2b-512"),
+  BLAKE2B_512("BLAKE2b_512"),
   
   BLAKE3("BLAKE3");
 

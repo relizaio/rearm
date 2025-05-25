@@ -208,7 +208,9 @@ public class ArtifactService {
 	}
 	
 	public boolean isRebomStoreable (ArtifactData artifactData) {
-		return artifactData.getBomFormat().equals(BomFormat.CYCLONEDX) && (
+		return  null != artifactData.getBomFormat()
+				&& artifactData.getBomFormat().equals(BomFormat.CYCLONEDX) 
+				&& null != artifactData.getType() && (
 				artifactData.getType().equals(ArtifactType.BOM)
 				|| artifactData.getType().equals(ArtifactType.VDR) 
 				|| artifactData.getType().equals(ArtifactType.VEX) 

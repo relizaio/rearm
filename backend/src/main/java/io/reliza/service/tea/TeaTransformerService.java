@@ -152,7 +152,7 @@ public class TeaTransformerService {
 					tact = TeaArtifactChecksumType.MD5;
 					break;
 				case "SHA1":
-					tact = TeaArtifactChecksumType.SHA_1;
+					tact = TeaArtifactChecksumType.SHA1;
 					break;
 				case "SHA256":
 					tact = TeaArtifactChecksumType.SHA_256;
