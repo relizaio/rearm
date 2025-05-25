@@ -4,7 +4,7 @@
 ### 1. Add App To Slack
 
 1. Go to Slack api page at https://api.slack.com/apps and click on "Create New App"
-2. Name your app "Reliza Hub" and select your Slack workspace in the "Development Slack Workspace"
+2. Name your app "ReARM Integration" and select your Slack workspace in the "Development Slack Workspace"
 3. Click on "Create App"
 4. Click on "Incoming Webhooks"
 5. Click on the toggle "Activate Incoming Webhooks" to change it to "On"

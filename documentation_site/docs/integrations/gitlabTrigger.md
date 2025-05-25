@@ -49,7 +49,7 @@ Note that for integration triggers firing on approval policy events, you would n
 1. In ReARM, make sure you register your VCS repository that contains desired GitLab CI/CD script either via Component creation or via **VCS** menu item and the plus-circle icon.
 
 2. You need to set up a ReARM component that will have corresponding triggers configured. Once your component is created, open it and click on the tool icon to toggle component settings:
-![Toggle Component Settings in Reliza Hub UI](images/component-settings-icon.png)
+![Toggle Component Settings in ReARM UI](images/component-settings-icon.png)
 
 3. If you are setting triggers based on approvals, make sure you have Approval Policy selected under **Core Settings** tab.
 
