@@ -575,7 +575,7 @@ type Artifact {
 	cicdMeta: String
 	digestRecords: [DigestRecord]
 	isInternal: ArtifactBelonging
-	type: String
+	type: ArtifactType
 	bomFormat: BomFormat
 	notes: String
 	tags: [TagRecord]
@@ -1595,6 +1595,27 @@ enum TeaArtifactChecksumType {
 enum DigestScope {
 	ORIGINAL_FILE
 	OCI_STORAGE
+}
+
+enum ArtifactType {
+	BOM
+	ATTESTATION
+	VDR
+	VEX
+	USER_DOCUMENT
+	DEVELOPMENT_DOCUMENT
+	PROJECT_DOCUMENT
+	MARKETING_DOCUMENT
+	TEST_REPORT
+	SARIF
+	BUILD_META
+	CERTIFICATION
+	FORMULATION
+	LICENSE
+	RELEASE_NOTES
+	SECURITY_TXT
+	THREAT_MODEL
+	OTHER
 }
 
 scalar Object

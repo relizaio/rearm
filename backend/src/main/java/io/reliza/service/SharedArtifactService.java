@@ -152,7 +152,7 @@ public class SharedArtifactService {
 		if(recordData.get("uuid").toString().equals(a.getUuid().toString())){
 			log.info("record and object ids equal");
 		}else{
-			log.info("unequal record and object id");
+			log.warn("unequal record and object id");
 			log.info("record data: {}", recordData);
 			log.info("art object: {}", a);
 		}
