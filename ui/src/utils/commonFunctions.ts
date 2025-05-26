@@ -225,6 +225,17 @@ function getGeneratedApiKeyHTML(responseData: any) {
         `
 }
 
+function isCycloneDXBomArtifact (art: any) {
+    return art.bomFormat
+        && art.type
+        && art.bomFormat === 'CYCLONEDX'
+        && (
+            art.type === 'BOM'
+            || art.type === 'VDR'
+            || art.type === 'VEX'
+            || art.type === 'ATTESTATION'
+        );
+}
 
 export default {
     getGeneratedApiKeyHTML,
@@ -239,5 +250,6 @@ export default {
     genUuid,
     dateDisplay,
     swalWrapper,
-    resolveWords
+    resolveWords,
+    isCycloneDXBomArtifact
 }

@@ -1389,27 +1389,37 @@ const getBomVersion = async(id: string) => {
 }
 const uploadNewBomVersion = async (art: any) => {
     
-    const releasesSharingThisArtifact = await findReleasesSharedByArtifact(art.uuid)
-   
-    const latestBomVersion: string = await getBomVersion(art.uuid)
+    const isBomArtifact = commonFunctions.isCycloneDXBomArtifact(art)
     let questionText = ''
-    if(releasesSharingThisArtifact && releasesSharingThisArtifact.length > 1){
-        const releaseVersions = releasesSharingThisArtifact.map(function(r: any){
-            return r.version;
-        }).join(", ");
-        questionText = `This BOM has serial number \`${art.internalBom.id}\` and version \`${latestBomVersion}\` is currently shared with the following releases - <${releaseVersions}> - if you upload a new BOM version with the same serial number and incremented version, it will be updated for all these releases. If instead you upload a new BOM version with a new serial number, this release will be switched to the BOM you are uploading, while all other mentioned releases will be unaffected. `
+    if(isBomArtifact){
+        const releasesSharingThisArtifact = await findReleasesSharedByArtifact(art.uuid)
+   
+        const latestBomVersion: string = await getBomVersion(art.uuid)
+        
+        if(releasesSharingThisArtifact && releasesSharingThisArtifact.length > 1){
+            const releaseVersions = releasesSharingThisArtifact.map(function(r: any){
+                return r.version;
+            }).join(", ");
+            questionText = `This BOM has serial number \`${art.internalBom.id}\` and version \`${latestBomVersion}\` is currently shared with the following releases - <${releaseVersions}> - if you upload a new BOM version with the same serial number and incremented version, it will be updated for all these releases. If instead you upload a new BOM version with a new serial number, this release will be switched to the BOM you are uploading, while all other mentioned releases will be unaffected. `
+        }else {
+            questionText = `This BOM has serial number: \`${art.internalBom.id}\`. \nIf you upload a new BOM version with the same serial number, it will be recorded as a new version of the same BOM (recommended).\nIf instead you upload a new BOM version with a new serial number, the BOM reference will be switched to the BOM you are uploading.`
+        }
+
+
     }else {
-        questionText = `This BOM has serial number: \`${art.internalBom.id}\`. \nIf you upload a new BOM version with the same serial number, it will be recorded as a new version of the same BOM (recommended).\nIf instead you upload a new BOM version with a new serial number, the BOM reference will be switched to the BOM you are uploading.`
+        const fileDigest = art.digestRecords.find(dr => dr.scope === 'ORIGINAL_FILE').digest
+        questionText = `This Artifact has a file with digest \`${fileDigest}\` and version \`${art.version}\`. \nIf you upload a new file, the artifact reference will be switched to the file you are uploading.`
     }
-  
+
+
     const swalResult = await Swal.fire({
-        title: 'Update Artifact BOM',
+        title: 'Update Artifact',
         text: questionText,
         showCancelButton: true,
         confirmButtonText: 'Confirm',
         cancelButtonText: 'Cancel'
     })
-    
+
     if (swalResult.isConfirmed) {
         showAddNewBomVersionModal.value = true
         artifactToUpdate.value = art
@@ -1902,6 +1912,7 @@ const artifactsTableFields: DataTableColumns<any> = [
             factContent.push(h('li', `UUID: ${row.uuid}`))
             row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
             if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
+            if (row.version) factContent.push(h('li', `Version: ${row.version}`))
             if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: string) => factContent.push(h('li', `digest(${d.scope}): ${d.algo}:${d.digest}`)))
             if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`)))) 
             if (row.identities && row.identities.length) factContent.push(h('li', 'Identities:'), h('ul', row.identities.map((id: Identity) => h('li', `${id.identityType}: ${id.identity}`)))) 

@@ -149,6 +149,7 @@ const ARTIFACT_DETAIL_DATA = `
     displayIdentifier
     buildId
     buildUri
+    version
     cicdMeta
     digestRecords{
         algo

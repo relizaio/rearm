@@ -60,6 +60,15 @@
                         :options="bomFormats" />
             </n-form-item>
             <n-form-item
+                        v-if="!commonFunctions.isCycloneDXBomArtifact(artifact)"
+                        path="version"
+                        label="Artifact Version">
+                <n-input
+                        v-model:value="artifact.version"
+                        required
+                        placeholder="Enter artifact version (Optional - or it would be generated)" />
+            </n-form-item>
+            <n-form-item
                         label="Artifact Tags">
                 <n-dynamic-input
                     preset="pair"
@@ -117,7 +126,7 @@ export default {
 <script lang="ts" setup>
 import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
-import { FormInst, NButton, NDynamicInput, NForm, NFormItem, NInput, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload } from 'naive-ui'
+import { FormInst, NButton, NDynamicInput, NForm, NFormItem, NInput, NInputNumber, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload } from 'naive-ui'
 import { computed, ComputedRef, ref, Ref } from 'vue'
 import { useStore } from 'vuex'
 import { Tag, DownloadLink, Identity} from '@/utils/commonTypes'
