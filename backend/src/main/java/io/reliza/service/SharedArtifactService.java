@@ -26,6 +26,9 @@ import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
+import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.ArtifactData.DigestScope;
+import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import lombok.extern.slf4j.Slf4j;
@@ -91,12 +94,14 @@ public class SharedArtifactService {
 			String fileName = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.FILE_NAME_FIELD)).findFirst().get().value();
 			
 			String resolvedFileName = StringUtils.isNotEmpty(fileName) ? fileName : tagValue;
+			String ociDigest = ad.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaArtifactChecksumType.SHA_256) && dr.scope().equals(DigestScope.OCI_STORAGE)).findFirst().orElseThrow().digest();
+			
 			monoResponseEntity = this.webClient.get()
 					.uri(uriBuilder -> uriBuilder
 						.path("/pull")
 						.queryParam("registry", this.registryHost)
 						.queryParam("repo",this.ociRepository)
-						.queryParam("tag", ad.getDigests().toArray()[0])
+						.queryParam("tag", ociDigest)
 						.build()
 					)
 					.accept(MediaType.APPLICATION_OCTET_STREAM)

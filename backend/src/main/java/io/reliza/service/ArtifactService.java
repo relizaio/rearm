@@ -226,6 +226,10 @@ public class ArtifactService {
 		OASResponseDto artifactUploadResponse = null;
 		DependencyTrackUploadResult dtur = null;
 		Artifact art = null;
+		ArtifactData existingAd = null;
+		if(null != artifactDto.getUuid()){
+			existingAd = getArtifactData(artifactDto.getUuid()).get();
+		}
 
 		if(artifactDto.getStoredIn().equals(StoredIn.REARM)){
 			if(isRebomStoreable(artifactDto)){
@@ -237,9 +241,8 @@ public class ArtifactService {
 					throw new RelizaException(e.getMessage());
 				}
 				//case of update
-				if(artifactDto.getUuid() != null){
+				if(null != existingAd){
 					// find the existing artifact data
-					ArtifactData existingAd = getArtifactData(artifactDto.getUuid()).get();
 					Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg()));		
 					String oldBomSerial = existingAd.getInternalBom().id().toString();
 			
@@ -298,6 +301,18 @@ public class ArtifactService {
 				}
 				tag = artifactDto.getUuid().toString();
 			}else {
+				String inputVersion = artifactDto.getVersion();
+				String version = StringUtils.isNotEmpty(inputVersion) ? inputVersion : "1";
+				if(null != existingAd && StringUtils.isNotEmpty(existingAd.getVersion())){
+					if(StringUtils.isNotEmpty(inputVersion)){
+						if(Integer.valueOf(inputVersion) <= Integer.valueOf(existingAd.getVersion())){
+							throw new RelizaException("Uploaded artifact should have an incremented version");
+						}
+					}else{
+						version = String.valueOf(Integer.valueOf(existingAd.getVersion()) + 1);
+					}
+				}
+				artifactDto.setVersion(version);
 				DigestRecord sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaArtifactChecksumType.SHA_256)).findFirst().orElse(null);
 				String sha256Digest = (null != sha256Dr) ? sha256Dr.digest() : null;
 				artifactUploadResponse = uploadFileToConfiguredOci(file, tag, sha256Digest);
