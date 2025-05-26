@@ -32,7 +32,11 @@ spec:
               value: http://{{ .Release.Name }}-rebom-backend-service:4000/
             - name: RELIZAPROP_REBOM_ENABLED
               value: {{ .Values.rebom.enabled | quote }}
-            - name: RELIZAPROP_OCI_ARTIFACT_SERVICE_HOST
+            - name: RELIZAPROP_OCIARTIFACTS_REGISTRY_HOST
+              value: {{ .Values.rebom.backend.oci.registryHost }}
+            - name: RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE
+              value: {{ .Values.rebom.backend.oci.registryNamespace }}
+            - name: RELIZAPROP_OCIARTIFACTS_SERVICE_HOST
               value: http://{{ .Release.Name }}-oci-artifact
             - name: RELIZAPROP_INSTALLATION_TYPE
               value: "OSS"
