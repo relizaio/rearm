@@ -11,10 +11,12 @@ hero:
       link: /get-started/
       type: primary
 features:
-- title: BOM Management
+- title: SBOM / xBOM Management
   details: Stores Bills of Materials and Attachments alongside your releases
+- title: Regulatory Compliance
+  details: Helps fulfill xBOM requirements of EU CRA, US EOs 14028, 14144, Section 524B of FD&C Act
 - title: Bundling
-  details: Intelligently assembles your Components in Products and produces aggregate xBOMs
+  details: Intelligently assembles your Components into Products and produces aggregate xBOMs
 - title: CI/CD Integration
-  details: Integrates with your CI/CD system of choice
+  details: Integrates with your CI/CD tooling, supports Transparency Exchange API (TEA)
 ---
