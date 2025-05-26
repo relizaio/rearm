@@ -2,6 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import {navLinks} from "../../Constants/NavLinks.js"
 import Logo from "../../../Assets/Logo.svg"
+import { FaDiscord, FaLinkedinIn, FaGithub } from 'react-icons/fa'
 
 const Header = () => {
   
@@ -28,9 +29,6 @@ const Header = () => {
                 <a class='nav-link fs-6' href='https://docs.relizahub.com' target="_blank" style={{ textDecoration: "none" }}>Documentation</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
-                <a class='nav-link fs-6' href='https://github.com/relizaio/rearm' target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>GitHub</a>
-              </li>
-              <li className="nav-item d-flex align-items-center p-3">
                 <a class='nav-link fs-6' href='/#homePagePricing' style={{ textDecoration: "none" }}>Pricing</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
@@ -40,6 +38,11 @@ const Header = () => {
                 <div className='d-flex'><a href='https://calendly.com/pavel_reliza/demo' target="_blank" style={{ textDecoration: "none" }}><button className='nav-item btn_getStarted btn btn-outline-primary'>Get Private Demo</button></a></div>
               </li>
             </ul>
+          </div>
+          <div>
+            <a target="_blank" rel="noreferrer" href="https://github.com/relizaio/rearm" style={{ padding: "10px", margin: "10px" }}>
+              <FaGithub style={{ color: "rgb(24,33,77)", fontSize: "24px" }} />
+            </a>
           </div>
         </div>
       </nav >

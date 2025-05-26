@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { FaDiscord, FaLinkedinIn } from 'react-icons/fa'
+import { FaDiscord, FaLinkedinIn, FaGithub } from 'react-icons/fa'
 import { FaBluesky } from 'react-icons/fa6'
 import Logo from "../../../Assets/Logo.svg"
 import { navLinks } from "../../Constants/NavLinks.js"
@@ -21,6 +21,10 @@ const Footer = () => {
     {
       link: FaLinkedinIn,
       url: "https://www.linkedin.com/company/relizaio",
+    },
+    {
+      link: FaGithub,
+      url: "https://www.github.com/relizaio/rearm",
     },
   ]
   return (
