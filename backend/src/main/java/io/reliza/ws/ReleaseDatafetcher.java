@@ -608,7 +608,6 @@ public class ReleaseDatafetcher {
 
 		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).orElseThrow();
 		OrganizationData od = organizationService.getOrganizationData(rd.getOrg()).orElseThrow();
-		UUID artId = null;
 
 		ArtifactBelongsTo belongsTo = ArtifactBelongsTo.RELEASE;
 		if(artifactInput.containsKey("belongsTo") && StringUtils.isNotEmpty((String)artifactInput.get("belongsTo")))
@@ -625,6 +624,7 @@ public class ReleaseDatafetcher {
 		}
 
 		ArtifactDto artDto = Utils.OM.convertValue(artifact, ArtifactDto.class);
+		artDto.setOrg(orgUuid);
 		if(null!= inputArtifactUuid){
 			artDto.setUuid(inputArtifactUuid);
 			// artDto = artifactService.getArtifactData(artifactUuid);
@@ -660,6 +660,8 @@ public class ReleaseDatafetcher {
 		if(!validationErrors.isEmpty()){
 			throw new RelizaException(validationErrors.stream().collect(Collectors.joining(", ")));
 		}
+
+		UUID artId = null;
 
 		if (multipartFile != null) {
 			String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;

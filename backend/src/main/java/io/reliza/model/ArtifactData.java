@@ -162,7 +162,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		if (null != artifactDto.getUuid()) {
 			ad.setUuid(artifactDto.getUuid());
 		} else {
-			ad.setUuid(UUID.randomUUID());
+			ad.setUuid(null);
 		}
 		ad.setType(artifactDto.getType());
 		ad.setDisplayIdentifier(artifactDto.getDisplayIdentifier());

@@ -154,7 +154,7 @@ public class SharedArtifactService {
 	
 	@Transactional
 	protected Artifact saveArtifact (Artifact a, Map<String, Object> recordData, WhoUpdated wu) {
-		if(recordData.get("uuid").toString().equals(a.getUuid().toString())){
+		if(recordData.containsKey("uuid") && null != recordData.get("uuid") && recordData.get("uuid").toString().equals(a.getUuid().toString())){
 			log.info("record and object ids equal");
 		}else{
 			log.warn("unequal record and object id");
