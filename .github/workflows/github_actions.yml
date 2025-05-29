@@ -3,7 +3,7 @@ on: [push]
 name: Build Component Container Images And Submit Metadata To Reliza Hub
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-docs:
@@ -23,6 +23,8 @@ jobs:
           path: documentation_site
           enable_sbom: 'false'
   build-docs-helm:
+    permissions:
+      contents: write
     name: Build And Push Documentation Helm Chart
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +39,8 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REARM_DOCS_HELM_API_KEY }}
           path: deploy/helm
   build-landing-helm:
+    permissions:
+      contents: write
     name: Build And Push ReARM Landing Helm Chart
     runs-on: ubuntu-latest
     steps:
@@ -51,6 +55,8 @@ jobs:
           reliza_api_key: ${{ secrets.RELIZA_REARM_LANDING_HELM_API_KEY }}
           path: deploy/helm
   build-rearm-helm:
+    permissions:
+      contents: write
     name: Build And Push Rearm Helm Chart
     runs-on: ubuntu-latest
     steps:
@@ -180,10 +186,10 @@ jobs:
           path: rebom-frontend
           enable_sbom: 'false'
   build-rebom-backend:
-    name: Build And Push Rebom Backend
+    name: Build And Push Rebom UI
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit Rebom Backend Release
+      - name: RelizaHub Build And Submit UI Release
         uses: relizaio/reliza-docker-action@3.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
