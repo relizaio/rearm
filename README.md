@@ -48,10 +48,12 @@ ReARM currently supports most of TEA Beta 1 functionality and we are working to 
 - Project ReARM web-site: https://rearmhq.com
 - Public Demo: https://demo.rearmhq.com
 - Reliza Website: https://reliza.io
+- Reliza Versioning: https://github.com/relizaio/versioning
 
 ## Related Projects
 - ReARM CLI: https://github.com/relizaio/rearm-cli - CLI tool to interact with ReARM for humans and automation bots
 - BEAR (BOM Enrichment and Augmentation by Reliza): https://github.com/relizaio/bear - BEAR may be used for BOM enrichment before uploading to ReARM
+- Reliza Versioning library: https://github.com/relizaio/versioning - Versioning library is used for automated versioning increments, comparisons and change logs handled by ReARM
 
 ## Public Demo
 Public Demo is available at https://demo.rearmhq.com. When you register for the demo, you get read-only account for the Demo organization and can browse several existing demo Components, Products, Releases. You may then also create your own organization and try organizing storage for your own release metadata (Documentation for this coming soon). Note, that while your data on Public Demo is private, it is subject to deletion at any time and without notice.
