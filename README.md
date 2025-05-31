@@ -1,5 +1,6 @@
  [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
  [![Website](https://img.shields.io/badge/https://-rearmhq.com-blue.svg)](https://rearmhq.com)
+ [![Documentation](https://img.shields.io/badge/read-documentation-blue.svg)](https://docs.rearmhq.com)
  ![Build Status](https://github.com/relizaio/rearm/actions/workflows/github_actions.yml/badge.svg?branch=main)
  [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/10664/badge)](https://www.bestpractices.dev/projects/10664)
 
