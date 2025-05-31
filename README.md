@@ -33,7 +33,11 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 7. Marketing release workflow (Commercial Edition only)
 
 ## Releases
-Refer to [ReARM Community Edition Product](https://demo.rearmhq.com/productsOfOrg/00000000-0000-0000-0000-000000000001/eab985e6-f4f1-42db-95ba-5d9d1d695348) on [ReARM Demo Instance](https://demo.rearmhq.com) for the constantly updated list of ReARM releases. Major releases are also published under [GitHub Releases](https://github.com/relizaio/rearm/releases) in this repository.
+ReARM follows [Trunk Based Development (TBD)](https://trunkbaseddevelopment.com/) methodology. This means that maintainers commit directly to the main branch where possible. Consumers should use releases marked as SHIPPED (or GENERAL_AVAILABILITY).
+
+Refer to [ReARM Community Edition Product](https://demo.rearmhq.com/productsOfOrg/00000000-0000-0000-0000-000000000001/eab985e6-f4f1-42db-95ba-5d9d1d695348) on [ReARM Demo Instance](https://demo.rearmhq.com) for the constantly updated list of ReARM releases. SHIPPED releases are also published under [GitHub Releases](https://github.com/relizaio/rearm/releases) in this repository.
+
+Helm chart and docker compose files tagged to a release contain a list of specific images that correspond to particular release.
 
 ## Transparency Exchange API
 Creators of ReARM are part of [active contributors](https://github.com/CycloneDX/transparency-exchange-api/blob/main/contributors.md) of [Transparency Exchange API](https://github.com/CycloneDX/transparency-exchange-api/) (TEA) that aims to build standard API for exchanging supply chain artifacts and intelligence.
