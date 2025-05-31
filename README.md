@@ -12,7 +12,7 @@ ReARM is an abbreviation for "Reliza's Artifact and Release Management". It is a
 
 ReARM stores xBOMs on OCI-compatible storage via Reliza's [Rebom](https://github.com/relizaio/rebom) project.
 
-ReARM is developed by [Reliza](https://reliza.io).
+ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
 
 ## ReARM Product Status Information
 - ReARM itself - Public Beta
