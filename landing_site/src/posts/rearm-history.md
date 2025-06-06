@@ -21,7 +21,7 @@ Development of Reliza Hub was going in 2 directions. First - directly related to
 
 Eventually, we realized that each of those directions would be better suited as its own Product. That is how an idea of separate Project ReARM was born in 2023.
 
-The big differentiator in our approach to Software and Release metadata was that we pioneers in using Product - Component hierarchy, reach branching structure and clear isolation of each release in the DevOps and DevSecOps pipeline. Such design choices were difficult from technical prospective, but they were driven by the actual problems we were facing in the way how software was developed and deployed in fast-paced organizations.
+The big differentiator in our approach to Software and Release metadata was that we pioneers in using Product - Component hierarchy, rich branching structure and clear isolation of each release in the DevOps and DevSecOps pipeline. Such design choices were difficult from technical prospective, but they were driven by the actual problems we were facing in the way how software was developed and deployed in fast-paced organizations.
 
 ### Regulatory Pressure
 
@@ -33,7 +33,7 @@ Such regulatory initiatives were driving certain architectural choices that we d
 
 We have released ReARM Closed Beta in 2024 and ReARM Public Beta in 2025. ReARM comes in both Community Edition as seen on [GitHub](https://github.com/relizaio/rearm) and Commercial Managed Service version.
 
-We made a decision to include all functionality necessary to fulfil regulatory requirements in the Community Edition to make sure that a wide range of organizations are able to be compliant under emerging regulations. At the same time we offer managed service, premium support and additional release management capabilities in ReARM Commercial version.
+We made a decision to include all functionality necessary to fulfill regulatory requirements in the Community Edition to make sure that a wide range of organizations are able to be compliant under emerging regulations. At the same time we offer managed service, premium support and additional release management capabilities in ReARM Commercial version.
 
 ReARM also provides tight integration with [OWASP Dependency-Track](https://dependencytrack.org/), which is a popular tool in Supply Chain Security based on SBOMs that enables constant monitoring of vulnerabilities and policy violations for existing SBOMs.
 
