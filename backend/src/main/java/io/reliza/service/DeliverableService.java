@@ -31,6 +31,7 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
+import io.reliza.common.Utils.StripBom;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
@@ -143,47 +144,16 @@ public class DeliverableService {
 		var bd = branchService.getBranchData(branchUUID).orElseThrow();
 		ComponentData cd = getComponentService.getComponentData(bd.getComponent()).orElseThrow();
 		OrganizationData od = organizationService.getOrganizationData(bd.getOrg()).orElseThrow();
-		// List<DeliverableDto> deliverableDtos = deliverablesList.stream().map(artMap -> Utils.OM.convertValue(artMap, DeliverableDto.class)).toList();
-		// log.info("del dto: {}", deliverableDtos);
-		// Boolean typeNotSet = deliverableDtos.stream().anyMatch(deliverableDto -> deliverableDto.getType() == null);
-		// if(typeNotSet){
-		// 	throw new RelizaException("Deliverables must have type!");
-		// }
 		for (Map<String, Object> deliverableItem : deliverablesList) {
-			
-		// }
-		// deliverablesList.stream().forEach( 
-		// 	handlingConsumerWrapper((Map<String, Object> deliverableItem) -> {
-			
 			//extract arts
+			@SuppressWarnings("unchecked")
 			var arts = (List<Map<String, Object>>) deliverableItem.get("artifacts");
 			deliverableItem.remove("artifacts");
 			DeliverableDto deliverableDto = Utils.OM.convertValue(deliverableItem,DeliverableDto.class);
 			deliverableDto.cleanDigests();
 			
-			List<UUID> artIds = new LinkedList<>();
-			if (null != arts && !arts.isEmpty()) {
-				for (Map<String, Object> artMap : arts) {
-					MultipartFile file = (MultipartFile) artMap.get("file");
-					artMap.remove("file");
-					// validations
-					if(!artMap.containsKey("storedIn") || StringUtils.isEmpty((String)artMap.get("storedIn"))){
-						artMap.put("storedIn", "REARM");
-					}
-					ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
-	
-					// artDto.setFile(file);
-					UUID artId = null;
-					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), artDto.getStripBom()),wu);
-
-					// try {
-					// 	artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), artDto.getStripBom()),wu);
-					// } catch (Exception e) {
-					// 	throw new RuntimeException(e); // Re-throw the exception
-					// }
-					artIds.add(artId);
-				}
-			}
+			RebomOptions rebomOptions = new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), StripBom.FALSE);
+			var artIds = artifactService.uploadListOfArtifacts(od, arts, rebomOptions, wu);
 			deliverableDto.setArtifacts(artIds);
 			// TODO: for now always create artifacts from programmatic - later add logic to parse digests and uris
 			

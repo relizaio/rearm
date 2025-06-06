@@ -7,6 +7,7 @@ package io.reliza.service;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -34,15 +36,18 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.Removable;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
+import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
+import io.reliza.model.ComponentData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ArtifactUploadResponseDto;
@@ -217,12 +222,46 @@ public class ArtifactService {
 				|| artifactData.getType().equals(ArtifactType.ATTESTATION)
 			);
 	}
+	
+	// TODO try to enforce strict type here
+	// TODO double check how we set and meaning of hash in rebom options
+	@Transactional
+	public List<UUID> uploadListOfArtifacts(OrganizationData od, List<Map<String, Object>> arts, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException {
+		List<UUID> artIds = new LinkedList<>();
+		if (null != arts && !arts.isEmpty()) {
+			for (Map<String, Object> artMap : arts) {
+				var artId = uploadSingleArtifactWithFileFromList(artMap, od, rebomOptions, wu);
+				artIds.add(artId);
+			}
+		}
+		return artIds;
+	}
+
+	// TODO try to enforce strict type here
+	private UUID uploadSingleArtifactWithFileFromList(Map<String, Object> artMap, OrganizationData od, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException {
+		List<UUID> artifactsOfThisArtifact = new LinkedList<>();
+		if (artMap.containsKey("artifacts")) {
+			artifactsOfThisArtifact = uploadListOfArtifacts(od, (List<Map<String, Object>>) artMap.get("artifacts"), rebomOptions, wu);
+		}
+		artMap.remove("artifacts");
+		MultipartFile file = (MultipartFile) artMap.get("file");
+		artMap.remove("file");
+		if(!artMap.containsKey("storedIn") || StringUtils.isEmpty((String)artMap.get("storedIn"))){
+			artMap.put("storedIn", "REARM");
+		}
+		ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
+		artDto.setArtifacts(artifactsOfThisArtifact);
+		artDto.setOrg(od.getOrg());
+		RebomOptions updRebomOptions = new RebomOptions(rebomOptions.name(), rebomOptions.group(), rebomOptions.version(), rebomOptions.belongsTo(),
+				rebomOptions.hash(), artDto.getStripBom());
+		return uploadArtifact(artDto, file.getResource(), updRebomOptions, wu);
+	}
 
 	@Transactional
-	public UUID uploadArtifact(ArtifactDto artifactDto, UUID orgUuid, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException{
-
-		artifactDto.setOrg(orgUuid);
-		String tag= "";
+	public UUID uploadArtifact(ArtifactDto artifactDto, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException {
+		UUID orgUuid = artifactDto.getOrg();
+		if (null == orgUuid) throw new RelizaException("Missing artifact org.");
+		String tag = "";
 		OASResponseDto artifactUploadResponse = null;
 		DependencyTrackUploadResult dtur = null;
 		Artifact art = null;
@@ -313,7 +352,10 @@ public class ArtifactService {
 					}
 				}
 				artifactDto.setVersion(version);
-				DigestRecord sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaArtifactChecksumType.SHA_256)).findFirst().orElse(null);
+				DigestRecord sha256Dr = null;
+				if (null != artifactDto.getDigestRecords() && !artifactDto.getDigestRecords().isEmpty()) {
+					sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaArtifactChecksumType.SHA_256)).findFirst().orElse(null);
+				}
 				String sha256Digest = (null != sha256Dr) ? sha256Dr.digest() : null;
 				artifactUploadResponse = uploadFileToConfiguredOci(file, tag, sha256Digest);
 			}
@@ -335,11 +377,11 @@ public class ArtifactService {
 			artifactDto.setDigestRecords(digestRecords);
 
 			artifactDto.setTags(List.of(
-            new TagRecord(CommonVariables.SIZE_FEILD, artifactUploadResponse.getOciResponse().getSize(), Removable.NO),
-            new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, artifactUploadResponse.getOciResponse().getArtifactType(), Removable.NO),
-            new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
-            new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
-            new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
+	            new TagRecord(CommonVariables.SIZE_FEILD, artifactUploadResponse.getOciResponse().getSize(), Removable.NO),
+	            new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, artifactUploadResponse.getOciResponse().getArtifactType(), Removable.NO),
+	            new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
+	            new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
+	            new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
         ));
 		}
 		

@@ -51,6 +51,10 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         RELEASE_NOTES,
         SECURITY_TXT,
         THREAT_MODEL,
+        SIGNATURE,
+        PUBLIC_KEY,
+        CERTIFICATE_X_509,
+        CERTIFICATE_PGP,
         OTHER
     }
     
@@ -75,6 +79,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         GTIN,
         GMN,
         MANUFACTURER_VERSION,
+        EAN,
         UID;
       }
 	
@@ -133,6 +138,10 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	private StatusEnum status; // HOW TO ASSIGN, ANY FOR NOW
 	private String version; // FIGURE OUT VERSIONING 
 	private DependencyTrackIntegration metrics = new DependencyTrackIntegration();
+	/**
+	 * Artifact may have its own artifacts - this is for signature related artifacts, maybe there will be more use cases discovered later
+	 */
+	private List<UUID> artifacts = new ArrayList<>();
 
 	// FIND OUT UNIQUENESS HERE?
 
@@ -184,7 +193,16 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 			ad.metrics.projectName = artifactDto.getDtur().projectName();
 			ad.metrics.projectVersion = artifactDto.getDtur().projectVersion();
 		}
-		// TODO Auto-generated method stub
+		if (null != artifactDto.getArtifacts()) {
+			ad.setArtifacts(artifactDto.getArtifacts());
+		}
 		return ad;
+	}
+	
+	@JsonIgnore
+	public boolean isSignatureType() {
+		if (this.type == ArtifactType.SIGNATURE || this.type == ArtifactType.CERTIFICATE_PGP || this.type == ArtifactType.CERTIFICATE_X_509 
+				|| this.type == ArtifactType.PUBLIC_KEY) return true;
+			else return false;
 	}
 }

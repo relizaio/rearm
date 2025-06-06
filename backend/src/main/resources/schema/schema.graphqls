@@ -1029,6 +1029,7 @@ input ArtifactInput {
 	fileSce: Upload
 	stripBom: StripBomEnum
 	digestRecords: [DigestRecordInput]
+	artifacts: [ArtifactInput]
 }
 
 input DigestRecordInput {

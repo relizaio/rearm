@@ -435,7 +435,7 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Mutation", field = "addReleaseProgrammatic")
 	@Transactional
 	public ReleaseData addReleaseProgrammatic(DgsDataFetchingEnvironment dfe) throws IOException, RelizaException, Exception {
-		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
@@ -538,9 +538,10 @@ public class ReleaseDatafetcher {
 					artMap.put("storedIn", "REARM");
 				}
 				ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
+				artDto.setOrg(od.getUuid());
 				UUID artId = null;
 				try {
-					artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, artDto.getStripBom()), ar.getWhoUpdated());
+					artId = artifactService.uploadArtifact(artDto, file.getResource(), new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, artDto.getStripBom()), ar.getWhoUpdated());
 				} catch (Exception e) {
 					throw new RuntimeException(e); // Re-throw the exception
 				}
@@ -665,7 +666,8 @@ public class ReleaseDatafetcher {
 
 		if (multipartFile != null) {
 			String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
-			artId = artifactService.uploadArtifact(artDto, orgUuid, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom()), wu);
+			artDto.setOrg(orgUuid);
+			artId = artifactService.uploadArtifact(artDto, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom()), wu);
 		} else {
 			artId = artifactService.createArtifact(artDto, wu).getUuid();
 		}

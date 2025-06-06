@@ -75,16 +75,16 @@ public class ArtifactDto {
 	@JsonProperty("digestRecords")
 	private Set<DigestRecord> digestRecords = new HashSet<>();
 	
-	@JsonProperty("tags")
+	@JsonProperty
 	private List<TagRecord> tags;
 	
-	@JsonProperty("status")	
+	@JsonProperty	
 	private StatusEnum status;
 	
-	@JsonProperty("version")
+	@JsonProperty
 	private String version;
 	
-	@JsonProperty("org")
+	@JsonProperty
 	private UUID org;
 
 	@JsonProperty("stripBom")
@@ -92,4 +92,7 @@ public class ArtifactDto {
 	
 	@JsonProperty
 	private DependencyTrackUploadResult dtur; 
+	
+	@JsonProperty
+	private List<UUID> artifacts;
 }

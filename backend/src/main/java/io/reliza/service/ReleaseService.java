@@ -963,21 +963,12 @@ public class ReleaseService {
 			for (Map<String, Object> artMap : arts) {
 				MultipartFile file = (MultipartFile) artMap.get("file");
 				artMap.remove("file");
-				// validations
 				if(!artMap.containsKey("storedIn") || StringUtils.isEmpty((String)artMap.get("storedIn"))){
 					artMap.put("storedIn", "REARM");
 				}
 				ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
-				// artDto.setFile(file);
-				UUID artId = null;
-				artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), artDto.getStripBom()), wu);
-
-				// try {
-				// 	artId = artifactService.uploadArtifact(artDto, od.getUuid(), file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), artDto.getStripBom()), wu);
-				// } catch (Exception e) {
-				// 	log.error("Exception on uploading artifact", e);
-				// 	throw new RuntimeException(e); // Re-throw the exception
-				// }
+				artDto.setOrg(od.getUuid());
+				UUID artId = artifactService.uploadArtifact(artDto, file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), artDto.getStripBom()), wu);
 				if (null != artId) artIds.add(artId);
 			}
 		}
