@@ -958,22 +958,7 @@ public class ReleaseService {
 	@Transactional
 	public List<UUID> uploadSceArtifacts (List<Map<String, Object>> arts, OrganizationData od, SceDto sceDto,
 			ComponentData cd, String version, WhoUpdated wu) throws RelizaException {
-		List<UUID> artIds = new ArrayList<>();
-		if(null != arts && !arts.isEmpty()){
-			for (Map<String, Object> artMap : arts) {
-				MultipartFile file = (MultipartFile) artMap.get("file");
-				artMap.remove("file");
-				if(!artMap.containsKey("storedIn") || StringUtils.isEmpty((String)artMap.get("storedIn"))){
-					artMap.put("storedIn", "REARM");
-				}
-				ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
-				artDto.setOrg(od.getUuid());
-				UUID artId = artifactService.uploadArtifact(artDto, file.getResource(), new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), artDto.getStripBom()), wu);
-				if (null != artId) artIds.add(artId);
-			}
-		}
-		return artIds;
-		
+		return artifactService.uploadListOfArtifacts(od, arts, new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), StripBom.FALSE), wu);
 	}
 	
 	@Transactional

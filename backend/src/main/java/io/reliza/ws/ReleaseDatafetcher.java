@@ -42,6 +42,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
+import io.reliza.common.Utils.StripBom;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
@@ -489,7 +490,7 @@ public class ReleaseDatafetcher {
 					List<Map<String, Object>> arts = (List<Map<String, Object>>) com.get("artifacts");
 					com.remove("artifacts");
 					SceDto sceDto = Utils.OM.convertValue(com, SceDto.class);
-					List<UUID>  sceUploadedArts = releaseService.uploadSceArtifacts(arts, od, sceDto, cd, version, ar.getWhoUpdated());
+					List<UUID> sceUploadedArts = releaseService.uploadSceArtifacts(arts, od, sceDto, cd, version, ar.getWhoUpdated());
 					var parsedCommit = releaseService.parseSceFromReleaseCreate(sceDto, sceUploadedArts, 
 							bd, bd.getName(), version, ar.getWhoUpdated());
 					if (parsedCommit.isPresent()) {
@@ -530,23 +531,7 @@ public class ReleaseDatafetcher {
 		if (progReleaseInput.containsKey("artifacts")) {
 			@SuppressWarnings("unchecked")
 			List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) progReleaseInput.get("artifacts");
-			artifacts = artifactsList.stream().map(artMap -> {
-				MultipartFile file = (MultipartFile) artMap.get("file");
-				artMap.remove("file");
-				// validations
-				if(!artMap.containsKey("storedIn") || StringUtils.isEmpty((String)artMap.get("storedIn"))){
-					artMap.put("storedIn", "REARM");
-				}
-				ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
-				artDto.setOrg(od.getUuid());
-				UUID artId = null;
-				try {
-					artId = artifactService.uploadArtifact(artDto, file.getResource(), new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, artDto.getStripBom()), ar.getWhoUpdated());
-				} catch (Exception e) {
-					throw new RuntimeException(e); // Re-throw the exception
-				}
-				return artId;
-			}).filter(Objects::nonNull).toList();
+			artifacts = artifactService.uploadListOfArtifacts(od, artifactsList, new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE), ar.getWhoUpdated());
 		}
 		
 		ReleaseLifecycle lifecycle = ReleaseLifecycle.ASSEMBLED;
