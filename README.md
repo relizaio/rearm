@@ -20,7 +20,7 @@ ReARM is developed by [Reliza](https://reliza.io). Read about project history on
 - Transparency Exchange API (TEA) implementation - in the process of implementation of TEA Beta 1 - Public Alpha available on ReARM Demo Instance (see below for details)
 
 ## Motivation
-ReARM is a xBOM management system that allows organizations to maintain compliance within the framework of [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) as well as US Executive Orders [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity) and [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity).
+ReARM is a xBOM management system that allows organizations to maintain compliance within the framework of [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) as well as US Executive Orders [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity) and [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity) (later [amended](https://rearmhq.com/blog/sbom-remains-attestations-out-amending-executive-order-14144)).
 
 While highlighting regulatory pressure, we strive to make sure that ReARM bears minimum or no overhead on developers and more so provides real value in terms of managing technology releases and their metadata. In other words, our goal is creating a product that would be useful for developers and managers, while also solving the compliance problem.
 
