@@ -92,16 +92,16 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 	return resp, nil
 }
 
-func (o *OrasClient) PullArtifact(ctx context.Context, tag string) error {
+func (o *OrasClient) PullArtifact(ctx context.Context, tagDigest string, dirName string) error {
 
-	fs, err := file.New("/tmp/" + tag + "/")
+	fs, err := file.New("/tmp/" + dirName + "/")
 	if err != nil {
 		log.Println("Error creating temp", err)
 		return err
 	}
 	defer fs.Close()
 
-	_, err = oras.Copy(ctx, o.Repository, tag, fs, tag, oras.DefaultCopyOptions)
+	_, err = oras.Copy(ctx, o.Repository, tagDigest, fs, tagDigest, oras.DefaultCopyOptions)
 	if err != nil {
 		log.Println("Error pulling artifact ", err)
 		return err

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gin-gonic/gin"
@@ -109,12 +110,13 @@ func downloadFile(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Error creating oras client: ", err)
 		return
 	}
-	err = oc.PullArtifact(c, form.Tag)
+	dirToDownload := strings.Replace(form.Tag, "sha256:", "", 1)
+	err = oc.PullArtifact(c, form.Tag, dirToDownload)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error Pulling artifact: ", err)
 		return
 	}
-	targetDir := filepath.Join("/tmp", form.Tag)
+	targetDir := filepath.Join("/tmp", dirToDownload)
 	files, err := os.ReadDir(targetDir)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error Pulling artifact: ", err)
@@ -123,7 +125,7 @@ func downloadFile(c *gin.Context) {
 
 	targetFile := files[0]
 
-	targetPath := filepath.Join("/tmp", form.Tag, targetFile.Name())
+	targetPath := filepath.Join("/tmp", dirToDownload, targetFile.Name())
 
 	mimeType, err := mimetype.DetectFile(targetPath)
 	if err != nil {
@@ -136,7 +138,7 @@ func downloadFile(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename="+form.Tag+mimeType.Extension())
 	c.File(targetPath)
 
-	err = os.RemoveAll("/tmp/" + form.Tag)
+	err = os.RemoveAll("/tmp/" + dirToDownload)
 	if err != nil {
 		log.Printf("Error deleting file: %v", err)
 	}
