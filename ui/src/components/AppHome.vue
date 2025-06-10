@@ -254,7 +254,7 @@ export default {
 <script lang="ts" setup>
 import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, NIcon, NGrid, NGi, NDivider } from 'naive-ui'
 import { useStore } from 'vuex'
-import { ComputedRef, h, computed, ref, Ref, onMounted, watch } from 'vue'
+import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import GqlQueries from '../utils/graphqlQueries'
@@ -491,7 +491,8 @@ function parseActiveComponentsInput () {
 }
 
 function embedActiveComponentsVega () {
-    vegaEmbed.default('#mostActiveVisHome', mostActiveOverTime.value,
+    const mostActiveToEmbed = toRaw(mostActiveOverTime.value)
+    vegaEmbed.default('#mostActiveVisHome', mostActiveToEmbed,
         {
             actions: {
                 editor: false
@@ -703,7 +704,7 @@ const mostActiveOverTime: Ref<any> = ref({
         },
         href: {field: "url", type: "nominal"},
         tooltip: [
-            {field: "componentname", type: "nominative", title: "Name"},
+            {field: "componentname", type: "nominal", title: "Name"},
             {field: "rlzcount", type: "quantitative", title: "Releases"}
         ]
     }
@@ -732,7 +733,7 @@ async function fetchReleaseAnalytics() {
     })
     releaseVisData.value.data.values = resp.data.releaseAnalytics
     vegaEmbed.default('#releaseCreationVisHome', 
-        releaseVisData.value,
+        toRaw(releaseVisData.value),
         {
             actions: {
                 editor: false
@@ -767,7 +768,7 @@ async function fetchVulnerabilityViolationAnalytics() {
         item.createdDate = item.createdDate.split('[')[0]
     })
     analyticsMetrics.value.data.values = resp.data.vulnerabilitiesViolationsOverTime
-    vegaEmbed.default('#analyticsMetricsVisHome', analyticsMetrics.value,
+    vegaEmbed.default('#analyticsMetricsVisHome', toRaw(analyticsMetrics.value),
         {
             actions: {
                 editor: false
