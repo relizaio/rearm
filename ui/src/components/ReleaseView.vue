@@ -1909,7 +1909,7 @@ const artifactsTableFields: DataTableColumns<any> = [
         title: 'Facts',
         render: (row: any) => {
             const factContent: any[] = []
-            factContent.push(h('li', `UUID: ${row.uuid}`))
+            factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
             row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
             if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
             if (row.version) factContent.push(h('li', `Version: ${row.version}`))
@@ -2057,7 +2057,7 @@ const deliverableTableFields: DataTableColumns<any> = [
         title: 'Facts',
         render: (row: any) => {
             const factContent: any[] = []
-            factContent.push(h('li', `UUID: ${row.uuid}`))
+            factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
             if (row.group) factContent.push(h('li', `group: ${row.group}`))
             if (row.publisher) factContent.push(h('li', `group: ${row.publisher}`))
             if (row.name) factContent.push(h('li', `name: ${row.publisher}`))
@@ -2308,7 +2308,7 @@ const commitTableFields: DataTableColumns<any> = [
         title: 'Facts',
         render: (row: any) => {
             const factContent: any[] = []
-            factContent.push(h('li', `UUID: ${row.uuid}`))
+            factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
             factContent.push(h('li', `Commit Hash: ${row.commit}`))
             factContent.push(h('li', `Branch: ${updatedRelease.value.sourceCodeEntryDetails.vcsBranch}`))
             if (updatedRelease.value.sourceCodeEntryDetails.vcsRepository?.uri) factContent.push(h('li', `VCS Repo URI: ${updatedRelease.value.sourceCodeEntryDetails.vcsRepository?.uri}`))

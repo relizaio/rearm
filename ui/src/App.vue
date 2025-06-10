@@ -39,6 +39,10 @@ export default class App extends Vue {
     width: 90%;
 }
 
+.iconInTooltip {
+    height: 25px;
+}
+
 .clickable {
     cursor: pointer;
 }
