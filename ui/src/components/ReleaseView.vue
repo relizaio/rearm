@@ -1913,12 +1913,18 @@ const artifactsTableFields: DataTableColumns<any> = [
             row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
             if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
             if (row.version) factContent.push(h('li', `Version: ${row.version}`))
-            if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: string) => factContent.push(h('li', `digest(${d.scope}): ${d.algo}:${d.digest}`)))
+            if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
             if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`)))) 
             if (row.identities && row.identities.length) factContent.push(h('li', 'Identities:'), h('ul', row.identities.map((id: Identity) => h('li', `${id.identityType}: ${id.identity}`)))) 
 
             if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
             if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
+            if (row.artifactDetails && row.artifactDetails.length) {
+                row.artifactDetails.forEach((ad: any) => {
+                    factContent.push(h('li', {}, [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad)}, 'download')]))
+                })
+            }
+            console.log(row)
             const els: any[] = [
                 h(NTooltip, {
                     trigger: 'hover'

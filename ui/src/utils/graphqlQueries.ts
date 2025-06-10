@@ -144,6 +144,52 @@ query FetchInstances($orgUuid: ID!) {
     }
 }`
 
+const ARTIFACT_DETAIL_DATA_SINGLE = `
+    uuid
+    displayIdentifier
+    buildId
+    buildUri
+    version
+    cicdMeta
+    digestRecords{
+        algo
+        digest
+        scope
+    }
+    type
+    bomFormat
+    tags{
+        key
+        value
+    }
+    metrics {
+        dependencyTrackFullUri
+        lastScanned
+        critical
+        high
+        medium
+        low
+        unassigned
+        policyViolationsSecurityTotal
+        policyViolationsLicenseTotal
+        policyViolationsOperationalTotal
+    }
+    reboms
+    identities{
+        identity
+        identityType
+    }
+    downloadLinks{
+        uri
+        content
+    }
+    internalBom {
+        id
+        belongsTo
+    }    
+    componentUuid
+`
+
 const ARTIFACT_DETAIL_DATA = `
     uuid
     displayIdentifier
@@ -188,6 +234,10 @@ const ARTIFACT_DETAIL_DATA = `
         belongsTo
     }    
     componentUuid
+    artifacts
+    artifactDetails {
+        ${ARTIFACT_DETAIL_DATA_SINGLE}
+    }
 `
 const DELIVERABLE_DETAIL_DATA = `
     uuid
