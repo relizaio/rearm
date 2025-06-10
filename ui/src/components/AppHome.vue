@@ -598,9 +598,10 @@ async function fetchActiveComponentsAnalytics() {
 }
 
 const releaseVisData: Ref<any> = ref({
-    $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
     title: 'Number of Releases Created Per Day',
+    height: 220,
     width: 'container',
     data: {
         values: []
@@ -636,9 +637,10 @@ const releaseVisData: Ref<any> = ref({
 })
 
 const analyticsMetrics: Ref<any> = ref({
-    $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
     title: 'Vulnerabilities and Policy Violations Over Time',
+    height: 220,
     width: 'container',
     data: {
         values: []
@@ -678,9 +680,10 @@ const analyticsMetrics: Ref<any> = ref({
 })
 
 const mostActiveOverTime: Ref<any> = ref({
-    $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
     width: 'container',
+    height: 220,
     data: {
         values: []
     },

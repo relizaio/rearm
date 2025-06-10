@@ -900,67 +900,6 @@ async function approve(approvals: ApprovalInput[]) {
         approvalPending.value = false
     })
 }
-
-
-async function triggerApprovalLegacy() {
-    approvalPending.value = true
-    // status validation
-    if (release.value.status !== 'COMPLETE' || updatedRelease.value.status !== 'COMPLETE') {
-        updatedRelease.value = deepCopyRelease(release.value)
-        notify('error', 'Error', 'Only COMPLETE Releases may be approved.')
-        approvalPending.value = false
-    } else {
-        // only send those approvals that changed
-        let localApproveObject: any = {
-            uuid: updatedRelease.value.uuid,
-            approvals: {},
-            productsForDisapproval: []
-        }
-        let disapprove = false
-        Object.keys(updatedRelease.value.approvals).forEach(async (ap: string) => {
-            if (updatedRelease.value.approvals[ap] !== release.value.approvals[ap]) {
-                localApproveObject.approvals[ap] = updatedRelease.value.approvals[ap]
-                if (localApproveObject.approvals[ap] === false) {
-                    disapprove = true
-                }
-            }
-        })
-        approveObject.value = localApproveObject
-        if (disapprove && release.value.componentDetails.type !== 'PRODUCT') {
-            productsForDisapproval.value = productOptions.value.map((b: any) => b.value)
-            if (productsForDisapproval.value.length) {
-                showDisapproveProductsConfirmationModal.value = true
-            } else {
-                approveLegacy()
-            }
-        } else {
-            approveLegacy()
-        }
-    }
-}
-function approveLegacy () {
-    showDisapproveProductsConfirmationModal.value=false
-    let ao = approveObject.value
-    approveObject.value.productsForDisapproval = productsForDisapproval.value
-    store.dispatch('approveRelease', ao).then(response => {
-        notify('success', 'Saved', 'Approvals Saved.')
-        release.value.status = response.data.approveReleaseManual.status
-        updatedRelease.value.status = response.data.approveReleaseManual.status
-        releaseTimingData.value.data.values = tranformReleaseTimingVisData(response.data.approveReleaseManual.timing)
-        deployTimingData.value.data.values = tranformDeployTimingVisData(response.data.approveReleaseManual.timing)
-        release.value.approvals = response.data.approveReleaseManual.approvals
-        emit('approvalsChanged', releaseUuid.value)
-        approvalPending.value = false
-    }).catch(error => {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(error.message),
-            'error'
-        )
-        emit('closeRelease')
-        approvalPending.value = false
-    })
-}
 function resetApprovals () {
     showDisapproveProductsConfirmationModal.value = false
     approvalPending.value = false
