@@ -1860,7 +1860,6 @@ const purl: ComputedRef<string | undefined> = computed((): string | undefined =>
     let purl = undefined
     if (release.value && release.value.identifiers && release.value.identifiers.length) {
         const purlObj = release.value.identifiers.find((id: any) => id.idType === 'PURL')
-        console.log(purlObj)
         if (purlObj) {
             purl = purlObj.idValue
         }
@@ -1924,7 +1923,6 @@ const artifactsTableFields: DataTableColumns<any> = [
                     factContent.push(h('li', {}, [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad)}, 'download')]))
                 })
             }
-            console.log(row)
             const els: any[] = [
                 h(NTooltip, {
                     trigger: 'hover'
@@ -2159,7 +2157,6 @@ const parentReleaseTableFields: DataTableColumns<any> = [
         type: 'expand',
         expandable: (row: any) => row.releaseDetails && row.releaseDetails.componentDetails ? row.releaseDetails.componentDetails.type === 'PRODUCT' && row.releaseDetails.parentReleases : false,
         renderExpand: (row: any) => {
-            console.log(row)
             if (row.releaseDetails && row.releaseDetails.componentDetails) {
                 return h(NDataTable, {
                     data: row.releaseDetails.parentReleases,
@@ -2224,7 +2221,6 @@ const parentReleaseTableFields: DataTableColumns<any> = [
         title: 'Vulnerabilities',
         render: (row: any) => {
             let els: any[] = []
-            console.log(row)
             if (row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
                 const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: help;'}, row.releaseDetails.metrics.critical)
                 const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: help;'}, row.releaseDetails.metrics.high)
