@@ -4,6 +4,8 @@
 package io.reliza.ws;
 
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -15,12 +17,16 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
+import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.SourceCodeEntryData.SCEArtifact;
+import io.reliza.model.dto.ArtifactWebDto;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.SourceCodeEntryData;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
@@ -88,6 +94,20 @@ public class ArtifactDataFetcher {
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		return artifactService.getArtifactBomLatestVersion(oad.get().getInternalBom().id(), oad.get().getOrg());
+	}
+	
+	@DgsData(parentType = "Artifact", field = "artifactDetails")
+	public List<ArtifactData> artifactsOfArtifact(DgsDataFetchingEnvironment dfe)  {
+		ArtifactData ad = dfe.getSource();
+		List<ArtifactData> artList = new LinkedList<>();
+		if (null != ad.getArtifacts()) {
+			for (UUID artUuid : ad.getArtifacts()) {
+				artList.add(artifactService
+						.getArtifactData(artUuid)
+						.get());
+			}
+		}
+		return artList;
 	}
 
 	// @Transactional

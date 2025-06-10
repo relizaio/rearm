@@ -597,6 +597,8 @@ type Artifact {
 	downloadLinks: [Downloadlink]
 	metrics: DependencyTrackMetrics
 	componentUuid: ID
+	artifacts: [ID]
+	artifactDetails: [Artifact]
 }
 
 type DependencyTrackMetrics {
@@ -1015,7 +1017,7 @@ input CreateArtifactInput {
 }
 
 input ArtifactInput {
-	type: String
+	type: ArtifactType
 	displayIdentifier: String
 	identities: [BomIdentityInput]
 	downloadLinks: [LinkInput]
@@ -1616,6 +1618,11 @@ enum ArtifactType {
 	RELEASE_NOTES
 	SECURITY_TXT
 	THREAT_MODEL
+    SIGNATURE
+    SIGNED_PAYLOAD
+    PUBLIC_KEY
+    CERTIFICATE_X_509
+    CERTIFICATE_PGP
 	OTHER
 }
 
