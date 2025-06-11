@@ -7,7 +7,8 @@ import gitlab from "../../Assets/Home/gitlab.png"
 import jenkins from "../../Assets/Home/jenkins.png"
 import ado from "../../Assets/Home/ado.png"
 import dtrack from "../../Assets/Home/dtrack.png"
-import cosign from "../../Assets/Home/sigstore_cosign-horizontal-color-logo.svg"
+import cosign from "../../Assets/Home/cosign.png"
+import msteams from "../../Assets/Home/msteams.png"
 import tealogo from "../../Assets/Home/tealogo.png"
 import analyse from "../../Assets/Home/analyse.svg"
 import colab from "../../Assets/Home/colab.svg"
@@ -47,6 +48,7 @@ const HomePage = () => {
     { icon: jenkins },
     { icon: slack },
     { icon: cosign },
+    { icon: msteams },
   ]
   const featuresArray = [
     {
