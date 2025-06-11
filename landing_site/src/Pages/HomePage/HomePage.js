@@ -7,6 +7,7 @@ import gitlab from "../../Assets/Home/gitlab.png"
 import jenkins from "../../Assets/Home/jenkins.png"
 import ado from "../../Assets/Home/ado.png"
 import dtrack from "../../Assets/Home/dtrack.png"
+import cosign from "../../Assets/Home/sigstore_cosign-horizontal-color-logo.svg"
 import tealogo from "../../Assets/Home/tealogo.png"
 import analyse from "../../Assets/Home/analyse.svg"
 import colab from "../../Assets/Home/colab.svg"
@@ -44,7 +45,8 @@ const HomePage = () => {
     { icon: github },
     { icon: gitlab },
     { icon: jenkins },
-    { icon: slack }
+    { icon: slack },
+    { icon: cosign },
   ]
   const featuresArray = [
     {
@@ -68,7 +70,7 @@ const HomePage = () => {
       image: rearm_release,
       title: "Storage for SBOMs / xBOMs, Release Metadata",
       texts: [
-        { text: "ReARM provides organized storage for Release Artifacts and Metadata, including SBOMs / xBOMs and Attestations." }
+        { text: "ReARM provides storage for Artifacts and Metadata, including SBOMs / xBOMs and Attestations, per each Release." }
       ]
     },
     {
