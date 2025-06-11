@@ -13,7 +13,6 @@ const BlogPost = () => {
   const { slug } = useParams()
   const post = posts.find((p) => p.slug === slug)
   if (!post) return <p>Post not found. <Link to="/">Go back</Link></p>
-
   return (
     <BasicLayout>
       <div className={`${styles.container1} container-fluid`}>
@@ -21,7 +20,14 @@ const BlogPost = () => {
           <h1 className={styles.C1_title1}>{post.title}</h1>
           <h3 className={styles.C1_text1}><em>{post.date}</em></h3>
           <div className={styles.C1_text1}>
-            <ReactMarkdown>
+            <ReactMarkdown components={{
+              img: ({ node, ...props }) => (
+                <img
+                  {...props}
+                  style={{ maxWidth: '1000px', height: 'auto' }} // adjust as needed
+                />
+              ),
+            }}>
               {post.content}
             </ReactMarkdown>
           </div>
