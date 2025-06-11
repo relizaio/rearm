@@ -43,6 +43,7 @@ public class ArtifactWebDto extends ArtifactData {
 		awd.setVersion(ad.getVersion());
 		awd.setMetrics(ad.getMetrics());
 		awd.setComponentUuid(component);
+		awd.setArtifacts(ad.getArtifacts());
 		return awd;
 	}
 }
