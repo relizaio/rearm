@@ -320,15 +320,15 @@ public class ArtifactService {
 				}
 				artifactDto.setInternalBom(new InternalBom(internalBomId, rebomOptions.belongsTo()));
 				artifactUploadResponse = rebomResponse.bom();
-				if(null != rebomResponse.duplicate() && rebomResponse.duplicate() ){
-					//find existing artifact and use its uuid, then create / update art
-					// find artifact by bom digest?
-					var a = findArtifactByStoredDigest(orgUuid, artifactUploadResponse.getOciResponse().getDigest());
-					if(a.isPresent()){
-						art = a.get();
-						artifactDto.setUuid(art.getUuid());
-					}
-				}
+				// if(null != rebomResponse.duplicate() && rebomResponse.duplicate() ){
+				// 	//find existing artifact and use its uuid, then create / update art
+				// 	// find artifact by bom digest?
+				// 	var a = findArtifactByStoredDigest(orgUuid, artifactUploadResponse.getOciResponse().getDigest());
+				// 	if(a.isPresent()){
+				// 		art = a.get();
+				// 		artifactDto.setUuid(art.getUuid());
+				// 	}
+				// }
 				if(null == artifactDto.getUuid()){
 					artifactDto.setUuid(UUID.randomUUID());
 				}
