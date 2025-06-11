@@ -246,7 +246,7 @@
   margin-bottom: 100px;
 }
 
-@media screen and (max-width: 1200px) {
+@media screen and (max-width: 1900px) {
 .integrationsFlexWrap{
   flex-wrap: wrap;
 }
