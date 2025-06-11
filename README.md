@@ -11,9 +11,9 @@ https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 ## About
 ReARM is an abbreviation for "Reliza's Artifact and Release Management". It is a DevSecOps and Supply Chain Security tool to organize product releases with their metadata, including various Bills of Materials (SBOMs / xBOMs).
 
-ReARM stores xBOMs on OCI-compatible storage via Reliza's [Rebom](https://github.com/relizaio/rebom) project.
+See [here](https://rearmhq.com/blog/rearm-comparison-with-traditional-sbom-tools) how ReARM's SBOM-related features compare with previous generation of tooling.
 
-ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
+ReARM stores xBOMs on OCI-compatible storage. ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
 
 ## ReARM Product Status Information
 - ReARM itself - Public Beta
