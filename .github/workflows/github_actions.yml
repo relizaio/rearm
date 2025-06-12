@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Release
-        uses: relizaio/reliza-docker-action@3.1
+        uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@3.2
+        uses: relizaio/reliza-helm-action@3.3
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Helm metadata action
-        uses: relizaio/reliza-helm-action@3.2
+        uses: relizaio/reliza-helm-action@3.3
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@3.2
+        uses: relizaio/reliza-helm-action@3.3
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -73,12 +73,13 @@ jobs:
           push_to_rearm: 'true'
           rearm_api_id: ${{ secrets.REARM_REARM_HELM_API_ID }}
           rearm_api_key: ${{ secrets.REARM_REARM_HELM_API_KEY }}
+          rearm_enable_public_cosign_sigstore: 'true'
   build-ui:
     name: Build And Push ReARM UI
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@3.1
+        uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -93,12 +94,13 @@ jobs:
           rearm_api_id: ${{ secrets.REARM_REARM_UI_API_ID }}
           rearm_api_key: ${{ secrets.REARM_REARM_UI_API_KEY }}
           source_code_sbom_type: 'npm'
+          rearm_enable_public_cosign_sigstore: 'true'
   build-backend:
     name: Build And Push ReARM Backend
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@3.1
+        uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -113,12 +115,13 @@ jobs:
           rearm_api_id: ${{ secrets.REARM_REARM_BACKEND_API_ID }}
           rearm_api_key: ${{ secrets.REARM_REARM_BACKEND_API_KEY }}
           source_code_sbom_type: 'other'
+          rearm_enable_public_cosign_sigstore: 'true'
   build-oci-service:
     name: Build And Push ReARM OCI Service
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM OCI Service Release
-        uses: relizaio/reliza-docker-action@3.1
+        uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -133,12 +136,13 @@ jobs:
           rearm_api_id: ${{ secrets.REARM_REARM_OCI_ARTIFACT_API_ID }}
           rearm_api_key: ${{ secrets.REARM_REARM_OCI_ARTIFACT_API_KEY }}
           source_code_sbom_type: 'other'
+          rearm_enable_public_cosign_sigstore: 'true'
   build-keycloak:
     name: Build And Push ReARM Keycloak
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Keycloak Release
-        uses: relizaio/reliza-docker-action@3.1
+        uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -153,12 +157,13 @@ jobs:
           rearm_api_id: ${{ secrets.REARM_REARM_KEYCLOAK_API_ID }}
           rearm_api_key: ${{ secrets.REARM_REARM_KEYCLOAK_API_KEY }}
           source_code_sbom_type: 'none'
+          rearm_enable_public_cosign_sigstore: 'true'
   build-rearm-landing:
     name: Build And Push ReARM Landing Website rearmhq.com
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Release
-        uses: relizaio/reliza-docker-action@3.1
+        uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -174,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@3.1
+        uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -190,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@3.1
+        uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -205,3 +210,4 @@ jobs:
           rearm_api_id: ${{ secrets.REARM_REBOM_BACKEND_API_ID }}
           rearm_api_key: ${{ secrets.REARM_REBOM_BACKEND_API_KEY }}
           source_code_sbom_type: 'npm'
+          rearm_enable_public_cosign_sigstore: 'true'
