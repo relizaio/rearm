@@ -366,6 +366,7 @@ public class ArtifactService {
 		}
 		// artifactDto.setDisplayIdentifier(this.registryHost + "/" + this.ociRepository);
 		if(null!=artifactUploadResponse){
+			log.info("RGDEBUG: artifactUploadResponse: {}", artifactUploadResponse);
 			Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
 			String ociDigest = artifactUploadResponse.getOciResponse().getDigest();
 			if(StringUtils.isNotEmpty(ociDigest)){
