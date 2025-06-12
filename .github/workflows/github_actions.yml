@@ -57,6 +57,7 @@ jobs:
   build-rearm-helm:
     permissions:
       contents: write
+      id-token: write
     name: Build And Push Rearm Helm Chart
     runs-on: ubuntu-latest
     steps:
@@ -75,6 +76,8 @@ jobs:
           rearm_api_key: ${{ secrets.REARM_REARM_HELM_API_KEY }}
           rearm_enable_public_cosign_sigstore: 'true'
   build-ui:
+    permissions:
+      id-token: write
     name: Build And Push ReARM UI
     runs-on: ubuntu-latest
     steps:
@@ -96,6 +99,8 @@ jobs:
           source_code_sbom_type: 'npm'
           rearm_enable_public_cosign_sigstore: 'true'
   build-backend:
+    permissions:
+      id-token: write
     name: Build And Push ReARM Backend
     runs-on: ubuntu-latest
     steps:
@@ -117,6 +122,8 @@ jobs:
           source_code_sbom_type: 'other'
           rearm_enable_public_cosign_sigstore: 'true'
   build-oci-service:
+    permissions:
+      id-token: write
     name: Build And Push ReARM OCI Service
     runs-on: ubuntu-latest
     steps:
@@ -138,6 +145,8 @@ jobs:
           source_code_sbom_type: 'other'
           rearm_enable_public_cosign_sigstore: 'true'
   build-keycloak:
+    permissions:
+      id-token: write
     name: Build And Push ReARM Keycloak
     runs-on: ubuntu-latest
     steps:
@@ -191,6 +200,8 @@ jobs:
           path: rebom-frontend
           enable_sbom: 'false'
   build-rebom-backend:
+    permissions:
+      id-token: write
     name: Build And Push Rebom UI
     runs-on: ubuntu-latest
     steps:
