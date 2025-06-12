@@ -24,6 +24,8 @@ function sidebar() {
             {text: 'ReARM CLI', link: '/integrations/rearmcli'},
             {text: 'GitHub Actions', link: '/integrations/githubActions',
               items: [
+                {text: 'Build Pipelines', link: '/integrations/githubActionsBuild'},
+                {text: 'Cosign and Sigstore', link: '/integrations/githubActionsCosign'},
                 {text: 'Workflow Triggers', link: '/integrations/githubActionsTriggers'}
               ]
             },
