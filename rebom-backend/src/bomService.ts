@@ -502,9 +502,9 @@ function computeRootDepIndex (bom: any) : number {
     let oasResponse: OASResponse 
     let bomRows: BomRecord[]
     let bomRecord: BomRecord
-    bomRows = await BomRepository.bomByOrgAndDigest(bomSha, bomInput.bomInput.org)
-    logger.info(`RGDEBUG: bom rows found by digest and org: ${bomRows.length}`)
-    if (!bomRows || !bomRows.length){
+    // bomRows = await BomRepository.bomByOrgAndDigest(bomSha, bomInput.bomInput.org)
+    // logger.info(`RGDEBUG: bom rows found by digest and org: ${bomRows.length}`)
+    // if (!bomRows || !bomRows.length){
       if(process.env.OCI_STORAGE_ENABLED){
         oasResponse = await pushToOci(newUuid, bomObj)
         logger.info(`RGDEBUG: oasResponse: ${oasResponse}`)
@@ -548,10 +548,11 @@ function computeRootDepIndex (bom: any) : number {
       let queryRes = await utils.runQuery(queryText, queryParams)
       bomRows = queryRes.rows
       bomRecord = bomRows[0]
-    }else{
-      bomRecord = bomRows[0]
-      bomRecord.duplicate = true
-    }
+    // }
+    // else{
+    //   bomRecord = bomRows[0]
+    //   bomRecord.duplicate = true
+    // }
     logger.info(`RGDEBUG: addBomResponse: ${JSON.stringify(bomRecord)}`)
     return bomRecord
   }
