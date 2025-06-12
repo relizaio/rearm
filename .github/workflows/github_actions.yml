@@ -202,10 +202,10 @@ jobs:
   build-rebom-backend:
     permissions:
       id-token: write
-    name: Build And Push Rebom UI
+    name: Build And Push Rebom Backend
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit UI Release
+      - name: RelizaHub Build And Submit Backend Release
         uses: relizaio/reliza-docker-action@3.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
