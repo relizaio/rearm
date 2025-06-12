@@ -503,9 +503,11 @@ function computeRootDepIndex (bom: any) : number {
     let bomRows: BomRecord[]
     let bomRecord: BomRecord
     bomRows = await BomRepository.bomByOrgAndDigest(bomSha, bomInput.bomInput.org)
+    logger.info(`RGDEBUG: bom rows found by digest and org: ${bomRows.length}`)
     if (!bomRows || !bomRows.length){
       if(process.env.OCI_STORAGE_ENABLED){
         oasResponse = await pushToOci(newUuid, bomObj)
+        logger.info(`RGDEBUG: oasResponse: ${oasResponse}`)
         rebomOptions.storage = 'oci'
       }else {
         throw new Error("OCI Storage not enabled")
@@ -530,7 +532,7 @@ function computeRootDepIndex (bom: any) : number {
             offset: 0
           }
         }
-        // if bom record found then update, otherwise insert
+        // if bom record found then update, otherwisebomRows insert
         let bomDtos = await findBom(bomSearch)
   
         // if not found, re-try search by meta
@@ -550,6 +552,7 @@ function computeRootDepIndex (bom: any) : number {
       bomRecord = bomRows[0]
       bomRecord.duplicate = true
     }
+    logger.info(`RGDEBUG: addBomResponse: ${JSON.stringify(bomRecord)}`)
     return bomRecord
   }
 
