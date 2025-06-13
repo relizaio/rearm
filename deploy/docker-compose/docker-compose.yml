@@ -1,6 +1,6 @@
 services:
   rearm-core:
-    image: registry.relizahub.com/library/rearm-backend:25.05.17
+    image: registry.relizahub.com/library/rearm-backend:25.06.15
     env_file:
      - path: ./core.env
        required: false
@@ -27,7 +27,7 @@ services:
         parallelism: 1
         delay: 10s
   rearm-ui:
-    image: registry.relizahub.com/library/rearm-ui:25.05.10
+    image: registry.relizahub.com/library/rearm-ui:25.05.19
     ports:
      - "8092:80"
     environment:
@@ -60,7 +60,7 @@ services:
     volumes:
       - "rearm-postgres-data:/bitnami/postgresql"
   keycloak:
-    image: registry.relizahub.com/library/rearm-keycloak:25.03.1
+    image: registry.relizahub.com/library/rearm-keycloak:25.03.6
     # build: ../../keycloak
     ports:
      - "9080:9080"
@@ -99,7 +99,7 @@ services:
       - ./postgres-keycloak-init.sql:/docker-entrypoint-initdb.d/init.sql
       - "rearm-keycloak-compose-postgres-data:/bitnami/postgresql"
   oci-artifact-service:
-    image: registry.relizahub.com/library/rearm-oci-artifact-service:25.03.2
+    image: registry.relizahub.com/library/rearm-oci-artifact-service:25.03.5
     env_file:
      - path: ./oci.env
        required: false
@@ -115,7 +115,7 @@ services:
         parallelism: 1
         delay: 10s
   rebom-backend:
-    image: registry.relizahub.com/library/rebom-backend:0.1.4
+    image: registry.relizahub.com/library/rebom-backend:0.1.11
     env_file:
      - path: ./rebom.env
        required: false
