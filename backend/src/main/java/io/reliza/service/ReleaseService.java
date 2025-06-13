@@ -339,7 +339,7 @@ public class ReleaseService {
 					sourceCodeEntry.setCommitAuthor(com.getCommitAuthor());
 					sourceCodeEntry.setCommitEmail(com.getCommitEmail());
 					sourceCodeEntry.setDate(com.getDate());
-					log.info("RGDEBUG: updated sceDTO = {}", sourceCodeEntry);
+					log.debug("RGDEBUG: updated sceDTO = {}", sourceCodeEntry);
 				}
 			}
 			if (null != sourceCodeEntry && StringUtils.isNotEmpty(sourceCodeEntry.getCommit())) {
@@ -699,7 +699,7 @@ public class ReleaseService {
 			if(null != releaseRebomIds && releaseRebomIds.size() > 0) bomIds.addAll(releaseRebomIds);
 
 		}
-		log.info("RGDEBUG: generateComponentReleaseBomForConfig bomIds: {}", bomIds);
+		log.debug("RGDEBUG: generateComponentReleaseBomForConfig bomIds: {}", bomIds);
 		// Call add bom on list
 
 		if(bomIds.size() > 0){
@@ -1314,7 +1314,7 @@ public class ReleaseService {
 		).toList();
 		newBoms.addAll(filteredBoms);
 		newBoms.add(rebom);
-		log.info("RGDEBUG: add rebom on release: {}, new Bom: {}, replaced: {}", releaseData.getUuid(), rebom.rebomId(), currentBomSize  == newBoms.size());
+		log.debug("RGDEBUG: add rebom on release: {}, new Bom: {}, replaced: {}", releaseData.getUuid(), rebom.rebomId(), currentBomSize  == newBoms.size());
 		releaseRebomService.setReboms(releaseData, newBoms, wu);
 		// ReleaseDto releaseDto = Utils.OM.convertValue(Utils.dataToRecord(releaseData), ReleaseDto.class);
 		// ossReleaseService.updateRelease(releaseDto, true, wu);
@@ -1633,7 +1633,7 @@ public class ReleaseService {
 	
 	@Async
 	public void reconcileMergedSbomRoutine(ReleaseData rd, WhoUpdated wu) {
-		log.info("RGDEBUG: Reconcile Merged Sboms Routine started for release: {}", rd.getUuid());
+		log.debug("RGDEBUG: Reconcile Merged Sboms Routine started for release: {}", rd.getUuid());
 		Set<ReleaseData> rds = sharedReleaseService.greedylocateProductsOfRelease(rd);
 		// log.info("greedy located rds: {}", rds);
 		// Set<ReleaseData> allRds = locateAllProductsOfRelease(rd, new HashSet<>());
