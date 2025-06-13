@@ -23,8 +23,20 @@ export async function runQuery (query: string, params: string[]) : Promise<any> 
     try {
       return await client.query(query, params)
     
-    } catch (error) {
-      logger.error("Error running query: ", error)
+    } catch (error: any) {
+        logger.error(`Error running query: ${error}`)
+        if (error.code === '23505') { // unique_violation
+            console.log('Unique constraint violation:', error.detail);
+            throw new Error(`Duplicate entry: ${error.detail}`);
+        } else if (error.code === '23502') { // not_null_violation
+            console.log('Not-null constraint violation:', error.detail);
+            throw new Error(`Cannot be null: ${error.detail}`);
+        } else if (error.code === '23503') { // foreign_key_violation
+            console.log('Foreign key constraint violation:', error.detail);
+            throw new Error(`Invalid reference: ${error.detail}`);
+        }
+        // Re-throw other errors
+        throw error;
     }
      finally {
       // Make sure to release the client before any error handling,

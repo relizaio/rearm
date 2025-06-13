@@ -507,7 +507,6 @@ function computeRootDepIndex (bom: any) : number {
     // if (!bomRows || !bomRows.length){
       if(process.env.OCI_STORAGE_ENABLED){
         oasResponse = await pushToOci(newUuid, bomObj)
-        logger.info(`RGDEBUG: oasResponse: ${oasResponse}`)
         rebomOptions.storage = 'oci'
       }else {
         throw new Error("OCI Storage not enabled")
@@ -553,7 +552,6 @@ function computeRootDepIndex (bom: any) : number {
     //   bomRecord = bomRows[0]
     //   bomRecord.duplicate = true
     // }
-    logger.info(`RGDEBUG: addBomResponse: ${JSON.stringify(bomRecord)}`)
     return bomRecord
   }
 
