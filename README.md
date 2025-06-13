@@ -20,7 +20,12 @@ ReARM stores xBOMs on OCI-compatible storage. ReARM is developed by [Reliza](htt
 - Transparency Exchange API (TEA) implementation - in the process of implementation of TEA Beta 1 - Public Alpha available on ReARM Demo Instance (see below for details)
 
 ## Motivation
-ReARM is a xBOM management system that allows organizations to maintain compliance within the framework of [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj) as well as US Executive Orders [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity) and [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity) (later [amended](https://rearmhq.com/blog/sbom-remains-attestations-out-amending-executive-order-14144)).
+ReARM is a xBOM management system that allows organizations to maintain compliance within various regulatory frameworks, including:
+- [European CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj), implied use of xBOMs in [NIS2 Directive](https://eur-lex.europa.eu/eli/dir/2022/2555/oj/eng) and [DORA](https://eur-lex.europa.eu/eli/reg/2022/2554/oj/eng)
+- US executive order [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity)
+- US executive order [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity) (later [amended](https://rearmhq.com/blog/sbom-remains-attestations-out-amending-executive-order-14144))
+- Section 524B of the US [FD&C Act](https://www.govinfo.gov/content/pkg/COMPS-973/pdf/COMPS-973.pdf)
+- Reserve Bank of India (RBI) and the Securities and Exchange Board of India (SEBI) Cybersecurity and Cyber Resilience Framework SBOM requirements, i.e. described [here](https://www.sebi.gov.in/sebi_data/faqfiles/jun-2025/1749647139924.pdf)
 
 While highlighting regulatory pressure, we strive to make sure that ReARM bears minimum or no overhead on developers and more so provides real value in terms of managing technology releases and their metadata. In other words, our goal is creating a product that would be useful for developers and managers, while also solving the compliance problem.
 
