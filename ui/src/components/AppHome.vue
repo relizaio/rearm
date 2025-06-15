@@ -38,6 +38,7 @@
                 </n-gi>
                 <n-gi>
                     <div class="searchBlock">
+                        <h3>Search Releases</h3>
                         <div class="searchUnit artifactSearch">
                             <n-tabs
                             class="card-tabs"
@@ -47,7 +48,7 @@
                             style="margin: 0 -4px"
                             pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
                             >
-                                <n-tab-pane name="searchreleasesbytext" tab="Search Releases by Version, Digest, Commit">
+                                <n-tab-pane name="searchreleasesbytext" tab="Search by Version, Digest, Commit">
                                     <h5>Search For Releases By Digest, Version, Commit, Git Tag</h5>
                                     <n-form
                                         inline
@@ -65,7 +66,7 @@
                                         </n-input-group>
                                     </n-form>
                                 </n-tab-pane>
-                                <n-tab-pane name="searchreleasesbytags" tab="Search Releases by Tags">
+                                <n-tab-pane name="searchreleasesbytags" tab="Search by Tags">
                                     <h5>Search For Releases By Reliza Tags</h5>
                                     <n-form
                                         inline
@@ -81,6 +82,24 @@
                                                 variant="contained-text"
                                                 attr-type="submit">
                                                 Search
+                                            </n-button>
+                                        </n-input-group>
+                                    </n-form>
+                                </n-tab-pane>
+                                <n-tab-pane name="searchreleasesbydsbom" tab="Search by SBOM Components">
+                                    <h5>Search For Releases By SBOM Component Name or Purl</h5>
+                                    <n-form
+                                        inline
+                                        @submit="searchSbomComponent">
+                                        <n-input-group>
+                                            <n-input
+                                                placeholder="SBOM Component Name or Purl"
+                                                v-model:value="hashSearchQuery"
+                                            />
+                                            <n-button
+                                                variant="contained-text"
+                                                attr-type="submit">
+                                                Find
                                             </n-button>
                                         </n-input-group>
                                     </n-form>
@@ -275,6 +294,7 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const installationType: ComputedRef<any> = computed((): any => store.getters.myuser.installationType)
 
 const hashSearchQuery = ref('')
+const sbomSearchQuery = ref('')
 
 onMounted(() => {
     if (myorg.value) 
@@ -343,6 +363,18 @@ async function searchHashVersion (e: Event) {
     hashSearchResults.value = await executeGqlSearchHashVersion(params)
     showSearchResultsModal.value = true
 }
+
+async function searchSbomComponent (e: Event) {
+    e.preventDefault()
+    const searchParams = {
+        org: myorg.value.uuid,
+        query: sbomSearchQuery.value
+    }
+    const releases = await store.dispatch('searchReleasesBySbomComponent', searchParams)
+    hashSearchResults.value = {commitReleases: releases, releaseInstances: []}
+    showSearchResultsModal.value = true
+}
+
 
 const instancePropsSearchObj: Ref<any> = ref({
     value: '',

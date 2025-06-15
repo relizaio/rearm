@@ -1280,6 +1280,20 @@ const storeObject : any = {
             context.commit('SET_RELEASES', response.data.releasesByTags)
             return response.data.releasesByTags
         },
+        async searchReleasesBySbomComponent (context: any, params: any) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query releasesBySbomComponent($orgUuid: ID!, $query: String!) {
+                        releasesBySbomComponent(orgUuid: $orgUuid, query: $query) {
+                            ${graphqlQueries.MultiReleaseGqlData}
+                        }
+                    }`,
+                variables: { orgUuid: params.org, query: params.query },
+                fetchPolicy: 'no-cache'
+            })
+            context.commit('SET_RELEASES', response.data.releasesBySbomComponent)
+            return response.data.releasesBySbomComponent
+        },
         async addApprovalRole (context: any, updObj: any) {
             const data = await graphqlClient.mutate({
                 mutation: gql`
