@@ -5,7 +5,9 @@ This tutorial will walk you through uploading your first Bill Of Material to ReA
 Time it takes: 10 minutes.
 
 ## Pre-requisites
-1. Make sure you have [installed](/installation/) ReARM Community Edition or have access to ReARM Enterprise. Alternatively, you can follow this steps on [ReARM Public Demo instance](https://demo.rearmhq.com). If using Public Demo, click on Profile (Human icon) in the top right of the screen, and then Create New Organization in which you would do subsequent steps. Reload the page (F5) once the organization is created, this will show the dropdown menu on top of the screen where you can switch into your new organization.
+1. Make sure you have [installed](/installation/) ReARM Community Edition or have access to ReARM Enterprise.
+
+Alternatively, you can follow the steps below on the [ReARM Public Demo instance](https://demo.rearmhq.com). If using Public Demo, click on Profile (Human icon) in the top right of the screen, and then Create New Organization in which you would do subsequent steps. Reload the page (F5) once the organization is created, this will show the dropdown menu on top of the screen where you can switch into your new organization.
 
 2. Optionally, but highly recommended is to set up [Dependency-Track](https://dependencytrack.org/) integration. ReARM relies on Dependency-Track for SBOM analysis, including vulnerability scans and policy violations. If you are using ReARM Enterprise Edition, Dependency Track integration will be set up for you by Reliza. If you are using Community Edition or your organization on Public Demo, follow [these instructions on setting up Dependency-Track integration](/integrations/dtrack).
 

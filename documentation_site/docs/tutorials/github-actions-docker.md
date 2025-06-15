@@ -25,7 +25,7 @@ This would essentially replicate `docker.io/library/hello-world` image. Note, th
 
 ## Set up ReARM component
 1. In your ReARM instance, [create a new component](/tutorials/first-bom#create-first-component), which we will call for the purposes of this tutorial `hello-world` - although you are free to choose any name. The component we created is viewable on ReARM public demo [here](https://demo.rearmhq.com/componentsOfOrg/00000000-0000-0000-0000-000000000001/91b89d22-b82d-461b-a668-ca560ce003a2/ea14da55-7537-49a1-9a19-82a511ca09a2).
-2. Once your component is created, on the component page, click on the `lock icon` and click `Yes, generate it!` on the next prompt. A screen will appear with API ID and API Key. Note these values, we will need them in the subsequent steps.
+2. Once your component is created, on the component page, click on the `lock icon` (Generate Component API Key) and click `Yes, generate it!` on the next prompt. A screen will appear with API ID and API Key. Note these values, we will need them in the subsequent steps.
 
 ## Configure GitHub repository
 In the GitHub repository, click on `Settings` in the top menu, then expand `Secrets and variables` menu on the left and click on `Actions`.
