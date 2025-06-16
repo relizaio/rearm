@@ -58,6 +58,11 @@ Here `version` is a regular version for the Release and `dockerTagSafeVersion` i
 
 *Note*, that `getversion` command will automatically create a Release on ReARM with the `Pending` lifecycle. If a new release is not created within the next 2 hours, lifecycle will automatically change to `Rejected`. If this behaviour is undesired and you would not want to create a release on getversion command, pass the `--onlyversion true` flag to the ReARM CLI `getversion` command.
 
+## Support for Conventional Commits
+ReARM supports parsing of [Conventional Commits specification](https://www.conventionalcommits.org/en/v1.0.0/) when assigning versions. For example, if commit starts with **fix:**, `micro` element of the version will be updated; if commit starts with **feat:**, `minor` element will be updated.
+
+Use ReARM CLI to pass commit details in `getversion` call, using `--vcsuri`, `--vcstype`, `--commit`, `--commitmessage` flags, refer to ReARM CLI `getversion` [documentation](https://github.com/relizaio/rearm-cli?tab=readme-ov-file#1-use-case-get-version-assignment-from-rearm) for example and more details.
+
 ## More Things to Try
 From here you can integrate ReARM CLI to any CI solution you may be using. In example, it is being used in our more comprehensive [Container Image Pipeline on GitHub Actions](./github-actions-docker) tutorial.
 
