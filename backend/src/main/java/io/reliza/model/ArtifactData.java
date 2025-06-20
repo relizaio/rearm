@@ -90,7 +90,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 
 	public enum DigestScope {
 		ORIGINAL_FILE, //user provided
-		OCI_STORAGE
+		OCI_STORAGE,
+		REARM // custom digest calculated only on components and dependencies
 	}
 
     public record Identity(IdentityType identityType, String identity) {}

@@ -264,8 +264,8 @@ public class ArtifactService {
 		String tag = "";
 		OASResponseDto artifactUploadResponse = null;
 		DependencyTrackUploadResult dtur = null;
-		Artifact art = null;
 		ArtifactData existingAd = null;
+		RebomResponse rebomResponse = null;
 		if(null != artifactDto.getUuid()){
 			existingAd = getArtifactData(artifactDto.getUuid()).get();
 		}
@@ -305,7 +305,7 @@ public class ArtifactService {
 					}
 				}
 
-				RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, orgUuid);
+				rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, orgUuid);
 
 				// UUID internalBomId = rebomOptions.serialNumber();
 				UUID internalBomId;
@@ -320,22 +320,23 @@ public class ArtifactService {
 				}
 				artifactDto.setInternalBom(new InternalBom(internalBomId, rebomOptions.belongsTo()));
 				artifactUploadResponse = rebomResponse.bom();
-				// if(null != rebomResponse.duplicate() && rebomResponse.duplicate() ){
-				// 	//find existing artifact and use its uuid, then create / update art
-				// 	// find artifact by bom digest?
-				// 	var a = findArtifactByStoredDigest(orgUuid, artifactUploadResponse.getOciResponse().getDigest());
-				// 	if(a.isPresent()){
-				// 		art = a.get();
-				// 		artifactDto.setUuid(art.getUuid());
-				// 	}
-				// }
+				
 				if(null == artifactDto.getUuid()){
 					artifactDto.setUuid(UUID.randomUUID());
 				}
 				if (artifactDto.getType().equals(ArtifactType.BOM)) {
-					String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
-					UploadableBom ub = new UploadableBom(bomJson, null, false);
-					dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
+					if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest()) ){
+						var a = findArtifactByStoredDigest(orgUuid, rebomResponse.meta().bomDigest());
+						if(a.isPresent()){
+							var metrics = ArtifactData.dataFromRecord(a.get()).getMetrics();
+							dtur = new DependencyTrackUploadResult(metrics.getDependencyTrackProject(), metrics.getUploadToken(), metrics.getProjectName(), metrics.getProjectVersion(),metrics.getDependencyTrackFullUri());
+						}
+					}
+					if(null == dtur){
+						String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
+						UploadableBom ub = new UploadableBom(bomJson, null, false);
+						dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
+					}
 					artifactDto.setDtur(dtur);
 				}
 				tag = artifactDto.getUuid().toString();
@@ -360,13 +361,9 @@ public class ArtifactService {
 				artifactUploadResponse = uploadFileToConfiguredOci(file, tag, sha256Digest);
 			}
 		}
-		//early return in case when art is not null; i.e. a duplicate artifact?
-		if(null != art){
-			return art.getUuid();
-		}
+		
 		// artifactDto.setDisplayIdentifier(this.registryHost + "/" + this.ociRepository);
-		if(null!=artifactUploadResponse){
-			log.debug("RGDEBUG: artifactUploadResponse: {}", artifactUploadResponse);
+		if(null!=artifactUploadResponse && null != rebomResponse){
 			Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
 			String ociDigest = artifactUploadResponse.getOciResponse().getDigest();
 			if(StringUtils.isNotEmpty(ociDigest)){
@@ -374,6 +371,9 @@ public class ArtifactService {
 			}
 			if(StringUtils.isNotEmpty(artifactUploadResponse.getFileSHA256Digest())){
 				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
+			}
+			if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
+				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));
 			}
 			artifactDto.setDigestRecords(digestRecords);
 
@@ -386,11 +386,8 @@ public class ArtifactService {
         ));
 		}
 		
-		if(null == art){
-			//handle case of update downstream if needed
-			art = createArtifact(artifactDto, wu);
-		}
-        // log.debug("artifactcreated: {}", art);
+		Artifact art = createArtifact(artifactDto, wu);
+		
         return art.getUuid();
     }
 

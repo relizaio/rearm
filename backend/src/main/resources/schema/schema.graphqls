@@ -1598,6 +1598,7 @@ enum TeaArtifactChecksumType {
 enum DigestScope {
 	ORIGINAL_FILE
 	OCI_STORAGE
+	REARM
 }
 
 enum ArtifactType {
