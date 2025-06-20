@@ -450,11 +450,11 @@ function computeRootDepIndex (bom: any) : number {
 }
 
   // function computeSha
+  // enforce StripBom Flag for now
   function computeBomDigest(bom: any, stripBom: string): string {
     // strip meta
     let bomForDigest: any = {}
-   
-    if(stripBom === 'TRUE'){
+    // if(stripBom === 'TRUE'){
       bomForDigest["components"] = bom["components"]
       bomForDigest["dependencies"] = bom["dependencies"]
       //strip version
@@ -466,9 +466,9 @@ function computeRootDepIndex (bom: any) : number {
       if(rootdepIndex > -1){
         bomForDigest["dependencies"][rootdepIndex]['ref'] = versionStrippedRootComponentPurl
       }
-    } else {
-      bomForDigest = bom
-    }
+    // } else {
+    //   bomForDigest = bom
+    // }
    
     // canoncicalize
     const canonBom = canonicalize(bomForDigest)

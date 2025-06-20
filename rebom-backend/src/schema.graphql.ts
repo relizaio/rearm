@@ -69,6 +69,7 @@ const typeDefs = gql`
     notes: String
     stripBom: String
     serialNumber: ID
+    bomDigest: String
   }
 
   input RebomOverride {
