@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
@@ -612,6 +613,49 @@ public class IntegrationService {
 			violationDetails.add(vdto);
 		});
 		return violationDetails;
+	}
+	
+	public record ComponentPurlToDtrackProject (String purl, List<UUID> projects) {}
+	
+	public List<ComponentPurlToDtrackProject> searchDependencyTrackComponent (String query, UUID org) {
+		List<ComponentPurlToDtrackProject> sbomComponents = new LinkedList<>();
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(org, IntegrationType.DEPENDENCYTRACK,
+				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		if (oid.isPresent()) {
+			IntegrationData dtrackIntegration = oid.get();
+			try {
+				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
+				URI componentSearchUri;
+				if (query.startsWith("pkg:")) {
+					componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?purl=" + query + "&pageSize=10000&pageNumber=1");
+				} else {
+					componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?name=" + query + "&pageSize=10000&pageNumber=1");	
+				}
+				
+				var resp = dtrackWebClient
+						.get()
+						.uri(componentSearchUri)
+						.header("X-API-Key", apiToken)
+						.retrieve()
+						.toEntity(String.class)
+						.block();
+				if (null != resp.getBody()) {
+					List<Map<String, Object>> respList = Utils.OM.readValue(resp.getBody(), List.class);
+					sbomComponents = respList
+						.stream()
+						.collect(Collectors.groupingBy(x -> URLDecoder.decode((String) x.get("purl"), StandardCharsets.UTF_8), 
+								Collectors.mapping(x -> UUID.fromString(((Map<String, String>) x.get("project")).get("uuid")), 
+										Collectors.toList())))
+						.entrySet().stream()
+						.map(e -> new ComponentPurlToDtrackProject(e.getKey(), e.getValue())).toList();				
+				} else {
+					log.warn("Null body searching components on dtrack for query = " + query + " and org = " + org);
+				}
+			} catch (Exception e) {
+				log.error("Exception searching components on dtrack for query = " + query + " and org = " + org, e);
+			}
+		}
+		return sbomComponents;
 	}
 	
 	

@@ -1348,7 +1348,7 @@ public class ReleaseService {
 		if (removed) {
 			Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
 			if (oad.isPresent()) {
-				List<Release> or = sharedReleaseService.findReleasesByArtifact(artifactUuid, oad.get().getOrg());
+				List<Release> or = sharedReleaseService.findReleasesByReleaseArtifact(artifactUuid, oad.get().getOrg());
 				if (or.isEmpty()) {
 					// archive artifact
 					artifactService.archiveArtifact(artifactUuid, wu);

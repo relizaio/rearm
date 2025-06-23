@@ -5,6 +5,7 @@
 package io.reliza.service;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -123,6 +124,7 @@ public class ArtifactService {
 	public List<Artifact> listArtifactsByOrg (UUID org) {
 		return repository.listArtifactsByOrg(org.toString());
 	}
+	
 	public Optional<Artifact> findArtifactByStoredDigest (UUID orgUuid, String digest) {
 		Optional<Artifact> a = Optional.empty();
 		List<Artifact> artifacts = repository.findArtifactsByStoredDigest(orgUuid.toString(), digest);
@@ -130,6 +132,12 @@ public class ArtifactService {
 			a = Optional.of(artifacts.get(0));
 		}
 		return a;
+	}
+	
+	public List<Artifact> listArtifactsByDtrackProjects (Collection<UUID> dtrackProjects) {
+		Set<UUID> uniqueDtrackProjects = new HashSet<>(dtrackProjects);
+		List<String> dtrackProjectsForQuery = uniqueDtrackProjects.stream().map(x -> x.toString()).toList();
+		return repository.findArtifactsByDtrackProjects(dtrackProjectsForQuery);
 	}
 	
 	//Creates or Updates existing artifact

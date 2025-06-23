@@ -125,7 +125,7 @@ public class DeliverableService {
 		var ropt = sharedReleaseService.getReleaseByOutboundDeliverable(dd.getUuid(), dd.getOrg());
 		if (ropt.isPresent()) releaseIds.add(ropt.get().getUuid());
 		dd.getArtifacts().forEach(a -> {
-			var releases = sharedReleaseService.findReleasesByArtifact(a, dd.getOrg());
+			var releases = sharedReleaseService.findReleasesByReleaseArtifact(a, dd.getOrg());
 			releases.forEach(r -> releaseIds.add(r.getUuid()));
 		});
 		releaseIds.forEach(r -> acollectionService.resolveReleaseCollection(r, wu));

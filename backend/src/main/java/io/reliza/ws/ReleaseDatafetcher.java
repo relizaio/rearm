@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
@@ -82,6 +83,8 @@ import io.reliza.service.DeliverableService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetDeliverableService;
 import io.reliza.service.GetSourceCodeEntryService;
+import io.reliza.service.IntegrationService;
+import io.reliza.service.IntegrationService.ComponentPurlToDtrackProject;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.RebomService;
 import io.reliza.service.ReleaseService;
@@ -154,6 +157,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	AcollectionService acollectionService;
+	
+	@Autowired
+	IntegrationService integrationService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "release")
@@ -689,7 +695,7 @@ public class ReleaseDatafetcher {
 					releaseService.replaceArtifact(inputArtifactUuid, artId, ord.get().getUuid(),  wu);
 				}
 			} else {
-				var releases = sharedReleaseService.findReleasesByArtifact(artId, orgUuid);
+				var releases = sharedReleaseService.findReleasesByReleaseArtifact(artId, orgUuid);
 				releases.forEach(r -> acollectionService.resolveReleaseCollection(r.getUuid(), wu));
 			}
 			
@@ -850,6 +856,28 @@ public class ReleaseDatafetcher {
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		
 		return releaseService.findReleasesByTags(orgUuid, branchUuid, tagKey, tagValue);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "releasesByDtrackProjects")
+	public List<ReleaseData> searchReleasesByDtrackProjects(DgsDataFetchingEnvironment dfe,
+			@InputArgument("orgUuid") final UUID orgUuid,
+			@InputArgument("dtrackProjects") List<UUID> dtrackProjects) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return sharedReleaseService.findReleaseDatasByDtrackProjects(dtrackProjects, orgUuid);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "sbomComponentSearch")
+	public List<ComponentPurlToDtrackProject> sbomComponentSearch(DgsDataFetchingEnvironment dfe,
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("query") String query) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return integrationService.searchDependencyTrackComponent(query, orgUuid);
 	}
 	
 	@Transactional

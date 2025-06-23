@@ -61,6 +61,9 @@ public class SharedReleaseService {
 	@Autowired
 	GetSourceCodeEntryService getSourceCodeEntryService;
 	
+	@Autowired
+	ArtifactService artifactService;
+	
 	public final static Integer DEFAULT_NUM_RELEASES = 300;
 	private final static Integer DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE = 20;
 	
@@ -571,9 +574,9 @@ public class SharedReleaseService {
 		return releaseIdentifier;
 	}
 	
-	public Set<UUID> gatherReleaseIdsForArtifact(UUID artifactUuid, UUID orgUuid){
+	private Set<UUID> gatherReleaseIdsForArtifact(UUID artifactUuid, UUID orgUuid){
 		Set<UUID> releases = new HashSet<>();
-		Set<UUID> allDirectReleases = findReleasesByArtifact(artifactUuid, orgUuid).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
+		Set<UUID> allDirectReleases = findReleasesByReleaseArtifact(artifactUuid, orgUuid).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
 		Set<UUID> allSceReleases = repository.findReleasesSharingSceArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
 		Set<UUID> allDeliverableReleases = repository.findReleasesSharingDeliverableArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
 		releases.addAll(allDirectReleases);
@@ -587,8 +590,8 @@ public class SharedReleaseService {
 		return getReleaseDataList(releaseIds, orgUuid);
 	}
 	
-	public List<Release> findReleasesByArtifact (UUID artifactUuid, UUID orgUuid) {
-		return repository.findReleasesByArtifact(artifactUuid.toString(), orgUuid.toString());
+	public List<Release> findReleasesByReleaseArtifact (UUID artifactUuid, UUID orgUuid) {
+		return repository.findReleasesByReleaseArtifact(artifactUuid.toString(), orgUuid.toString());
 	}
 	
 	/**
@@ -617,6 +620,15 @@ public class SharedReleaseService {
 	
 	public List<ReleaseData> findReleaseDatasBySce(UUID sce, UUID org) {
 		return findReleasesBySce(sce,org).stream().map(ReleaseData::dataFromRecord).toList();
+	}
+	
+	public List<ReleaseData> findReleaseDatasByDtrackProjects(Collection<UUID> dtrackProjects, final UUID org) {
+		Set<UUID> arts = artifactService.listArtifactsByDtrackProjects(dtrackProjects).stream().map(x -> x.getUuid()).collect(Collectors.toSet());
+		Set<UUID> releaseIds = new HashSet<>();
+		arts.forEach(aId -> {
+			releaseIds.addAll(gatherReleaseIdsForArtifact(aId, org));
+		});
+		return getReleaseDataList(releaseIds, org);
 	}
 
 }

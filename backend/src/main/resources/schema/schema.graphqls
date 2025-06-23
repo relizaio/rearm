@@ -54,8 +54,10 @@ type Query {
 	organization(orgUuid: ID!): Organization
 	
 	healthCheck: String
-	searchDigestVersion(orgUuid: ID!, query: String): SearchDigestVersionResponse
+	searchDigestVersion(orgUuid: ID!, query: String!): SearchDigestVersionResponse
 	releasesByTags(orgUuid: ID!, branchUuid: ID, tagKey: String!, tagValue:String): [Release]
+	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID]): [Release]
+	sbomComponentSearch(orgUuid: ID!, query: String!): [ComponentPurlToDtrack]
 	
 	getAllOrganizations: [Organization]
 	
@@ -833,6 +835,11 @@ type Condition {
 	metricsType: MetricsType
 	comparisonSign: ComparisonSign
 	metricsValue: Int
+}
+
+type ComponentPurlToDtrack {
+	purl: String
+	projects: [ID]
 }
 
 input ApprovalPolicyInput {

@@ -214,7 +214,7 @@ public class SourceCodeEntryService {
 		var sceReleases = sharedReleaseService.findReleasesBySce(sce.getUuid(), sced.getOrg());
 		sceReleases.forEach(r -> affectedReleases.add(r.getUuid()));
 		sced.getArtifacts().forEach(a -> {
-			var releases = sharedReleaseService.findReleasesByArtifact(a.artifactUuid(), sced.getOrg());
+			var releases = sharedReleaseService.findReleasesByReleaseArtifact(a.artifactUuid(), sced.getOrg());
 			releases.forEach(r -> affectedReleases.add(r.getUuid()));
 		});
 		affectedReleases.forEach(r -> acollectionService.resolveReleaseCollection(r, wu));

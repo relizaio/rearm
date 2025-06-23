@@ -203,9 +203,13 @@ class VariableQueries {
 			and record_data->'metrics'->>'uploadToken' is not null
 		""";
 
-
 	protected static final String FIND_ARTIFACTS_BY_STORED_DIGEST = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString" 
 	+ " and jsonb_contains(record_data, jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))";
+	
+	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECTS = """
+				select * from rearm.artifacts a where a.record_data->'metrics'->>'dependencyTrackProject' in (:dtrackProjectIds)
+			""";
+	
 	/*
 	 * Branches and Feature Sets
 	 */
