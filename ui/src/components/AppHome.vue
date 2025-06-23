@@ -94,7 +94,7 @@
                                         <n-input-group>
                                             <n-input
                                                 placeholder="SBOM Component Name or Purl"
-                                                v-model:value="hashSearchQuery"
+                                                v-model:value="sbomSearchQuery"
                                             />
                                             <n-button
                                                 variant="contained-text"
@@ -173,6 +173,22 @@
                                         </li>
                                     </ul>
                                 </div>
+                            </div>
+                            <div v-else>No results.</div>
+                        </n-modal>
+                        <n-modal
+                            v-model:show="showDtrackSearchResultsModal"
+                            preset="dialog"
+                            :show-icon="false"
+                            style="width: 90%"
+                        >
+                            <div class="searchResults" v-if="dtrackSearchResults.length">
+                                <h4>Matching Purls:</h4>
+                                <n-data-table
+                                    :data="dtrackSearchResults"
+                                    :columns="dtrackSearchResultRows"
+                                    :pagination="pagination"
+                                />
                             </div>
                             <div v-else>No results.</div>
                         </n-modal>
@@ -335,8 +351,10 @@ const initLoad = async function () {
 }
 
 const hashSearchResults : Ref<any> = ref({})
+const dtrackSearchResults : Ref<any[]> = ref([])
 const releaseInstances : Ref<any[]> = ref([])
 const showSearchResultsModal : Ref<boolean> = ref(false)
+const showDtrackSearchResultsModal : Ref<boolean> = ref(false)
 
 const executeGqlSearchHashVersion = async function (params : any) {
     const response = await graphqlClient.query({
@@ -365,6 +383,24 @@ async function searchHashVersion (e: Event) {
 }
 
 async function searchSbomComponent (e: Event) {
+    e.preventDefault()
+    const response = await graphqlClient.query({
+        query: gql`
+            query sbomComponentSearch($orgUuid: ID!, $query: String!) {
+                sbomComponentSearch(orgUuid: $orgUuid, query: $query) {
+                    purl
+                    projects
+                }
+            }`,
+        variables: { orgUuid: myorg.value.uuid, query: sbomSearchQuery.value },
+        fetchPolicy: 'no-cache'
+    })
+    console.log(response)
+    dtrackSearchResults.value = response.data.sbomComponentSearch
+    showDtrackSearchResultsModal.value = true
+}
+
+async function searchReleasesBySbomComponent (e: Event) {
     e.preventDefault()
     const searchParams = {
         org: myorg.value.uuid,
@@ -500,6 +536,17 @@ const releaseSearchResultRows = [
     }
 ]
 const pagination = { pageSize: 10 }
+
+
+const dtrackSearchResultRows = [
+    {
+        key: 'purl',
+        title: 'Purl',
+        render: (row: any) => {
+            return h('div', row.purl)
+        }
+    }
+]
 
 const activeComponentsInputDate = ref(new Date())
 const activeComponentsInput = ref({
