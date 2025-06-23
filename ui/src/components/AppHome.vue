@@ -182,13 +182,41 @@
                             :show-icon="false"
                             style="width: 90%"
                         >
-                            <div class="searchResults" v-if="dtrackSearchResults.length">
-                                <h4>Matching Purls:</h4>
-                                <n-data-table
-                                    :data="dtrackSearchResults"
-                                    :columns="dtrackSearchResultRows"
-                                    :pagination="pagination"
-                                />
+                            <div v-if="dtrackSearchResults.length">
+                                <h3>Search by SBOM Components</h3>
+                                <n-form
+                                    style="margin-bottom:20px;"
+                                    inline
+                                    @submit="searchSbomComponent">
+                                    <n-input-group>
+                                        <n-input
+                                            placeholder="SBOM Component Name or Purl"
+                                            v-model:value="sbomSearchQuery"
+                                        />
+                                        <n-button
+                                            variant="contained-text"
+                                            attr-type="submit">
+                                            Find
+                                        </n-button>
+                                    </n-input-group>
+                                </n-form>
+                                <n-grid x-gap="3" cols="2">
+                                    <n-gi>
+                                        <n-data-table
+                                            :data="dtrackSearchResults"
+                                            :columns="dtrackSearchResultRows"
+                                            :pagination="pagination"
+                                        />
+                                    </n-gi>
+                                    <n-gi>
+                                        <n-data-table
+                                            :data="dtrackSearchReleases"
+                                            :columns="dtrackSearchReleaseRows"
+                                            :pagination="releasePagination"
+                                        />
+                                    </n-gi>
+                                </n-grid>
+                                
                             </div>
                             <div v-else>No results.</div>
                         </n-modal>
@@ -287,7 +315,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, NIcon, NGrid, NGi, NDivider } from 'naive-ui'
+import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider } from 'naive-ui'
 import { useStore } from 'vuex'
 import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
@@ -352,6 +380,7 @@ const initLoad = async function () {
 
 const hashSearchResults : Ref<any> = ref({})
 const dtrackSearchResults : Ref<any[]> = ref([])
+const dtrackSearchReleases : Ref<any[]> = ref([])
 const releaseInstances : Ref<any[]> = ref([])
 const showSearchResultsModal : Ref<boolean> = ref(false)
 const showDtrackSearchResultsModal : Ref<boolean> = ref(false)
@@ -395,22 +424,17 @@ async function searchSbomComponent (e: Event) {
         variables: { orgUuid: myorg.value.uuid, query: sbomSearchQuery.value },
         fetchPolicy: 'no-cache'
     })
-    console.log(response)
     dtrackSearchResults.value = response.data.sbomComponentSearch
     showDtrackSearchResultsModal.value = true
 }
 
-async function searchReleasesBySbomComponent (e: Event) {
-    e.preventDefault()
+async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
     const searchParams = {
-        org: myorg.value.uuid,
-        query: sbomSearchQuery.value
+        orgUuid: myorg.value.uuid,
+        dtrackProjects
     }
-    const releases = await store.dispatch('searchReleasesBySbomComponent', searchParams)
-    hashSearchResults.value = {commitReleases: releases, releaseInstances: []}
-    showSearchResultsModal.value = true
+    dtrackSearchReleases.value = await store.dispatch('searchReleasesByDtrackProject', searchParams)
 }
-
 
 const instancePropsSearchObj: Ref<any> = ref({
     value: '',
@@ -479,7 +503,7 @@ const searchInstanceChanges = function(e: Event) {
         showInstChangeSearchResultsModal.value=true
     })
 }
-const openRelease = function (uuid: string) {
+function openRelease (uuid: string) {
     const routeData = router.resolve({ name: 'ReleaseView', params: { uuid: uuid } })
     window.open(routeData.href, '_blank')
 }
@@ -536,14 +560,77 @@ const releaseSearchResultRows = [
     }
 ]
 const pagination = { pageSize: 10 }
-
+const releasePagination = { pageSize: 20 }
 
 const dtrackSearchResultRows = [
     {
         key: 'purl',
         title: 'Purl',
         render: (row: any) => {
-            return h('div', row.purl)
+            return h('div', {style: "cursor: pointer;", onClick: () => searchReleasesByDtrackProjects(row.projects)}, row.purl)
+        }
+    }
+]
+
+const dtrackSearchReleaseRows: DataTableColumns<any> = [
+    {
+        type: 'expand',
+        expandable: (row: any) => row.componentDetails ? row.componentDetails.type === 'PRODUCT' && row.parentReleases : false,
+        renderExpand: (row: any) => {
+            if (row.componentDetails) {
+                return h(NDataTable, {
+                    data: row.parentReleases,
+                    columns: dtrackSearchReleaseRows
+                })
+            }
+        }
+    },
+    {
+        key: 'component',
+        title: 'Component / Product',
+        render(row: any) {
+            if (row.componentDetails) {
+                const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
+                return h(RouterLink, 
+                    {to: {name: routeName,
+                        params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid}},
+                    style: "text-decoration: none;"},
+                    () => row.componentDetails.name )
+            }
+        }
+    },
+    {
+        key: 'branch',
+        title: 'Branch / Feature Set',
+        render(row: any) {
+            if (row.componentDetails) {
+                const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
+                return h(RouterLink, 
+                    {to: {name: routeName,
+                        params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid,
+                            branchuuid: row.branchDetails.uuid
+                        }},
+                    style: "text-decoration: none;"},
+                    () => row.branchDetails.name )
+            }
+        }
+    },
+    {
+        key: 'version',
+        title: 'Version',
+        render(row: any) {
+            if (row.componentDetails) {
+                return h('a', {onclick: () => openRelease(row.uuid), style: "cursor: pointer; color: blue;"}, row.version)
+            }
+        }
+    },
+    {
+        key: 'lifecycle',
+        title: 'Lifecycle',
+        render(row: any) {
+            if (row.componentDetails) {
+                return h('span', row.lifecycle )
+            }
         }
     }
 ]
