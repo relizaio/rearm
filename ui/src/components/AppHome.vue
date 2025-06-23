@@ -339,6 +339,7 @@ const installationType: ComputedRef<any> = computed((): any => store.getters.myu
 
 const hashSearchQuery = ref('')
 const sbomSearchQuery = ref('')
+const selectedPurl = ref('')
 
 onMounted(() => {
     if (myorg.value) 
@@ -567,10 +568,17 @@ const dtrackSearchResultRows = [
         key: 'purl',
         title: 'Purl',
         render: (row: any) => {
-            return h('div', {style: "cursor: pointer;", onClick: () => searchReleasesByDtrackProjects(row.projects)}, row.purl)
+            let style = "cursor: pointer;"
+            if (selectedPurl.value === row.purl) style = "cursor: pointer; background-color: orange;"
+            return h('div', {style, onClick: () => handlePurlSearchClick(row)}, row.purl)
         }
     }
 ]
+
+async function handlePurlSearchClick (row: any) {
+    selectedPurl.value = row.purl
+    searchReleasesByDtrackProjects(row.projects)
+}
 
 const dtrackSearchReleaseRows: DataTableColumns<any> = [
     {
