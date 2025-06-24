@@ -58,7 +58,8 @@ function sidebar() {
         {text: 'Tutorials', link: '/tutorials/', items: [
           {text: 'Upload First BOM', link: '/tutorials/first-bom'},
           {text: 'Docker on GitHub Actions', link: '/tutorials/github-actions-docker'},
-          {text: 'ReARM as Version Manager', link: '/tutorials/using-rearm-as-version-manager'}
+          {text: 'ReARM as Version Manager', link: '/tutorials/using-rearm-as-version-manager'},
+          {text: 'Search by SBOM Components', link: '/tutorials/search-releases-by-sbom-components'}
         ]}
     ]
 }
