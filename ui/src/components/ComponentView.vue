@@ -606,21 +606,14 @@ const componentData: ComputedRef<any> = computed((): any => {
     return store.getters.componentById(componentUuid)
 })
 
-let isComponent : boolean = true
+const isComponent : Ref<boolean> = ref(true)
 
 const myUser = store.getters.myuser
 
 const isAdmin : boolean = commonFunctions.isAdmin(orguuid.value, myUser)
 const isWritable : boolean = commonFunctions.isWritable(orguuid.value, myUser, 'COMPONENT')
 
-const words : any = {
-    branchFirstUpper: (isComponent) ? 'Branch' : 'Feature Set',
-    branchFirstUpperPlural: (isComponent) ? 'Branches' : 'Feature Sets',
-    branch: (isComponent) ? 'branch' : 'feature set',
-    componentFirstUpper: (isComponent) ? 'Component' : 'Product',
-    component: (isComponent) ? 'component' : 'product',
-    componentsFirstUpper: (isComponent) ? 'Components' : 'Products'
-}
+const words: Ref<any> = ref({})
 
 const genApiKey = function (type : string) {
     genApiKeyRoutine(type, componentUuid)
@@ -839,7 +832,7 @@ function selectBranch (uuid: string) {
     selectedBranchUuid.value = uuid
     branchCollapseState.value['branchCollapse' + uuid] = true
     router.push({
-        name: isComponent ? 'ComponentsOfOrg' : 'ProductsOfOrg',
+        name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
         params: {
             orguuid: route.params.orguuid,
             compuuid: componentUuid,
@@ -1127,9 +1120,9 @@ const setComponentVisibility = async function (newVisValue: string) {
         }
     }
     const swalData: SwalData = {
-        questionText: `Are you sure you want to change the Visibility of the ${updatedComponent.value.name} ${words.component} to "${newVisValue}"?`,
+        questionText: `Are you sure you want to change the Visibility of the ${updatedComponent.value.name} ${words.value.component} to "${newVisValue}"?`,
         successTitle: 'Saved!',
-        successText: `The visibility of the ${updatedComponent.value.name} ${words.component} has been modified to "${newVisValue}".`,
+        successText: `The visibility of the ${updatedComponent.value.name} ${words.value.component} has been modified to "${newVisValue}".`,
         dismissText: `Visibility Modification has been cancelled. The visibility remains as "${componentData.value.visibilitySetting}".`
     }
     await commonFunctions.swalWrapper(onSwalConfirm, swalData)
@@ -1227,8 +1220,8 @@ const getVcsRepoObjById = function (repoId: string) {
 
 const archiveComponent = async function () {
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to archive the ${updatedComponent.value.name} ${words.component}?`,
-        text: `If you proceed, the ${words.component} will be archived and you will not have access to its data.`,
+        title: `Are you sure you want to archive the ${updatedComponent.value.name} ${words.value.component}?`,
+        text: `If you proceed, the ${words.value.component} will be archived and you will not have access to its data.`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Yes, archive!',
@@ -1242,7 +1235,7 @@ const archiveComponent = async function () {
         }
         try {
             let archived = await store.dispatch('archiveComponent', archiveComponentParams)
-            if (archived && words.componentFirstUpper === 'Component') {
+            if (archived && words.value.componentFirstUpper === 'Component') {
                 router.push({ name: 'ComponentsOfOrg', params: { orguuid: componentData.value.org } })
             } else if (archived) {
                 router.push({ name: 'ProductsOfOrg', params: { orguuid: componentData.value.org } })
@@ -1257,7 +1250,7 @@ const archiveComponent = async function () {
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
         Swal.fire(
             'Cancelled',
-            `${words.componentFirstUpper} archiving cancelled. Your ${words.component} is still active.`,
+            `${words.value.componentFirstUpper} archiving cancelled. Your ${words.value.component} is still active.`,
             'info'
         )
     }
@@ -1439,7 +1432,7 @@ const branchFields: any[] = [
         
     },]
 
-if (!isComponent && isWritable){
+if (!isComponent.value && isWritable){
     branchFields.push({
         title: '',
         key: 'manage',
@@ -1447,7 +1440,7 @@ if (!isComponent && isWritable){
             return h(
                 NIcon, 
                 {
-                    title: 'Clone ' + words.branchFirstUpper,
+                    title: 'Clone ' + words.value.branchFirstUpper,
                     class: 'icons clickable',
                     size: 25,
                     onClick: () => {cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; showCloneBranchModal.value = true}
@@ -1703,7 +1696,15 @@ async function initLoad() {
         storeComponent = await store.dispatch('fetchComponentFull', compUuid)
     }
     updatedComponent.value = commonFunctions.deepCopy(storeComponent)
-    isComponent = updatedComponent.value.type === 'COMPONENT'
+    isComponent.value = updatedComponent.value.type === 'COMPONENT'
+    words.value = {
+        branchFirstUpper: (isComponent.value) ? 'Branch' : 'Feature Set',
+        branchFirstUpperPlural: (isComponent.value) ? 'Branches' : 'Feature Sets',
+        branch: (isComponent.value) ? 'branch' : 'feature set',
+        componentFirstUpper: (isComponent.value) ? 'Component' : 'Product',
+        component: (isComponent.value) ? 'component' : 'product',
+        componentsFirstUpper: (isComponent.value) ? 'Components' : 'Products'
+    }
     if (selectedBranchUuid.value === ''){
         if (mainBranch.value) selectBranch(mainBranch.value)
     }
