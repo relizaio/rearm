@@ -6,7 +6,7 @@
                 <div class="componentIconsAndSettings">
                     <n-space>
                         <vue-feather v-cloak v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
-                        <vue-feather class="clickable icons" title="Component Settings" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
+                        <vue-feather class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
                         <!-- vue-feather v-if="componentData"
                             @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" / -->
                         <vue-feather type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
@@ -27,7 +27,7 @@
                             target="_blank"><vue-feather type="external-link" class="clickable icons" title="Open VCS Repository URI in New Window" /></a>
                         </n-tooltip>
 
-                        <vue-feather v-if="isWritable" @click="archiveComponent" class="clickable" type="trash-2" title="Archive Component" />
+                        <vue-feather v-if="isWritable" @click="archiveComponent" class="clickable" type="trash-2" :title="'Archive ' + words.componentFirstUpper" />
                     </n-space>
                     <n-modal
                         v-model:show="showComponentAnalyticsModal"
