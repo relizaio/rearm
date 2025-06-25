@@ -7,8 +7,8 @@
                     <n-space>
                         <vue-feather v-cloak v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
                         <vue-feather class="clickable icons" title="Component Settings" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
-                        <vue-feather v-if="componentData"
-                            @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" />
+                        <!-- vue-feather v-if="componentData"
+                            @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" / -->
                         <vue-feather type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
                         <n-tooltip trigger="hover" v-if="componentData && componentData.uuid">
                             <template #trigger>
