@@ -33,7 +33,7 @@ const HomePage = () => {
     titleMaxWidth: "925px",
     text: [
       {
-        text: "System to Manage Releases, SBOMs, xBOMs",
+        text: "Supply Chain Security System to Manage Releases, SBOMs, xBOMs",
         maxWidth: "611px",
         textClass: `mx-auto ${styles.C1_text}`
       }
