@@ -26,7 +26,7 @@ const Header = () => {
                 )
               })}
               <li className="nav-item d-flex align-items-center p-3">
-                <a class='nav-link fs-6' href='https://docs.relizahub.com' target="_blank" style={{ textDecoration: "none" }}>Documentation</a>
+                <a class='nav-link fs-6' href='https://docs.rearmhq.com' target="_blank" style={{ textDecoration: "none" }}>Documentation</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
                 <a class='nav-link fs-6' href='/#homePagePricing' style={{ textDecoration: "none" }}>Pricing</a>
