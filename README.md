@@ -1,8 +1,17 @@
+ **Releases:**
+ [![Release Version](https://img.shields.io/github/v/release/relizaio/rearm?label=ReARM)](https://github.com/relizaio/rearm/releases/latest)
  [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+ [![Website](https://img.shields.io/badge/https://-demo.rearmhq.com-blue.svg)](https://demo.rearmhq.com)
  [![Website](https://img.shields.io/badge/https://-rearmhq.com-blue.svg)](https://rearmhq.com)
  [![Documentation](https://img.shields.io/badge/read-documentation-blue.svg)](https://docs.rearmhq.com)
+
+ **Build:**
  ![Build Status](https://github.com/relizaio/rearm/actions/workflows/github_actions.yml/badge.svg?branch=main)
  [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/10664/badge)](https://www.bestpractices.dev/projects/10664)
+
+ **Social:**
+[![Discord](https://img.shields.io/discord/757425726143201370.svg?color=%237289da&label=Discord&logo=discord&logoColor=%237289da)](https://discord.gg/UTxjBf9juQ)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-blue.svg?logo=LinkedIn)](https://www.linkedin.com/company/relizaio/)
 
 # ReARM - SBOM / xBOM Repository and Release Manager - Community Edition
 
