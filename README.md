@@ -30,14 +30,22 @@ ReARM is a xBOM management system that allows organizations to maintain complian
 
 While highlighting regulatory pressure, we strive to make sure that ReARM bears minimum or no overhead on developers and more so provides real value in terms of managing technology releases and their metadata. In other words, our goal is creating a product that would be useful for developers and managers, while also solving the compliance problem.
 
-## Capabilities
+## Present Capabilities
 1. Storage and retrieval of SBOMs / xBOMs for software and hardware, per release, including signatures and signing details
-2. Maintaining representation of organization's products and components with branches and releases
-3. Automated creation of release versions and changelogs between releases
-4. Close integration with [Dependency-Track](https://dependencytrack.org/) for analysis of vulnerabilities and policies, including license policy
-5. Integration with various CI systems (including GitHub Actions, Azure DevOps, Jenkins, GitLab CI and others) to produce BOMs and upload them with other release metadata to ReARM
-6. Release approval logic (Commercial Edition only)
-7. Marketing release workflow (Commercial Edition only)
+2. Seamless creation of aggregated BOMs on Component and Product Release levels
+3. Maintaining representation of organization's products and components with branches and releases
+4. Automated creation of release versions and changelogs between releases
+5. Integration with [Dependency-Track](https://dependencytrack.org/) for analysis of vulnerabilities and policies, including license policy, while optimizing Dependency-Track performance via data deduplication
+6. Search for presence of dependencies in organization's software based on Dependency-Track data
+7. Integration with various CI systems (including GitHub Actions, Azure DevOps, Jenkins, GitLab CI and others) to produce BOMs and upload them with other release metadata to ReARM
+8. Release approval logic with triggers based on approvals and / or vulnerabilities or policy violations (Commercial Edition only)
+9. Marketing release workflow (Commercial Edition only)
+
+## Future Capabilities (Medium-Term Roadmap)
+1. Release-level changelog for changes in SBOM dependencies
+2. Better handling and prescribed workflows for Attestations
+3. Extended options to configure retrieved aggregated BOMs (via tagging and detailed component analysis, i.e., option to exclude Test dependencies)
+4. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
 
 ## Releases
 ReARM follows [Trunk Based Development (TBD)](https://trunkbaseddevelopment.com/) methodology. This means that maintainers commit directly to the main branch where possible. Consumers should use releases marked as SHIPPED (or GENERAL_AVAILABILITY).
