@@ -32,6 +32,7 @@ ReARM stores xBOMs on OCI-compatible storage. ReARM is developed by [Reliza](htt
 ReARM is a xBOM management system that allows organizations to maintain compliance within various regulatory frameworks, including:
 - European [CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj), [BSI TR-03183](https://www.bsi.bund.de/EN/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/Technische-Richtlinien/TR-nach-Thema-sortiert/tr03183/tr-03183.html), implied use of xBOMs in [NIS2 Directive](https://eur-lex.europa.eu/eli/dir/2022/2555/oj/eng) and [DORA](https://eur-lex.europa.eu/eli/reg/2022/2554/oj/eng)
 - US executive order [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity)
+- US OMB Memorandum [M-22-18](https://www.whitehouse.gov/wp-content/uploads/2022/09/M-22-18.pdf)
 - US Army [Memorandum](https://federalnewsnetwork.com/wp-content/uploads/2024/09/081624_Army_SBOM_Memo.pdf) on SBOMs
 - US executive order [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity) (later [amended](https://rearmhq.com/blog/sbom-remains-attestations-out-amending-executive-order-14144))
 - Section 524B of the US [FD&C Act](https://www.govinfo.gov/content/pkg/COMPS-973/pdf/COMPS-973.pdf)
