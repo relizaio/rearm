@@ -12,7 +12,7 @@ const Footer = () => {
   const socialLinks = [
     {
       link: FaDiscord,
-      url: "https://devopscommunity.org",
+      url: "https://discord.gg/UTxjBf9juQ",
     },
     {
       link: FaBluesky,
