@@ -29,13 +29,16 @@ const Header = () => {
                 <a class='nav-link fs-6' href='https://docs.rearmhq.com' target="_blank" style={{ textDecoration: "none" }}>Documentation</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
+                <a class='nav-link fs-6' href='https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_2025-06-30.pdf' rel="noreferrer" target="_blank" style={{ textDecoration: "none" }}>Datasheet</a>
+              </li>
+              <li className="nav-item d-flex align-items-center p-3">
                 <a class='nav-link fs-6' href='/#homePagePricing' style={{ textDecoration: "none" }}>Pricing</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
                 <a class='nav-link fs-6' href='https://discord.gg/UTxjBf9juQ' target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>Discord</a>
               </li>
               <li className="nav-item p-3 ">
-                <div className='d-flex'><a href='https://calendly.com/pavel_reliza/demo' target="_blank" style={{ textDecoration: "none" }}><button className='nav-item btn_getStarted btn btn-outline-primary'>Get Private Demo</button></a></div>
+                <div className='d-flex'><a href='https://calendly.com/pavel_reliza/demo' target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}><button className='nav-item btn_getStarted btn btn-outline-primary'>Get Private Demo</button></a></div>
               </li>
             </ul>
           </div>
