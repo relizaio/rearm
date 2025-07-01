@@ -46,7 +46,31 @@ ReARM supports Deliverable types as per CycloneDX specification of *Component Ty
 We assume that 2 software Deliverables are equal if they are of the same type and their known digests (such as sha256 or sha512) are equal.
 
 ## Artifact
-Artifact is a Metadata document that describes specific release. This can be a Bill of Materials (xBOM), including VEX, VDR, Attestations and other, Documentation, Test Results or Other types. 
+Artifact is a Metadata document that describes specific release. Here are the types currently supported by ReARM:
+
+- BOM
+- Attestation
+- VDR
+- VEX
+- User Documentation
+- Development Documentation
+- Project Documentation
+- Marketing Documentation
+- Test Report
+- SARIF file
+- Build Metadata Document
+- Certification
+- Formulation
+- License
+- Release Notes
+- Security Text File
+- Thread Model
+- Signature
+- Signed Payload
+- Public Key
+- X509 Certificate
+- PGP Certificate
+- Other
 
 ## Source Code Entry
 Source Code Entry is a pointer to a specific commit or revision in a version control system. Unlike commit in a distributed VCS, Source Code Entry also points to a specific VCS repository to ensure auditability.
