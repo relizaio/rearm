@@ -518,6 +518,14 @@ public class SharedReleaseService {
 	}
 	
 
+	public UUID findPreviousReleasesOfBranchForRelease (UUID branchUuid,  UUID release) {
+		return repository.findPreviousReleasesOfBranchForRelease(branchUuid.toString(), release);
+	}
+	public UUID findNextReleasesOfBranchForRelease (UUID branchUuid,  UUID release) {
+		return repository.findNextReleasesOfBranchForRelease(branchUuid.toString(), release);
+	}
+	
+
 	/**
 	 * This method attempts to prepare a map of commit id to message for all commits
 	 * @param sces - List of sce data

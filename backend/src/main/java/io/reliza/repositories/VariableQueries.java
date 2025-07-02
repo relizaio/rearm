@@ -311,6 +311,30 @@ class VariableQueries {
 			+ " AND r.created_date <= cast (:toDate as timestamptz)"
 			+ " ORDER BY r.created_date desc ";
 
+	protected static final String FIND_PREVIOUS_RELEASES_OF_BRANCH_FOR_RELEASE = 
+			"""
+			WITH PreviousRelease AS (
+				SELECT *,
+					LAG(uuid) OVER (
+						ORDER BY created_date
+					) as previous_release_uuid
+				FROM rearm.releases r
+			)	
+			""" 
+			+ "select previous_release_uuid from PreviousRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
+	
+		protected static final String FIND_NEXT_RELEASES_OF_BRANCH_FOR_RELEASE = 
+			"""
+			WITH NextRelease AS (
+				SELECT *,
+					LEAD(uuid) OVER (
+						ORDER BY created_date
+					) as next_release_uuid
+				FROM rearm.releases r
+			)	
+			""" 
+			+ "select next_release_uuid from NextRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
+
 	protected static final String FIND_ALL_RELEASES_OF_ORG = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString";
 	

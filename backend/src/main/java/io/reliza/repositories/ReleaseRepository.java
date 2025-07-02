@@ -123,6 +123,16 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findReleasesOfBranchBetweenDates(String branchUuidAsString, String fromDate, String toDate);
 	
 	@Query(
+			value = VariableQueries.FIND_PREVIOUS_RELEASES_OF_BRANCH_FOR_RELEASE,
+			nativeQuery = true)
+	UUID findPreviousReleasesOfBranchForRelease(String branch, UUID release);
+	
+	@Query(
+			value = VariableQueries.FIND_NEXT_RELEASES_OF_BRANCH_FOR_RELEASE,
+			nativeQuery = true)
+	UUID findNextReleasesOfBranchForRelease(String branch, UUID release);
+	
+	@Query(
 			value = VariableQueries.FIND_DISTINCT_RELEASE_TAG_KEYS_OF_ORG,
 			nativeQuery = true)
 	List<String> findDistrinctReleaseKeysOfOrg(String orgUuidAsString);

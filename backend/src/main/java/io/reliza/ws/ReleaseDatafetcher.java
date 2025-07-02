@@ -49,6 +49,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.StoredIn;
+import io.reliza.model.AcollectionData;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
@@ -1025,5 +1026,11 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		return sharedReleaseService.gatherReleasesForArtifact(artifactUuid, ro.getOrg());
+	}
+
+	@DgsData(parentType = "Release", field = "releaseCollection")
+	public AcollectionData collectionOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		return acollectionService.getLatestCollectionDataOfRelease(rd.getUuid());
 	}
 }

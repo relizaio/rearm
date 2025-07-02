@@ -425,6 +425,20 @@ type ChildComponent {
 	isFollowVersion: Boolean
 }
 
+type ReleaseCollection {
+	uuid: ID
+	artifactChangelog: ArtifactChangelog
+}
+
+type ArtifactChangelog {
+	added : [DiffComponent]
+	removed: [DiffComponent]
+}
+
+type DiffComponent {
+	purl: String
+	version: String
+}
 
 type Release {
 	uuid: ID
@@ -465,6 +479,7 @@ type Release {
 	updateEvents: [ReleaseUpdateEvent]
 	metrics: DependencyTrackMetrics
 	identifiers: [Identifier]
+	releaseCollection: ReleaseCollection
 }
 
 type Variant {

@@ -18,6 +18,8 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.model.Acollection;
 import io.reliza.model.AcollectionData;
+import io.reliza.model.ArtifactData;
+import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.AcollectionData.VersionedArtifact;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ReleaseData;
@@ -129,6 +131,8 @@ public class AcollectionService {
 			ac.setUuid(curColData.getUuid());
 			ac = saveAcollection(ac, recordData, wu);
 			resolvedCollection = AcollectionData.dataFromRecord(ac);
+			//trigger bom diff calculation
+			releaseBomChangelogRoutine(rd.getUuid(), rd.getBranch(), rd.getOrg());
 		}
 		
 		return resolvedCollection;
@@ -150,4 +154,49 @@ public class AcollectionService {
 		return repository.save(ac);
 	}
 
+	public void releaseBomChangelogRoutine(UUID releaseId, UUID branch, UUID org){
+        UUID prevReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(branch, releaseId);
+        UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
+
+		if(null != prevReleaseId)
+	        resolveBomDiff(releaseId, prevReleaseId, org);
+		
+		if(null != nextReleaseId)
+        	resolveBomDiff(nextReleaseId, releaseId, org);
+    }
+	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org){
+		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
+		AcollectionData prevAcollectionData = getLatestCollectionDataOfRelease(prevReleaseId);
+		
+		 if(null != currAcollectionData.getArtifacts() 
+			&& currAcollectionData.getArtifacts().size() > 0 
+			&& null != prevAcollectionData 
+			&& prevAcollectionData.getArtifacts().size() > 0
+			&& ! prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts())
+		){
+            List<UUID> currArtifacts = getInternalBomIdsFromACollection(currAcollectionData);
+			List<UUID> prevArtifacts = getInternalBomIdsFromACollection(prevAcollectionData);
+			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(currArtifacts, prevArtifacts, org);
+			persistArtifactChangelogForCollection(artifactChangelog, currAcollectionData.getUuid());
+		}
+	}
+
+	private void persistArtifactChangelogForCollection(ArtifactChangelog artifactChangelog, UUID acollection){
+		Acollection ac = getAcollection(acollection).get();
+		AcollectionData acd = AcollectionData.dataFromRecord(ac);
+		acd.setArtifactChangelog(artifactChangelog);
+		Map<String,Object> recordData = Utils.dataToRecord(acd);	
+
+		ac.setRecordData(recordData);
+		repository.save(ac);
+	}
+	private List<UUID> getInternalBomIdsFromACollection(AcollectionData collection){
+		List<UUID> artIds = collection.getArtifacts().stream().map(VersionedArtifact::artifactUuid).toList();
+		List<ArtifactData> artList = artifactService.getArtifactDataList(artIds);
+		return artList.stream()
+		.filter(art -> null != art.getInternalBom())
+		.map(art -> art.getInternalBom().id())
+		.distinct()
+		.toList();
+	}
 }
