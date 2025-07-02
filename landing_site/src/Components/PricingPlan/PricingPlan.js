@@ -11,6 +11,79 @@ const PricingPlan = () => {
     const sliderRef1 = useRef()
     const [planDuration, setPlanDuration] = useState(false)
     const [selectedPlan, setSelectedPlan] = useState(1)
+    let startupPrice = '$190'
+    let standardPrice = '$1490'
+    let priceType = 'US'
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (timezone) {
+        if (timezone === 'GB' || timezone === 'GB-Eire') {
+            priceType = 'GB'
+        } else if (timezone.includes('Europe')) {
+            switch (timezone) {
+                case 'Europe/Belfast':
+                case 'Europe/London':
+                    priceType = 'GB'
+                    break
+                default:
+                    priceType = 'EU'
+                    break
+            }
+        } else if (timezone.includes('America')) {
+            switch (timezone) {
+                case 'America/Atikokan':
+                case 'America/Blanc-Sablon':
+                case 'America/Cambridge_Bay':
+                case 'America/Coral_Harbour':
+                case 'America/Creston':
+                case 'America/Dawson':
+                case 'America/Dawson_Creek':
+                case 'America/Edmonton':
+                case 'America/Fort_Nelson':
+                case 'America/Glace_Bay':
+                case 'America/Goose_Bay':
+                case 'America/Halifax':
+                case 'America/Inuvik':
+                case 'America/Iqaluit':
+                case 'America/Moncton':
+                case 'America/Montreal':
+                case 'America/Nipigon':
+                case 'America/Pangnirtung':
+                case 'America/Rainy_River':
+                case 'America/Rankin_Inlet':
+                case 'America/Regina':
+                case 'America/Resolute':
+                case 'America/St_Johns':
+                case 'America/Swift_Current':
+                case 'America/Thunder_Bay':
+                case 'America/Toronto':
+                case 'America/Vancouver':
+                case 'America/Whitehorse':
+                case 'America/Winnipeg':
+                case 'Canada/Atlantic':
+                case 'Canada/Central':
+                case 'Canada/Eastern':
+                case 'Canada/Mountain':
+                case 'Canada/Newfoundland':
+                case 'Canada/Pacific':
+                case 'Canada/Saskatchewan':
+                case 'Canada/Yukon':
+                    priceType = 'CA'
+                    break
+                default:
+                    break
+            }
+        }
+    }
+    if (priceType === 'EU') {
+        startupPrice = '€150'
+        standardPrice = '€1250'
+    } else if (priceType === 'CA') {
+        startupPrice = 'C$240'
+        standardPrice = 'C$1990'
+    } else if (priceType === 'GB') {
+        startupPrice = '£130'
+        standardPrice = '£1090'
+    }
     const monthlyPlan = [
         {
             id: 0,
@@ -27,7 +100,7 @@ const PricingPlan = () => {
             id: 1,
             title: "Startup Plan",
             icon: starterPlan,
-            amount: "$190",
+            amount: startupPrice,
             type: "Per Month",
             space: "Up to 3 team members",
             yearSupport: "Premium support",
@@ -39,7 +112,7 @@ const PricingPlan = () => {
             id: 2,
             title: "Standard Plan",
             icon: basicPlan,
-            amount: "$1490",
+            amount: standardPrice,
             type: "Per Month",
             space: "Up to 20 team members",
             yearSupport: "Premium support",
