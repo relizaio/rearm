@@ -87,6 +87,12 @@ export async function createTmpFiles(dataArr: any[]): Promise<string[]> {
     return filePaths;
 }
 
+export async function createTempFile(data: any): Promise<string> {
+    const tmpDir = os.tmpdir();
+    const tmpFilePath = path.join(tmpDir, `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`);
+    await fs.promises.writeFile(tmpFilePath, JSON.stringify(data));
+    return tmpFilePath
+}
 export async function deleteTmpFiles(filePaths: string[]): Promise<void> {
     for (const filePath of filePaths) {
         await fs.promises.unlink(filePath);

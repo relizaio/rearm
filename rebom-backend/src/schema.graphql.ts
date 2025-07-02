@@ -11,6 +11,7 @@ const typeDefs = gql`
     rawBomId(id: ID, org: ID): Object
     bomBySerialNumberAndVersion(serialNumber: ID!, version: Int!, org: ID!, raw: Boolean): Object
     bomMetaBySerialNumber(serialNumber: ID!, org: ID!): [BomMeta]
+    bomDiff(fromIds: [ID], toIds: [ID], org: ID!): BomDiffResult
   }
 
   type Mutation {
@@ -47,6 +48,14 @@ const typeDefs = gql`
     serialNumber: ID
   }
 
+  type BomDiffResult {
+    added: [BomDiffComponent]
+    removed: [BomDiffComponent]
+  }
+  type BomDiffComponent {
+    purl: String
+    version: String
+  }
   input BomInput {
     meta: String
     bom: Object

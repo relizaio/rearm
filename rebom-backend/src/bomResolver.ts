@@ -1,4 +1,5 @@
 import * as BomService from './bomService';
+import * as DiffService from './bomDiffService';
 import { BomDto, BomInput, BomRecord, BomSearch } from './types';
 // A map of functions which return data for the schema.
 const resolvers = {
@@ -12,7 +13,7 @@ const resolvers = {
 		bomMetaBySerialNumber: async (_:any, input: any): Promise<Object> => BomService.findBomMetasBySerialNumber(input.serialNumber, input.org),
 		// mergeBoms: async (_:any, mergeInput: any): Promise<any> => {
 		// 	return BomService.exportMergedBom(mergeInput.ids, mergeInput.rebomOptions)},
-		
+		bomDiff: async (_:any, input: any): Promise<Object> => DiffService.bomDiff(input.fromIds, input.toIds, input.org)
 	},
 	Mutation: {
 		addBom: async (_:any, bomInput: BomInput): Promise<BomRecord> => BomService.addBom(bomInput),

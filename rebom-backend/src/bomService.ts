@@ -433,7 +433,7 @@ function rootComponentOverride(bomRecord: BomRecord): any {
 
 function computeRootDepIndex (bom: any) : number {
     const rootComponentPurl: string = decodeURIComponent(bom.metadata.component["bom-ref"])
-    let rootdepIndex : number = bom.dependencies.findIndex((dep: any) => {
+    let rootdepIndex : number = bom.dependencies?.findIndex((dep: any) => {
         return dep.ref === rootComponentPurl
     })
     if (rootdepIndex < 0) {
