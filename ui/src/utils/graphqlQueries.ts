@@ -189,7 +189,19 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
     }    
     componentUuid
 `
-
+const RELEASE_COLLECTION_DATA = `
+    uuid
+    artifactChangelog {
+        added {
+            purl
+            version
+        }
+        removed {
+            purl
+            version
+        }
+    }
+`
 const ARTIFACT_DETAIL_DATA = `
     uuid
     displayIdentifier
@@ -434,6 +446,9 @@ const singleReleaseDataNoParent = `
     identifiers {
         idType
         idValue
+    }
+    releaseCollection {
+        ${RELEASE_COLLECTION_DATA}
     }
 `
 

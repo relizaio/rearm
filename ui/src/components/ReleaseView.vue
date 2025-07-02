@@ -204,6 +204,22 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
+                        <div v-if="release.releaseCollection && release.releaseCollection.artifactChangelog">
+                            <h4>Artifact Changelog</h4>
+                            <h5>Components Added</h5>
+                            <ul>
+                                <li v-for="added in release.releaseCollection.artifactChangelog.added" :key="added.purl">
+                                    {{ added.purl }}
+                                </li>
+                            </ul>
+                            <h5>Components Removed</h5>
+                            <ul>
+                                <li v-for="removed in release.releaseCollection.artifactChangelog.removed" :key="removed.purl">
+                                    {{ removed.purl }}
+                                </li>
+                            </ul>
+                        </div>
+                        
                     </div>
                     <div class="container">
                         <h3>
