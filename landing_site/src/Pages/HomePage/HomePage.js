@@ -7,6 +7,7 @@ import gitlab from "../../Assets/Home/gitlab.png"
 import jenkins from "../../Assets/Home/jenkins.png"
 import ado from "../../Assets/Home/ado.png"
 import dtrack from "../../Assets/Home/dtrack.png"
+import oci from "../../Assets/Home/oci.png"
 import cosign from "../../Assets/Home/cosign.png"
 import msteams from "../../Assets/Home/msteams.png"
 import tealogo from "../../Assets/Home/tealogo.png"
@@ -49,6 +50,7 @@ const HomePage = () => {
     { icon: slack },
     { icon: cosign },
     { icon: msteams },
+    { icon: oci },
   ]
   const featuresArray = [
     {
