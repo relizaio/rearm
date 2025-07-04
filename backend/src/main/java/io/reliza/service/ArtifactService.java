@@ -399,7 +399,7 @@ public class ArtifactService {
         return art.getUuid();
     }
 
-	public OASResponseDto uploadFileToConfiguredOci(Resource file, String tag, String sha256Digest){
+	private OASResponseDto uploadFileToConfiguredOci(Resource file, String tag, String sha256Digest){
 		MultiValueMap<String, Object> formData = new LinkedMultiValueMap<>();
 		if(!tag.startsWith("rearm")){
 			tag = "rearm-" + tag;
