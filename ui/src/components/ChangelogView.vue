@@ -246,13 +246,13 @@ async function getChangelog (org: string, release1: string, release2: string, ag
 }
 
 const props = defineProps<{
-    release1prop: String,
-    release2prop: String,
+    release1prop?: String,
+    release2prop?: String,
     componentprop: String,
     orgprop: String,
-    branchprop: String,
+    branchprop?: String,
     componenttypeprop: String,
-    isrouterlink: Boolean,
+    isrouterlink?: Boolean,
     iscomponentchangelog: Boolean
 }>()
 
@@ -264,7 +264,6 @@ const aggregationTypes = [
 
 const changelog : Ref<any> = ref({})
 
-const isComponentChangelog = props.iscomponentchangelog
 const isRouterLink = props.isrouterlink
 const componentType = props.componenttypeprop
 
