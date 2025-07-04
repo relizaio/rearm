@@ -461,10 +461,8 @@ const approvalMatrix = ref({})
 if (false && myUser.installationType !== 'OSS') approvalMatrix.value = await loadApprovalMatrix(orguuid, modifiedBranch.value.resourceGroup)
 
 const releaseFilter = ref({
-    approvalType: '',
-    environment: '',
+    lifecycle: '',
     tagKey: '',
-    tagValue: ''
 })
 
 const releases: ComputedRef<any> = computed((): any => {
@@ -487,29 +485,12 @@ const perPage: Ref<number> = ref(25)
 
 const filteredReleases: ComputedRef<any> = computed((): any => {
     let filteredReleases = releases.value && releases.value.length ? releases.value.slice(0) : []
-    if (releaseFilter.value.approvalType) {
-        filteredReleases = filteredReleases.filter((a: any) => a.approvals[releaseFilter.value.approvalType])
-    }
-    if (releaseFilter.value.environment) {
-        // locate approvals per environment first
-        let envApprovals = approvalMatrix.value[releaseFilter.value.environment]
-        if (envApprovals) {
-            Object.keys(envApprovals).forEach(ea => {
-                let aval = envApprovals[ea]
-                if (aval) {
-                    filteredReleases = filteredReleases.filter((a: any) => a.approvals[ea])
-                }
-            })
-        }
+    if (releaseFilter.value.lifecycle) {
+        filteredReleases = filteredReleases.filter((a: any) => a.lifecycle === releaseFilter.value.lifecycle)
     }
     if (releaseFilter.value.tagKey) {
-        if (!releaseFilter.value.tagValue) {
-            filteredReleases = filteredReleases.filter((a: any) => a.tags[releaseFilter.value.tagKey])
-        } else {
-            filteredReleases = filteredReleases.filter((a: any) => a.tags[releaseFilter.value.tagKey] === releaseFilter.value.tagValue)
-        }
+        filteredReleases = filteredReleases.filter((a: any) => a.tags[releaseFilter.value.tagKey])
     }
-
     return filteredReleases
 })
 
@@ -523,8 +504,7 @@ const itemsForList: ComputedRef<any> = computed((): any => {
 
 const isReleaseFilterActivated: ComputedRef<boolean>  = computed((): boolean => {
     let isActivated: boolean = false
-    if (releaseFilter.value.approvalType || releaseFilter.value.environment ||
-        releaseFilter.value.tagKey || releaseFilter.value.tagValue) {
+    if (releaseFilter.value.lifecycle || releaseFilter.value.tagKey) {
         isActivated = true
     }
     return isActivated
@@ -690,10 +670,8 @@ const linkVcsRepo = function (value: any) {
 
 const resetReleaseFilter = function () {
     releaseFilter.value = {
-        approvalType: '',
-        environment: '',
+        lifecycle: '',
         tagKey: '',
-        tagValue: ''
     }
 }
 
@@ -816,9 +794,18 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                         )
                     )
                 }
+                const lifecycleEl = h('div', [
+                                'Lifecycle:',
+                                h(NSelect, {
+                                    options: [{value: '', label: ''}].concat(constants.LifecycleOptions.map((x: any) => ({ value: x.key, label: x.label }))),
+                                    defaultValue: releaseFilter.value.lifecycle,
+                                    'on-update:value': (value: string) => releaseFilter.value.lifecycle = value
+                                })
+                            ])
                 els.push(h(
                     NPopover, {
-                        trigger: 'hover'
+                        trigger: 'hover',
+                        style: 'width: 300px;'
                     }, {
                         trigger: () => h(
                             NIcon,
@@ -831,36 +818,13 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                             { default: () => h(Filter) }
                         ),
                         default: () =>  [
-                            h('div', [
-                                'Approval:',
-                                h(NSelect, {
-                                    options: approvalTypes.value,
-                                    defaultValue: releaseFilter.value.approvalType,
-                                    'on-update:value': (value: string) => releaseFilter.value.approvalType = value
-                                })
-                            ]),
-                            h('div', [
-                                'Environment:',
-                                h(NSelect, {
-                                    options: environmentTypes.value,
-                                    defaultValue: releaseFilter.value.environment,
-                                    'on-update:value': (value: string) => releaseFilter.value.environment = value
-                                })
-                            ]),
+                            lifecycleEl,
                             h('div', [
                                 'Tag key:',
                                 h(NSelect, {
                                     options: releaseTagKeys.value,
                                     defaultValue: releaseFilter.value.tagKey,
                                     'on-update:value': (value: string) => releaseFilter.value.tagKey = value
-                                })
-                            ]),
-                            h('div', [
-                                'Tag value:',
-                                h(NInput, {
-                                    type: 'text',
-                                    defaultValue: releaseFilter.value.tagValue,
-                                    'on-update:value': (value: string) => releaseFilter.value.tagValue = value
                                 })
                             ]),
                             h(NButton, {
@@ -901,7 +865,6 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                         )
                     )
                 }
-            
                 return h('div', els)
             }
         }
