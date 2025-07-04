@@ -489,7 +489,7 @@ const filteredReleases: ComputedRef<any> = computed((): any => {
         filteredReleases = filteredReleases.filter((a: any) => a.lifecycle === releaseFilter.value.lifecycle)
     }
     if (releaseFilter.value.tagKey) {
-        filteredReleases = filteredReleases.filter((a: any) => a.tags[releaseFilter.value.tagKey])
+        filteredReleases = filteredReleases.filter((a: any) => a.tags.find((t: any) => t.key === releaseFilter.value.tagKey))
     }
     return filteredReleases
 })
@@ -721,10 +721,11 @@ const onCreated = async function () {
     // compute list of tag keys
     const tagKeyMap: any = {}
     rlz.forEach((r: any) => {
-        if (r.tags) {
-            let tagKeyArr = Object.keys(r.tags)
+        if (r.tags && r.tags.length) {
+            console.log(r.tags)
+            const tagKeyArr = r.tags.map((t: any) => t.key)
             if (tagKeyArr && tagKeyArr.length) {
-                tagKeyArr.forEach(tk => {tagKeyMap[tk] = true})
+                tagKeyArr.forEach((tk: string) => {tagKeyMap[tk] = true})
             }
         }
     })
@@ -802,6 +803,14 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                                     'on-update:value': (value: string) => releaseFilter.value.lifecycle = value
                                 })
                             ])
+                const tagEl = h('div', [
+                                'Tag key:',
+                                h(NSelect, {
+                                    options: [{value: '', label: ''}].concat(releaseTagKeys.value),
+                                    defaultValue: releaseFilter.value.tagKey,
+                                    'on-update:value': (value: string) => releaseFilter.value.tagKey = value
+                                })
+                            ])
                 els.push(h(
                     NPopover, {
                         trigger: 'hover',
@@ -819,14 +828,7 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                         ),
                         default: () =>  [
                             lifecycleEl,
-                            h('div', [
-                                'Tag key:',
-                                h(NSelect, {
-                                    options: releaseTagKeys.value,
-                                    defaultValue: releaseFilter.value.tagKey,
-                                    'on-update:value': (value: string) => releaseFilter.value.tagKey = value
-                                })
-                            ]),
+                            tagEl,
                             h(NButton, {
                                 type: 'warning',
                                 onClick: () => resetReleaseFilter()
