@@ -1242,7 +1242,7 @@ async function genApiKey() {
         loadProgrammaticAccessKeys(false)
         Swal.fire({
             title: 'Generated!',
-            customClass: 'swal-wide',
+            customClass: {popup: 'swal-wide'},
             html: newKeyMessage,
             icon: 'success'
         })
@@ -1277,7 +1277,7 @@ async function genUserApiKey() {
         const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setUserOrgApiKey)      
         Swal.fire({
             title: 'Generated!',
-            customClass: 'swal-wide',
+            customClass: {popup: 'swal-wide'},
             html: newKeyMessage,
             icon: 'success'
         })
@@ -1336,7 +1336,7 @@ async function genUserRegistryToken(type: string, notes: string) {
     let newKeyMessage = getGeneratedRegistryTokenHTML(gqlResponse.data.setRegistryKey)      
     Swal.fire({
         title: 'Organization Registry Token',
-        customClass: 'swal-wide',
+        customClass: {popup: 'swal-wide'},
         html: newKeyMessage,
         icon: 'success'
     })

@@ -220,7 +220,7 @@ async function genUserApiKey(orgUUID: string) {
         let newKeyMessage = getGeneratedApiKeyHTML(axiosResp.data)
         Swal.fire({
             title: 'Generated!',
-            customClass: 'swal-wide',
+            customClass: {popup: 'swal-wide'},
             html: newKeyMessage,
             icon: 'success'
         })
@@ -322,7 +322,7 @@ const submitFile = async () => {
             let htmlResp = parseBackupResponse(response.data)
             Swal.fire({
                 title: 'Backup Success!',
-                customClass: 'swal-wide',
+                customClass: {popup: 'swal-wide'},
                 html: htmlResp,
                 icon: 'success'
             })

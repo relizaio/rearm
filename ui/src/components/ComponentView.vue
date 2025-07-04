@@ -525,7 +525,7 @@ async function genApiKeyRoutine (type : string, compUuid : string) {
 
         Swal.fire({
             title: 'Generated!',
-            customClass: 'swal-wide',
+            customClass: {popup: 'swal-wide'},
             html: newKeyMessage,
             icon: 'success'
         })

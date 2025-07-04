@@ -605,7 +605,7 @@ const genApiKey = async function () {
 
         Swal.fire({
             title: 'Generated!',
-            customClass: 'swal-wide',
+            customClass: {popup: 'swal-wide'},
             html: newKeyMessage,
             icon: 'success'
         })
