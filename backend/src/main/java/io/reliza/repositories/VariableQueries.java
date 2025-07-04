@@ -318,7 +318,7 @@ class VariableQueries {
 					LAG(uuid) OVER (
 						ORDER BY created_date
 					) as previous_release_uuid
-				FROM rearm.releases r
+				FROM rearm.releases r where r.record_data->>'branch' = :branch
 			)	
 			""" 
 			+ "select previous_release_uuid from PreviousRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
@@ -330,7 +330,7 @@ class VariableQueries {
 					LEAD(uuid) OVER (
 						ORDER BY created_date
 					) as next_release_uuid
-				FROM rearm.releases r
+				FROM rearm.releases r where r.record_data->>'branch' = :branch
 			)	
 			""" 
 			+ "select next_release_uuid from NextRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";

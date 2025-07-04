@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -154,10 +155,12 @@ public class AcollectionService {
 		return repository.save(ac);
 	}
 
+	@Async
 	public void releaseBomChangelogRoutine(UUID releaseId, UUID branch, UUID org){
         UUID prevReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(branch, releaseId);
         UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
-
+		log.info("prevReleaseId found: {}", prevReleaseId);
+		log.info("nextReleaseId found: {}", nextReleaseId);
 		if(null != prevReleaseId)
 	        resolveBomDiff(releaseId, prevReleaseId, org);
 		
@@ -165,6 +168,7 @@ public class AcollectionService {
         	resolveBomDiff(nextReleaseId, releaseId, org);
     }
 	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org){
+		log.info("resolveBomDiff for releaseId: {}, prevReleaseId: {} ", releaseId, prevReleaseId);
 		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
 		AcollectionData prevAcollectionData = getLatestCollectionDataOfRelease(prevReleaseId);
 		
@@ -176,7 +180,10 @@ public class AcollectionService {
 		){
             List<UUID> currArtifacts = getInternalBomIdsFromACollection(currAcollectionData);
 			List<UUID> prevArtifacts = getInternalBomIdsFromACollection(prevAcollectionData);
+			log.info("currArtifacts: {}", currArtifacts);
+			log.info("prevArtifacts: {}", prevArtifacts);
 			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(currArtifacts, prevArtifacts, org);
+			log.info("artifactChangelog: {}", artifactChangelog);
 			persistArtifactChangelogForCollection(artifactChangelog, currAcollectionData.getUuid());
 		}
 	}
