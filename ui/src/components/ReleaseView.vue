@@ -150,7 +150,7 @@
                         <span class="lifecycle" style="float: right; margin-right: 80px;">
                             <span v-if="userPermission !== 'READ_ONLY'">
                                 <n-dropdown v-if="updatedRelease.lifecycle" trigger="hover" :options="lifecycleOptions" @select="lifecycleChange">
-                                    <n-tag type="success">{{updatedRelease.lifecycle}}</n-tag>
+                                    <n-tag type="success">{{ lifecycleOptions.find(lo => lo.key === updatedRelease.lifecycle)?.label }}</n-tag>
                                 </n-dropdown>
                             </span>
                             <span v-if="userPermission === 'READ_ONLY'">

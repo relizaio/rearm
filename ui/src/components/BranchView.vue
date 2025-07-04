@@ -263,6 +263,7 @@ import { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries  from '@/utils/graphqlQueries'
 import { Copy, LayoutColumns, Filter, Trash } from '@vicons/tabler'
 import { Edit24Regular } from '@vicons/fluent'
+import constants from '@/utils/constants'
 
 async function loadApprovalMatrix (org: string, resourceGroup: string) {
     let amxResponse = await graphqlClient.query({
@@ -919,7 +920,8 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
         },
         {
             key: 'lifecycle',
-            title: 'Lifecycle'
+            title: 'Lifecycle',
+            render: (row: any) => (constants.LifecycleOptions.find(lo => lo.key === row.lifecycle)?.label)
         }
     )
     fields.push({
