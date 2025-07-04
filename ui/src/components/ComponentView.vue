@@ -1326,9 +1326,9 @@ const isSelectedBranchPR : ComputedRef<boolean> = computed((): any => {
     const isPR: boolean = prBranches.value.find((b:any) => b.uuid === selectedBranchUuid.value) != undefined
     return isPR
 })
-if(isSelectedBranchPR.value){
-    selectedComponentTab.value = 'PULL_REQUEST'
-}
+// if(isSelectedBranchPR.value){
+//     selectedComponentTab.value = 'PULL_REQUEST'
+// }
 
 
 const marketingVersionEnabled = ref(updatedComponent.value.versionType === 'MARKETING')
