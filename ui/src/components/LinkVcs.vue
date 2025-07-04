@@ -50,7 +50,7 @@ import CreateVcsRepository from './CreateVcsRepository.vue'
 import commonFunctions from '@/utils/commonFunctions'
 const props = defineProps<{
     branchUuid: String,
-    hideButtons: Boolean,
+    hideButtons?: Boolean,
     orgprop: String
 }>()
 

@@ -132,7 +132,6 @@ export default {
 import { Ref, ref, ComputedRef, computed } from 'vue'
 import { useStore } from 'vuex'
 import { NForm, NFormItem, NInput, NSelect, NRadio, NRadioGroup, NSpin, NTabs, NTabPane, NButton } from 'naive-ui'
-import axios from '../utils/axios'
 import constants from '../utils/constants'
 import CreateArtifact from './CreateArtifact.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
@@ -160,15 +159,15 @@ const props = defineProps<{
     orgProp: String,
     inputBranch: String,
     inputType: String,
-    inputFeatureSet: String,
-    inputComponent: String,
-    updateMode: Boolean,
-    attemptPickRelease: Boolean,
+    inputFeatureSet?: String,
+    inputComponent?: String,
+    updateMode?: Boolean,
+    attemptPickRelease?: Boolean,
     disallowPlaceholder: Boolean,
-    disallowCreateRelease: Boolean,
-    isChooseNamespace: Boolean,
-    isHideReset: Boolean,
-    createButtonText: String
+    disallowCreateRelease?: Boolean,
+    isChooseNamespace?: Boolean,
+    isHideReset?: Boolean,
+    createButtonText?: String
 }>()
 
 const emit = defineEmits(['createdRelease'])

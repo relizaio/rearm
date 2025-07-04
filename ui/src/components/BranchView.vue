@@ -338,8 +338,8 @@ const notify = async function (type: NotificationType, title: string, content: s
 const orguuid = route.params.orguuid.toString()
 const myUser = store.getters.myuser
 
-const branchUuid: Ref<string> = ref(props.branchUuidProp ? props.branchUuidProp : route.params.branchuuid ? route.params.branchuuid.toString() : '')
-const prNumber: Ref<string> = ref(props.prnumberprop ? props.prnumberprop : route.params.prnumber ? route.params.prnumber.toString() : '')
+const branchUuid: Ref<string> = ref(props.branchUuidProp ? props.branchUuidProp.toString() : route.params.branchuuid ? route.params.branchuuid.toString() : '')
+const prNumber: Ref<string> = ref(props.prnumberprop ? props.prnumberprop.toString() : route.params.prnumber ? route.params.prnumber.toString() : '')
 
 const isLinkVcsRepo = ref(false)
 

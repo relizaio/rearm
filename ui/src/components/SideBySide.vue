@@ -39,13 +39,13 @@ import InstanceRevision from '@/components/InstanceRevision.vue'
 import ReleaseRevision from '@/components/ReleaseRevision.vue'
 const props = defineProps<{
     instanceLeft: String,
-    revisionLeft: Number,
+    revisionLeft?: Number,
     instanceRight: String,
-    revisionRight: Number,
+    revisionRight?: Number,
     comparisonTypeLeftIn: String,
     comparisonTypeRightIn: String,
-    namespaceLeft: String,
-    namespaceRight: String
+    namespaceLeft?: String,
+    namespaceRight?: String
 }>()
 
 const comparisonTypeLeft = (props.comparisonTypeLeftIn) ? props.comparisonTypeLeftIn : 'instance'
