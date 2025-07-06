@@ -1,4 +1,9 @@
-on: [push]
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
 
 name: Build Component Container Images And Submit Metadata To Reliza Hub
 
