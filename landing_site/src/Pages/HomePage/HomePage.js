@@ -34,7 +34,7 @@ const HomePage = () => {
     titleMaxWidth: "925px",
     text: [
       {
-        text: "Supply Chain Security System to Manage Releases, SBOMs, xBOMs",
+        text: "Supply Chain Security and Asset Management for Releases, SBOMs, xBOMs, Security Artifacts",
         maxWidth: "611px",
         textClass: `mx-auto ${styles.C1_text}`
       }
