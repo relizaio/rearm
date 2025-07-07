@@ -261,7 +261,7 @@ public class ArtifactService {
 		artDto.setArtifacts(artifactsOfThisArtifact);
 		artDto.setOrg(od.getOrg());
 		RebomOptions updRebomOptions = new RebomOptions(rebomOptions.name(), rebomOptions.group(), rebomOptions.version(), rebomOptions.belongsTo(),
-				rebomOptions.hash(), artDto.getStripBom());
+				rebomOptions.hash(), artDto.getStripBom(), rebomOptions.purl());
 		return uploadArtifact(artDto, file.getResource(), updRebomOptions, wu);
 	}
 

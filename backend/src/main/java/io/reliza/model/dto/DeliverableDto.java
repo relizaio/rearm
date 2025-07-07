@@ -21,6 +21,7 @@ import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.DeliverableData.CPUArchitecture;
 import io.reliza.model.DeliverableData.OS;
 import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
+import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
 
@@ -58,6 +59,9 @@ public class DeliverableDto {
 	
 	private List<UUID> artifacts;
 	private BelongsToOrganization isInternal;
+
+	@JsonProperty
+	private List<TeaIdentifier> identifiers;
 	
 	public void cleanDigests() {
 		if (null != this.softwareMetadata) {

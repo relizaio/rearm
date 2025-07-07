@@ -172,6 +172,7 @@ type Deliverable {
 	softwareMetadata: SoftwareMetadata
 	artifacts: [ID]
 	artifactDetails: [Artifact]
+	identifiers: [Identifier]
 }
 type SoftwareMetadata {
 	buildId: String
@@ -1014,6 +1015,7 @@ input DeliverableInput {
 	supportedCpuArchitectures: [CPUArchitectureEnum]
 	softwareMetadata: SoftwareMetadataInput
 	artifacts: [ArtifactInput]
+	identifiers: [IdentifierInput]
 }
 
 input SoftwareMetadataInput {

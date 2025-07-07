@@ -28,6 +28,7 @@ import io.reliza.common.Utils;
 import io.reliza.model.ArtifactData.Identity;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.tea.Link;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.versioning.Version;
 import io.reliza.versioning.VersionUtils;
 import lombok.Builder;
@@ -135,6 +136,10 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 	
 	private UUID uuid;
 	private String displayIdentifier;
+	/**
+	 * @deprecated use {@link #identifiers} instead
+	 */
+	@Deprecated
 	private List<Identity> identities = new ArrayList<>();
 	private UUID org; // if branch uuid is specified, organization must match that of branch
 	@JsonProperty(CommonVariables.BRANCH_FIELD)
@@ -164,6 +169,13 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 	
 	private List<UUID> artifacts = new ArrayList<>();
 	
+	@JsonProperty
+	private List<TeaIdentifier> identifiers = new ArrayList<>();
+
+	public List<TeaIdentifier> getIdentifiers() {
+		return new ArrayList<>(this.identifiers);
+	}
+
 	public CdxType getType() {
 		return this.type;
 	}
@@ -202,6 +214,8 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 		dd.setGroup(deliverableDto.getGroup());
 		if (null != deliverableDto.getArtifacts())
 			dd.setArtifacts(new ArrayList<>(deliverableDto.getArtifacts()));
+		if (null != deliverableDto.getIdentifiers())
+			dd.setIdentifiers(new ArrayList<>(deliverableDto.getIdentifiers()));
 		return dd;
 	}
 	

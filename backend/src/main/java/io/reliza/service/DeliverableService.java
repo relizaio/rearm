@@ -10,11 +10,9 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -22,7 +20,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
@@ -38,13 +35,12 @@ import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.Deliverable;
 import io.reliza.model.DeliverableData;
-import io.reliza.model.DeliverableData.DeliverableVersionComparator;
 import io.reliza.model.DeliverableData.PackageType;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.DeliverableRepository;
 
 
@@ -75,8 +71,6 @@ public class DeliverableService {
 	
 	@Autowired 
 	private AcollectionService acollectionService;
-	
-	private static final Logger log = LoggerFactory.getLogger(DeliverableService.class);
 			
 	private final DeliverableRepository repository;
 	
@@ -152,11 +146,12 @@ public class DeliverableService {
 			DeliverableDto deliverableDto = Utils.OM.convertValue(deliverableItem,DeliverableDto.class);
 			deliverableDto.cleanDigests();
 			
-			RebomOptions rebomOptions = new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), StripBom.FALSE);
+			String purl = null;
+			var purlId = deliverableDto.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
+			if (purlId.isPresent()) purl = purlId.get().getIdValue();
+			RebomOptions rebomOptions = new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), StripBom.FALSE, purl);
 			var artIds = artifactService.uploadListOfArtifacts(od, arts, rebomOptions, wu);
-			deliverableDto.setArtifacts(artIds);
-			// TODO: for now always create artifacts from programmatic - later add logic to parse digests and uris
-			
+			deliverableDto.setArtifacts(artIds);			
 			// if deliverable with this digest already exists for this org, do not create a new one (only software deliverables)
 			List<Deliverable> deliverablesByDigest = new LinkedList<>();
 			if (null != branchUUID && null != deliverableDto.getSoftwareMetadata() && 
@@ -177,7 +172,7 @@ public class DeliverableService {
 				
 				deliverableDto.setBranch(branchUUID);
 	
-				// digests may be not present for failed artifacts / artifact builds - TODO: think more
+				// digests may be not present for failed deliverables / deliverable builds - TODO: think more
 				if (StringUtils.isEmpty(deliverableDto.getVersion())) {
 					deliverableDto.setVersion(version);
 				}

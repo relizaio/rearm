@@ -74,6 +74,7 @@ import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ArtifactGatherService;
@@ -538,7 +539,8 @@ public class ReleaseDatafetcher {
 		if (progReleaseInput.containsKey("artifacts")) {
 			@SuppressWarnings("unchecked")
 			List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) progReleaseInput.get("artifacts");
-			artifacts = artifactService.uploadListOfArtifacts(od, artifactsList, new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE), ar.getWhoUpdated());
+			// TODO allow propagation of purl from release purl
+			artifacts = artifactService.uploadListOfArtifacts(od, artifactsList, new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, null), ar.getWhoUpdated());
 		}
 		
 		ReleaseLifecycle lifecycle = ReleaseLifecycle.ASSEMBLED;
@@ -656,10 +658,23 @@ public class ReleaseDatafetcher {
 
 		UUID artId = null;
 
+		String purl = null;
+		if(ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable")){
+			UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
+			DeliverableData dd = getDeliverableService.getDeliverableData(deliverableId).get();
+			var purlId = dd.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
+			if (purlId.isPresent()) purl = purlId.get().getIdValue();
+		} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
+			// TODO purl for sce
+		} else { // belongs to release
+			var purlId = ord.get().getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
+			if (purlId.isPresent()) purl = purlId.get().getIdValue();
+		}
+
 		if (multipartFile != null) {
 			String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
 			artDto.setOrg(orgUuid);
-			artId = artifactService.uploadArtifact(artDto, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom()), wu);
+			artId = artifactService.uploadArtifact(artDto, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom(), purl), wu);
 		} else {
 			artId = artifactService.createArtifact(artDto, wu).getUuid();
 		}

@@ -11,7 +11,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
-import io.reliza.model.dto.ArtifactUploadResponseDto;
 import io.reliza.model.dto.OASResponseDto;
 import io.reliza.service.RebomService.BomStructureType;
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -30,19 +29,19 @@ public class Rebom {
         String notes,
         StripBom stripBom,
         String serialNumber,
-        String bomDigest
+        String bomDigest,
+        String purl
     ) {
-          // Overloaded constructor
-          // create opts
-          public RebomOptions() {
-            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "");
+        // create opts
+        public RebomOptions() {
+            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "", "");
         }
-        public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, StripBom stripBom) {
-            this(name, group,  version, belongsTo, hash, false, BomStructureType.FLAT, "sent from ReArm", stripBom, "", "");
+        public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, StripBom stripBom, String purl) {
+            this(name, group,  version, belongsTo, hash, false, BomStructureType.FLAT, "sent from ReArm", stripBom, "", "", purl);
         }
         // merge opts
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly,  BomStructureType structure) {
-            this(null, null,  null, belongsTo, null, tldOnly, structure, "sent from ReArm", StripBom.TRUE, "", "");
+            this(null, null,  null, belongsTo, null, tldOnly, structure, "sent from ReArm", StripBom.TRUE, "", "", "");
         }
     }
 
