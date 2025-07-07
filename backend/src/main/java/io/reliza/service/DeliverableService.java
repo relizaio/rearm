@@ -40,6 +40,7 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.DeliverableRepository;
 
@@ -147,7 +148,8 @@ public class DeliverableService {
 			deliverableDto.cleanDigests();
 			
 			String purl = null;
-			var purlId = deliverableDto.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
+			Optional<TeaIdentifier> purlId = Optional.empty();
+			if (null != deliverableDto.getIdentifiers()) purlId = deliverableDto.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
 			if (purlId.isPresent()) purl = purlId.get().getIdValue();
 			RebomOptions rebomOptions = new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), StripBom.FALSE, purl);
 			var artIds = artifactService.uploadListOfArtifacts(od, arts, rebomOptions, wu);

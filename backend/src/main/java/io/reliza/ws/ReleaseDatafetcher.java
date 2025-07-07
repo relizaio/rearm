@@ -74,6 +74,7 @@ import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ApiKeyService;
@@ -659,15 +660,16 @@ public class ReleaseDatafetcher {
 		UUID artId = null;
 
 		String purl = null;
+		Optional<TeaIdentifier> purlId = Optional.empty();
 		if(ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable")){
 			UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
 			DeliverableData dd = getDeliverableService.getDeliverableData(deliverableId).get();
-			var purlId = dd.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
+			if (null != dd.getIdentifiers()) purlId = dd.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
 			if (purlId.isPresent()) purl = purlId.get().getIdValue();
 		} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
 			// TODO purl for sce
 		} else { // belongs to release
-			var purlId = ord.get().getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
+			if (null != ord.get().getIdentifiers()) purlId = ord.get().getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
 			if (purlId.isPresent()) purl = purlId.get().getIdValue();
 		}
 

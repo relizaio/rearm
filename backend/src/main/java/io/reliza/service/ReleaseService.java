@@ -762,7 +762,8 @@ public class ReleaseService {
 					} else {
 						var od = organizationService.getOrganizationData(rd.getOrg()).get();
 						String purl = null;
-						var purlId = rd.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
+						Optional<TeaIdentifier> purlId = Optional.empty();
+						if (null != rd.getIdentifiers()) purlId = rd.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
 						if (purlId.isPresent()) purl = purlId.get().getIdValue();
 						var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(),  rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE, "", "", purl);
 						UUID rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions, od.getUuid());

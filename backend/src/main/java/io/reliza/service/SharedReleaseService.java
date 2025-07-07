@@ -565,7 +565,7 @@ public class SharedReleaseService {
 		List<TeaIdentifier> releaseIdentifier = new LinkedList<>();
 		try {
 			var compIdentifiers = cd.getIdentifiers();
-			if (!compIdentifiers.isEmpty()) {
+			if (null != compIdentifiers && !compIdentifiers.isEmpty()) {
 				Optional<TeaIdentifier> purlIdentifier = compIdentifiers.stream().filter(x -> x.getIdType() == TeaIdentifierType.PURL).findFirst();
 				if (purlIdentifier.isPresent()) {
 					PackageURL purlObj = new PackageURL(purlIdentifier.get().getIdValue());
