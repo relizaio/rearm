@@ -21,7 +21,6 @@ import io.reliza.common.Utils.StripBom;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
-import io.reliza.model.ArtifactData.Identity;
 import io.reliza.model.ArtifactData.InventoryType;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.tea.Link;
@@ -44,9 +43,6 @@ public class ArtifactDto {
 	
 	@JsonProperty("displayIdentifier")
 	private String displayIdentifier;
-
-	@JsonProperty("identities")
-	private List<Identity> identities;
 
 	@JsonProperty("downloadLinks")
 	private List<Link> downloadLinks;

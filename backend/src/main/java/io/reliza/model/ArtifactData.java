@@ -52,6 +52,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         SECURITY_TXT,
         THREAT_MODEL,
         SIGNATURE,
+        SIGNED_PAYLOAD,
         PUBLIC_KEY,
         CERTIFICATE_X_509,
         CERTIFICATE_PGP,
@@ -71,6 +72,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         VULNERABILITY
     }
     
+	// TODO incorporate into TEA - that is already used
+	@Deprecated
     public enum IdentityType {
         PURL,
         CPE,
@@ -93,8 +96,6 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		OCI_STORAGE,
 		REARM // custom digest calculated only on components and dependencies
 	}
-
-    public record Identity(IdentityType identityType, String identity) {}
 
 	public record DigestRecord(
 		TeaArtifactChecksumType algo, 
@@ -125,7 +126,6 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	private ArtifactType type;
 	
 	private String displayIdentifier;
-	private List<Identity> identities = new ArrayList<>();
 	private List<Link> downloadLinks = new ArrayList<>();
 	private List<InventoryType> inventoryTypes = new ArrayList<>();
 	private BomFormat bomFormat; // FIND ON create
@@ -176,7 +176,6 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		}
 		ad.setType(artifactDto.getType());
 		ad.setDisplayIdentifier(artifactDto.getDisplayIdentifier());
-		if (null != artifactDto.getIdentities()) ad.setIdentities(new ArrayList<>(artifactDto.getIdentities()));
 		if (null != artifactDto.getDownloadLinks()) ad.setDownloadLinks(new ArrayList<>(artifactDto.getDownloadLinks()));
 		if (null != artifactDto.getInventoryTypes()) ad.setInventoryTypes(new ArrayList<>(artifactDto.getInventoryTypes()));
 		ad.setBomFormat(artifactDto.getBomFormat());
@@ -203,7 +202,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	@JsonIgnore
 	public boolean isSignatureType() {
 		if (this.type == ArtifactType.SIGNATURE || this.type == ArtifactType.CERTIFICATE_PGP || this.type == ArtifactType.CERTIFICATE_X_509 
-				|| this.type == ArtifactType.PUBLIC_KEY) return true;
+				|| this.type == ArtifactType.PUBLIC_KEY || this.type == ArtifactType.SIGNED_PAYLOAD) return true;
 			else return false;
 	}
 }

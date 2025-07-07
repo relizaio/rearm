@@ -159,7 +159,6 @@ type Deliverable {
 	name: String
 	org: ID
 	displayIdentifier: String
-	identities: [BomIdentity]
 	branch: ID
 	type: String
 	notes: String
@@ -611,7 +610,6 @@ type Artifact {
 	createdDate: DateTime
 	reboms: Object
 	internalBom: InternalBom
-	identities: [BomIdentity]
 	downloadLinks: [Downloadlink]
 	metrics: DependencyTrackMetrics
 	componentUuid: ID
@@ -665,12 +663,7 @@ type ExternalBom {
 	bomFormat: String
 	date: String
 	type: String
-	identities: [BomIdentity]
 	documentType: String
-}
-type BomIdentity {
-	identityType: String
-	identity: String
 }
 type Downloadlink {
 	uri: String
@@ -1003,7 +996,6 @@ input TagRecordInput {
 input DeliverableInput {
 	name: String
 	displayIdentifier: String
-	identities: [BomIdentityInput]
 	branch: ID
 	type: CdxType
 	notes: String
@@ -1043,7 +1035,6 @@ input CreateArtifactInput {
 input ArtifactInput {
 	type: ArtifactType
 	displayIdentifier: String
-	identities: [BomIdentityInput]
 	downloadLinks: [LinkInput]
 	inventoryTypes: [InventoryType]
 	bomFormat: String
@@ -1072,7 +1063,6 @@ input ExternalBomInput {
 	bomFormat: String
 	date: String
 	type: String
-	identities: [BomIdentityInput]
 	documentType: String
 }
 
@@ -1121,11 +1111,6 @@ input AddDeliverableInput {
 	release: ID
 	variant: ID
 	deliverables: [DeliverableInput]
-}
-
-input BomIdentityInput {
-	identityType: String
-	identity: String
 }
 
 input LinkInput {

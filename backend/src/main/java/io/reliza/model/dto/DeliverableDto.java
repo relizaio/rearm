@@ -16,7 +16,6 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
-import io.reliza.model.ArtifactData.Identity;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.DeliverableData.CPUArchitecture;
 import io.reliza.model.DeliverableData.OS;
@@ -34,7 +33,7 @@ public class DeliverableDto {
 	@JsonProperty(CommonVariables.UUID_FIELD)
 	private UUID uuid;
 	private String displayIdentifier;
-	private List<Identity> identities;
+	private List<TeaIdentifier> identifiers;
 	@JsonProperty(CommonVariables.ORGANIZATION_FIELD)
 	private UUID org; // if branch uuid is specified, organization should match that of branch
 	@JsonProperty(CommonVariables.BRANCH_FIELD)
@@ -59,9 +58,6 @@ public class DeliverableDto {
 	
 	private List<UUID> artifacts;
 	private BelongsToOrganization isInternal;
-
-	@JsonProperty
-	private List<TeaIdentifier> identifiers;
 	
 	public void cleanDigests() {
 		if (null != this.softwareMetadata) {

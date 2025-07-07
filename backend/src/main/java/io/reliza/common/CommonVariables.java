@@ -245,7 +245,7 @@ public class CommonVariables {
 	public static final String DOWNLOAD_LINKS_FIELD = "downloadLinks";
 	public static final String INVENTORY_TYPES_FIELD = "inventoryTypes";
 	public static final String DOCUMENT_TYPE_FIELD = "documentType";
-	public static final String IDENTITIES_FIELD = "identities";
+	public static final String IDENTIFIERS_FIELD = "identifiers";
 	public static final String INTERNAL_BOMS_FIELD = "internalBoms";
 	public static final String EXTERNAL_BOMS_FIELD = "externalBoms";
 	public static final String BOM_FORMAT_FIELD = "bomFormat";

@@ -30,7 +30,6 @@ public class ArtifactWebDto extends ArtifactData {
 		awd.setOrg(ad.getOrg());
 		awd.setType(ad.getType());
 		awd.setDisplayIdentifier(ad.getDisplayIdentifier());
-		awd.setIdentities(new LinkedList<>(ad.getIdentities()));
 		awd.setDownloadLinks(new LinkedList<>(ad.getDownloadLinks()));
 		awd.setInventoryTypes(new LinkedList<>(ad.getInventoryTypes()));
 		awd.setBomFormat(ad.getBomFormat());
