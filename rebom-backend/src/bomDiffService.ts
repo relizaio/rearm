@@ -45,22 +45,20 @@ async function mergeBomsForDiff(ids:[string], org: string){
   }
 
   export async function bomDiffExec(fromIds:[string], toIds: [string], org: string): Promise<BomDiffResult> {
-
     try {
       const fromBomObj = await mergeBomsForDiff(fromIds, org)
       const toBomObj = await mergeBomsForDiff(toIds, org)
-      
+    
       const fromBomPath : string = await utils.createTempFile(fromBomObj)
       const toBomPath : string = await utils.createTempFile(toBomObj)
       const command = ['diff']
-     
       command.push(
         '--from-format', 'json',
         '--to-format', 'json',
         '--output-format', 'json',
         '--component-versions',
-        fromBomPath,
-        toBomPath
+        toBomPath,
+        fromBomPath
       )
 
       const diffResultString: string = await utils.shellExec('cyclonedx-cli',command)
