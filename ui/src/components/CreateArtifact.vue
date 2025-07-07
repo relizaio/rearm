@@ -77,18 +77,6 @@
                     value-placeholder="Enter tag value, i.e. 'primary'" />
             </n-form-item>
             <n-form-item
-                        label="Artifact Identities">
-                <n-dynamic-input
-                    v-model:value="identities"
-                    :on-create="onCreateIdentities"
-                 >
-                    <template #default="{ value }">
-                        <n-select  :options="identityTypes" v-model:value="value.identityType"  placeholder='Select Idenitity Type'/>
-                        <n-input v-model:value="value.identity" type="text" placeholder='identity'/>
-                    </template>
-                    </n-dynamic-input>
-            </n-form-item>
-            <n-form-item
                         label="Artifact DownloadLinks" v-if="artifact.storedIn==='EXTERNALLY'">
                 <n-dynamic-input
                     v-model:value="downloadLinks"
@@ -129,7 +117,7 @@ import gql from 'graphql-tag'
 import { FormInst, NButton, NDynamicInput, NForm, NFormItem, NInput, NInputNumber, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload } from 'naive-ui'
 import { computed, ComputedRef, ref, Ref } from 'vue'
 import { useStore } from 'vuex'
-import { Tag, DownloadLink, Identity} from '@/utils/commonTypes'
+import { Tag, DownloadLink } from '@/utils/commonTypes'
 import Swal from 'sweetalert2'
 import commonFunctions from '../utils/commonFunctions'
 
@@ -165,7 +153,6 @@ interface Artifact {
     displayIdentifier: string,
     tags: Tag[],
     type: string,
-    identities: Identity[],
     downloadLinks: DownloadLink[],
     inventoryTypes: string[],
     digestRecords: DigestRecord[],
@@ -178,7 +165,6 @@ const artifact: Ref<any>= ref({
     displayIdentifier: props.isUpdateExistingBom ? props.updateArtifact.displayIdentifier : '',
     tags: props.isUpdateExistingBom ? props.updateArtifact.tags :[],
     type:  props.isUpdateExistingBom ? props.updateArtifact.type : '',
-    identities: props.isUpdateExistingBom ? props.updateArtifact.identities : [],
     downloadLinks: [],
     inventoryTypes: props.isUpdateExistingBom ? props.updateArtifact.inventoryTypes : [],
     digestRecords: [],
@@ -191,7 +177,6 @@ if(props.isUpdateExistingBom && props.updateArtifact){
     artifact.value.storedIn = 'REARM'
 }
 const downloadLinks: Ref<DownloadLink[]> = ref([])
-const identities: Ref<Idenitity[]> = ref([])
 
 const rules = {
     displayIdentifier: {
@@ -223,7 +208,6 @@ const onSubmit = async () => {
     
     artifact.value.tags = artifactTags.value
     artifact.value.downloadLinks = downloadLinks.value
-    artifact.value.identities = identities.value
     artifact.value.file = fileList.value?.file?.file
    
     const createArtifactInput = {
@@ -281,12 +265,7 @@ const onCreateDownloadLinks = () => {
         content: ''
     }
 }
-const onCreateIdentities = () => {
-    return {
-        identity: '',
-        identityType: ''
-    }
-}
+
 const onCreateDigests = () => {
     return {
         algo: '',
@@ -359,7 +338,6 @@ const onReset = function () {
     artifact.value = {
         displayIdentifier: '',
         tags: [],
-        identities: [],
         downloadLinks: [],
         inventoryTypes: [],
         bomFormat: null,
@@ -421,17 +399,6 @@ const contentTypes = [
     {value: 'PLAIN_JSON', label: 'Plain JSON'},
     {value: 'OCTET_STREAM', label: 'Octet Stream'},
     {value: 'PLAIN_XML', label: 'Plain XML'},
-]
-
-const identityTypes = [
-    {value: 'PURL', label: 'PURL'},
-    {value: 'CPE', label: 'CPE'},
-    {value: 'SWID', label: 'SWID'},
-    {value: 'GAV', label: 'GAV'},
-    {value: 'GTIN', label: 'GTIN'},
-    {value: 'GMN', label: 'GMN'},
-    {value: 'MANUFACTURER_VERSION', label: 'Manufacturer Version'},
-    {value: 'UID', label: 'UID'}
 ]
 
 enum TeaArtifactChecksumType {

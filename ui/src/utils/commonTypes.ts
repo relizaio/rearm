@@ -7,10 +7,6 @@ export interface DownloadLink {
     uri: string,
     content: string
 }
-export interface Identity {
-    identityType: string,
-    identity: string
-}
 
 export type ApprovalRole = {
     id: string;

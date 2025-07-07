@@ -508,9 +508,9 @@ import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
-import { Tag, DownloadLink, Identity} from '@/utils/commonTypes'
+import { DownloadLink} from '@/utils/commonTypes'
 
-const route = useRoute()
+const route = useRoute()    
 const router = useRouter()
 const store = useStore()
 const notification = useNotification()
@@ -1867,7 +1867,6 @@ const artifactsTableFields: DataTableColumns<any> = [
             if (row.version) factContent.push(h('li', `Version: ${row.version}`))
             if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
             if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`)))) 
-            if (row.identities && row.identities.length) factContent.push(h('li', 'Identities:'), h('ul', row.identities.map((id: Identity) => h('li', `${id.identityType}: ${id.identity}`)))) 
 
             if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
             if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))

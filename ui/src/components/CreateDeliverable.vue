@@ -63,12 +63,12 @@
                     value-placeholder="Enter tag value, i.e. 'primary'" />
             </n-form-item>
             <n-form-item
-                        label="Deliverable Identities">
+                        label="Deliverable Identifiers">
                 <n-dynamic-input
                     preset="pair"
-                    v-model:value="deliverable.identities"
-                    key-placeholder="Enter Identity Type"
-                    value-placeholder="Enter Identity" />
+                    v-model:value="deliverable.identifiers"
+                    key-placeholder="Enter Identifier Type"
+                    value-placeholder="Enter Identifier" />
             </n-form-item>
             <n-form-item
                         label="Deliverable Download Links">
@@ -131,7 +131,7 @@ interface Deliverable {
     tags: Tag[],
     branch: string,
     type: string,
-    identities: [],
+    identifiers: [],
     supportedOs: string[],
     supportedCpuArchitectures: string[],
     softwareMetadata: SoftwareMetadata
@@ -149,7 +149,7 @@ const deliverable: Ref<Deliverable>= ref({
     group: '',
     branch: props.inputBranch,
     type: '',
-    identities: [],
+    identifiers: [],
     supportedOs: [],
     tags: [],
     supportedCpuArchitectures: [],
@@ -167,7 +167,7 @@ function onReset () {
         group: '',
         branch: props.inputBranch,
         type: '',
-        identities: [],
+        identifiers: [],
         supportedOs: [],
         tags: [],
         supportedCpuArchitectures: [],

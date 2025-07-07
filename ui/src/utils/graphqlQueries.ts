@@ -175,10 +175,6 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
         policyViolationsOperationalTotal
     }
     reboms
-    identities{
-        identity
-        identityType
-    }
     downloadLinks{
         uri
         content
@@ -233,10 +229,6 @@ const ARTIFACT_DETAIL_DATA = `
         policyViolationsOperationalTotal
     }
     reboms
-    identities{
-        identity
-        identityType
-    }
     downloadLinks{
         uri
         content
