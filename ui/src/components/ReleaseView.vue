@@ -2012,7 +2012,7 @@ const deliverableTableFields: DataTableColumns<any> = [
             if (row.group) factContent.push(h('li', `group: ${row.group}`))
             if (row.publisher) factContent.push(h('li', `group: ${row.publisher}`))
             if (row.name) factContent.push(h('li', `name: ${row.publisher}`))
-            if (row.identities && row.identities.length) row.identities.forEach((i: any) => factContent.push(h('li', i.toString())))
+            if (row.identifiers && row.identifiers.length) row.identifiers.forEach((i: any) => factContent.push(h('li', [`${i.idType}: ${i.idValue}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(i.idValue) })])))
             row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
             if (row.softwareMetadata) {
                 Object.keys(row.softwareMetadata).forEach(k => {

@@ -638,7 +638,7 @@ const storeObject : any = {
             context.commit('UPDATE_MY_ORG', orgUuid)
         },   
         async fetchReleaseById (context : any, params : any) {
-            let gqlQ = (!params.light) ? graphqlQueries.SingleReleaseGql : graphqlQueries.SingleReleaseGqlLight
+            const gqlQ = (!params.light) ? graphqlQueries.SingleReleaseGql : graphqlQueries.SingleReleaseGqlLight
             const response = await graphqlClient.query({
                 query: gqlQ,
                 variables: { releaseID: params.release, orgID: params.org },

@@ -256,9 +256,9 @@ const DELIVERABLE_DETAIL_DATA = `
     name
     org
     displayIdentifier
-    identities {
-        identityType
-        identity
+    identifiers {
+        idType
+        idValue
     }
     branch
     type
