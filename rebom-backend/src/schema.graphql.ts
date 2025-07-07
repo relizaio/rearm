@@ -65,9 +65,6 @@ const typeDefs = gql`
   }
 
   input RebomOptions {
-    # rebomOverride: RebomOverride
-    # mergeOptions: RebomMergeOptions
-    # releaseId: ID
     name: String
     group: String
     version: String
@@ -79,19 +76,7 @@ const typeDefs = gql`
     stripBom: String
     serialNumber: ID
     bomDigest: String
-  }
-
-  input RebomOverride {
-    name: String!
-    group: String!
-    version: String!
-    belongsTo: String
-    hash: String
-  }
-  input RebomMergeOptions {
-    belongsTo: String
-    tldOnly: Boolean!
-    structure: String!
+    purl: String
   }
 
   input BomSearch {

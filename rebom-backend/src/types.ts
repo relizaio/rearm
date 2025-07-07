@@ -62,7 +62,8 @@ export type RebomOptions = {
     storage: string, //[oci, db]
     bomDigest?: string,
     stripBom: string,
-    bomVersion: string
+    bomVersion: string,
+    purl?: string
 }
 
 export type BomSearch = {
