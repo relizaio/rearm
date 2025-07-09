@@ -9,6 +9,8 @@ const typeDefs = gql`
     findBom(bomSearch: BomSearch): [Bom]
     bomById(id: ID, org: ID): Object
     rawBomId(id: ID, org: ID): Object
+    bomByIdCsv(id: ID, org: ID): String
+    rawBomIdCsv(id: ID, org: ID): String
     bomBySerialNumberAndVersion(serialNumber: ID!, version: Int!, org: ID!, raw: Boolean): Object
     bomMetaBySerialNumber(serialNumber: ID!, org: ID!): [BomMeta]
     bomDiff(fromIds: [ID], toIds: [ID], org: ID!): BomDiffResult
@@ -17,6 +19,7 @@ const typeDefs = gql`
   type Mutation {
     addBom(bomInput: BomInput!): Bom
     mergeAndStoreBoms(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): Bom
+    mergeAndStoreBomsCsv(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): String
   }
 
   type Bom {

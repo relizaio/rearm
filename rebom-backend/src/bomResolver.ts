@@ -9,6 +9,14 @@ const resolvers = {
 		findBom: async (_:any, bomSearch: BomSearch): Promise<BomDto[]> => BomService.findBom(bomSearch),
 		bomById: async (_:any, input: any): Promise<Object> => BomService.findBomObjectById(input.id, input.org),
 		rawBomId: async (_:any, input: any): Promise<Object> => BomService.findRawBomObjectById(input.id, input.org),
+		bomByIdCsv: async (_:any, input: any): Promise<string> => {
+			const bom = await BomService.findBomObjectById(input.id, input.org);
+			return BomService.bomToCsv(bom);
+		},
+		rawBomIdCsv: async (_:any, input: any): Promise<string> => {
+			const rawBom = await BomService.findRawBomObjectById(input.id, input.org);
+			return BomService.bomToCsv(rawBom);
+		},
 		bomBySerialNumberAndVersion: async (_:any, input: any): Promise<Object> => BomService.findBomBySerialNumberAndVersion(input.serialNumber, input.version, input.org, input.raw),
 		bomMetaBySerialNumber: async (_:any, input: any): Promise<Object> => BomService.findBomMetasBySerialNumber(input.serialNumber, input.org),
 		// mergeBoms: async (_:any, mergeInput: any): Promise<any> => {
@@ -19,6 +27,10 @@ const resolvers = {
 		addBom: async (_:any, bomInput: BomInput): Promise<BomRecord> => BomService.addBom(bomInput),
 		mergeAndStoreBoms: async (_:any, mergeInput: any): Promise<BomRecord> => {
 			return BomService.mergeAndStoreBoms(mergeInput.ids, mergeInput.rebomOptions, mergeInput.org)},
+		mergeAndStoreBomsCsv: async (_:any, mergeInput: any): Promise<string> => {
+			const mergedBom = await BomService.mergeAndStoreBoms(mergeInput.ids, mergeInput.rebomOptions, mergeInput.org);
+			return BomService.bomToCsv(mergedBom);
+		}
 	}
 }
 export default resolvers;

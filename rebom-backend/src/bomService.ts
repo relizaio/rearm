@@ -11,6 +11,39 @@ import { v4 as uuidv4 } from 'uuid';
 
 const utils = require('./utils')
 
+// Converts BOM object(s) to CSV string
+export function bomToCsv(bom: any): string {
+  // If bom is an array, process as array, else wrap in array
+  const boms = Array.isArray(bom) ? bom : [bom];
+  if (boms.length === 0) return '';
+
+  // Pick some common fields for CSV output
+  const fields = [
+    'serialNumber',
+    'name',
+    'group',
+    'version',
+    'bomVersion',
+    'hash',
+    'createdDate',
+    'lastUpdatedDate'
+  ];
+
+  // CSV header
+  const header = fields.join(',');
+  // CSV rows
+  const rows = boms.map(b => {
+    return fields.map(f => {
+      // Try meta, bom, or top-level
+      if (b.meta && b.meta[f] !== undefined) return JSON.stringify(b.meta[f]);
+      if (b.bom && b.bom[f] !== undefined) return JSON.stringify(b.bom[f]);
+      if (b[f] !== undefined) return JSON.stringify(b[f]);
+      return '';
+    }).join(',');
+  });
+  return [header, ...rows].join('\n');
+}
+
 async function bomRecordToDto(bomRecord: BomRecord, rootOverride: boolean = true): Promise<BomDto> {
     let version = ''
     let group = ''
