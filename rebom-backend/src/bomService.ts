@@ -1,4 +1,5 @@
 import { isSupportedSpdxId } from '@cyclonedx/cyclonedx-library/dist.d/spdx';
+import * as CDX from '@cyclonedx/cyclonedx-library';
 import * as BomRepository from './bomRespository';
 import { logger } from './logger';
 import { fetchFromOci, OASResponse, pushToOci } from './ociService';
@@ -62,12 +63,12 @@ async function bomRecordToDto(bomRecord: BomRecord, rootOverride: boolean = true
         name = bomRecord.bom.metadata.component.name
         group = bomRecord.bom.metadata.component.group
     }
-    let bomDto: BomDto = {
+    const bomDto: BomDto = {
         uuid: bomRecord.uuid,
         createdDate: bomRecord.created_date,
         lastUpdatedDate: bomRecord.last_updated_date,
         meta: bomRecord.meta,
-        bom: bomRecord.bom,
+        bom: bomRecord.bom as CDX.Models.Bom,
         tags: bomRecord.tags,
         organization: bomRecord.organization,
         public: bomRecord.public,
