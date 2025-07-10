@@ -44,23 +44,23 @@
             </tr>
             </thead>
             <tbody>
-            <tr
-                v-for="b in boms"
-                :key="b.uuid"
-            >
-                <td class="text-left">{{ b.bomVersion }}</td>
-                <td class="text-left">{{ b.group }}</td>
-                <td class="text-left">{{ b.name }}</td>
-                <td class="text-left">{{ b.version }}</td>
-                <td class="text-left">
-                    <a :href="'/restapi/bomById/' + b.uuid" target="_blank" rel="noopener noreferrer" title="Open Bom in New Tab">
-                        <vue-feather type="eye"/>
-                    </a>
-                    <a :href="'/restapi/bomById/' + b.uuid + '?download=true'" target="_blank" rel="noopener noreferrer" title="Download Bom">
-                        <vue-feather type="download"/>
-                    </a>
-                </td>
-            </tr>
+                <tr
+                    v-for="b in boms"
+                    :key="b.uuid"
+                >
+                    <td class="text-left">{{ b.bomVersion }}</td>
+                    <td class="text-left">{{ b.group }}</td>
+                    <td class="text-left">{{ b.name }}</td>
+                    <td class="text-left">{{ b.version }}</td>
+                    <td class="text-left">
+                        <a :href="'/restapi/bomById/' + b.uuid" target="_blank" rel="noopener noreferrer" title="Open Bom in New Tab">
+                            <vue-feather type="eye"/>
+                        </a>
+                        <a :href="'/restapi/bomById/' + b.uuid + '?download=true'" target="_blank" rel="noopener noreferrer" title="Download Bom">
+                            <vue-feather type="download"/>
+                        </a>
+                    </td>
+                </tr>
             </tbody>
         </n-table>
         <div style="margin-top: 10px; margin-left: 5px;" class="leftText" v-if="!boms || !boms.length">
@@ -69,76 +69,11 @@
     </div>
 </template>
 
-<script lang="ts">
+<script setup lang="ts">
 import { NForm, NInput, NButton, NInputGroup, NTable } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { ref } from 'vue';
-
-export default {
-    name: 'AppHome',
-    components: {
-      NForm, NInput, NButton, NInputGroup, NTable
-    },
-    props: { 
-        queryValue: String
-    },
-    async setup(/*props : any, { emit } : any*/) {
-        let bomSearchObj : BomSearch = {
-            bomSearch: {
-                serialNumber: '',
-                version: '',
-                componentVersion: '',
-                componentGroup: '',
-                componentName: '',
-                singleQuery: ''
-            }
-        }
-        let boms = ref(await searchBom(bomSearchObj))
-
-        const headers = [
-            {text: 'Bom Version', value: 'bomversion'}, 
-            {text: 'Group', value: 'group'},
-            {text: 'Name', value: 'name'}, 
-            {text: 'Component Version', value: 'version'},
-            {text: 'Actions', value: 'actions'}
-        ]
-
-        const bomsTest = [
-            {
-                bomversion: '1',
-                group: '2',
-                name: '3',
-                version: '4',
-                actions: '5'
-            }
-        ]
-
-        const searchQuery = ref('')
-        async function userSearch (e:any) {
-            e.preventDefault()
-            bomSearchObj = {
-                bomSearch: {
-                    serialNumber: '',
-                    version: '',
-                    componentVersion: '',
-                    componentGroup: '',
-                    componentName: '',
-                    singleQuery: searchQuery.value
-                }
-            }
-            boms.value = await searchBom(bomSearchObj)
-        }
-
-        return {
-            boms,
-            bomsTest,
-            headers,
-            userSearch,
-            searchQuery
-        }
-    }
-}
 
 type BomSearch = {
   bomSearch: {
@@ -151,24 +86,78 @@ type BomSearch = {
   }
 }
 
-async function searchBom(bomSearch: BomSearch) {
-    const response = await graphqlClient.query({
-        query: gql`
-            query findBom ($bomSearch: BomSearch) {
-                findBom(bomSearch: $bomSearch) {
-                    uuid
-                    meta
-                    version
-                    bomVersion
-                    group
-                    name
-                }
-            }`,
-        variables: bomSearch,
-        fetchPolicy: 'no-cache'
-    })
-    return response.data.findBom
+const props = defineProps({
+  queryValue: String
+})
+
+let bomSearchObj : BomSearch = {
+  bomSearch: {
+    serialNumber: '',
+    version: '',
+    componentVersion: '',
+    componentGroup: '',
+    componentName: '',
+    singleQuery: ''
+  }
 }
+
+const headers = [
+  {text: 'Bom Version', value: 'bomversion'}, 
+  {text: 'Group', value: 'group'},
+  {text: 'Name', value: 'name'}, 
+  {text: 'Component Version', value: 'version'},
+  {text: 'Actions', value: 'actions'}
+]
+
+const bomsTest = [
+  {
+    bomversion: '1',
+    group: '2',
+    name: '3',
+    version: '4',
+    actions: '5'
+  }
+]
+
+const searchQuery = ref('')
+const boms = ref<any[]>([])
+
+async function searchBom(bomSearch: BomSearch) {
+  const response = await graphqlClient.query({
+    query: gql`
+      query findBom ($bomSearch: BomSearch) {
+        findBom(bomSearch: $bomSearch) {
+          uuid
+          meta
+          version
+          bomVersion
+          group
+          name
+        }
+      }`,
+    variables: bomSearch,
+    fetchPolicy: 'no-cache'
+  })
+  return response.data.findBom
+}
+
+async function userSearch(e: Event) {
+  e.preventDefault()
+  bomSearchObj = {
+    bomSearch: {
+      serialNumber: '',
+      version: '',
+      componentVersion: '',
+      componentGroup: '',
+      componentName: '',
+      singleQuery: searchQuery.value
+    }
+  }
+  boms.value = await searchBom(bomSearchObj)
+}
+
+// Initialize data
+boms.value = await searchBom(bomSearchObj)
 
 </script>
 
