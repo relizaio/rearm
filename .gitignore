@@ -1,1 +1,11 @@
 .vscode
+
+# AI/Cascade plans
+**/ai-plans/*
+!**/ai-plans/*.md
+!**/ai-plans/README.md
+!**/ai-plans/.placeholder
+
+# Ignore AI plan temp/backup files
+**/ai-plans/*.tmp
+**/ai-plans/*~
