@@ -29,7 +29,7 @@ const Header = () => {
                 <a class='nav-link fs-6' href='https://docs.rearmhq.com' target="_blank" style={{ textDecoration: "none" }}>Documentation</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
-                <a class='nav-link fs-6' href='https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_2025-06-30.pdf' rel="noreferrer" target="_blank" style={{ textDecoration: "none" }}>Datasheet</a>
+                <a class='nav-link fs-6' href='https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_Datasheet_v2_2025-07-10.pdf' rel="noreferrer" target="_blank" style={{ textDecoration: "none" }}>Datasheet</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
                 <a class='nav-link fs-6' href='/#homePagePricing' style={{ textDecoration: "none" }}>Pricing</a>
