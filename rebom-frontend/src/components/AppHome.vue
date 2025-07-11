@@ -56,6 +56,9 @@
                         <a href="#" @click="downloadArtifact(b)" title="Download Bom">
                             <vue-feather type="download"/>
                         </a>
+                        <a href="#" @click="downloadCSV(b)" title="Download Bom">
+                            <vue-feather type="table"/>
+                        </a>
                     </td>
                 </tr>
             </tbody>
@@ -137,6 +140,36 @@ async function downloadArtifact(bom: any) {
         
         // Create a download link
         const blob = new Blob([JSON.stringify(bomContent)], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = fileName;
+        link.click();
+    } catch (error) {
+        console.error('Error downloading BOM:', error);
+    }
+}
+
+async function downloadCSV(bom: any) {
+    try {
+        // Using GraphQL bomById query
+        const response = await graphqlClient.query({
+            query: gql`
+                query getBomByIdCsv($id: ID, $org: ID) {
+                    bomByIdCsv(id: $id, org: $org)
+                }
+            `,
+            variables: { id: 'c76dad06-aa79-47f0-8e21-030e61f652e7', org: '00000000-0000-0000-0000-000000000001' },
+            fetchPolicy: 'no-cache'
+        });
+        
+        // Extract the BOM content
+        const bomContent = response.data.bomByIdCsv;
+        // const bomName = response.data.bomByIdCsv.metadata.component.name || 'bom';
+        // const bomVersion = response.data.bomByIdCsv.metadata.component.version || '';
+        const fileName = '1.csv';
+        
+        // Create a download link
+        const blob = new Blob([bomContent], { type: 'text/csv' });
         const link = document.createElement('a');
         link.href = window.URL.createObjectURL(blob);
         link.download = fileName;

@@ -12,36 +12,65 @@ import { v4 as uuidv4 } from 'uuid';
 
 const utils = require('./utils')
 
-// Converts BOM object(s) to CSV string
+// Converts CycloneDX BOM object(s) to CSV string with component information
 export function bomToCsv(bom: any): string {
-  // If bom is an array, process as array, else wrap in array
-  const boms = Array.isArray(bom) ? bom : [bom];
-  if (boms.length === 0) return '';
-
-  // Pick some common fields for CSV output
+  // Define the fields we want for components
   const fields = [
-    'serialNumber',
     'name',
     'group',
     'version',
-    'bomVersion',
-    'hash',
-    'createdDate',
-    'lastUpdatedDate'
+    'purl',
+    'author',
+    'license'
   ];
 
   // CSV header
   const header = fields.join(',');
-  // CSV rows
-  const rows = boms.map(b => {
-    return fields.map(f => {
-      // Try meta, bom, or top-level
-      if (b.meta && b.meta[f] !== undefined) return JSON.stringify(b.meta[f]);
-      if (b.bom && b.bom[f] !== undefined) return JSON.stringify(b.bom[f]);
-      if (b[f] !== undefined) return JSON.stringify(b[f]);
-      return '';
-    }).join(',');
+  let rows: string[] = [];
+
+  // Process single or array of boms
+  const boms = Array.isArray(bom) ? bom : [bom];
+  if (boms.length === 0) return '';
+
+  // Process each bom
+  boms.forEach(b => {
+    // Check if this is a CDX bom with components
+    if (b && b.components && Array.isArray(b.components)) {
+      // Process each component
+      b.components.forEach((component: any) => {
+        const row = fields.map(field => {
+          // Handle special cases
+          if (field === 'license') {
+            // License might be in different formats in CycloneDX
+            if (component.licenses && Array.isArray(component.licenses)) {
+              const licenseIds = component.licenses
+                .map((license: any) => {
+                  if (license.license && license.license.id) return license.license.id;
+                  if (license.license && license.license.name) return license.license.name;
+                  if (typeof license === 'string') return license;
+                  return '';
+                })
+                .filter(Boolean);
+              return JSON.stringify(licenseIds.join('; '));
+            }
+            return '';
+          }
+          
+          if (field === 'author') {
+            // Author might be in publisher or author field
+            const author = component.publisher || component.author || '';
+            return JSON.stringify(author);
+          }
+          
+          // Regular field access
+          return JSON.stringify(component[field] || '');
+        }).join(',');
+        
+        rows.push(row);
+      });
+    }
   });
+
   return [header, ...rows].join('\n');
 }
 

@@ -12,11 +12,13 @@
 - [x] Design the SBOM export feature interface.
 - [x] Create new GraphQL endpoints for CSV export (bomById, rawBomId, mergeAndStoreBoms).
 - [x] Implement CSV export functionality for SBOM (basic stub).
-- [ ] Fix or improve bomToCsv function.
-- [ ] Implement full CSV export logic for SBOM (handle nested/component data, formatting, etc).
+- [x] Fix or improve bomToCsv function.
+- [x] Implement full CSV export logic for SBOM (handle nested/component data, formatting, etc).
+- [ ] Test CSV export functionality with CycloneDX BOMs.
+- [ ] Document the CSV export process for users.
 - [ ] Implement Excel export functionality for SBOM.
-- [ ] Test CSV and Excel export features.
-- [ ] Document the export process for users.
+- [ ] Test Excel export features.
+- [ ] Document the Excel export process for users.
 
 ## Current Goal
-Design and implement full CSV export logic.
+Test the CSV export functionality with CycloneDX BOMs.
