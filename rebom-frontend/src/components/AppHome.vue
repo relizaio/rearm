@@ -53,10 +53,7 @@
                     <td class="text-left">{{ b.name }}</td>
                     <td class="text-left">{{ b.version }}</td>
                     <td class="text-left">
-                        <a :href="'/restapi/bomById/' + b.uuid" target="_blank" rel="noopener noreferrer" title="Open Bom in New Tab">
-                            <vue-feather type="eye"/>
-                        </a>
-                        <a :href="'/restapi/bomById/' + b.uuid + '?download=true'" target="_blank" rel="noopener noreferrer" title="Download Bom">
+                        <a href="#" @click="downloadArtifact(b)" title="Download Bom">
                             <vue-feather type="download"/>
                         </a>
                     </td>
@@ -118,6 +115,36 @@ const bomsTest = [
     actions: '5'
   }
 ]
+
+async function downloadArtifact(bom: any) {
+    try {
+        // Using GraphQL bomById query
+        const response = await graphqlClient.query({
+            query: gql`
+                query getBomById($id: ID, $org: ID) {
+                    bomById(id: $id, org: $org)
+                }
+            `,
+            variables: { id: 'c76dad06-aa79-47f0-8e21-030e61f652e7', org: '00000000-0000-0000-0000-000000000001' },
+            fetchPolicy: 'no-cache'
+        });
+        
+        // Extract the BOM content
+        const bomContent = response.data.bomById;
+        const bomName = response.data.bomById.metadata.component.name || 'bom';
+        const bomVersion = response.data.bomById.metadata.component.version || '';
+        const fileName = `${bomName}-${bomVersion}.json`;
+        
+        // Create a download link
+        const blob = new Blob([JSON.stringify(bomContent)], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = fileName;
+        link.click();
+    } catch (error) {
+        console.error('Error downloading BOM:', error);
+    }
+}
 
 const searchQuery = ref('')
 const boms = ref<any[]>([])
