@@ -156,7 +156,13 @@ jobs:
       fi
       echo -n "--commit ${{ parameters.commit }} --commitmessage \"$(git log -1 --pretty='%s')\" --date $(git log -1 --date=iso-strict --pretty='%ad') --vcstype git " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       
-      #generate sboms
+      # establish purl
+      url4purl=oci://${{parameters.containerRegistry }}:${{parameters.imageRepository}}
+      docker pull registry.relizahub.com/library/url2purl-cli:25.07.0@sha256:05f849cfedbc31c6c8d11819e42efb4eb5e95198696978ca1ad84b010d52e952
+      purl=$(docker run --rm registry.relizahub.com/library/url2purl-cli:25.07.0@sha256:05f849cfedbc31c6c8d11819e42efb4eb5e95198696978ca1ad84b010d52e952 $url4purl)
+      echo "deliverable purl=$purl"
+      
+      # generate sboms
       if [ "${{ parameters.enableSbom }}" = "true" ]; then
         if [ "${{ parameters.sbomType }}" = "dotnet" ]; then
             dotnet-CycloneDX ${{ parameters.dotnetSlnFilePath }} -o ./ -fn fs.cdx.bom.json -j
@@ -170,13 +176,14 @@ jobs:
         cdxgen -t docker -o docker.cdx.bom.tmp.json --project-version $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)
         # touch docker.cdx.bom.json
         # docker run --rm -v $(pwd)/:/data registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixocipurl -f /data/docker.cdx.bom.tmp.json -o /data/docker.cdx.bom.json --ociimage ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}@$(echo $docker_sha_256)
-        cat docker.cdx.bom.tmp.json | docker run -i --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixocipurl --ociimage ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}@$(echo $docker_sha_256) > docker.cdx.bom.json
+        cat docker.cdx.bom.tmp.json | docker run -i --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixpurl --newpurl "${purl}" > docker.cdx.bom.json
         echo -n "--odelartsjson '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/docker.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       fi
 
       echo -n "--odelid ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:latest " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       echo -n "--odelbuildid azuredevops${{ parameters.tag }} " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       echo -n "--odelbuilduri ${{ parameters.buildUri }} " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--odelidentifiers \"PURL:${purl}\" " >> rearm_command
       echo -n "--odelcimeta azuredevops " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       echo -n "--odeltype CONTAINER " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       echo -n "--odeldigests $(echo $docker_sha_256) " >>  $(Pipeline.Workspace)/variables/REARM_COMMAND
