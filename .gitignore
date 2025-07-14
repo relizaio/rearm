@@ -9,3 +9,6 @@
 # Ignore AI plan temp/backup files
 **/ai-plans/*.tmp
 **/ai-plans/*~
+
+# local launch scripts
+**/launch_locally.sh
