@@ -157,6 +157,7 @@ type Mutation {
 enum BomMediaType {
     JSON
     CSV
+    EXCEL
 }
 
 type Deliverable {

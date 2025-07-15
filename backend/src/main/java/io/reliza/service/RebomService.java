@@ -40,8 +40,8 @@ public class RebomService {
 
     public enum BomMediaType {
         JSON,
-        CSV;
-        // EXCEL;
+        CSV,
+        EXCEL;
     }
     
     public RebomService(
@@ -123,7 +123,7 @@ public class RebomService {
         return bomJson;
     }
 
-    public String findBomByIdCsv(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
+    public String findBomByIdCsv(UUID bomSerialNumber, UUID org) {
         String query = """
             query bomByIdCsv ($id: ID, $org: ID) {
                 bomByIdCsv(id: $id, org: $org)
@@ -134,7 +134,20 @@ public class RebomService {
         variables.put("org", org.toString());
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         var br = response.get("bomByIdCsv");
-        log.info("PSDEBUG: bomByIdCsv: {}", br);
+        return br.toString();
+    }
+
+    public String findBomByIdExcel(UUID bomSerialNumber, UUID org) {
+        String query = """
+            query bomByIdExcel ($id: ID, $org: ID) {
+                bomByIdExcel(id: $id, org: $org)
+            }
+        """;
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("id", bomSerialNumber.toString());
+        variables.put("org", org.toString());
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var br = response.get("bomByIdExcel");
         return br.toString();
     }
 

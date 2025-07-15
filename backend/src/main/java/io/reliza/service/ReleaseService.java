@@ -658,6 +658,8 @@ public class ReleaseService {
 			mergedBom = mergedBomJsonNode.toString();
 		} else if (mediaType == BomMediaType.CSV) {
 			mergedBom = rebomService.findBomByIdCsv(releaseBomId, org);
+		} else if (mediaType == BomMediaType.EXCEL) {
+			mergedBom = rebomService.findBomByIdExcel(releaseBomId, org);
 		}
 		return mergedBom;
 	}
