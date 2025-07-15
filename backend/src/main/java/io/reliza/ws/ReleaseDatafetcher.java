@@ -97,6 +97,7 @@ import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
 import io.reliza.service.VcsRepositoryService;
 import io.reliza.service.oss.OssReleaseService;
+import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
 import lombok.extern.slf4j.Slf4j;
 
@@ -211,7 +212,8 @@ public class ReleaseDatafetcher {
 			@InputArgument("release") String releaseUuidStr,
 			@InputArgument("tldOnly") Boolean tldOnly,
 			@InputArgument("structure") BomStructureType structure,
-			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo
+			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
+			@InputArgument("mediaType") BomMediaType mediaType
 			) throws RelizaException, JsonProcessingException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -227,8 +229,11 @@ public class ReleaseDatafetcher {
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		ReleaseData rd = (ReleaseData) ro;
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-
-		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, belongsTo, structure, rd.getOrg(), wu);
+		if (null == mediaType) {
+			mediaType = BomMediaType.JSON;
+		}
+		log.info("mediaType: {}", mediaType);
+		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, belongsTo, structure, mediaType, rd.getOrg(), wu);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

@@ -60,6 +60,7 @@ import io.reliza.model.tea.Rebom.RebomResponse;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.service.IntegrationService.UploadableBom;
+import io.reliza.service.RebomService.BomMediaType;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
@@ -452,7 +453,7 @@ public class ArtifactService {
 	public String getArtifactBomLatestVersion(UUID id, UUID org) throws RelizaException{
 		JsonNode bom;
 		try {
-			bom = rebomService.findBomById(id, org);
+			bom = rebomService.findBomByIdJson(id, org);
 		} catch (JsonProcessingException e) {
 			log.error("Error finding bom by ID", e);
 			throw new RelizaException(e.getMessage());

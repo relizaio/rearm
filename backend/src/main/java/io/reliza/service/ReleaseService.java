@@ -99,6 +99,7 @@ import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.versioning.VersionApi.ActionEnum;
@@ -644,16 +645,20 @@ public class ReleaseService {
 		return getDeliverableService.getDeliverableDataList(deliverableUuids);
 	}
 
-	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu) throws RelizaException, JsonProcessingException{
+	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu) throws RelizaException, JsonProcessingException{
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElseThrow();
 		RebomOptions mergeOptions = new RebomOptions(belongsTo, tldOnly, structure);
 		UUID releaseBomId = matchOrGenerateSingleBomForRelease(rd, mergeOptions, wu);
 		if(null == releaseBomId){
 			throw new RelizaException("No SBOMs found!");
 		}
-		JsonNode mergedBomJsonNode = rebomService.findBomById(releaseBomId, org);
-		String mergedBom = mergedBomJsonNode.toString();
-	
+		String mergedBom = "";
+		if (mediaType == BomMediaType.JSON){
+			JsonNode mergedBomJsonNode = rebomService.findBomByIdJson(releaseBomId, org);
+			mergedBom = mergedBomJsonNode.toString();
+		} else if (mediaType == BomMediaType.CSV) {
+			mergedBom = rebomService.findBomByIdCsv(releaseBomId, org);
+		}
 		return mergedBom;
 	}
 	

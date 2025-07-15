@@ -128,7 +128,7 @@ type Mutation {
 	removeReleaseArtifact(artifactUuid: ID!, releaseUuid: ID!): Boolean
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
-	releaseSbomExport(release: ID!, tldOnly: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum): String
+	releaseSbomExport(release: ID!, tldOnly: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType): String
 
 	# Programmatic
 	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
@@ -152,6 +152,11 @@ type Mutation {
 	logout: Boolean
 	updateEmailAddress(oldEmail: String!, newEmail: String!, makePrimary: Boolean!, acceptMarketing: Boolean!): Boolean
 	resendEmailVerification: Boolean
+}
+
+enum BomMediaType {
+    JSON
+    CSV
 }
 
 type Deliverable {

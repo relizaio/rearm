@@ -31,6 +31,7 @@ import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
+import io.reliza.service.RebomService.BomMediaType;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
@@ -79,7 +80,7 @@ public class SharedArtifactService {
         log.info("download artifacts for ad: {}", ad);
 
 		if(null != ad.getInternalBom()){
-			String rebom = rebomService.findBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+			String rebom = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg()).toString();
 			byte[] byteArray = rebom.getBytes();
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);

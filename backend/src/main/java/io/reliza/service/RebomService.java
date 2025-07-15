@@ -37,6 +37,12 @@ public class RebomService {
 		FLAT,
 		HIERARCHICAL;
 	}
+
+    public enum BomMediaType {
+        JSON,
+        CSV;
+        // EXCEL;
+    }
     
     public RebomService(
 		@Value("${relizaprops.rebom.url}") String rebomHost
@@ -102,12 +108,12 @@ public class RebomService {
         RebomResponse bomResponse = clonedMapper.convertValue(response.get("addBom"), RebomResponse.class);
         return bomResponse;
     }
-    public JsonNode findBomById(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
+    public JsonNode findBomByIdJson(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
         String query = """
             query bomById ($id: ID, $org: ID) {
                 bomById(id: $id, org: $org)
-            }""";
-        
+            }
+        """;
         Map<String, Object> variables = new HashMap<>();
         variables.put("id", bomSerialNumber.toString());
         variables.put("org", org.toString());
@@ -115,8 +121,23 @@ public class RebomService {
         var br = response.get("bomById");
         JsonNode bomJson = Utils.OM.valueToTree(br);
         return bomJson;
-
     }
+
+    public String findBomByIdCsv(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
+        String query = """
+            query bomByIdCsv ($id: ID, $org: ID) {
+                bomByIdCsv(id: $id, org: $org)
+            }
+        """;
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("id", bomSerialNumber.toString());
+        variables.put("org", org.toString());
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var br = response.get("bomByIdCsv");
+        log.info("PSDEBUG: bomByIdCsv: {}", br);
+        return br.toString();
+    }
+
     public JsonNode findRawBomById(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
         String query = """
             query rawBomId ($id: ID, $org: ID) {
@@ -241,7 +262,6 @@ public class RebomService {
         // Configure the cloned ObjectMapper to ignore unknown properties
         clonedMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     
-        @SuppressWarnings("unchecked")
         RebomResponse bomResponse = clonedMapper.convertValue(response.get("mergeAndStoreBoms"), RebomResponse.class);
         String bomSerialNumber = bomResponse.meta().serialNumber();
         if(bomSerialNumber.startsWith("urn")){
