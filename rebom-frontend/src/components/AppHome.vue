@@ -60,7 +60,7 @@
                             <vue-feather type="table"/>
                         </a>
                         <a href="#" @click="downloadExcel(b)" title="Download Bom Excel">
-                            <vue-feather type="download"/>
+                            <vue-feather type="book-open"/>
                         </a>
                     </td>
                 </tr>
@@ -131,7 +131,7 @@ async function downloadArtifact(bom: any) {
                     bomById(id: $id, org: $org)
                 }
             `,
-            variables: { id: 'c76dad06-aa79-47f0-8e21-030e61f652e7', org: '00000000-0000-0000-0000-000000000001' },
+            variables: { id: bom.meta.serialNumber, org: '00000000-0000-0000-0000-000000000001' },
             fetchPolicy: 'no-cache'
         });
         
@@ -161,7 +161,7 @@ async function downloadCSV(bom: any) {
                     bomByIdCsv(id: $id, org: $org)
                 }
             `,
-            variables: { id: 'c76dad06-aa79-47f0-8e21-030e61f652e7', org: '00000000-0000-0000-0000-000000000001' },
+            variables: { id: bom.meta.serialNumber, org: '00000000-0000-0000-0000-000000000001' },
             fetchPolicy: 'no-cache'
         });
         
@@ -191,7 +191,7 @@ async function downloadExcel(bom: any) {
                     bomByIdExcel(id: $id, org: $org)
                 }
             `,
-            variables: { id: 'c76dad06-aa79-47f0-8e21-030e61f652e7', org: '00000000-0000-0000-0000-000000000001' },
+            variables: { id: bom.meta.serialNumber, org: '00000000-0000-0000-0000-000000000001' },
             fetchPolicy: 'no-cache'
         });
         
