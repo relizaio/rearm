@@ -140,7 +140,7 @@ type Mutation {
 	addArtifactProgrammatic(artifactInput: AddArtifactInput): Release
 	approveReleaseProgrammatic(releaseApprovals: ReleaseApprovalProgrammaticInput!): Release
 	synchronizeLiveBranches(synchronizeBranchInput: SynchronizeBranchInput!): Boolean
-
+	releasecompletionfinalizerProgrammatic(release: ID!): Boolean
 	removeUser(orgUuid: ID!, userUuid: ID!): Boolean
 
 

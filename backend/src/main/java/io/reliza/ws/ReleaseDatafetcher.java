@@ -99,6 +99,7 @@ import io.reliza.service.VcsRepositoryService;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
+import io.reliza.service.ReleaseFinalizerService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -164,6 +165,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	IntegrationService integrationService;
+
+	@Autowired
+	ReleaseFinalizerService releaseFinalizerService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "release")
@@ -764,6 +768,28 @@ public class ReleaseDatafetcher {
 		// return releaseService.addArtifacts(ord.get(), addArtifactDto.getArtifacts(), ar.getWhoUpdated());
 	}
 
+	@DgsData(parentType = "Mutation", field = "releasecompletionfinalizerProgrammatic")
+	public Boolean releasecompletionfinalizerProgrammatic(@InputArgument("release") UUID releaseId, DgsDataFetchingEnvironment dfe) {
+		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
+		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
+		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+
+		Optional<ReleaseData> ord = Optional.empty();
+		ord = sharedReleaseService.getReleaseData(releaseId);
+		if (ord.isEmpty()) throw new RuntimeException("Wrong release");
+
+		ReleaseData rd = ord.get();
+		UUID componentId = rd.getComponent();
+
+		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
+		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+
+		releaseFinalizerService.finalizeRelease(rd.getUuid());
+		return true;
+	}
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "removeReleaseArtifact")
 	public Boolean removeReleaseArtifact(DgsDataFetchingEnvironment dfe,
