@@ -58,6 +58,7 @@
                         <n-radio-group v-model:value="selectedSbomMediaType" name="sbomMediaType">
                             <n-radio-button value="JSON">JSON</n-radio-button>
                             <n-radio-button value="CSV">CSV</n-radio-button>
+                            <n-radio-button value="EXCEL">EXCEL</n-radio-button>
                         </n-radio-group>
                     </n-form-item>
                     <n-form-item>
@@ -1429,17 +1430,20 @@ async function exportReleaseSbom (tldOnly: boolean, selectedBomStructureType: st
             },
             fetchPolicy: 'no-cache'
         })
-        let blobType = mediaType === 'JSON' ? 'application/json' : 'text/csv'
+        let blobType = mediaType === 'JSON' ? 'application/json' : mediaType === 'EXCEL' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv'
         let exportContent = gqlResp.data.releaseSbomExport
         if (mediaType === 'JSON') {
             if (typeof exportContent !== 'string') {
                 exportContent = JSON.stringify(exportContent, null, 2)
             }
+        } else if (mediaType === 'EXCEL') {
+            const binary = atob(exportContent);
+            exportContent = Uint8Array.from(binary, c => c.charCodeAt(0));
         }
         const blob = new Blob([exportContent], { type: blobType })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
-        link.download = updatedRelease.value.uuid + '-sbom.' + mediaType
+        link.download = updatedRelease.value.uuid + '-sbom.' + (mediaType === 'EXCEL' ? 'xlsx' : mediaType.toLowerCase())
         link.click()
     } catch (err: any) {
         Swal.fire(
