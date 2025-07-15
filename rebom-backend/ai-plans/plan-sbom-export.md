@@ -16,9 +16,9 @@
 - [x] Implement full CSV export logic for SBOM (handle nested/component data, formatting, etc).
 - [x] Test CSV export functionality with CycloneDX BOMs.
 - [ ] Document the CSV export process for users.
-- [ ] Implement Excel export functionality for SBOM.
+- [x] Implement Excel export functionality for SBOM.
 - [ ] Test Excel export features.
 - [ ] Document the Excel export process for users.
 
 ## Current Goal
-Test the CSV export functionality with CycloneDX BOMs.
+Test the Excel export endpoints and document the Excel export process for users.

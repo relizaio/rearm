@@ -3,6 +3,8 @@ import gql from 'graphql-tag';
 // The GraphQL schema
 const typeDefs = gql`
   type Query {
+    bomByIdExcel(id: ID, org: ID): String
+    rawBomIdExcel(id: ID, org: ID): String
     hello: String
     dbtest: String
     allBoms: [Bom]
@@ -17,6 +19,7 @@ const typeDefs = gql`
   }
 
   type Mutation {
+    mergeAndStoreBomsExcel(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): String
     addBom(bomInput: BomInput!): Bom
     mergeAndStoreBoms(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): Bom
     mergeAndStoreBomsCsv(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): String

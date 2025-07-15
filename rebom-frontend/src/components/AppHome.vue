@@ -56,8 +56,11 @@
                         <a href="#" @click="downloadArtifact(b)" title="Download Bom">
                             <vue-feather type="download"/>
                         </a>
-                        <a href="#" @click="downloadCSV(b)" title="Download Bom">
+                        <a href="#" @click="downloadCSV(b)" title="Download Bom CSV">
                             <vue-feather type="table"/>
+                        </a>
+                        <a href="#" @click="downloadExcel(b)" title="Download Bom Excel">
+                            <vue-feather type="download"/>
                         </a>
                     </td>
                 </tr>
@@ -170,6 +173,38 @@ async function downloadCSV(bom: any) {
         
         // Create a download link
         const blob = new Blob([bomContent], { type: 'text/csv' });
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = fileName;
+        link.click();
+    } catch (error) {
+        console.error('Error downloading BOM:', error);
+    }
+}
+
+async function downloadExcel(bom: any) {
+    try {
+        // Using GraphQL bomById query
+        const response = await graphqlClient.query({
+            query: gql`
+                query getBomByIdExcel($id: ID, $org: ID) {
+                    bomByIdExcel(id: $id, org: $org)
+                }
+            `,
+            variables: { id: 'c76dad06-aa79-47f0-8e21-030e61f652e7', org: '00000000-0000-0000-0000-000000000001' },
+            fetchPolicy: 'no-cache'
+        });
+        
+        // Extract the BOM content
+        const bomContent = response.data.bomByIdExcel;
+        // const bomName = response.data.bomByIdCsv.metadata.component.name || 'bom';
+        // const bomVersion = response.data.bomByIdCsv.metadata.component.version || '';
+        const fileName = '1.xlsx';
+        
+        // Create a download link
+        const binary = atob(bomContent);
+        const array = Uint8Array.from(binary, c => c.charCodeAt(0));
+        const blob = new Blob([array], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const link = document.createElement('a');
         link.href = window.URL.createObjectURL(blob);
         link.download = fileName;

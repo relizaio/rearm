@@ -1,5 +1,5 @@
-import { isSupportedSpdxId } from '@cyclonedx/cyclonedx-library/dist.d/spdx';
 import * as CDX from '@cyclonedx/cyclonedx-library';
+import ExcelJS from 'exceljs';
 import * as BomRepository from './bomRespository';
 import { logger } from './logger';
 import { fetchFromOci, OASResponse, pushToOci } from './ociService';
@@ -8,12 +8,66 @@ import validateBom from './validateBom';
 const canonicalize = require ('canonicalize')
 import { createHash } from 'crypto';
 import { PackageURL } from 'packageurl-js'
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from 'uuid'
 
 const utils = require('./utils')
 
+export async function bomToExcel(bom: any): Promise<string> {
+  const fields = [
+    'name',
+    'group',
+    'version',
+    'purl',
+    'author',
+    'license'
+  ];
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('SBOM');
+
+  worksheet.addRow(fields);
+
+  const boms = Array.isArray(bom) ? bom : [bom];
+  if (boms.length !== 0) {
+
+    boms.forEach(b => {
+      if (b && b.components && Array.isArray(b.components)) {
+        b.components.forEach((component: any) => {
+          const row = fields.map(field => {
+            if (field === 'license') {
+              if (component.licenses && Array.isArray(component.licenses)) {
+                const licenseIds = component.licenses
+                  .map((license: any) => {
+                    if (license.license && license.license.id) return license.license.id;
+                    if (license.license && license.license.name) return license.license.name;
+                    if (typeof license === 'string') return license;
+                    return '';
+                  })
+                  .filter(Boolean);
+                return licenseIds.join('; ');
+              }
+              return '';
+            }
+            if (field === 'author') {
+              const author = component.publisher || component.author || '';
+              return author;
+            }
+            return component[field] || '';
+          });
+          worksheet.addRow(row);
+        });
+      }
+    });
+  }
+
+  const xlsxBuffer = await workbook.xlsx.writeBuffer()
+  const xlsxContent = Buffer.from(xlsxBuffer).toString('base64')
+  return xlsxContent
+}
+
 // Converts CycloneDX BOM object(s) to CSV string with component information
 export function bomToCsv(bom: any): string {
+
   // Define the fields we want for components
   const fields = [
     'name',
