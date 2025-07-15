@@ -45,7 +45,6 @@
                         </n-radio-group>
                     </n-form-item>
                         <n-form-item label="Select structure">
-                        
                         <n-radio-group v-model:value="selectedBomStructureType" name="bomStructureType">
                             <n-radio-button
                                 v-for="abtn in bomStructureTypes"
@@ -55,13 +54,19 @@
                             />
                         </n-radio-group>
                     </n-form-item>
+                    <n-form-item label="Media Type">
+                        <n-radio-group v-model:value="selectedSbomMediaType" name="sbomMediaType">
+                            <n-radio-button value="JSON">JSON</n-radio-button>
+                            <n-radio-button value="CSV">CSV</n-radio-button>
+                        </n-radio-group>
+                    </n-form-item>
                     <n-form-item>
                         Top Level Dependency only: <n-switch v-model:value="tldOnly"/>
                     </n-form-item>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
                             :disabled="bomExportPending"
-                            @click="exportReleaseSbom(tldOnly, selectedBomStructureType, selectedRebomType)">
+                            @click="exportReleaseSbom(tldOnly, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
                             <span v-if="bomExportPending" class="ml-2">Exporting...</span>
                             <span v-else>Export</span>
                         </n-button>
@@ -632,6 +637,9 @@ async function fetchRelease () {
 }
 
 // BOM EXPORT
+
+// Media type for SBOM export
+const selectedSbomMediaType = ref('JSON')
 
 //getAggregatedChangelog
 const showExportSBOMModal: Ref<boolean> = ref(false)
@@ -1403,28 +1411,35 @@ const downloadRawArtifact = async (art: any) => {
     })
 }
 
-async function exportReleaseSbom (tldOnly: boolean, selectedBomStructureType: string, selectedRebomType: string) {
+async function exportReleaseSbom (tldOnly: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
     try {
         bomExportPending.value = true
         const gqlResp: any = await graphqlClient.mutate({
             mutation: gql`
-                mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum) {
-                    releaseSbomExport(release: $release, tldOnly: $tldOnly, structure: $structure, belongsTo: $belongsTo)
+                mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType) {
+                    releaseSbomExport(release: $release, tldOnly: $tldOnly, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType)
                 }
             `,
             variables: {
                 release: updatedRelease.value.uuid,
                 tldOnly: tldOnly,
                 structure: selectedBomStructureType,
-                belongsTo: selectedRebomType ? selectedRebomType : null
+                belongsTo: selectedRebomType ? selectedRebomType : null,
+                mediaType: mediaType.toUpperCase()
             },
             fetchPolicy: 'no-cache'
         })
-        const fileName = release + '.json'
-        const blob = new Blob([gqlResp.data.releaseSbomExport], { type: 'application/json' })
+        let blobType = mediaType === 'JSON' ? 'application/json' : 'text/csv'
+        let exportContent = gqlResp.data.releaseSbomExport
+        if (mediaType === 'JSON') {
+            if (typeof exportContent !== 'string') {
+                exportContent = JSON.stringify(exportContent, null, 2)
+            }
+        }
+        const blob = new Blob([exportContent], { type: blobType })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
-        link.download = updatedRelease.value.uuid + '-sbom.json'
+        link.download = updatedRelease.value.uuid + '-sbom.' + mediaType
         link.click()
     } catch (err: any) {
         Swal.fire(
