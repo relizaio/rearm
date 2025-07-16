@@ -1,4 +1,4 @@
-import { mergeBomObjects, findBomObjectById } from "./bomService"
+import { mergeBomObjects, findBomObjectById, overrideRootComponent } from "./bomService"
 import { logger } from './logger';
 import { RebomOptions } from './types';
 
@@ -6,19 +6,30 @@ import { RebomOptions } from './types';
 const utils = require('./utils')
 import { BomDiffResult, ComponentDiff } from "./bomDiffResult.interface"
 async function mergeBomsForDiff(ids:[string], org: string){
-    const bomRecords =  await Promise.all(ids.map(async(id) => findBomObjectById(id, org)))
+
     const rebomOptions: RebomOptions = {
-        structure: "", group: "rearmrebom", name: "diff-temp", version: "1",
-        serialNumber: "",
-        belongsTo: "",
-        notes: "",
-        tldOnly: false,
-        bomState: "",
-        mod: "",
-        storage: "",
-        stripBom: "",
-        bomVersion: ""
-    }
+      structure: "", group: "rearmrebom", name: "diff-temp", version: "1",
+      serialNumber: "",
+      belongsTo: "",
+      notes: "",
+      tldOnly: false,
+      bomState: "",
+      mod: "",
+      storage: "",
+      stripBom: "",
+      bomVersion: ""
+  }
+
+    const bomRecords =  await Promise.all(ids.map(async(id, index : number) => {
+      
+        const bomRecord = await findBomObjectById(id, org)
+        // override the root component, with a purl and version, the purl is a custom purl specific to the diff functionality and injected into the bom just so the root component don't show up in diff
+        const overriddenBom = overrideRootComponent(bomRecord, {...rebomOptions, version: "1"+ index, purl: "pkg:generic/diff/test@"+ index}, new Date())
+        
+        
+        return overriddenBom
+    }))
+
     return await mergeBomObjects(bomRecords, rebomOptions)
 
   }
@@ -52,6 +63,8 @@ async function mergeBomsForDiff(ids:[string], org: string){
       const fromBomPath : string = await utils.createTempFile(fromBomObj)
       const toBomPath : string = await utils.createTempFile(toBomObj)
       const command = ['diff']
+      // logger.info(`fromBomPath: ${fromBomPath}`)
+      // logger.info(`toBomPath: ${toBomPath}`)
       command.push(
         '--from-format', 'json',
         '--to-format', 'json',

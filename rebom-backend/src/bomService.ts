@@ -482,73 +482,81 @@ function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions
     return purlStr
 }
 
+export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, lastUpdatedDate?: string | Date): any {
+    const newMetadata = { ...bom.metadata };
+    // Generate new purl
+    const origPurl = (bom.metadata && bom.metadata.component && bom.metadata.component.purl) ? bom.metadata.component.purl : undefined;
+    const newPurl = establishPurl(origPurl, rebomOverride);
+    logger.debug(`established purl: ${newPurl}`);
+
+    // Override metadata
+    newMetadata.component = {
+        ...newMetadata.component,
+        purl: newPurl,
+        ['bom-ref']: newPurl,
+        name: rebomOverride.name,
+        version: rebomOverride.version,
+        group: rebomOverride.group
+    };
+    newMetadata['authors'] = [{ name: rebomOverride.group }];
+    newMetadata['supplier'] = { name: rebomOverride.group };
+    if (lastUpdatedDate) {
+        newMetadata['timestamp'] = (new Date(lastUpdatedDate)).toISOString();
+    }
+
+    // Update dependencies
+    const rootdepIndex = computeRootDepIndex(bom);
+    const dependenciesArray = Array.isArray(bom.dependencies) ? bom.dependencies : [];
+    const newDependencies = [...dependenciesArray];
+    if (rootdepIndex > -1) newDependencies[rootdepIndex]['ref'] = newPurl;
+
+    // Return new BOM object
+    return {
+        ...bom,
+        metadata: newMetadata,
+        dependencies: newDependencies
+    };
+}
+
 function rootComponentOverride(bomRecord: BomRecord): any {
-    const rebomOverride = bomRecord.meta
-    const bom = bomRecord.bom
+  const rebomOverride = bomRecord.meta;
+  const bom = bomRecord.bom;
+  if (!rebomOverride) return bom;
+  const overriddenBom = overrideRootComponent(bom, rebomOverride, bomRecord.last_updated_date);
+  return attachRebomToolToBom(overriddenBom);
+}
 
-    if (!rebomOverride) return bom
-    
-    const newBom: any = {}
-    const rootdepIndex = computeRootDepIndex(bom)
-    const origPurl = (bom.metadata && bom.metadata.component && bom.metadata.component.purl) ? bom.metadata.component.purl : undefined
-    const newPurl = establishPurl(origPurl, rebomOverride)
-    logger.debug(`established purl: ${newPurl}`)
-    newBom.metadata = bom.metadata
-    newBom.metadata.component.purl = newPurl
-    newBom.metadata.component['bom-ref'] = newPurl
-    newBom.metadata.component['name'] = rebomOverride.name 
-    newBom.metadata.component['version'] = rebomOverride.version
-    // newBom.metadata.component['type'] = rebomOverride.belongsTo?.toLowerCase() ?? 'application'
-    newBom.metadata.component['group'] = rebomOverride.group
-    newBom.metadata['authors'] = [{name: rebomOverride.group}]
-    newBom.metadata['supplier'] = {name: rebomOverride.group}
-    newBom.metadata['timestamp'] = (new Date(bomRecord.last_updated_date)).toISOString()
 
-    newBom.dependencies = bom.dependencies
-  
-    if(rootdepIndex > -1) newBom.dependencies[rootdepIndex]['ref'] = newPurl
-  
-    const finalBom = Object.assign(bom, newBom)
-
+function createRebomToolObject(specVersion: string) {
     const rebomTool: any = {
-      "type": "application",
-      "name": "rebom",
-      "group": "io.reliza",
-      version: process.env.npm_package_version,
-      supplier: {
-        name: "Reliza Incorporated"
-      },
-      "description": "Catalog of SBOMs",
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ],
-      "externalReferences": [
-        {
-          "url": "ssh://git@github.com/relizaio/rebom.git",
-          "type": "vcs"
-        },
-        {
-          "url": "https://reliza.io",
-          "type": "website"
-        }
-      ]
-    }
-    if (finalBom.specVersion === '1.6' ) {
-        rebomTool["authors"] = [{
-            name: "Reliza Incorporated",
-            email: "info@reliza.io"
-        }]
+        type: "application",
+        name: "rebom",
+        group: "io.reliza",
+        version: process.env.npm_package_version,
+        supplier: { name: "Reliza Incorporated" },
+        description: "Catalog of SBOMs",
+        licenses: [
+            { license: { id: "MIT" } }
+        ],
+        externalReferences: [
+            { url: "ssh://git@github.com/relizaio/rebom.git", type: "vcs" },
+            { url: "https://reliza.io", type: "website" }
+        ]
+    };
+    if (specVersion === '1.6') {
+        rebomTool["authors"] = [{ name: "Reliza Incorporated", email: "info@reliza.io" }];
     } else {
-      rebomTool["author"] = "Reliza Incorporated"
+        rebomTool["author"] = "Reliza Incorporated";
     }
-    if (!finalBom.metadata.tools) finalBom.metadata.tools = {components: []}
-    if (!finalBom.metadata.tools.components) finalBom.metadata.tools.components = []
-    finalBom.metadata.tools.components.push(rebomTool)
-    return finalBom
+    return rebomTool;
+}
+
+function attachRebomToolToBom(finalBom: any): any {
+    const rebomTool = createRebomToolObject(finalBom.specVersion);
+    if (!finalBom.metadata.tools) finalBom.metadata.tools = { components: [] };
+    if (!finalBom.metadata.tools.components) finalBom.metadata.tools.components = [];
+    finalBom.metadata.tools.components.push(rebomTool);
+    return finalBom;
 }
 
 function computeRootDepIndex (bom: any) : number {
