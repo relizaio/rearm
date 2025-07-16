@@ -1604,12 +1604,12 @@ public class ReleaseService {
 		computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases, lastScanned);
 		computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases, lastScanned);
 		computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases, lastScanned);
-		log.info("PSDEBUG: processed releases size = " + dedupProcessedReleases.size());
+		log.debug("processed releases size for metrics = " + dedupProcessedReleases.size());
 		
 		var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases);
 		computeMetricsForReleaseList(productReleases, dedupProcessedReleases, lastScanned);
 		
-		log.info("PSDEBUG: processed product releases size = " + productReleases.size());
+		log.debug("processed product releases size for metrics = " + productReleases.size());
 	}
 	
 	private List<Release> findProductReleasesFromComponentsForMetrics (Set<UUID> dedupProcessedReleases) {
