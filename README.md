@@ -36,7 +36,7 @@ ReARM is a xBOM management system that allows organizations to maintain complian
 - US Army [Memorandum](https://federalnewsnetwork.com/wp-content/uploads/2024/09/081624_Army_SBOM_Memo.pdf) on SBOMs
 - US executive order [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity) (later [amended](https://rearmhq.com/blog/sbom-remains-attestations-out-amending-executive-order-14144))
 - Section 524B of the US [FD&C Act](https://www.govinfo.gov/content/pkg/COMPS-973/pdf/COMPS-973.pdf) and its [guidance](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/cybersecurity-medical-devices-quality-system-considerations-and-content-premarket-submissions).
-- Reserve Bank of India (RBI) and the Securities and Exchange Board of India (SEBI) Cybersecurity and Cyber Resilience Framework SBOM requirements, i.e. described [here](https://www.sebi.gov.in/sebi_data/faqfiles/jun-2025/1749647139924.pdf)
+- Reserve Bank of India (RBI) and the Securities and Exchange Board of India (SEBI) Cybersecurity and Cyber Resilience Framework SBOM [requirements](https://www.sebi.gov.in/legal/circulars/aug-2024/cybersecurity-and-cyber-resilience-framework-cscrf-for-sebi-regulated-entities-res-_85964.html) with [faq](https://www.sebi.gov.in/sebi_data/faqfiles/jun-2025/1749647139924.pdf)
 
 While highlighting regulatory pressure, we strive to make sure that ReARM bears minimum or no overhead on developers and more so provides real value in terms of managing technology releases and their metadata. In other words, our goal is creating a product that would be useful for developers and managers, while also solving the compliance problem.
 
