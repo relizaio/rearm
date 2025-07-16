@@ -25,13 +25,15 @@ public class AcollectionData extends RelizaDataParent implements RelizaObject {
 	public record VersionedArtifact(UUID artifactUuid, Long version, ArtifactType type) {}
 	public record DiffComponent(String purl, String version) {}
 	public record ArtifactChangelog (Set<DiffComponent> added, Set<DiffComponent> removed) {}
-
+	public record ArtifactComparison (ArtifactChangelog changelog, UUID comparedReleaseUuid) {}
 	private UUID uuid;
 	private UUID release;
 	private UUID org;
 	private Long version;
 	private TeaCollectionUpdateReasonType updateReason;
+	@Deprecated
 	private ArtifactChangelog artifactChangelog;
+	private ArtifactComparison artifactComparison;
 	private Set<VersionedArtifact> artifacts = new HashSet<>();
 		
 	public static AcollectionData acollectionDataFactory(UUID org, UUID releaseUuid, Long version, Collection<VersionedArtifact> artifacts) {

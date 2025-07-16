@@ -9,6 +9,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -21,14 +22,18 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.CommonVariables.ReleaseEventType;
 import io.reliza.common.Utils;
+import io.reliza.model.AcollectionData;
 import io.reliza.model.BranchData;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.TextPayload;
+import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.ws.RelizaConfigProps;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 public class NotificationService {
 	
@@ -51,6 +56,9 @@ public class NotificationService {
 	private GetDeliverableService getDeliverableService;
 	
 	private RelizaConfigProps relizaConfigProps;
+
+	@Autowired
+	private OrganizationService organizationService;
 	
 	@Autowired
     public void setProps(RelizaConfigProps relizaConfigProps) {
@@ -200,5 +208,112 @@ public class NotificationService {
 		integrationService.sendNotification(rd.getOrg(), IntegrationType.SLACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER, payloadWrapper);
 		integrationService.sendNotification(rd.getOrg(), IntegrationType.MSTEAMS, CommonVariables.BASE_INTEGRATION_IDENTIFIER, payloadWrapper);
 	}
+
+	public void sendBomDiffAlert(UUID org, ReleaseData rd, ArtifactChangelog changelog){
+		Boolean isAlertEnabled = organizationService.isBomDiffAlertEnabled(org);
+
+		// early returns
+		
+
+		if(changelog.added() == null || changelog.added().isEmpty() || changelog.removed() == null || changelog.removed().isEmpty()) return;
+		
+		Optional<ComponentData> opd = getComponentService.getComponentData(rd.getComponent());
+		Optional<BranchData> obd =  branchService.getBranchData(rd.getBranch());
+		
+		if (!opd.isPresent() || !obd.isPresent()) return;
+		
+		ComponentData pd = opd.get();
+		BranchData bd = obd.get();
+		// ignore any external org
+		if (CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(pd.getOrg())) return;
+		
+		String projUri = null;
+		List<TextPayload> payloadWrapper = new LinkedList<>();
+		String productOrComponent = null;
+		String branchOrFeatureSet = null;
+		String releaseUri = relizaConfigProps.getBaseuri() + "/release/show/" + rd.getUuid();
+
+		if (pd.getType() == ComponentType.COMPONENT) {
+			projUri = relizaConfigProps.getBaseuri() + "/componentsOfOrg/" + pd.getOrg() + "/" + pd.getUuid();
+			productOrComponent = "component";
+			branchOrFeatureSet = "branch";
+		} else {
+			projUri = relizaConfigProps.getBaseuri() + "/productsOfOrg/" + pd.getOrg() + "/" + pd.getUuid();
+			productOrComponent = "product";
+			branchOrFeatureSet = "feature set";
+		}
+		
+		String branchUri = projUri + "/" + bd.getUuid();
+
+		payloadWrapper.add(new TextPayload("Bom diff on " + productOrComponent, null));
+		payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
+		payloadWrapper.add(new TextPayload(pd.getName(), URI.create(projUri)));
+		payloadWrapper.add(TextPayload.COMMA_SEPARATOR_TEXT_PAYLOAD);
+		payloadWrapper.add(new TextPayload(branchOrFeatureSet, null));
+		payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
+		payloadWrapper.add(new TextPayload(bd.getName(), URI.create(branchUri)));
+		payloadWrapper.add(TextPayload.COMMA_SEPARATOR_TEXT_PAYLOAD);
+		payloadWrapper.add(new TextPayload("version", null));
+		payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
+		payloadWrapper.add(new TextPayload(rd.getVersion(), URI.create(releaseUri)));
+
+		if(rd.getSourceCodeEntry() != null && pd.getVcs() != null){
+			var osced = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
+			var ovcsrd = vcsRepositoryService.getVcsRepositoryData(pd.getVcs());
+			if(osced.isPresent() && ovcsrd.isPresent()) {
+				payloadWrapper.add(new TextPayload(", commit ", null));
+				String commitStr = osced.get().getCommit().substring(0, Math.min(osced.get().getCommit().length(), 7));
+				String commitUri = Utils.linkifyCommit(ovcsrd.get().getUri(), osced.get().getCommit());
+				payloadWrapper.add(new TextPayload(commitStr, URI.create(commitUri)));
+				payloadWrapper.add(TextPayload.COMMA_SEPARATOR_TEXT_PAYLOAD);
+				payloadWrapper.add(new TextPayload("\"" + osced.get().getCommitMessage() + "\"", null));
+			}
+		}
+
+		// Added Components
+		if (changelog.added() != null && !changelog.added().isEmpty()) {
+			payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
+			payloadWrapper.add(new TextPayload("Added Components:", null));
+			int max = 10;
+			int count = 0;
+			for (AcollectionData.DiffComponent dc : changelog.added()) {
+				payloadWrapper.add(new TextPayload("- " + dc.purl() + " : " + dc.version(), null));
+				count++;
+				if (count >= max) break;
+			}
+			if (changelog.added().size() > max) {
+				payloadWrapper.add(new TextPayload("...and " + (changelog.added().size() - max) + " more added components", null));
+			}
+		}
+
+
+		// Removed Components
+		if (changelog.removed() != null && !changelog.removed().isEmpty()) {
+			payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
+			payloadWrapper.add(new TextPayload("Removed Components:", null));
+			int max = 10;
+			int count = 0;
+			for (AcollectionData.DiffComponent dc : changelog.removed()) {
+				payloadWrapper.add(new TextPayload("- " + dc.purl() + " : " + dc.version(), null));
+				count++;
+				if (count >= max) break;
+			}
+			if (changelog.removed().size() > max) {
+				payloadWrapper.add(new TextPayload("...and " + (changelog.removed().size() - max) + " more removed components", null));
+			}
+		}
+		if(!isAlertEnabled) {
+			//pretty print payload
+			log.info("Bom diff alert is disabled for org " + org + " and payload is \n" + payloadWrapper.stream().map(tp -> tp.text()).collect(Collectors.joining("\n")));
+		}else{
+			// Send notification to Slack and MSTeams
+			integrationService.sendNotification(rd.getOrg(), IntegrationType.SLACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER, payloadWrapper);
+			integrationService.sendNotification(rd.getOrg(), IntegrationType.MSTEAMS, CommonVariables.BASE_INTEGRATION_IDENTIFIER, payloadWrapper);
+		}
+
+		
+
+	}
+	
 }
 

@@ -19,9 +19,11 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.model.Acollection;
 import io.reliza.model.AcollectionData;
-import io.reliza.model.ArtifactData;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.AcollectionData.VersionedArtifact;
+import io.reliza.model.ArtifactData;
+import io.reliza.model.Branch;
+import io.reliza.model.ComponentData;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
@@ -40,6 +42,15 @@ public class AcollectionService {
 	
 	@Autowired
 	RebomService rebomService;
+
+	@Autowired
+	NotificationService notificationService;
+
+	@Autowired
+	GetComponentService getComponentService;
+
+	@Autowired
+	BranchService branchService;
 	
 	@Autowired
 	private ArtifactGatherService artifactGatherService;
@@ -132,8 +143,6 @@ public class AcollectionService {
 			ac.setUuid(curColData.getUuid());
 			ac = saveAcollection(ac, recordData, wu);
 			resolvedCollection = AcollectionData.dataFromRecord(ac);
-			//trigger bom diff calculation
-			releaseBomChangelogRoutine(rd.getUuid(), rd.getBranch(), rd.getOrg());
 		}
 		
 		return resolvedCollection;
@@ -157,22 +166,63 @@ public class AcollectionService {
 
 	@Async
 	public void releaseBomChangelogRoutine(UUID releaseId, UUID branch, UUID org){
-        UUID prevReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(branch, releaseId);
-        UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
-		log.info("prevReleaseId found: {}", prevReleaseId);
-		log.info("nextReleaseId found: {}", nextReleaseId);
-		if(null != prevReleaseId)
-	        resolveBomDiff(releaseId, prevReleaseId, org);
+
+		UUID prevReleaseId = null;
+
+		AcollectionData acd = getLatestCollectionDataOfRelease(releaseId);
+
+		if(null != acd && null != acd.getArtifactComparison() && null != acd.getArtifactComparison().comparedReleaseUuid()) {
+			prevReleaseId = acd.getArtifactComparison().comparedReleaseUuid();
+		}else{
+			prevReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(branch, releaseId);
+		}
+		if(prevReleaseId == null){
+			// First release on this branch: compare with latest release on base branch
+			Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
+			if (ord.isPresent()) {
+				ReleaseData rd = ord.get();
+				UUID componentId = rd.getComponent();
+				Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+				if (ocd.isPresent() && ocd.get().getDefaultBranch() != null) {
+					String baseBranchName = ocd.get().getDefaultBranch().name();
+					try {
+						Optional<Branch> baseBranchOpt = branchService.findBranchByName(componentId, baseBranchName);
+						if (baseBranchOpt.isPresent()) {
+							Optional<ReleaseData> baseBranchLatestRd = sharedReleaseService.getReleaseDataOfBranch(baseBranchOpt.get().getUuid());
+							if (baseBranchLatestRd.isPresent()) {
+								prevReleaseId = baseBranchLatestRd.get().getUuid();
+							} else {
+								log.debug("No release found on base branch {} for comparison.", baseBranchName);
+							}
+						} else {
+							log.debug("Base branch {} not found for component {}", baseBranchName, componentId);
+						}
+					} catch (Exception e) {
+						log.error("Error finding base branch by name: {}", baseBranchName, e);
+					}
+				}
+			}
+		}
 		
-		if(null != nextReleaseId)
-        	resolveBomDiff(nextReleaseId, releaseId, org);
-    }
+		UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
+		// log.info("prevReleaseId found: {}", prevReleaseId);
+		// log.info("nextReleaseId found: {}", nextReleaseId);
+
+		if (prevReleaseId != null) {
+			resolveBomDiff(releaseId, prevReleaseId, org);
+		}
+		if (nextReleaseId != null) {
+			resolveBomDiff(nextReleaseId, releaseId, org);
+		}
+	}
+
+
 	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org){
-		log.info("resolveBomDiff for releaseId: {}, prevReleaseId: {} ", releaseId, prevReleaseId);
+		// log.info("resolveBomDiff for releaseId: {}, prevReleaseId: {} ", releaseId, prevReleaseId);
 		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
 		AcollectionData prevAcollectionData = getLatestCollectionDataOfRelease(prevReleaseId);
 		
-		 if(null != currAcollectionData.getArtifacts() 
+		if(null != currAcollectionData.getArtifacts() 
 			&& currAcollectionData.getArtifacts().size() > 0 
 			&& null != prevAcollectionData 
 			&& prevAcollectionData.getArtifacts().size() > 0
@@ -180,22 +230,36 @@ public class AcollectionService {
 		){
             List<UUID> currArtifacts = getInternalBomIdsFromACollection(currAcollectionData);
 			List<UUID> prevArtifacts = getInternalBomIdsFromACollection(prevAcollectionData);
-			log.info("currArtifacts: {}", currArtifacts);
-			log.info("prevArtifacts: {}", prevArtifacts);
+			
 			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(currArtifacts, prevArtifacts, org);
-			log.info("artifactChangelog: {}", artifactChangelog);
-			persistArtifactChangelogForCollection(artifactChangelog, currAcollectionData.getUuid());
+
+			if (null == currAcollectionData.getArtifactComparison() || null == currAcollectionData.getArtifactComparison().changelog()  || !currAcollectionData.getArtifactComparison().changelog().equals(artifactChangelog)) {
+				log.debug("artifact changelog is different, persisiting!");
+				persistArtifactChangelogForCollection(artifactChangelog, prevReleaseId, currAcollectionData.getUuid());
+
+			}else{
+				log.debug("duplicate trigger, not persisting changelog");
+			}
 		}
 	}
 
-	private void persistArtifactChangelogForCollection(ArtifactChangelog artifactChangelog, UUID acollection){
+	private void persistArtifactChangelogForCollection(ArtifactChangelog artifactChangelog, UUID comparedReleaseUuid, UUID acollection){
 		Acollection ac = getAcollection(acollection).get();
 		AcollectionData acd = AcollectionData.dataFromRecord(ac);
-		acd.setArtifactChangelog(artifactChangelog);
+		AcollectionData.ArtifactComparison artifactComparison = new AcollectionData.ArtifactComparison(artifactChangelog, comparedReleaseUuid);
+		acd.setArtifactComparison(artifactComparison);
 		Map<String,Object> recordData = Utils.dataToRecord(acd);	
 
 		ac.setRecordData(recordData);
 		repository.save(ac);
+
+		AcollectionData updatedAcd = AcollectionData.dataFromRecord(ac);
+		UUID org = updatedAcd.getOrg();
+		UUID releaseUuid = updatedAcd.getRelease();
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		if (ord.isPresent()) {
+			notificationService.sendBomDiffAlert(org, ord.get(), artifactChangelog);
+		}
 	}
 	private List<UUID> getInternalBomIdsFromACollection(AcollectionData collection){
 		List<UUID> artIds = collection.getArtifacts().stream().map(VersionedArtifact::artifactUuid).toList();

@@ -347,4 +347,8 @@ public class OrganizationService {
 		}
 	}
 
+
+	public Boolean isBomDiffAlertEnabled(UUID org) {
+		return true;
+	}
 }

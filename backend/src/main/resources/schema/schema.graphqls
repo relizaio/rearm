@@ -433,7 +433,12 @@ type ChildComponent {
 
 type ReleaseCollection {
 	uuid: ID
-	artifactChangelog: ArtifactChangelog
+	artifactComparison: ArtifactComparison
+}
+
+type ArtifactComparison {
+	changelog: ArtifactChangelog
+	comparedReleaseUuid: ID
 }
 
 type ArtifactChangelog {

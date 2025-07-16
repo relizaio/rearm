@@ -319,6 +319,7 @@ class VariableQueries {
 						ORDER BY created_date
 					) as previous_release_uuid
 				FROM rearm.releases r where r.record_data->>'branch' = :branch
+				AND r.record_data->>'lifecycle' NOT IN ('CANCELLED', 'REJECTED')
 			)	
 			""" 
 			+ "select previous_release_uuid from PreviousRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
@@ -331,6 +332,7 @@ class VariableQueries {
 						ORDER BY created_date
 					) as next_release_uuid
 				FROM rearm.releases r where r.record_data->>'branch' = :branch
+				AND r.record_data->>'lifecycle' NOT IN ('CANCELLED', 'REJECTED')
 			)	
 			""" 
 			+ "select next_release_uuid from NextRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
