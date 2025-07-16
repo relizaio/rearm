@@ -187,16 +187,19 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
 `
 const RELEASE_COLLECTION_DATA = `
     uuid
-    artifactChangelog {
-        added {
-            purl
-            version
-        }
-        removed {
-            purl
-            version
+    artifactComparison{
+        changelog {
+            added {
+                purl
+                version
+            }
+            removed {
+                purl
+                version
+            }
         }
     }
+    
 `
 const ARTIFACT_DETAIL_DATA = `
     uuid
