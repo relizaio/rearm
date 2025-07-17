@@ -4,6 +4,7 @@
 
 package io.reliza.model;
 
+import java.time.ZonedDateTime;
 import java.util.Map;
 import java.util.UUID;
 
@@ -40,6 +41,7 @@ public class SystemInfoData extends RelizaDataParent{
 	private SmtpProps smtpProps;
 	private EmailSendType emailSendType = EmailSendType.UNSET;
 	private UUID defaultOrg;
+	private ZonedDateTime lastDtrackSync;
 	
 	public static SystemInfoData dataFromRecord (SystemInfo t) {
 		Map<String,Object> recordData = t.getData();

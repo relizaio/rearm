@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -704,6 +705,154 @@ public class IntegrationService {
 			}
 		}
 		return isRequested;
+	}
+	
+	/**
+	 * Retrieve unsynced vulnerabilities from Dependency Track based on last sync time
+	 * @param orgUuid Organization UUID
+	 * @param lastSyncTime Last sync time to filter findings
+	 * @return Set of project UUIDs from vulnerability findings
+	 */
+	private Set<UUID> retrieveUnsyncedDtrackVulnerabilities(UUID orgUuid, ZonedDateTime lastSyncTime) {
+		Set<UUID> projectUuids = new HashSet<>();
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(orgUuid, IntegrationType.DEPENDENCYTRACK,
+				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		if (oid.isPresent()) {
+			IntegrationData dtrackIntegration = oid.get();
+			try {
+				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
+				String dateFilter = (lastSyncTime != null) ? "&attributedOnDateFrom=" + lastSyncTime.toLocalDate().toString() : "";
+				URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/finding?pageNumber=1&pageSize=10000" + dateFilter);
+				
+				var resp = dtrackWebClient
+						.get()
+						.uri(dtrackUri)
+						.header("X-API-Key", apiToken)
+						.retrieve()
+						.toEntity(String.class)
+						.block();
+				
+				@SuppressWarnings("unchecked")
+				List<Object> vulnerabilityFindings = Utils.OM.readValue(resp.getBody(), List.class);
+				
+				// Extract project UUIDs from component.project field
+				vulnerabilityFindings.forEach(finding -> {
+					try {
+						@SuppressWarnings("unchecked")
+						Map<String, Object> findingMap = (Map<String, Object>) finding;
+						@SuppressWarnings("unchecked")
+						Map<String, Object> component = (Map<String, Object>) findingMap.get("component");
+						if (component != null) {
+							Object projectObj = component.get("project");
+							if (projectObj != null) {
+								UUID projectUuid = UUID.fromString(projectObj.toString());
+								projectUuids.add(projectUuid);
+							}
+						}
+					} catch (Exception e) {
+						log.warn("Error parsing project UUID from vulnerability finding: {}", e.getMessage());
+					}
+				});
+				
+				log.info("Retrieved {} unique project UUIDs from {} unsynced vulnerabilities from Dependency Track for org {}", 
+						projectUuids.size(), vulnerabilityFindings.size(), orgUuid);
+			} catch (WebClientResponseException wcre) {
+				if (wcre.getStatusCode() == HttpStatus.NOT_FOUND) {
+					log.warn("Dependency Track integration not found or no vulnerabilities available for org {}", orgUuid);
+				} else {
+					log.error("Web exception retrieving unsynced vulnerabilities from Dependency Track for org " + orgUuid, wcre);
+				}
+			} catch (Exception e) {
+				log.error("Exception retrieving unsynced vulnerabilities from Dependency Track for org " + orgUuid, e);
+			}
+		}
+		return projectUuids;
+	}
+	
+	/**
+	 * Retrieve unsynced violations from Dependency Track based on last sync time
+	 * @param orgUuid Organization UUID
+	 * @param lastSyncTime Last sync time to filter violations
+	 * @return Set of project UUIDs from violation findings
+	 */
+	private Set<UUID> retrieveUnsyncedDtrackViolations(UUID orgUuid, ZonedDateTime lastSyncTime) {
+		Set<UUID> projectUuids = new HashSet<>();
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(orgUuid, IntegrationType.DEPENDENCYTRACK,
+				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		if (oid.isPresent()) {
+			IntegrationData dtrackIntegration = oid.get();
+			try {
+				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
+				String dateFilter = (lastSyncTime != null) ? "&occurredOnDateFrom=" + lastSyncTime.toLocalDate().toString() : "";
+				URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/violation?pageNumber=1&pageSize=10000" + dateFilter);
+				
+				var resp = dtrackWebClient
+						.get()
+						.uri(dtrackUri)
+						.header("X-API-Key", apiToken)
+						.retrieve()
+						.toEntity(String.class)
+						.block();
+				
+				@SuppressWarnings("unchecked")
+				List<Object> violationFindings = Utils.OM.readValue(resp.getBody(), List.class);
+				
+				// Extract project UUIDs from project.uuid field
+				violationFindings.forEach(violation -> {
+					try {
+						@SuppressWarnings("unchecked")
+						Map<String, Object> violationMap = (Map<String, Object>) violation;
+						@SuppressWarnings("unchecked")
+						Map<String, Object> project = (Map<String, Object>) violationMap.get("project");
+						if (project != null) {
+							Object projectUuidObj = project.get("uuid");
+							if (projectUuidObj != null) {
+								UUID projectUuid = UUID.fromString(projectUuidObj.toString());
+								projectUuids.add(projectUuid);
+							}
+						}
+					} catch (Exception e) {
+						log.warn("Error parsing project UUID from violation finding: {}", e.getMessage());
+					}
+				});
+				
+				log.info("Retrieved {} unique project UUIDs from {} unsynced violations from Dependency Track for org {}", 
+						projectUuids.size(), violationFindings.size(), orgUuid);
+			} catch (WebClientResponseException wcre) {
+				if (wcre.getStatusCode() == HttpStatus.NOT_FOUND) {
+					log.warn("Dependency Track integration not found or no violations available for org {}", orgUuid);
+				} else {
+					log.error("Web exception retrieving unsynced violations from Dependency Track for org " + orgUuid, wcre);
+				}
+			} catch (Exception e) {
+				log.error("Exception retrieving unsynced violations from Dependency Track for org " + orgUuid, e);
+			}
+		}
+		return projectUuids;
+	}
+	
+	/**
+	 * Retrieve all unsynced projects from Dependency Track based on last sync time
+	 * Combines both vulnerability and violation findings into a single set of project UUIDs
+	 * @param orgUuid Organization UUID
+	 * @param lastSyncTime Last sync time to filter findings
+	 * @return Set of project UUIDs that have unsynced vulnerabilities or violations
+	 */
+	public Set<UUID> retrieveUnsyncedDtrackProjects(UUID orgUuid, ZonedDateTime lastSyncTime) {
+		Set<UUID> allProjectUuids = new HashSet<>();
+		
+		// Get projects with unsynced vulnerabilities
+		Set<UUID> vulnerabilityProjects = retrieveUnsyncedDtrackVulnerabilities(orgUuid, lastSyncTime);
+		allProjectUuids.addAll(vulnerabilityProjects);
+		
+		// Get projects with unsynced violations
+		Set<UUID> violationProjects = retrieveUnsyncedDtrackViolations(orgUuid, lastSyncTime);
+		allProjectUuids.addAll(violationProjects);
+		
+		log.info("Retrieved {} total unique project UUIDs ({} from vulnerabilities, {} from violations) for org {}", 
+				allProjectUuids.size(), vulnerabilityProjects.size(), violationProjects.size(), orgUuid);
+		
+		return allProjectUuids;
 	}
 	
 	/**

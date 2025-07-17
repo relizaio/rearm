@@ -7,7 +7,8 @@ package io.reliza.common;
 public enum AdvisoryLockKey {
 	REJECT_PENDING_RELEASE(1),
 	RESOLVE_DEPENDENCY_TRACK_STATUS(7),
-	COMPUTE_ANALYTICS_METRICS(8);
+	COMPUTE_ANALYTICS_METRICS(8),
+	SYNC_DEPENDENCY_TRACK_DATA(9);
 	
 	private int queryVal;
 	

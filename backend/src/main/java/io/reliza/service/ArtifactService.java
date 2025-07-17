@@ -37,7 +37,6 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.Removable;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
-import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
@@ -48,10 +47,8 @@ import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
-import io.reliza.model.ComponentData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
-import io.reliza.model.dto.ArtifactUploadResponseDto;
 import io.reliza.model.dto.OASResponseDto;
 import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.model.tea.Rebom.InternalBom;
@@ -60,7 +57,6 @@ import io.reliza.model.tea.Rebom.RebomResponse;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.service.IntegrationService.UploadableBom;
-import io.reliza.service.RebomService.BomMediaType;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
@@ -76,6 +72,9 @@ public class ArtifactService {
 	
 	@Autowired
     private IntegrationService integrationService;
+	
+	@Autowired
+    private SystemInfoService systemInfoService;
 	
 	private final ArtifactRepository repository;
 
@@ -448,6 +447,60 @@ public class ArtifactService {
 			
 		if (doUpdate) sharedArtifactService.updateArtifactDti(a, dti, WhoUpdated.getAutoWhoUpdated());
 		return true;
+	}
+	
+	/**
+	 * Sync dependency track data for all unsynced projects
+	 * Retrieves unsynced projects from Dependency Track, finds associated artifacts,
+	 * and updates their dependency track data
+	 * @param orgUuid Organization UUID
+	 * @return Number of artifacts processed
+	 */
+	public int syncUnsyncedDependencyTrackData(UUID orgUuid) {
+		log.info("Starting sync of unsynced dependency track data for org {}", orgUuid);
+		
+		// Get last sync time from system info
+		var lastSyncTime = systemInfoService.getLastDtrackSync();
+		if (lastSyncTime == null) {
+			log.info("No last sync time found, using 1970-01-01 as default for org {}", orgUuid);
+			lastSyncTime = java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC);
+		}
+		
+		// Get all unsynced projects from Dependency Track
+		Set<UUID> unsyncedProjects = integrationService.retrieveUnsyncedDtrackProjects(orgUuid, lastSyncTime);
+		log.info("Found {} unsynced projects for org {}", unsyncedProjects.size(), orgUuid);
+		
+		if (unsyncedProjects.isEmpty()) {
+			log.info("No unsynced projects found for org {}", orgUuid);
+			return 0;
+		}
+		
+		// Get artifacts for these projects
+		List<Artifact> artifacts = listArtifactsByDtrackProjects(unsyncedProjects);
+		log.info("Found {} artifacts to sync for {} unsynced projects in org {}", 
+				artifacts.size(), unsyncedProjects.size(), orgUuid);
+		
+		// Process each artifact
+		int processedCount = 0;
+		for (Artifact artifact : artifacts) {
+			try {
+				fetchDependencyTrackDataForArtifact(artifact);
+				processedCount++;
+				log.debug("Successfully processed artifact {} for dependency track sync", artifact.getUuid());
+			} catch (Exception e) {
+				log.error("Error processing artifact {} for dependency track sync: {}", 
+						artifact.getUuid(), e.getMessage(), e);
+			}
+		}
+		
+		log.info("Completed sync of unsynced dependency track data for org {}. Processed {}/{} artifacts", 
+				orgUuid, processedCount, artifacts.size());
+		
+		// Update last sync time to current time
+		systemInfoService.setLastDtrackSync(java.time.ZonedDateTime.now());
+		log.debug("Updated last dependency track sync time to current time");
+		
+		return processedCount;
 	}
 
 	public String getArtifactBomLatestVersion(UUID id, UUID org) throws RelizaException{

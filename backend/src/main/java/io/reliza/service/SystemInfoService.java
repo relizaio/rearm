@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import java.time.ZonedDateTime;
 import java.util.Map;
 import java.util.UUID;
 
@@ -83,6 +84,11 @@ public class SystemInfoService {
 		return sysInfo.getDefaultOrg();
 	}
 	
+	protected ZonedDateTime getLastDtrackSync () {
+		var sysInfo = findSystemInfo();
+		return sysInfo.getLastDtrackSync();
+	}
+	
 
 	@Transactional
 	public void setEmailProperties(SetEmailPropertiesDto emailPropsDto) throws RelizaException {
@@ -122,6 +128,14 @@ public class SystemInfoService {
 		SystemInfo sysInfo =  this.repository.findSystemInfo();
 		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
 		sd.setDefaultOrg(defaultOrg);
+		saveSystemInfo(sysInfo, sd);
+	}
+	
+	@Transactional
+	public void setLastDtrackSync (ZonedDateTime lastDtrackSync) {
+		SystemInfo sysInfo = this.repository.findSystemInfo();
+		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
+		sd.setLastDtrackSync(lastDtrackSync);
 		saveSystemInfo(sysInfo, sd);
 	}
 	

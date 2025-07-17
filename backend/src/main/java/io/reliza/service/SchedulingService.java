@@ -29,6 +29,9 @@ public class SchedulingService {
     @Autowired
     AnalyticsMetricsService analyticsMetricsService;
     
+    @Autowired
+    OrganizationService organizationService;
+    
     private Boolean getLock (AdvisoryLockKey alk) {
     	String query = "SELECT pg_try_advisory_lock(" + alk.getQueryVal() + ")";
         return (Boolean) entityManager.createNativeQuery(query).getSingleResult();
@@ -94,6 +97,40 @@ public class SchedulingService {
 			}
 		} catch (Exception e) {
 			log.error("Compute analytics metrics run failed with an error", e);
+		}
+    }
+    
+    @Scheduled(cron="0 50 21 * * *") // once daily at the end of day
+    public void syncDependencyTrackData () {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.SYNC_DEPENDENCY_TRACK_DATA);
+            log.debug("sync dependency track data lock acquired {}", lock);
+			if (lock) {
+				try {
+					// Get all organizations and sync dependency track data for each
+					var allOrgs = organizationService.listAllOrganizationData();
+					log.debug("Starting dependency track sync for {} organizations", allOrgs.size());
+					
+					int totalProcessed = 0;
+					for (var org : allOrgs) {
+						try {
+							int processed = artifactService.syncUnsyncedDependencyTrackData(org.getUuid());
+							totalProcessed += processed;
+							log.debug("Processed {} artifacts for org {}", processed, org.getUuid());
+						} catch (Exception e) {
+							log.error("Error syncing dependency track data for org {}: {}", org.getUuid(), e.getMessage(), e);
+						}
+					}
+					
+					log.info("Completed dependency track sync for all organizations. Total artifacts processed: {}", totalProcessed);
+				} catch (Exception e) {
+					log.error("Exception in syncing dependency track data", e);
+				} finally {
+					releaseLock(AdvisoryLockKey.SYNC_DEPENDENCY_TRACK_DATA);
+				}
+			}
+		} catch (Exception e) {
+			log.error("Sync dependency track data run failed with an error", e);
 		}
     }
 
