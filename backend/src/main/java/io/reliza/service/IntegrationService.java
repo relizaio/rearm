@@ -8,6 +8,7 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -722,18 +723,48 @@ public class IntegrationService {
 			try {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
 				String dateFilter = (lastSyncTime != null) ? "&attributedOnDateFrom=" + lastSyncTime.toLocalDate().toString() : "";
-				URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/finding?pageNumber=1&pageSize=10000" + dateFilter);
 				
-				var resp = dtrackWebClient
-						.get()
-						.uri(dtrackUri)
-						.header("X-API-Key", apiToken)
-						.retrieve()
-						.toEntity(String.class)
-						.block();
+				// Paginated retrieval with 200 records per page
+				List<Object> vulnerabilityFindings = new ArrayList<>();
+				int pageNumber = 1;
+				int pageSize = 200;
+				boolean hasMorePages = true;
 				
-				@SuppressWarnings("unchecked")
-				List<Object> vulnerabilityFindings = Utils.OM.readValue(resp.getBody(), List.class);
+				while (hasMorePages) {
+					URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + 
+							"/api/v1/finding?pageNumber=" + pageNumber + "&pageSize=" + pageSize + dateFilter);
+					
+					log.debug("Fetching vulnerability findings page {} with size {} for org {}", pageNumber, pageSize, orgUuid);
+					
+					var resp = dtrackWebClient
+							.get()
+							.uri(dtrackUri)
+							.header("X-API-Key", apiToken)
+							.retrieve()
+							.toEntity(String.class)
+							.block();
+					
+					@SuppressWarnings("unchecked")
+					List<Object> pageFindings = Utils.OM.readValue(resp.getBody(), List.class);
+					
+					if (pageFindings.isEmpty()) {
+						// No more records, stop pagination
+						hasMorePages = false;
+						log.debug("No more vulnerability findings found at page {} for org {}", pageNumber, orgUuid);
+					} else {
+						// Add findings from this page to the total list
+						vulnerabilityFindings.addAll(pageFindings);
+						log.debug("Retrieved {} vulnerability findings from page {} for org {}", pageFindings.size(), pageNumber, orgUuid);
+						
+						// If we got fewer records than page size, this is the last page
+						if (pageFindings.size() < pageSize) {
+							hasMorePages = false;
+							log.debug("Last page reached (partial page) for org {}", orgUuid);
+						}
+					}
+					
+					pageNumber++;
+				}
 				
 				// Extract project UUIDs from component.project field
 				vulnerabilityFindings.forEach(finding -> {
@@ -784,18 +815,48 @@ public class IntegrationService {
 			try {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
 				String dateFilter = (lastSyncTime != null) ? "&occurredOnDateFrom=" + lastSyncTime.toLocalDate().toString() : "";
-				URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/violation?pageNumber=1&pageSize=10000" + dateFilter);
 				
-				var resp = dtrackWebClient
-						.get()
-						.uri(dtrackUri)
-						.header("X-API-Key", apiToken)
-						.retrieve()
-						.toEntity(String.class)
-						.block();
+				// Paginated retrieval with 200 records per page
+				List<Object> violationFindings = new ArrayList<>();
+				int pageNumber = 1;
+				int pageSize = 200;
+				boolean hasMorePages = true;
 				
-				@SuppressWarnings("unchecked")
-				List<Object> violationFindings = Utils.OM.readValue(resp.getBody(), List.class);
+				while (hasMorePages) {
+					URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + 
+							"/api/v1/violation?pageNumber=" + pageNumber + "&pageSize=" + pageSize + dateFilter);
+					
+					log.debug("Fetching violation findings page {} with size {} for org {}", pageNumber, pageSize, orgUuid);
+					
+					var resp = dtrackWebClient
+							.get()
+							.uri(dtrackUri)
+							.header("X-API-Key", apiToken)
+							.retrieve()
+							.toEntity(String.class)
+							.block();
+					
+					@SuppressWarnings("unchecked")
+					List<Object> pageFindings = Utils.OM.readValue(resp.getBody(), List.class);
+					
+					if (pageFindings.isEmpty()) {
+						// No more records, stop pagination
+						hasMorePages = false;
+						log.debug("No more violation findings found at page {} for org {}", pageNumber, orgUuid);
+					} else {
+						// Add findings from this page to the total list
+						violationFindings.addAll(pageFindings);
+						log.debug("Retrieved {} violation findings from page {} for org {}", pageFindings.size(), pageNumber, orgUuid);
+						
+						// If we got fewer records than page size, this is the last page
+						if (pageFindings.size() < pageSize) {
+							hasMorePages = false;
+							log.debug("Last page reached (partial page) for org {}", orgUuid);
+						}
+					}
+					
+					pageNumber++;
+				}
 				
 				// Extract project UUIDs from project.uuid field
 				violationFindings.forEach(violation -> {

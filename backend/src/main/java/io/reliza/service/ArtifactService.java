@@ -496,9 +496,15 @@ public class ArtifactService {
 		log.info("Completed sync of unsynced dependency track data for org {}. Processed {}/{} artifacts", 
 				orgUuid, processedCount, artifacts.size());
 		
-		// Update last sync time to current time
-		systemInfoService.setLastDtrackSync(java.time.ZonedDateTime.now());
-		log.debug("Updated last dependency track sync time to current time");
+		// Count errors and only update last sync time if there are no errors
+		int errorCount = artifacts.size() - processedCount;
+		if (errorCount == 0) {
+			// Update last sync time to current time only if all artifacts processed successfully
+			systemInfoService.setLastDtrackSync(java.time.ZonedDateTime.now());
+			log.debug("Updated last dependency track sync time to current time - no errors encountered");
+		} else {
+			log.warn("Skipping last sync time update due to {} errors during processing", errorCount);
+		}
 		
 		return processedCount;
 	}
