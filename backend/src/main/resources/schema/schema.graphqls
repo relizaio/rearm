@@ -913,6 +913,7 @@ input CreateComponentInput {
 	vcsRepository: VcsRepositoryInput
 	includeApi: Boolean
 	approvalPolicy: ID
+	identifiers: [IdentifierInput]
 }
 
 input UpdateComponentInput {
