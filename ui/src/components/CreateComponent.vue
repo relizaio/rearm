@@ -37,7 +37,7 @@
                             v-if="marketingVersionEnabled"
                             v-model:value="component.marketingVersionSchema"
                             :placeholder="'Enter ' + componentProductWords.component + ' marketing version schema'"
-                            :options="versionTypes" />
+                            :options="constants.VersionTypes" />
                 <n-input
                             v-if="component.marketingVersionSchema === 'custom_version' && marketingVersionEnabled"
                             v-model:value="customMarketingVersion"
@@ -54,6 +54,19 @@
                             v-if="component.featureBranchVersioning === 'custom_version'"
                             v-model:value="customFeatureBranchVersioning"
                             placeholder="Custom Feature Branch Version Schema" />
+            </n-form-item>
+            <n-form-item    path="identifiers"
+                            label="Identifiers">
+                <n-dynamic-input v-model:value="component.identifiers" :on-create="onCreateIdentifier">
+                    <template #create-button-default>
+                        Add Identifier
+                    </template>
+                    <template #default="{ value }">
+                        <n-select style="width: 200px;" v-model:value="value.idType"
+                            :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
+                        <n-input type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
+                    </template>
+                </n-dynamic-input>
             </n-form-item>
             <n-form-item    path="vcs"
                             v-if="!isProduct"
@@ -86,12 +99,12 @@ export default {
 <script lang="ts" setup>
 import { Ref, ref, ComputedRef, computed } from 'vue'
 import { useStore } from 'vuex'
-import { FormInst, NForm, NFormItem, NInput, NButton, NSelect, NSwitch } from 'naive-ui'
+import { FormInst, NForm, NFormItem, NInput, NButton, NSelect, NSwitch, NDynamicInput } from 'naive-ui'
 import CreateVcsRepository from '@/components/CreateVcsRepository.vue'
 import constants from '@/utils/constants'
 
 const props = defineProps<{
-    orgProp: String,
+    orgProp: string,
     isProduct: Boolean,
     isHideTitle: Boolean
 }>()
@@ -177,7 +190,8 @@ const onReset = function () {
         vcs: '',
         versionSchema: '',
         versionType: 'DEV',
-        marketingVersionSchema: ''
+        marketingVersionSchema: '',
+        identifiers: []
     }
 }
 
@@ -190,7 +204,8 @@ const component = ref({
     vcs: '',
     versionSchema: '',
     versionType: 'DEV',
-    marketingVersionSchema: ''
+    marketingVersionSchema: '',
+    identifiers: []
 })
 
 const componentProductWords = {
@@ -242,6 +257,13 @@ const vcsRepos: ComputedRef<any> = computed((): any => {
 const createdVcsRepo = function (repoValue: string) {
     isCreatedNewRepo.value = true
     component.value.vcs = repoValue
+}
+
+function onCreateIdentifier () {
+    return {
+        idType: '',
+        idValue: ''
+    }
 }
 
 store.dispatch('fetchVcsRepos', props.orgProp)
