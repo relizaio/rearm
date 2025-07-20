@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.stereotype.Service;
@@ -239,7 +240,7 @@ public class ApiKeyService {
 			keyBuilder.append(KeyGenerators.string().generateKey());
 		}
 		String apiKeyString = keyBuilder.toString();
-		BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(BCryptPasswordEncoder.BCryptVersion.$2B);
+		Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 		String enKey = encoder.encode(apiKeyString);
 		ak.setApiKey(enKey);
 		akd.setNotes(notes);
@@ -258,9 +259,13 @@ public class ApiKeyService {
 		Optional<ApiKey> oak = getApiKeyByObjUuidTypeOrder(ahp.getObjUuid(), ahp.getType(), ahp.getKeyOrder(), ahp.getOrgUuid());
 		
 		if (oak.isPresent()) {
-			BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(BCryptPasswordEncoder.BCryptVersion.$2B);
+			Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 			ApiKey ak = oak.get();
 			boolean matches = encoder.matches(ahp.getApiKey(), ak.getApiKey());
+			if (!matches) {
+				BCryptPasswordEncoder bcryptEncoder = new BCryptPasswordEncoder(BCryptPasswordEncoder.BCryptVersion.$2B);
+				matches = bcryptEncoder.matches(ahp.getApiKey(), ak.getApiKey());
+			}
 			if (matches) matchingKeyId = oak.get().getUuid();
 		}
 		return matchingKeyId;
