@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -120,7 +120,7 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	public Optional<InvitedObject> resolveInvitee (String secret) {
 		// TODO proper locking
 		
-		BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(BCryptPasswordEncoder.BCryptVersion.$2B);
+		Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 		Optional<InvitedObject> resolvedInvObject = Optional.empty();
 		// scan invitees by secret
 		Iterator<InvitedObject> invIter = invitees.iterator();

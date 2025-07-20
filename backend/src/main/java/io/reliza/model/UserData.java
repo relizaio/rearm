@@ -16,7 +16,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -390,7 +390,7 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	
 	public boolean resolveVerifiedEmail (String secret, String newEmail) {
 		boolean resolved = false;
-		BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(BCryptPasswordEncoder.BCryptVersion.$2B);
+		Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 		// scan emails by secret
 		Optional<EmailObject> oeo = this.allEmails.stream()
 				.filter(eo -> StringUtils.isNotEmpty(eo.verificationChallenge) 

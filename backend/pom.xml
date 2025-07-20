@@ -117,6 +117,12 @@
         <artifactId>commons-validator</artifactId>
         <version>1.9.0</version>
     </dependency>
+    <!-- Bouncy Castle for Argon2 password encoding -->
+    <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>1.81</version>
+    </dependency>
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>

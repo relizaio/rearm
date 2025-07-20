@@ -25,7 +25,7 @@ import org.apache.commons.validator.routines.EmailValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -598,7 +598,7 @@ public class UserService {
 		String key = keyBuilder.toString();
 		key = encryptionService.encrypt(email) + CommonVariables.JOIN_SECRET_SEPARATOR + key;
 		String urlSafeKey = URLEncoder.encode(key, StandardCharsets.UTF_8.toString());
-		BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(BCryptPasswordEncoder.BCryptVersion.$2B);
+		Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 		String secret = encoder.encode(urlSafeKey);
 		// set verification requirement into user data
 		var setChallenge = ud.updateEmail(email, secret, makePrimary, acceptMarketing);

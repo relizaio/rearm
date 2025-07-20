@@ -25,7 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -260,7 +260,7 @@ public class OrganizationService {
 			String orgUuidStr = od.getUuid().toString();
 			key = encryptionService.encrypt(orgUuidStr) + CommonVariables.JOIN_SECRET_SEPARATOR + key;
 			String urlSafeKey = URLEncoder.encode(key, StandardCharsets.UTF_8.toString());
-			BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(BCryptPasswordEncoder.BCryptVersion.$2B);
+			Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 			String secret = encoder.encode(urlSafeKey);
 			od.addInvitee(secret, type, userEmail, wu.getLastUpdatedBy());
 			Organization o = saveOrganization(getOrganization(od.getUuid()).get(), Utils.dataToRecord(od), wu);
