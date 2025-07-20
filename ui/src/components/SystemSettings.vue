@@ -76,34 +76,34 @@
                             <n-select v-model:value="emailProps.emailSendType"
                                :options="emailSendTypeOptions" />
                         </n-form-item>
-                        <n-form-item label='From Email Address:'>
+                        <n-form-item v-if="emailProps.emailSendType !== 'UNSET'" label='From Email Address:'>
                             <n-input v-model:value="emailProps.fromEmail"
                                 placeholder="From email" />
                         </n-form-item>
-                        <n-form-item label='SendGrid Key:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SENDGRID'" label='SendGrid Key:'>
                             <n-input type="password" id="sendgridKey" password v-model:value="emailProps.sendGridKey"
                                 placeholder="SendGrid Key" />
                         </n-form-item>
-                        <n-form-item label='SMTP User Name:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP User Name:'>
                             <n-input v-model:value="emailProps.smtpProps.userName"
                                 placeholder="SMTP User Name" />
                         </n-form-item>
-                        <n-form-item label='SMTP Password:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP Password:'>
                             <n-input type="password" password v-model:value="emailProps.smtpProps.password"
                                 placeholder="SMTP Password" />
                         </n-form-item>
-                        <n-form-item label='SMTP Hostname:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP Hostname:'>
                             <n-input v-model:value="emailProps.smtpProps.smtpHost"
                                 placeholder="SMTP Host" />
                         </n-form-item>
-                        <n-form-item label='SMTP Hostname:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP Hostname:'>
                             <n-input number clearable v-model:value.number="emailProps.smtpProps.port" placeholder="SMTP Port" />
                         </n-form-item>
-                        <n-form-item label='Require STARTTLS:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='Require STARTTLS:'>
                             <n-select v-model:value="emailProps.smtpProps.isStarttls"
                                :options="[{label: 'Yes', value: true}, {label: 'No', value: false}]" />
                         </n-form-item>
-                        <n-form-item label='SSL on Connection:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SSL on Connection:'>
                             <n-select v-model:value="emailProps.smtpProps.isSsl"
                                :options="[{label: 'Yes', value: true}, {label: 'No', value: false}]" />
                         </n-form-item>
