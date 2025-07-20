@@ -569,10 +569,6 @@ const storeObject : any = {
             context.commit('ADD_COMPONENTS', response.data.components)
             return response.data.components
         },
-        async fetchOrganizations (context: any) {
-            const axiosResp = await axios.get('/v1/organization/getAll')
-            context.commit('SET_ORGANIZATIONS', axiosResp.data)
-        },
         async fetchProducts (context : any, orgid : string) : Promise<any[]> {
             const response = await graphqlClient.query({
                 query: gql`

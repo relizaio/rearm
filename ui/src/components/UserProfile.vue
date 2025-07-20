@@ -194,13 +194,7 @@ const updateEmailObj: Ref<any> = ref({})
 const userName = ref('')
 
 async function initLoad() {
-    if (route.query.adminView) {
-        setTimeout(() => {
-            store.dispatch('fetchOrganizations')
-        }, 500)
-    } else {
-        store.dispatch('fetchMyOrganizations')
-    }
+    store.dispatch('fetchMyOrganizations')
     // reload my user
     const userResp = await store.dispatch('fetchMyUser')
     userName.value = userResp.name
