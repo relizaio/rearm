@@ -36,7 +36,10 @@
                 </n-form>
             </n-modal>
         </div>
-        <h4>Your Organizations</h4>
+        <h4>Your Organizations
+            <vue-feather v-if="myUser.installationType !== 'OSS'" @click="showCreateOrgModal = true" class="clickable icons" type="plus-circle"
+                title="Create New Organization" style="margin-left: 8px; vertical-align: middle;" />
+        </h4>
         <ul>
             <li v-for="organization in organizations" :key="organization.uuid">
                 {{ organization.name }}
@@ -50,13 +53,6 @@
                         title="Backup Organiztion" /></a>
             </li>
         </ul>
-        <h4 v-if="myUser.installationType !== 'OSS'" class="mt-4">Create New Organization</h4>
-        <div v-if="myUser.installationType !== 'OSS'" class="createOrg">
-            <n-input-group class="w-50">
-                <n-input v-model:value="orgname" type="text" placeholder="Name of the organization" />
-                <n-button @click="createOrg">Create organization</n-button>
-            </n-input-group>
-        </div>
         <div v-if="false" class="createOrg">
             Resotre Organization
             <vue-feather @click="showRestoreOrgModal = true" class="clickable icons" type="arrow-up"
@@ -80,6 +76,19 @@
             <n-input v-model:value="sshKey" type="textarea" placeholder="Paste SSH Key Here" />
             <n-button type="success" @click="addSshKey">Add Key</n-button>
         </n-modal>
+        <n-modal v-model:show="showCreateOrgModal" preset="dialog" :show-icon="false" style="width: 50%"
+            title="Create New Organization">
+            <n-form>
+                <n-form-item label="Organization Name:">
+                    <n-input v-model:value="orgname" type="text" placeholder="Name of the organization" />
+                </n-form-item>
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+                    <n-button @click="showCreateOrgModal = false">Cancel</n-button>
+                    <n-button type="primary" @click="createOrgFromModal">Create Organization</n-button>
+                </div>
+            </n-form>
+        </n-modal>
+
         <n-modal v-model:show="showRestoreOrgModal" preset="dialog" :show-icon="false" style="width: 70%"
             title="Restore Organization">
             <n-form-item label="Restore Organization" path="/api/manual/v1/restore">
@@ -205,6 +214,23 @@ function createOrg() {
     }
     orgname.value = ''
 }
+
+const createOrgFromModal = () => {
+    if (!orgname.value.trim()) {
+        notify('error', 'Error', 'Please enter an organization name')
+        return
+    }
+    store.dispatch('createOrganization', orgname.value).then(() => {
+        notify('success', 'Success', 'Organization created successfully!')
+        orgname.value = ''
+        showCreateOrgModal.value = false
+    }).catch((error: any) => {
+        notify('error', 'Error', 'Failed to create organization: ' + error.message)
+    })
+}
+
+const showCreateOrgModal: Ref<boolean> = ref(false)
+
 async function genUserApiKey(orgUUID: string) {
     const swalResult = await Swal.fire({
         title: 'Are you sure?',
