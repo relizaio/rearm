@@ -24,6 +24,15 @@ ReARM maintains xBOM documents per each release. See [here](https://rearmhq.com/
 
 ReARM stores xBOMs on OCI-compatible storage. ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
 
+## Project links
+- Documentation: https://docs.rearmhq.com
+- Video learning and tutorials playlist (wip): https://www.youtube.com/playlist?list=PLPABgZUOtPyXyC9YWJktF-sfu0ewpytGf
+- ReARM CLI: https://github.com/relizaio/rearm-cli
+- Project ReARM web-site: https://rearmhq.com
+- Public Demo: https://demo.rearmhq.com
+- Reliza Website: https://reliza.io
+- Reliza Versioning: https://github.com/relizaio/versioning
+
 ## ReARM Product Status Information
 - ReARM itself - Public Beta
 - Transparency Exchange API (TEA) implementation - in the process of implementation of TEA Beta 1 - Public Alpha available on ReARM Demo Instance (see below for details)
@@ -70,14 +79,6 @@ Creators of ReARM are part of [active contributors](https://github.com/CycloneDX
 A lot of core ReARM ideas are shared as a part of the TEA workgroup with permissive Open Source licensing.
 
 ReARM currently supports most of TEA Beta 1 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/index.html).
-
-## Project links
-- Documentation: https://docs.rearmhq.com
-- ReARM CLI: https://github.com/relizaio/rearm-cli
-- Project ReARM web-site: https://rearmhq.com
-- Public Demo: https://demo.rearmhq.com
-- Reliza Website: https://reliza.io
-- Reliza Versioning: https://github.com/relizaio/versioning
 
 ## Related Projects
 - ReARM CLI: https://github.com/relizaio/rearm-cli - CLI tool to interact with ReARM for humans and automation bots
