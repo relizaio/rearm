@@ -19,11 +19,6 @@ const routes : any[] = [
         component: () => import('@/components/SystemSettings.vue')
     },
     {
-        path: '/adminAnalytics',
-        name: 'adminAnalytics',
-        component: () => import('@/components/AdminAnalytics.vue')
-    },
-    {
         path: '/componentsOfOrg/:orguuid/:compuuid?/:branchuuid?/:prnumber?',
         name: 'ComponentsOfOrg',
         component: () => import('@/components/ComponentsOfOrg.vue')
