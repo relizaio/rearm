@@ -1,7 +1,7 @@
 <template>
     <div>
         <n-config-provider>
-            <n-notification-provider>
+            <n-notification-provider placement="bottom-right">
                 <n-space vertical v-if="!showSignUpFlow">
                     <n-layout>
                         <n-layout-content >
