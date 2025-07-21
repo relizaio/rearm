@@ -271,37 +271,44 @@ public class NotificationService {
 		}
 
 		// Added Components
-		if (changelog.added() != null && !changelog.added().isEmpty()) {
-			payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
-			payloadWrapper.add(new TextPayload("Added Components:", null));
-			int max = 10;
-			int count = 0;
-			for (AcollectionData.DiffComponent dc : changelog.added()) {
-				payloadWrapper.add(new TextPayload("- " + dc.purl() + " : " + dc.version(), null));
-				count++;
-				if (count >= max) break;
-			}
-			if (changelog.added().size() > max) {
-				payloadWrapper.add(new TextPayload("...and " + (changelog.added().size() - max) + " more added components", null));
-			}
-		}
+        if (changelog.added() != null && !changelog.added().isEmpty()) {
+            payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
+            payloadWrapper.add(new TextPayload("\nAdded Components:", null));
+            int max = 10;
+            int count = 0;
+            StringBuilder addedBlock = new StringBuilder();
+            addedBlock.append("```\n");
+            for (AcollectionData.DiffComponent dc : changelog.added()) {
+                addedBlock.append("- ").append(dc.purl()).append(" : ").append(dc.version()).append("\n");
+                count++;
+                if (count >= max) break;
+            }
+            if (changelog.added().size() > max) {
+                addedBlock.append("...and ").append(changelog.added().size() - max).append(" more added components\n");
+            }
+            addedBlock.append("```");
+            payloadWrapper.add(new TextPayload(addedBlock.toString(), null));
+        }
 
-
-		// Removed Components
-		if (changelog.removed() != null && !changelog.removed().isEmpty()) {
-			payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
-			payloadWrapper.add(new TextPayload("Removed Components:", null));
-			int max = 10;
-			int count = 0;
-			for (AcollectionData.DiffComponent dc : changelog.removed()) {
-				payloadWrapper.add(new TextPayload("- " + dc.purl() + " : " + dc.version(), null));
-				count++;
-				if (count >= max) break;
-			}
-			if (changelog.removed().size() > max) {
-				payloadWrapper.add(new TextPayload("...and " + (changelog.removed().size() - max) + " more removed components", null));
-			}
-		}
+        // Removed Components
+        if (changelog.removed() != null && !changelog.removed().isEmpty()) {
+            payloadWrapper.add(TextPayload.WHITESPACE_SEPARATOR_TEXT_PAYLOAD);
+            payloadWrapper.add(new TextPayload("Removed Components:", null));
+            int max = 10;
+            int count = 0;
+            StringBuilder removedBlock = new StringBuilder();
+            removedBlock.append("```\n");
+            for (AcollectionData.DiffComponent dc : changelog.removed()) {
+                removedBlock.append("- ").append(dc.purl()).append(" : ").append(dc.version()).append("\n");
+                count++;
+                if (count >= max) break;
+            }
+            if (changelog.removed().size() > max) {
+                removedBlock.append("...and ").append(changelog.removed().size() - max).append(" more removed components\n");
+            }
+            removedBlock.append("```");
+            payloadWrapper.add(new TextPayload(removedBlock.toString(), null));
+        }
 		if(!isAlertEnabled) {
 			//pretty print payload
 			log.info("Bom diff alert is disabled for org " + org + " and payload is \n" + payloadWrapper.stream().map(tp -> tp.text()).collect(Collectors.joining("\n")));
