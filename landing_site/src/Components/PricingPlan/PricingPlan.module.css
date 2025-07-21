@@ -44,8 +44,8 @@
   font-family: "Inter";
   font-style: normal;
   font-weight: 600;
-  font-size: 72px;
-  line-height: 110%;
+  font-size: 58px;
+  line-height: 100%;
   letter-spacing: -0.5px;
   color: #000b33;
   margin-top: 30px;
@@ -54,7 +54,7 @@
 
 .planCard .type {
   font-weight: 400;
-  font-size: 16px;
+  font-size: 26px;
   line-height: 162%;
   margin-bottom: 20px;
   color: #000b33;

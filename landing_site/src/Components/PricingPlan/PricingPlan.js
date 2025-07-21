@@ -87,18 +87,19 @@ const PricingPlan = () => {
     const monthlyPlan = [
         {
             id: 0,
-            title: "Community Edition",
+            title: "ReARM CE",
             icon: starterPlan,
             amount: "Free",
             type: "Forever",
-            space: "Self-Hosted",
-            yearSupport: "Community support",
-            querries: "All base SBOM / xBOM storage and retrieval features",
-            statistics: "Vulnerabilities and Violations via self-managed Dependency-Track Integration"
+            space: "FOSS ReARM Community Edition",
+            yearSupport: "Self-Hosted",
+            querries: "Community support",
+            statistics: "All core SBOM / xBOM storage and retrieval features",
+            trial: "Vulnerabilities and Violations via self-managed Dependency-Track Integration"
         },
         {
             id: 1,
-            title: "Startup Plan",
+            title: "ReARM Pro - Startup",
             icon: starterPlan,
             amount: startupPrice,
             type: "Per Month",
@@ -106,11 +107,12 @@ const PricingPlan = () => {
             yearSupport: "Premium support",
             querries: "Managed Dependency-Track Integration",
             statistics: "Approvals, Triggers and Marketing Releases",
+            domain: "Managed Service",
             trial: "Free 90 day trial"
         },
         {
             id: 2,
-            title: "Standard Plan",
+            title: "ReARM Pro - Standard",
             icon: basicPlan,
             amount: standardPrice,
             type: "Per Month",
@@ -123,7 +125,7 @@ const PricingPlan = () => {
         },
         {
             id: 3,
-            title: "Enterprise Plan",
+            title: "ReARM Pro - Enterprise",
             icon: premiumPlan,
             amount: "Contact",
             type: "us",
