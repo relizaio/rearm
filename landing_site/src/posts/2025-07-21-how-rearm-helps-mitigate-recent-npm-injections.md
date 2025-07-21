@@ -38,4 +38,4 @@ If you are using ReARM Pro or ReARM CE with Dependency-Track integration, perfor
 
 Also, if you are using ReARM Pro with configured triggers, you may have received high vulnerability alerts for the affected packages. 
 
-Finally, we are currently releasing a feature that shows and alerts on any change in the SBOM components introduced by a new release. We are publishing a release of ReARM containing this feature by the end of the month.
+Finally, we are currently releasing a feature for both ReARM PRO and ReARM CE that shows and alerts on any change in the SBOM components introduced by a new release. We are publishing a release of ReARM containing this feature by the end of the month.
