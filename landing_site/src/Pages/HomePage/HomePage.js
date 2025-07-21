@@ -224,137 +224,141 @@ const HomePage = () => {
     ]
   };
   return (
-    <BasicLayout>
-      <div className='mainPaddingContainer'>
-        <div className={`container-fluid ${styles.container1}`}>
-          <div className='row mx-auto' style={{ maxWidth: titleDetails?.titleMaxWidth }}>
-            <div className='col-12 mb-4'>
-              <h1 className={titleDetails?.titleClass}>{titleDetails?.title}</h1>
-            </div>
-            <div className='col-12'>
-              {titleDetails?.text?.map((item) => {
-                return (
-                  <p className={item?.textClass} style={{ maxWidth: item?.maxWidth }}>{item?.text}</p>
-                )
-              })}
-            </div>
-          </div>
-          <div className='d-flex justify-content-center'>
-            <a href='https://demo.rearmhq.com' target="_blank" style={{textDecoration:"none"}}><button className={styles.btn_usingFree}>Try Public Demo</button></a>
-          </div>
-        </div>
-        <div className={`d-flex justify-content-center`}>
-          <iframe className={`${styles.videoContainer}`} src="https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.mp4" width="100%" height="100%" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen title="ReARM Demo Walkthrough"></iframe>
-        </div>
-        <div className={`container-fluid ${styles.container2}`}>
-          <div className='row'>
-            <h3 className={`text-center ${styles.C2_title}`}>Supports</h3>
-            <p className={styles.C2_text}>OWASP Transparency Exchange API</p>
-            <div className={`d-flex justify-content-center ${styles.integrationsFlexWrap}`}>
-              <img src={tealogo} alt="OWASP Transparency Exchange API Logo" className={styles.favAppIcons} />
-            </div>
-          </div>
-        </div>
-        <div className={`container-fluid ${styles.container2}`}>
-          <div className='row'>
-            <h3 className={`text-center ${styles.C2_title}`}>Integrates</h3>
-            <p className={styles.C2_text}>with your favorite tools</p>
-            <div className={`d-flex justify-content-center ${styles.integrationsFlexWrap}`}>
-              {favApps?.map((item) => {
-                return (
-                  <img src={item?.icon} alt="" className={styles.favAppIcons} />
-                )
-              })}
-            </div>
-          </div>
-        </div>
-        {/*
-        <div className={`container-fluid ${styles.container3}`}>
-          <div className='row'>
-            <div className='col-12 col-sm-8'>
-              <h3 className={`${styles.C2_title}`}>Features</h3>
-              <p className={styles.C3_text1}>Our Solution <br className='d-none d-sm-block' /> for your business</p>
-              <p className={styles.C3_text2}>We are self-service data analytics software that lets you create visually appealing data visualizations and insightful dashboards in minutes.</p>
-              <button className={`${styles.C3_btn_moreFeatures} d-none d-sm-block`}>More Features</button>
-            </div>
-            <div className='col-12 col-sm-4'>
-              <div className={`row ${styles.features_right}`}>
-                {featuresArray?.map((item) => {
+    <article>
+      <title>{`ReARM by Reliza - SBOM / xBOM Digital Asset Management System for Supply Chain Security`}</title>
+      <meta name="description" content="ReARM by Reliza is an open source product that provides capabilities to create Digital Asset Management System for organization and store SBOM, xBOM and other security artifacts. It is used in DevSecOps and Supply Chain Security." />
+      <BasicLayout>
+        <div className='mainPaddingContainer'>
+          <div className={`container-fluid ${styles.container1}`}>
+            <div className='row mx-auto' style={{ maxWidth: titleDetails?.titleMaxWidth }}>
+              <div className='col-12 mb-4'>
+                <h1 className={titleDetails?.titleClass}>{titleDetails?.title}</h1>
+              </div>
+              <div className='col-12'>
+                {titleDetails?.text?.map((item) => {
                   return (
-                    <div className={styles.C3_right_card}>
-                      <div className='d-flex'>
-                        <div><img src={item?.icon} alt="" /></div>
-                        <div className='ps-4'>
-                          <h4 className={styles.featuresArray_title}>{item?.title}</h4>
-                          <p className={styles.featuresArray_text}>{item?.text}</p>
-                        </div>
-                      </div>
-                    </div>
+                    <p className={item?.textClass} style={{ maxWidth: item?.maxWidth }}>{item?.text}</p>
                   )
-                })
-                }
-              </div>
-              <button className={`${styles.C3_btn_moreFeatures} d-block d-sm-none`}>More Features</button>
-            </div>
-          </div>
-        </div>
-        <div className={`container-fluid ${styles.container4}`}>
-          <Experience />
-        </div>
-              */}
-      </div>
-      <div className={`container-fluid ${styles.container4}`}>
-        {array2?.map((item, index) => {
-          return (
-            <Component1 details={item} index={index} />
-          )
-        })}
-      </div>
-      <div className='mainPaddingContainer'>
-        <div className={`container-fluid ${styles.container5}`}>
-          {/*
-          <div className='row'>
-            <h3 className={`text-center ${styles.C2_title} text-capitalize`}>Testimonials</h3>
-            <div className={`${styles.testimonialContainer}`}>
-              <p className={`text-center ${styles.C5_text}`}>What our happy customer say</p>
-              <div className='d-flex d-sm-none'>
-                <button className={`${styles.btn_slider_left}`} onClick={() => sliderRef1.current.slickPrev()}><FaArrowLeft /></button>
-                <button className={`${styles.btn_slider_right}`} onClick={() => sliderRef1.current.slickNext()}><FaArrowRight /></button>
-              </div>
-            </div>
-            <div className="sliderContinerMain">
-              <div className={styles.sliderContiner}>
-                <Slider ref={sliderRef1} {...settings}>
-                  {customerFeedbackArray?.map((item) => {
-                    return (
-                      <div>
-                        <CustomerCard details={item} />
-                      </div>
-                    )
-                  })}
-                </Slider>
-              </div>
-              <div className='sliderBtnContainer d-none d-sm-block'>
-                <button className={`btn_slider ${styles.btn_slider_left}`} onClick={() => sliderRef1.current.slickPrev()}><FaArrowLeft /></button>
-                <button className={`btn_slider ${styles.btn_slider_right}`} onClick={() => sliderRef1.current.slickNext()}><FaArrowRight /></button>
+                })}
               </div>
             </div>
             <div className='d-flex justify-content-center'>
-              <button className={styles.btn_allCustomers} onClick={() => navigation("/customers")}>See all customer</button>
+              <a href='https://demo.rearmhq.com' target="_blank" style={{textDecoration:"none"}}><button className={styles.btn_usingFree}>Try Public Demo</button></a>
             </div>
+          </div>
+          <div className={`d-flex justify-content-center`}>
+            <iframe className={`${styles.videoContainer}`} src="https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.mp4" width="100%" height="100%" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen title="ReARM Demo Walkthrough"></iframe>
+          </div>
+          <div className={`container-fluid ${styles.container2}`}>
+            <div className='row'>
+              <h3 className={`text-center ${styles.C2_title}`}>Supports</h3>
+              <p className={styles.C2_text}>OWASP Transparency Exchange API</p>
+              <div className={`d-flex justify-content-center ${styles.integrationsFlexWrap}`}>
+                <img src={tealogo} alt="OWASP Transparency Exchange API Logo" className={styles.favAppIcons} />
+              </div>
+            </div>
+          </div>
+          <div className={`container-fluid ${styles.container2}`}>
+            <div className='row'>
+              <h3 className={`text-center ${styles.C2_title}`}>Integrates</h3>
+              <p className={styles.C2_text}>with your favorite tools</p>
+              <div className={`d-flex justify-content-center ${styles.integrationsFlexWrap}`}>
+                {favApps?.map((item) => {
+                  return (
+                    <img src={item?.icon} alt="" className={styles.favAppIcons} />
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+          {/*
+          <div className={`container-fluid ${styles.container3}`}>
+            <div className='row'>
+              <div className='col-12 col-sm-8'>
+                <h3 className={`${styles.C2_title}`}>Features</h3>
+                <p className={styles.C3_text1}>Our Solution <br className='d-none d-sm-block' /> for your business</p>
+                <p className={styles.C3_text2}>We are self-service data analytics software that lets you create visually appealing data visualizations and insightful dashboards in minutes.</p>
+                <button className={`${styles.C3_btn_moreFeatures} d-none d-sm-block`}>More Features</button>
+              </div>
+              <div className='col-12 col-sm-4'>
+                <div className={`row ${styles.features_right}`}>
+                  {featuresArray?.map((item) => {
+                    return (
+                      <div className={styles.C3_right_card}>
+                        <div className='d-flex'>
+                          <div><img src={item?.icon} alt="" /></div>
+                          <div className='ps-4'>
+                            <h4 className={styles.featuresArray_title}>{item?.title}</h4>
+                            <p className={styles.featuresArray_text}>{item?.text}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                  }
+                </div>
+                <button className={`${styles.C3_btn_moreFeatures} d-block d-sm-none`}>More Features</button>
+              </div>
+            </div>
+          </div>
+          <div className={`container-fluid ${styles.container4}`}>
+            <Experience />
           </div>
                 */}
         </div>
-      </div>
-      <div id="homePagePricing" className='mainPaddingContainer'>
-        <div className={`container-fluid ${styles.container6}`}>
-          <h4 className={`${styles.pricingPlan_title1} text-center`}>Pricing & Plans</h4>
-          <h4 className={`mx-auto text-center ${styles.pricingPlan_title2}`} style={{ maxWidth: "600px" }}>Fixed predictable rates for any team</h4>
-          <PricingPlan />
+        <div className={`container-fluid ${styles.container4}`}>
+          {array2?.map((item, index) => {
+            return (
+              <Component1 details={item} index={index} />
+            )
+          })}
         </div>
-      </div>
-      <LastContainer1 />
-    </BasicLayout>
+        <div className='mainPaddingContainer'>
+          <div className={`container-fluid ${styles.container5}`}>
+            {/*
+            <div className='row'>
+              <h3 className={`text-center ${styles.C2_title} text-capitalize`}>Testimonials</h3>
+              <div className={`${styles.testimonialContainer}`}>
+                <p className={`text-center ${styles.C5_text}`}>What our happy customer say</p>
+                <div className='d-flex d-sm-none'>
+                  <button className={`${styles.btn_slider_left}`} onClick={() => sliderRef1.current.slickPrev()}><FaArrowLeft /></button>
+                  <button className={`${styles.btn_slider_right}`} onClick={() => sliderRef1.current.slickNext()}><FaArrowRight /></button>
+                </div>
+              </div>
+              <div className="sliderContinerMain">
+                <div className={styles.sliderContiner}>
+                  <Slider ref={sliderRef1} {...settings}>
+                    {customerFeedbackArray?.map((item) => {
+                      return (
+                        <div>
+                          <CustomerCard details={item} />
+                        </div>
+                      )
+                    })}
+                  </Slider>
+                </div>
+                <div className='sliderBtnContainer d-none d-sm-block'>
+                  <button className={`btn_slider ${styles.btn_slider_left}`} onClick={() => sliderRef1.current.slickPrev()}><FaArrowLeft /></button>
+                  <button className={`btn_slider ${styles.btn_slider_right}`} onClick={() => sliderRef1.current.slickNext()}><FaArrowRight /></button>
+                </div>
+              </div>
+              <div className='d-flex justify-content-center'>
+                <button className={styles.btn_allCustomers} onClick={() => navigation("/customers")}>See all customer</button>
+              </div>
+            </div>
+                  */}
+          </div>
+        </div>
+        <div id="homePagePricing" className='mainPaddingContainer'>
+          <div className={`container-fluid ${styles.container6}`}>
+            <h4 className={`${styles.pricingPlan_title1} text-center`}>Pricing & Plans</h4>
+            <h4 className={`mx-auto text-center ${styles.pricingPlan_title2}`} style={{ maxWidth: "600px" }}>Fixed predictable rates for any team</h4>
+            <PricingPlan />
+          </div>
+        </div>
+        <LastContainer1 />
+      </BasicLayout>
+    </article>
   )
 }
 
