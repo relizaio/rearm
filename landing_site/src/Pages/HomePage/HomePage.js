@@ -235,9 +235,9 @@ const HomePage = () => {
                 <h1 className={titleDetails?.titleClass}>{titleDetails?.title}</h1>
               </div>
               <div className='col-12'>
-                {titleDetails?.text?.map((item) => {
+                {titleDetails?.text?.map((item, index) => {
                   return (
-                    <p className={item?.textClass} style={{ maxWidth: item?.maxWidth }}>{item?.text}</p>
+                    <p key={index} className={item?.textClass} style={{ maxWidth: item?.maxWidth }}>{item?.text}</p>
                   )
                 })}
               </div>
@@ -247,7 +247,7 @@ const HomePage = () => {
             </div>
           </div>
           <div className={`d-flex justify-content-center`}>
-            <iframe className={`${styles.videoContainer}`} src="https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.mp4" width="100%" height="100%" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen title="ReARM Demo Walkthrough"></iframe>
+            <iframe className={`${styles.videoContainer}`} src="https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.mp4" width="100%" height="100%" allow="autoplay; fullscreen; picture-in-picture" title="ReARM Demo Walkthrough"></iframe>
           </div>
           <div className={`container-fluid ${styles.container2}`}>
             <div className='row'>
@@ -263,9 +263,9 @@ const HomePage = () => {
               <h3 className={`text-center ${styles.C2_title}`}>Integrates</h3>
               <p className={styles.C2_text}>with your favorite tools</p>
               <div className={`d-flex justify-content-center ${styles.integrationsFlexWrap}`}>
-                {favApps?.map((item) => {
+                {favApps?.map((item, index) => {
                   return (
-                    <img src={item?.icon} alt="" className={styles.favAppIcons} />
+                    <img key={index} src={item?.icon} alt="" className={styles.favAppIcons} />
                   )
                 })}
               </div>
@@ -309,7 +309,7 @@ const HomePage = () => {
         <div className={`container-fluid ${styles.container4}`}>
           {array2?.map((item, index) => {
             return (
-              <Component1 details={item} index={index} />
+              <Component1 key={index} details={item} index={index} />
             )
           })}
         </div>

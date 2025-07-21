@@ -8,9 +8,9 @@ const Component1 = ({ details, index }) => {
       <div className={`col-12 col-sm-6`}>
         <div className={`${styles.textContent}`}>
           <h3 className={styles.title}>{details?.title}</h3>
-          {details?.texts?.map((text) => {
+          {details?.texts?.map((text, index) => {
             return (
-              <><p className={styles.text}>{text?.text}</p><br className={`d-none d-sm-block`} /></>
+              <React.Fragment key={index}><p className={styles.text}>{text?.text}</p><br className={`d-none d-sm-block`} /></React.Fragment>
             )
           })}
           {/* <div className='d-flex'><a href='https://app.relizahub.com' target="_blank" style={{ textDecoration: "none" }}><button className={`d-none d-sm-block ${styles.btn_usingFree}`}>Start using for free</button></a></div> */}

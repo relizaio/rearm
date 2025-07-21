@@ -68,7 +68,7 @@ const ContactUs = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
   const handleSubmit = () => {
-    console.log(formData);
+    // console.log(formData);
   }
   return (
     <BasicLayout>

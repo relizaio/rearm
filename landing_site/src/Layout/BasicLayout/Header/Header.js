@@ -18,9 +18,9 @@ const Header = () => {
           {/* </div> */}
           <div className="collapse navbar-collapse" id="navbarSupportedContent">
             <ul className="navbar-nav mx-auto mb-2 mb-lg-0">
-              {navLinks?.map((item) => {
+              {navLinks?.map((item, index) => {
                 return ( 
-                  <li className="nav-item d-flex align-items-center p-3">
+                  <li key={item?.path || index} className="nav-item d-flex align-items-center p-3">
                     <Link className={`nav-link fs-6 ${window.location.pathname === item?.path ? "link-active" : "link-inactive"}`} aria-current="page" to={item?.path}>{item?.title}</Link>
                   </li>
                 )

@@ -35,18 +35,18 @@ const Footer = () => {
             <img src={Logo} alt='Logo' />
           </div>
           <div className='col-8 d-flex justify-content-center flex-wrap'>
-            {navLinks?.map((item) => {
+            {navLinks?.map((item, index) => {
               return (
-                <li className="d-flex align-items-center p-3">
+                <li key={item?.path || index} className="d-flex align-items-center p-3">
                   <Link className={`fs-6 footer_links`} aria-current="page" to={item?.path}>{item?.title}</Link>
                 </li>
               )
             })}
           </div>
           <div className='col-2 d-flex'>
-            {socialLinks?.map((item) => {
+            {socialLinks?.map((item, index) => {
               return (
-                <a target="_blank" rel="noreferrer" href={item?.url} style={{ padding: "10px", margin: "10px" }}>
+                <a key={item?.url || index} target="_blank" rel="noreferrer" href={item?.url} style={{ padding: "10px", margin: "10px" }}>
                   <item.link style={{ color: "rgb(24,33,77)", fontSize: "24px" }} />
                 </a>
               )
@@ -63,9 +63,9 @@ const Footer = () => {
 
       <div className='container d-block d-md-none'>
         <div className='row'>
-          {navLinks?.map((item) => {
+          {navLinks?.map((item, index) => {
             return (
-              <div className='col-6'>
+              <div key={item?.path || index} className='col-6'>
                 <li className="d-flex align-items-center p-2">
                   <Link className={`fs-6 footer_links`} aria-current="page" to={item?.path}>{item?.title}</Link>
                 </li>
@@ -75,9 +75,9 @@ const Footer = () => {
         </div>
         <div className='row mt-3'>
           <div className='col d-flex'>
-            {socialLinks?.map((item) => {
+            {socialLinks?.map((item, index) => {
               return (
-                <a target="_blank" rel="noreferrer" href={item?.url} style={{ padding: "10px", margin: "0px" }}>
+                <a key={item?.url || index} target="_blank" rel="noreferrer" href={item?.url} style={{ padding: "10px", margin: "0px" }}>
                   <item.link style={{ color: "rgb(24,33,77)", fontSize: "13px" }} />
                 </a>
               )

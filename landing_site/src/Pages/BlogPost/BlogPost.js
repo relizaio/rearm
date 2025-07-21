@@ -22,7 +22,6 @@ const BlogPost = () => {
   
   const currentUrl = `${window.location.origin}/blog/${slug}`
   const description = getDescription(post.content)
-  console.log(description)
   
   return (
     <article>

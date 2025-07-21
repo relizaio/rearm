@@ -30,7 +30,7 @@ const LastContainer1 = () => {
                                 <div id="mce-success-response" style={{display: 'none'}}></div>
                             </div>
                             <div style={{position: 'absolute', left: '-5000px'}} aria-hidden="true">
-                                <input type="text" name="b_4b4c84aa576f5c0665c654b00_5ec5adc899" tabIndex="-1" value="" />
+                                <input type="text" name="b_4b4c84aa576f5c0665c654b00_5ec5adc899" tabIndex="-1" value="" readOnly />
                             </div>
                             <div className='d-flex justify-content-center' style={{ padding: "2% 25px" }}>
                                 <input className='contactUs-btn_ContactUs fw-bold' type="submit" value="Subscribe" name="subscribe" id="mc-embedded-subscribe" />
