@@ -186,9 +186,9 @@ public class AcollectionService {
 				if (ocd.isPresent() && ocd.get().getDefaultBranch() != null) {
 					String baseBranchName = ocd.get().getDefaultBranch().name();
 					try {
-						Optional<Branch> baseBranchOpt = branchService.findBranchByName(componentId, baseBranchName);
+						Optional<Branch> baseBranchOpt = branchService.findBranchByName(componentId, baseBranchName.toLowerCase());
 						if (baseBranchOpt.isPresent()) {
-							Optional<ReleaseData> baseBranchLatestRd = sharedReleaseService.getReleaseDataOfBranch(baseBranchOpt.get().getUuid());
+							Optional<ReleaseData> baseBranchLatestRd = sharedReleaseService.getLatestNonCancelledOrRejectedReleaseDataOfBranch(baseBranchOpt.get().getUuid());
 							if (baseBranchLatestRd.isPresent()) {
 								prevReleaseId = baseBranchLatestRd.get().getUuid();
 							} else {

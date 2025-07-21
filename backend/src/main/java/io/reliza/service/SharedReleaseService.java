@@ -117,6 +117,21 @@ public class SharedReleaseService {
 	}
 	
 	/**
+	 * This method returns the latest Release data of a specific branch or feature set
+	 * which is NOT CANCELLED or REJECTED
+	 * @param branchUuid - UUID of desired branch or feature set
+	 * @return Optional of latest release data for specified branch, excluding CANCELLED or REJECTED; if not found returns empty Optional
+	 */
+	public Optional<ReleaseData> getLatestNonCancelledOrRejectedReleaseDataOfBranch(UUID branchUuid) {
+		BranchData bd = branchService.getBranchData(branchUuid).orElseThrow();
+		log.info("bd: {}", bd);
+		List<ReleaseData> releases = listReleaseDataOfBranch(branchUuid, true); // sorted by version/date desc
+		return releases.stream()
+				.filter(rd -> rd.getLifecycle() != ReleaseData.ReleaseLifecycle.CANCELLED
+						&& rd.getLifecycle() != ReleaseData.ReleaseLifecycle.REJECTED)
+				.findFirst();
+	}
+	/**
 	 * This method returns latest Release data of specific branch or feature set
 	 * @param branchUuid - UUID of desired branch or feature set
 	 * @param et - Environment Type for which to check specific approvals, if empty method attempts to find latest release
