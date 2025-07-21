@@ -74,16 +74,16 @@ const HomePage = () => {
   const array2 = [
     {
       image: rearm_release,
-      title: "Storage for SBOMs / xBOMs, Release Metadata",
+      title: "Digital Asset Management",
       texts: [
-        { text: "ReARM provides storage for Artifacts and Metadata, including SBOMs / xBOMs and Attestations, per each Release." }
+        { text: "ReARM maintains up-to-date inventory of digital assets and provides storage for Artifacts and Metadata, such as SBOMs / xBOMs, and Attestations, per each Release." }
       ]
     },
     {
       image: compliance_image,
       title: "Regulatory Compliance",
       texts: [
-        { text: "ReARM ensures supply chain security compliance with various regulations, including EU CRA, NIS2, DORA, US Executive Orders 14028, 14144, Section 524B of the FD&C Act." }
+        { text: "ReARM ensures supply chain security compliance with various regulations, including EU CRA, NIS2, DORA, US Executive Orders 14028, 14144, Section 524B of the FD&C Act, India's RBI and SEBI." }
       ]
     },
     {
@@ -111,7 +111,7 @@ const HomePage = () => {
       image: rearm_approvals,
       title: "Approval and Lifecycle Management",
       texts: [
-        { text: "ReARM provides rich capabilities for managing approvals and lifecycles of your releases. Both manual and automated approvals are supported." }
+        { text: "ReARM Pro provides rich capabilities for managing approvals and lifecycles of your releases. Both manual and automated approvals are supported." }
       ]
     }
   ]
