@@ -8,7 +8,7 @@
                 <vue-feather type="arrow-right-circle" @click="openNextVersionModal" class="icons clickable" title='Set Next Version' />
             </div>
             <div class="dangerControls">
-                <vue-feather v-if="isWritable" @click="archiveBranch" class="clickable" type="trash-2" title="Archive Branch" />
+                <vue-feather v-if="isWritable" @click="archiveBranch" class="clickable" type="trash-2" :title="Archive ' + words.branchFirstUpper" />
             </div>
         </div>
         <n-modal
