@@ -226,7 +226,8 @@ const HomePage = () => {
   return (
     <article>
       <title>{`ReARM by Reliza - SBOM / xBOM Digital Asset Management System for Supply Chain Security`}</title>
-      <meta name="description" content="ReARM by Reliza is an open source product that provides capabilities to create Digital Asset Management System for organization and store SBOM, xBOM and other security artifacts. It is used in DevSecOps and Supply Chain Security." />
+      <meta name="title" property="og:title" content="ReARM by Reliza - SBOM / xBOM Digital Asset Management System for Supply Chain Security" />
+      <meta name="description" property="og:description" content="ReARM by Reliza is an open source product that provides capabilities to create Digital Asset Management System for organization and store SBOM, xBOM and other security artifacts. It is used in DevSecOps and Supply Chain Security." />
       <BasicLayout>
         <div className='mainPaddingContainer'>
           <div className={`container-fluid ${styles.container1}`}>

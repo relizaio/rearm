@@ -27,15 +27,13 @@ const BlogPost = () => {
     <article>
       {/* React 19 native metadata tags - automatically hoisted to <head> */}
       <title>{`${post.title} - ReARM by Reliza`}</title>
-      <meta name="description" content={description} />
+      <meta name="description" property="og:description" content={description} />
       
       {/* Open Graph tags for Facebook, LinkedIn, etc. */}
-      <meta property="og:title" content={post.title} />
-      <meta property="og:description" content={description} />
+      <meta property="og:title" name="title" content={post.title} />
       <meta property="og:type" content="article" />
-      <meta property="og:url" content={currentUrl} />
-      <meta property="og:site_name" content="ReARM by Reliza" />
-      <meta property="og:image" content={`${window.location.origin}/logo192.png`} />
+      <meta property="og:url" name="url" content={currentUrl} />
+      <meta property="og:site_name" name="site_name" content="ReARM by Reliza" />
       <meta property="article:published_time" content={post.date} />
       
       {/* Twitter Card tags */}
@@ -43,7 +41,6 @@ const BlogPost = () => {
       <meta name="twitter:title" content={post.title} />
       <meta name="twitter:description" content={description} />
       <meta name="twitter:url" content={currentUrl} />
-      <meta name="twitter:image" content={`${window.location.origin}/logo192.png`} />
       
       {/* Additional meta tags */}
       <meta name="author" content="ReARM by Reliza" />

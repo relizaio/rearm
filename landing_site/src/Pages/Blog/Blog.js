@@ -11,7 +11,8 @@ const Blog = () => {
   return (
     <article>
       <title>{`Blog - ReARM by Reliza`}</title>
-      <meta name="description" content="ReARM Blog Entry Page containing available blog posts" />
+      <meta property="og:title" name="title" content="Blog - ReARM by Reliza" />
+      <meta name="description" property="og:description" content="ReARM Blog Entry Page containing available blog posts" />
       <BasicLayout>
         <div className={`${styles.containerHeader} container-fluid`}>
           <div className='row'>
