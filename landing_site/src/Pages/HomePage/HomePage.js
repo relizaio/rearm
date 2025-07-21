@@ -10,6 +10,7 @@ import dtrack from "../../Assets/Home/dtrack.png"
 import oci from "../../Assets/Home/oci.png"
 import cosign from "../../Assets/Home/cosign.png"
 import msteams from "../../Assets/Home/msteams.png"
+import sendgrid from "../../Assets/Home/sendgrid.png"
 import tealogo from "../../Assets/Home/tealogo.png"
 import analyse from "../../Assets/Home/analyse.svg"
 import colab from "../../Assets/Home/colab.svg"
@@ -51,6 +52,7 @@ const HomePage = () => {
     { icon: cosign },
     { icon: msteams },
     { icon: oci },
+    { icon: sendgrid },
   ]
   const featuresArray = [
     {
