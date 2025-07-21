@@ -9,7 +9,7 @@ ReARM allows organizations to maintain compliance within the various regulatory 
 - US Army [Memorandum](https://federalnewsnetwork.com/wp-content/uploads/2024/09/081624_Army_SBOM_Memo.pdf) on SBOMs
 - US executive order [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity) (later [amended](https://rearmhq.com/blog/sbom-remains-attestations-out-amending-executive-order-14144))
 - Section 524B of the US [FD&C Act](https://www.govinfo.gov/content/pkg/COMPS-973/pdf/COMPS-973.pdf)
-- Reserve Bank of India (RBI) and the Securities and Exchange Board of India (SEBI) Cybersecurity and Cyber Resilience Framework SBOM requirements, i.e. described [here](https://www.sebi.gov.in/sebi_data/faqfiles/jun-2025/1749647139924.pdf)
+- Reserve Bank of India (RBI) and the Securities and Exchange Board of India (SEBI) Cybersecurity and Cyber Resilience Framework SBOM [requirements](https://www.sebi.gov.in/legal/circulars/aug-2024/cybersecurity-and-cyber-resilience-framework-cscrf-for-sebi-regulated-entities-res-_85964.html) with [faq](https://www.sebi.gov.in/sebi_data/faqfiles/jun-2025/1749647139924.pdf)
 
 ## Component
 Component refers to software or hardware that is being developed or used by an organization and in case of software usually maps to a version control system (VCS) repository (i.e., this could be a Git repository). In other words, if you are working on a software which has its own Version Control repository or is a component in a Monorepo - that would be a Component.
@@ -30,9 +30,9 @@ There are 3 well-known work organization systems that deal with branching:
 While all of the above are supported by ReARM, we at Reliza recommend using Trunk-Based Development where possible.
 
 ## Product
-Product is a customer-facing, operational piece of software. Products are not mapped directly to a version control repository, but rather through their Components. Components of Products are either Components or other Products.
+Product is a customer-facing, operational piece of software or hardware. This is what customer buys. Products are not mapped directly to a version control repository, but rather through their Components. Products may themselves be components of other Products.
 
-Customers, Project Managers and Product Marketing teams usually think in terms of Products when describing software produced by organization.
+Customers, Project Managers and Product Marketing teams usually think in terms of Products when describing software or hardware produced by organization.
 
 Using Product-Component relationships helps communication between Development, Ops and Product Marketing teams.
 
