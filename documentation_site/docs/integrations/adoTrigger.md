@@ -1,6 +1,6 @@
 # Trigger Azure DevOps Pipeline from ReARM
 
-N.B. This functinality is not part of ReARM Community Edition and is only available on Enterprise Edition.
+N.B. This functinality is not part of ReARM Community Edition and is only available on ReARM Pro.
 
 ## Azure Part
 1. You would need to create Azure Service Principal to perform Azure DevOps trigger operations. For this, in Azure Portal search, search for `App registrations`, click on it and once on the `App registrations` page, click on the `New registration` button.

@@ -1,6 +1,6 @@
 # Configure Microsoft Azure as Identity Provider
 
-This will allow you to use Microsoft Entra ID to log in to your ReARM instance. This tutorial is for ReARM Community Edition, if you are a user of ReARM Enterprise Edition, Reliza will work with you on the configuration.
+This will allow you to use Microsoft Entra ID to log in to your ReARM instance. This tutorial is for ReARM Community Edition, if you are a user of ReARM Pro, Reliza will work with you on the configuration.
 
 ## Azure Part
 1. You would need to create Azure Service Principal to register Microsoft as an identity provider. For this, in Azure Portal search, search for `App registrations`, click on it and once on the `App registrations` page, click on the `New registration` button.

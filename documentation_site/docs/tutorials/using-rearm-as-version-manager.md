@@ -7,7 +7,7 @@ This tutorial will walk through the most basic example how to set up ReARM as a 
 Time it takes: 5 minutes.
 
 ## Pre-requisites
-Make sure you have [installed](/installation/) ReARM Community Edition or have access to ReARM Enterprise.
+Make sure you have [installed](/installation/) ReARM Community Edition or have access to ReARM Pro.
 
 Alternatively, you can follow the steps below on the [ReARM Public Demo instance](https://demo.rearmhq.com). If using Public Demo, click on Profile (Human icon) in the top right of the screen, and then Create New Organization in which you would do subsequent steps. Reload the page (F5) once the organization is created, this will show the dropdown menu on top of the screen where you can switch into your new organization.
 

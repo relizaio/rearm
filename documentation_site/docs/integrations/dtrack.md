@@ -1,7 +1,7 @@
 
 # Dependency-Track
 
-ReARM relies on [Dependency-Track](https://dependencytrack.org) for SBOM analysis, including vulnerability scans and policy violations. If you are using ReARM Enterprise Edition, Dependency Track integration will be set up for you by Reliza. If you are using Community Edition or your organization on [ReARM Public Demo](https://demo.rearmhq.com), follow these instructions below:
+ReARM relies on [Dependency-Track](https://dependencytrack.org) for SBOM analysis, including vulnerability scans and policy violations. If you are using ReARM Pro, Dependency Track integration will be set up for you by Reliza. If you are using ReARM Community Edition or your organization on [ReARM Public Demo](https://demo.rearmhq.com), follow these instructions below:
 
 ## Pre-requisites
 You need to have a running instance of Dependency-Track.

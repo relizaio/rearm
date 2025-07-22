@@ -1,6 +1,6 @@
 # Trigger GitLab CI/CD from ReARM
 
-N.B. This functinality is not part of ReARM Community Edition and is only available on Enterprise Edition.
+N.B. This functinality is not part of ReARM Community Edition and is only available on ReARM Pro.
 
 GitLab trigger integrations is done via triggering GitLab CI/CD schedules.
 
