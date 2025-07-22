@@ -5,7 +5,7 @@ titleTemplate: null
 
 hero:
   name: ReARM
-  tagline: System to Manage Releases, SBOMs, xBOMs
+  tagline: Digital Asset Management System for Releases, SBOMs, xBOMs, and more
   actions:
     - text: Get Started →
       link: /get-started/
