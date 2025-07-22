@@ -866,6 +866,7 @@ const COMPONENT_SHORT_DATA = `
     type
     versionSchema
     featureBranchVersioning
+    vcs
     identifiers {
         idType
         idValue
