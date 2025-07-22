@@ -27,6 +27,11 @@ Here is the list of affected packages:
   - 0.2.8
 - napi-postinstall:
   - 0.3.1
+- is: 
+  - 3.3.1
+- got-fetch: 
+  - 5.1.11
+  - 5.1.12
 
 To make matters worse, at certain instances applications such as Dependabot or Renovate Bot were offering affected versions as automated updates.
 
@@ -39,3 +44,5 @@ If you are using ReARM Pro or ReARM CE with Dependency-Track integration, perfor
 Also, if you are using ReARM Pro with configured triggers, you may have received high vulnerability alerts for the affected packages. 
 
 Finally, we are currently releasing a feature for both ReARM PRO and ReARM CE that shows and alerts on any change in the SBOM components introduced by a new release. We are publishing a release of ReARM containing this feature by the end of the month.
+
+*Note:* This article has been updated on July 22, 2025 with more malicious packages details (is, got-fetch).
