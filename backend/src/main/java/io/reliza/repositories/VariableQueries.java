@@ -609,19 +609,30 @@ class VariableQueries {
 	/*
 	 * Organizations
 	 */
-	protected static final String GET_NUMERIC_ANALYTICS_FOR_ORG = "select component_count.components, product_count.products, release_count.releases,"
-			+ " vcs_count.vcs, artifact_count.artifacts, sce_count.commits, branch_count.branches "
-			+ " from"
-			+ " (select count(*) as components from rearm.components where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString and"
-			+ " record_data->>'" + CommonVariables.TYPE_FIELD + "' = 'COMPONENT') as component_count,"
-			+ " (select count(*) as products from rearm.components where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString and"
-			+ " record_data->>'" + CommonVariables.TYPE_FIELD + "' = 'PRODUCT') as product_count,"
-			+ " (select count(*) as releases from rearm.releases where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString) as release_count,"
-			+ " (select count(*) as vcs from rearm.vcs_repositories as vcs where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString) as vcs_count,"
-			+ " (select count(*) as artifacts from rearm.artifacts where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString) as artifact_count,"
-			+ " (select count(*) as commits from rearm.source_code_entries where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString) as sce_count,"
-			+ " (select count(*) as branches from rearm.branches where record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString) as branch_count"
-			;
+	protected static final String GET_NUMERIC_ANALYTICS_FOR_ORG = """
+			select component_count.components, product_count.products, release_count.releases,
+			vcs_count.vcs, artifact_count.artifacts, sce_count.commits, branch_count.branches, deliverable_count.deliverables, feature_set_count.feature_sets
+			from
+			(select count(*) as components from rearm.components where record_data->>'org' = :orgUuidAsString 
+			   and record_data->>'type' = 'COMPONENT' and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as component_count,
+			(select count(*) as products from rearm.components where record_data->>'org' = :orgUuidAsString 
+			   and record_data->>'type' = 'PRODUCT' and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as product_count,
+			(select count(*) as releases from rearm.releases where record_data->>'org' = :orgUuidAsString 
+			    and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as release_count,
+			(select count(*) as vcs from rearm.vcs_repositories as vcs where record_data->>'org' = :orgUuidAsString 
+			    and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as vcs_count,
+			(select count(*) as artifacts from rearm.artifacts where record_data->>'org' = :orgUuidAsString
+				) as artifact_count,
+			(select count(*) as commits from rearm.source_code_entries where record_data->>'org' = :orgUuidAsString) as sce_count,
+			(select count(*) as branches from rearm.branches b where b.record_data->>'org' = :orgUuidAsString and
+				(b.record_data->>'status' is null or b.record_data->>'status' = 'ACTIVE') and 
+				'COMPONENT' = (select rc.record_data->>'type' from rearm.components rc where rc.record_data->>'uuid' = b.record_data->>'component')) as branch_count,
+			(select count(*) as feature_sets from rearm.branches b where b.record_data->>'org' = :orgUuidAsString and
+				(b.record_data->>'status' is null or b.record_data->>'status' = 'ACTIVE') and 
+				'PRODUCT' = (select rc.record_data->>'type' from rearm.components rc where rc.record_data->>'uuid' = b.record_data->>'component')) as feature_set_count,
+			(select count(*) as deliverables from rearm.deliverables where record_data->>'org' = :orgUuidAsString and
+				(record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as deliverable_count
+		""";
 
 	/*
 	 * Analytical Queries
