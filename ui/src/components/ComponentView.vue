@@ -60,7 +60,7 @@
                         :show-icon="false"
                         style="width: 90%"
                     >
-                        <h2>Create Branch</h2>
+                        <h2>Create {{ words.branchFirstUpper }}</h2>
                         <n-form :model="createBranchObject">
                             <n-form-item label="Name" path="name">
                                 <n-input v-model:value="createBranchObject.name" required :placeholder="'Enter ' + words.branchFirstUpper + ' name'" />
