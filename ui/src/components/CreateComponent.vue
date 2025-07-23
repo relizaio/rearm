@@ -254,8 +254,9 @@ const vcsRepos: ComputedRef<any> = computed((): any => {
     return retMap
 })
 
-const createdVcsRepo = function (repoValue: string) {
+const createdVcsRepo = async function (repoValue: string) {
     isCreatedNewRepo.value = true
+    await store.dispatch('fetchVcsRepos', props.orgProp)
     component.value.vcs = repoValue
 }
 
