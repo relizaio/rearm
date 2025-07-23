@@ -9,7 +9,7 @@
     "lint": "eslint --ext .js,.vue --ignore-path .gitignore --fix src"
   },
   "dependencies": {
-    "@apollo/client": "^3.7.12",
+    "@apollo/client": "^3.7.14",
     "@vue/apollo-option": "^4.0.0-beta.4",
     "feather-icons": "^4.29.0",
     "vue": "^3.2.47",
