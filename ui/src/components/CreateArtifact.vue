@@ -1,10 +1,10 @@
 <template>
     <div class="createArtifact">
-        <div>Create Artifact</div>
+        <h2>Create Artifact</h2>
         <n-form ref="createArtifactForm" :model="artifact" :rules="rules">
             <n-form-item v-if="!isUpdateExistingBom"
                         path="storedIn"
-                        label="Storage Type">
+                        label="Select Storage Type">
                 <n-radio-group  v-model:value="artifact.storedIn" >
                     <n-tooltip trigger="hover">
                         <template #trigger>
@@ -42,7 +42,7 @@
                 <n-input
                         v-model:value="artifact.displayIdentifier"
                         required
-                        placeholder="Enter artifact identifier, i.e. this can be URI" />
+                        placeholder="Enter artifact display identifier, i.e. this can be URI" />
             </n-form-item>
             <n-form-item 
                         path="type"
@@ -66,7 +66,7 @@
                 <n-input
                         v-model:value="artifact.version"
                         required
-                        placeholder="Enter artifact version (Optional - or it would be generated)" />
+                        placeholder="Enter artifact version (Positive integer, optional, auto-generated otherwise)" />
             </n-form-item>
             <n-form-item
                         label="Artifact Tags">
@@ -179,6 +179,10 @@ if(props.isUpdateExistingBom && props.updateArtifact){
 const downloadLinks: Ref<DownloadLink[]> = ref([])
 
 const rules = {
+    storedIn: {
+        required: true,
+        message: 'Storage Type is required'
+    },
     displayIdentifier: {
         required: true,
         message: 'Identifier is required'
@@ -186,6 +190,17 @@ const rules = {
     type: {
         required: true,
         message: 'Type is required'
+    },
+    version: {
+        validator: (rule: any, value: string) => {
+            if (!value) return true // Allow empty values (not required)
+            const num = parseInt(value, 10)
+            if (isNaN(num) || num <= 0 || !Number.isInteger(num) || num.toString() !== value.trim()) {
+                return new Error('Version must be a positive integer')
+            }
+            return true
+        },
+        trigger: ['input', 'blur']
     }
 }
 
@@ -205,6 +220,11 @@ function onFileChange(newFileList: any) {
 }
 
 const onSubmit = async () => {
+    try {
+        await createArtifactForm.value?.validate()
+    } catch (validationErrors) {
+        return
+    }
     
     artifact.value.tags = artifactTags.value
     artifact.value.downloadLinks = downloadLinks.value
@@ -217,7 +237,6 @@ const onSubmit = async () => {
         sce: props.inputSce,
         belongsTo: props.inputBelongsTo,
     }
-
 
     try{
         if(props.isUpdateExistingBom){

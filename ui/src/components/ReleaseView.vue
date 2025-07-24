@@ -381,13 +381,11 @@
             style="width: 90%;"
             preset="dialog"
             :show-icon="false" >
-            <n-card title="Add Artifact" :hide-footer="true">
-                <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
-                    :inputOrgUuid="updatedRelease.orgDetails.uuid"
-                    :inputRelease="updatedRelease.uuid"
-                    :inputSourceCodeEntry="updatedRelease.sourceCodeEntry"
-                    :inputBelongsTo="'RELEASE'" />
-            </n-card>
+            <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
+                :inputOrgUuid="updatedRelease.orgDetails.uuid"
+                :inputRelease="updatedRelease.uuid"
+                :inputSourceCodeEntry="updatedRelease.sourceCodeEntry"
+                :inputBelongsTo="'RELEASE'" />
         </n-modal>
         <n-modal
             v-model:show="showSCEAddArtifactModal"
