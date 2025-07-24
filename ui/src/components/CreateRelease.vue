@@ -68,37 +68,7 @@
                     </n-form-item>
                 </n-form>
             </n-tab-pane>
-            <n-tab-pane v-if="isCreateNewRelease && componentProduct === 'COMPONENT'" name="sourcecodecreatereleasetab" tab="Source Code">
-                <div v-if="releaseBranch && !releaseBranch.vcs && !release.sourceCodeEntry">
-                    <p>Please link VCS repository to this branch first</p>
-                    <link-vcs
-                        :branchUuid="release.branch"
-                        @linkVcsRepo="linkVcsRepo"
 
-                    />
-                </div>
-                <div
-                    v-if="isSetSce && releaseBranch && releaseBranch.vcs">
-                            <p> VCS repo: {{ vcs }}
-                            <a :href="'http://' + vcs" target="_blank" rel="noopener noreferrer">
-                                <vue-feather type="external-link" title="Open repository In New Tab" class="clickable icons" />
-                            </a></p>
-                            <p> VCS branch: {{ releaseBranch.vcsBranch }}</p>
-                        </div>
-                <create-source-code-entry v-if="isSetSce && release.branch && releaseBranch.vcs && !release.sourceCodeEntry"
-                    @updateSce="updateSce"
-                    :inputOrgUuid="release.org"
-                    :inputBranch="release.branch" />
-                <div v-if="release.sourceCodeEntry"> <b> To be added: </b> </div>
-                    <div v-if="release.sourceCodeEntry">
-                        <p> Source Code Entry : {{ release.sourceCodeEntry }} <a :href="linkifiedCommit" target="_blank" rel="noopener noreferrer">
-                            <vue-feather type="external-link" title="Open Commit In New Tab" class="clickable icons" />
-                        </a></p>
-                    </div>
-                <div v-show="release.sourceCodeEntry">
-                    <p @click="clearSourceCodeEntry">x</p>
-                </div>
-            </n-tab-pane>
             <n-tab-pane v-if="isCreateNewRelease" name="artifactsreleasetab" tab="Artifacts">
                 <h4>Create artifacts</h4>
                 <vue-feather @click="isCreateArtifact = true" class="clickable" type="plus-circle" title="Add artifact" />
@@ -134,8 +104,6 @@ import { useStore } from 'vuex'
 import { NForm, NFormItem, NInput, NSelect, NRadio, NRadioGroup, NSpin, NTabs, NTabPane, NButton } from 'naive-ui'
 import constants from '../utils/constants'
 import CreateArtifact from './CreateArtifact.vue'
-import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
-import LinkVcs from './LinkVcs.vue'
 import commonFunctions from '@/utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
@@ -179,7 +147,7 @@ const componentProduct = ref(props.inputType)
 const isCreateNewRelease = ref(!props.attemptPickRelease)
 const generatedReleaseVersion = ref('')
 const isReleasesLoading = ref(false)
-const isSetSce = ref(false)
+
 const isCreateArtifact = ref(false)
 
 const compuuid = ref(props.inputComponent ? props.inputComponent : '')
@@ -188,7 +156,6 @@ const release = ref({
     version: '',
     branch: props.inputBranch ? props.inputBranch : '',
     artifacts: new Array<string>(),
-    sourceCodeEntry: '',
     org: props.orgProp,
     uuid: '',
 })
@@ -303,13 +270,7 @@ const branchName: ComputedRef<string> = computed((): any => {
     return branchName
 })
 
-const sce: ComputedRef<any> = computed((): any => {
-    let sceRet = {}
-    if (release.value.sourceCodeEntry) {
-        sceRet = store.getters.sourceCodeEntryById(release.value.sourceCodeEntry)
-    }
-    return sceRet
-})
+
 
 const vcs: ComputedRef<string> = computed((): any => {
     if (props.inputType !== 'PRODUCT' && typeof store.getters.vcsRepoById(releaseBranch.value.vcs) !== 'undefined') {
@@ -354,12 +315,10 @@ const onOrgChange = function (changedOrg: string) {
     if (changedOrg !== constants.ExternalPublicComponentsOrg) {
         store.dispatch('fetchProducts', changedOrg)
         store.dispatch('fetchComponents', changedOrg)
-        store.dispatch('fetchVcsRepos', changedOrg)
     }
     release.value.version = ''
     release.value.branch = ''
     release.value.artifacts = []
-    release.value.sourceCodeEntry = ''
     release.value.uuid = ''
 }
 
@@ -418,22 +377,12 @@ const checkIfCreateNewRelease = async function (value: string) {
     }
 }
 
-const updateSce = function (sceId: string) {
-    release.value.sourceCodeEntry = sceId
-    isSetSce.value = false
-}
-
-const clearSourceCodeEntry = function () {
-    release.value.sourceCodeEntry = ''
-    isSetSce.value = false
-}
 
 const onReset = function () {
     release.value = {
         version: '',
         branch: props.inputBranch ? props.inputBranch : '',
         artifacts: new Array<string>(),
-        sourceCodeEntry: '',
         org: props.orgProp,
         uuid: ''
     }
@@ -460,7 +409,6 @@ const onCreate = async function () {
     } else {
         store.dispatch('fetchComponents', release.value.org)
         store.dispatch('fetchProducts', release.value.org)
-        store.dispatch('fetchVcsRepos', release.value.org)
     }
 
     if (props.inputComponent) {
