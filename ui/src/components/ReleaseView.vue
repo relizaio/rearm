@@ -2023,16 +2023,16 @@ const deliverableTableFields: DataTableColumns<any> = [
             factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
             if (row.group) factContent.push(h('li', `group: ${row.group}`))
             if (row.publisher) factContent.push(h('li', `group: ${row.publisher}`))
-            if (row.name) factContent.push(h('li', `name: ${row.publisher}`))
+            if (row.name) factContent.push(h('li', `name: ${row.name}`))
             if (row.identifiers && row.identifiers.length) row.identifiers.forEach((i: any) => factContent.push(h('li', [`${i.idType}: ${i.idValue}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(i.idValue) })])))
             row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
             if (row.softwareMetadata) {
                 Object.keys(row.softwareMetadata).forEach(k => {
-                    if (k !== 'digests' && k !== 'downloadLinks' && row.softwareMetadata[k]) factContent.push(h('li', `${k}: ${row.softwareMetadata[k]}`))
+                    if (k !== 'digestRecords' && k !== 'downloadLinks' && row.softwareMetadata[k]) factContent.push(h('li', `${k}: ${row.softwareMetadata[k]}`))
                 })
             }
-            if (row.softwareMetadata.downloadLinks && row.softwareMetadata.downloadLinks.length) row.softwareMetadata.digests.forEach((d: any) => factContent.push(h('li', `download link: ${d.uri}`)))
-            if (row.softwareMetadata.digests && row.softwareMetadata.digests.length) row.softwareMetadata.digests.forEach((d: string) => factContent.push(h('li', `digest: ${d}`)))
+            if (row.softwareMetadata.downloadLinks && row.softwareMetadata.downloadLinks.length) row.softwareMetadata.downloadLinks.forEach((d: any) => factContent.push(h('li', `download link: ${d.uri}`)))
+            if (row.softwareMetadata.digestRecords && row.softwareMetadata.digestRecords.length) row.softwareMetadata.digestRecords.forEach((d: any) => factContent.push(h('li', `digest: ${d.algo} - ${d.digest}`)))
             if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
             if (row.supportedCpuArchitectures && row.supportedCpuArchitectures.length) factContent.push(h('li', `Supported CPU Architectures: ${row.supportedCpuArchitectures.toString()}`))
             if (row.supportedOs && row.supportedOs.length) factContent.push(h('li', `Supported OS: ${row.supportedOs.toString()}`))

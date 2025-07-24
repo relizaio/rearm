@@ -271,7 +271,10 @@ const DELIVERABLE_DETAIL_DATA = `
         buildId
         buildUri
         cicdMeta
-        digests
+        digestRecords {
+            algo
+            digest
+        }
         dateFrom
         dateTo
         duration
