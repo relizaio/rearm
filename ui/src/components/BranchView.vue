@@ -13,7 +13,7 @@
         </div>
         <n-modal
             v-model:show="showCreateReleaseModal"
-            :title="'Add New ' + words.branchFirstUpper + ' Release'"
+            title="Add New Release"
             preset="dialog"
             :show-icon="false"
             style="width: 90%"
@@ -71,16 +71,16 @@
                 />
                 <n-input v-else class="w-25" type="text" :value="branchData.type" readonly/>
             </div>
-            <div class="linkedVcsRepoBlock" v-if="branchData.componentDetails.type === 'COMPONENT' && modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">
+            <div class="linkedVcsRepoBlock" v-if="branchData.componentDetails.type === 'COMPONENT'">
                 <h6><strong>Linked VCS Repository:</strong></h6>
                 <div>
-                    <span v-if="!selectNewVcsRepo">{{ (modifiedBranch.vcsRepositoryDetails.name === modifiedBranch.vcsRepositoryDetails.uri) ? modifiedBranch.vcsRepositoryDetails.name : modifiedBranch.vcsRepositoryDetails.name + ' - ' + modifiedBranch.vcsRepositoryDetails.uri }}</span>
+                    <span v-if="modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid && !selectNewVcsRepo">{{ (modifiedBranch.vcsRepositoryDetails.name === modifiedBranch.vcsRepositoryDetails.uri) ? modifiedBranch.vcsRepositoryDetails.name : modifiedBranch.vcsRepositoryDetails.name + ' - ' + modifiedBranch.vcsRepositoryDetails.uri }}</span>
                     <n-select v-if="selectNewVcsRepo" :options="vcsRepos" v-model:value="modifiedBranch.vcs" />
                     <vue-feather v-if="!selectNewVcsRepo && isWritable" type="edit" class="clickable" @click="async () => {await fetchVcsRepos(); selectNewVcsRepo = true;}" />
                     <vue-feather v-if="selectNewVcsRepo && isWritable" type="check" class="clickable" @click="saveModifiedBranch(); selectNewVcsRepo = false;" />
                     <vue-feather v-if="selectNewVcsRepo && isWritable" class="clickable" @click="modifiedBranch.vcs = branchData.vcs; selectNewVcsRepo = false;" type="x" title="Discard VCS Repository Change" />
                 </div>
-                <div class="vcsBranchBlock">
+                <div class="vcsBranchBlock" v-if="modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">
                     <label for="vcsBranch">VCS Branch</label>
                     <vue-feather class="clickable versionIcon accept" v-if="branchData && branchData.vcsBranch !== modifiedBranch.vcsBranch && isWritable" @click="modifiedBranch.vcsBranch = branchData.vcsBranch" type="x" title="Discard VCS Branch Changes" />
                     <vue-feather class="clickable versionIcon reject" v-if="branchData && branchData.vcsBranch !== modifiedBranch.vcsBranch && isWritable" @click="saveModifiedBranch" type="check" title="Save VCS Branch Changes" />
