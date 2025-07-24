@@ -236,7 +236,7 @@
                         </h3>
                         <n-data-table :data="outboundDeliverables" :columns="deliverableTableFields" :row-key="artifactsRowKey" />
                     </div>
-                    <div class="container">
+                    <div class="container" v-if="false">
                         <h3>
                             Inbound Deliverables
                         </h3>
