@@ -372,11 +372,9 @@
             v-model:show="showReleaseAddProducesSce"
             preset="dialog"
             :show-icon="false">
-            <n-card title="Set Source Code Entry" :hide-footer="true">
-                <create-source-code-entry v-if="updatedRelease.orgDetails" @updateSce="updateSce"
-                    :inputOrgUuid="updatedRelease.orgDetails.uuid"
-                    :inputBranch="updatedRelease.branchDetails.uuid" />
-            </n-card>
+            <create-source-code-entry v-if="updatedRelease.orgDetails" @updateSce="updateSce"
+                :inputOrgUuid="updatedRelease.orgDetails.uuid"
+                :inputBranch="updatedRelease.branchDetails.uuid" />
         </n-modal>
         <n-modal
             v-model:show="showReleaseAddProducesArtifactModal"
