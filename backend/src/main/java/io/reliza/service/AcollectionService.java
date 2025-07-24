@@ -65,6 +65,11 @@ public class AcollectionService {
 		return repository.findById(uuid);
 	}
 
+	@Transactional
+	public Optional<Acollection> getAcollectionWriteLocked (UUID uuid) {
+		return repository.findByIdWriteLocked(uuid);
+	}
+	
 	public Optional<AcollectionData> getAcollectionData (UUID uuid) {
 		Optional<AcollectionData> ovd = Optional.empty();
 		Optional<Acollection> v = getAcollection(uuid);
@@ -136,6 +141,7 @@ public class AcollectionService {
 		if (null != latestAcolData && versionedArtifacts.equals(latestAcolData.getArtifacts())) {
 			resolvedCollection = latestAcolData;
 		} else {
+
 			AcollectionData curColData = AcollectionData.acollectionDataFactory(rd.getOrg(), releaseUuid, curColVersion, versionedArtifacts);
 			curColData.resolveUpdateReason(latestAcolData);
 			Map<String,Object> recordData = Utils.dataToRecord(curColData);
@@ -156,7 +162,7 @@ public class AcollectionService {
 			throw new IllegalStateException("Artifact Collection must have record data");
 		}
 		ac.setRecordData(recordData);
-		Optional<Acollection> oac = getAcollection(ac.getUuid());
+		Optional<Acollection> oac = getAcollectionWriteLocked(ac.getUuid());
 		if (oac.isPresent()) {
 			throw new IllegalStateException("Artifact Collections are immutable and cannot be modified, new version must be created instead");
 		}
@@ -243,8 +249,9 @@ public class AcollectionService {
 		}
 	}
 
+	@Transactional
 	private void persistArtifactChangelogForCollection(ArtifactChangelog artifactChangelog, UUID comparedReleaseUuid, UUID acollection){
-		Acollection ac = getAcollection(acollection).get();
+		Acollection ac = getAcollectionWriteLocked(acollection).get();
 		AcollectionData acd = AcollectionData.dataFromRecord(ac);
 		AcollectionData.ArtifactComparison artifactComparison = new AcollectionData.ArtifactComparison(artifactChangelog, comparedReleaseUuid);
 		acd.setArtifactComparison(artifactComparison);

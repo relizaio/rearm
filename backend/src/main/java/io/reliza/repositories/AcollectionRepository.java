@@ -4,12 +4,16 @@
 package io.reliza.repositories;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.Acollection;
+import jakarta.persistence.LockModeType;
 
 public interface AcollectionRepository extends CrudRepository<Acollection, UUID> {
 	@Query(
@@ -17,4 +21,8 @@ public interface AcollectionRepository extends CrudRepository<Acollection, UUID>
 			nativeQuery = true)
 	List<Acollection> findAcollectionsByRelease(String releaseUuidAsString);
 
+	@Transactional
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query(value = "SELECT ac FROM Acollection ac where uuid = :uuid")
+	public Optional<Acollection> findByIdWriteLocked(UUID uuid);
 }
