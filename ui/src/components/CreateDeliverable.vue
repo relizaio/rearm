@@ -1,6 +1,6 @@
 <template>
     <div class="createDeliverable">
-        <div>Create Deliverable</div>
+        <h2>Create Deliverable</h2>
         <n-form ref="createDeliverableForm" :model="deliverable" :rules="rules">
             <n-form-item
                         path="displayIdentifier"

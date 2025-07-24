@@ -436,14 +436,12 @@
             style="width: 90%;"
             preset="dialog"
             :show-icon="false" >
-            <n-card title="Add Deliverable" :hide-footer="true">
-                <create-deliverable v-if="updatedRelease.orgDetails"
-                    :inputOrgUuid="updatedRelease.orgDetails.uuid"
-                    :inputRelease="updatedRelease.uuid"
-                    :inputBranch="updatedRelease.branch"
-                    @addDeliverable="addArtifact"
-                 />
-            </n-card>
+            <create-deliverable v-if="updatedRelease.orgDetails"
+                :inputOrgUuid="updatedRelease.orgDetails.uuid"
+                :inputRelease="updatedRelease.uuid"
+                :inputBranch="updatedRelease.branch"
+                @addDeliverable="addArtifact"
+                />
         </n-modal>
         <n-modal
             v-model:show="cloneReleaseToFsObj.showModal"
