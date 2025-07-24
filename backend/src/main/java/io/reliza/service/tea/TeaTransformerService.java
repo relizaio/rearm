@@ -21,6 +21,7 @@ import io.reliza.model.AcollectionData;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
+import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
@@ -217,7 +218,7 @@ public class TeaTransformerService {
 		ta.setType(tat);
 		String name = StringUtils.isNotEmpty(rearmAD.getDisplayIdentifier()) ? rearmAD.getDisplayIdentifier() : rearmAD.getUuid().toString();  
 		ta.setName(name);
-		
+
 		List<TeaArtifactFormat> tafList = new LinkedList<>();
 		if (rearmAD.getStoredIn() == StoredIn.REARM) {
 			TeaArtifactFormat taf = new TeaArtifactFormat();
@@ -236,6 +237,14 @@ public class TeaTransformerService {
 				// tafAugmented.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO
 				tafAugmented.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/augmented/" + rearmAD.getUuid());
 				tafAugmented.setSignatureUrl(null); // TODO
+				List<TeaArtifactChecksum> tacList = new LinkedList<>();
+				rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
+					TeaArtifactChecksum tac = new TeaArtifactChecksum();
+					tac.setAlgType(d.algo());
+					tac.setAlgValue(d.digest());
+					tacList.add(tac);	
+				});
+				tafAugmented.setChecksums(tacList);
 				tafList.add(tafAugmented);
 			}
 		} else {
@@ -243,7 +252,14 @@ public class TeaTransformerService {
 				TeaArtifactFormat taf = new TeaArtifactFormat();
 				taf.setDescription("External Artifact linked from ReARM");
 				taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), dlink.getContent().getContentString()));
-				taf.setChecksums(transformDigestsToTea(rearmAD.getDigests()));
+				List<TeaArtifactChecksum> tacList = new LinkedList<>();
+				rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
+					TeaArtifactChecksum tac = new TeaArtifactChecksum();
+					tac.setAlgType(d.algo());
+					tac.setAlgValue(d.digest());
+					tacList.add(tac);	
+				});
+				taf.setChecksums(tacList);
 				taf.setUrl(dlink.getUri());
 				taf.setSignatureUrl(null); // TODO
 				tafList.add(taf);
