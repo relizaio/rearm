@@ -53,14 +53,14 @@
                 <n-input v-if="isWritable" v-model:value="modifiedBranch.marketingVersionSchema" />
                 <n-input v-else type="text" name="marketingVersionSchema" :value="modifiedBranch.marketingVersionSchema" readonly/>
             </div>
-            <div class="versionMetadataBlock" v-if="branchData.componentDetails.type === 'PRODUCT'">
+            <div class="versionMetadataBlock" v-if="false && branchData.componentDetails.type === 'PRODUCT'">
                 <label id="branchVersionMetadataLabel" for="branchVersionMetadata">Generated Version Metadata</label>
                 <vue-feather class="clickable versionIcon accept" v-if="branchData && branchData.metadata !== modifiedBranch.metadata && isWritable" @click="modifiedBranch.metadata = branchData.metadata" type="x" title="Discard Metadata Changes" />
                 <vue-feather class="clickable versionIcon reject" v-if="branchData && branchData.metadata !== modifiedBranch.metadata && isWritable" @click="saveModifiedBranch" type="check" title="Save Metadata" />
                 <n-input v-if="isWritable" id="branchVersionMetadata" v-model:value="modifiedBranch.metadata" />
                 <n-input v-else type="text" id="versionMetadata" name="versionMetadata" :value="modifiedBranch.metadata" readonly/>
             </div>
-            <div class="branchTypeBlock">
+            <div class="branchTypeBlock" v-if="branchData.componentDetails.type === 'COMPONENT'">
                 <label id="branchTypeMetadataLabel">Branch Type</label>
                 <n-select
                     v-if="isWritable && branchData.type !== 'BASE'"
