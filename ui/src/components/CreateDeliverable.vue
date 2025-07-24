@@ -65,10 +65,16 @@
             <n-form-item
                         label="Deliverable Identifiers">
                 <n-dynamic-input
-                    preset="pair"
-                    v-model:value="deliverable.identifiers"
-                    key-placeholder="Enter Identifier Type"
-                    value-placeholder="Enter Identifier" />
+                    v-model:value="deliverable.identifiers" :on-create="onCreateIdentifier">
+                    <template #create-button-default>
+                        Add Identifier
+                    </template>
+                    <template #default="{ value }">
+                        <n-select style="width: 200px;" v-model:value="value.idType"
+                            :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
+                        <n-input type="text" minlength="100" v-model:value="value.idValue" />
+                                        </template>
+                </n-dynamic-input>
             </n-form-item>
             <n-form-item
                         label="Deliverable Download Links">
@@ -131,7 +137,7 @@ interface Deliverable {
     tags: Tag[],
     branch: string,
     type: string,
-    identifiers: [],
+    identifiers: any[],
     supportedOs: string[],
     supportedCpuArchitectures: string[],
     softwareMetadata: SoftwareMetadata
@@ -191,7 +197,7 @@ const rules = {
 }
 
 
-const onSubmit = async () => {
+async function onSubmit () {
     const response = await graphqlClient.mutate({
         mutation: gql`
             mutation addOutboundDeliverablesManual($deliverables: AddDeliverableInput!) {
@@ -208,10 +214,17 @@ const onSubmit = async () => {
     emit('addDeliverable')
 }
 
-const onCreateDownloadLink = () => {
+function onCreateDownloadLink () {
     return {
         uri: '',
         content: ''
+    }
+}
+
+function onCreateIdentifier () {
+    return {
+        idType: '',
+        idValue: ''
     }
 }
 
