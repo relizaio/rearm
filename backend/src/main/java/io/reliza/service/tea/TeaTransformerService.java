@@ -228,6 +228,14 @@ public class TeaTransformerService {
 			// taf.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO: digest is currently from Rebom OCI
 			taf.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + rearmAD.getUuid());
 			taf.setSignatureUrl(null); // TODO
+			List<TeaArtifactChecksum> tacList = new LinkedList<>();
+			rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
+				TeaArtifactChecksum tac = new TeaArtifactChecksum();
+				tac.setAlgType(d.algo());
+				tac.setAlgValue(d.digest());
+				tacList.add(tac);	
+			});
+			taf.setChecksums(tacList);
 			tafList.add(taf);
 			
 			if (rearmAD.getType() == ArtifactType.BOM || rearmAD.getType() == ArtifactType.VDR || rearmAD.getType() == ArtifactType.VEX || rearmAD.getType() == ArtifactType.ATTESTATION) {
@@ -237,14 +245,6 @@ public class TeaTransformerService {
 				// tafAugmented.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO
 				tafAugmented.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/augmented/" + rearmAD.getUuid());
 				tafAugmented.setSignatureUrl(null); // TODO
-				List<TeaArtifactChecksum> tacList = new LinkedList<>();
-				rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
-					TeaArtifactChecksum tac = new TeaArtifactChecksum();
-					tac.setAlgType(d.algo());
-					tac.setAlgValue(d.digest());
-					tacList.add(tac);	
-				});
-				tafAugmented.setChecksums(tacList);
 				tafList.add(tafAugmented);
 			}
 		} else {

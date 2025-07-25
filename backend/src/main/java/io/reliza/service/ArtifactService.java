@@ -371,7 +371,7 @@ public class ArtifactService {
 		}
 		
 		// artifactDto.setDisplayIdentifier(this.registryHost + "/" + this.ociRepository);
-		if(null!=artifactUploadResponse && null != rebomResponse){
+		if(null!=artifactUploadResponse){
 			Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
 			String ociDigest = artifactUploadResponse.getOciResponse().getDigest();
 			if(StringUtils.isNotEmpty(ociDigest)){
@@ -380,7 +380,7 @@ public class ArtifactService {
 			if(StringUtils.isNotEmpty(artifactUploadResponse.getFileSHA256Digest())){
 				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
 			}
-			if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
+			if(null!=rebomResponse && StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
 				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));
 			}
 			artifactDto.setDigestRecords(digestRecords);

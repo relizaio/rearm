@@ -74,9 +74,6 @@ public class SharedArtifactService {
 	
 	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
-
-	
-        var tags = ad.getTags();
         log.info("download artifacts for ad: {}", ad);
 
 		if(null != ad.getInternalBom()){
@@ -85,39 +82,37 @@ public class SharedArtifactService {
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);
 		}else {
-			Boolean isDownloadable = tags.stream().anyMatch(t -> t.key().equals(CommonVariables.DOWNLOADABLE_ARTIFACT) && t.value().equalsIgnoreCase("true"));
-		
-			if(!isDownloadable)
-				throw new RelizaException("No Downloadable object associated with artifact: " + ad.getUuid().toString());
-			
-			String tagValue = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.TAG_FIELD)).findFirst().get().value();
-			String mediaType = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.MEDIA_TYPE_FIELD)).findFirst().get().value();
-			String fileName = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.FILE_NAME_FIELD)).findFirst().get().value();
-			
-			String resolvedFileName = StringUtils.isNotEmpty(fileName) ? fileName : tagValue;
-			String ociDigest = ad.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaArtifactChecksumType.SHA_256) && dr.scope().equals(DigestScope.OCI_STORAGE)).findFirst().orElseThrow().digest();
-			
-			monoResponseEntity = this.webClient.get()
+			monoResponseEntity = downloadRearmNonBomArtifact(ad);
+		}
+
+		return monoResponseEntity;
+    }
+	private Mono<ResponseEntity<byte[]>> downloadRearmNonBomArtifact(ArtifactData ad)throws RelizaException{
+		var tags = ad.getTags();
+		Boolean isDownloadable = tags.stream().anyMatch(t -> t.key().equals(CommonVariables.DOWNLOADABLE_ARTIFACT) && t.value().equalsIgnoreCase("true"));
+		if(!isDownloadable)
+			throw new RelizaException("No Downloadable object associated with artifact: " + ad.getUuid().toString());
+		String tagValue = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.TAG_FIELD)).findFirst().get().value();
+		String mediaType = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.MEDIA_TYPE_FIELD)).findFirst().get().value();
+		String fileName = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.FILE_NAME_FIELD)).findFirst().get().value();
+		String resolvedFileName = StringUtils.isNotEmpty(fileName) ? fileName : tagValue;
+		String ociDigest = ad.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaArtifactChecksumType.SHA_256) && dr.scope().equals(DigestScope.OCI_STORAGE)).findFirst().orElseThrow().digest();
+		return this.webClient.get()
 					.uri(uriBuilder -> uriBuilder
-						.path("/pull")
-						.queryParam("registry", this.registryHost)
-						.queryParam("repo",this.ociRepository)
-						.queryParam("tag", ociDigest)
-						.build()
+							.path("/pull")
+							.queryParam("registry", this.registryHost)
+							.queryParam("repo",this.ociRepository)
+							.queryParam("tag", ociDigest)
+							.build()
 					)
 					.accept(MediaType.APPLICATION_OCTET_STREAM)
 					.retrieve()
 					.bodyToMono(byte[].class)
 					.map(data -> ResponseEntity.ok()
-							.contentType(MediaType.parseMediaType(mediaType))
-							.header("Content-Disposition", "attachment; filename=\"" + resolvedFileName + "\"")
-							.body(data));
-		}
-
-
-
-		return monoResponseEntity;
-    }
+									.contentType(MediaType.parseMediaType(mediaType))
+									.header("Content-Disposition", "attachment; filename=\"" + resolvedFileName + "\"")
+									.body(data));	
+	}
 	public Mono<ResponseEntity<byte[]>> downloadRawArtifact(ArtifactData ad) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
 
@@ -127,7 +122,7 @@ public class SharedArtifactService {
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);
 		}else {
-			throw new RelizaException("No Raw Downloadable object associated with artifact: " + ad.getUuid().toString());
+			monoResponseEntity = downloadRearmNonBomArtifact(ad);
 		}
 		return monoResponseEntity;
     }
