@@ -7,6 +7,7 @@ import static io.reliza.common.LambdaExceptionWrappers.*;
 
 import java.time.ZonedDateTime;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +29,9 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
+import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.ArtifactData.DigestScope;
+import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
@@ -43,9 +47,10 @@ import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.DeliverableRepository;
+import lombok.extern.slf4j.Slf4j;
 
 
-
+@Slf4j
 @Service
 public class DeliverableService {
 	
@@ -145,7 +150,7 @@ public class DeliverableService {
 			var arts = (List<Map<String, Object>>) deliverableItem.get("artifacts");
 			deliverableItem.remove("artifacts");
 			DeliverableDto deliverableDto = Utils.OM.convertValue(deliverableItem,DeliverableDto.class);
-			deliverableDto.cleanDigests();
+			deliverableDto.cleanLegacyDigests();
 			
 			String purl = null;
 			Optional<TeaIdentifier> purlId = Optional.empty();
@@ -247,6 +252,62 @@ public class DeliverableService {
 	
 	public void saveAll(List<Deliverable> artifacts){
 		repository.saveAll(artifacts);
+	}
+	
+	/**
+	 * Migrates all deliverables from deprecated digests field to digestRecords field
+	 * This method should be run once to migrate existing data
+	 */
+	@Transactional
+	private void migrateDigestsToDigestRecords() {
+		Iterable<Deliverable> allDeliverables = repository.findAll();
+		int migratedCount = 0;
+		
+		for (Deliverable deliverable : allDeliverables) {
+			DeliverableData dd = DeliverableData.dataFromRecord(deliverable);
+			
+			if (dd.getSoftwareMetadata() != null) {
+				var softwareMetadata = dd.getSoftwareMetadata();
+				Set<String> legacyDigests = softwareMetadata.getDigests();
+				
+				// Only migrate if there are legacy digests and no digest records yet
+				if (legacyDigests != null && !legacyDigests.isEmpty() && 
+					(softwareMetadata.getDigestRecords() == null || softwareMetadata.getDigestRecords().isEmpty())) {
+					
+					Set<DigestRecord> digestRecords = new LinkedHashSet<>();
+					
+					for (String digestString : legacyDigests) {
+						String cleanedDigest = io.reliza.common.Utils.cleanString(digestString);
+						if (StringUtils.isNotEmpty(cleanedDigest)) {
+							String[] digestParts = cleanedDigest.split(":", 2);
+							if (digestParts.length == 2) {
+								String digestTypeString = digestParts[0];
+								String digestValue = digestParts[1];
+								
+								TeaArtifactChecksumType checksumType = TeaArtifactChecksumType.parseDigestType(digestTypeString);
+								if (checksumType != null) {
+									digestRecords.add(new DigestRecord(checksumType, digestValue, DigestScope.ORIGINAL_FILE));
+								} else {
+									// Log and skip unsupported digest types
+									log.error("Skipping unsupported digest type: " + digestTypeString + " for deliverable: " + deliverable.getUuid());
+								}
+							}
+						}
+					}
+					
+					if (!digestRecords.isEmpty()) {
+						softwareMetadata.setDigestRecords(digestRecords);
+						dd.setSoftwareMetadata(softwareMetadata);
+						
+						Map<String, Object> recordData = io.reliza.common.Utils.dataToRecord(dd);
+						saveDeliverable(deliverable, recordData, WhoUpdated.getAutoWhoUpdated());
+						migratedCount++;
+					}
+				}
+			}
+		}
+		
+		log.info("Deliverable migration completed. Migrated " + migratedCount + " deliverables from digests to digestRecords.");
 	}
 
 }

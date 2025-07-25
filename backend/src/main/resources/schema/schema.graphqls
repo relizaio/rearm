@@ -184,6 +184,7 @@ type SoftwareMetadata {
 	buildUri: String
 	cicdMeta: String
 	digests: [String]
+	digestRecords: [DigestRecord]
 	dateFrom: DateTime
 	dateTo: DateTime
 	duration: Long
@@ -1027,6 +1028,7 @@ input SoftwareMetadataInput {
 	buildUri: String
 	cicdMeta: String
 	digests: [String]
+	digestRecords: [DigestRecordInput]
 	dateFrom: DateTime
 	dateTo: DateTime
 	duration: Long

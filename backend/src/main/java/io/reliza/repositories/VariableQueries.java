@@ -167,16 +167,16 @@ class VariableQueries {
 	/*
 	 * Deliverables
 	 */
-	protected static final String FIND_DELIVERABLE_BY_DIGEST = "select * from rearm.deliverables a"
-			+ " where jsonb_contains(a.record_data, jsonb_build_object('digests', jsonb_build_array(:digest))) AND a.record_data->>'" + 
-			CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
-			+ " and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)";
+	protected static final String FIND_DELIVERABLE_BY_DIGEST = """
+	    select * from rearm.deliverables a where a.record_data->>'org' = :orgUuidAsString 
+	    and jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))));
+	""";
 	
 	protected static final String FIND_DELIVERABLE_BY_DIGEST_AND_COMPONENT = """
 			SELECT * FROM rearm.deliverables a
-				WHERE jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digests', jsonb_build_array(:digest)))
+				WHERE jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))
 				AND cast (a.record_data->>'branch' as UUID) in (select uuid from rearm.branches where
-				record_data->>'component' = :compUuidAsStr)
+					record_data->>'component' = :compUuidAsStr)
 				AND (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
 			""";
 	

@@ -25,6 +25,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
+import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.tea.Link;
 import io.reliza.model.tea.TeaIdentifier;
@@ -93,8 +94,14 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 		private String buildUri;
 		@JsonProperty(CommonVariables.CICD_META_FIELD)
 		private String cicdMeta; // for now unstructured data regarding build process, i.e. jenkins uri
+		/**
+		 * @deprecated use digestRecords instead
+		 */
+		@Deprecated
 		@JsonProperty(CommonVariables.DIGESTS_FIELD)
 		private Set<String> digests;
+		@JsonProperty
+		private Set<DigestRecord> digestRecords;
 		/**
 		 * Timestamp when deliverable build started
 		 */

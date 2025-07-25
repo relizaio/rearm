@@ -92,6 +92,10 @@ public class GetDeliverableService {
 	
 
 	protected List<Deliverable> getDeliverablesByDigest (String digest, UUID orgUuid) {
+		if (StringUtils.startsWith(digest, "sha")) {
+			var digestEls = digest.split(":", 2);
+			digest = digestEls[1];
+		}
 		return repository.findDeliverableByDigest(digest, orgUuid.toString());
 	}
 	
@@ -148,6 +152,10 @@ public class GetDeliverableService {
 	}
 	
 	public Optional<Deliverable> getDeliverableByDigestAndComponent (String digest, UUID compUuid) {
+		if (StringUtils.startsWith(digest, "sha")) {
+			var digestEls = digest.split(":", 2);
+			digest = digestEls[1];
+		}
 		return repository.findDeliverableByDigestAndComponent(digest, compUuid.toString());
 	}
 	

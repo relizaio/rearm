@@ -4,9 +4,12 @@
 
 package io.reliza.model.dto;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.StringUtils;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,10 +19,13 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
+import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.DeliverableData.CPUArchitecture;
 import io.reliza.model.DeliverableData.OS;
 import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
+import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
@@ -59,28 +65,42 @@ public class DeliverableDto {
 	private List<UUID> artifacts;
 	private BelongsToOrganization isInternal;
 	
-	public void cleanDigests() {
+	public void cleanLegacyDigests() {
 		if (null != this.softwareMetadata) {
 			var dirtyDigests = this.getSoftwareMetadata().getDigests();
 			if (null != dirtyDigests && !dirtyDigests.isEmpty()) {
-				var cleanDigests = dirtyDigests
-										.stream()
-										.map(d -> Utils.cleanString(d))
-										.collect(Collectors.toSet());
-				this.softwareMetadata.setDigests(cleanDigests);
+				Set<DigestRecord> digestRecords = new LinkedHashSet<>();
+				
+				for (String digestString : dirtyDigests) {
+					String cleanedDigest = Utils.cleanString(digestString);
+					if (StringUtils.isNotEmpty(cleanedDigest)) {
+						String[] digestParts = cleanedDigest.split(":", 2);
+						if (digestParts.length == 2) {
+							String digestTypeString = digestParts[0];
+							String digestValue = digestParts[1];
+							
+							TeaArtifactChecksumType checksumType = TeaArtifactChecksumType.parseDigestType(digestTypeString);
+							if (null != checksumType) {
+								digestRecords.add(new DigestRecord(checksumType, digestValue, DigestScope.ORIGINAL_FILE));
+							}
+						}
+					}
+				}
+				
+				this.softwareMetadata.setDigestRecords(digestRecords);
 			}	
 		}
-
 	}
 
 	public String getShaDigest() {
 		String shaDigest = null;
 		if (null != this.softwareMetadata) {
-			var digests = this.getSoftwareMetadata().getDigests();
+			var digests = this.getSoftwareMetadata().getDigestRecords();
 			if (null != digests && !digests.isEmpty()) {
-				shaDigest = digests
+				var shaDigestRec = digests
 							.stream()
-							.filter(digest -> digest.startsWith("sha256:")).findFirst().orElse(null);
+							.filter(digest -> digest.algo() == TeaArtifactChecksumType.SHA_256).findFirst().orElse(null);
+				shaDigest = "sha256:" + shaDigestRec.digest();
 			}
 		}
 		return shaDigest;
