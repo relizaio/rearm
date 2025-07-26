@@ -79,6 +79,25 @@
                     <span v-else>Export</span>
                 </n-button>
             </n-modal>
+            <n-modal
+                v-model:show="showDownloadArtifactModal"
+                title='Download Artifact'
+                preset="dialog"
+                :show-icon="false" >
+                <n-form-item label="Select Download Type">
+                    <n-radio-group v-model:value="downloadType" name="downloadType">
+                        <n-radio-button value="DOWNLOAD">
+                            Augmented Artifact
+                        </n-radio-button>
+                        <n-radio-button value="RAW_DOWNLOAD">
+                            Raw Artifact
+                        </n-radio-button>
+                    </n-radio-group>
+                </n-form-item>
+                <n-button type="success" @click="executeDownload">
+                    Download
+                </n-button>
+            </n-modal>
             <div v-if="release && release.componentDetails">
                 <n-grid x-gap="2" :cols="4">
                     <n-gi span="2">
@@ -1145,6 +1164,9 @@ const deliverableAddArtifactSceId: Ref<string> = ref('')
 const showReleaseAddDeliverableModal: Ref<boolean> = ref(false)
 const addNewBomBelongsTo: Ref<string> = ref('')
 const artifactToUpdate: Ref<any> = ref({})
+const showDownloadArtifactModal: Ref<boolean> = ref(false)
+const selectedArtifactForDownload: Ref<any> = ref({})
+const downloadType: Ref<string> = ref('DOWNLOAD')
 
 function deleteArtifact (artifactUuid: string, releaseUuid: string) {
     Swal.fire({
@@ -1192,6 +1214,22 @@ async function addArtifact () {
     showReleaseAddDeliverableModal.value = false
     showAddNewBomVersionModal.value = false
 
+}
+
+function openDownloadArtifactModal (artifact: any) {
+    selectedArtifactForDownload.value = artifact
+    downloadType.value = 'DOWNLOAD'
+    showDownloadArtifactModal.value = true
+}
+
+function executeDownload () {
+    if (downloadType.value === 'DOWNLOAD') {
+        downloadArtifact(selectedArtifactForDownload.value)
+    } else if (downloadType.value === 'RAW_DOWNLOAD') {
+        downloadRawArtifact(selectedArtifactForDownload.value)
+    }
+    showDownloadArtifactModal.value = false
+    notify('info', 'Processing Download', 'Your artifact is being downloaded...')
 }
 
 function setArtifactBelongsTo (art: any, belongsTo: string, belongsToId?: string,  belongsToUUID?: string) {
@@ -1439,6 +1477,7 @@ async function exportReleaseSbom (tldOnly: boolean, selectedBomStructureType: st
         link.href = window.URL.createObjectURL(blob)
         link.download = updatedRelease.value.uuid + '-sbom.' + (mediaType === 'EXCEL' ? 'xlsx' : mediaType.toLowerCase())
         link.click()
+        notify('info', 'Processing Download', 'Your artifact is being downloaded...')
     } catch (err: any) {
         Swal.fire(
             'Error!',
@@ -1470,6 +1509,7 @@ async function exportReleaseObom () {
         link.href = window.URL.createObjectURL(blob)
         link.download = fileName
         link.click()
+        notify('info', 'Processing Download', 'Your artifact is being downloaded...')
     } catch (err: any) {
         Swal.fire(
             'Error!',
@@ -1958,18 +1998,8 @@ const artifactsTableFields: DataTableColumns<any> = [
                         title: 'Download Artifact',
                         class: 'icons clickable',
                         size: 25,
-                        onClick: () => downloadArtifact(row)
+                        onClick: () => openDownloadArtifactModal(row)
                     }, { default: () => h(Download) })
-                els.push(downloadEl)
-            }
-            if (isDownloadable) {
-                const downloadEl = h(NIcon,
-                    {
-                        title: 'Download Raw Artifact',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => downloadRawArtifact(row)
-                    }, { default: () => h(FileDownload) })
                 els.push(downloadEl)
             }
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
