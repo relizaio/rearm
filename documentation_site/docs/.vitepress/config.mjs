@@ -55,6 +55,7 @@ function sidebar() {
             },
           ]
         },
+        {text: 'Video Learning Series', link: '/learning-series/' },
         {text: 'Tutorials', link: '/tutorials/', items: [
           {text: 'Upload First BOM', link: '/tutorials/first-bom'},
           {text: 'Docker on GitHub Actions', link: '/tutorials/github-actions-docker'},

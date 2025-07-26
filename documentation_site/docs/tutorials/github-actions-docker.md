@@ -74,7 +74,7 @@ Note that if you have actual source code that builds into docker, you may config
 
 Once this file file is pushed in the repository, that will automatically trigger GitHub Action and produce container image with its metadata uploaded to ReARM.
 
-You can find the release we produced during this demo [here](https://demo.rearmhq.com/release/show/686f81a8-a045-4459-a0c7-07d7ccdc8578).
+You can find one of the releases we produced with the workflow built in this demo [here](https://demo.rearmhq.com/release/show/d4ea598d-6788-4b05-9ae0-59715f646ca8).
 
 ## More Things to Try
 Feel free to modify something in your code and produce additional deliverables. Also feel free to create branches in git and see how those would manifest in ReARM.
