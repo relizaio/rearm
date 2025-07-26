@@ -45,7 +45,7 @@ In the GitHub repository, create new file `.github/workflows/github_actions.yml`
 
 For the content, use the sample below, but make sure to modify `registry_host`, `image_namespace`, `image_name` and `rearm_api_url` parameters based on your actual settings:
 
-```
+```yaml
 on: [push]
 
 name: Build Docker Image And Submit Metadata To ReARM
@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ReARM Build And Submit Backend Release metadata action
-        uses: relizaio/rearm-docker-action@1.0.0
+        uses: relizaio/rearm-docker-action@514a2c018d53238945e860af9749df6805143543 # v1.2.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -74,7 +74,7 @@ Note that if you have actual source code that builds into docker, you may config
 
 Once this file file is pushed in the repository, that will automatically trigger GitHub Action and produce container image with its metadata uploaded to ReARM.
 
-You can find the release we produced during this demo [here](https://demo.rearmhq.com/release/show/43a69faf-59e7-4792-9e08-b426c255ff0b).
+You can find the release we produced during this demo [here](https://demo.rearmhq.com/release/show/686f81a8-a045-4459-a0c7-07d7ccdc8578).
 
 ## More Things to Try
 Feel free to modify something in your code and produce additional deliverables. Also feel free to create branches in git and see how those would manifest in ReARM.
