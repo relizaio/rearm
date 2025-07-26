@@ -88,11 +88,16 @@
                 </n-dynamic-input>
             </n-form-item>
             <n-form-item
-                        path ="softwareMetadata.digests"
+                        path ="softwareMetadata.digestRecords"
                         label="Deliverable Digests">
                 <n-dynamic-input
-                    v-model:value="deliverable.softwareMetadata.digests"
-                    placeholder="Enter digest, i.e. sha256:digest" />
+                    v-model:value="deliverable.softwareMetadata.digestRecords"
+                    :on-create="onCreateDigestRecords">
+                    <template #default="{ value }">
+                        <n-select style="width: 200px;" :options="constants.TeaArtifactChecksumTypes" v-model:value="value.algo"  placeholder='Select Algo'/>
+                        <n-input v-model:value="value.digest" type="text" placeholder='digest'/>
+                    </template>
+                </n-dynamic-input>
             </n-form-item>
             <n-space>
                 <n-button type="success" @click="onSubmit">Add Deliverable</n-button>
@@ -143,10 +148,15 @@ interface Deliverable {
     softwareMetadata: SoftwareMetadata
 }
 
+interface DigestRecord {
+    algo: string,
+    digest: string
+}
+
 interface SoftwareMetadata {
     packageType: null | string,
     downloadLinks: DownloadLink[],
-    digests: string[]
+    digestRecords: DigestRecord[]
 }
 
 const deliverable: Ref<Deliverable>= ref({
@@ -161,7 +171,7 @@ const deliverable: Ref<Deliverable>= ref({
     supportedCpuArchitectures: [],
     softwareMetadata: {
         packageType: null,
-        digests: [],
+        digestRecords: [],
         downloadLinks: [],
     }
 })
@@ -179,7 +189,7 @@ function onReset () {
         supportedCpuArchitectures: [],
         softwareMetadata: {
             packageType: null,
-            digests: [],
+            digestRecords: [],
             downloadLinks: [],
         }
     }
@@ -226,6 +236,13 @@ function onCreateIdentifier () {
         idType: '',
         idValue: ''
     }
+}
+
+function onCreateDigestRecords () {
+    return {
+        algo: '',
+        digest: ''
+    } as DigestRecord
 }
 
 

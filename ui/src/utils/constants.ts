@@ -39,6 +39,36 @@ const LIFECYCLE_OPTIONS = [
     {label: 'End of Support', key: 'END_OF_SUPPORT'}
 ]
 
+enum TeaArtifactChecksumType {
+    MD5,
+    SHA_1,
+    SHA_256,
+    SHA_384,
+    SHA_512,
+    SHA3_256,
+    SHA3_384,
+    SHA3_512,
+    BLAKE2B_256,
+    BLAKE2B_384,
+    BLAKE2B_512,
+    BLAKE3,
+}
+
+const TEA_ARTIFACT_CHECKSUM_TYPES = [
+    {value: 'MD5', label: 'MD5'},
+    {value: 'SHA1', label: 'SHA1'},
+    {value: 'SHA_256', label: 'SHA_256'},
+    {value: 'SHA_384', label: 'SHA_384'},
+    {value: 'SHA_512', label: 'SHA_512'},
+    {value: 'SHA3_256', label: 'SHA3_256'},
+    {value: 'SHA3_384', label: 'SHA3_384'},
+    {value: 'SHA3_512', label: 'SHA3_512'},
+    {value: 'BLAKE2B_256', label: 'BLAKE2B_256'},
+    {value: 'BLAKE2B_384', label: 'BLAKE2B_384'},
+    {value: 'BLAKE2B_512', label: 'BLAKE2B_512'},
+    {value: 'BLAKE3', label: 'BLAKE3'},
+]
+
 export default {
     VersionTypes: VERSION_TYPES,
     ExternalPublicComponentsOrg: EXTERNAL_PUBLIC_COMPONENTS_ORG,
@@ -57,5 +87,7 @@ export default {
     PackageTypes: PACKAGE_TYPES.map((pt: string) => {return {label: pt, value: pt}}),
     OperatingSystems: OPERATING_SYSTEMS.map((pt: string) => {return {label: pt, value: pt}}),
     CpuArchitectures: CPU_ARCHITECTURES.map((pt: string) => {return {label: pt, value: pt}}),
-    LifecycleOptions: LIFECYCLE_OPTIONS
+    LifecycleOptions: LIFECYCLE_OPTIONS,
+    TeaArtifactChecksumType,
+    TeaArtifactChecksumTypes: TEA_ARTIFACT_CHECKSUM_TYPES
 }

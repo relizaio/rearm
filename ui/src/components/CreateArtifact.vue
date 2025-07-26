@@ -95,7 +95,7 @@
                     :on-create="onCreateDigests"
                  >
                     <template #default="{ value }">
-                        <n-select  :options="teaArtifactChecksumTypes" v-model:value="value.algo"  placeholder='Select Algo'/>
+                        <n-select style="width: 200px;" :options="constants.TeaArtifactChecksumTypes" v-model:value="value.algo"  placeholder='Select Algo'/>
                         <n-input v-model:value="value.digest" type="text" placeholder='digest'/>
                     </template>
                     </n-dynamic-input>
@@ -120,6 +120,7 @@ import { useStore } from 'vuex'
 import { Tag, DownloadLink } from '@/utils/commonTypes'
 import Swal from 'sweetalert2'
 import commonFunctions from '../utils/commonFunctions'
+import constants from '@/utils/constants'
 
 
 const props = defineProps<{
@@ -420,35 +421,7 @@ const contentTypes = [
     {value: 'PLAIN_XML', label: 'Plain XML'},
 ]
 
-enum TeaArtifactChecksumType {
-    MD5,
-    SHA_1,
-    SHA_256,
-    SHA_384,
-    SHA_512,
-    SHA3_256,
-    SHA3_384,
-    SHA3_512,
-    BLAKE2B_256,
-    BLAKE2B_384,
-    BLAKE2B_512,
-    BLAKE3,
-}
 
-const teaArtifactChecksumTypes = [
-    {value: 'MD5', label: 'MD5'},
-    {value: 'SHA1', label: 'SHA1'},
-    {value: 'SHA_256', label: 'SHA_256'},
-    {value: 'SHA_384', label: 'SHA_384'},
-    {value: 'SHA_512', label: 'SHA_512'},
-    {value: 'SHA3_256', label: 'SHA3_256'},
-    {value: 'SHA3_384', label: 'SHA3_384'},
-    {value: 'SHA3_512', label: 'SHA3_512'},
-    {value: 'BLAKE2B_256', label: 'BLAKE2B_256'},
-    {value: 'BLAKE2B_384', label: 'BLAKE2B_384'},
-    {value: 'BLAKE2B_512', label: 'BLAKE2B_512'},
-    {value: 'BLAKE3', label: 'BLAKE3'},
-]
 
 </script>
 
