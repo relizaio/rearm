@@ -116,10 +116,12 @@ export default {
 import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
 import { FormInst, NButton, NDynamicInput, NForm, NFormItem, NInput, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload, NSpace } from 'naive-ui'
-import { computed, ComputedRef, ref, Ref } from 'vue'
+import { ref, Ref } from 'vue'
 import { useStore } from 'vuex'
 import { Tag, DownloadLink} from '@/utils/commonTypes'
 import constants from '@/utils/constants' 
+import Swal from 'sweetalert2'
+import commonFunctions from '@/utils/commonFunctions'
 
 const props = defineProps<{
     inputBranch: string,
@@ -206,21 +208,36 @@ const rules = {
     }
 }
 
-
 async function onSubmit () {
-    const response = await graphqlClient.mutate({
-        mutation: gql`
-            mutation addOutboundDeliverablesManual($deliverables: AddDeliverableInput!) {
-                addOutboundDeliverablesManual(deliverables: $deliverables)
-            }`,
-        variables: {
-            deliverables: {
-                release: props.inputRelease,
-                deliverables: [deliverable.value]
-            }
-        },
-        fetchPolicy: 'no-cache'
+    createDeliverableForm.value?.validate((errors) => {
+        if (!errors) {
+            onSubmitSuccess()
+        }
     })
+}
+
+async function onSubmitSuccess () {
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation addOutboundDeliverablesManual($deliverables: AddDeliverableInput!) {
+                    addOutboundDeliverablesManual(deliverables: $deliverables)
+                }`,
+            variables: {
+                deliverables: {
+                    release: props.inputRelease,
+                    deliverables: [deliverable.value]
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    }
     emit('addDeliverable')
 }
 
