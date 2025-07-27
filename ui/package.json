@@ -51,6 +51,7 @@
     "vite": "^6.3.5"
   },
   "optionalDependencies": {
+    "@esbuild/linux-x64": "^0.25.8",
     "@rollup/rollup-linux-x64-musl": "4.42.0"
   },
   "eslintConfig": {
