@@ -362,16 +362,16 @@
             preset="dialog"
             :show-icon="false" >
             <n-card title="NOTICE: Disapprove Product Releases">
-            Select products to disapprove parent releases:
-            <div v-if="updatedRelease.inProducts && updatedRelease.inProducts.length" class="m-4">
-                <n-form label-placement="left" :style="{maxWidth: '640px'}" size="medium">
-                    <n-checkbox-group v-model:value="productsForDisapproval" :options="productOptions">
-                        <n-checkbox v-for="b in productOptions" :key="b.value" :value="b.value" :label="b.label"></n-checkbox>
-                    </n-checkbox-group>
-                    <n-button attr-type="submit" @click="approve" type="success">Save</n-button>
-                    <n-button attr-type="reset" @click="resetApprovals">Reset</n-button>
-                </n-form>
-            </div>
+                Select products to disapprove parent releases:
+                <div v-if="updatedRelease.inProducts && updatedRelease.inProducts.length" class="m-4">
+                    <n-form label-placement="left" :style="{maxWidth: '640px'}" size="medium">
+                        <n-checkbox-group v-model:value="productsForDisapproval" :options="productOptions">
+                            <n-checkbox v-for="b in productOptions" :key="b.value" :value="b.value" :label="b.label"></n-checkbox>
+                        </n-checkbox-group>
+                        <n-button attr-type="submit" @click="approve" type="success">Save</n-button>
+                        <n-button attr-type="reset" @click="resetApprovals">Reset</n-button>
+                    </n-form>
+                </div>
             </n-card>
         </n-modal>
         <n-modal
@@ -380,7 +380,8 @@
             preset="dialog"
             :show-icon="false" >
             <create-release class="addComponentRelease" v-if="updatedRelease.orgDetails"
-                :attemptPickRelease="true" :orgProp="updatedRelease.orgDetails.uuid"
+                :attemptPickRelease="true"
+                :orgProp="updatedRelease.orgDetails.uuid"
                 @createdRelease="addComponentRelease" />
         </n-modal>
 
@@ -841,7 +842,7 @@ function requestApproval(type: string) {
         }
     })
 }
-const approveObject: Ref<any> = ref({})
+
 const productsForDisapproval: Ref<any[]> = ref([])
 const showDisapproveProductsConfirmationModal: Ref<boolean> = ref(false)
 const productOptions: ComputedRef<any> = computed((): any => {

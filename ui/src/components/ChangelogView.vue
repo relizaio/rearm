@@ -248,7 +248,7 @@ async function getChangelog (org: string, release1: string, release2: string, ag
 const props = defineProps<{
     release1prop?: String,
     release2prop?: String,
-    componentprop: String,
+    componentprop?: String,
     orgprop: String,
     branchprop?: String,
     componenttypeprop: String,

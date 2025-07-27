@@ -96,13 +96,13 @@ async function getGeneratedVersion (branchUuid: string): Promise<string> {
 
 const props = defineProps<{
     orgProp: string,
-    inputBranch: string,
-    inputType: string,
+    inputBranch?: string,
+    inputType?: string,
     inputFeatureSet?: string,
     inputComponent?: string,
     updateMode?: boolean,
     attemptPickRelease?: boolean,
-    disallowPlaceholder: boolean,
+    disallowPlaceholder?: boolean,
     disallowCreateRelease?: boolean,
     isChooseNamespace?: boolean,
     isHideReset?: boolean,
