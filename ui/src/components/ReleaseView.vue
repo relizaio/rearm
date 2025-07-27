@@ -156,7 +156,7 @@
                             <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
                         </router-link>
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
-                        <Icon v-if="release.lifecycle === 'ASSEMBLED'" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
+                        <Icon v-if="release.lifecycle === 'ASSEMBLED' && release.componentDetails.versionType === 'MARKETING' && userPermission !== 'READ_ONLY'" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
                     </n-gi>
                     <n-gi>
                         <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
