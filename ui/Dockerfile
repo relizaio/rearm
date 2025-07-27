@@ -1,7 +1,7 @@
 FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 AS build-stage
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts && npm install @esbuild/linux-x64@0.25.8
 COPY ./ .
 RUN npm run build
 
