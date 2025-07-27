@@ -379,11 +379,9 @@
             v-model:show="showAddComponentReleaseModal"
             preset="dialog"
             :show-icon="false" >
-            <n-card title="Add component release" :hide-footer="true">
             <create-release class="addComponentRelease" v-if="updatedRelease.orgDetails"
                 :attemptPickRelease="true" :orgProp="updatedRelease.orgDetails.uuid"
                 @createdRelease="addComponentRelease" />
-            </n-card>
         </n-modal>
 
         <n-modal
@@ -411,44 +409,37 @@
             style="width: 90%;"
             preset="dialog"
             :show-icon="false" >
-            <n-card title="Add Artifact" :hide-footer="true">
-                <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
-                    :inputOrgUuid="updatedRelease.orgDetails.uuid"
-                    :inputRelease="updatedRelease.uuid"
-                    :inputSce="sceAddArtifactSceId"
-                    :inputBelongsTo="'SCE'" />
-            </n-card>
+            <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
+                :inputOrgUuid="updatedRelease.orgDetails.uuid"
+                :inputRelease="updatedRelease.uuid"
+                :inputSce="sceAddArtifactSceId"
+                :inputBelongsTo="'SCE'" />
         </n-modal>
         <n-modal
             v-model:show="showDeliverableAddArtifactModal"
             style="width: 90%;"
             preset="dialog"
             :show-icon="false" >
-            <n-card title="Add Artifact" :hide-footer="true">
-                <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
-                    :inputOrgUuid="updatedRelease.orgDetails.uuid"
-                    :inputRelease="updatedRelease.uuid"
-                    :inputDeliverarble="deliverableAddArtifactSceId"
-                    :inputBelongsTo="'DELIVERABLE'" />
-            </n-card>
+            <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
+                :inputOrgUuid="updatedRelease.orgDetails.uuid"
+                :inputRelease="updatedRelease.uuid"
+                :inputDeliverarble="deliverableAddArtifactSceId"
+                :inputBelongsTo="'DELIVERABLE'" />
         </n-modal>
         <n-modal
             v-model:show="showAddNewBomVersionModal"
             style="width: 90%;"
             preset="dialog"
             :show-icon="false" >
-            <n-card title="Update Bom" :hide-footer="true">
-                <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
-                    :inputOrgUuid="updatedRelease.orgDetails.uuid"
-                    :inputRelease="updatedRelease.uuid"
-                    :inputSce="deliverableAddArtifactSceId"
-                    :inputDeliverarble="deliverableAddArtifactSceId"
-                    :inputBelongsTo="addNewBomBelongsTo"
-                    :isUpdateExistingBom="true"
-                    :updateArtifact="artifactToUpdate"
-                    />
-            </n-card>
-           
+            <create-artifact v-if="updatedRelease.orgDetails" @addArtifact="addArtifact"
+                :inputOrgUuid="updatedRelease.orgDetails.uuid"
+                :inputRelease="updatedRelease.uuid"
+                :inputSce="deliverableAddArtifactSceId"
+                :inputDeliverarble="deliverableAddArtifactSceId"
+                :inputBelongsTo="addNewBomBelongsTo"
+                :isUpdateExistingBom="true"
+                :updateArtifact="artifactToUpdate"
+                />
         </n-modal>
         <n-modal
             v-model:show="showReleaseAddDeliverableModal"
