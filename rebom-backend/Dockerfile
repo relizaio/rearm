@@ -15,7 +15,7 @@ fi
 RUN mkdir /app
 WORKDIR /app
 COPY package*.json ./
-RUN npm i
+RUN npm ci --ignore-scripts
 COPY ./ .
 RUN npm run build
 
