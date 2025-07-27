@@ -1,4 +1,4 @@
-FROM node:22-alpine3.21 as builder
+FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 as builder
 
 ARG TARGETARCH
 ARG TARGETOS
@@ -19,7 +19,7 @@ RUN npm i
 COPY ./ .
 RUN npm run build
 
-FROM node:22-alpine3.21 as package
+FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 as package
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
