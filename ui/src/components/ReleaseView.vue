@@ -325,7 +325,9 @@
                     </div>
                 </n-tab-pane>
                 <n-tab-pane name="history" tab="History">
+                    <h3>Release History</h3>
                     <n-data-table :columns="releaseHistoryFields" :data="release.updateEvents" class="table-hover" />
+                    <h3>Approval History</h3>
                     <n-data-table :columns="approvalHistoryFields" :data="release.approvalEvents" class="table-hover" />
                 </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
