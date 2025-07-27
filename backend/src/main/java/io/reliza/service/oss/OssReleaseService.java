@@ -254,6 +254,16 @@ public class OssReleaseService {
 	public Release updateRelease (ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
 		return updateRelease(releaseDto, false, wu);
 	}
+
+	@Transactional
+	public Release updateReleaseTagsMeta (ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
+		ReleaseDto tagsMetaDto = ReleaseDto.builder()
+			.uuid(releaseDto.getUuid())
+			.tags(releaseDto.getTags())
+			.notes(releaseDto.getNotes())
+			.build();
+		return updateRelease(tagsMetaDto, true, wu);
+	}
 	
 	/**
 	 * Updates release based on dto
@@ -284,7 +294,7 @@ public class OssReleaseService {
 	}
 	
 
-	private Release doUpdateRelease (Release r, ReleaseData rData, ReleaseDto releaseDto, WhoUpdated wu) {
+	private Release doUpdateRelease (Release r, ReleaseData rData, ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
 		log.debug("updating exisiting rd, with dto: {}", releaseDto);
 		List<UuidDiff> artDiff = Utils.diffUuidLists(rData.getArtifacts(), releaseDto.getArtifacts());
 		if (!artDiff.isEmpty()) {
@@ -330,6 +340,25 @@ public class OssReleaseService {
 		}
 		if (null != releaseDto.getTags() && (null == rData.getTags() || 
 				!releaseDto.getTags().toString().equals(rData.getTags().toString()))) {
+			
+			// Validate that non-removable tags are not being removed
+			if (null != rData.getTags()) {
+				Set<String> newTagKeys = releaseDto.getTags().stream()
+						.map(CommonVariables.TagRecord::key)
+						.collect(Collectors.toSet());
+				
+				List<String> nonRemovableTagsBeingRemoved = rData.getTags().stream()
+						.filter(tag -> tag.removable() == CommonVariables.Removable.NO)
+						.filter(tag -> !newTagKeys.contains(tag.key()))
+						.map(CommonVariables.TagRecord::key)
+						.collect(Collectors.toList());
+				
+				if (!nonRemovableTagsBeingRemoved.isEmpty()) {
+					throw new RelizaException("Cannot remove non-removable tags: " + 
+							String.join(", ", nonRemovableTagsBeingRemoved));
+				}
+			}
+			
 			rData.setTags(releaseDto.getTags());
 			String oldTags = null != rData.getTags() ? rData.getTags().toString() : "";
 			rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.TAGS,

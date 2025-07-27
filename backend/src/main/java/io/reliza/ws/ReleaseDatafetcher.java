@@ -379,6 +379,27 @@ public class ReleaseDatafetcher {
 		}
 		return sharedReleaseService.getReleaseData(releaseDto.getUuid()).get();
 	}
+
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "updateReleaseTagsMeta")
+	public ReleaseData updateReleaseTagsMeta(DgsDataFetchingEnvironment dfe) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Map<String, Object> updateReleaseInput = dfe.getArgument("release");
+		ReleaseDto releaseDto = Utils.OM.convertValue(updateReleaseInput, ReleaseDto.class);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseDto.getUuid());
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		try {
+			ossReleaseService.updateReleaseTagsMeta(releaseDto, wu);
+		} catch (RelizaException e) {
+			log.error("Exception on updateReleaseTagsMeta", e);
+			throw new RuntimeException(e.getMessage());
+		}
+		return sharedReleaseService.getReleaseData(releaseDto.getUuid()).get();
+	}
 	
 	@DgsData(parentType = "Query", field = "getReleaseByHashProgrammatic")
 	public Optional<ReleaseData> getReleaseByHash(DgsDataFetchingEnvironment dfe,
@@ -516,6 +537,12 @@ public class ReleaseDatafetcher {
 					}
 				}
 				
+				for (int i = 0; i < commitList.size(); i++) {
+					var com = commitList.get(i);
+					log.info("PSDEBUG: Processing commitList element [{}]: {}", i, com);
+				}
+				log.info("PSDEBUG: Current sceMap contents: {}", sceMap);
+
 				// use the first commit of commitlist to fill in the missing fields of source code entry
 				if (!commitList.isEmpty() && (
 						sceMap.isEmpty() || ((String) sceMap.get(CommonVariables.COMMIT_FIELD))

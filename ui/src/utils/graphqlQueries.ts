@@ -854,6 +854,13 @@ mutation updateRelease($rel: ReleaseInput!) {
     }
 }`
 
+const RELEASE_TAGS_META_GQL_MUTATE = gql`
+mutation updateReleaseTagsMeta($rel: ReleaseInput!) {
+    updateReleaseTagsMeta(release:$rel) {
+        ${SINGLE_RELEASE_GQL_DATA}
+    }
+}`
+
 const APPROVE_RELEASE_GQL_MUTATE = gql`
 mutation approveReleaseManual($release: ID!, $approvals: [ReleaseApprovalInput!]) {
     approveReleaseManual(release:$release, approvals: $approvals) {
@@ -972,6 +979,7 @@ export default {
     ComponentFullData: COMPONENT_FULL_DATA,
     ComponentMutate: COMPONENT_MUTATE,
     ReleaseGqlMutate: RELEASE_GQL_MUTATE,
+    ReleaseTagsMetaGqlMutate: RELEASE_TAGS_META_GQL_MUTATE,
     ApproveReleaseGqlMutate: APPROVE_RELEASE_GQL_MUTATE,
     ComponentShortData: COMPONENT_SHORT_DATA,
     MarketingRelease: MARKETING_RELEASE_GQL_DATA,

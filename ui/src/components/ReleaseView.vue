@@ -758,7 +758,7 @@ const setMarketingVersion = async function (){
 
 }
 function deepCopyRelease (rlz: any) {
-    return Object.assign({}, rlz)
+    return JSON.parse(JSON.stringify(rlz))
 }
 
 function tranformReleaseTimingVisData(timingData: any) {
@@ -1075,11 +1075,24 @@ async function lifecycleChange(newLifecycle: string) {
 }
 
 async function save() {
-    if (release.value.lifecycle === 'DRAFT' || updatedRelease.value.lifecycle === 'DRAFT' ||
-        release.value.notes !== updatedRelease.value.notes ||
-        release.value.tags !== updatedRelease.value.tags) {
+    if (release.value.lifecycle === 'DRAFT' || updatedRelease.value.lifecycle === 'DRAFT') {
         try {
             await store.dispatch('updateRelease', updatedRelease.value)
+            fetchRelease()
+            notify('success', 'Saved', 'Release saved.')
+        } catch (err: any) {
+            updatedRelease.value = deepCopyRelease(release.value)
+            Swal.fire(
+                'Error!',
+                commonFunctions.parseGraphQLError(err.message),
+                'error'
+            )
+            console.error(err)
+        }
+    } else if (release.value.notes !== updatedRelease.value.notes ||
+        release.value.tags !== updatedRelease.value.tags) {
+        try {
+            await store.dispatch('updateReleaseTagsMeta', updatedRelease.value)
             fetchRelease()
             notify('success', 'Saved', 'Release saved.')
         } catch (err: any) {
@@ -1696,7 +1709,7 @@ async function deleteTag (key: string) {
     updatedRelease.value.tags = updatedRelease.value.tags.filter((t: any) => (t.key !== key))
     await save()
 }
-function addTag () {
+async function addTag () {
     if (newTagKey.value && newTagValue.value) {
         const tpresent = updatedRelease.value.tags.filter((t: any) => (t.key === newTagKey.value))
         if (tpresent && tpresent.length) {
@@ -1708,10 +1721,9 @@ function addTag () {
                     value: newTagValue.value
                 }
             )
-            save().then(() => {
-                newTagKey.value = ''
-                newTagValue.value = ''
-            })
+            await save()
+            newTagKey.value = ''
+            newTagValue.value = ''
         }
     }
 }

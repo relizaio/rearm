@@ -1156,6 +1156,29 @@ const storeObject : any = {
             }
             return data.data.updateRelease
         },
+        async updateReleaseTagsMeta (context: any, release: any) {
+            const rlzUpdObject: any = {
+                notes: release.notes,
+                uuid: release.uuid,
+                org: release.org
+            }
+            if (release.tags && release.tags.length) {
+                rlzUpdObject.tags = release.tags.map((x:any) => ({key: x.key, value: x.value}))
+            } else {
+                rlzUpdObject.tags = []
+            }
+            const data = await graphqlClient.mutate({
+                mutation: graphqlQueries.ReleaseTagsMetaGqlMutate,
+                variables: {
+                    'rel': rlzUpdObject
+                }
+            })
+            context.commit('ADD_RELEASE', data.data.updateReleaseTagsMeta)
+            if(data.errors){
+                return data.errors
+            }
+            return data.data.updateReleaseTagsMeta
+        },
         async updateReleaseLifecycle (context: any, release: any) {
             const data = await graphqlClient.mutate({
                 mutation: gql`

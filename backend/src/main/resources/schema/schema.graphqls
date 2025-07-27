@@ -110,6 +110,7 @@ type Mutation {
 	setUserOrgApiKey(orgUuid: ID!): ApiKeyForUser
 	updateRelease(release: ReleaseInput!): Release
 	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
+	updateReleaseTagsMeta(release: ReleaseInput!): Release
 	addMarketingReleaseManual(marketingRelease: MarketingReleaseInput!): MarketingRelease
 	updateMarketingRelease(marketingRelease: MarketingReleaseInput!): MarketingRelease
 	advanceMarketingReleaseLifecycle(marketingReleaseUuid: ID!, newLifecycle: MarketingReleaseLifecycleEnum): MarketingRelease 
