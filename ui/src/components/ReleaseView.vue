@@ -1388,7 +1388,7 @@ const getBomVersion = async(id: string) => {
     })
     return response.data.artifactBomLatestVersion
 }
-const uploadNewBomVersion = async (art: any) => {
+async function uploadNewBomVersion (art: any) {
     
     const isBomArtifact = commonFunctions.isCycloneDXBomArtifact(art)
     let questionText = ''
@@ -1401,9 +1401,9 @@ const uploadNewBomVersion = async (art: any) => {
             const releaseVersions = releasesSharingThisArtifact.map(function(r: any){
                 return r.version;
             }).join(", ");
-            questionText = `This BOM has serial number \`${art.internalBom.id}\` and version \`${latestBomVersion}\` is currently shared with the following releases - <${releaseVersions}> - if you upload a new BOM version with the same serial number and incremented version, it will be updated for all these releases. If instead you upload a new BOM version with a new serial number, this release will be switched to the BOM you are uploading, while all other mentioned releases will be unaffected. `
+            questionText = `This Artifact has serial number \`${art.internalBom.id}\` and version \`${latestBomVersion}\` is currently shared with the following releases - <${releaseVersions}> - if you upload a new Artifact version with the same serial number and incremented version, it will be updated for all these releases. If instead you upload a new Artifact version with a new serial number, this release will be switched to the Artifact you are uploading, while all other mentioned releases will be unaffected. `
         }else {
-            questionText = `This BOM has serial number: \`${art.internalBom.id}\`. \nIf you upload a new BOM version with the same serial number, it will be recorded as a new version of the same BOM (recommended).\nIf instead you upload a new BOM version with a new serial number, the BOM reference will be switched to the BOM you are uploading.`
+            questionText = `This Artifact has serial number: \`${art.internalBom.id}\`. \nIf you upload a new Artifact version with the same serial number, it will be recorded as a new version of the same Artifact (recommended).\nIf instead you upload a new Artifact version with a new serial number, the Artifact reference will be switched to the Artifact you are uploading.`
         }
 
 
@@ -1986,16 +1986,6 @@ const artifactsTableFields: DataTableColumns<any> = [
         title: 'Actions',
         render: (row: any) => {
             let els: any[] = []
-           
-            const uploadEl = h(NIcon,
-                {
-                    title: 'Upload New Bom Version',
-                    class: 'icons clickable',
-                    size: 25,
-                    onClick: () => uploadNewBomVersion(row)
-                }, { default: () => h(Edit) })
-            els.push(uploadEl)
-            
             
             const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
             if (isDownloadable) {
@@ -2008,6 +1998,16 @@ const artifactsTableFields: DataTableColumns<any> = [
                     }, { default: () => h(Download) })
                 els.push(downloadEl)
             }
+
+            const uploadEl = h(NIcon,
+                {
+                    title: 'Upload New Bom Version',
+                    class: 'icons clickable',
+                    size: 25,
+                    onClick: () => uploadNewBomVersion(row)
+                }, { default: () => h(Edit) })
+            els.push(uploadEl)
+
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
                 const dtrackElIcon = h(NIcon,
                     {
