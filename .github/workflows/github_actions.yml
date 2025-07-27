@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@80bf4c8e0cc29cbbe1ec98422151552011d92cae # v3.6
+        uses: relizaio/reliza-docker-action@f7ee375dee76ad5c21a360555b1cc0fc17253bd3 # experimental
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
