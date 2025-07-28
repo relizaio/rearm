@@ -261,7 +261,7 @@
                         </h3>
                         <n-data-table :data="inboundDeliverables" :columns="deliverableTableFields" :row-key="artifactsRowKey" />
                     </div>
-                    <div class="container" v-if="updatedRelease.inProducts && updatedRelease.inProducts.length">
+                    <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
                         <h3>Part of Products</h3>
                         <n-data-table :data="updatedRelease.inProducts" :columns="inProductsTableFields" :row-key="artifactsRowKey" />
                     </div>
