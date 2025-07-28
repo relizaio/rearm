@@ -37,6 +37,8 @@ import lombok.Setter;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class SourceCodeEntryData extends RelizaDataParent implements RelizaObject {
 	
+	private static final String DEMO_COMMIT_EMAIL = "info@reliza.io";
+
 	@Setter(AccessLevel.PRIVATE)
 	private UUID uuid;
 	
@@ -117,8 +119,12 @@ public class SourceCodeEntryData extends RelizaDataParent implements RelizaObjec
 		sced.setCommitMessage(CommonVariables.DETAILS_UNAVAILABLE_MESSAGE);
 		return sced;
 	}
-	
+
 	public static SourceCodeEntryData dataFromRecord (SourceCodeEntry sce) {
+		return dataFromRecord(sce, false);
+	}
+	
+	public static SourceCodeEntryData dataFromRecord (SourceCodeEntry sce, boolean isDemo) {
 		if (sce.getSchemaVersion() != 0) { // we'll be adding new schema versions later as required, if schema version is not supported, throw exception
 			throw new IllegalStateException("Release entry schema version is " + sce.getSchemaVersion() + ", which is not currently supported");
 		}
@@ -127,6 +133,9 @@ public class SourceCodeEntryData extends RelizaDataParent implements RelizaObjec
 		red.setUuid(sce.getUuid());
 		red.setCreatedDate(sce.getCreatedDate());
 		red.setUpdatedDate(sce.getLastUpdatedDate());
+		if (isDemo) {
+			red.setCommitEmail(DEMO_COMMIT_EMAIL);
+		}
 		return red;
 	}
 

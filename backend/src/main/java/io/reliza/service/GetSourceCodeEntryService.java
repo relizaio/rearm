@@ -13,8 +13,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import io.micrometer.common.util.StringUtils;
+import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.repositories.SourceCodeEntryRepository;
@@ -24,6 +28,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GetSourceCodeEntryService {
 	
+	@Autowired
+	UserService userService;
+
 	private final SourceCodeEntryRepository repository;
 	
 	GetSourceCodeEntryService(SourceCodeEntryRepository repository) {
@@ -35,17 +42,18 @@ public class GetSourceCodeEntryService {
 	}
 	
 	public Optional<SourceCodeEntryData> getSourceCodeEntryData (UUID uuid) {
-		Optional<SourceCodeEntryData> rData = Optional.empty();
-		Optional<SourceCodeEntry> r = getSourceCodeEntry(uuid);
-		if (r.isPresent()) {
-			rData = Optional
-							.of(
-								SourceCodeEntryData
-									.dataFromRecord(r
-										.get()
-								));
+		Optional<SourceCodeEntryData> sceData = Optional.empty();
+		Optional<SourceCodeEntry> sce = getSourceCodeEntry(uuid);
+		if (sce.isPresent()) {
+			SourceCodeEntryData sceDataOrig = SourceCodeEntryData.dataFromRecord(sce.get());
+			if (StringUtils.isNotEmpty(sceDataOrig.getCommitEmail()) 
+				&& userService.getInstallationType() == InstallationType.DEMO
+				&& sceDataOrig.getOrg().equals(UserService.USER_ORG)) {
+					sceDataOrig = SourceCodeEntryData.dataFromRecord(sce.get(), true);
+			}
+			sceData = Optional.of(sceDataOrig);
 		}
-		return rData;
+		return sceData;
 	}
 	
 	private List<SourceCodeEntry> getSceList (Collection<UUID> uuidList, Collection<UUID> orgs) {
