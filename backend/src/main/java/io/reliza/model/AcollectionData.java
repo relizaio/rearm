@@ -36,13 +36,14 @@ public class AcollectionData extends RelizaDataParent implements RelizaObject {
 	private ArtifactComparison artifactComparison;
 	private Set<VersionedArtifact> artifacts = new HashSet<>();
 		
-	public static AcollectionData acollectionDataFactory(UUID org, UUID releaseUuid, Long version, Collection<VersionedArtifact> artifacts) {
+	public static AcollectionData acollectionDataFactory(UUID org, UUID releaseUuid, Long version, Collection<VersionedArtifact> artifacts, ArtifactComparison artifactComparison) {
 		AcollectionData acd = new AcollectionData();
 		acd.setUuid(UUID.randomUUID());
 		acd.setOrg(org);
 		acd.setRelease(releaseUuid);
 		acd.setVersion(version);
 		acd.setArtifacts(new HashSet<>(artifacts));
+		acd.setArtifactComparison(artifactComparison);
 		return acd;
 	}
 	

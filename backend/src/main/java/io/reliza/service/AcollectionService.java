@@ -20,6 +20,7 @@ import io.reliza.common.Utils;
 import io.reliza.model.Acollection;
 import io.reliza.model.AcollectionData;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
+import io.reliza.model.AcollectionData.ArtifactComparison;
 import io.reliza.model.AcollectionData.VersionedArtifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.Branch;
@@ -141,8 +142,8 @@ public class AcollectionService {
 		if (null != latestAcolData && versionedArtifacts.equals(latestAcolData.getArtifacts())) {
 			resolvedCollection = latestAcolData;
 		} else {
-
-			AcollectionData curColData = AcollectionData.acollectionDataFactory(rd.getOrg(), releaseUuid, curColVersion, versionedArtifacts);
+			ArtifactComparison artifactComparison = null != latestAcolData ? latestAcolData.getArtifactComparison() : null;
+			AcollectionData curColData = AcollectionData.acollectionDataFactory(rd.getOrg(), releaseUuid, curColVersion, versionedArtifacts, artifactComparison);
 			curColData.resolveUpdateReason(latestAcolData);
 			Map<String,Object> recordData = Utils.dataToRecord(curColData);
 			Acollection ac = new Acollection();
