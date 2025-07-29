@@ -12,7 +12,7 @@ const PricingPlan = () => {
     const [planDuration, setPlanDuration] = useState(false)
     const [selectedPlan, setSelectedPlan] = useState(1)
     let startupPrice = '$190'
-    let standardPrice = '$1490'
+    let standardPrice = '$1990'
     let priceType = 'US'
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
     if (timezone) {
@@ -76,13 +76,13 @@ const PricingPlan = () => {
     }
     if (priceType === 'EU') {
         startupPrice = '€150'
-        standardPrice = '€1250'
+        standardPrice = '€1690'
     } else if (priceType === 'CA') {
         startupPrice = 'C$240'
-        standardPrice = 'C$1990'
+        standardPrice = 'C$2490'
     } else if (priceType === 'GB') {
         startupPrice = '£130'
-        standardPrice = '£1090'
+        standardPrice = '£1490'
     }
     const monthlyPlan = [
         {
