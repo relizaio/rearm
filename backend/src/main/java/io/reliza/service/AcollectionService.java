@@ -171,7 +171,6 @@ public class AcollectionService {
 		return repository.save(ac);
 	}
 
-	@Async
 	public void releaseBomChangelogRoutine(UUID releaseId, UUID branch, UUID org){
 
 		UUID prevReleaseId = null;
@@ -212,8 +211,8 @@ public class AcollectionService {
 		}
 		
 		UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
-		// log.info("prevReleaseId found: {}", prevReleaseId);
-		// log.info("nextReleaseId found: {}", nextReleaseId);
+		log.info("RGDEBUG: prevReleaseId found: {}", prevReleaseId);
+		log.info("RGDEBUG: nextReleaseId found: {}", nextReleaseId);
 
 		if (prevReleaseId != null) {
 			resolveBomDiff(releaseId, prevReleaseId, org);
@@ -235,8 +234,13 @@ public class AcollectionService {
 			&& prevAcollectionData.getArtifacts().size() > 0
 			&& ! prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts())
 		){
+			log.info("RGDEBUG: current Release ID: {}", releaseId);
             List<UUID> currArtifacts = getInternalBomIdsFromACollection(currAcollectionData);
+			log.info("RGDEBUG: current Artifacts: {}", currArtifacts);
+
+			log.info("RGDEBUG: prev Release ID: {}", prevReleaseId);
 			List<UUID> prevArtifacts = getInternalBomIdsFromACollection(prevAcollectionData);
+			log.info("RGDEBUG: prev Artifacts: {}", prevArtifacts);
 			
 			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(currArtifacts, prevArtifacts, org);
 
@@ -271,6 +275,7 @@ public class AcollectionService {
 	}
 	private List<UUID> getInternalBomIdsFromACollection(AcollectionData collection){
 		List<UUID> artIds = collection.getArtifacts().stream().map(VersionedArtifact::artifactUuid).toList();
+		log.info("RGDEBUG: artIds: {}", artIds);
 		List<ArtifactData> artList = artifactService.getArtifactDataList(artIds);
 		return artList.stream()
 		.filter(art -> null != art.getInternalBom())

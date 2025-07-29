@@ -5,6 +5,8 @@ package io.reliza.ws;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,6 +106,11 @@ public class App {
 	  		}
 	  	});
 	  	return http.build();
+	}
+
+	@Bean
+	public ScheduledExecutorService scheduledExecutorService() {
+		return Executors.newSingleThreadScheduledExecutor();
 	}
 
 }

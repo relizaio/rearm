@@ -814,7 +814,7 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
 		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
 
-		releaseFinalizerService.finalizeRelease(rd.getUuid());
+		releaseFinalizerService.scheduleFinalizeRelease(rd.getUuid());
 		return true;
 	}
 	@PreAuthorize("isAuthenticated()")
