@@ -29,18 +29,18 @@ public class ReleaseFinalizerService {
     private ScheduledExecutorService scheduledExecutorService;
 
     public void scheduleFinalizeRelease(UUID releaseId) {
-        log.info("RGDEBUG: scheduling finalize release for {}", releaseId);
+        // log.info("RGDEBUG: scheduling finalize release for {}", releaseId);
         scheduledExecutorService.schedule(() -> {
             try {
                 finalizeRelease(releaseId);
             } catch (Exception e) {
                 log.error("Error finalizing release {}", releaseId, e);
             }
-        }, 300, TimeUnit.SECONDS);
+        }, 180, TimeUnit.SECONDS);
     }
 
     public void finalizeRelease(UUID releaseUuid) {
-        log.info("RGDEBUG: finalizing release {}", releaseUuid);
+        // log.info("RGDEBUG: finalizing release {}", releaseUuid);
         Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
         if (ord.isPresent()) {
             ReleaseData rd = ord.get();
