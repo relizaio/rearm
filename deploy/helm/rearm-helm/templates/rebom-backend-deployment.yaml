@@ -26,9 +26,15 @@ spec:
         image: {{ .Values.image.rebomBackend }}
         env:
         - name: POSTGRES_HOST
-          value: {{ .Release.Name }}-rebom-postgres
+          value: {{ if .Values.use_external_postgres }}{{ .Values.rebom_postgres_host }}{{ else }}{{ .Release.Name }}-rebom-postgres{{ end }}
+        - name: POSTGRES_DATABASE
+          value: {{ .Values.rebom_postgres_database }}
+        - name: POSTGRES_USER
+          value: {{ .Values.rebom_postgres_username }}
         - name: POSTGRES_PORT
           value: "5432"
+        - name: POSTGRES_SSL
+          value: "{{ .Values.rebom_postgres_ssl }}"
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -55,9 +61,9 @@ spec:
         image: {{ .Values.image.flywayImage }}
         env:
         - name: POSTGRES_JDBC
-          value: jdbc:postgresql://{{ .Release.Name }}-rebom-postgres:5432/postgres
+          value: {{ if .Values.use_external_postgres }}jdbc:postgresql://{{ .Values.rebom_postgres_host }}:5432/{{ .Values.rebom_postgres_database }}{{ else }}jdbc:postgresql://{{ .Release.Name }}-rebom-postgres:5432/postgres{{ end }}
         - name: POSTGRES_USER
-          value: postgres
+          value: {{ .Values.rebom_postgres_username }}
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:

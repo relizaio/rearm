@@ -41,9 +41,11 @@ spec:
               value: "9080"
             - name: MAX_BODY_SIZE
               value: {{ .Values.max_upload_size_in_MB }}M
+            {{- end}}
             - name: KEYCLOAK_ADMIN_ACCESS
               value: ""
-            {{- end}}
+            - name: KEYCLOAK_RELIZA_ADMIN_ACCESS
+              value: ""
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http

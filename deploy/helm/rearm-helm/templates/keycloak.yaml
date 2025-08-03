@@ -73,14 +73,14 @@ spec:
             - name: KC_DB_SCHEMA
               value: reliza_keycloak
             - name: KC_DB_USERNAME
-              value: postgres
+              value: {{ .Values.keycloak_postgres_username }}
             - name: KC_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Release.Name }}-keycloak
                   key: POSTGRES_PASSWORD
             - name: KC_DB_URL
-              value: jdbc:postgresql://keycloak-postgres:5432/postgres
+              value: {{ if .Values.use_external_postgres }}{{ .Values.keycloak_postgres_host }}{{ else }}jdbc:postgresql://keycloak-postgres:5432/postgres{{ end }}
             - name: KEYCLOAK_ADMIN
               value: admin
             - name: KEYCLOAK_ADMIN_PASSWORD

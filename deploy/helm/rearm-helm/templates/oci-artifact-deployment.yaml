@@ -61,7 +61,7 @@ spec:
             periodSeconds: 10
 
 ---
-
+{{- if .Values.ociArtifactService.create_secret_in_chart}}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -71,4 +71,5 @@ type: Opaque
 data:
   REGISTRY_USERNAME: {{ .Values.ociArtifactService.registryUser | nospace | b64enc | quote }}
   REGISTRY_TOKEN: {{ .Values.ociArtifactService.registryToken | nospace | b64enc | quote }}
+{{- end}}
 {{- end}}

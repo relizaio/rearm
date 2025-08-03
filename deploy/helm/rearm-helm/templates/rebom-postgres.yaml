@@ -1,3 +1,4 @@
+{{- if not .Values.use_external_postgres }}
 {{- if .Values.useDefaultSecrets }}
 apiVersion: v1
 kind: Secret
@@ -78,3 +79,5 @@ spec:
         resources:
           requests:
             storage: {{ .Values.rebom.postgresStorage }}
+
+{{- end }}

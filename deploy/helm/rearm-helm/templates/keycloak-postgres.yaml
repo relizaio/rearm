@@ -1,4 +1,4 @@
-{{- if .Values.keycloak.enabled}}
+{{- if and .Values.keycloak.enabled (not .Values.use_external_postgres) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -46,6 +46,10 @@ spec:
               value: {{ .Release.Name }}-postgresql
             - name: PG_PORT
               value: "5432"
+            - name: PG_DATABASE
+              value: {{ .Values.rearm_postgres_database }}
+            - name: PG_USER
+              value: {{ .Values.rearm_postgres_username }}
             - name: PROJECT_PROTOCOL
               value: {{ .Values.projectProtocol }}
             - name: PROJECT_HOST

@@ -1,5 +1,5 @@
 {{- if .Values.useTraefikLe}}
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: {{ .Values.traefik_crd_api_version }}
 kind: IngressRoute
 metadata:
   name: web-ingressroute
@@ -18,7 +18,7 @@ spec:
       - name: redirect
 {{- end }}
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: {{ .Values.traefik_crd_api_version }}
 kind: IngressRoute
 metadata:
   name: websecure-ingressroute
@@ -35,7 +35,7 @@ spec:
   tls:
     certResolver: le
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: {{ .Values.traefik_crd_api_version }}
 kind: Middleware
 metadata:
   name: redirect
@@ -45,7 +45,7 @@ spec:
     scheme: https
 {{- end}}
 {{- if .Values.traefikBehindLb}}
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: {{ .Values.traefik_crd_api_version }}
 kind: IngressRoute
 metadata:
   name: web-ingressroute

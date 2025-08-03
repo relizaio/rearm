@@ -3,6 +3,21 @@ uiReplicaCount: 1
 ociArtifactReplicaCount: 1
 enableBetaTea: false
 
+use_external_postgres: false
+rearm_postgres_host: ""
+rearm_postgres_database: "postgres"
+rearm_postgres_username: "postgres"
+
+keycloak_postgres_host: ""
+keycloak_postgres_username: "postgres"
+
+rebom_postgres_host: ""
+rebom_postgres_database: "postgres"
+rebom_postgres_username: "postgres"
+rebom_postgres_ssl: "false"
+
+traefik_crd_api_version: traefik.containo.us/v1alpha1
+
 image:
   backEndImage: registry.relizahub.com/library/rearm-backend:25.06.15
   uiImage: registry.relizahub.com/library/rearm-ui:25.05.19
@@ -63,6 +78,7 @@ ociArtifactService:
   registryHost: registry.relizahub.com/123-private # change
   registryUser: changeme # change
   registryToken: changeme # change
+  create_secret_in_chart: true
 
 useTraefikLe: true
 traefikBehindLb: false
@@ -72,10 +88,23 @@ postgresql:
   image:
     registry: docker.io
     repository: bitnami/postgresql
-    tag: 16.6.0
+    tag: 17.5.0-debian-12-r4
     digest: ""
+    ## Specify a imagePullPolicy
+    ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
+    ## ref: https://kubernetes.io/docs/user-guide/images/#pre-pulling-images
+    ##
     pullPolicy: IfNotPresent
+    ## Optionally specify an array of imagePullSecrets.
+    ## Secrets must be manually created in the namespace.
+    ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+    ## Example:
+    ## pullSecrets:
+    ##   - myRegistryKeySecretName
+    ##
     pullSecrets: []
+    ## Set to true if you would like to see extra information on logs
+    ##
     debug: false
   auth:
     enablePostgresUser: true
