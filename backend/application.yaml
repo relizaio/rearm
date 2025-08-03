@@ -7,8 +7,8 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5440}/postgres
-    username: postgres
+    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5440}/${PG_DATABASE:postgres}
+    username: ${PG_USER:postgres}
     password: ${PG_PASS:relizaPass}
     test-on-borrow: true
     validationQuery: SELECT 1
