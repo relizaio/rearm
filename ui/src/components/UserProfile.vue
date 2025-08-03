@@ -37,7 +37,7 @@
             </n-modal>
         </div>
         <h4>Your Organizations
-            <vue-feather v-if="myUser.installationType !== 'OSS'" @click="showCreateOrgModal = true" class="clickable icons" type="plus-circle"
+            <vue-feather v-if="!(myUser.installationType === 'OSS' || (myUser.installationType === 'MANAGED_SERVICE' && myUser.permissions.permissions[0].type !== 'ADMIN'))" @click="showCreateOrgModal = true" class="clickable icons" type="plus-circle"
                 title="Create New Organization" style="margin-left: 8px; vertical-align: middle;" />
         </h4>
         <ul>
