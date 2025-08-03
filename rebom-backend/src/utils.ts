@@ -12,7 +12,7 @@ const pool = new pg.Pool({
     database: process.env.POSTGRES_DATABASE ? process.env.POSTGRES_DATABASE : `postgres`,
     password: process.env.POSTGRES_PASSWORD ? process.env.POSTGRES_PASSWORD : `password`,
     port: process.env.POSTGRES_PORT ? parseInt(process.env.POSTGRES_PORT) : 5438,
-    ssl: process.env.POSTGRES_SSL ? process.env.POSTGRES_SSL : false
+    ssl: (process.env.POSTGRES_SSL === 'true') ? true : false
 })
 
 export function getPool() {
