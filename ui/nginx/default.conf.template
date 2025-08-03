@@ -67,6 +67,16 @@ server {
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
     }
 
+    location /kauth/admin/Reliza {
+        ${KEYCLOAK_RELIZA_ADMIN_ACCESS}
+        proxy_pass http://keycloak;
+        proxy_set_header Host            $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_buffers 8 16k;
+        proxy_buffer_size 16k;
+        proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+    }
+
     location /kauth/realms/Reliza {
         proxy_pass http://keycloak;
         proxy_set_header Host            $host;
