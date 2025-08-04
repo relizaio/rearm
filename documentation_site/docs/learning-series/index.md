@@ -16,3 +16,4 @@ Currently, learning series is a work in progress, videos will be added to this p
 10. Create a Product in ReARM - https://www.youtube.com/watch?v=lMDcJgrt2Yc
 11. Create a Component Branch in ReARM - https://www.youtube.com/watch?v=MHMuHiy7gxU
 12. Create a Product Feature Set in ReARM - https://www.youtube.com/watch?v=egyVUuJc2hM
+13. Component Release - View and Manually Create in ReARM - https://www.youtube.com/watch?v=szzqYxm7ROA
