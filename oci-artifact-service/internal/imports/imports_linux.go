@@ -3,6 +3,7 @@ package imports
 
 import (
 	_ "context"
+	_ "crypto/sha256"
 	_ "fmt"
 	_ "github.com/gabriel-vasile/mimetype"
 	_ "github.com/gin-gonic/gin"
@@ -18,4 +19,5 @@ import (
 	_ "oras.land/oras-go/v2/registry/remote/retry"
 	_ "os"
 	_ "path/filepath"
+	_ "strings"
 )
