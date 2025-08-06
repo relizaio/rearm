@@ -1,4 +1,4 @@
-# ReARM(hq) Integrations
+# ReARM Integrations
 
 
 ## ReARM CLI
