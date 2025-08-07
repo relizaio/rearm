@@ -1278,6 +1278,47 @@ const artifacts: ComputedRef<any> = computed((): any => {
     return artifacts
 })
 
+const hasKnownDependencyTrackIntegration: ComputedRef<boolean> = computed((): boolean => {
+    return artifacts.value.some((artifact: any) => artifact.metrics && artifact.metrics.dependencyTrackFullUri)
+})
+
+const dtrackProjectUuids: ComputedRef<string[]> = computed((): string[] => {
+    const projectUuids: string[] = []
+    artifacts.value.forEach((artifact: any) => {
+        if (artifact.metrics && artifact.metrics.dependencyTrackFullUri) {
+            const parts = artifact.metrics.dependencyTrackFullUri.split('/projects/')
+            if (parts.length > 1) {
+                const projectUuid = parts[parts.length - 1]
+                if (projectUuid && !projectUuids.includes(projectUuid)) {
+                    projectUuids.push(projectUuid)
+                }
+            }
+        }
+    })
+    return projectUuids
+})
+
+async function searchDtrackComponentByPurl(purl: string) {
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query searchDtrackComponentByPurlAndProjects($orgUuid: ID!, $purl: String!, $dtrackProjects: [ID]!) {
+                    searchDtrackComponentByPurlAndProjects(orgUuid: $orgUuid, purl: $purl, dtrackProjects: $dtrackProjects)
+                }
+            `,
+            variables: {
+                orgUuid: release.value.orgDetails.uuid,
+                purl: purl,
+                dtrackProjects: dtrackProjectUuids.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        console.log('Dependency-Track search result:', resp.data?.searchDtrackComponentByPurlAndProjects)
+    } catch (error) {
+        console.error('Error searching Dependency-Track component:', error)
+    }
+}
+
 const outboundDeliverables: ComputedRef<any> = computed((): any => {
     let outboundDeliverables: any[] = []
     if(updatedRelease.value && updatedRelease.value.variantDetails && updatedRelease.value.variantDetails.length){
@@ -2368,7 +2409,21 @@ const changelogTableFields: DataTableColumns<any> = [
         title: 'New Purl',
         sorter: (a: any, b: any) => (a.newPurl || '').localeCompare(b.newPurl || ''),
         render: (row: any) => {
-            return row.newPurl || ''
+            const purlText = row.newPurl || ''
+            if (!purlText) return ''
+            
+            if (hasKnownDependencyTrackIntegration.value) {
+                return h('a', {
+                    href: '#',
+                    style: 'color: #337ab7; cursor: pointer; text-decoration: underline;',
+                    onClick: (e: Event) => {
+                        e.preventDefault()
+                        searchDtrackComponentByPurl(purlText)
+                    }
+                }, purlText)
+            } else {
+                return purlText
+            }
         }
     },
     {
