@@ -10,8 +10,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -890,6 +892,68 @@ public class IntegrationService {
 			}
 		}
 		return projectUuids;
+	}
+	
+	public UUID searchDtrackComponentByPurlAndProjects(UUID orgUuid, String purl, Collection<UUID> dtrackProjects) {
+		Iterator<UUID> dtrackProjectsIter = dtrackProjects.iterator();
+		UUID componentUuid = null;
+		while (null == componentUuid && dtrackProjectsIter.hasNext()) {
+			UUID projectUuid = dtrackProjectsIter.next();
+			componentUuid = searchDtrackComponentByPurlAndProject(orgUuid, purl, projectUuid);
+		}
+		return componentUuid;
+	}
+	
+	/**
+	 * Search for a component in Dependency Track by PURL and project UUID
+	 * @param orgUuid Organization UUID
+	 * @param purl Package URL (PURL) to search for
+	 * @param projectUuid Project UUID to search within
+	 * @return Component data if found, null otherwise
+	 */
+	private UUID searchDtrackComponentByPurlAndProject(UUID orgUuid, String purl, UUID projectUuid) {
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(orgUuid, IntegrationType.DEPENDENCYTRACK,
+				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		if (oid.isPresent()) {
+			IntegrationData dtrackIntegration = oid.get();
+			try {
+				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
+				
+				// Build the URI with purl and project parameters
+				URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + 
+						"/api/v1/component/identity?purl=" + java.net.URLEncoder.encode(purl, "UTF-8") + 
+						"&project=" + projectUuid.toString());
+				
+				log.debug("Searching for component with PURL {} in project {} for org {}", purl, projectUuid, orgUuid);
+				
+				var resp = dtrackWebClient
+						.get()
+						.uri(dtrackUri)
+						.header("X-API-Key", apiToken)
+						.retrieve()
+						.toEntity(String.class)
+						.block();
+				
+				if (resp != null && resp.getBody() != null) {
+					@SuppressWarnings("unchecked")
+					List<Map<String, Object>> components = Utils.OM.readValue(resp.getBody(), List.class);
+					log.debug("Found component for PURL {} in project {} for org {}", purl, projectUuid, orgUuid);
+					if (null != components && !components.isEmpty()) {
+						return UUID.fromString((String) components.get(0).get("uuid"));
+					}
+				}
+				
+			} catch (WebClientResponseException wcre) {
+				if (wcre.getStatusCode() == HttpStatus.NOT_FOUND) {
+					log.warn("Component not found for PURL {} in project {} for org {}", purl, projectUuid, orgUuid);
+				} else {
+					log.error("Web exception searching for component with PURL {} in project {} for org {}", purl, projectUuid, orgUuid, wcre);
+				}
+			} catch (Exception e) {
+				log.error("Exception searching for component with PURL {} in project {} for org {}", purl, projectUuid, orgUuid, e);
+			}
+		}
+		return null;
 	}
 	
 	/**

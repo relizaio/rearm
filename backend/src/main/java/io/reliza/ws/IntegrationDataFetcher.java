@@ -134,4 +134,18 @@ public class IntegrationDataFetcher {
 		
 		return integrationService.requestMetricsRefreshOnDependencyTrack(oad.get());
 	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "searchDtrackComponentByPurlAndProjects")
+	public UUID searchDtrackComponentByPurlAndProjects(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("purl") String purl,
+			@InputArgument("dtrackProjects") Set<UUID> dtrackProjects) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		
+		return integrationService.searchDtrackComponentByPurlAndProjects(orgUuid, purl, dtrackProjects);
+	}
 }

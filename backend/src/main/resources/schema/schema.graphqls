@@ -58,6 +58,7 @@ type Query {
 	releasesByTags(orgUuid: ID!, branchUuid: ID, tagKey: String!, tagValue:String): [Release]
 	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID]): [Release]
 	sbomComponentSearch(orgUuid: ID!, query: String!): [ComponentPurlToDtrack]
+	searchDtrackComponentByPurlAndProjects(orgUuid: ID!, purl: String!, dtrackProjects: [ID]!): ID
 	
 	getAllOrganizations: [Organization]
 	
