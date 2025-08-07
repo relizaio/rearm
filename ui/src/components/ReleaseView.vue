@@ -2375,34 +2375,74 @@ const changelogTableFields: DataTableColumns<any> = [
     }
 ]
 
-const combinedChangelogData: ComputedRef<any[]> = computed((): any[] => {
-    let combinedData: any[] = []
+function mergeUpdatedComponents(addedItems: any[], removedItems: any[]): any[] {
+    const mergedData: any[] = []
+    const usedAddedIndices = new Set<number>()
+    const usedRemovedIndices = new Set<number>()
     
-    if (release.value?.releaseCollection?.artifactComparison?.changelog) {
-        // Add "Added" components
-        if (release.value.releaseCollection.artifactComparison.changelog.added) {
-            const addedItems = release.value.releaseCollection.artifactComparison.changelog.added.map((item: any) => ({
+    // Compare each added item with each removed item
+    addedItems.forEach((addedItem, addedIndex) => {
+        if (usedAddedIndices.has(addedIndex)) return
+        
+        const addedBaseName = addedItem.purl.split('@')[0]
+        
+        removedItems.forEach((removedItem, removedIndex) => {
+            if (usedRemovedIndices.has(removedIndex)) return
+            
+            const removedBaseName = removedItem.purl.split('@')[0]
+            
+            // If base names match, merge into an "Updated" entry
+            if (addedBaseName === removedBaseName) {
+                mergedData.push({
+                    ...addedItem,
+                    changeType: 'Updated',
+                    oldPurl: removedItem.purl,
+                    newPurl: addedItem.purl
+                })
+                
+                // Mark both items as used
+                usedAddedIndices.add(addedIndex)
+                usedRemovedIndices.add(removedIndex)
+            }
+        })
+    })
+    
+    // Add remaining unmerged added items
+    addedItems.forEach((item, index) => {
+        if (!usedAddedIndices.has(index)) {
+            mergedData.push({
                 ...item,
                 changeType: 'Added',
                 oldPurl: '',
                 newPurl: item.purl
-            }))
-            combinedData = combinedData.concat(addedItems)
+            })
         }
-        
-        // Add "Removed" components
-        if (release.value.releaseCollection.artifactComparison.changelog.removed) {
-            const removedItems = release.value.releaseCollection.artifactComparison.changelog.removed.map((item: any) => ({
+    })
+    
+    // Add remaining unmerged removed items
+    removedItems.forEach((item, index) => {
+        if (!usedRemovedIndices.has(index)) {
+            mergedData.push({
                 ...item,
                 changeType: 'Removed',
                 oldPurl: item.purl,
                 newPurl: ''
-            }))
-            combinedData = combinedData.concat(removedItems)
+            })
         }
+    })
+    
+    return mergedData
+}
+
+const combinedChangelogData: ComputedRef<any[]> = computed((): any[] => {
+    if (!release.value?.releaseCollection?.artifactComparison?.changelog) {
+        return []
     }
     
-    return combinedData
+    const addedItems = release.value.releaseCollection.artifactComparison.changelog.added || []
+    const removedItems = release.value.releaseCollection.artifactComparison.changelog.removed || []
+    
+    return mergeUpdatedComponents(addedItems, removedItems)
 })
 
 function changelogRowKey(row: any) {
