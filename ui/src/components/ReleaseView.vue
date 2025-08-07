@@ -232,17 +232,17 @@
                         <div v-if="release.releaseCollection && release.releaseCollection?.artifactComparison?.changelog">
                             <h4>Artifact Changelog</h4>
                             <h5>Components Added</h5>
-                            <ul>
-                                <li v-for="added in release.releaseCollection.artifactComparison.changelog.added" :key="added.purl">
-                                    {{ added.purl }}
-                                </li>
-                            </ul>
+                            <n-data-table 
+                                :data="release.releaseCollection.artifactComparison.changelog.added" 
+                                :columns="changelogAddedTableFields" 
+                                :row-key="changelogRowKey" 
+                            />
                             <h5>Components Removed</h5>
-                            <ul>
-                                <li v-for="removed in release.releaseCollection.artifactComparison.changelog.removed" :key="removed.purl">
-                                    {{ removed.purl }}
-                                </li>
-                            </ul>
+                            <n-data-table 
+                                :data="release.releaseCollection.artifactComparison.changelog.removed" 
+                                :columns="changelogRemovedTableFields" 
+                                :row-key="changelogRowKey" 
+                            />
                         </div>
                         
                     </div>
@@ -2359,6 +2359,30 @@ const commitTableFields: DataTableColumns<any> = [
         }
     }
 ]
+
+const changelogAddedTableFields: DataTableColumns<any> = [
+    {
+        key: 'purl',
+        title: 'Component PURL',
+        render: (row: any) => {
+            return row.purl
+        }
+    }
+]
+
+const changelogRemovedTableFields: DataTableColumns<any> = [
+    {
+        key: 'purl',
+        title: 'Component PURL',
+        render: (row: any) => {
+            return row.purl
+        }
+    }
+]
+
+function changelogRowKey(row: any) {
+    return row.purl
+}
 
 async function refetchDependencyTrackMetrics (artifact: string) {
     const resp = await graphqlClient.mutate({
