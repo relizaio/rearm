@@ -435,9 +435,9 @@ public class ArtifactService {
 	public boolean fetchDependencyTrackDataForArtifact (Artifact a) {
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
 		var dti = integrationService.resolveDependencyTrackProcessingStatus(ad);
-		log.debug("PSDEBUG: setting dti to last scanned = " + dti.getLastScanned() + " on artifact = " + a.getUuid());
 		boolean doUpdate = false;
 		if (null != dti) {
+			log.debug("PSDEBUG: setting dti to last scanned = " + dti.getLastScanned() + " on artifact = " + a.getUuid());
 			if (null == ad.getMetrics() || null == ad.getMetrics().getLastScanned() || 
 					ad.getMetrics().getLastScanned().plusSeconds(1).isBefore(dti.getLastScanned())){
 				doUpdate = true;
