@@ -1299,6 +1299,7 @@ const dtrackProjectUuids: ComputedRef<string[]> = computed((): string[] => {
 })
 
 async function searchDtrackComponentByPurl(purl: string) {
+    let dtrackComponent: string | undefined = undefined
     try {
         const resp = await graphqlClient.query({
             query: gql`
@@ -1313,10 +1314,11 @@ async function searchDtrackComponentByPurl(purl: string) {
             },
             fetchPolicy: 'no-cache'
         })
-        console.log('Dependency-Track search result:', resp.data?.searchDtrackComponentByPurlAndProjects)
+        dtrackComponent = resp.data?.searchDtrackComponentByPurlAndProjects
     } catch (error) {
         console.error('Error searching Dependency-Track component:', error)
     }
+    return dtrackComponent
 }
 
 const outboundDeliverables: ComputedRef<any> = computed((): any => {
@@ -2416,9 +2418,22 @@ const changelogTableFields: DataTableColumns<any> = [
                 return h('a', {
                     href: '#',
                     style: 'color: #337ab7; cursor: pointer; text-decoration: underline;',
-                    onClick: (e: Event) => {
+                    onClick: async (e: Event) => {
                         e.preventDefault()
-                        searchDtrackComponentByPurl(purlText)
+                        const dtrackComponent = await searchDtrackComponentByPurl(purlText)
+                        console.log('Dependency-Track component:', dtrackComponent)
+                        if (dtrackComponent) {
+                            // Get base URL from first artifact with dependencyTrackFullUri
+                            const firstArtifactWithDtrack = artifacts.value.find((artifact: any) => 
+                                artifact.metrics && artifact.metrics.dependencyTrackFullUri
+                            )
+                            if (firstArtifactWithDtrack) {
+                                const baseUrl = firstArtifactWithDtrack.metrics.dependencyTrackFullUri.split('/projects')[0]
+                                const componentUrl = `${baseUrl}/components/${dtrackComponent}`
+                                // Open in new window
+                                window.open(componentUrl, '_blank')
+                            }
+                        }
                     }
                 }, purlText)
             } else {
