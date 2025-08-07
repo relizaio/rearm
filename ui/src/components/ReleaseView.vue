@@ -229,7 +229,7 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
-                        <h4>Artifact Changelog</h4>
+                        <h4>Changes in SBOM Components</h4>
                         <n-data-table 
                             :data="combinedChangelogData" 
                             :columns="changelogTableFields" 
@@ -2353,17 +2353,24 @@ const commitTableFields: DataTableColumns<any> = [
 
 const changelogTableFields: DataTableColumns<any> = [
     {
-        key: 'purl',
-        title: 'Component PURL',
-        render: (row: any) => {
-            return row.purl
-        }
-    },
-    {
         key: 'changeType',
         title: 'Change Type',
         render: (row: any) => {
             return row.changeType
+        }
+    },
+    {
+        key: 'oldPurl',
+        title: 'Old PURL',
+        render: (row: any) => {
+            return row.oldPurl || ''
+        }
+    },
+    {
+        key: 'newPurl',
+        title: 'New PURL',
+        render: (row: any) => {
+            return row.newPurl || ''
         }
     }
 ]
@@ -2376,7 +2383,9 @@ const combinedChangelogData: ComputedRef<any[]> = computed((): any[] => {
         if (release.value.releaseCollection.artifactComparison.changelog.added) {
             const addedItems = release.value.releaseCollection.artifactComparison.changelog.added.map((item: any) => ({
                 ...item,
-                changeType: 'Added'
+                changeType: 'Added',
+                oldPurl: '',
+                newPurl: item.purl
             }))
             combinedData = combinedData.concat(addedItems)
         }
@@ -2385,7 +2394,9 @@ const combinedChangelogData: ComputedRef<any[]> = computed((): any[] => {
         if (release.value.releaseCollection.artifactComparison.changelog.removed) {
             const removedItems = release.value.releaseCollection.artifactComparison.changelog.removed.map((item: any) => ({
                 ...item,
-                changeType: 'Removed'
+                changeType: 'Removed',
+                oldPurl: item.purl,
+                newPurl: ''
             }))
             combinedData = combinedData.concat(removedItems)
         }
