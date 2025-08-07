@@ -229,7 +229,7 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
-                        <h4>Changes in SBOM Components</h4>
+                        <h3>Changes in SBOM Components</h3>
                         <n-data-table 
                             :data="combinedChangelogData" 
                             :columns="changelogTableFields" 
@@ -2356,24 +2356,28 @@ const commitTableFields: DataTableColumns<any> = [
 
 const changelogTableFields: DataTableColumns<any> = [
     {
-        key: 'changeType',
-        title: 'Change Type',
-        render: (row: any) => {
-            return row.changeType
-        }
-    },
-    {
         key: 'oldPurl',
-        title: 'Old PURL',
+        title: 'Old Purl',
+        sorter: (a: any, b: any) => (a.oldPurl || '').localeCompare(b.oldPurl || ''),
         render: (row: any) => {
             return row.oldPurl || ''
         }
     },
     {
         key: 'newPurl',
-        title: 'New PURL',
+        title: 'New Purl',
+        sorter: (a: any, b: any) => (a.newPurl || '').localeCompare(b.newPurl || ''),
         render: (row: any) => {
             return row.newPurl || ''
+        }
+    },
+    {
+        key: 'changeType',
+        title: 'Change Type',
+        width: 150,
+        sorter: (a: any, b: any) => a.changeType.localeCompare(b.changeType),
+        render: (row: any) => {
+            return row.changeType
         }
     }
 ]
