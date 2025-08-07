@@ -229,16 +229,17 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
-                        <h3>Changes in SBOM Components</h3>
-                        <n-data-table 
-                            :data="combinedChangelogData" 
-                            :columns="changelogTableFields" 
-                            :row-key="changelogRowKey" 
-                            :pagination="{
-                                pageSize: 7
-                            }"
-                        />
-                        
+                        <div v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
+                            <h3>Changes in SBOM Components</h3>
+                            <n-data-table
+                                :data="combinedChangelogData"
+                                :columns="changelogTableFields"
+                                :row-key="changelogRowKey"
+                                :pagination="{
+                                    pageSize: 7
+                                }"
+                            />
+                        </div>
                     </div>
                     <div class="container">
                         <h3>
