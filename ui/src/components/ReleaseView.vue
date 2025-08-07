@@ -234,6 +234,9 @@
                             :data="combinedChangelogData" 
                             :columns="changelogTableFields" 
                             :row-key="changelogRowKey" 
+                            :pagination="{
+                                pageSize: 7
+                            }"
                         />
                         
                     </div>
