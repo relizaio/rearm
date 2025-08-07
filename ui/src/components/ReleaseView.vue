@@ -229,21 +229,12 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
-                        <div v-if="release.releaseCollection && release.releaseCollection?.artifactComparison?.changelog">
-                            <h4>Artifact Changelog</h4>
-                            <h5>Components Added</h5>
-                            <n-data-table 
-                                :data="release.releaseCollection.artifactComparison.changelog.added" 
-                                :columns="changelogAddedTableFields" 
-                                :row-key="changelogRowKey" 
-                            />
-                            <h5>Components Removed</h5>
-                            <n-data-table 
-                                :data="release.releaseCollection.artifactComparison.changelog.removed" 
-                                :columns="changelogRemovedTableFields" 
-                                :row-key="changelogRowKey" 
-                            />
-                        </div>
+                        <h4>Artifact Changelog</h4>
+                        <n-data-table 
+                            :data="combinedChangelogData" 
+                            :columns="changelogTableFields" 
+                            :row-key="changelogRowKey" 
+                        />
                         
                     </div>
                     <div class="container">
@@ -2360,28 +2351,51 @@ const commitTableFields: DataTableColumns<any> = [
     }
 ]
 
-const changelogAddedTableFields: DataTableColumns<any> = [
+const changelogTableFields: DataTableColumns<any> = [
     {
         key: 'purl',
         title: 'Component PURL',
         render: (row: any) => {
             return row.purl
+        }
+    },
+    {
+        key: 'changeType',
+        title: 'Change Type',
+        render: (row: any) => {
+            return row.changeType
         }
     }
 ]
 
-const changelogRemovedTableFields: DataTableColumns<any> = [
-    {
-        key: 'purl',
-        title: 'Component PURL',
-        render: (row: any) => {
-            return row.purl
+const combinedChangelogData: ComputedRef<any[]> = computed((): any[] => {
+    let combinedData: any[] = []
+    
+    if (release.value?.releaseCollection?.artifactComparison?.changelog) {
+        // Add "Added" components
+        if (release.value.releaseCollection.artifactComparison.changelog.added) {
+            const addedItems = release.value.releaseCollection.artifactComparison.changelog.added.map((item: any) => ({
+                ...item,
+                changeType: 'Added'
+            }))
+            combinedData = combinedData.concat(addedItems)
+        }
+        
+        // Add "Removed" components
+        if (release.value.releaseCollection.artifactComparison.changelog.removed) {
+            const removedItems = release.value.releaseCollection.artifactComparison.changelog.removed.map((item: any) => ({
+                ...item,
+                changeType: 'Removed'
+            }))
+            combinedData = combinedData.concat(removedItems)
         }
     }
-]
+    
+    return combinedData
+})
 
 function changelogRowKey(row: any) {
-    return row.purl
+    return `${row.changeType}-${row.purl}`
 }
 
 async function refetchDependencyTrackMetrics (artifact: string) {
