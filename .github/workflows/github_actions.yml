@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Release
-        uses: relizaio/reliza-docker-action@80bf4c8e0cc29cbbe1ec98422151552011d92cae # v3.6
+        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@8c334ea501221b77cba85758c63ce7a2a19f9af8 # v3.6
+        uses: relizaio/reliza-helm-action@a04c5d7148bd4ea7ad12a5990c262651d64dec95 # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Helm metadata action
-        uses: relizaio/reliza-helm-action@8c334ea501221b77cba85758c63ce7a2a19f9af8 # v3.6
+        uses: relizaio/reliza-helm-action@a04c5d7148bd4ea7ad12a5990c262651d64dec95 # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@8c334ea501221b77cba85758c63ce7a2a19f9af8 # v3.6
+        uses: relizaio/reliza-helm-action@a04c5d7148bd4ea7ad12a5990c262651d64dec95 # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # next
+        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # next
+        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -130,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM OCI Service Release
-        uses: relizaio/reliza-docker-action@80bf4c8e0cc29cbbe1ec98422151552011d92cae # v3.6
+        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -153,7 +153,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Keycloak Release
-        uses: relizaio/reliza-docker-action@80bf4c8e0cc29cbbe1ec98422151552011d92cae # v3.6
+        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -174,7 +174,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Release
-        uses: relizaio/reliza-docker-action@80bf4c8e0cc29cbbe1ec98422151552011d92cae # v3.6
+        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -190,7 +190,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@80bf4c8e0cc29cbbe1ec98422151552011d92cae # v3.6
+        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -208,7 +208,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@80bf4c8e0cc29cbbe1ec98422151552011d92cae # v3.6
+        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
