@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@80bf4c8e0cc29cbbe1ec98422151552011d92cae # v3.6
+        uses: relizaio/reliza-docker-action@5fbf3d53f5005b7cdab32e71ab0480b2d0abd179 # next
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -121,7 +121,7 @@ jobs:
           push_to_rearm: 'true'
           rearm_api_id: ${{ secrets.REARM_REARM_BACKEND_API_ID }}
           rearm_api_key: ${{ secrets.REARM_REARM_BACKEND_API_KEY }}
-          source_code_sbom_type: 'other'
+          source_code_sbom_type: 'custom'
           rearm_enable_public_cosign_sigstore: 'true'
   build-oci-service:
     permissions:
