@@ -60,7 +60,6 @@ relizaprops:
     oldpassword: ${RELIZAPROP_PASS_OLD:pleasechange}
     oldsalt: ${RELIZAPROP_SALT_OLD:aaaaaaaa}
   rejectPendingReleasesRate: ${RELIZAPROP_REJECT_PENDING_RELEASES_RATE:PT15M} #ISO 8601
-  maxApiKeyAccessRecords: ${RELIZAPROP_MAX_API_KEY_ACCESS_RECORDS:3}
   installationSecret: ${RELIZAPROP_INSTALLATION_SECRET:r3liza}
   installationType: OSS
   enableBetaTea: ${RELIZAPROP_ENABLE_BETA_TEA:false}

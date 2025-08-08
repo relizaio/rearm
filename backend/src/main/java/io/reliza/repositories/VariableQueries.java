@@ -24,19 +24,6 @@ class VariableQueries {
 				ORDER BY aka.api_key_uuid, aka.access_date DESC
 		 		""";
 	 
-	 protected static final String DELETE_EXCESS_KEY_ACCESS_BY_KEY_ID = """
-				DELETE FROM rearm.api_key_access aka
-				where aka.api_key_uuid = :keyUuid 
-				AND uuid IN (
-					SELECT uuid FROM (
-						SELECT uuid FROM rearm.api_key_access
-						where api_key_uuid = :keyUuid 
-						ORDER BY access_date ASC
-						LIMIT :numberOfKeysToDelete
-					) AS subquery
-				)
-		 		""";
-	 
 	 protected static final String COUNT_KEY_ACCESS_BY_KEY_ID = """
 		 		SELECT COUNT(aka.*) FROM rearm.api_key_access aka
 				where aka.api_key_uuid = :keyUuid

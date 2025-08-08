@@ -23,9 +23,6 @@ public class ApiKeyAccessService {
 	@Autowired
 	private final ApiKeyAccessRepository repository;
 
-	@Value("${relizaprops.maxApiKeyAccessRecords}")
-	private int maxApiKeyAccessRecords;
-
 	public ApiKeyAccessService(ApiKeyAccessRepository repository) {
 	    this.repository = repository;
 	}
@@ -60,12 +57,6 @@ public class ApiKeyAccessService {
 		aka.setAccessDate(ZonedDateTime.now());
       
         saveApiKeyAccess(aka);
-		int currentCount = repository.countKeyAccessByKeyId(apiKeyUuid);
-		
-		if(currentCount > maxApiKeyAccessRecords){
-			int excessCount = currentCount - maxApiKeyAccessRecords;
-			repository.deleteExcessKeyAccessByKeyId(apiKeyUuid, excessCount);
-		}
     }
 	
 }

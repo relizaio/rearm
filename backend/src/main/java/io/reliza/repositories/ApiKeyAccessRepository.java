@@ -26,12 +26,6 @@ public interface ApiKeyAccessRepository extends CrudRepository<ApiKeyAccess, UUI
 			nativeQuery = true)
 	Optional<ApiKeyAccess> getKeyAccessByOrgKeyId(UUID orgUuid, UUID keyUuid);
 
-	@Modifying
-	@Query(
-			value = VariableQueries.DELETE_EXCESS_KEY_ACCESS_BY_KEY_ID,
-			nativeQuery = true)
-	int deleteExcessKeyAccessByKeyId(UUID keyUuid, int numberOfKeysToDelete);
-
 	@Query(
 			value = VariableQueries.COUNT_KEY_ACCESS_BY_KEY_ID,
 			nativeQuery = true)
