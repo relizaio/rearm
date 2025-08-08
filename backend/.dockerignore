@@ -1,3 +1,7 @@
 .git
 .settings
+target
+ai-plans
+.apt_generated
+.apt_generated_tests
 Dockerfile

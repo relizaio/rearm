@@ -1,0 +1,5 @@
+FROM maven:3.9.11-eclipse-temurin-21@sha256:1829262961db972b3924b5b8e4a240083626da2d92a49788c7dfb6de4692410d
+RUN mkdir /app && mkdir /sbom
+COPY . /app/
+WORKDIR /app
+RUN mvn org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeAggregateBom -DincludeBomSerialNumber=true && cp /app/target/bom.json /sbom/sbom.json
