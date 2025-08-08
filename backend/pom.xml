@@ -22,7 +22,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.4.6</version>
+        <version>3.4.8</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     
@@ -241,7 +241,7 @@
         <plugin>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-maven-plugin</artifactId>
-            <version>10.15.2</version>
+            <version>11.11.0</version>
             <configuration>
                 <url>jdbc:postgresql://localhost:5440/postgres</url>
                 <user>postgres</user>
@@ -252,7 +252,7 @@
                 <dependency>
                     <groupId>org.postgresql</groupId>
                     <artifactId>postgresql</artifactId>
-                    <version>42.7.3</version>
+                    <version>42.7.5</version>
                 </dependency>
             </dependencies>
         </plugin>
