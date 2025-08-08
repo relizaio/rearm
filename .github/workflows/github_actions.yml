@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@5fbf3d53f5005b7cdab32e71ab0480b2d0abd179 # next
+        uses: relizaio/reliza-docker-action@d663b7add13366ef176a8cb10dfc669da8d2c5a4 # next
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
