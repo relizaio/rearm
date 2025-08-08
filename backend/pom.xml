@@ -41,7 +41,7 @@
 	            <groupId>com.netflix.graphql.dgs</groupId>
 	            <artifactId>graphql-dgs-platform-dependencies</artifactId>
 	            <!-- The DGS BOM/platform dependency. This is the only place you set version of DGS -->
-	            <version>10.0.4</version>
+	            <version>10.1.2</version>
 	            <type>pom</type>
 	            <scope>import</scope>
 	        </dependency>
@@ -109,7 +109,7 @@
 	<dependency>
 	    <groupId>io.hypersistence</groupId>
 	    <artifactId>hypersistence-utils-hibernate-62</artifactId>
-	    <version>3.8.1</version>
+	    <version>3.9.4</version>
 	</dependency>
     <dependency>
         <groupId>com.sendgrid</groupId>
@@ -124,7 +124,7 @@
     <dependency>
         <groupId>commons-validator</groupId>
         <artifactId>commons-validator</artifactId>
-        <version>1.9.0</version>
+        <version>1.10.0</version>
     </dependency>
     <!-- Bouncy Castle for Argon2 password encoding -->
     <dependency>
@@ -166,7 +166,7 @@
     <dependency>
         <groupId>org.cyclonedx</groupId>
         <artifactId>cyclonedx-core-java</artifactId>
-        <version>9.0.4</version>
+        <version>10.2.1</version>
         <exclusions>
             <exclusion>
                 <groupId>org.apache.logging.log4j</groupId>
@@ -178,7 +178,7 @@
 	<dependency>
 	    <groupId>org.json</groupId>
 	    <artifactId>json</artifactId>
-	    <version>20240303</version>
+	    <version>20250517</version>
 	</dependency>
 	<dependency>
 	    <groupId>org.apache.commons</groupId>
@@ -204,7 +204,7 @@
     <dependency>
         <groupId>org.jsoup</groupId>
         <artifactId>jsoup</artifactId>
-        <version>1.18.3</version>
+        <version>1.21.1</version>
     </dependency>
     <dependency>
         <groupId>org.openapitools</groupId>
