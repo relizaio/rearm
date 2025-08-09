@@ -145,6 +145,9 @@
                                 </a>
                             </div>
                         </n-tooltip>
+                        <router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
+                            <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
+                        </router-link>
                         <vue-feather v-if="userPermission !== 'READ_ONLY' && release.componentDetails.type === 'PRODUCT'"
                             size="16px"
                             class="clickable icons versionIcon"
@@ -153,9 +156,6 @@
                             @click="cloneReleaseToFs(releaseUuid, release.version)"
                             style="margin-left:10px;"
                         />
-                        <router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
-                            <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
-                        </router-link>
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                         <Icon v-if="release.lifecycle === 'ASSEMBLED' && release.componentDetails.versionType === 'MARKETING' && userPermission !== 'READ_ONLY'" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
                     </n-gi>
