@@ -62,7 +62,7 @@
                         </n-radio-group>
                     </n-form-item>
                     <n-form-item>
-                        Top Level Dependency only: <n-switch v-model:value="tldOnly"/>
+                        Top Level Dependencies Only:<n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
