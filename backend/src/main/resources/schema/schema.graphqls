@@ -132,6 +132,8 @@ type Mutation {
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
 	releaseSbomExport(release: ID!, tldOnly: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType): String
 
+	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
+
 	# Programmatic
 	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
 	deleteApiKey(apiKeyUuid: ID!): Boolean

@@ -40,7 +40,9 @@ import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.AuthPrincipalType;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.RequestType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
@@ -64,6 +66,7 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
+import io.reliza.model.UserData;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.changelog.entry.AggregationType;
@@ -971,6 +974,24 @@ public class ReleaseDatafetcher {
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		ossReleaseService.updateComponentReleasesWithIdentifiers(compUuid, wu);
 		return true;
+	}
+
+	@DgsData(parentType = "Mutation", field = "createFeatureSetFromRelease")
+	public BranchData createFeatureSetFromRelease(DgsDataFetchingEnvironment dfe,
+			@InputArgument("releaseUuid") UUID releaseUuid,
+			@InputArgument("featureSetName") String featureSetName) 
+				throws RelizaException {
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+
+		return releaseService.createFeatureSetFromRelease(featureSetName, ord.get(), ord.get().getOrg(), wu);
 	}
 	
 	
