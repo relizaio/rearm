@@ -112,7 +112,8 @@
                             <template #trigger>
                                 <Icon class="clickable" style="margin-left:10px;" size="16"><Info20Regular/></Icon>
                             </template>
-                            <strong>UUID: </strong> {{ releaseUuid }}
+                            <strong>UUID: </strong> {{ releaseUuid }} 
+                            <Icon class="clickable" style="margin-left: 5px;" size="14" @click="copyToClipboard(releaseUuid)"><Copy20Regular/></Icon> 
                             <div v-if="purl"><strong>PURL:</strong> {{ purl }}</div>
                             <div><strong>Marketing Version: </strong>{{ updatedRelease && updatedRelease.marketingVersion ? updatedRelease.marketingVersion : 'Not Set' }}</div>
                             <div class=""><strong>Organization:</strong> {{ release.orgDetails.name }}</div>
@@ -504,10 +505,9 @@ import graphqlClient from '../utils/graphql'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular } from '@vicons/fluent'
-import { Box, CirclePlus, ClipboardCheck, Download, Edit, FileDownload, FileInvoice, GitCompare, Link, Trash, Refresh, Upload } from '@vicons/tabler'
-import { CancelOutlined } from '@vicons/material'
+import { CirclePlus, ClipboardCheck, Download, Edit, GitCompare, Link, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
-import { BoxArrowUp20Regular, Info20Regular } from '@vicons/fluent'
+import { BoxArrowUp20Regular, Info20Regular, Copy20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NIcon, NInput, NInputGroup, NModal, NRadioButton, NRadioGroup, NSelect, NSpin, NSpace, NSwitch, NTabPane, NTabs, NTag, NFlex, NTooltip, NUpload, NotificationType, useNotification, DataTableColumns, NGrid, NGi } from 'naive-ui'
