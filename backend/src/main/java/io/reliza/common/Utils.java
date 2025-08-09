@@ -242,6 +242,9 @@ public class Utils {
 	}
 	
 	public static Optional<DigestRecord> convertDigestStringToRecord (String digestString) {
+		return convertDigestStringToRecord(digestString, DigestScope.ORIGINAL_FILE);
+	}
+	public static Optional<DigestRecord> convertDigestStringToRecord (String digestString, DigestScope scope) {
 		Optional<DigestRecord> convertedDigest = Optional.empty();
 		String cleanedDigest = cleanString(digestString);
 		if (StringUtils.isNotEmpty(cleanedDigest)) {
@@ -252,7 +255,7 @@ public class Utils {
 				
 				TeaArtifactChecksumType checksumType = TeaArtifactChecksumType.parseDigestType(digestTypeString);
 				if (null != checksumType) {
-					convertedDigest = Optional.of(new DigestRecord(checksumType, digestValue, DigestScope.ORIGINAL_FILE));
+					convertedDigest = Optional.of(new DigestRecord(checksumType, digestValue, scope));
 				}
 			}
 		}

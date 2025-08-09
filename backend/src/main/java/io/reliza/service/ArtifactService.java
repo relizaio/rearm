@@ -375,7 +375,8 @@ public class ArtifactService {
 			Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
 			String ociDigest = artifactUploadResponse.getOciResponse().getDigest();
 			if(StringUtils.isNotEmpty(ociDigest)){
-				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, ociDigest, DigestScope.OCI_STORAGE));
+				var dr = Utils.convertDigestStringToRecord(ociDigest, DigestScope.OCI_STORAGE);
+				digestRecords.add(dr.get());
 			}
 			if(StringUtils.isNotEmpty(artifactUploadResponse.getFileSHA256Digest())){
 				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
