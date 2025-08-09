@@ -99,8 +99,8 @@
                 </n-button>
             </n-modal>
             <div v-if="release && release.componentDetails">
-                <n-grid x-gap="2" :cols="4">
-                    <n-gi span="2">
+                <n-grid :cols="7">
+                    <n-gi span="4">
                         <h3 style="color: #537985; display: inline;">                  
                             <router-link
                                 style="text-decoration: none; color: rgb(39 179 223);"
@@ -159,7 +159,7 @@
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                         <Icon v-if="release.lifecycle === 'ASSEMBLED' && release.componentDetails.versionType === 'MARKETING' && userPermission !== 'READ_ONLY'" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
                     </n-gi>
-                    <n-gi>
+                    <n-gi span="2">
                         <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
                             <span title="Criticial Severity Vulnerabilities" class="circle" style="background: #f86c6b; cursor: help;">{{ updatedRelease.metrics.critical }}</span>    
                             <span title="High Severity Vulnerabilities" class="circle" style="background: #fd8c00; cursor: help;">{{ updatedRelease.metrics.high }}</span>
@@ -172,7 +172,7 @@
                             <span title="Operational Policy Violations" class="circle" style="background: grey; cursor: help;">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
                         </n-space>
                     </n-gi>
-                    <n-gi>
+                    <n-gi span="1">
                         <span class="lifecycle" style="float: right; margin-right: 80px;">
                             <span v-if="userPermission !== 'READ_ONLY'">
                                 <n-dropdown v-if="updatedRelease.lifecycle" trigger="hover" :options="lifecycleOptions" @select="lifecycleChange">
