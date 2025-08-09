@@ -14,9 +14,14 @@ import io.reliza.model.Deliverable;
 
 public interface DeliverableRepository extends CrudRepository<Deliverable, UUID> {
 	@Query(
-			value = VariableQueries.FIND_DELIVERABLE_BY_DIGEST,
+			value = VariableQueries.FIND_DELIVERABLE_BY_DIGEST_RECORD,
 			nativeQuery = true)
-	List<Deliverable> findDeliverableByDigest(String digest, String orgUuidAsString);
+	List<Deliverable> findDeliverableByDigestRecord(String digest, String scope, String algo, String orgUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_DELIVERABLE_BY_DIGEST_ANY_ALGO,
+			nativeQuery = true)
+	List<Deliverable> findDeliverableByDigestAnyAlgo(String digest, String scope, String orgUuidAsString);
 	
 	@Query(
 			value = VariableQueries.FIND_DELIVERABLE_BY_DIGEST_AND_COMPONENT,

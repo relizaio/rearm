@@ -154,10 +154,15 @@ class VariableQueries {
 	/*
 	 * Deliverables
 	 */
-	protected static final String FIND_DELIVERABLE_BY_DIGEST = """
+	protected static final String FIND_DELIVERABLE_BY_DIGEST_RECORD = """
 	    select * from rearm.deliverables a where a.record_data->>'org' = :orgUuidAsString 
-	    and jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))));
+	    and jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('algo',:algo,'scope',:scope,'digest',:digest))));
 	""";
+	
+	protected static final String FIND_DELIVERABLE_BY_DIGEST_ANY_ALGO = """
+		    select * from rearm.deliverables a where a.record_data->>'org' = :orgUuidAsString 
+		    and jsonb_contains(a.record_data->'softwareMetadata', jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('scope',:scope,'digest',:digest))));
+		""";
 	
 	protected static final String FIND_DELIVERABLE_BY_DIGEST_AND_COMPONENT = """
 			SELECT * FROM rearm.deliverables a

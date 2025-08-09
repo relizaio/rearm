@@ -131,9 +131,11 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 					.buildUri(sdm.getBuildUri())
 					.cicdMeta(sdm.getCicdMeta())
 					.digests(null != sdm.getDigests() ? new LinkedHashSet<>(sdm.getDigests()): new LinkedHashSet<>())
+					.digestRecords(null != sdm.getDigestRecords() ? new LinkedHashSet<>(sdm.getDigestRecords()): new LinkedHashSet<>())
 					.dateFrom(sdm.getDateFrom())
 					.dateTo(sdm.getDateTo())
 					.packageType(sdm.getPackageType())
+					.downloadLinks(null != sdm.getDownloadLinks() ? new ArrayList<>(sdm.getDownloadLinks()): new ArrayList<>())
 					.build();
 			clonedSdm.setDuration();
 			return clonedSdm;

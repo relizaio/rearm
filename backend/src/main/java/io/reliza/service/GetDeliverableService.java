@@ -31,6 +31,8 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.Deliverable;
@@ -91,12 +93,20 @@ public class GetDeliverableService {
 	}
 	
 
-	protected List<Deliverable> getDeliverablesByDigest (String digest, UUID orgUuid) {
-		if (StringUtils.startsWith(digest, "sha")) {
-			var digestEls = digest.split(":", 2);
-			digest = digestEls[1];
+	private List<Deliverable> getDeliverablesByDigestString (String digest, UUID orgUuid) {
+		List<Deliverable> deliverables = new LinkedList<>();
+		Optional<DigestRecord> odr = Utils.convertDigestStringToRecord(digest);
+		if (odr.isPresent()) {
+			var digestRecord = odr.get();
+			deliverables = repository.findDeliverableByDigestRecord(digestRecord.digest(), digestRecord.scope().toString(), digestRecord.algo().toString(), orgUuid.toString());
+		} else {
+			deliverables = repository.findDeliverableByDigestAnyAlgo(digest, DigestScope.ORIGINAL_FILE.toString(), orgUuid.toString());
 		}
-		return repository.findDeliverableByDigest(digest, orgUuid.toString());
+		return deliverables;
+	}
+	
+	protected List<Deliverable> getDeliverablesByDigestRecord (DigestRecord digestRecord, UUID orgUuid) {
+		return repository.findDeliverableByDigestRecord(digestRecord.digest(), digestRecord.scope().toString(), digestRecord.algo().toString(), orgUuid.toString());
 	}
 	
 	private List<Deliverable> getDeliverablesByBuildId (String query, UUID orgUuid) {
@@ -115,10 +125,10 @@ public class GetDeliverableService {
 		Optional<DeliverableData> dData = Optional.empty();
 		List<Deliverable> dbds = new LinkedList<>();
 		if (StringUtils.isNotEmpty(digest)) {
-			dbds = getDeliverablesByDigest(digest, orgUuid);
+			dbds = getDeliverablesByDigestString(digest, orgUuid);
 			
 			// if list is empty, try public orgs
-			if (dbds.isEmpty()) dbds = getDeliverablesByDigest(digest, CommonVariables.EXTERNAL_PROJ_ORG_UUID);
+			if (dbds.isEmpty()) dbds = getDeliverablesByDigestString(digest, CommonVariables.EXTERNAL_PROJ_ORG_UUID);
 		}
 		if (!dbds.isEmpty()) {
 			List<DeliverableData> ddList = dbds.stream().map(DeliverableData::dataFromRecord).collect(Collectors.toList());

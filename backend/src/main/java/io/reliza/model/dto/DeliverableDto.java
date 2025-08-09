@@ -6,6 +6,7 @@ package io.reliza.model.dto;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -72,19 +73,8 @@ public class DeliverableDto {
 				Set<DigestRecord> digestRecords = new LinkedHashSet<>();
 				
 				for (String digestString : dirtyDigests) {
-					String cleanedDigest = Utils.cleanString(digestString);
-					if (StringUtils.isNotEmpty(cleanedDigest)) {
-						String[] digestParts = cleanedDigest.split(":", 2);
-						if (digestParts.length == 2) {
-							String digestTypeString = digestParts[0];
-							String digestValue = digestParts[1];
-							
-							TeaArtifactChecksumType checksumType = TeaArtifactChecksumType.parseDigestType(digestTypeString);
-							if (null != checksumType) {
-								digestRecords.add(new DigestRecord(checksumType, digestValue, DigestScope.ORIGINAL_FILE));
-							}
-						}
-					}
+					Optional<DigestRecord> odr = Utils.convertDigestStringToRecord(digestString);
+					if (odr.isPresent()) digestRecords.add(odr.get());
 				}
 				
 				this.softwareMetadata.setDigestRecords(digestRecords);

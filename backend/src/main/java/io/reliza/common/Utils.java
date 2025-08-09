@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -49,7 +50,10 @@ import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
+import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
+import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.model.BranchData;
 import io.reliza.model.RelizaData;
 import lombok.extern.slf4j.Slf4j;
@@ -236,6 +240,24 @@ public class Utils {
 		cleanString = cleanString.replaceFirst("\r$", "");
 		return cleanString;
 	}
+	
+	public static Optional<DigestRecord> convertDigestStringToRecord (String digestString) {
+		Optional<DigestRecord> convertedDigest = Optional.empty();
+		String cleanedDigest = cleanString(digestString);
+		if (StringUtils.isNotEmpty(cleanedDigest)) {
+			String[] digestParts = cleanedDigest.split(":", 2);
+			if (digestParts.length == 2) {
+				String digestTypeString = digestParts[0];
+				String digestValue = digestParts[1];
+				
+				TeaArtifactChecksumType checksumType = TeaArtifactChecksumType.parseDigestType(digestTypeString);
+				if (null != checksumType) {
+					convertedDigest = Optional.of(new DigestRecord(checksumType, digestValue, DigestScope.ORIGINAL_FILE));
+				}
+			}
+		}
+		return convertedDigest;
+	}
 
 	public static String getNullable(String nullable) {
 		if (nullable == null || nullable.trim().isEmpty()) {
@@ -405,7 +427,7 @@ public class Utils {
 			suppliedComponentId = UUID.fromString(suppliedComponentIdStr);
 		}
 		
-		if (ApiTypeEnum.COMPONENT == ahp.getType()) {
+		if (ApiTypeEnum.COMPONENT == ahp.getType() || ApiTypeEnum.VERSION_GEN == ahp.getType()) {
 			componentId = ahp.getObjUuid();
 			if (null != suppliedComponentId && !componentId.equals(suppliedComponentId)) {
 				throw new AccessDeniedException("Component mismatch.");

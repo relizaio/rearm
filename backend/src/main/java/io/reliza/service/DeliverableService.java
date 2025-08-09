@@ -162,10 +162,10 @@ public class DeliverableService {
 			// if deliverable with this digest already exists for this org, do not create a new one (only software deliverables)
 			List<Deliverable> deliverablesByDigest = new LinkedList<>();
 			if (null != branchUUID && null != deliverableDto.getSoftwareMetadata() && 
-					null != deliverableDto.getSoftwareMetadata().getDigests() &&
-					!deliverableDto.getSoftwareMetadata().getDigests().isEmpty()) {
-				deliverableDto.getSoftwareMetadata().getDigests().forEach(dd -> {
-					deliverablesByDigest.addAll(getDeliverableService.getDeliverablesByDigest(dd, bd.getOrg()));
+					null != deliverableDto.getSoftwareMetadata().getDigestRecords() &&
+					!deliverableDto.getSoftwareMetadata().getDigestRecords().isEmpty()) {
+				deliverableDto.getSoftwareMetadata().getDigestRecords().forEach(dd -> {
+					deliverablesByDigest.addAll(getDeliverableService.getDeliverablesByDigestRecord(dd, bd.getOrg()));
 				});
 			}
 			
@@ -208,6 +208,8 @@ public class DeliverableService {
 				// }
 				Deliverable d = createDeliverable(deliverableDto, wu);
 				deliverables.add(d.getUuid());
+			} else {
+				throw new RelizaException("A deliverable with this exact digest already belongs to another release, first in list = " + deliverablesByDigest.get(0).getUuid().toString());
 			}
 		}
 		return deliverables;
