@@ -42,6 +42,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.BranchDto;
+import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
@@ -238,7 +239,8 @@ public class BranchDataFetcher {
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
+		if (null != ro)	ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
 		
 		@SuppressWarnings("unchecked")
 		List<String> liveBranches = (List<String>) synchronizeBranchInput.get("liveBranches");

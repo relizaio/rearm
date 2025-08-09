@@ -73,6 +73,7 @@ import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
+import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
@@ -487,7 +488,9 @@ public class ReleaseDatafetcher {
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		
+		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
+		if (null != ro)	ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
 		
 		BranchData bd = resolveAddReleaseProgrammaticBranchData(componentId, (String) progReleaseInput.get(CommonVariables.BRANCH_FIELD),
 				ar.getWhoUpdated());

@@ -41,6 +41,7 @@ import io.reliza.model.RelizaObject;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.AuthorizationResponse;
+import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.dto.DeliverableDto.AddOutboundDeliverablesInput;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.ArtifactService;
@@ -196,7 +197,8 @@ public class DeliverableDataFetcher {
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
+		if (null != ro)	ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
 		
 		Optional<VariantData> ovd = Optional.empty();
 		

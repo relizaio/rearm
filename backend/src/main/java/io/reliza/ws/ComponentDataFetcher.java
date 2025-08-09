@@ -63,6 +63,7 @@ import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.UpdateComponentDto;
+import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.dto.ComponentDto;
 import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.service.ApiKeyService;
@@ -298,29 +299,15 @@ public class ComponentDataFetcher {
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
 		
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
-		String componentIdStr = (String) getNewVersionInput.get(CommonVariables.COMPONENT_FIELD);
 		
-		UUID componentId = null;
-		UUID orgId = null;
-		if (ApiTypeEnum.COMPONENT == ahp.getType() || ApiTypeEnum.VERSION_GEN == ahp.getType()) {
-			componentId = ahp.getObjUuid();
-		} else if (ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
-			try {
-				orgId = ahp.getObjUuid();
-				componentId = UUID.fromString(componentIdStr);
-			} catch (NullPointerException e) {
-				throw new IllegalArgumentException("Must provide component UUID as input if using organization wide API access.");
-			}
-		}
+		UUID componentId = Utils.resolveProgrammaticComponentId((String) getNewVersionInput.get(CommonVariables.COMPONENT_FIELD), ahp);
+		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.VERSION_GEN, ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
-		Optional<ComponentData> opd = getComponentService.getComponentData(componentId);
-		RelizaObject ro = null;
-		if (opd.isPresent()) {
-			if (null == orgId) orgId = opd.get().getOrg();
-			ro = opd.get();
-		}
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
 		log.debug("before get new version programmatic auth");
-		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, orgId, CallType.WRITE, ro);
+		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
+		if (null != ro)	ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
 
 		log.debug("get new version programmatic ar = " + ar.getAuthorizationStatus());
 		
