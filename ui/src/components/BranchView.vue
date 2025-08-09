@@ -415,8 +415,8 @@ const cloneReleaseToFs = async function(uuid: string, version: string) {
 const createFsFromRelease = async function(){
     const gqlResp: any = await graphqlClient.mutate({
         mutation: gql`
-            mutation createFeatureSetFromRelease($featureSetName: String!, $releaseUuid: ID!, $org: ID!) {
-                createFeatureSetFromRelease(featureSetName: $featureSetName, releaseUuid: $releaseUuid, org: $org)
+            mutation createFeatureSetFromRelease($featureSetName: String!, $releaseUuid: ID!) {
+                createFeatureSetFromRelease(featureSetName: $featureSetName, releaseUuid: $releaseUuid)
                 {
                     ${graphqlQueries.BranchGql}
                 }
@@ -424,8 +424,7 @@ const createFsFromRelease = async function(){
         `,
         variables: {
             featureSetName: cloneReleaseToFsObj.value.fsName,
-            releaseUuid: cloneReleaseToFsObj.value.releaseUuid,
-            org: branchData.value.org
+            releaseUuid: cloneReleaseToFsObj.value.releaseUuid
         },
         fetchPolicy: 'no-cache'
     })
@@ -438,7 +437,7 @@ const createFsFromRelease = async function(){
         name: 'ProductsOfOrg',
         params: {
             orguuid: gqlResp.data.createFeatureSetFromRelease.org,
-            compuuid: gqlResp.data.createFeatureSetFromRelease.componentUuid,
+            compuuid: gqlResp.data.createFeatureSetFromRelease.component,
             branchuuid: gqlResp.data.createFeatureSetFromRelease.uuid
         }
     })
