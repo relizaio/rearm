@@ -163,7 +163,6 @@ public class SharedArtifactService {
 		if (oa.isPresent()) {
 			log.debug("existing artifact object: {}", oa.get());
 			auditService.createAndSaveAuditRecord(TableName.ARTIFACTS, a);
-			a.setRevision(a.getRevision() + 1);
 			a.setLastUpdatedDate(ZonedDateTime.now());
 		}
 		a.setRecordData(recordData);

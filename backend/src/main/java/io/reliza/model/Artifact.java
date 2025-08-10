@@ -12,6 +12,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import org.hibernate.annotations.Type;
 
@@ -25,6 +26,7 @@ public class Artifact implements Serializable, RelizaEntity {
 	@Id
 	private UUID uuid = UUID.randomUUID();
 	
+	@Version
 	@Column(nullable = false)
 	private int revision=0;
 	
