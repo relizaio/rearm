@@ -213,7 +213,7 @@
                                         :key="pt"
                                         :value="pt"
                                         :disabled="false"
-                                        :label="pt"
+                                        :label="translatePermissionName(pt)"
                                     />
                                 </n-radio-group>
                                 
@@ -643,8 +643,8 @@ const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
     if (permissionTypes.length) {
         let retSelection: any[] = []
         permissionTypes.forEach((el: string) => {
-            let retObj = {
-                label: el,
+            const retObj = {
+                label: translatePermissionName(el),
                 value: el
             }
             retSelection.push(retObj)
@@ -655,22 +655,7 @@ const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
     }
 })
 const permissionTypeswAdmin: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
-const permissionTypeswAdminSelections: ComputedRef<SelectOption[]> = computed((): any => {
 
-    if (permissionTypeswAdmin.length) {
-        let retSelection: SelectOption[] = []
-        permissionTypeswAdmin.forEach((el: string) => {
-            let retObj = {
-                label: el,
-                value: el
-            }
-            retSelection.push(retObj)
-        })
-        return retSelection
-    } else {
-        return []
-    }
-})
 const programmaticAccessFields: Ref<any> = ref([
     {
         key: 'uuid',
@@ -1169,11 +1154,20 @@ function enableRegistry() {
         })
     }
 }
+function translatePermissionName(type: string) {
+    switch (type) {
+        case 'NONE': return 'None'
+        case 'READ_ONLY': return 'Read Only'
+        case 'READ_WRITE': return 'Read & Write'
+        case 'ADMIN': return 'Administrator'
+        default: return type
+    }
+}
 function extractOrgWidePermission(user: any) {
-    let perm = user.permissions.permissions.filter((up: any) =>
+    const perm = user.permissions.permissions.filter((up: any) =>
         (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
     )
-    return perm[0].type
+    return translatePermissionName(perm[0].type)
 }
 async function genApiKey() {
     let swalObject: SweetAlertOptions = {
