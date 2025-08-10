@@ -25,8 +25,11 @@ import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.tea.Link;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.TeaArtifactChecksumType;
+import lombok.AccessLevel;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.Setter;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -119,8 +122,10 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
     	private String projectVersion;
     }
 
-	
+	@Getter(AccessLevel.PUBLIC)
+	@Setter(AccessLevel.PRIVATE)
 	private UUID uuid;
+
 	private UUID org;
 	
 	private ArtifactType type;
@@ -167,9 +172,11 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	}
 
 
-	public static ArtifactData artifactDataFactory(ArtifactDto artifactDto) {
+	public static ArtifactData artifactDataFactory(ArtifactDto artifactDto, UUID artifactUuid) {
 		ArtifactData ad = new ArtifactData();
-		if (null != artifactDto.getUuid()) {
+		if (null != artifactUuid) {
+			ad.setUuid(artifactUuid);
+		} else if (null != artifactDto.getUuid()) {
 			ad.setUuid(artifactDto.getUuid());
 		} else {
 			ad.setUuid(null);

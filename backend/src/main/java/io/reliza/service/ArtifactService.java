@@ -156,7 +156,7 @@ public class ArtifactService {
 		}
 		if(null == artifactDto.getType())
 			throw new RelizaException("Artifact must have type!");
-		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto);
+		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto, a.getUuid());
 		Map<String,Object> recordData = Utils.dataToRecord(ad);
 		a = sharedArtifactService.saveArtifact(a, recordData, wu);
 		return a;
