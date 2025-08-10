@@ -201,7 +201,7 @@
                         :title="'User Permissions for ' + selectedUser.email"
                     >
                         <n-flex vertical>
-                            <n-space>
+                            <n-space style="margin-top: 20px; margin-bottom: 20px;">
                                 <n-h5>
                                     <n-text depth="1">
                                         Organization-Wide Permissions:
@@ -218,7 +218,7 @@
                                 </n-radio-group>
                                 
                             </n-space>
-                            <n-space class="approvalPermissions" v-if="selectedUserType !== 'ADMIN'">
+                            <n-space style="margin-bottom: 20px;" v-if="selectedUserType !== 'ADMIN' && myorg.approvalRoles && myorg.approvalRoles.length">
                                 <n-h5>
                                     <n-text depth="1">
                                         Approval Permissions:
