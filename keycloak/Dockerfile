@@ -1,4 +1,4 @@
-FROM quay.io/keycloak/keycloak:26.2.5@sha256:4883630ef9db14031cde3e60700c9a9a8eaf1b5c24db1589d6a2d43de38ba2a9 as builder
+FROM quay.io/keycloak/keycloak:26.3.2@sha256:922e443a962b8ad0dffa3c17061e8136583d7bc59209a1d1fc059816467c3f69 as builder
 
 ENV KC_HEALTH_ENABLED=true
 ENV KC_METRICS_ENABLED=true
@@ -7,7 +7,7 @@ ENV KC_DB=postgres
 
 RUN /opt/keycloak/bin/kc.sh build --health-enabled=true --metrics-enabled=true
 
-FROM quay.io/keycloak/keycloak:26.2.5@sha256:4883630ef9db14031cde3e60700c9a9a8eaf1b5c24db1589d6a2d43de38ba2a9
+FROM quay.io/keycloak/keycloak:26.3.2@sha256:922e443a962b8ad0dffa3c17061e8136583d7bc59209a1d1fc059816467c3f69
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
@@ -18,7 +18,8 @@ RUN mkdir -p /opt/keycloak/data/tmp && mkdir -p /opt/keycloak/data/import
 RUN chown keycloak:keycloak -R /opt/keycloak
 COPY --from=builder --chown=keycloak:keycloak /opt/keycloak/lib/quarkus/ /opt/keycloak/lib/quarkus/
 COPY --chown=keycloak:keycloak ./realms/2025-02-10-reliza-realm-rearmoss.json /opt/keycloak/data/import/2025-02-10-reliza-realm-rearmoss.json
-COPY --chown=keycloak:keycloak ./themes /opt/keycloak/themes
+COPY --chown=keycloak:keycloak ./realms/2025-08-11-master-realm-export.json /opt/keycloak/data/import/2025-08-11-master-realm-export.json
+COPY --chown=keycloak:keycloak ./themes/ /opt/keycloak/themes/
 
 WORKDIR /opt/keycloak
 
