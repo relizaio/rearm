@@ -7,3 +7,12 @@
 .card-pf {
     opacity: 0.9;
 }
+
+div.kc-logo-text {
+    background-image: url(../img/logo.png);
+    background-repeat: no-repeat;
+    background-size: contain;
+    background-position: center;
+    width: 100%;
+    height: 100px;
+}

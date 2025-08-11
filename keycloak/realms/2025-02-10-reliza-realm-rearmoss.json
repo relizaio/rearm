@@ -1436,7 +1436,7 @@
   "smtpServer": {},
   "loginTheme": "reliza",
   "accountTheme": "reliza",
-  "adminTheme": "keycloak.v2",
+  "adminTheme": "reliza",
   "emailTheme": "keycloak",
   "eventsEnabled": false,
   "eventsListeners": [
