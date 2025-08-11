@@ -300,7 +300,7 @@
                                                     <template #default="{ value: value1, index }">
                                                         <div style="width: 100%;">
                                                             <h5>Trigger Group #{{ index + 1 }}</h5>
-                                                            <n-form-item label="Condition Matching With The Group">
+                                                            <n-form-item label="Condition Matching Within The Group">
                                                                 <n-select v-model:value="value1.matchOperator" :options="[{label: 'Require All Conditions', value: 'AND'}, {label: 'Require Any Condition', value: 'OR'}]" />
                                                             </n-form-item>
                                                             <n-dynamic-input v-model:value="value1.conditions" :on-create="onCreateInputTriggerCondition">
