@@ -332,7 +332,7 @@
                             </n-form-item>
                             <n-space>
                                 <n-button type="success" @click="addApprovalRole">Create</n-button>
-                                <n-button type="warning" @click="newApprovalRole.id = ''; newApprovalRole.displayView = ''">Reset</n-button>
+                                <n-button type="warning" @click="resetCreateApprovalRole">Reset</n-button>
                             </n-space>
                         </n-form>
                     </n-modal>
@@ -972,8 +972,16 @@ async function addApprovalRole () {
             orgUuid: orgResolved.value,
             approvalRole: newApprovalRole.value
         }
-        store.dispatch('addApprovalRole', updObj)
+        await store.dispatch('addApprovalRole', updObj)
         showCreateApprovalRole.value = false
+        resetCreateApprovalRole()
+    }
+}
+
+function resetCreateApprovalRole () {
+    newApprovalRole.value = {
+        id: '',
+        displayView: ''
     }
 }
 
