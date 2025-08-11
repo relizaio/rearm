@@ -274,7 +274,7 @@
                             </n-tab-pane>
                             <n-tab-pane name="Trigger Events" v-if="myUser.installationType !== 'OSS'">
                                 <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Trigger" @click="showCreateInputTriggerModal = true">
+                                <Icon v-if="isWritable" class="clickable" size="25" title="Add Trigger Event" @click="showCreateInputTriggerModal = true">
                                     <CirclePlus />
                                 </Icon>
                                 <n-modal
