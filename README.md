@@ -24,6 +24,8 @@ ReARM maintains xBOM documents per each release. See [here](https://rearmhq.com/
 
 ReARM stores xBOMs on OCI-compatible storage. ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
 
+ReARM was the first project that introduced the principles of [Product-Component relationship within release metadata organization](https://worklifenotes.com/2024/10/08/release-metadata-organization-model/) which is seeing increasing market adoption.
+
 ## Project links
 - Documentation: https://docs.rearmhq.com
 - Video learning and tutorials playlist (wip): https://www.youtube.com/playlist?list=PLPABgZUOtPyXyC9YWJktF-sfu0ewpytGf
@@ -59,11 +61,12 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 7. Integration with various CI systems (including GitHub Actions, Azure DevOps, Jenkins, GitLab CI and others) to produce BOMs and upload them with other release metadata to ReARM
 8. Release approval logic with triggers based on approvals and / or vulnerabilities or policy violations (Commercial Edition only)
 9. Marketing release workflow (Commercial Edition only)
+10. Component release-level alerts and changelog for changes in SBOM dependencies
 
 ## Future Capabilities (Medium-Term Roadmap)
-1. Release-level changelog for changes in SBOM dependencies
-2. Better handling and prescribed workflows for Attestations
-3. Extended options to configure retrieved aggregated BOMs (via tagging and detailed component analysis, i.e., option to exclude Test dependencies)
+1. Extended options to configure retrieved aggregated BOMs (via tagging and detailed component analysis, i.e., option to exclude Test dependencies)
+2. Resource group authorization hierarchy 
+3. Better handling and prescribed workflows for Attestations
 4. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
 
 ## Releases
