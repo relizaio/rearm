@@ -116,7 +116,7 @@
                             @click="showAddComponentProductModal = true" title="Add Product Dependency Requirement" />
                         <vue-feather v-if="false && isWritable" class="clickable" type="file-plus"
                             @click="showAddOssArtifactModal = true" title="Register open source artifact" />
-                        <vue-feather v-if="isWritable" class="clickable" type="trending-up"
+                        <vue-feather v-if="isWritable && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable" type="trending-up"
                             @click="triggerAutoIntegrate" title="Trigger Auto Integrate" />
                     </p>
                     <n-data-table :data="modifiedBranch.dependencies" :columns="depTableFields" :row-key="releaseRowkey" />
