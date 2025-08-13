@@ -1,0 +1,2110 @@
+[
+    {
+      "key": "cancel",
+      "value": "Cancel"
+    },
+    {
+      "key": "role_view-events",
+      "value": "View events"
+    },
+    {
+      "key": "recovery-codes-generate-new-codes",
+      "value": "Generate new codes to ensure access to your account"
+    },
+    {
+      "key": "irreversibleAction",
+      "value": "This action is irreversible"
+    },
+    {
+      "key": "authenticatorSMSMessage",
+      "value": "Keycloak will send the Verification code to your phone as the two-factor authentication."
+    },
+    {
+      "key": "role_view-users",
+      "value": "View users"
+    },
+    {
+      "key": "error-username-invalid-character",
+      "value": "'{{0}}' contains invalid character."
+    },
+    {
+      "key": "invalidPasswordMinLengthMessage",
+      "value": "Invalid password: minimum length {0}."
+    },
+    {
+      "key": "infoMessage",
+      "value": "By clicking Remove Access, you will remove granted permissions of this application. This application will no longer use your information."
+    },
+    {
+      "key": "permissionRequestion",
+      "value": "Permission Requestion"
+    },
+    {
+      "key": "authenticatorSubTitle",
+      "value": "Set Up Two-Factor Authentication"
+    },
+    {
+      "key": "givenName",
+      "value": "Given name"
+    },
+    {
+      "key": "signOut",
+      "value": "Sign out"
+    },
+    {
+      "key": "verifiableCredentialsTitle",
+      "value": "Verifiable Credentials"
+    },
+    {
+      "key": "signedInDevicesExplanation",
+      "value": "Sign out of any unfamiliar devices."
+    },
+    {
+      "key": "addMultivaluedLabel",
+      "value": "Add {{fieldLabel}}"
+    },
+    {
+      "key": "authenticatorSubMessage",
+      "value": "To enhance the security of your account, enable at least one of the available two-factor authentication methods."
+    },
+    {
+      "key": "accessPermissions",
+      "value": "Access Permissions"
+    },
+    {
+      "key": "doSignOut",
+      "value": "Sign out"
+    },
+    {
+      "key": "error-user-attribute-required",
+      "value": "Please specify '{{0}}'."
+    },
+    {
+      "key": "clientDescriptionHelp",
+      "value": "Specifies description of the client. For example 'My Client for TimeSheets'. Supports keys for localized values as well. For example: ${my_client_description}"
+    },
+    {
+      "key": "error-invalid-blank",
+      "value": "Please specify value of '{{0}}'."
+    },
+    {
+      "key": "signedOutSession",
+      "value": "Signed out {{browser}}/{{os}}"
+    },
+    {
+      "key": "totp.totp",
+      "value": "Time-based"
+    },
+    {
+      "key": "close",
+      "value": "Close"
+    },
+    {
+      "key": "role_manage-events",
+      "value": "Manage events"
+    },
+    {
+      "key": "applicationInUse",
+      "value": "In-use app only"
+    },
+    {
+      "key": "removeConsentError",
+      "value": "Could not remove consent due to: {{error}}"
+    },
+    {
+      "key": "website",
+      "value": "Web page"
+    },
+    {
+      "key": "address",
+      "value": "Address"
+    },
+    {
+      "key": "role_manage-account",
+      "value": "Manage account"
+    },
+    {
+      "key": "lastAccess",
+      "value": "Last Access"
+    },
+    {
+      "key": "totpAppGoogleName",
+      "value": "Google Authenticator"
+    },
+    {
+      "key": "searchOrganization",
+      "value": "Search for organization"
+    },
+    {
+      "key": "invalidPasswordExistingMessage",
+      "value": "Invalid existing password."
+    },
+    {
+      "key": "invalidUserMessage",
+      "value": "Invalid user"
+    },
+    {
+      "key": "sharetheResource",
+      "value": "Share the resource"
+    },
+    {
+      "key": "scopeNameHelp",
+      "value": "Name of the client scope. Must be unique in the realm. Name should not contain space characters as it is used as value of scope parameter"
+    },
+    {
+      "key": "flowTypeHelp",
+      "value": "What kind of form is it"
+    },
+    {
+      "key": "addPeople",
+      "value": "Add people to share your resource with"
+    },
+    {
+      "key": "identityProvider",
+      "value": "Identity Provider"
+    },
+    {
+      "key": "passwordConfirm",
+      "value": "Confirmation"
+    },
+    {
+      "key": "webauthn-display-name",
+      "value": "Passkey"
+    },
+    {
+      "key": "authenticatorActionSetup",
+      "value": "Set up"
+    },
+    {
+      "key": "error-invalid-value",
+      "value": "'{{0}}' has invalid value."
+    },
+    {
+      "key": "add",
+      "value": "Add"
+    },
+    {
+      "key": "waitingforApproval",
+      "value": "Waiting for approval"
+    },
+    {
+      "key": "rolesScope",
+      "value": "If there is no role scope mapping defined, each user is permitted to use this client scope. If there are role scope mappings defined, the user must be a member of at least one of the roles."
+    },
+    {
+      "key": "readOnlyUserMessage",
+      "value": "You can''t update your account as it is read-only."
+    },
+    {
+      "key": "unShareAllConfirm",
+      "value": "Are you sure you want to completely remove all shares?"
+    },
+    {
+      "key": "deletingImplies",
+      "value": "Deleting your account implies:"
+    },
+    {
+      "key": "zoneinfo",
+      "value": "Time zone"
+    },
+    {
+      "key": "error-invalid-number",
+      "value": "'{{0}}' is invalid number."
+    },
+    {
+      "key": "changePasswordHtmlTitle",
+      "value": "Change Password"
+    },
+    {
+      "key": "choose",
+      "value": "Choose..."
+    },
+    {
+      "key": "accountUpdatedError",
+      "value": "Could not update account due to validation errors"
+    },
+    {
+      "key": "error-invalid-uri",
+      "value": "'{{0}}' is invalid URL."
+    },
+    {
+      "key": "hasAccessTo",
+      "value": "Has access to"
+    },
+    {
+      "key": "peopleAccessResource",
+      "value": "People with access to this resource"
+    },
+    {
+      "key": "shareSuccess",
+      "value": "Resource successfully shared."
+    },
+    {
+      "key": "mobile",
+      "value": "Mobile"
+    },
+    {
+      "key": "termsOfService",
+      "value": "Terms of service"
+    },
+    {
+      "key": "configureAuthenticators",
+      "value": "Configured Authenticators"
+    },
+    {
+      "key": "successTotpMessage",
+      "value": "Mobile authenticator configured."
+    },
+    {
+      "key": "authenticatorMobileSetupTitle",
+      "value": "Mobile Authenticator Setup"
+    },
+    {
+      "key": "deleteAccountWarning",
+      "value": "This is irreversible. All your data will be permanently destroyed, and irretrievable."
+    },
+    {
+      "key": "successTotpRemovedMessage",
+      "value": "Mobile authenticator removed."
+    },
+    {
+      "key": "unLinkSuccess",
+      "value": "Successfully unlinked account"
+    },
+    {
+      "key": "username",
+      "value": "Username"
+    },
+    {
+      "key": "termsAndConditionsDeclined",
+      "value": "You need to accept the Terms and Conditions to continue"
+    },
+    {
+      "key": "identityProviderNotFoundMessage",
+      "value": "Specified identity provider not found."
+    },
+    {
+      "key": "recovery-codes-number-remaining",
+      "value": "{{0}} recovery codes remaining"
+    },
+    {
+      "key": "lastAccessedOn",
+      "value": "Last accessed"
+    },
+    {
+      "key": "otp-display-name",
+      "value": "Authenticator application"
+    },
+    {
+      "key": "additionalGrants",
+      "value": "Additional Grants"
+    },
+    {
+      "key": "authorizedProviderMessage",
+      "value": "Authorized Providers linked with your account"
+    },
+    {
+      "key": "role_manage-consent",
+      "value": "Manage consents"
+    },
+    {
+      "key": "error-number-out-of-range-too-small",
+      "value": "'{{0}}' must have minimal value of {{1}}."
+    },
+    {
+      "key": "recovery-authn-code",
+      "value": "My recovery authentication codes"
+    },
+    {
+      "key": "createFlowHelp",
+      "value": "You can create a top level flow within this from"
+    },
+    {
+      "key": "refreshPage",
+      "value": "Refresh the page"
+    },
+    {
+      "key": "save",
+      "value": "Save"
+    },
+    {
+      "key": "doCancel",
+      "value": "Cancel"
+    },
+    {
+      "key": "thirdpartyApps",
+      "value": "Third-Party applications"
+    },
+    {
+      "key": "doLogOutAllSessions",
+      "value": "Log out all sessions"
+    },
+    {
+      "key": "share",
+      "value": "Share"
+    },
+    {
+      "key": "authenticator",
+      "value": "Authenticator"
+    },
+    {
+      "key": "signingIn",
+      "value": "Signing in"
+    },
+    {
+      "key": "doDownload",
+      "value": "Download"
+    },
+    {
+      "key": "webauthn-help-text",
+      "value": "Use your Passkey to sign in."
+    },
+    {
+      "key": "addressScopeConsentText",
+      "value": "Address"
+    },
+    {
+      "key": "offlineAccessScopeConsentText",
+      "value": "Offline Access"
+    },
+    {
+      "key": "consentDenied",
+      "value": "Consent denied."
+    },
+    {
+      "key": "signOutAllDevices",
+      "value": "Sign out all devices"
+    },
+    {
+      "key": "device-activity",
+      "value": "Device activity"
+    },
+    {
+      "key": "identityProviderRedirectErrorMessage",
+      "value": "Failed to redirect to identity provider."
+    },
+    {
+      "key": "doRemove",
+      "value": "Remove"
+    },
+    {
+      "key": "accountUpdatedMessage",
+      "value": "Your account has been updated."
+    },
+    {
+      "key": "shareWithOthers",
+      "value": "Share with others"
+    },
+    {
+      "key": "doAdd",
+      "value": "Add"
+    },
+    {
+      "key": "domains",
+      "value": "Domains"
+    },
+    {
+      "key": "invalidPasswordConfirmMessage",
+      "value": "Password confirmation doesn''t match."
+    },
+    {
+      "key": "doFinish",
+      "value": "Finish"
+    },
+    {
+      "key": "missingEmailMessage",
+      "value": "'{{0}}': Please specify email."
+    },
+    {
+      "key": "error-invalid-date",
+      "value": "'{{0}}' is invalid date."
+    },
+    {
+      "key": "errasingData",
+      "value": "Erasing all your data"
+    },
+    {
+      "key": "doDeny",
+      "value": "Deny"
+    },
+    {
+      "key": "client_realm-management",
+      "value": "Realm Management"
+    },
+    {
+      "key": "accessGrantedOn",
+      "value": "Access granted on:"
+    },
+    {
+      "key": "role_view-clients",
+      "value": "View clients"
+    },
+    {
+      "key": "requestor",
+      "value": "Requestor"
+    },
+    {
+      "key": "totpAlgorithm",
+      "value": "Algorithm"
+    },
+    {
+      "key": "error-pattern-no-match",
+      "value": "'{{0}}' doesn't match required format."
+    },
+    {
+      "key": "application",
+      "value": "Application"
+    },
+    {
+      "key": "shareUser",
+      "value": "Add users to share your resource with"
+    },
+    {
+      "key": "sharedWithMe",
+      "value": "Shared with Me"
+    },
+    {
+      "key": "authenticatorSMSTitle",
+      "value": "SMS Code"
+    },
+    {
+      "key": "password",
+      "value": "My password"
+    },
+    {
+      "key": "setUpNew",
+      "value": "Set up {{name}}"
+    },
+    {
+      "key": "successGrantRevokedMessage",
+      "value": "Grant revoked successfully."
+    },
+    {
+      "key": "client_broker",
+      "value": "Broker"
+    },
+    {
+      "key": "authenticatorStatusMessage",
+      "value": "Two-factor authentication is currently"
+    },
+    {
+      "key": "access-denied-when-idp-auth",
+      "value": "Access denied when authenticating with {0}"
+    },
+    {
+      "key": "doCopy",
+      "value": "Copy"
+    },
+    {
+      "key": "realmName",
+      "value": "Realm"
+    },
+    {
+      "key": "invalidPasswordMinDigitsMessage",
+      "value": "Invalid password: must contain at least {0} numerical digits."
+    },
+    {
+      "key": "authenticatorFinishSetUpMessage",
+      "value": "Each time you sign in to your Keycloak account, you will be asked to provide a two-factor authentication code."
+    },
+    {
+      "key": "role_view-identity-providers",
+      "value": "View identity providers"
+    },
+    {
+      "key": "sendVerficationCode",
+      "value": "Send Verification Code"
+    },
+    {
+      "key": "error-number-out-of-range",
+      "value": "'{{0}}' must be a number between {{1}} and {{2}}."
+    },
+    {
+      "key": "groupsListHeader",
+      "value": "Groups list header"
+    },
+    {
+      "key": "refresh",
+      "value": "Refresh"
+    },
+    {
+      "key": "scopeDescriptionHelp",
+      "value": "Description of the client scope"
+    },
+    {
+      "key": "authenticatorTitle",
+      "value": "Authenticator"
+    },
+    {
+      "key": "linkedAccounts",
+      "value": "Linked accounts"
+    },
+    {
+      "key": "removeAccess",
+      "value": "Remove access"
+    },
+    {
+      "key": "noResourcesSharedWithYou",
+      "value": "There are no resources shared with you"
+    },
+    {
+      "key": "removeCred",
+      "value": "Remove {{name}}"
+    },
+    {
+      "key": "organizationList",
+      "value": "List of organizations"
+    },
+    {
+      "key": "organizationDescription",
+      "value": "View organizations that you joined"
+    },
+    {
+      "key": "error-invalid-length-too-long",
+      "value": "'{{0}}' must have maximal length of {{2}}."
+    },
+    {
+      "key": "password-help-text",
+      "value": "Sign in by entering your password."
+    },
+    {
+      "key": "updatePasswordTitle",
+      "value": "Update Password"
+    },
+    {
+      "key": "invalidPasswordNotContainsUsernameMessage",
+      "value": "Invalid password: Can not contain the username."
+    },
+    {
+      "key": "resourceName",
+      "value": "Resource name"
+    },
+    {
+      "key": "client_account",
+      "value": "Account"
+    },
+    {
+      "key": "invalidFederatedIdentityActionMessage",
+      "value": "Invalid or missing action."
+    },
+    {
+      "key": "phoneNumber",
+      "value": "Phone number"
+    },
+    {
+      "key": "name",
+      "value": "Name"
+    },
+    {
+      "key": "verifiableCredentialsDescription",
+      "value": "Select the credential for import into your wallet."
+    },
+    {
+      "key": "clientTypeHelp",
+      "value": "The type of this resource. It can be used to group different resource instances with the same type."
+    },
+    {
+      "key": "offlineAccess",
+      "value": "Offline access"
+    },
+    {
+      "key": "notSetUp",
+      "value": "{{name}} is not set up."
+    },
+    {
+      "key": "description",
+      "value": "Description"
+    },
+    {
+      "key": "groupsListColumnsNames",
+      "value": "Groups list columns names"
+    },
+    {
+      "key": "federatedIdentity",
+      "value": "Federated Identity"
+    },
+    {
+      "key": "anyPermission",
+      "value": "Any Permission"
+    },
+    {
+      "key": "error-invalid-uri-scheme",
+      "value": "'{{0}}' has invalid URL scheme."
+    },
+    {
+      "key": "unLinkError",
+      "value": "Could not unlink due to: {{error}}"
+    },
+    {
+      "key": "street",
+      "value": "Street"
+    },
+    {
+      "key": "doRemoveSharing",
+      "value": "Remove Sharing"
+    },
+    {
+      "key": "updateError",
+      "value": "Could not update the resource due to: {{error}}"
+    },
+    {
+      "key": "webauthn-passwordless-display-name",
+      "value": "Passkey"
+    },
+    {
+      "key": "recovery-authn-codes-help-text",
+      "value": "These codes can be used to regain your access in case your other 2FA means are not available."
+    },
+    {
+      "key": "editTheResource",
+      "value": "Edit the resource - {{name}}"
+    },
+    {
+      "key": "accountDisabledMessage",
+      "value": "Account is disabled, contact your administrator."
+    },
+    {
+      "key": "resourceIntroMessage",
+      "value": "Share your resources among team members"
+    },
+    {
+      "key": "jumpToSection",
+      "value": "Jump to section"
+    },
+    {
+      "key": "updateCredAriaLabel",
+      "value": "Update credential"
+    },
+    {
+      "key": "totpAppMicrosoftAuthenticatorName",
+      "value": "Microsoft Authenticator"
+    },
+    {
+      "key": "authenticatorMobileFinishSetUpMessage",
+      "value": "The authenticator has been bound to your phone."
+    },
+    {
+      "key": "applications",
+      "value": "Applications"
+    },
+    {
+      "key": "accountSecuritySidebarTitle",
+      "value": "Account security"
+    },
+    {
+      "key": "accountSecurityIntroMessage",
+      "value": "Control your password and account access"
+    },
+    {
+      "key": "required",
+      "value": "Required"
+    },
+    {
+      "key": "emptyUserOrganizationsInstructions",
+      "value": "You have not joined any organizations yet."
+    },
+    {
+      "key": "role_read-token",
+      "value": "Read token"
+    },
+    {
+      "key": "usernamePlaceholder",
+      "value": "Username or email"
+    },
+    {
+      "key": "sessions",
+      "value": "Sessions"
+    },
+    {
+      "key": "selectALocale",
+      "value": "Select a locale"
+    },
+    {
+      "key": "error-number-out-of-range-too-big",
+      "value": "'{{0}}' must have maximal value of {{2}}."
+    },
+    {
+      "key": "allFieldsRequired",
+      "value": "All fields required"
+    },
+    {
+      "key": "resourceSharedWith_zero",
+      "value": "This resource is not shared."
+    },
+    {
+      "key": "removeModalMessage",
+      "value": "This will remove the currently granted access permission for {{name}}. You will need to grant access again if you want to use this app."
+    },
+    {
+      "key": "log",
+      "value": "Log"
+    },
+    {
+      "key": "rolesScopeConsentText",
+      "value": "User roles"
+    },
+    {
+      "key": "role_manage-realm",
+      "value": "Manage realm"
+    },
+    {
+      "key": "invalidPasswordNotUsernameMessage",
+      "value": "Invalid password: must not be equal to the username."
+    },
+    {
+      "key": "stopUsingCred",
+      "value": "Stop using {{name}}?"
+    },
+    {
+      "key": "offlineToken",
+      "value": "Offline Token"
+    },
+    {
+      "key": "sharedwithMe",
+      "value": "Shared with Me"
+    },
+    {
+      "key": "identityProviderRemovedMessage",
+      "value": "Identity provider removed successfully."
+    },
+    {
+      "key": "usernameExistsMessage",
+      "value": "Username already exists."
+    },
+    {
+      "key": "applicationsHtmlTitle",
+      "value": "Applications"
+    },
+    {
+      "key": "authenticatorBackupCodesSetupTitle",
+      "value": "Recovery Authentication Codes Setup"
+    },
+    {
+      "key": "manageAccount",
+      "value": "Manage account"
+    },
+    {
+      "key": "authorizedProvider",
+      "value": "Authorized Provider"
+    },
+    {
+      "key": "deleteAccount",
+      "value": "Delete account"
+    },
+    {
+      "key": "permissionRequest",
+      "value": "Permission requests - {{name}}"
+    },
+    {
+      "key": "group",
+      "value": "Group"
+    },
+    {
+      "key": "missingTotpMessage",
+      "value": "Please specify authenticator code."
+    },
+    {
+      "key": "verifiableCredentialsConfigAlert",
+      "value": "Was not able to retrieve the credential configuration."
+    },
+    {
+      "key": "smscodeIntroMessage",
+      "value": "Enter your phone number and a verification code will be sent to your phone."
+    },
+    {
+      "key": "socialLogin",
+      "value": "Social login"
+    },
+    {
+      "key": "done",
+      "value": "Done"
+    },
+    {
+      "key": "doRemoveRequest",
+      "value": "Remove Request"
+    },
+    {
+      "key": "personalInfoHtmlTitle",
+      "value": "Personal Info"
+    },
+    {
+      "key": "grantedPermissions",
+      "value": "Granted Permissions"
+    },
+    {
+      "key": "resourceManagedPolicies",
+      "value": "Permissions granting access to this resource"
+    },
+    {
+      "key": "doLink",
+      "value": "Link"
+    },
+    {
+      "key": "openshift.scope.user_info",
+      "value": "User information"
+    },
+    {
+      "key": "accountManagementWelcomeMessage",
+      "value": "Welcome to Keycloak Account Management"
+    },
+    {
+      "key": "readOnlyPasswordMessage",
+      "value": "You can''t update your password as your account is read-only."
+    },
+    {
+      "key": "enterYourPhoneNumber",
+      "value": "Enter your phone number"
+    },
+    {
+      "key": "authenticatorSMSFinishSetUpMessage",
+      "value": "Text messages are sent to"
+    },
+    {
+      "key": "general",
+      "value": "General"
+    },
+    {
+      "key": "applicationsIntroMessage",
+      "value": "View applications your account has access to"
+    },
+    {
+      "key": "missingLastNameMessage",
+      "value": "'{{0}}': Please specify last name."
+    },
+    {
+      "key": "linkedLoginProviders",
+      "value": "Linked login providers"
+    },
+    {
+      "key": "client_account-console",
+      "value": "Account Console"
+    },
+    {
+      "key": "role_uma_authorization",
+      "value": "Obtain permissions"
+    },
+    {
+      "key": "totpManualStep2",
+      "value": "Open the application and enter the key:"
+    },
+    {
+      "key": "totpManualStep3",
+      "value": "Use the following configuration values if the application allows setting them:"
+    },
+    {
+      "key": "missingUsernameMessage",
+      "value": "'{{0}}': Please specify username."
+    },
+    {
+      "key": "oid4vci",
+      "value": "Verifiable Credentials"
+    },
+    {
+      "key": "unLink",
+      "value": "Unlink account"
+    },
+    {
+      "key": "myResourcesSub",
+      "value": "My resources"
+    },
+    {
+      "key": "invalidPasswordMinSpecialCharsMessage",
+      "value": "Invalid password: must contain at least {0} special characters."
+    },
+    {
+      "key": "linkError",
+      "value": "Could not link due to: {{error}}"
+    },
+    {
+      "key": "approve",
+      "value": "Approve"
+    },
+    {
+      "key": "organizations",
+      "value": "Organizations"
+    },
+    {
+      "key": "phoneNumberVerified",
+      "value": "Phone number verified"
+    },
+    {
+      "key": "federatedIdentityLinkNotActiveMessage",
+      "value": "This identity is not active anymore."
+    },
+    {
+      "key": "resourceSharedWith_other",
+      "value": "Resource is shared with <0>{{username}}</0> and <1>{{other}}</1> other users"
+    },
+    {
+      "key": "error-person-name-invalid-character",
+      "value": "'{{0}}' contains invalid character."
+    },
+    {
+      "key": "error-invalid-multivalued-size",
+      "value": "Attribute {{0}} must have at least {{1}} and at most {{2}} value(s)."
+    },
+    {
+      "key": "user",
+      "value": "User"
+    },
+    {
+      "key": "account",
+      "value": "Account"
+    },
+    {
+      "key": "locale_ar",
+      "value": "Arabic (العربية)"
+    },
+    {
+      "key": "removeConsentSuccess",
+      "value": "Successfully removed consent"
+    },
+    {
+      "key": "noGroupsText",
+      "value": "You are not joined in any group"
+    },
+    {
+      "key": "path",
+      "value": "Path"
+    },
+    {
+      "key": "role_offline-access",
+      "value": "Offline access"
+    },
+    {
+      "key": "notHaveAnyResource",
+      "value": "You don’t have any resources"
+    },
+    {
+      "key": "credentialCreatedAt",
+      "value": "<0>Created</0> {{date}}."
+    },
+    {
+      "key": "updatePasswordMessageTitle",
+      "value": "Make sure you choose a strong password"
+    },
+    {
+      "key": "locale_zh-TW",
+      "value": "Chinese (Traditional) (中文 (繁體))"
+    },
+    {
+      "key": "chooseYourCountry",
+      "value": "Choose your country"
+    },
+    {
+      "key": "locality",
+      "value": "City or Locality"
+    },
+    {
+      "key": "federatedIdentitiesHtmlTitle",
+      "value": "Federated Identities"
+    },
+    {
+      "key": "identityProviderAlreadyLinkedMessage",
+      "value": "Federated identity returned by {0} is already linked to another user."
+    },
+    {
+      "key": "totpType",
+      "value": "Type"
+    },
+    {
+      "key": "updateEmail",
+      "value": "Update email"
+    },
+    {
+      "key": "two-factor",
+      "value": "Two-factor authentication"
+    },
+    {
+      "key": "editAccountHtmlTitle",
+      "value": "Edit Account"
+    },
+    {
+      "key": "authenticatorCode",
+      "value": "One-time code"
+    },
+    {
+      "key": "doSave",
+      "value": "Save"
+    },
+    {
+      "key": "recovery-authn-codes-display-name",
+      "value": "Recovery authentication codes"
+    },
+    {
+      "key": "locale_cs",
+      "value": "Czech (Čeština)"
+    },
+    {
+      "key": "personalInfoSidebarTitle",
+      "value": "Personal info"
+    },
+    {
+      "key": "icon",
+      "value": "Icon"
+    },
+    {
+      "key": "phoneScopeConsentText",
+      "value": "Phone number"
+    },
+    {
+      "key": "staleCodeAccountMessage",
+      "value": "The page expired. Please try one more time."
+    },
+    {
+      "key": "scopeTypeHelp",
+      "value": "Client scopes, which will be added as default scopes to each created client"
+    },
+    {
+      "key": "locale_ca",
+      "value": "Catalan (Català)"
+    },
+    {
+      "key": "locale_pt-BR",
+      "value": "Portuguese (Brazil) (Português (Brasil))"
+    },
+    {
+      "key": "error-empty",
+      "value": "Please specify value of '{{0}}'."
+    },
+    {
+      "key": "signOutAllDevicesWarning",
+      "value": "This action will sign out all the devices that have signed in to your account, including the current device you are using."
+    },
+    {
+      "key": "unShareSuccess",
+      "value": "Resource successfully un-shared."
+    },
+    {
+      "key": "thirdPartyApp",
+      "value": "Third-party"
+    },
+    {
+      "key": "updateReadOnlyAttributesRejectedMessage",
+      "value": "Update of read-only attribute rejected"
+    },
+    {
+      "key": "emailVerified",
+      "value": "Email verified"
+    },
+    {
+      "key": "emailScopeConsentText",
+      "value": "Email address"
+    },
+    {
+      "key": "scanBarCode",
+      "value": "Want to scan the barcode?"
+    },
+    {
+      "key": "client_security-admin-console",
+      "value": "Security Admin Console"
+    },
+    {
+      "key": "currentPage",
+      "value": "Current Page"
+    },
+    {
+      "key": "personalInfoIntroMessage",
+      "value": "Manage your basic information"
+    },
+    {
+      "key": "somethingWentWrongDescription",
+      "value": "Sorry, an unexpected error has occurred."
+    },
+    {
+      "key": "locale_es",
+      "value": "Spanish (Español)"
+    },
+    {
+      "key": "authenticatorDefaultStatus",
+      "value": "Default"
+    },
+    {
+      "key": "myPermissions",
+      "value": "My Permissions"
+    },
+    {
+      "key": "myResources",
+      "value": "My Resources"
+    },
+    {
+      "key": "invalidPasswordBlacklistedMessage",
+      "value": "Invalid password: password is blacklisted."
+    },
+    {
+      "key": "groupDescriptionLabel",
+      "value": "View groups that you are associated with"
+    },
+    {
+      "key": "resourceAlreadyShared",
+      "value": "Resource is already shared with this user."
+    },
+    {
+      "key": "samlRoleListScopeConsentText",
+      "value": "My Roles"
+    },
+    {
+      "key": "locale_el",
+      "value": "Greek (Ελληνικά)"
+    },
+    {
+      "key": "locale_en",
+      "value": "English"
+    },
+    {
+      "key": "totpInterval",
+      "value": "Interval"
+    },
+    {
+      "key": "tryAgain",
+      "value": "Try again"
+    },
+    {
+      "key": "basic-authentication",
+      "value": "Basic authentication"
+    },
+    {
+      "key": "profileScopeConsentText",
+      "value": "User profile"
+    },
+    {
+      "key": "locale_da",
+      "value": "Danish (Dansk)"
+    },
+    {
+      "key": "locale_de",
+      "value": "German (Deutsch)"
+    },
+    {
+      "key": "accountPasswordUpdatedMessage",
+      "value": "Your password has been updated."
+    },
+    {
+      "key": "password-display-name",
+      "value": "Password"
+    },
+    {
+      "key": "noGroups",
+      "value": "No groups"
+    },
+    {
+      "key": "generateNewBackupCodes",
+      "value": "Generate New Recovery Authentication Codes"
+    },
+    {
+      "key": "federatedIdentityRemovingLastProviderMessage",
+      "value": "You can not remove last federated identity as you do not have a password."
+    },
+    {
+      "key": "totp.hotp",
+      "value": "Counter-based"
+    },
+    {
+      "key": "activeFilters",
+      "value": "Active filters"
+    },
+    {
+      "key": "client",
+      "value": "Client"
+    },
+    {
+      "key": "owner",
+      "value": "Owner"
+    },
+    {
+      "key": "locale_fr",
+      "value": "French (Français)"
+    },
+    {
+      "key": "authenticatorMobileMessage",
+      "value": "Use mobile Authenticator to get Verification codes as the two-factor authentication."
+    },
+    {
+      "key": "permission",
+      "value": "Permission"
+    },
+    {
+      "key": "accountLogHtmlTitle",
+      "value": "Account Log"
+    },
+    {
+      "key": "shareWith",
+      "value": "Share with"
+    },
+    {
+      "key": "locale_fa",
+      "value": "Persian (فارسی)"
+    },
+    {
+      "key": "role_view-realm",
+      "value": "View realm"
+    },
+    {
+      "key": "locale_fi",
+      "value": "Finnish (Suomi)"
+    },
+    {
+      "key": "locale_it",
+      "value": "Italian (Italiano)"
+    },
+    {
+      "key": "backTo",
+      "value": "Back to {{app}}"
+    },
+    {
+      "key": "applicationType",
+      "value": "Application type"
+    },
+    {
+      "key": "personalSubMessage",
+      "value": "Manage your basic information."
+    },
+    {
+      "key": "locale_ja",
+      "value": "Japanese (日本語)"
+    },
+    {
+      "key": "authenticatorFinishSetUpTitle",
+      "value": "Your Two-Factor Authentication"
+    },
+    {
+      "key": "invalidPasswordGenericMessage",
+      "value": "Invalid password: new password doesn''t match password policies."
+    },
+    {
+      "key": "doApprove",
+      "value": "Approve"
+    },
+    {
+      "key": "deviceActivity",
+      "value": "Device activity"
+    },
+    {
+      "key": "addTeam",
+      "value": "Add team to share your resource with"
+    },
+    {
+      "key": "action",
+      "value": "Action"
+    },
+    {
+      "key": "resourcesSharedWithMe",
+      "value": "Resources shared with me"
+    },
+    {
+      "key": "scopesHelp",
+      "value": "The scopes associated with this resource."
+    },
+    {
+      "key": "locale_hu",
+      "value": "Hungarian (Magyar)"
+    },
+    {
+      "key": "authenticatorMobileTitle",
+      "value": "Mobile Authenticator"
+    },
+    {
+      "key": "ip",
+      "value": "IP"
+    },
+    {
+      "key": "sessionsHtmlTitle",
+      "value": "Sessions"
+    },
+    {
+      "key": "resourceSharedWith_one",
+      "value": "Resource is shared with <0>{{username}}</0>"
+    },
+    {
+      "key": "notMatchPasswordMessage",
+      "value": "Passwords don''t match."
+    },
+    {
+      "key": "locale_hr",
+      "value": "Croatian (Hrvatski)"
+    },
+    {
+      "key": "status",
+      "value": "Status"
+    },
+    {
+      "key": "role_view-consent",
+      "value": "View consents"
+    },
+    {
+      "key": "invalidPasswordRegexPatternMessage",
+      "value": "Invalid password: fails to match regex pattern(s)."
+    },
+    {
+      "key": "locale_ky",
+      "value": "Kyrgyz (кыргызча)"
+    },
+    {
+      "key": "clients",
+      "value": "Clients"
+    },
+    {
+      "key": "clickHereForDetails",
+      "value": "Click here for details."
+    },
+    {
+      "key": "currentSession",
+      "value": "Current session"
+    },
+    {
+      "key": "accountTemporarilyDisabledMessage",
+      "value": "Account is temporarily disabled, contact your administrator or try again later."
+    },
+    {
+      "key": "error-invalid-uri-fragment",
+      "value": "'{{0}}' is invalid URL fragment."
+    },
+    {
+      "key": "anyAction",
+      "value": "Any action"
+    },
+    {
+      "key": "federatedIdentityBoundOrganization",
+      "value": "You cannot remove the link to an identity provider associated with an organization."
+    },
+    {
+      "key": "signOutWarning",
+      "value": "Sign out the session?"
+    },
+    {
+      "key": "privacyPolicy",
+      "value": "Privacy policy"
+    },
+    {
+      "key": "avatar",
+      "value": "Avatar"
+    },
+    {
+      "key": "updateSuccess",
+      "value": "Resource successfully updated."
+    },
+    {
+      "key": "accountSecurityTitle",
+      "value": "Account Security"
+    },
+    {
+      "key": "unShare",
+      "value": "Unshare all"
+    },
+    {
+      "key": "scopes",
+      "value": "Scopes"
+    },
+    {
+      "key": "postal_code",
+      "value": "Zip or Postal code"
+    },
+    {
+      "key": "role_view-groups",
+      "value": "View groups"
+    },
+    {
+      "key": "invalidPasswordNotEmailMessage",
+      "value": "Invalid password: must not be equal to the email."
+    },
+    {
+      "key": "role_admin",
+      "value": "Admin"
+    },
+    {
+      "key": "authenticatorChangePhone",
+      "value": "Change Phone Number"
+    },
+    {
+      "key": "logo",
+      "value": "Logo"
+    },
+    {
+      "key": "requestsWaitingApproval",
+      "value": "Your requests waiting approval"
+    },
+    {
+      "key": "somethingWentWrong",
+      "value": "Something went wrong"
+    },
+    {
+      "key": "userDefined",
+      "value": "User Defined"
+    },
+    {
+      "key": "unShareError",
+      "value": "Could not un-share the resource due to: {{error}}"
+    },
+    {
+      "key": "ipAddress",
+      "value": "IP address"
+    },
+    {
+      "key": "availableRoles",
+      "value": "Available Roles"
+    },
+    {
+      "key": "accountManagementTitle",
+      "value": "Keycloak Account Management"
+    },
+    {
+      "key": "locale_lt",
+      "value": "Lithuanian (Lietuvių)"
+    },
+    {
+      "key": "locale_lv",
+      "value": "Latvian (Latviešu)"
+    },
+    {
+      "key": "birthday",
+      "value": "Birthdate"
+    },
+    {
+      "key": "delete",
+      "value": "Delete"
+    },
+    {
+      "key": "resourceIsNotBeingShared",
+      "value": "The resource is not being shared"
+    },
+    {
+      "key": "accountManagementBaseThemeCannotBeUsedDirectly",
+      "value": "The base account theme only contains translations for account console. To display account console, you either need to set the parent of your theme to another account theme, or supply your own index.ftl file. Please see the documentation for further information."
+    },
+    {
+      "key": "backtoAuthenticatorPage",
+      "value": "Back to Authenticator Page"
+    },
+    {
+      "key": "deviceActivitySidebarTitle",
+      "value": "Device activity"
+    },
+    {
+      "key": "emptyUserOrganizations",
+      "value": "No organizations"
+    },
+    {
+      "key": "systemDefined",
+      "value": "System defined"
+    },
+    {
+      "key": "internalApp",
+      "value": "Internal"
+    },
+    {
+      "key": "fullAccess",
+      "value": "Full Access"
+    },
+    {
+      "key": "currentPassword",
+      "value": "Current Password"
+    },
+    {
+      "key": "role_view-applications",
+      "value": "View applications"
+    },
+    {
+      "key": "approveAll",
+      "value": "Approve all"
+    },
+    {
+      "key": "locale_nl",
+      "value": "Dutch (Nederlands)"
+    },
+    {
+      "key": "invalidPasswordMinLowerCaseCharsMessage",
+      "value": "Invalid password: must contain at least {0} lower case characters."
+    },
+    {
+      "key": "locale_no",
+      "value": "Norwegian (Norsk)"
+    },
+    {
+      "key": "applicationDetails",
+      "value": "Application details for {{clientId}}"
+    },
+    {
+      "key": "internalApps",
+      "value": "Internal applications"
+    },
+    {
+      "key": "deviceActivityHtmlTitle",
+      "value": "Device Activity"
+    },
+    {
+      "key": "doLogIn",
+      "value": "Log In"
+    },
+    {
+      "key": "locale_zh-CN",
+      "value": "Chinese (Simplified) (中文 (简体))"
+    },
+    {
+      "key": "deny",
+      "value": "Deny"
+    },
+    {
+      "key": "edit",
+      "value": "Edit"
+    },
+    {
+      "key": "allApps",
+      "value": "All applications"
+    },
+    {
+      "key": "invalidTotpMessage",
+      "value": "Invalid authenticator code."
+    },
+    {
+      "key": "linkedEmpty",
+      "value": "No linked providers"
+    },
+    {
+      "key": "directMembership",
+      "value": "Direct membership"
+    },
+    {
+      "key": "error-invalid-length-too-short",
+      "value": "'{{0}}' must have minimal length of {{1}}."
+    },
+    {
+      "key": "accept",
+      "value": "Accept"
+    },
+    {
+      "key": "defaultLocale",
+      "value": "Choose..."
+    },
+    {
+      "key": "locale_pl",
+      "value": "Polish (Polski)"
+    },
+    {
+      "key": "perPage",
+      "value": "per page"
+    },
+    {
+      "key": "peopleSharingThisResource",
+      "value": "People sharing this resource"
+    },
+    {
+      "key": "locale_pt",
+      "value": "Portuguese (Português)"
+    },
+    {
+      "key": "client_admin-cli",
+      "value": "Admin CLI"
+    },
+    {
+      "key": "openshift.scope.user_full",
+      "value": "Full Access"
+    },
+    {
+      "key": "locale_th",
+      "value": "Thai (ไทย)"
+    },
+    {
+      "key": "totpDigits",
+      "value": "Digits"
+    },
+    {
+      "key": "shares",
+      "value": "share(s)"
+    },
+    {
+      "key": "missingFirstNameMessage",
+      "value": "'{{0}}': Please specify first name."
+    },
+    {
+      "key": "locale_sv",
+      "value": "Swedish (Svenska)"
+    },
+    {
+      "key": "email",
+      "value": "Email"
+    },
+    {
+      "key": "applicationName",
+      "value": "Name"
+    },
+    {
+      "key": "webauthn-passwordless-help-text",
+      "value": "Use your Passkey for passwordless sign in."
+    },
+    {
+      "key": "identityProviderMessage",
+      "value": "To link your account with identity providers you have configured"
+    },
+    {
+      "key": "clientNotFoundMessage",
+      "value": "Client not found."
+    },
+    {
+      "key": "started",
+      "value": "Started"
+    },
+    {
+      "key": "locale_sk",
+      "value": "Slovak (Slovenčina)"
+    },
+    {
+      "key": "grantedPersonalInfo",
+      "value": "Granted Personal Info"
+    },
+    {
+      "key": "people",
+      "value": "people"
+    },
+    {
+      "key": "locale_sl",
+      "value": "Slovenian (Slovenščina)"
+    },
+    {
+      "key": "confirm",
+      "value": "Confirm"
+    },
+    {
+      "key": "selectOne",
+      "value": "Select an option"
+    },
+    {
+      "key": "openshift.scope.list-projects",
+      "value": "List projects"
+    },
+    {
+      "key": "enterYourVerficationCode",
+      "value": "Enter your verification code"
+    },
+    {
+      "key": "organizationScopeConsentText",
+      "value": "Organization"
+    },
+    {
+      "key": "locale_ru",
+      "value": "Russian (русский)"
+    },
+    {
+      "key": "appResults",
+      "value": "Results"
+    },
+    {
+      "key": "country",
+      "value": "Country"
+    },
+    {
+      "key": "totpCounter",
+      "value": "Counter"
+    },
+    {
+      "key": "linkedAccountsIntroMessage",
+      "value": "Manage logins through third-party accounts."
+    },
+    {
+      "key": "role_manage-account-links",
+      "value": "Manage account links"
+    },
+    {
+      "key": "shareError",
+      "value": "Could not share the resource due to: {{error}}"
+    },
+    {
+      "key": "details",
+      "value": "Details"
+    },
+    {
+      "key": "totpDeviceName",
+      "value": "Device Name"
+    },
+    {
+      "key": "locale_uk",
+      "value": "Ukrainian (українська)"
+    },
+    {
+      "key": "emailExistsMessage",
+      "value": "Email already exists."
+    },
+    {
+      "key": "unlinkedEmpty",
+      "value": "No unlinked providers"
+    },
+    {
+      "key": "passwordNew",
+      "value": "New Password"
+    },
+    {
+      "key": "firstName",
+      "value": "First name"
+    },
+    {
+      "key": "locale_tr",
+      "value": "Turkish (Türkçe)"
+    },
+    {
+      "key": "totpAppFreeOTPName",
+      "value": "FreeOTP"
+    },
+    {
+      "key": "notBeingShared",
+      "value": "This resource is not being shared."
+    },
+    {
+      "key": "verifiableCredentialsOfferAlert",
+      "value": "Was not able to retrieve an offer."
+    },
+    {
+      "key": "region",
+      "value": "State, Province, or Region"
+    },
+    {
+      "key": "role_manage-identity-providers",
+      "value": "Manage identity providers"
+    },
+    {
+      "key": "expires",
+      "value": "Expires"
+    },
+    {
+      "key": "role_manage-clients",
+      "value": "Manage clients"
+    },
+    {
+      "key": "revoke",
+      "value": "Revoke Grant"
+    },
+    {
+      "key": "update",
+      "value": "Update"
+    },
+    {
+      "key": "totpScanBarcode",
+      "value": "Scan barcode?"
+    },
+    {
+      "key": "otp-help-text",
+      "value": "Enter a verification code from authenticator application."
+    },
+    {
+      "key": "removeAccessMessage",
+      "value": "You will need to grant access again, if you want to use this app account."
+    },
+    {
+      "key": "errorSignOutMessage",
+      "value": "Could not be signed out: {{error}}"
+    },
+    {
+      "key": "openshift.scope.user_check-access",
+      "value": "User access information"
+    },
+    {
+      "key": "fullName",
+      "value": "{{givenName}} {{familyName}}"
+    },
+    {
+      "key": "aliasHelp",
+      "value": "Name of the configuration"
+    },
+    {
+      "key": "updatePasswordMessage",
+      "value": "A strong password contains a mix of numbers, letters, and symbols. It is hard to guess, does not resemble a real word, and is only used for this account."
+    },
+    {
+      "key": "role_manage-users",
+      "value": "Manage users"
+    },
+    {
+      "key": "unlinkedLoginProviders",
+      "value": "Unlinked login providers"
+    },
+    {
+      "key": "invalidPasswordMinUpperCaseCharsMessage",
+      "value": "Invalid password: must contain at least {0} upper case characters."
+    },
+    {
+      "key": "totpUnableToScan",
+      "value": "Unable to scan?"
+    },
+    {
+      "key": "role_realm-admin",
+      "value": "Realm Admin"
+    },
+    {
+      "key": "requiredFields",
+      "value": "Required fields"
+    },
+    {
+      "key": "permissions",
+      "value": "Permissions"
+    },
+    {
+      "key": "doPrint",
+      "value": "Print"
+    },
+    {
+      "key": "invalidPasswordHistoryMessage",
+      "value": "Invalid password: must not be equal to any of last {0} passwords."
+    },
+    {
+      "key": "needMyApproval",
+      "value": "Need my approval"
+    },
+    {
+      "key": "personalSubTitle",
+      "value": "Your Personal Info"
+    },
+    {
+      "key": "sharedwith",
+      "value": "Shared with"
+    },
+    {
+      "key": "noAccessMessage",
+      "value": "Access not allowed"
+    },
+    {
+      "key": "unknownOperatingSystem",
+      "value": "Unknown operating system"
+    },
+    {
+      "key": "linkedAccountsHtmlTitle",
+      "value": "Linked accounts"
+    },
+    {
+      "key": "totpStep3DeviceName",
+      "value": "Provide a Device Name to help you manage your OTP devices."
+    },
+    {
+      "key": "totpStep3",
+      "value": "Enter the one-time code provided by the application and click Save to finish the setup."
+    },
+    {
+      "key": "totpStep1",
+      "value": "Install one of the following applications on your mobile:"
+    },
+    {
+      "key": "totpStep2",
+      "value": "Open the application and scan the barcode:"
+    },
+    {
+      "key": "verifiableCredentialsIssuerAlert",
+      "value": "Was not able to retrieve the issuer information."
+    },
+    {
+      "key": "lastName",
+      "value": "Last name"
+    },
+    {
+      "key": "invalidEmailMessage",
+      "value": "'{{0}}': Invalid email address."
+    },
+    {
+      "key": "gender",
+      "value": "Gender"
+    },
+    {
+      "key": "filterByName",
+      "value": "Filter by name..."
+    },
+    {
+      "key": "selectPermission",
+      "value": "Select Permission"
+    },
+    {
+      "key": "event",
+      "value": "Event"
+    },
+    {
+      "key": "inResource",
+      "value": "in"
+    },
+    {
+      "key": "passwordless",
+      "value": "Passwordless"
+    },
+    {
+      "key": "missingTotpDeviceNameMessage",
+      "value": "Please specify device name."
+    },
+    {
+      "key": "personalInfoDescription",
+      "value": "Manage your basic information"
+    },
+    {
+      "key": "signingInDescription",
+      "value": "Configure ways to sign in."
+    },
+    {
+      "key": "date",
+      "value": "Date"
+    },
+    {
+      "key": "personalInfo",
+      "value": "Personal info"
+    },
+    {
+      "key": "role_create-realm",
+      "value": "Create realm"
+    },
+    {
+      "key": "role_manage-applications",
+      "value": "Manage applications"
+    },
+    {
+      "key": "loggingOutImmediately",
+      "value": "Logging you out immediately"
+    },
+    {
+      "key": "error-invalid-email",
+      "value": "Invalid email address."
+    },
+    {
+      "key": "doRevoke",
+      "value": "Revoke"
+    },
+    {
+      "key": "accountSecurity",
+      "value": "Account security"
+    },
+    {
+      "key": "accountUnusable",
+      "value": "Any subsequent use of the application will not be possible with this account"
+    },
+    {
+      "key": "familyName",
+      "value": "Family name"
+    },
+    {
+      "key": "enterBarCode",
+      "value": "Enter the one-time code"
+    },
+    {
+      "key": "role_view-profile",
+      "value": "View profile"
+    },
+    {
+      "key": "resourceNoPermissionsGrantingAccess",
+      "value": "No permissions granting access to this resource"
+    },
+    {
+      "key": "authenticatorSMSCodeSetupTitle",
+      "value": "SMS Code Setup"
+    },
+    {
+      "key": "resource",
+      "value": "Resource"
+    },
+    {
+      "key": "mobileSetupStep3",
+      "value": "Enter the one-time code provided by the application and click Save to finish the setup."
+    },
+    {
+      "key": "mobileSetupStep2",
+      "value": "Open the application and scan the barcode:"
+    },
+    {
+      "key": "mobileSetupStep1",
+      "value": "Install an authenticator application on your phone. The applications listed here are supported."
+    },
+    {
+      "key": "notInUse",
+      "value": "Not in use"
+    },
+    {
+      "key": "gssDelegationCredential",
+      "value": "GSS Delegation Credential"
+    },
+    {
+      "key": "missingIdentityProviderMessage",
+      "value": "Identity provider not specified."
+    },
+    {
+      "key": "linkedAccountsSidebarTitle",
+      "value": "Linked accounts"
+    },
+    {
+      "key": "unknownUser",
+      "value": "Anonymous"
+    },
+    {
+      "key": "recovery-codes-number-used",
+      "value": "{{0}} recovery codes used"
+    },
+    {
+      "key": "invalidPasswordMaxLengthMessage",
+      "value": "Invalid password: maximum length {0}."
+    },
+    {
+      "key": "backToApplication",
+      "value": "&laquo; Back to application"
+    },
+    {
+      "key": "clearAllFilter",
+      "value": "Clear all filters"
+    },
+    {
+      "key": "link",
+      "value": "Link account"
+    },
+    {
+      "key": "shareTheResource",
+      "value": "Share the resource - {{name}}"
+    },
+    {
+      "key": "verifiableCredentialsSelectionDefault",
+      "value": "Select a credential configuration."
+    },
+    {
+      "key": "signedInDevices",
+      "value": "Signed in devices"
+    },
+    {
+      "key": "missingPasswordMessage",
+      "value": "'{{0}}': Please specify password."
+    },
+    {
+      "key": "error-user-attribute-read-only",
+      "value": "The field {{0}} is read only."
+    },
+    {
+      "key": "havePermissionRequestsWaitingForApproval",
+      "value": "You have {0} permission request(s) waiting for approval."
+    },
+    {
+      "key": "error-invalid-length",
+      "value": "'{{0}}' must have a length between {{1}} and {{2}}."
+    },
+    {
+      "key": "inUse",
+      "value": "In use"
+    },
+    {
+      "key": "signingInSidebarTitle",
+      "value": "Signing in"
+    },
+    {
+      "key": "permissionRequests",
+      "value": "Permission requests"
+    },
+    {
+      "key": "resources",
+      "value": "Resources"
+    },
+    {
+      "key": "groups",
+      "value": "Groups"
+    },
+    {
+      "key": "errorRemovedMessage",
+      "value": "Could not remove {{userLabel}} due to: {{error}}"
+    },
+    {
+      "key": "readOnlyUsernameMessage",
+      "value": "You can''t update your username as it is read-only."
+    },
+    {
+      "key": "passwordLastUpdateMessage",
+      "value": "Your password was updated at"
+    },
+    {
+      "key": "successRemovedMessage",
+      "value": "{{userLabel}} was removed."
+    }
+  ]
