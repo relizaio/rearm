@@ -445,8 +445,8 @@ const createFsFromRelease = async function(){
     //redirect to created fs
 }
 
-const triggerAutoIntegrate = function () {
-    graphqlClient.mutate({
+async function triggerAutoIntegrate () {
+    await graphqlClient.mutate({
         mutation: gql`
             mutation autoIntegrateFeatureSet($branchUuid: ID!) {
                 autoIntegrateFeatureSet(branchUuid: $branchUuid)
@@ -454,6 +454,9 @@ const triggerAutoIntegrate = function () {
         variables: { branchUuid: branchUuid.value },
         fetchPolicy: 'no-cache'
     })
+    notify('success', 'Success', 'Auto Integrate Triggered')
+    await onCreated()
+    showBranchSettingsModal.value = false
 }
 
 const approvalMatrix = ref({})
@@ -706,7 +709,7 @@ const getNextVersion = async function (branch: string){
 }
 const nextVersion: Ref<any> = ref("")
 const currentNextVersion: Ref<any> = ref("")
-const onCreated = async function () {
+async function onCreated () {
     if (!branchData.value || !branchData.value.uuid) {
         if(branchUuid.value!=''){
             modifiedBranch.value = commonFunctions.deepCopy((await store.dispatch('fetchBranch', branchUuid.value)))
