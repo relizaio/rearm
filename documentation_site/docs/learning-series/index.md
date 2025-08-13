@@ -1,8 +1,6 @@
 # ReARM Video Learning Series
 
-This page contains links to ReARM Learning Series Videos. We aim to make each video short (less than 5 minutes, some are shorter than 1 minute).
-
-Currently, learning series is a work in progress, videos will be added to this page as they are released.
+This page contains links to ReARM Learning Series Videos. We aim to make each video short (less than 10 minutes, some are shorter than 1 minute).
 
 1. ReARM Interface Overview - https://www.youtube.com/watch?v=KL9ElQZv81I
 2. ReARM User Profile - https://www.youtube.com/watch?v=B9XxpTtRYwU
@@ -17,3 +15,8 @@ Currently, learning series is a work in progress, videos will be added to this p
 11. Create a Component Branch in ReARM - https://www.youtube.com/watch?v=MHMuHiy7gxU
 12. Create a Product Feature Set in ReARM - https://www.youtube.com/watch?v=egyVUuJc2hM
 13. Component Release - View and Manually Create in ReARM - https://www.youtube.com/watch?v=szzqYxm7ROA
+14. Product Release - View and Manually Create in ReARM - https://www.youtube.com/watch?v=8Em6BqnYqgU
+15. Creating Approval Policies in ReARM Pro - https://www.youtube.com/watch?v=y_LjUD3spcA
+16. Using Approval Policies and Triggers in Components and Products - https://www.youtube.com/watch?v=FWOdwag2dxo
+17. Product Auto Integration - https://www.youtube.com/watch?v=tOzOJYzmwi0
+18. Simple Automated Release Creation in ReARM - https://www.youtube.com/watch?v=og8gv6EDycg
