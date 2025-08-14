@@ -230,13 +230,18 @@ const onSubmit = async () => {
     artifact.value.tags = artifactTags.value
     artifact.value.downloadLinks = downloadLinks.value
     artifact.value.file = fileList.value?.file?.file
-   
-    const createArtifactInput = {
+    const createArtifactInput: any = {
         release: props.inputRelease,
-        deliverable: props.inputDeliverarble,
         artifact: artifact.value,
-        sce: props.inputSce,
         belongsTo: props.inputBelongsTo,
+    }
+
+    if(props.inputBelongsTo === 'DELIVERABLE'){
+        createArtifactInput.deliverable = props.inputDeliverarble
+    }
+
+    if(props.inputBelongsTo === 'SCE'){
+        createArtifactInput.sce = props.inputSce
     }
 
     try{
