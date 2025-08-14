@@ -12,6 +12,11 @@
             <vue-feather class="clickable versionIcon accept" v-if="userName !== myUser.name" type="check"
                 @click="updateUserName" title="Save Name" />
         </div>
+        <div class="mt-3">
+            <a href="/kauth/realms/Reliza/account" target="_blank" rel="noopener">
+                <n-button type="primary">Change Authentication Details</n-button>
+            </a>
+        </div>
         <div class="emailsBlock">
             <h4 class="mt-4">Emails</h4>
             <n-data-table v-if="myUser && myUser.allEmails" :columns="emailFields" :data="Object.values(myUser.allEmails)">
