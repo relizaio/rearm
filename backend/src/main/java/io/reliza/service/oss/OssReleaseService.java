@@ -46,6 +46,7 @@ import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
+import io.reliza.model.ReleaseData.UpdateReleaseStrength;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.VersionAssignment;
@@ -252,7 +253,7 @@ public class OssReleaseService {
 	
 	@Transactional
 	public Release updateRelease (ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
-		return updateRelease(releaseDto, false, wu);
+		return updateRelease(releaseDto, UpdateReleaseStrength.DRAFT_ONLY, wu);
 	}
 
 	@Transactional
@@ -262,19 +263,19 @@ public class OssReleaseService {
 			.tags(releaseDto.getTags())
 			.notes(releaseDto.getNotes())
 			.build();
-		return updateRelease(tagsMetaDto, true, wu);
+		return updateRelease(tagsMetaDto, UpdateReleaseStrength.FULL, wu);
 	}
 	
 	/**
 	 * Updates release based on dto
 	 * @param releaseDto
-	 * @param force - if true, will update release regardless of status
+	 * @param strength - controls lifecycle enforcement for assembly-affecting updates
 	 * @param wu
 	 * @return
 	 * @throws RelizaException 
 	 */
 	@Transactional
-	public Release updateRelease (ReleaseDto releaseDto, Boolean force, WhoUpdated wu) throws RelizaException {
+	public Release updateRelease (ReleaseDto releaseDto, UpdateReleaseStrength strength, WhoUpdated wu) throws RelizaException {
 		Release r = null;
 		// locate and lock release in db
 		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseDto.getUuid());
@@ -283,8 +284,26 @@ public class OssReleaseService {
 			ReleaseData rData = ReleaseData.dataFromRecord(r);
 			ReleaseLifecycle oldLifecycle = rData.getLifecycle();
 			boolean isAssemblyAllowed = ReleaseLifecycle.isAssemblyAllowed(rData.getLifecycle());
-			if (!isAssemblyAllowed && ReleaseDto.isAssemblyRequested(releaseDto) && !force) {
-				throw new RelizaException("Cannot update assembled release with requested properties");
+			boolean isAssemblyRequested = ReleaseDto.isAssemblyRequested(releaseDto);
+			boolean permitted = true;
+			if (isAssemblyRequested) {
+				switch (strength) {
+				case UpdateReleaseStrength.FULL:
+					permitted = true;
+					break;
+				case UpdateReleaseStrength.DRAFT_PENDING:
+					permitted = isAssemblyAllowed; // DRAFT or PENDING
+					break;
+				case UpdateReleaseStrength.DRAFT_ONLY:
+					permitted = (rData.getLifecycle() == ReleaseLifecycle.DRAFT);
+					break;
+				default:
+					permitted = false;
+					break;
+				}
+			}
+			if (!permitted) {
+				throw new RelizaException("Cannot update release in the current lifecycle with requested properties");
 			}
 			doUpdateRelease (r, rData, releaseDto, wu);
 			processReleaseLifecycleEvents (rData, releaseDto.getLifecycle(), oldLifecycle);
@@ -710,7 +729,7 @@ public class OssReleaseService {
 			r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
 			
 			releaseDto.setUuid(existingRd.getUuid());
-			r = updateRelease(releaseDto, wu);
+			r = updateRelease(releaseDto, UpdateReleaseStrength.DRAFT_PENDING, wu);
 			rData = ReleaseData.dataFromRecord(r);
 		} else if (ova.isPresent()) {
 			r = saveRelease(r, recordData, wu);

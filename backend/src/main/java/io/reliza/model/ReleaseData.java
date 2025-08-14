@@ -114,6 +114,13 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 			return isAllowed;
 		}
 	}
+
+	public enum UpdateReleaseStrength {
+		DRAFT_ONLY,
+		DRAFT_PENDING,
+		FULL
+	}
+	
 	
 	@Getter(AccessLevel.PUBLIC)
 	@Setter(AccessLevel.PRIVATE)

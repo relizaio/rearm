@@ -78,6 +78,7 @@ import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
+import io.reliza.model.ReleaseData.UpdateReleaseStrength;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
@@ -88,7 +89,6 @@ import io.reliza.model.changelog.CommitType;
 import io.reliza.model.changelog.ConventionalCommit;
 import io.reliza.model.changelog.entry.AggregationType;
 import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
-import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ComponentJsonDto.ComponentJsonDtoBuilder;
@@ -1311,7 +1311,7 @@ public class ReleaseService {
 		
 		releaseData.setInboundDeliverables(currentDeliverables);
 		ReleaseDto releaseDto = Utils.OM.convertValue(Utils.dataToRecord(releaseData), ReleaseDto.class);
-		Release release = ossReleaseService.updateRelease(releaseDto, true, wu);
+		Release release = ossReleaseService.updateRelease(releaseDto, UpdateReleaseStrength.FULL, wu);
 		return ReleaseData.dataFromRecord(release);
 	}
 	
