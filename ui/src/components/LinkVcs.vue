@@ -121,7 +121,7 @@ if (props.branchUuid) {
     const br = store.getters.branchById(props.branchUuid)
     vcsBranch.value = br.name
     modifiedBranch.value = commonFunctions.deepCopy(br)
-    const componentData = await store.dispatch('fetchComponent', br.componentUuid)
+    const componentData = await store.dispatch('fetchComponent', br.component)
     store.dispatch('fetchComponents', componentData.org)
 }
 

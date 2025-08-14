@@ -896,6 +896,26 @@ const storeObject : any = {
             context.commit('SET_VCS_REPOS', response.data.listVcsReposOfOrganization)
             return response.data.listVcsReposOfOrganization
         },
+        async fetchVcsRepo (context: any, vcs: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query vcsRepository($vcs: ID!) {
+                        vcsRepository(vcs: $vcs) {
+                            uuid
+                            name
+                            org
+                            uri
+                            type
+                        }
+                    }`,
+                variables: {
+                    vcs
+                },
+                fetchPolicy: 'no-cache'
+            })
+            context.commit('ADD_VCS_REPO', response.data.vcsRepository)
+            return response.data.vcsRepository
+        },
         async updateVcsRepo (context: any, vcsRepoProps: any) {
             const data = await graphqlClient.mutate({
                 mutation: gql`

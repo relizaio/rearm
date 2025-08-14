@@ -343,6 +343,7 @@ const singleReleaseDataNoParent = `
     branchDetails {
         uuid
         name
+        vcs
         pullRequests {
             endpoint
             number

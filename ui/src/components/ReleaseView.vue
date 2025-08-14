@@ -1145,12 +1145,12 @@ function dateDisplay(date: any){
     return commonFunctions.dateDisplay(date)
 }
 const showReleaseAddProducesSce: Ref<boolean> = ref(false)
-function  updateSce (value: any) {
+async function updateSce (value: any) {
     // fetch vcs repo
-    let sce = store.getters.sourceCodeEntryById(value)
+    const sce = store.getters.sourceCodeEntryById(value)
     let vcs = store.getters.vcsRepoById(sce.vcs)
     if (!vcs) {
-        store.dispatch('fetchVcsRepo', releaseUuid.value)
+        vcs = await store.dispatch('fetchVcsRepo', release.value.branchDetails.vcs)
     }
     updatedRelease.value.sourceCodeEntry = value
     showReleaseAddProducesSce.value = false
