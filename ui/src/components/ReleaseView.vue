@@ -1085,7 +1085,7 @@ async function save() {
             console.error(err)
         }
     } else if (release.value.notes !== updatedRelease.value.notes ||
-        release.value.tags !== updatedRelease.value.tags) {
+        JSON.stringify(release.value.tags) !== JSON.stringify(updatedRelease.value.tags)) {
         try {
             await store.dispatch('updateReleaseTagsMeta', updatedRelease.value)
             fetchRelease()
