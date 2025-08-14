@@ -657,10 +657,9 @@ const storeObject : any = {
                     }
                 })
             }
-            let branchUpdObject = {
+            const branchUpdObject = {
                 uuid: brProps.uuid,
                 name: brProps.name,
-                components: brProps.components,
                 vcs: brProps.vcs,
                 vcsBranch: brProps.vcsBranch,
                 versionSchema: brProps.versionSchema,
@@ -670,7 +669,7 @@ const storeObject : any = {
                 type: brProps.type,
                 marketingVersionSchema: brProps.marketingVersionSchema
             }
-            let data = await graphqlClient.mutate({
+            const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.BranchGqlMutate,
                 variables: {
                     'br': branchUpdObject
