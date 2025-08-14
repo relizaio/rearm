@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
@@ -615,31 +616,51 @@ public class ReleaseDatafetcher {
 		}
 	}
 	
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static record CreateArtifactInput(
+            UUID release,
+            UUID component,
+            UUID deliverable,
+            String releaseVersion,
+            UUID sce,
+            ArtifactBelongsTo belongsTo
+    ) {}
+
 	@Transactional
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "addArtifactManual")
-	public ReleaseData addArtifactManual(DgsDataFetchingEnvironment dfe) throws RelizaException {
+	public ReleaseData addArtifactManual(DgsDataFetchingEnvironment dfe, 
+		@InputArgument("artifactUuid") UUID inputArtifactUuid) throws RelizaException {
+
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
+		
+		Map<String, Object> artifactInput = dfe.getArgument("artifactInput");
+		// Avoid Jackson trying to process nested 'artifact' (may contain MultipartFile) during record mapping
+		Map<String, Object> convertible = new LinkedHashMap<>(artifactInput);
+		@SuppressWarnings("unchecked")
+		Map<String, Object> artifact = (Map<String, Object>) convertible.remove("artifact");
+		CreateArtifactInput createArtifactInput = Utils.OM.convertValue(convertible, CreateArtifactInput.class);
+		
+		List<RelizaObject> ros = new LinkedList<>();
+		
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(createArtifactInput.release());
+		RelizaObject releaseRo = ord.isPresent() ? ord.get() : null;
+		ros.add(releaseRo);
 
+		if (null != createArtifactInput.component()) {
+			ros.add(getComponentService.getComponentData(createArtifactInput.component()).orElseThrow());
+		}	
 
-		Map<String, Object> variables = dfe.getVariables();
-		Map<String, Object> artifactInput = (Map<String, Object>) variables.get("artifactInput");
-		Map<String, Object> artifact = (Map<String, Object>) artifactInput.get("artifact");
-
-
-		UUID inputArtifactUuid = null;
-		if(variables.containsKey("artifactUuid")){
-			String artifactUuidStr = (String) variables.get("artifactUuid");
-			inputArtifactUuid = UUID.fromString(artifactUuidStr);
+		if (null != createArtifactInput.deliverable()) {
+			ros.add(getDeliverableService.getDeliverableData(createArtifactInput.deliverable()).orElseThrow());
 		}
-				
-		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(UUID.fromString((String)artifactInput.get("release")));
 
-		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		UUID orgUuid = ord.isPresent() ? ord.get().getOrg() : null;
+		if (null != createArtifactInput.sce()) {
+			ros.add(getSourceCodeEntryService.getSourceCodeEntryData(createArtifactInput.sce()).orElseThrow());
+		}
 
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		ReleaseData rd = ord.get();
@@ -662,7 +683,7 @@ public class ReleaseDatafetcher {
 		}
 
 		ArtifactDto artDto = Utils.OM.convertValue(artifact, ArtifactDto.class);
-		artDto.setOrg(orgUuid);
+		artDto.setOrg(rd.getOrg());
 		if(null!= inputArtifactUuid){
 			artDto.setUuid(inputArtifactUuid);
 			// artDto = artifactService.getArtifactData(artifactUuid);
@@ -717,7 +738,7 @@ public class ReleaseDatafetcher {
 
 		if (multipartFile != null) {
 			String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
-			artDto.setOrg(orgUuid);
+			artDto.setOrg(rd.getOrg());
 			artId = artifactService.uploadArtifact(artDto, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom(), purl), wu);
 		} else {
 			artId = artifactService.createArtifact(artDto, wu).getUuid();
@@ -755,7 +776,7 @@ public class ReleaseDatafetcher {
 					releaseService.replaceArtifact(inputArtifactUuid, artId, ord.get().getUuid(),  wu);
 				}
 			} else {
-				var releases = sharedReleaseService.findReleasesByReleaseArtifact(artId, orgUuid);
+				var releases = sharedReleaseService.findReleasesByReleaseArtifact(artId, rd.getOrg());
 				releases.forEach(r -> acollectionService.resolveReleaseCollection(r.getUuid(), wu));
 			}
 			

@@ -146,9 +146,11 @@ public class AuthorizationService {
 		UUID org = null;
 		boolean orgMatch = (null != ros && !ros.isEmpty());
 		if (orgMatch) {
-			org = ros.iterator().next().getOrg();
-			for (var ro: ros) {
-				if (null == ro || !org.equals(ro.getOrg())) orgMatch = false; 
+			var rosIter = ros.iterator();
+			while (orgMatch && rosIter.hasNext()) {
+				var ro = rosIter.next();
+				if (null == org && null != ro) org = ro.getOrg();
+				if (null == ro || null == org || !org.equals(ro.getOrg())) orgMatch = false; 
 			}
 		}
 		if (!orgMatch) org = null;
