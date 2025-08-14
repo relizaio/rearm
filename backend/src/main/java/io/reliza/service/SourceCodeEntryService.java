@@ -85,7 +85,7 @@ public class SourceCodeEntryService {
 			BranchData bd = obd.get();
 			// check vs branch vcs and return error if doesn't match
 			UUID vcsUuidFromBranch = bd.getVcs();
-			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepositoryWriteLocked(vcsUuidFromBranch);
+			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepository(vcsUuidFromBranch);
 			String vcsUri = sceDto.getUri();
 			if (StringUtils.isNotEmpty(vcsUri) && ovr.isPresent() && !Utils.uriEquals(vcsUri, VcsRepositoryData.dataFromRecord(ovr.get()).getUri())) {
 				throw new AccessDeniedException("Current vcs repository in branch does not match the supplied one, manual fix required");
