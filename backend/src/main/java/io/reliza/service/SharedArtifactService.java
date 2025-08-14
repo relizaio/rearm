@@ -102,7 +102,7 @@ public class SharedArtifactService {
 							.path("/pull")
 							.queryParam("registry", this.registryHost)
 							.queryParam("repo",this.ociRepository)
-							.queryParam("tag", ociDigest)
+							.queryParam("tag", "sha256:" + ociDigest)
 							.build()
 					)
 					.accept(MediaType.APPLICATION_OCTET_STREAM)
