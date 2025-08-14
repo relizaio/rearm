@@ -946,7 +946,6 @@ input VcsRepositoryInput {
 input BranchInput {
 	uuid: ID
 	name: String
-	components: [String]
 	vcs: ID
 	vcsBranch: String
 	versionSchema: String

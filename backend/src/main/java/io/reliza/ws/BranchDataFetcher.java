@@ -4,6 +4,7 @@
 package io.reliza.ws;
 
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -160,8 +161,18 @@ public class BranchDataFetcher {
 		Map<String, Object> updateBranchInputMap = dfe.getArgument("branch");
 		BranchDto updateBranchInput = Utils.OM.convertValue(updateBranchInputMap, BranchDto.class);
 		Optional<BranchData> obd = branchService.getBranchData(updateBranchInput.getUuid());
+		List<RelizaObject> roList = new LinkedList<>();
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		roList.add(ro);
+		if (obd.isPresent() && null != obd.get().getDependencies() && !obd.get().getDependencies().isEmpty()) {
+			obd.get().getDependencies().forEach((dep) -> {
+				roList.add(branchService.getBranchData(dep.getBranch()).orElseThrow());
+				if (null != dep.getRelease()) {
+					roList.add(sharedReleaseService.getReleaseData(dep.getRelease()).orElseThrow());
+				}
+			});
+		}
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), roList, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
 		try {
