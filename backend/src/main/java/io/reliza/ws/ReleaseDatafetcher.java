@@ -518,7 +518,29 @@ public class ReleaseDatafetcher {
 		Optional<SourceCodeEntryData> osced = Optional.empty();
 		String version = (String) progReleaseInput.get(CommonVariables.VERSION_FIELD);
 		List<UUID> commits = new LinkedList<>();
-				
+		
+		var releaseDtoBuilder = ReleaseDto.builder()
+										 .branch(bd.getUuid())
+										 .org(ocd.get().getOrg())
+										 .commits(!commits.isEmpty() ? commits : null);
+		if (osced.isPresent()) {
+			releaseDtoBuilder.sourceCodeEntry(osced.get().getUuid());
+		}
+
+		List<UUID> inboundDeliverables = new LinkedList<>();
+		if (null != inboundDeliverablesList && !inboundDeliverablesList.isEmpty()) {
+			inboundDeliverables = deliverableService.prepareListofDeliverables(inboundDeliverablesList,
+					bd.getUuid(), version, ar.getWhoUpdated());
+		}
+		
+		List<UUID> artifacts = new LinkedList<>();
+		if (progReleaseInput.containsKey("artifacts")) {
+			@SuppressWarnings("unchecked")
+			List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) progReleaseInput.get("artifacts");
+			// TODO allow propagation of purl from release purl
+			artifacts = artifactService.uploadListOfArtifacts(od, artifactsList, new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, null), ar.getWhoUpdated());
+		}
+		
 		if (progReleaseInput.containsKey(CommonVariables.SOURCE_CODE_ENTRY_FIELD) || progReleaseInput.containsKey(CommonVariables.COMMITS_FIELD)) {
 			ComponentData cd = getComponentService.getComponentData(bd.getComponent()).orElseThrow();
 			@SuppressWarnings("unchecked")
@@ -563,28 +585,6 @@ public class ReleaseDatafetcher {
 			SceDto sceDto = Utils.OM.convertValue(sceMap, SceDto.class);
 			List<UUID> sceUploadedArts = releaseService.uploadSceArtifacts(arts, od, sceDto, cd, version, ar.getWhoUpdated());
 			osced = releaseService.parseSceFromReleaseCreate(sceDto, sceUploadedArts, bd, bd.getName(), version, ar.getWhoUpdated());
-		}
-		
-		var releaseDtoBuilder = ReleaseDto.builder()
-										 .branch(bd.getUuid())
-										 .org(ocd.get().getOrg())
-										 .commits(!commits.isEmpty() ? commits : null);
-		if (osced.isPresent()) {
-			releaseDtoBuilder.sourceCodeEntry(osced.get().getUuid());
-		}
-
-		List<UUID> inboundDeliverables = new LinkedList<>();
-		if (null != inboundDeliverablesList && !inboundDeliverablesList.isEmpty()) {
-			inboundDeliverables = deliverableService.prepareListofDeliverables(inboundDeliverablesList,
-					bd.getUuid(), version, ar.getWhoUpdated());
-		}
-		
-		List<UUID> artifacts = new LinkedList<>();
-		if (progReleaseInput.containsKey("artifacts")) {
-			@SuppressWarnings("unchecked")
-			List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) progReleaseInput.get("artifacts");
-			// TODO allow propagation of purl from release purl
-			artifacts = artifactService.uploadListOfArtifacts(od, artifactsList, new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, null), ar.getWhoUpdated());
 		}
 		
 		ReleaseLifecycle lifecycle = ReleaseLifecycle.ASSEMBLED;
