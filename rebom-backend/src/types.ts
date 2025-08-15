@@ -47,6 +47,14 @@ export type BomInput = {
     }
 }
 
+/**
+ * Enum to control how the root component is handled during merge operations in RebomOptions.
+ */
+export enum RootComponentMergeMode {
+    PRESERVE_UNDER_NEW_ROOT = 'PRESERVE_UNDER_NEW_ROOT',
+    FLATTEN_UNDER_NEW_ROOT = 'FLATTEN_UNDER_NEW_ROOT'
+}
+
 export type RebomOptions = {
     serialNumber: string,
     name: string,
@@ -63,7 +71,8 @@ export type RebomOptions = {
     bomDigest?: string,
     stripBom: string,
     bomVersion: string,
-    purl?: string
+    purl?: string,
+    rootComponentMergeMode?: RootComponentMergeMode
 }
 
 export type BomSearch = {

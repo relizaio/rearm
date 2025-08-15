@@ -1,8 +1,9 @@
-FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 as builder
+FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 AS builder
 
 ARG TARGETARCH
 ARG TARGETOS
 ARG CYCLONE_DX_CLI_VERSION=v0.27.2
+ARG REARM_CLI_VERSION=25.08.2
 
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/${CYCLONE_DX_CLI_VERSION}/cyclonedx-linux-musl-x64 ;\
@@ -12,6 +13,9 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
 fi
 
+ADD https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION}/rearm-${REARM_CLI_VERSION}-${TARGETOS}-${TARGETARCH}.zip rearm-${REARM_CLI_VERSION}-${TARGETOS}-${TARGETARCH}.zip
+RUN unzip rearm-${REARM_CLI_VERSION}-${TARGETOS}-${TARGETARCH}.zip 
+RUN mv rearm /usr/local/bin/rearm-cli
 RUN mkdir /app
 WORKDIR /app
 COPY package*.json ./
@@ -19,7 +23,7 @@ RUN npm ci --ignore-scripts
 COPY ./ .
 RUN npm run build
 
-FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 as package
+FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 AS package
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
@@ -27,6 +31,7 @@ ARG GIT_BRANCH=git_branch_undefined
 ARG VERSION=not_versioned
 
 COPY --from=builder /usr/local/bin/cyclonedx-cli /usr/local/bin/
+COPY --from=builder /usr/local/bin/rearm-cli /usr/local/bin/
 
 ENV \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
@@ -49,10 +54,10 @@ USER apprunner
 
 RUN npm ci --omit=dev
 
-LABEL git_commit $GIT_COMMIT
-LABEL git_branch $GIT_BRANCH
-LABEL ci_environment $CI_ENV
-LABEL version $VERSION
+LABEL git_commit=$GIT_COMMIT
+LABEL git_branch=$GIT_BRANCH
+LABEL ci_environment=$CI_ENV
+LABEL version=$VERSION
 
 EXPOSE 4000
 

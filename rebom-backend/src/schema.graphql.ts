@@ -70,7 +70,12 @@ const typeDefs = gql`
     rebomOptions: RebomOptions
   }
 
-  input RebomOptions {
+  enum RootComponentMergeMode {
+    PRESERVE_UNDER_NEW_ROOT
+    FLATTEN_UNDER_NEW_ROOT
+}
+
+input RebomOptions {
     name: String
     group: String
     version: String
@@ -83,6 +88,7 @@ const typeDefs = gql`
     serialNumber: ID
     bomDigest: String
     purl: String
+    rootComponentMergeMode: RootComponentMergeMode
   }
 
   input BomSearch {

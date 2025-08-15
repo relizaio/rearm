@@ -401,23 +401,26 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
         await validateBom(bobjs)
       })
       
-      
+      const purl = establishPurl(undefined, rebomOptions)
       const bomPaths: string[] = await utils.createTmpFiles(bomObjects)
-      const command = ['merge']
-      if(rebomOptions.structure.toUpperCase() === HIERARCHICHAL.toUpperCase()){
-        command.push('--hierarchical')
+      const command = ['bomutils', 'merge-boms']
+      
+      if (rebomOptions.rootComponentMergeMode) {
+        command.push('--root-component-merge-mode', rebomOptions.rootComponentMergeMode);
       }
       command.push(
-        '--output-format', 'json',
-        '--input-format', 'json',
-        '--output-version', 'v1_6',
+        '--structure', rebomOptions.structure,
         '--group', rebomOptions.group,
         '--name', rebomOptions.name,
-        '--version', rebomOptions.version,
-        '--input-files', ...bomPaths
+        '--version', rebomOptions.version
       )
+      bomPaths.forEach(path => {
+        command.push('--input-files', path)
+      })
+      command.push('--purl', purl)
+     
 
-      const mergeResponse: string = await utils.shellExec('cyclonedx-cli',command)
+      const mergeResponse: string = await utils.shellExec('rearm-cli',command)
       // utils.deleteTmpFiles(bomPaths)s
 
       const jsonObj = JSON.parse(mergeResponse)
@@ -426,9 +429,9 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
       // let bomRoots = bomObjects.map(bomObj => bomObj.metadata.component)
       // use the bom roots to prep the root level dep obj if doesn't already exist!
       // check if the root level dep obj is there?
-      const postMergeBom = postMergeOps(processedBom, rebomOptions)
-      await validateBom(postMergeBom)
-      return postMergeBom
+      // const postMergeBom = postMergeOps(processedBom, rebomOptions)
+      await validateBom(processedBom)
+      return processedBom
 
     } catch (e) {
       logger.error("Error During merge", e)
