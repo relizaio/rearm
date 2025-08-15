@@ -928,7 +928,6 @@ input UpdateComponentInput {
 	marketingVersionSchema: String
 	versionType: VersionType
 	featureBranchVersioning: String
-	vcsRepositoryUuid: ID
 	vcs: ID
 	approvalPolicy: ID
 	releaseInputTriggers: [ReleaseInputEventInput]

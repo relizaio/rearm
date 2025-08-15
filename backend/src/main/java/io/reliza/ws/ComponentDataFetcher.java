@@ -80,6 +80,7 @@ import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
 import io.reliza.service.VersionAssignmentService;
 import io.reliza.service.VersionAssignmentService.GetNewVersionDto;
+import io.reliza.service.saas.ApprovalPolicyService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -124,6 +125,9 @@ public class ComponentDataFetcher {
 	
 	@Autowired
 	IntegrationService integrationService;
+	
+	@Autowired
+	ApprovalPolicyService approvalPolicyService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "component")
@@ -187,8 +191,11 @@ public class ComponentDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> createComponentInputMap = dfe.getArgument("component");
 		CreateComponentDto cpd = Utils.OM.convertValue(createComponentInputMap, CreateComponentDto.class);
-		UUID orgUuid = cpd.getOrganization();
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.WRITE);
+		List<RelizaObject> ros = new LinkedList<>();
+		if (null != cpd.getOrganization()) ros.add(organizationService.getOrganizationData(cpd.getOrganization()).orElse(null));
+		if (null != cpd.getVcs()) ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
+		if (null != cpd.getApprovalPolicy()) ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
 		try {
@@ -232,9 +239,14 @@ public class ComponentDataFetcher {
 		
 		UpdateComponentDto ucdto = Utils.OM.convertValue(componentUpdateData, UpdateComponentDto.class);
 		UUID componentUuid = ucdto.getUuid();
+		List<RelizaObject> ros = new LinkedList<>();
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		ros.add(ro);
+		if (null != ucdto.getVcs()) ros.add(vcsRepositoryService.getVcsRepositoryData(ucdto.getVcs()).orElseThrow());
+		if (null != ucdto.getApprovalPolicy()) ros.add(approvalPolicyService.getApprovalPolicyData(ucdto.getApprovalPolicy()).orElseThrow());
+
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		List<RelizaObject> orgCheckList = new LinkedList<>();
@@ -352,9 +364,14 @@ public class ComponentDataFetcher {
 
 		UUID orgUuid = ahp.getOrgUuid();
 		if (null == orgUuid) throw new AccessDeniedException("Not authorized");
+		List<RelizaObject> ros = new LinkedList<>();
 		Optional<OrganizationData> ood = organizationService.getOrganizationData(orgUuid);
-		if (ood.isEmpty()) throw new AccessDeniedException("Not authorized");
-
+		ros.add(ood.orElse(null));
+		ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
+		ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
+		UUID orgCheckUuid = authorizationService.getMatchingOrg(ros);
+		if (null == orgCheckUuid) throw new AccessDeniedException("Not authorized");
+		
 		Map<String, Object> createComponentInputMap = dfe.getArgument("component");
 		CreateComponentDto cpd = Utils.OM.convertValue(createComponentInputMap, CreateComponentDto.class);
 		cpd.setOrganization(orgUuid);
