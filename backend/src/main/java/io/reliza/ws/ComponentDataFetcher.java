@@ -364,14 +364,7 @@ public class ComponentDataFetcher {
 
 		UUID orgUuid = ahp.getOrgUuid();
 		if (null == orgUuid) throw new AccessDeniedException("Not authorized");
-		List<RelizaObject> ros = new LinkedList<>();
-		Optional<OrganizationData> ood = organizationService.getOrganizationData(orgUuid);
-		ros.add(ood.orElse(null));
-		ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
-		ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
-		UUID orgCheckUuid = authorizationService.getMatchingOrg(ros);
-		if (null == orgCheckUuid) throw new AccessDeniedException("Not authorized");
-		
+
 		Map<String, Object> createComponentInputMap = dfe.getArgument("component");
 		CreateComponentDto cpd = Utils.OM.convertValue(createComponentInputMap, CreateComponentDto.class);
 		cpd.setOrganization(orgUuid);
@@ -379,6 +372,15 @@ public class ComponentDataFetcher {
 		if (cpd.getType() != ComponentType.COMPONENT && cpd.getType() != ComponentType.PRODUCT) {
 			throw new AccessDeniedException("Component type not allowed");
 		}
+		
+		List<RelizaObject> ros = new LinkedList<>();
+		Optional<OrganizationData> ood = organizationService.getOrganizationData(orgUuid);
+		ros.add(ood.orElse(null));
+		ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
+		ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
+		UUID orgCheckUuid = authorizationService.getMatchingOrg(ros);
+		if (null == orgCheckUuid) throw new AccessDeniedException("Not authorized");
+
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.ORGANIZATION_RW);
 		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, orgUuid, CallType.WRITE, ro);
