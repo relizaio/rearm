@@ -226,6 +226,12 @@
         <artifactId>packageurl-java</artifactId>
         <version>1.5.0</version>
     </dependency>
+    <!-- Bucket4j for token-bucket rate limiting -->
+    <dependency>
+        <groupId>com.bucket4j</groupId>
+        <artifactId>bucket4j-core</artifactId>
+        <version>8.10.1</version>
+    </dependency>
   </dependencies>
 
   <build>

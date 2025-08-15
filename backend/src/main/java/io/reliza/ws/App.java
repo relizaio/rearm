@@ -4,7 +4,6 @@
 package io.reliza.ws;
 
 import java.io.IOException;
-import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -28,6 +27,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
@@ -71,7 +71,7 @@ public class App {
 	}
 	
 	@Bean
-	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter) throws Exception {
 	  http
 	  .oauth2ResourceServer(
 		    oauth2 -> oauth2.jwt(Customizer.withDefaults())
@@ -105,7 +105,9 @@ public class App {
 		  				.anyRequest().authenticated(); 
 	  		}
 	  	});
-	  	return http.build();
+    	// Place rate limiting after JWT auth so SecurityContext is populated
+    	http.addFilterAfter(rateLimitingFilter, BearerTokenAuthenticationFilter.class);
+    	return http.build();
 	}
 
 	@Bean
