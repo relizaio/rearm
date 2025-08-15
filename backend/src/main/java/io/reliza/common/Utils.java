@@ -502,4 +502,12 @@ public class Utils {
 		TRUE,
 		FALSE,
 	}
+
+	/**
+     * Enum to control how the root component is handled during merge operations in RebomOptions.
+     */
+    public enum RootComponentMergeMode {
+        PRESERVE_UNDER_NEW_ROOT,
+        FLATTEN_UNDER_NEW_ROOT
+    }
 }

@@ -55,6 +55,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
+import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
@@ -712,7 +713,11 @@ public class ReleaseService {
 		if(bomIds.size() > 0){
 			ComponentData pd = getComponentService.getComponentData(rd.getComponent()).get();
 			OrganizationData od = organizationService.getOrganizationData(rd.getOrg()).get();
-			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE,"", "", null );
+			String purl = null;
+			Optional<TeaIdentifier> purlId = Optional.empty();
+			if (null != rd.getIdentifiers()) purlId = rd.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
+			if (purlId.isPresent()) purl = purlId.get().getIdValue();
+			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE,"", "", purl, RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT);
 			rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions, od.getUuid());
 			
 			addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions), wu);
