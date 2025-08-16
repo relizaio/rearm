@@ -1988,7 +1988,7 @@ const artifactsTableFields: DataTableColumns<any> = [
     },
     {
         key: 'vulnerabilities',
-        title: 'Vulnerabilities',
+        title: 'Vulnerabilities & Weaknesses',
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
