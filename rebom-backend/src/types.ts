@@ -102,7 +102,6 @@ export enum VulnerabilitySeverity {
     HIGH = 'HIGH',
     MEDIUM = 'MEDIUM',
     LOW = 'LOW',
-    INFO = 'INFO',
     UNKNOWN = 'UNKNOWN'
 }
 

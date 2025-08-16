@@ -188,10 +188,8 @@ function determineSeverity(result: SarifResult, rule?: SarifRule): Vulnerability
             return VulnerabilitySeverity.HIGH;
         } else if (securitySeverity >= 4.0) {
             return VulnerabilitySeverity.MEDIUM;
-        } else if (securitySeverity >= 0.1) {
-            return VulnerabilitySeverity.LOW;
         } else {
-            return VulnerabilitySeverity.INFO;
+            return VulnerabilitySeverity.LOW;
         }
     }
 

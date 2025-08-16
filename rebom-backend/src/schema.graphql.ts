@@ -77,7 +77,7 @@ const typeDefs = gql`
     HIGH
     MEDIUM
     LOW
-    INFO
+    UNKNOWN
   }
   input BomInput {
     meta: String
