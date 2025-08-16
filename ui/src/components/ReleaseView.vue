@@ -467,6 +467,22 @@
             </n-form>
         </n-modal>
         <n-modal
+            v-model:show="showDetailedVulnerabilitiesModal"
+            title='Detailed Vulnerability, Weakness and Violation Data'
+            style="width: 95%;"
+            preset="dialog"
+            :show-icon="false" >
+            <n-spin :show="loadingVulnerabilities">
+                <n-data-table
+                    :columns="vulnerabilityColumns"
+                    :data="detailedVulnerabilitiesData"
+                    :pagination="{ pageSize: 20 }"
+                    :bordered="false"
+                    size="small"
+                />
+            </n-spin>
+        </n-modal>
+        <n-modal
             v-model:show="showUploadArtifactModal"
             title='Upload Artifact'
             preset="dialog"
@@ -509,8 +525,9 @@ import { CirclePlus, ClipboardCheck, Download, Edit, GitCompare, Link, Trash, Re
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined } from '@vicons/antd'
+import { SecurityUpdateWarningOutlined } from '@vicons/material'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NIcon, NInput, NInputGroup, NModal, NRadioButton, NRadioGroup, NSelect, NSpin, NSpace, NSwitch, NTabPane, NTabs, NTag, NFlex, NTooltip, NUpload, NotificationType, useNotification, DataTableColumns, NGrid, NGi } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, NotificationType, DataTableColumns, NModal } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -1169,6 +1186,176 @@ const artifactToUpdate: Ref<any> = ref({})
 const showDownloadArtifactModal: Ref<boolean> = ref(false)
 const selectedArtifactForDownload: Ref<any> = ref({})
 const downloadType: Ref<string> = ref('DOWNLOAD')
+
+// Detailed vulnerabilities modal
+const showDetailedVulnerabilitiesModal: Ref<boolean> = ref(false)
+const detailedVulnerabilitiesData: Ref<any[]> = ref([])
+const loadingVulnerabilities: Ref<boolean> = ref(false)
+
+const vulnerabilityColumns: DataTableColumns<any> = [
+    {
+        title: 'Type',
+        key: 'type',
+        width: 120,
+        render: (row: any) => {
+            const typeColors: any = {
+                'Vulnerability': 'error',
+                'Violation': 'warning', 
+                'Weakness': 'info'
+            }
+            return h('n-tag', { type: typeColors[row.type] || 'default', size: 'small' }, row.type)
+        }
+    },
+    {
+        title: 'ID',
+        key: 'id',
+        width: 150
+    },
+    {
+        title: 'PURL',
+        key: 'purl',
+        width: 300,
+        ellipsis: {
+            tooltip: true
+        }
+    },
+    {
+        title: 'Severity',
+        key: 'severity',
+        width: 120,
+        render: (row: any) => {
+            if (row.severity === '-') return row.severity
+            const severityColors: any = {
+                'CRITICAL': 'error',
+                'HIGH': 'error',
+                'MEDIUM': 'warning',
+                'LOW': 'info',
+                'UNASSIGNED': 'default'
+            }
+            return h('n-tag', { type: severityColors[row.severity] || 'default', size: 'small' }, row.severity)
+        }
+    },
+    {
+        title: 'Details',
+        key: 'details',
+        ellipsis: {
+            tooltip: true
+        }
+    },
+    {
+        title: 'Location',
+        key: 'location',
+        width: 200,
+        ellipsis: {
+            tooltip: true
+        }
+    },
+    {
+        title: 'Fingerprint',
+        key: 'fingerprint',
+        width: 200,
+        ellipsis: {
+            tooltip: true
+        }
+    }
+]
+
+async function viewDetailedVulnerabilities(artifactUuid: string) {
+    loadingVulnerabilities.value = true
+    showDetailedVulnerabilitiesModal.value = true
+    
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query getArtifactDetails($artifactUuid: ID!) {
+                    artifact(artifactUuid: $artifactUuid) {
+                        uuid
+                        displayIdentifier
+                        metrics {
+                            vulnerabilityDetails {
+                                purl
+                                vulnId
+                                severity
+                            }
+                            violationDetails {
+                                purl
+                                type
+                                License
+                                violationDetails
+                            }
+                            weaknessDetails {
+                                cweId
+                                ruleId
+                                location
+                                fingerprint
+                                severity
+                            }
+                        }
+                    }
+                }
+            `,
+            variables: { artifactUuid }
+        })
+        
+        const artifact = response.data.artifact
+        if (artifact && artifact.metrics) {
+            // Combine all security data into a single array with type indicators
+            const combinedData: any[] = []
+            
+            // Add vulnerabilities
+            if (artifact.metrics.vulnerabilityDetails) {
+                artifact.metrics.vulnerabilityDetails.forEach((vuln: any) => {
+                    combinedData.push({
+                        type: 'Vulnerability',
+                        id: vuln.vulnId,
+                        purl: vuln.purl,
+                        severity: vuln.severity,
+                        details: vuln.vulnId,
+                        location: '-',
+                        fingerprint: '-'
+                    })
+                })
+            }
+            
+            // Add violations
+            if (artifact.metrics.violationDetails) {
+                artifact.metrics.violationDetails.forEach((violation: any) => {
+                    combinedData.push({
+                        type: 'Violation',
+                        id: violation.type,
+                        purl: violation.purl,
+                        severity: '-',
+                        details: `${violation.type}: ${violation.License || ''} ${violation.violationDetails || ''}`.trim(),
+                        location: '-',
+                        fingerprint: '-'
+                    })
+                })
+            }
+            
+            // Add weaknesses
+            if (artifact.metrics.weaknessDetails) {
+                artifact.metrics.weaknessDetails.forEach((weakness: any) => {
+                    combinedData.push({
+                        type: 'Weakness',
+                        id: weakness.cweId,
+                        purl: '-',
+                        severity: weakness.severity,
+                        details: weakness.ruleId,
+                        location: weakness.location,
+                        fingerprint: weakness.fingerprint
+                    })
+                })
+            }
+            
+            detailedVulnerabilitiesData.value = combinedData
+        }
+    } catch (error) {
+        console.error('Error fetching artifact details:', error)
+        notify('error', 'Error', 'Failed to load vulnerability details')
+    } finally {
+        loadingVulnerabilities.value = false
+    }
+}
 
 function deleteArtifact (artifactUuid: string, releaseUuid: string) {
     Swal.fire({
@@ -2044,6 +2231,17 @@ const artifactsTableFields: DataTableColumns<any> = [
                     onClick: () => uploadNewBomVersion(row)
                 }, { default: () => h(Edit) })
             els.push(uploadEl)
+
+            if (row.metrics && row.metrics.lastScanned) {
+                const detailedMetricsEl = h(NIcon,
+                    {
+                        title: 'View Detailed Vulnerability, Weakness and Violation Data',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => viewDetailedVulnerabilities(row.uuid)
+                    }, { default: () => h(SecurityUpdateWarningOutlined) })
+                els.push(detailedMetricsEl)
+            }
 
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
                 const dtrackElIcon = h(NIcon,
