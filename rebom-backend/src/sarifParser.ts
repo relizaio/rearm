@@ -226,6 +226,24 @@ export function validateSarifReport(data: any): data is SarifReport {
         return false;
     }
 
+    // Validate SARIF version is 2.0.0 or higher
+    const version = data.version;
+    if (typeof version !== 'string') {
+        return false;
+    }
+    
+    const versionParts = version.split('.').map(Number);
+    if (versionParts.length < 2 || isNaN(versionParts[0]) || isNaN(versionParts[1])) {
+        return false;
+    }
+    
+    const majorVersion = versionParts[0];
+    
+    // Require SARIF version 2.0.0 or higher
+    if (majorVersion < 2) {
+        return false;
+    }
+
     // Basic validation of runs structure
     for (const run of data.runs) {
         if (!run.tool || !run.tool.driver || !run.tool.driver.name) {
