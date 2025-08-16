@@ -2,26 +2,28 @@ FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d0
 
 ARG TARGETARCH
 ARG TARGETOS
-ARG CYCLONE_DX_CLI_VERSION=v0.27.2
-ARG REARM_CLI_VERSION=25.08.2
 
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/${CYCLONE_DX_CLI_VERSION}/cyclonedx-linux-musl-x64 ;\
-        mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/${CYCLONE_DX_CLI_VERSION}/cyclonedx-${TARGETOS}-${TARGETARCH} ;\
-        mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
-fi
-
-ADD https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION}/rearm-${REARM_CLI_VERSION}-${TARGETOS}-${TARGETARCH}.zip rearm-${REARM_CLI_VERSION}-${TARGETOS}-${TARGETARCH}.zip
-RUN unzip rearm-${REARM_CLI_VERSION}-${TARGETOS}-${TARGETARCH}.zip 
-RUN mv rearm /usr/local/bin/rearm-cli
 RUN mkdir /app
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --ignore-scripts
 COPY ./ .
 RUN npm run build
+
+
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.29.1/cyclonedx-linux-musl-x64 ;\
+        mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.29.1/cyclonedx-${TARGETOS}-${TARGETARCH} ;\
+        mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
+fi
+
+ADD https://d7ge14utcyki8.cloudfront.net/rearm-download/25.08.2/rearm-25.08.2-${TARGETOS}-${TARGETARCH}.zip rearm-25.08.2-${TARGETOS}-${TARGETARCH}.zip
+
+RUN sha256sum -c tools.${TARGETARCH}.sha256
+RUN unzip rearm-25.08.2-${TARGETOS}-${TARGETARCH}.zip
+RUN mv rearm /usr/local/bin/rearm-cli
 
 FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 AS package
 
