@@ -16,6 +16,7 @@ const typeDefs = gql`
     bomBySerialNumberAndVersion(serialNumber: ID!, version: Int!, org: ID!, raw: Boolean): Object
     bomMetaBySerialNumber(serialNumber: ID!, org: ID!): [BomMeta]
     bomDiff(fromIds: [ID], toIds: [ID], org: ID!): BomDiffResult
+    parseSarifContent(sarifContent: String!): [Weakness]
   }
 
   type Mutation {
@@ -61,6 +62,22 @@ const typeDefs = gql`
   type BomDiffComponent {
     purl: String
     version: String
+  }
+
+  type Weakness {
+    cweId: String
+    ruleId: String!
+    location: String
+    fingerprint: String
+    severity: VulnerabilitySeverity
+  }
+
+  enum VulnerabilitySeverity {
+    CRITICAL
+    HIGH
+    MEDIUM
+    LOW
+    INFO
   }
   input BomInput {
     meta: String

@@ -1,7 +1,8 @@
 import * as BomService from './bomService';
 import { bomToExcel } from './bomService';
 import * as DiffService from './bomDiffService';
-import { BomDto, BomInput, BomRecord, BomSearch } from './types';
+import { SarifService } from './sarifService';
+import { BomDto, BomInput, BomRecord, BomSearch, WeaknessDto } from './types';
 // A map of functions which return data for the schema.
 const resolvers = {
 	Query: {
@@ -29,6 +30,9 @@ const resolvers = {
 		rawBomIdExcel: async (_:any, input: any): Promise<string> => {
 			const rawBom = await BomService.findRawBomObjectById(input.id, input.org);
 			return await bomToExcel(rawBom);
+		},
+		parseSarifContent: async (_:any, input: { sarifContent: string }): Promise<WeaknessDto[]> => {
+			return SarifService.parseSarifContent(input.sarifContent);
 		}
 	},
 	Mutation: {
