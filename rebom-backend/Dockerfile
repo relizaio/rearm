@@ -19,10 +19,10 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
 fi
 
-ADD https://d7ge14utcyki8.cloudfront.net/rearm-download/25.08.2/rearm-25.08.2-${TARGETOS}-${TARGETARCH}.zip rearm-25.08.2-${TARGETOS}-${TARGETARCH}.zip
+ADD https://d7ge14utcyki8.cloudfront.net/rearm-download/25.08.3/rearm-25.08.3-${TARGETOS}-${TARGETARCH}.zip rearm-25.08.3-${TARGETOS}-${TARGETARCH}.zip
 
 RUN sha256sum -c tools.${TARGETARCH}.sha256
-RUN unzip rearm-25.08.2-${TARGETOS}-${TARGETARCH}.zip
+RUN unzip rearm-25.08.3-${TARGETOS}-${TARGETARCH}.zip
 RUN mv rearm /usr/local/bin/rearm-cli
 
 FROM node:22-alpine3.22@sha256:5539840ce9d013fa13e3b9814c9353024be7ac75aca5db6d039504a56c04ea59 AS package
