@@ -12,3 +12,5 @@
 
 # local launch scripts
 **/launch_locally.sh
+
+codeqldb
