@@ -120,6 +120,53 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
     	private URI dependencyTrackFullUri;
     	private String projectName;
     	private String projectVersion;
+    	
+    	public static DependencyTrackIntegration fromReleaseMetricsDto(ReleaseMetricsDto rmd) {
+    		DependencyTrackIntegration dti = new DependencyTrackIntegration();
+    		
+    		// Copy all fields from ReleaseMetricsDto
+    		dti.setCritical(rmd.getCritical());
+    		dti.setHigh(rmd.getHigh());
+    		dti.setMedium(rmd.getMedium());
+    		dti.setLow(rmd.getLow());
+    		dti.setUnassigned(rmd.getUnassigned());
+    		dti.setVulnerabilities(rmd.getVulnerabilities());
+    		dti.setVulnerableComponents(rmd.getVulnerableComponents());
+    		dti.setComponents(rmd.getComponents());
+    		dti.setSuppressed(rmd.getSuppressed());
+    		dti.setFindingsTotal(rmd.getFindingsTotal());
+    		dti.setFindingsAudited(rmd.getFindingsAudited());
+    		dti.setFindingsUnaudited(rmd.getFindingsUnaudited());
+    		dti.setInheritedRiskScore(rmd.getInheritedRiskScore());
+    		dti.setPolicyViolationsFail(rmd.getPolicyViolationsFail());
+    		dti.setPolicyViolationsWarn(rmd.getPolicyViolationsWarn());
+    		dti.setPolicyViolationsInfo(rmd.getPolicyViolationsInfo());
+    		dti.setPolicyViolationsTotal(rmd.getPolicyViolationsTotal());
+    		dti.setPolicyViolationsAudited(rmd.getPolicyViolationsAudited());
+    		dti.setPolicyViolationsUnaudited(rmd.getPolicyViolationsUnaudited());
+    		dti.setPolicyViolationsSecurityTotal(rmd.getPolicyViolationsSecurityTotal());
+    		dti.setPolicyViolationsSecurityAudited(rmd.getPolicyViolationsSecurityAudited());
+    		dti.setPolicyViolationsSecurityUnaudited(rmd.getPolicyViolationsSecurityUnaudited());
+    		dti.setPolicyViolationsLicenseTotal(rmd.getPolicyViolationsLicenseTotal());
+    		dti.setPolicyViolationsLicenseAudited(rmd.getPolicyViolationsLicenseAudited());
+    		dti.setPolicyViolationsLicenseUnaudited(rmd.getPolicyViolationsLicenseUnaudited());
+    		dti.setPolicyViolationsOperationalTotal(rmd.getPolicyViolationsOperationalTotal());
+    		dti.setPolicyViolationsOperationalAudited(rmd.getPolicyViolationsOperationalAudited());
+    		dti.setPolicyViolationsOperationalUnaudited(rmd.getPolicyViolationsOperationalUnaudited());
+    		dti.setLastScanned(rmd.getLastScanned());
+    		dti.setViolationDetails(rmd.getViolationDetails());
+    		dti.setVulnerabilityDetails(rmd.getVulnerabilityDetails());
+    		dti.setWeaknessDetails(rmd.getWeaknessDetails());
+    		
+    		// DependencyTrack-specific fields remain null
+    		dti.setDependencyTrackProject(null);
+    		dti.setUploadToken(null);
+    		dti.setDependencyTrackFullUri(null);
+    		dti.setProjectName(null);
+    		dti.setProjectVersion(null);
+    		
+    		return dti;
+    	}
     }
 
 	@Getter(AccessLevel.PUBLIC)
@@ -199,6 +246,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 			ad.metrics.uploadToken = artifactDto.getDtur().token();
 			ad.metrics.projectName = artifactDto.getDtur().projectName();
 			ad.metrics.projectVersion = artifactDto.getDtur().projectVersion();
+		} else if (null != artifactDto.getRmd()) {
+			ad.metrics = DependencyTrackIntegration.fromReleaseMetricsDto(artifactDto.getRmd());
 		}
 		if (null != artifactDto.getArtifacts()) {
 			ad.setArtifacts(artifactDto.getArtifacts());

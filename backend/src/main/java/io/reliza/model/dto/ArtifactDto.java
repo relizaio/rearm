@@ -87,7 +87,10 @@ public class ArtifactDto {
 	private StripBom stripBom;
 	
 	@JsonProperty
-	private DependencyTrackUploadResult dtur; 
+	private DependencyTrackUploadResult dtur;
+
+	@JsonProperty
+	private ReleaseMetricsDto rmd; 
 	
 	@JsonProperty
 	private List<UUID> artifacts;

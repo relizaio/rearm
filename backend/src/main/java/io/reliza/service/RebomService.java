@@ -23,6 +23,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
+import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.WeaknessDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -281,5 +283,58 @@ public class RebomService {
             bomSerialNumber = bomSerialNumber.replace("urn:uuid:","");
         }
         return UUID.fromString(bomSerialNumber);
+    }
+
+    public ReleaseMetricsDto parseSarifOnRebom(String sarifContent) {
+        String query = """
+            query parseSarifContent($sarifContent: String!) {
+                parseSarifContent(sarifContent: $sarifContent) {
+                    cweId
+                    ruleId
+                    location
+                    fingerprint
+                    severity
+                }
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("sarifContent", sarifContent);
+        
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var weaknessesResponse = response.get("parseSarifContent");
+        
+        // Directly convert to WeaknessDto using a custom TypeReference
+        List<Map<String, Object>> rawWeaknesses = Utils.OM.convertValue(weaknessesResponse, new TypeReference<List<Map<String, Object>>>() {});
+        
+        ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+        
+        // Map raw response to WeaknessDto objects
+        List<WeaknessDto> weaknessDtos = rawWeaknesses.stream()
+            .map(w -> new WeaknessDto(
+                (String) w.get("cweId"), 
+                (String) w.get("ruleId"), 
+                (String) w.get("location"), 
+                (String) w.get("fingerprint"), 
+                mapSeverity((String) w.get("severity"))
+            ))
+            .toList();
+        
+        rmd.setWeaknessDetails(weaknessDtos);
+        rmd.computeMetricsFromFacts();
+        
+        return rmd;
+    }
+    
+    private ReleaseMetricsDto.VulnerabilitySeverity mapSeverity(String severity) {
+        if (severity == null) return ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
+        
+        return switch (severity.toUpperCase()) {
+            case "CRITICAL" -> ReleaseMetricsDto.VulnerabilitySeverity.CRITICAL;
+            case "HIGH" -> ReleaseMetricsDto.VulnerabilitySeverity.HIGH;
+            case "MEDIUM" -> ReleaseMetricsDto.VulnerabilitySeverity.MEDIUM;
+            case "LOW" -> ReleaseMetricsDto.VulnerabilitySeverity.LOW;
+            case "UNKNOWN" -> ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
+            default -> ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
+        };
     }
 }

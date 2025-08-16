@@ -50,6 +50,7 @@ import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.OASResponseDto;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
@@ -201,13 +202,6 @@ public class ArtifactService {
 		repository.saveAll(artifacts);
 	}
 
-	// if( null!= artifactDto.getBomFormat() && null != artifactDto.getType() && artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) && (
-	// 			artifactDto.getType().equals(ArtifactType.BOM)
-	// 			|| artifactDto.getType().equals(ArtifactType.VDR) 
-	// 			|| artifactDto.getType().equals(ArtifactType.VEX) 
-	// 			|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
-	// 		))
-	
 	public boolean isRebomStoreable (ArtifactDto artifactDto) {
 		return null!= artifactDto.getBomFormat() 
 				&& null != artifactDto.getType() 
@@ -348,7 +342,7 @@ public class ArtifactService {
 					artifactDto.setDtur(dtur);
 				}
 				tag = artifactDto.getUuid().toString();
-			}else {
+			} else {
 				String inputVersion = artifactDto.getVersion();
 				String version = StringUtils.isNotEmpty(inputVersion) ? inputVersion : "1";
 				if(null != existingAd && StringUtils.isNotEmpty(existingAd.getVersion())){
@@ -367,6 +361,17 @@ public class ArtifactService {
 				}
 				String sha256Digest = (null != sha256Dr) ? sha256Dr.digest() : null;
 				artifactUploadResponse = uploadFileToConfiguredOci(file, tag, sha256Digest);
+				if (artifactDto.getType().equals(ArtifactType.SARIF)) {
+					try {
+						var sarifJson = Utils.readJsonFromResource(file);
+						String sarifString = Utils.OM.writeValueAsString(sarifJson);
+						ReleaseMetricsDto rmd = rebomService.parseSarifOnRebom(sarifString);
+						artifactDto.setRmd(rmd);
+					} catch (Exception e) {
+						log.error("Error parsing SARIF file", e);
+						throw new RuntimeException("Error parsing SARIF file");
+					}
+				}
 			}
 		}
 		

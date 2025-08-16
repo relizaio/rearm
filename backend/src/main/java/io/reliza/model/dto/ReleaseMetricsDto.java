@@ -54,7 +54,8 @@ public class ReleaseMetricsDto implements Cloneable {
 	@JsonProperty private ZonedDateTime lastScanned;
 	@JsonProperty private List<ViolationDto> violationDetails = new LinkedList<>();
 	@JsonProperty private List<VulnerabilityDto> vulnerabilityDetails = new LinkedList<>();
-	
+	@JsonProperty private List<WeaknessDto> weaknessDetails = new LinkedList<>();
+
 	public static enum ViolationType {
 		LICENSE,
 		SECURITY,
@@ -72,6 +73,11 @@ public class ReleaseMetricsDto implements Cloneable {
 	public static record ViolationDto (String purl, ViolationType type, String License, String violationDetails) {}
 	
 	public static record VulnerabilityDto (String purl, String vulnId, VulnerabilitySeverity severity) {}
+
+	/**
+	 * We use weaknessDto to store findngs from SARIF parsing
+	 */
+	public static record WeaknessDto (String cweId, String ruleId, String location, String fingerprint, VulnerabilitySeverity severity) {}
 	
 	@Override
     public ReleaseMetricsDto clone() {
@@ -195,6 +201,28 @@ public class ReleaseMetricsDto implements Cloneable {
   				break;
   			}
   		}
+
+		for (var x: weaknessDetails) {
+			switch (x.severity()) {
+			case CRITICAL:
+				++criticalVulns;
+				break;
+			case HIGH:
+				++highVulns;
+				break;
+			case MEDIUM:
+				++mediumVulns;
+				break;
+			case LOW:
+				++lowVulns;
+				break;
+			case UNASSIGNED:
+				++unassignedVulns;
+				break;
+			default:
+				break;
+			}
+		}
   		
   		this.critical = criticalVulns;
   		this.high = highVulns;
@@ -205,6 +233,8 @@ public class ReleaseMetricsDto implements Cloneable {
   		this.policyViolationsSecurityTotal = securityViolations;
   		this.policyViolationsLicenseTotal = licenseViolations;
   		this.policyViolationsOperationalTotal = operationalViolations;
+
+		if (null == this.lastScanned) this.lastScanned = ZonedDateTime.now();
   	}
   	
 	public void mergeWithByContent(ReleaseMetricsDto otherRmd) {
@@ -214,6 +244,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	    if (otherRmd != null) {
 	    	this.violationDetails = mergeViolationDtos(this.violationDetails, otherRmd.violationDetails);
 	    	this.vulnerabilityDetails = mergeVulnerabilityDtos(this.vulnerabilityDetails, otherRmd.vulnerabilityDetails);
+	    	this.weaknessDetails = mergeWeaknessDtos(this.weaknessDetails, otherRmd.weaknessDetails);
 	    	this.computeMetricsFromFacts();
 	    }
 	}
@@ -244,6 +275,16 @@ public class ReleaseMetricsDto implements Cloneable {
 			if (!violationMap.containsKey(xKey)) violationMap.put(xKey, x);
 		});
 		return new LinkedList<>(violationMap.values());
+	}
+
+	private List<WeaknessDto> mergeWeaknessDtos(List<WeaknessDto> list1, List<WeaknessDto> list2) {
+		Map<String, WeaknessDto> vulnMap = new LinkedHashMap<>(list1.stream()
+				.collect(Collectors.toMap(x -> x.fingerprint(), Function.identity())));
+		list2.forEach(x -> {
+			String xKey = x.fingerprint();
+			if (!vulnMap.containsKey(xKey)) vulnMap.put(xKey, x);
+		});
+		return new LinkedList<>(vulnMap.values());
 	}
   
 	public void mergeWithByMetrics(ReleaseMetricsDto otherRmd) {
