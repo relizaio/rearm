@@ -1,4 +1,6 @@
 import type { DataTableColumns } from 'naive-ui'
+import Swal from 'sweetalert2'
+import { searchDtrackComponentByPurl } from '@/utils/dtrack'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -60,7 +62,63 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
 }
 
 // Build shared vulnerability/violation/weakness columns
-export function buildVulnerabilityColumns(h: any, NTag: any): DataTableColumns<any> {
+export function buildVulnerabilityColumns(
+  h: any,
+  NTag: any,
+  options?: {
+    hasKnownDependencyTrackIntegration?: () => boolean
+    getArtifacts?: () => any[]
+    getOrgUuid?: () => string
+    getDtrackProjectUuids?: () => string[]
+  }
+): DataTableColumns<any> {
+  function makePurlRenderer() {
+    return (row: any) => {
+      const purlText = row.purl || ''
+      if (!purlText) return ''
+      if (!options || !options.hasKnownDependencyTrackIntegration || !options.hasKnownDependencyTrackIntegration()) {
+        return purlText
+      }
+      return h('a', {
+        href: '#',
+        style: 'color: #337ab7; cursor: pointer; text-decoration: underline;',
+        onClick: async (e: Event) => {
+          e.preventDefault()
+          try {
+            const orgUuid = options.getOrgUuid ? options.getOrgUuid() : ''
+            const dtrackProjects = options.getDtrackProjectUuids ? options.getDtrackProjectUuids() : []
+            const dtrackComponent = await searchDtrackComponentByPurl(orgUuid, purlText, dtrackProjects)
+            if (dtrackComponent) {
+              const artifacts = options.getArtifacts ? options.getArtifacts() : []
+              const firstArtifactWithDtrack = artifacts.find((artifact: any) => artifact.metrics && artifact.metrics.dependencyTrackFullUri)
+              if (firstArtifactWithDtrack) {
+                const baseUrl = firstArtifactWithDtrack.metrics.dependencyTrackFullUri.split('/projects')[0]
+                const componentUrl = `${baseUrl}/components/${dtrackComponent}`
+                window.open(componentUrl, '_blank')
+                return
+              }
+            }
+            await Swal.fire({
+              icon: 'warning',
+              title: 'Not Found',
+              text: 'Purl not found in known SBOMs',
+              timer: 2500,
+              showConfirmButton: false
+            })
+          } catch (err) {
+            // best-effort UI message
+            await Swal.fire({
+              icon: 'error',
+              title: 'Error',
+              text: 'Unable to open Dependency-Track component link',
+              timer: 2500,
+              showConfirmButton: false
+            })
+          }
+        }
+      }, purlText)
+    }
+  }
   return [
     {
       title: 'Type',
@@ -77,7 +135,7 @@ export function buildVulnerabilityColumns(h: any, NTag: any): DataTableColumns<a
       }
     },
     { title: 'Issue ID', key: 'id', width: 150 },
-    { title: 'PURL', key: 'purl', width: 300, ellipsis: { tooltip: true } },
+    { title: 'PURL', key: 'purl', width: 300, ellipsis: { tooltip: true }, render: makePurlRenderer() },
     {
       title: 'Severity',
       key: 'severity',

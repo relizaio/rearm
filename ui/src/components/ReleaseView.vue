@@ -541,6 +541,7 @@ import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { processMetricsData, buildVulnerabilityColumns } from '@/utils/metrics'
+import { searchDtrackComponentByPurl as searchDtrackComponentByPurlUtil } from '@/utils/dtrack'
 
 const route = useRoute()    
 const router = useRouter()
@@ -1199,7 +1200,12 @@ const showDetailedVulnerabilitiesModal: Ref<boolean> = ref(false)
 const detailedVulnerabilitiesData: Ref<any[]> = ref([])
 const loadingVulnerabilities: Ref<boolean> = ref(false)
 
-const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag)
+const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, {
+    hasKnownDependencyTrackIntegration: () => hasKnownDependencyTrackIntegration.value,
+    getArtifacts: () => artifacts.value,
+    getOrgUuid: () => release.value.orgDetails.uuid,
+    getDtrackProjectUuids: () => dtrackProjectUuids.value
+})
 
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
     loadingVulnerabilities.value = true
@@ -1430,29 +1436,6 @@ const dtrackProjectUuids: ComputedRef<string[]> = computed((): string[] => {
     })
     return projectUuids
 })
-
-async function searchDtrackComponentByPurl(purl: string) {
-    let dtrackComponent: string | undefined = undefined
-    try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                query searchDtrackComponentByPurlAndProjects($orgUuid: ID!, $purl: String!, $dtrackProjects: [ID]!) {
-                    searchDtrackComponentByPurlAndProjects(orgUuid: $orgUuid, purl: $purl, dtrackProjects: $dtrackProjects)
-                }
-            `,
-            variables: {
-                orgUuid: release.value.orgDetails.uuid,
-                purl: purl,
-                dtrackProjects: dtrackProjectUuids.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        dtrackComponent = resp.data?.searchDtrackComponentByPurlAndProjects
-    } catch (error) {
-        console.error('Error searching Dependency-Track component:', error)
-    }
-    return dtrackComponent
-}
 
 const outboundDeliverables: ComputedRef<any> = computed((): any => {
     let outboundDeliverables: any[] = []
@@ -2563,7 +2546,11 @@ const changelogTableFields: DataTableColumns<any> = [
                     style: 'color: #337ab7; cursor: pointer; text-decoration: underline;',
                     onClick: async (e: Event) => {
                         e.preventDefault()
-                        const dtrackComponent = await searchDtrackComponentByPurl(purlText)
+                        const dtrackComponent = await searchDtrackComponentByPurlUtil(
+                            release.value.orgDetails.uuid,
+                            purlText,
+                            dtrackProjectUuids.value
+                        )
                         console.log('Dependency-Track component:', dtrackComponent)
                         if (dtrackComponent) {
                             // Get base URL from first artifact with dependencyTrackFullUri
@@ -2575,7 +2562,23 @@ const changelogTableFields: DataTableColumns<any> = [
                                 const componentUrl = `${baseUrl}/components/${dtrackComponent}`
                                 // Open in new window
                                 window.open(componentUrl, '_blank')
+                            } else {
+                                await Swal.fire({
+                                    icon: 'warning',
+                                    title: 'Not Found',
+                                    text: 'Purl not found in known SBOMs',
+                                    timer: 2500,
+                                    showConfirmButton: false
+                                })
                             }
+                        } else {
+                            await Swal.fire({
+                                icon: 'warning',
+                                title: 'Not Found',
+                                text: 'Purl not found in known SBOMs',
+                                timer: 2500,
+                                showConfirmButton: false
+                            })
                         }
                     }
                 }, purlText)
