@@ -237,6 +237,23 @@
                 <n-button type="success" @click="setNextVersion">Create</n-button>
             </n-form>
         </n-modal>
+        <n-modal
+            v-model:show="showDetailedVulnerabilitiesModal"
+            preset="dialog"
+            :show-icon="false"
+            style="width: 95%"
+            title="Detailed Vulnerabilities / Violations / Weaknesses"
+        >
+            <n-spin :show="loadingVulnerabilities">
+                <n-data-table
+                    :columns="vulnerabilityColumns"
+                    :data="detailedVulnerabilitiesData"
+                    :row-key="(row: any) => row.type + '-' + row.id + '-' + row.purl"
+                    :pagination="{ pageSize: 15 }"
+                    style="max-height: 70vh; overflow: auto;"
+                />
+            </n-spin>
+        </n-modal>
     </div>
 </template>
 
@@ -249,7 +266,7 @@ export default {
 import { ComputedRef, computed, Ref, ref, h } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace} from 'naive-ui'
+import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, DataTableColumns} from 'naive-ui'
 import AddComponent from './AddComponent.vue'
 import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
@@ -264,6 +281,8 @@ import graphqlQueries  from '@/utils/graphqlQueries'
 import { Copy, LayoutColumns, Filter, Trash } from '@vicons/tabler'
 import { Edit24Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
+import { SecurityUpdateWarningOutlined } from '@vicons/material'
+import { processMetricsData } from '@/utils/metrics'
 
 async function loadApprovalMatrix (org: string, resourceGroup: string) {
     let amxResponse = await graphqlClient.query({
@@ -917,7 +936,17 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                 const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: help;'}, row.metrics.policyViolationsLicenseTotal)
                 const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: help;'}, row.metrics.policyViolationsSecurityTotal)
                 const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: help;'}, row.metrics.policyViolationsOperationalTotal)
-                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
+                const detailedMetricsEl = h(
+                    NIcon,
+                    {
+                        title: 'View Detailed Vulnerability, Weakness and Violation Data',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)
+                    },
+                    { default: () => h(SecurityUpdateWarningOutlined) }
+                )
+                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl, detailedMetricsEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
             return els
@@ -926,6 +955,83 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
 
     return fields
 })
+
+// Detailed vulnerability modal state and logic (mirrors ReleaseView)
+const showDetailedVulnerabilitiesModal = ref(false)
+const detailedVulnerabilitiesData: Ref<any[]> = ref([])
+const loadingVulnerabilities: Ref<boolean> = ref(false)
+
+const vulnerabilityColumns: DataTableColumns<any> = [
+    {
+        title: 'Type',
+        key: 'type',
+        width: 120,
+        render: (row: any) => {
+            const typeColors: any = {
+                'Vulnerability': 'error',
+                'Violation': 'warning',
+                'Weakness': 'info'
+            }
+            return h(NTag, { type: typeColors[row.type] || 'default', size: 'small' }, { default: () => row.type })
+        }
+    },
+    { title: 'Issue ID', key: 'id', width: 150 },
+    { title: 'PURL', key: 'purl', width: 300, ellipsis: { tooltip: true } },
+    {
+        title: 'Severity',
+        key: 'severity',
+        width: 120,
+        render: (row: any) => {
+            if (row.severity === '-') return row.severity
+            const severityColors: any = {
+                'CRITICAL': 'error',
+                'HIGH': 'error',
+                'MEDIUM': 'warning',
+                'LOW': 'info',
+                'UNASSIGNED': 'default'
+            }
+            return h(NTag, { type: severityColors[row.severity] || 'default', size: 'small' }, { default: () => row.severity })
+        }
+    },
+    { title: 'Details', key: 'details', ellipsis: { tooltip: true } },
+    { title: 'Location', key: 'location', width: 200, ellipsis: { tooltip: true } },
+    { title: 'Fingerprint', key: 'fingerprint', width: 200, ellipsis: { tooltip: true } }
+]
+
+async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
+    loadingVulnerabilities.value = true
+    showDetailedVulnerabilitiesModal.value = true
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
+                    release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
+                        uuid
+                        version
+                        metrics {
+                            vulnerabilityDetails { purl vulnId severity }
+                            violationDetails { purl type License violationDetails }
+                            weaknessDetails { cweId ruleId location fingerprint severity }
+                        }
+                    }
+                }
+            `,
+            variables: {
+                releaseUuid,
+                orgUuid: branchData.value.org
+            }
+        })
+        const releaseData = response.data.release
+        if (releaseData && releaseData.metrics) {
+            detailedVulnerabilitiesData.value = processMetricsData(releaseData.metrics)
+        }
+    } catch (error) {
+        console.error('Error fetching release details:', error)
+        notify('error', 'Error', 'Failed to load vulnerability details for release')
+    } finally {
+        loadingVulnerabilities.value = false
+    }
+}
 
 const depTableFields = [
     {

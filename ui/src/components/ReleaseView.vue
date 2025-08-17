@@ -542,6 +542,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
+import { processMetricsData } from '@/utils/metrics'
 
 const route = useRoute()    
 const router = useRouter()
@@ -1267,59 +1268,6 @@ const vulnerabilityColumns: DataTableColumns<any> = [
         }
     }
 ]
-
-function processMetricsData(metrics: any): any[] {
-    const combinedData: any[] = []
-    
-    if (!metrics) return combinedData
-    
-    // Add vulnerabilities
-    if (metrics.vulnerabilityDetails) {
-        metrics.vulnerabilityDetails.forEach((vuln: any) => {
-            combinedData.push({
-                type: 'Vulnerability',
-                id: vuln.vulnId,
-                purl: vuln.purl,
-                severity: vuln.severity,
-                details: vuln.vulnId,
-                location: '-',
-                fingerprint: '-'
-            })
-        })
-    }
-    
-    // Add violations
-    if (metrics.violationDetails) {
-        metrics.violationDetails.forEach((violation: any) => {
-            combinedData.push({
-                type: 'Violation',
-                id: violation.type,
-                purl: violation.purl,
-                severity: '-',
-                details: `${violation.type}: ${violation.License || ''} ${violation.violationDetails || ''}`.trim(),
-                location: '-',
-                fingerprint: '-'
-            })
-        })
-    }
-    
-    // Add weaknesses
-    if (metrics.weaknessDetails) {
-        metrics.weaknessDetails.forEach((weakness: any) => {
-            combinedData.push({
-                type: 'Weakness',
-                id: weakness.cweId,
-                purl: '-',
-                severity: weakness.severity,
-                details: weakness.ruleId,
-                location: weakness.location,
-                fingerprint: weakness.fingerprint
-            })
-        })
-    }
-    
-    return combinedData
-}
 
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
     loadingVulnerabilities.value = true
