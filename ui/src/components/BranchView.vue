@@ -960,7 +960,17 @@ const showDetailedVulnerabilitiesModal = ref(false)
 const detailedVulnerabilitiesData: Ref<any[]> = ref([])
 const loadingVulnerabilities: Ref<boolean> = ref(false)
 
-const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag)
+// Per-modal context for Dependency-Track linking
+const currentReleaseArtifacts: Ref<any[]> = ref([])
+const currentReleaseOrgUuid: Ref<string> = ref('')
+const currentDtrackProjectUuids: Ref<string[]> = ref([])
+
+const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, {
+    hasKnownDependencyTrackIntegration: () => currentReleaseArtifacts.value.some((artifact: any) => artifact.metrics && artifact.metrics.dependencyTrackFullUri),
+    getArtifacts: () => currentReleaseArtifacts.value,
+    getOrgUuid: () => currentReleaseOrgUuid.value,
+    getDtrackProjectUuids: () => currentDtrackProjectUuids.value
+})
 
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
     loadingVulnerabilities.value = true
@@ -972,6 +982,12 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
                     release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
                         uuid
                         version
+                        org
+                        artifacts
+                        artifactDetails {
+                            uuid
+                            metrics { dependencyTrackFullUri }
+                        }
                         metrics {
                             vulnerabilityDetails { purl vulnId severity }
                             violationDetails { purl type License violationDetails }
@@ -986,8 +1002,25 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
             }
         })
         const releaseData = response.data.release
-        if (releaseData && releaseData.metrics) {
-            detailedVulnerabilitiesData.value = processMetricsData(releaseData.metrics)
+        if (releaseData) {
+            // populate per-release context for D-Track linking
+            currentReleaseOrgUuid.value = releaseData.org || ''
+            currentReleaseArtifacts.value = Array.isArray(releaseData.artifactDetails) ? releaseData.artifactDetails : []
+            const projectUuids: string[] = []
+            currentReleaseArtifacts.value.forEach((artifact: any) => {
+                if (artifact.metrics && artifact.metrics.dependencyTrackFullUri) {
+                    const parts = String(artifact.metrics.dependencyTrackFullUri).split('/projects/')
+                    if (parts.length > 1) {
+                        const projectUuid = parts[parts.length - 1]
+                        if (projectUuid && !projectUuids.includes(projectUuid)) projectUuids.push(projectUuid)
+                    }
+                }
+            })
+            currentDtrackProjectUuids.value = projectUuids
+
+            if (releaseData.metrics) {
+                detailedVulnerabilitiesData.value = processMetricsData(releaseData.metrics)
+            }
         }
     } catch (error) {
         console.error('Error fetching release details:', error)
