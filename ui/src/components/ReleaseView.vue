@@ -1268,10 +1268,109 @@ const vulnerabilityColumns: DataTableColumns<any> = [
     }
 ]
 
+function processMetricsData(metrics: any): any[] {
+    const combinedData: any[] = []
+    
+    if (!metrics) return combinedData
+    
+    // Add vulnerabilities
+    if (metrics.vulnerabilityDetails) {
+        metrics.vulnerabilityDetails.forEach((vuln: any) => {
+            combinedData.push({
+                type: 'Vulnerability',
+                id: vuln.vulnId,
+                purl: vuln.purl,
+                severity: vuln.severity,
+                details: vuln.vulnId,
+                location: '-',
+                fingerprint: '-'
+            })
+        })
+    }
+    
+    // Add violations
+    if (metrics.violationDetails) {
+        metrics.violationDetails.forEach((violation: any) => {
+            combinedData.push({
+                type: 'Violation',
+                id: violation.type,
+                purl: violation.purl,
+                severity: '-',
+                details: `${violation.type}: ${violation.License || ''} ${violation.violationDetails || ''}`.trim(),
+                location: '-',
+                fingerprint: '-'
+            })
+        })
+    }
+    
+    // Add weaknesses
+    if (metrics.weaknessDetails) {
+        metrics.weaknessDetails.forEach((weakness: any) => {
+            combinedData.push({
+                type: 'Weakness',
+                id: weakness.cweId,
+                purl: '-',
+                severity: weakness.severity,
+                details: weakness.ruleId,
+                location: weakness.location,
+                fingerprint: weakness.fingerprint
+            })
+        })
+    }
+    
+    return combinedData
+}
+
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
-    // TODO: Implement detailed vulnerabilities view for entire release
-    console.log('viewDetailedVulnerabilitiesForRelease called with releaseUuid:', releaseUuid)
-    notify('info', 'Coming Soon', 'Detailed vulnerability view for entire release will be implemented soon')
+    loadingVulnerabilities.value = true
+    showDetailedVulnerabilitiesModal.value = true
+    
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
+                    release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
+                        uuid
+                        version
+                        metrics {
+                            vulnerabilityDetails {
+                                purl
+                                vulnId
+                                severity
+                            }
+                            violationDetails {
+                                purl
+                                type
+                                License
+                                violationDetails
+                            }
+                            weaknessDetails {
+                                cweId
+                                ruleId
+                                location
+                                fingerprint
+                                severity
+                            }
+                        }
+                    }
+                }
+            `,
+            variables: { 
+                releaseUuid,
+                orgUuid: release.value.org
+            }
+        })
+        
+        const releaseData = response.data.release
+        if (releaseData && releaseData.metrics) {
+            detailedVulnerabilitiesData.value = processMetricsData(releaseData.metrics)
+        }
+    } catch (error) {
+        console.error('Error fetching release details:', error)
+        notify('error', 'Error', 'Failed to load vulnerability details for release')
+    } finally {
+        loadingVulnerabilities.value = false
+    }
 }
 
 async function viewDetailedVulnerabilities(artifactUuid: string) {
@@ -1313,55 +1412,7 @@ async function viewDetailedVulnerabilities(artifactUuid: string) {
         
         const artifact = response.data.artifact
         if (artifact && artifact.metrics) {
-            // Combine all security data into a single array with type indicators
-            const combinedData: any[] = []
-            
-            // Add vulnerabilities
-            if (artifact.metrics.vulnerabilityDetails) {
-                artifact.metrics.vulnerabilityDetails.forEach((vuln: any) => {
-                    combinedData.push({
-                        type: 'Vulnerability',
-                        id: vuln.vulnId,
-                        purl: vuln.purl,
-                        severity: vuln.severity,
-                        details: vuln.vulnId,
-                        location: '-',
-                        fingerprint: '-'
-                    })
-                })
-            }
-            
-            // Add violations
-            if (artifact.metrics.violationDetails) {
-                artifact.metrics.violationDetails.forEach((violation: any) => {
-                    combinedData.push({
-                        type: 'Violation',
-                        id: violation.type,
-                        purl: violation.purl,
-                        severity: '-',
-                        details: `${violation.type}: ${violation.License || ''} ${violation.violationDetails || ''}`.trim(),
-                        location: '-',
-                        fingerprint: '-'
-                    })
-                })
-            }
-            
-            // Add weaknesses
-            if (artifact.metrics.weaknessDetails) {
-                artifact.metrics.weaknessDetails.forEach((weakness: any) => {
-                    combinedData.push({
-                        type: 'Weakness',
-                        id: weakness.cweId,
-                        purl: '-',
-                        severity: weakness.severity,
-                        details: weakness.ruleId,
-                        location: weakness.location,
-                        fingerprint: weakness.fingerprint
-                    })
-                })
-            }
-            
-            detailedVulnerabilitiesData.value = combinedData
+            detailedVulnerabilitiesData.value = processMetricsData(artifact.metrics)
         }
     } catch (error) {
         console.error('Error fetching artifact details:', error)
