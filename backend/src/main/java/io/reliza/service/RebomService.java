@@ -325,6 +325,37 @@ public class RebomService {
         return rmd;
     }
     
+    public ReleaseMetricsDto parseCycloneDxContent(String vdrContent) {
+        String query = """
+            query parseCycloneDxContent($vdrContent: String!) {
+                parseCycloneDxContent(vdrContent: $vdrContent) {
+                    purl
+                    vulnId
+                    severity
+                }
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("vdrContent", vdrContent);
+        
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var vulnsResponse = response.get("parseCycloneDxContent");
+        
+        List<Map<String, Object>> rawVulns = Utils.OM.convertValue(vulnsResponse, new TypeReference<List<Map<String, Object>>>() {});
+        
+        ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+        List<ReleaseMetricsDto.VulnerabilityDto> vulnerabilityDtos = rawVulns.stream()
+            .map(v -> new ReleaseMetricsDto.VulnerabilityDto(
+                (String) v.get("purl"),
+                (String) v.get("vulnId"),
+                mapSeverity((String) v.get("severity"))
+            ))
+            .toList();
+        rmd.setVulnerabilityDetails(vulnerabilityDtos);
+        rmd.computeMetricsFromFacts();
+        return rmd;
+    }
+    
     private ReleaseMetricsDto.VulnerabilitySeverity mapSeverity(String severity) {
         if (severity == null) return ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
         

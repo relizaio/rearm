@@ -363,7 +363,18 @@ public class ArtifactService {
 						artifactDto.setRmd(rmd);
 					} catch (Exception e) {
 						log.error("Error parsing SARIF file", e);
-						throw new RuntimeException("Error parsing SARIF file");
+						throw new RelizaException("Error parsing SARIF file");
+					}
+				} else if ((artifactDto.getType().equals(ArtifactType.VDR) || artifactDto.getType().equals(ArtifactType.BOV)) &&
+					artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) ) {
+					try {
+						var vdrJson = Utils.readJsonFromResource(file);
+						String vdrString = Utils.OM.writeValueAsString(vdrJson);
+						ReleaseMetricsDto rmd = rebomService.parseCycloneDxContent(vdrString);
+						artifactDto.setRmd(rmd);
+					} catch (Exception e) {
+						log.error("Error parsing CycloneDX VDR/BOV file", e);
+						throw new RelizaException("Error parsing CycloneDX VDR/BOV file");
 					}
 				}
 			}
