@@ -1211,7 +1211,7 @@ const vulnerabilityColumns: DataTableColumns<any> = [
                 'Violation': 'warning', 
                 'Weakness': 'info'
             }
-            return h('n-tag', { type: typeColors[row.type] || 'default', size: 'small' }, row.type)
+            return h(NTag, { type: typeColors[row.type] || 'default', size: 'small' }, { default: () => row.type })
         }
     },
     {
@@ -1240,7 +1240,7 @@ const vulnerabilityColumns: DataTableColumns<any> = [
                 'LOW': 'info',
                 'UNASSIGNED': 'default'
             }
-            return h('n-tag', { type: severityColors[row.severity] || 'default', size: 'small' }, row.severity)
+            return h(NTag, { type: severityColors[row.severity] || 'default', size: 'small' }, { default: () => row.severity })
         }
     },
     {
