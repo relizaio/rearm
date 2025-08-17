@@ -2,7 +2,8 @@ import * as BomService from './bomService';
 import { bomToExcel } from './bomService';
 import * as DiffService from './bomDiffService';
 import { SarifService } from './sarifService';
-import { BomDto, BomInput, BomRecord, BomSearch, WeaknessDto } from './types';
+import { CycloneDxService } from './cycloneDxService';
+import { BomDto, BomInput, BomRecord, BomSearch, WeaknessDto, VulnerabilityDto } from './types';
 // A map of functions which return data for the schema.
 const resolvers = {
 	Query: {
@@ -33,6 +34,9 @@ const resolvers = {
 		},
 		parseSarifContent: async (_:any, input: { sarifContent: string }): Promise<WeaknessDto[]> => {
 			return SarifService.parseSarifContent(input.sarifContent);
+		},
+		parseCycloneDxContent: async (_:any, input: { vdrContent: string }): Promise<VulnerabilityDto[]> => {
+			return CycloneDxService.parseCycloneDxContent(input.vdrContent);
 		}
 	},
 	Mutation: {

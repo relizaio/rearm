@@ -17,6 +17,7 @@ const typeDefs = gql`
     bomMetaBySerialNumber(serialNumber: ID!, org: ID!): [BomMeta]
     bomDiff(fromIds: [ID], toIds: [ID], org: ID!): BomDiffResult
     parseSarifContent(sarifContent: String!): [Weakness]
+    parseCycloneDxContent(vdrContent: String!): [Vulnerability]
   }
 
   type Mutation {
@@ -71,6 +72,13 @@ const typeDefs = gql`
     fingerprint: String
     severity: VulnerabilitySeverity
   }
+
+  type Vulnerability {
+    purl: String!
+    vulnId: String!
+    severity: VulnerabilitySeverity!
+  }
+
 
   enum VulnerabilitySeverity {
     CRITICAL

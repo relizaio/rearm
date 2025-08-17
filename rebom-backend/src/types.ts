@@ -113,6 +113,12 @@ export type WeaknessDto = {
     severity: VulnerabilitySeverity;
 }
 
+export type VulnerabilityDto = {
+    purl: string;
+    vulnId: string;
+    severity: VulnerabilitySeverity;
+}
+
 export type SarifResult = {
     ruleId?: string;
     ruleIndex?: number;
@@ -170,3 +176,4 @@ export type SarifReport = {
     $schema: string;
     runs: SarifRun[];
 }
+

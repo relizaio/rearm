@@ -1,0 +1,191 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2023-01-10T12:00:00Z",
+    "tools": [
+      {
+        "vendor": "OWASP",
+        "name": "CycloneDX",
+        "version": "1.4.0"
+      }
+    ],
+    "component": {
+      "bom-ref": "pkg:npm/express@4.18.2",
+      "type": "library",
+      "name": "express",
+      "version": "4.18.2",
+      "purl": "pkg:npm/express@4.18.2"
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "pkg:npm/express@4.18.2",
+      "type": "library",
+      "name": "express",
+      "version": "4.18.2",
+      "purl": "pkg:npm/express@4.18.2"
+    },
+    {
+      "bom-ref": "pkg:npm/lodash@4.17.20",
+      "type": "library",
+      "name": "lodash",
+      "version": "4.17.20",
+      "purl": "pkg:npm/lodash@4.17.20"
+    },
+    {
+      "bom-ref": "pkg:maven/org.apache.commons/commons-lang3@3.12.0",
+      "type": "library",
+      "name": "commons-lang3",
+      "version": "3.12.0",
+      "purl": "pkg:maven/org.apache.commons/commons-lang3@3.12.0"
+    }
+  ],
+  "vulnerabilities": [
+    {
+      "bom-ref": "vuln-1",
+      "id": "CVE-2022-24999",
+      "source": {
+        "name": "NVD",
+        "url": "https://nvd.nist.gov/"
+      },
+      "ratings": [
+        {
+          "source": {
+            "name": "NVD"
+          },
+          "score": 9.8,
+          "severity": "CRITICAL",
+          "method": "CVSSv3",
+          "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+        }
+      ],
+      "cwes": [79, 89],
+      "description": "Express.js before 4.17.3 and 4.18.x before 4.18.1 is vulnerable to XSS via response.redirect().",
+      "detail": "qs before 6.10.3, as used in Express before 4.17.3 and other products, allows attackers to cause a Node process hang for an Express application by leveraging failure to remove __proto__ keys in querystring data and thus triggering prototype pollution and hanging the application.",
+      "recommendation": "Upgrade to express 4.18.1 or later",
+      "published": "2022-11-26T22:15:00Z",
+      "updated": "2022-12-13T12:15:00Z",
+      "affects": [
+        {
+          "ref": "pkg:npm/express@4.18.2",
+          "versions": [
+            {
+              "version": "4.18.2",
+              "status": "affected"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bom-ref": "vuln-2",
+      "id": "CVE-2021-23337",
+      "source": {
+        "name": "NVD",
+        "url": "https://nvd.nist.gov/"
+      },
+      "ratings": [
+        {
+          "source": {
+            "name": "NVD"
+          },
+          "score": 7.2,
+          "severity": "HIGH",
+          "method": "CVSSv3",
+          "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H"
+        }
+      ],
+      "cwes": [1321],
+      "description": "Lodash versions prior to 4.17.21 are vulnerable to Command Injection via the template function.",
+      "detail": "Lodash versions prior to 4.17.21 are vulnerable to Command Injection via the template function.",
+      "recommendation": "Upgrade to lodash 4.17.21 or later",
+      "published": "2021-02-15T13:15:00Z",
+      "updated": "2021-02-23T14:15:00Z",
+      "affects": [
+        {
+          "ref": "pkg:npm/lodash@4.17.20",
+          "versions": [
+            {
+              "version": "4.17.20",
+              "status": "affected"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bom-ref": "vuln-3",
+      "id": "CVE-2020-15250",
+      "source": {
+        "name": "NVD",
+        "url": "https://nvd.nist.gov/"
+      },
+      "ratings": [
+        {
+          "source": {
+            "name": "NVD"
+          },
+          "score": 5.6,
+          "severity": "MEDIUM",
+          "method": "CVSSv3",
+          "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:L"
+        }
+      ],
+      "cwes": [20],
+      "description": "In JUnit4 from version 4.7 and before 4.13.1, the test rule TemporaryFolder contains a local information disclosure vulnerability.",
+      "detail": "In JUnit4 from version 4.7 and before 4.13.1, the test rule TemporaryFolder contains a local information disclosure vulnerability.",
+      "recommendation": "Upgrade to JUnit 4.13.1 or later",
+      "published": "2020-10-12T17:15:00Z",
+      "updated": "2020-10-16T18:15:00Z",
+      "affects": [
+        {
+          "ref": "pkg:maven/org.apache.commons/commons-lang3@3.12.0",
+          "versions": [
+            {
+              "version": "3.12.0",
+              "status": "unaffected"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "bom-ref": "vuln-4",
+      "id": "GHSA-c4w7-xm78-47vh",
+      "source": {
+        "name": "GitHub Security Advisory",
+        "url": "https://github.com/advisories"
+      },
+      "ratings": [
+        {
+          "source": {
+            "name": "GitHub"
+          },
+          "score": 3.1,
+          "severity": "LOW",
+          "method": "CVSSv3",
+          "vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:L/A:N"
+        }
+      ],
+      "description": "Prototype pollution in lodash",
+      "detail": "lodash prior to 4.17.19 is vulnerable to Prototype Pollution in zipObjectDeep due to an incomplete fix for CVE-2020-8203.",
+      "recommendation": "Upgrade to lodash 4.17.19 or later",
+      "published": "2020-07-15T19:15:00Z",
+      "updated": "2020-07-16T12:15:00Z",
+      "affects": [
+        {
+          "ref": "pkg:npm/lodash@4.17.20",
+          "versions": [
+            {
+              "version": "4.17.20",
+              "status": "unaffected"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
