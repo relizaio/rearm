@@ -48,10 +48,24 @@ export function parseCycloneDxToVulnerabilities(vdrData: CdxBom): VulnerabilityD
 
         // Create a map of component references to PURLs for quick lookup
         const componentMap = new Map<string, string>();
+        // Include top-level metadata.component if present
+        const anyBom = vdrData as any;
+        const metaComp = anyBom?.metadata?.component;
+        if (metaComp) {
+            const ref = (metaComp['bom-ref'] || metaComp.bom_ref) as string | undefined;
+            const purl = metaComp?.purl as string | undefined;
+            if (ref && purl) {
+                componentMap.set(ref, purl);
+            }
+        }
+
         if (vdrData.components) {
             vdrData.components.forEach((component: CdxComponent) => {
-                if (component.bom_ref && component.purl) {
-                    componentMap.set(component.bom_ref, component.purl);
+                const anyComp = component as any;
+                const ref = (anyComp && (anyComp['bom-ref'] || anyComp.bom_ref)) as string | undefined;
+                const purl = anyComp?.purl as string | undefined;
+                if (ref && purl) {
+                    componentMap.set(ref, purl);
                 }
             });
         }
@@ -111,16 +125,26 @@ function extractPurlFromVulnerability(
     // Check if vulnerability has affects section
     if (vuln.affects && vuln.affects.length > 0) {
         for (const affect of vuln.affects) {
-            const purl = affect?.ref ? componentMap.get(affect.ref) : undefined;
-            if (purl) {
-                return purl;
+            const ref = affect?.ref;
+            if (ref) {
+                // If ref is already a PURL, return it directly
+                if (ref.startsWith('pkg:')) {
+                    return ref;
+                }
+                // Otherwise, try to resolve via component map
+                const mapped = componentMap.get(ref);
+                if (mapped) {
+                    return mapped;
+                }
             }
         }
     }
 
     // If no PURL found from affects, try to construct from component reference
-    if (vuln.bom_ref) {
-        const purl = componentMap.get(vuln.bom_ref);
+    const anyVuln = vuln as any;
+    const vref = (anyVuln && (anyVuln['bom-ref'] || anyVuln.bom_ref)) as string | undefined;
+    if (vref) {
+        const purl = componentMap.get(vref);
         if (purl) {
             return purl;
         }
