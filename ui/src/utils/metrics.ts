@@ -1,3 +1,5 @@
+import type { DataTableColumns } from 'naive-ui'
+
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
   id: string
@@ -55,4 +57,44 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
   }
 
   return combinedData
+}
+
+// Build shared vulnerability/violation/weakness columns
+export function buildVulnerabilityColumns(h: any, NTag: any): DataTableColumns<any> {
+  return [
+    {
+      title: 'Type',
+      key: 'type',
+      width: 120,
+      render: (row: any) => {
+        const typeColors: any = {
+          Vulnerability: 'error',
+          Violation: 'warning',
+          Weakness: 'info'
+        }
+        return h(NTag, { type: typeColors[row.type] || 'default', size: 'small' }, { default: () => row.type })
+      }
+    },
+    { title: 'Issue ID', key: 'id', width: 150 },
+    { title: 'PURL', key: 'purl', width: 300, ellipsis: { tooltip: true } },
+    {
+      title: 'Severity',
+      key: 'severity',
+      width: 120,
+      render: (row: any) => {
+        if (row.severity === '-') return row.severity
+        const severityColors: any = {
+          CRITICAL: 'error',
+          HIGH: 'error',
+          MEDIUM: 'warning',
+          LOW: 'info',
+          UNASSIGNED: 'default'
+        }
+        return h(NTag, { type: severityColors[row.severity] || 'default', size: 'small' }, { default: () => row.severity })
+      }
+    },
+    { title: 'Details', key: 'details', ellipsis: { tooltip: true } },
+    { title: 'Location', key: 'location', width: 200, ellipsis: { tooltip: true } },
+    { title: 'Fingerprint', key: 'fingerprint', width: 200, ellipsis: { tooltip: true } }
+  ]
 }

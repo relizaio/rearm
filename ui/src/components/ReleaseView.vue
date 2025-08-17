@@ -542,7 +542,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
-import { processMetricsData } from '@/utils/metrics'
+import { processMetricsData, buildVulnerabilityColumns } from '@/utils/metrics'
 
 const route = useRoute()    
 const router = useRouter()
@@ -1201,73 +1201,7 @@ const showDetailedVulnerabilitiesModal: Ref<boolean> = ref(false)
 const detailedVulnerabilitiesData: Ref<any[]> = ref([])
 const loadingVulnerabilities: Ref<boolean> = ref(false)
 
-const vulnerabilityColumns: DataTableColumns<any> = [
-    {
-        title: 'Type',
-        key: 'type',
-        width: 120,
-        render: (row: any) => {
-            const typeColors: any = {
-                'Vulnerability': 'error',
-                'Violation': 'warning', 
-                'Weakness': 'info'
-            }
-            return h(NTag, { type: typeColors[row.type] || 'default', size: 'small' }, { default: () => row.type })
-        }
-    },
-    {
-        title: 'Issue ID',
-        key: 'id',
-        width: 150
-    },
-    {
-        title: 'PURL',
-        key: 'purl',
-        width: 300,
-        ellipsis: {
-            tooltip: true
-        }
-    },
-    {
-        title: 'Severity',
-        key: 'severity',
-        width: 120,
-        render: (row: any) => {
-            if (row.severity === '-') return row.severity
-            const severityColors: any = {
-                'CRITICAL': 'error',
-                'HIGH': 'error',
-                'MEDIUM': 'warning',
-                'LOW': 'info',
-                'UNASSIGNED': 'default'
-            }
-            return h(NTag, { type: severityColors[row.severity] || 'default', size: 'small' }, { default: () => row.severity })
-        }
-    },
-    {
-        title: 'Details',
-        key: 'details',
-        ellipsis: {
-            tooltip: true
-        }
-    },
-    {
-        title: 'Location',
-        key: 'location',
-        width: 200,
-        ellipsis: {
-            tooltip: true
-        }
-    },
-    {
-        title: 'Fingerprint',
-        key: 'fingerprint',
-        width: 200,
-        ellipsis: {
-            tooltip: true
-        }
-    }
-]
+const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag)
 
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
     loadingVulnerabilities.value = true
