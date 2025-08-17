@@ -52,12 +52,12 @@
                         :options="artifactTypes" />
             </n-form-item>
             <n-form-item 
-                        v-if="artifact.type === 'BOM' || artifact.type === 'VEX' || artifact.type === 'VDR' || artifact.type === 'ATTESTATION'" 
+                        v-if="artifact.type === 'BOM' || artifact.type === 'VEX' || artifact.type === 'VDR' || artifact.type === 'BOV'" 
                         path='bomFormat'
                         label='Bom Format'>
                         <n-select
-                        v-model:value="artifact.bomFormat"
-                        :options="bomFormats" />
+                            v-model:value="artifact.bomFormat"
+                            :options="bomFormats" />
             </n-form-item>
             <n-form-item
                         v-if="!commonFunctions.isCycloneDXBomArtifact(artifact)"
