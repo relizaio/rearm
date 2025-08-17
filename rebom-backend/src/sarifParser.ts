@@ -82,8 +82,8 @@ function extractCweId(rule?: SarifRule): string {
     // Check relationships for CWE references
     if (rule.relationships) {
         for (const relationship of rule.relationships) {
-            if (relationship.target.toolComponent.name === 'CWE' || 
-                relationship.target.id.startsWith('CWE-')) {
+            if (relationship.target.toolComponent.name.toUpperCase() === 'CWE' || 
+                relationship.target.id.toUpperCase().startsWith('CWE-')) {
                 return relationship.target.id;
             }
         }
@@ -92,8 +92,8 @@ function extractCweId(rule?: SarifRule): string {
     // Check tags for CWE references
     if (rule.properties?.tags) {
         for (const tag of rule.properties.tags) {
-            if (tag.startsWith('CWE-') || tag.includes('CWE')) {
-                const cweMatch = tag.match(/CWE-(\d+)/);
+            if (tag.toUpperCase().startsWith('CWE-') || tag.toUpperCase().includes('CWE')) {
+                const cweMatch = tag.toUpperCase().match(/CWE-(\d+)/);
                 if (cweMatch) {
                     return `CWE-${cweMatch[1]}`;
                 }
@@ -102,7 +102,7 @@ function extractCweId(rule?: SarifRule): string {
     }
 
     // Check rule ID itself for CWE pattern
-    const cweMatch = rule.id.match(/CWE-(\d+)/);
+    const cweMatch = rule.id.toUpperCase().match(/CWE-(\d+)/);
     if (cweMatch) {
         return `CWE-${cweMatch[1]}`;
     }
