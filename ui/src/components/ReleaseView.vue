@@ -1207,7 +1207,7 @@ const vulnerabilityColumns: DataTableColumns<any> = [
         }
     },
     {
-        title: 'ID',
+        title: 'Issue ID',
         key: 'id',
         width: 150
     },
