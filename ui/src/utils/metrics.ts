@@ -66,6 +66,7 @@ export function buildVulnerabilityColumns(h: any, NTag: any): DataTableColumns<a
       title: 'Type',
       key: 'type',
       width: 120,
+      sorter: 'default',
       render: (row: any) => {
         const typeColors: any = {
           Vulnerability: 'error',
@@ -81,6 +82,18 @@ export function buildVulnerabilityColumns(h: any, NTag: any): DataTableColumns<a
       title: 'Severity',
       key: 'severity',
       width: 120,
+      defaultSortOrder: 'ascend',
+      sorter: (rowA: any, rowB: any) => {
+        const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
+        const idx = (v: string) => {
+          const i = order.indexOf(v)
+          return i === -1 ? order.length : i
+        }
+        const diff = idx(rowA.severity) - idx(rowB.severity)
+        if (diff !== 0) return diff
+        // tie-breaker by Type (alphabetical, same as Type's default sorter)
+        return String(rowA.type || '').localeCompare(String(rowB.type || ''))
+      },
       render: (row: any) => {
         if (row.severity === '-') return row.severity
         const severityColors: any = {

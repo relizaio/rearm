@@ -249,8 +249,7 @@
                     :columns="vulnerabilityColumns"
                     :data="detailedVulnerabilitiesData"
                     :row-key="(row: any) => row.type + '-' + row.id + '-' + row.purl"
-                    :pagination="{ pageSize: 15 }"
-                    style="max-height: 70vh; overflow: auto;"
+                    :pagination="{ pageSize: 10 }"
                 />
             </n-spin>
         </n-modal>

@@ -484,9 +484,7 @@
                 <n-data-table
                     :columns="vulnerabilityColumns"
                     :data="detailedVulnerabilitiesData"
-                    :pagination="{ pageSize: 20 }"
-                    :bordered="false"
-                    size="small"
+                    :pagination="{ pageSize: 10 }"
                 />
             </n-spin>
         </n-modal>
