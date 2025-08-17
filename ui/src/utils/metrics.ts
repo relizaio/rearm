@@ -134,7 +134,73 @@ export function buildVulnerabilityColumns(
         return h(NTag, { type: typeColors[row.type] || 'default', size: 'small' }, { default: () => row.type })
       }
     },
-    { title: 'Issue ID', key: 'id', width: 150 },
+    {
+      title: 'Issue ID',
+      key: 'id',
+      width: 150,
+      render: (row: any) => {
+        const id = String(row.id || '')
+        if (!id) return ''
+        const confirmAndOpen = async (e: Event, href: string) => {
+          e.preventDefault()
+          try {
+            const LS_KEY = 'rearm_external_link_consent_until'
+            const now = Date.now()
+            const stored = localStorage.getItem(LS_KEY)
+            if (stored && Number(stored) > now) {
+              window.open(href, '_blank')
+              return
+            }
+
+            const result = await Swal.fire({
+              icon: 'info',
+              title: 'Open external link?\n',
+              text: 'This will open a vulnerability database resource external to ReARM. Please confirm that you want to proceed.',
+              showCancelButton: true,
+              confirmButtonText: 'Open',
+              cancelButtonText: 'Cancel',
+              input: 'checkbox',
+              inputValue: 0,
+              inputPlaceholder: "Don't ask me again for 15 days"
+            })
+            if (result.isConfirmed) {
+              // result.value === 1 when checkbox is checked
+              if (result.value === 1) {
+                const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000
+                localStorage.setItem(LS_KEY, String(now + fifteenDaysMs))
+              }
+              window.open(href, '_blank')
+            }
+          } catch (err) {
+            // Fail open on errors to avoid blocking navigation unexpectedly
+            window.open(href, '_blank')
+          }
+        }
+        if (id.startsWith('CVE-')) {
+          const href = `https://osv.dev/vulnerability/${id}`
+          return h('a', {
+            href,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            onClick: (e: Event) => confirmAndOpen(e, href)
+          }, id)
+        }
+        if (id.startsWith('CWE-')) {
+          const raw = id.slice(4)
+          const num = String(parseInt(raw, 10))
+          if (num && num !== 'NaN') {
+            const href = `https://cwe.mitre.org/data/definitions/${num}.html`
+            return h('a', {
+              href,
+              target: '_blank',
+              rel: 'noopener noreferrer',
+              onClick: (e: Event) => confirmAndOpen(e, href)
+            }, id)
+          }
+        }
+        return id
+      }
+    },
     { title: 'PURL', key: 'purl', width: 300, ellipsis: { tooltip: true }, render: makePurlRenderer() },
     {
       title: 'Severity',
