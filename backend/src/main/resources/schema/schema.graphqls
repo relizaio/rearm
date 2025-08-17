@@ -664,6 +664,9 @@ type DependencyTrackMetrics {
 	policyViolationsOperationalTotal: Int
 	policyViolationsOperationalAudited: Int
 	policyViolationsOperationalUnaudited: Int
+	vulnerabilityDetails: [Vulnerability]
+	violationDetails: [Violation]
+	weaknessDetails: [Weakness]
 }
 
 type InternalBom {
@@ -839,6 +842,41 @@ type VulnerabilityViolationChart {
 	createdDate: DateTime
 	num: Int
 	type: String
+}
+
+enum ViolationType {
+	LICENSE
+	SECURITY
+	OPERATIONAL
+}
+
+enum VulnerabilitySeverity {
+	CRITICAL
+	HIGH
+	MEDIUM
+	LOW
+	UNASSIGNED
+}
+
+type Vulnerability {
+	purl: String
+	vulnId: String
+	severity: VulnerabilitySeverity
+}
+
+type Violation {
+	purl: String
+	type: ViolationType
+	License: String
+	violationDetails: String
+}
+
+type Weakness {
+	cweId: String
+	ruleId: String
+	location: String
+	fingerprint: String
+	severity: VulnerabilitySeverity
 }
 
 type SearchDigestVersionResponse {
