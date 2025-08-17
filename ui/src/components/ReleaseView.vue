@@ -170,6 +170,14 @@
                             <span title="Licensing Policy Violations" class="circle" style="background: blue; cursor: help;">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
                             <span title="Security Policy Violations" class="circle" style="background: red; cursor: help;">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
                             <span title="Operational Policy Violations" class="circle" style="background: grey; cursor: help;">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
+                            <n-icon 
+                                title="View Detailed Vulnerability, Weakness and Violation Data for Release"
+                                class="icons clickable"
+                                size="25"
+                                style="margin-left: 10px;"
+                                @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">
+                                <SecurityUpdateWarningOutlined />
+                            </n-icon>
                         </n-space>
                     </n-gi>
                     <n-gi span="1">
@@ -1259,6 +1267,12 @@ const vulnerabilityColumns: DataTableColumns<any> = [
         }
     }
 ]
+
+async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
+    // TODO: Implement detailed vulnerabilities view for entire release
+    console.log('viewDetailedVulnerabilitiesForRelease called with releaseUuid:', releaseUuid)
+    notify('info', 'Coming Soon', 'Detailed vulnerability view for entire release will be implemented soon')
+}
 
 async function viewDetailedVulnerabilities(artifactUuid: string) {
     loadingVulnerabilities.value = true
