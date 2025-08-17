@@ -124,25 +124,49 @@ function parseMagicInput(timeout: number){
     // strip git ending
         let gitEnding = /\.git$/
         magicInput.value = magicInput.value.replace(gitEnding, '')
-        if (magicInput.value.includes('bitbucket.org/')) {
-            vcsrepo.value.type = 'Git'
-            magicInput.value = magicInput.value.split('/src/')[0]
-            vcsrepo.value.uri = magicInput.value
-            vcsrepo.value.name = magicInput.value.split('bitbucket.org/')[1]
-        } else if (magicInput.value.includes('github.com/')) {
-            vcsrepo.value.type = 'Git'
-            magicInput.value = magicInput.value.split('/tree/')[0]
-            vcsrepo.value.uri = magicInput.value
-            vcsrepo.value.name = magicInput.value.split('github.com/')[1]
-        } else if (magicInput.value.includes('gitlab.com/')) {
-            vcsrepo.value.type = 'Git'
-            magicInput.value = magicInput.value.split('/-/')[0]
-            vcsrepo.value.uri = magicInput.value
-            vcsrepo.value.name = magicInput.value.split('gitlab.com/')[1]
-        } else if (magicInput.value.includes('dev.azure.com/')) {
-            vcsrepo.value.type = 'Git'
-            vcsrepo.value.uri = magicInput.value
-            vcsrepo.value.name = magicInput.value.split('dev.azure.com/')[1]
+        // Normalize SSH-like URLs (e.g., git@github.com:owner/repo) to https for parsing
+        let input = magicInput.value.trim()
+        const sshLike = /^(?:git@|ssh:\/\/git@)([^:]+):(.+)$/.exec(input)
+        if (sshLike) {
+            const host = sshLike[1]
+            const path = sshLike[2]
+            input = `https://${host}/${path}`
+        }
+        // Ensure a scheme for URL parsing
+        if (!/^https?:\/\//i.test(input)) {
+            input = `https://${input}`
+        }
+        try {
+            const url = new URL(input)
+            // Clean provider-specific path suffixes
+            let cleanedPath = url.pathname
+            if (url.hostname === 'bitbucket.org') {
+                const idx = cleanedPath.indexOf('/src/')
+                if (idx !== -1) cleanedPath = cleanedPath.substring(0, idx)
+                vcsrepo.value.type = 'Git'
+                vcsrepo.value.uri = `${url.origin}${cleanedPath}`
+                vcsrepo.value.name = cleanedPath.replace(/^\//, '')
+            } else if (url.hostname === 'github.com') {
+                const idx = cleanedPath.indexOf('/tree/')
+                if (idx !== -1) cleanedPath = cleanedPath.substring(0, idx)
+                vcsrepo.value.type = 'Git'
+                vcsrepo.value.uri = `${url.origin}${cleanedPath}`
+                vcsrepo.value.name = cleanedPath.replace(/^\//, '')
+            } else if (url.hostname === 'gitlab.com') {
+                const idx = cleanedPath.indexOf('/-/')
+                if (idx !== -1) cleanedPath = cleanedPath.substring(0, idx)
+                vcsrepo.value.type = 'Git'
+                vcsrepo.value.uri = `${url.origin}${cleanedPath}`
+                vcsrepo.value.name = cleanedPath.replace(/^\//, '')
+            } else if (url.hostname === 'dev.azure.com') {
+                vcsrepo.value.type = 'Git'
+                vcsrepo.value.uri = `${url.origin}${cleanedPath}`
+                vcsrepo.value.name = cleanedPath.replace(/^\//, '')
+            }
+            // Update magicInput to normalized canonical URL for UX consistency
+            magicInput.value = vcsrepo.value.uri || magicInput.value
+        } catch (e) {
+            // If URL parsing fails, leave values unchanged
         }
     }, timeout)
 }

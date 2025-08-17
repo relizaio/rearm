@@ -105,26 +105,35 @@ function dateDisplay (zonedDate: any) {
 }
 function linkifyCommit (uri: string, commit: string): string {
     let linkifiedCommit = commit
-    if (uri && uri.toLowerCase().includes('bitbucket.org/')) {
-        let repoPart = uri.toLowerCase().split('bitbucket.org/')[1]
-        linkifiedCommit = 'https://bitbucket.org/' + repoPart + '/commits/' + commit
-    } else if (uri &&  uri.toLowerCase().includes('github.com/')) {
-        let repoPart = uri.toLowerCase().split('github.com/')[1]
-        linkifiedCommit = 'https://github.com/' + repoPart + '/commit/' + commit
-    } else if (uri &&  uri.toLowerCase().includes('gitlab.com/')) {
-        let repoPart = uri.toLowerCase().split('gitlab.com/')[1]
-        linkifiedCommit = 'https://gitlab.com/' + repoPart + '/-/commit/' + commit
-    } else if (uri && uri.toLowerCase().includes('azure.com/')) {
-        // remove @ if present
-        let repoPart
-        let repoUserArr = uri.toLowerCase().split('@')
-        if (repoUserArr.length === 2) {
-            repoPart = repoUserArr[1]
-        } else {
-            repoPart = repoUserArr[0]
-        }
-        linkifiedCommit = `https://${repoPart}/commit/${commit}`
+    
+    if (!uri || !commit) {
+        return linkifiedCommit
     }
+    
+    try {
+        // Ensure a scheme for URL parsing
+        let input = uri.trim()
+        if (!/^https?:\/\//i.test(input)) {
+            input = `https://${input}`
+        }
+        
+        const url = new URL(input)
+        const encodedCommit = encodeURIComponent(commit)
+        
+        if (url.hostname === 'bitbucket.org') {
+            linkifiedCommit = `${url.origin}${url.pathname}/commits/${encodedCommit}`
+        } else if (url.hostname === 'github.com') {
+            linkifiedCommit = `${url.origin}${url.pathname}/commit/${encodedCommit}`
+        } else if (url.hostname === 'gitlab.com') {
+            linkifiedCommit = `${url.origin}${url.pathname}/-/commit/${encodedCommit}`
+        } else if (url.hostname.includes('azure.com')) {
+            linkifiedCommit = `${url.origin}${url.pathname}/commit/${encodedCommit}`
+        }
+    } catch (e) {
+        // If URL parsing fails, return the original commit value
+        return linkifiedCommit
+    }
+    
     return linkifiedCommit
 }
 function genUuid () {
