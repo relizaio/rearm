@@ -208,9 +208,6 @@ public class ArtifactService {
 				&& artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) 
 				&& (
 					artifactDto.getType().equals(ArtifactType.BOM)
-					|| artifactDto.getType().equals(ArtifactType.VDR) 
-					|| artifactDto.getType().equals(ArtifactType.VEX) 
-					|| artifactDto.getType().equals(ArtifactType.ATTESTATION)
 				);
 	}
 	
@@ -218,10 +215,7 @@ public class ArtifactService {
 		return  null != artifactData.getBomFormat()
 				&& artifactData.getBomFormat().equals(BomFormat.CYCLONEDX) 
 				&& null != artifactData.getType() && (
-				artifactData.getType().equals(ArtifactType.BOM)
-				|| artifactData.getType().equals(ArtifactType.VDR) 
-				|| artifactData.getType().equals(ArtifactType.VEX) 
-				|| artifactData.getType().equals(ArtifactType.ATTESTATION)
+					artifactData.getType().equals(ArtifactType.BOM)
 			);
 	}
 	
