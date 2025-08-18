@@ -521,11 +521,7 @@ public class ReleaseDatafetcher {
 		
 		var releaseDtoBuilder = ReleaseDto.builder()
 										 .branch(bd.getUuid())
-										 .org(ocd.get().getOrg())
-										 .commits(!commits.isEmpty() ? commits : null);
-		if (osced.isPresent()) {
-			releaseDtoBuilder.sourceCodeEntry(osced.get().getUuid());
-		}
+										 .org(ocd.get().getOrg());
 
 		List<UUID> inboundDeliverables = new LinkedList<>();
 		if (null != inboundDeliverablesList && !inboundDeliverablesList.isEmpty()) {
@@ -585,6 +581,11 @@ public class ReleaseDatafetcher {
 			SceDto sceDto = Utils.OM.convertValue(sceMap, SceDto.class);
 			List<UUID> sceUploadedArts = releaseService.uploadSceArtifacts(arts, od, sceDto, cd, version, ar.getWhoUpdated());
 			osced = releaseService.parseSceFromReleaseCreate(sceDto, sceUploadedArts, bd, bd.getName(), version, ar.getWhoUpdated());
+		}
+
+		releaseDtoBuilder.commits(!commits.isEmpty() ? commits : null);
+		if (osced.isPresent()) {
+			releaseDtoBuilder.sourceCodeEntry(osced.get().getUuid());
 		}
 		
 		ReleaseLifecycle lifecycle = ReleaseLifecycle.ASSEMBLED;
