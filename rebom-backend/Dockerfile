@@ -63,4 +63,4 @@ LABEL version=$VERSION
 
 EXPOSE 4000
 
-CMD ["node", "src/index.js"]
+CMD ["node", "index.js"]

@@ -12,6 +12,6 @@
         "outDir": "./dist",
         "baseUrl": "./",
     },
-    "include": ["src/**/*", "test/test-cyclonedx.ts"],
+    "include": ["src/**/*"],
     "exclude": ["node_modules", "**/*.spec.ts"]
 }
