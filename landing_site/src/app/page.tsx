@@ -53,10 +53,15 @@ export default function Home() {
           <div className="d-flex justify-content-center integrationsFlexWrap">
             {[
               "dtrack.png",
+              "cdx.png",
               "ado.png",
               "github.png",
               "gitlab.png",
               "jenkins.png",
+              "nvd.png",
+              "osv.png",
+              "sonatype_oss.png",
+              "snyk.png",
               "slack.png",
               "cosign.png",
               "msteams.png",
