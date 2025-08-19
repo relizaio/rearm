@@ -649,6 +649,10 @@ public class ReleaseDatafetcher {
 		RelizaObject releaseRo = ord.isPresent() ? ord.get() : null;
 		ros.add(releaseRo);
 
+		if (null != inputArtifactUuid) {
+			ros.add(artifactService.getArtifactData(inputArtifactUuid).orElseThrow());
+		}
+
 		if (null != createArtifactInput.component()) {
 			ros.add(getComponentService.getComponentData(createArtifactInput.component()).orElseThrow());
 		}	
