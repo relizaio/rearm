@@ -378,12 +378,16 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
     if (rootComponentRef && bom.dependencies.length) {
       rootDepObj = bom.dependencies.find((dep: any) => dep.ref === rootComponentRef)
 
-      if (rootDepObj && rootDepObj.dependsOn.length && bom.components && bom.components.length) {
+      if (rootDepObj && rootDepObj.dependsOn && Array.isArray(rootDepObj.dependsOn) && rootDepObj.dependsOn.length && bom.components && bom.components.length) {
         newBom.components = bom.components.filter((comp: any) => {
           return rootDepObj.dependsOn.includes(comp["bom-ref"])
         })
         newBom.dependencies = []
-        newBom.dependencies[0] = rootDepObj
+        // Ensure dependsOn remains an array
+        newBom.dependencies[0] = {
+          ...rootDepObj,
+          dependsOn: Array.isArray(rootDepObj.dependsOn) ? rootDepObj.dependsOn : []
+        }
       }
     }
 
@@ -563,10 +567,17 @@ function attachRebomToolToBom(finalBom: any): any {
 }
 
 function computeRootDepIndex (bom: any) : number {
-    const rootComponentPurl: string = decodeURIComponent(bom.metadata.component["bom-ref"])
+    const rootComponentPurl: string = bom.metadata.component["bom-ref"]
     let rootdepIndex : number = bom.dependencies?.findIndex((dep: any) => {
         return dep.ref === rootComponentPurl
     })
+    if (rootdepIndex < 0) {
+        // Try with decoded comparison
+        const decodedRootPurl = decodeURIComponent(rootComponentPurl)
+        rootdepIndex = bom.dependencies.findIndex((dep: any) => {
+            return decodeURIComponent(dep.ref) === decodedRootPurl
+        })
+    }
     if (rootdepIndex < 0) {
         const versionStrippedRootComponentPurl = rootComponentPurl.split("@")[0]
         rootdepIndex = bom.dependencies.findIndex((dep: any) => {
