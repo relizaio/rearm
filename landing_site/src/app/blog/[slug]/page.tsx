@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
     title,
     description,
     alternates: { canonical: url },
-    openGraph: { title, description, url, type: "article", siteName: "ReARM by Reliza" },
+    openGraph: { title, description, url, type: "article", siteName: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza" },
     twitter: { card: "summary", title, description },
   };
 }

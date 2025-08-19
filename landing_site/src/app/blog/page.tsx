@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getAllPosts } from "../../lib/posts";
 
 export const metadata = {
-  title: "Blog - ReARM by Reliza",
+  title: "Blog - ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
   description: "Articles and updates about ReARM, SBOM/xBOM, TEA, and supply chain security.",
 };
 

@@ -20,21 +20,21 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ReARM by Reliza",
+  title: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
   description:
     "Supply Chain Security and Digital Asset Management for Releases, SBOMs, xBOMs, and Security Artifacts.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com"),
   openGraph: {
-    title: "ReARM by Reliza",
+    title: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
     description:
       "Supply Chain Security and Digital Asset Management for Releases, SBOMs, xBOMs, and Security Artifacts.",
     url: "/",
-    siteName: "ReARM by Reliza",
+    siteName: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "ReARM by Reliza",
+    title: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
     description:
       "Supply Chain Security and Digital Asset Management for Releases, SBOMs, xBOMs, and Security Artifacts.",
   },

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import PricingPlan from "@/components/PricingPlan";
 
 export const metadata: Metadata = {
-  title: "Pricing - ReARM by Reliza",
+  title: "Pricing - ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
   description: "ReARM pricing plans: Community Edition, Pro (Startup/Standard), and Enterprise.",
 };
 
