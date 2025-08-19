@@ -29,7 +29,7 @@ export default function Home() {
           src="https://d7ge14utcyki8.cloudfront.net/ReARM_Demo_Video.mp4" 
           width="100%" 
           height="100%" 
-          allow="autoplay; fullscreen; picture-in-picture" 
+          allow="fullscreen; picture-in-picture" 
           title="ReARM Demo Walkthrough"
         />
       </div>
