@@ -1,3 +1,15 @@
+# Dependencies and build artifacts
 node_modules
-**/node_modules
-**/dist
+.next
+out
+
+# VCS
+.git
+.gitignore
+
+# OS/editor files
+.DS_Store
+*.log
+
+# Docker context noise
+Dockerfile
