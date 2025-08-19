@@ -172,6 +172,15 @@ public class BranchDataFetcher {
 				}
 			});
 		}
+		if (null != updateBranchInput.getDependencies() && !updateBranchInput.getDependencies().isEmpty()) {
+			updateBranchInput.getDependencies().forEach((dep) -> {
+				roList.add(branchService.getBranchData(dep.getBranch()).orElseThrow());
+				if (null != dep.getRelease()) {
+					roList.add(sharedReleaseService.getReleaseData(dep.getRelease()).orElseThrow());
+				}
+			});
+		}
+		
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), roList, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
