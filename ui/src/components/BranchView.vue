@@ -708,7 +708,6 @@ const resetComparison = function () {
     releasesToCompare.value = []
     // uncheck checkboxes
     Object.keys(comparisonCheckboxes.value).forEach(checkbox => {
-        console.log('unchecking = ' + checkbox)
         comparisonCheckboxes.value[checkbox] = false
     })
 }
@@ -741,7 +740,6 @@ async function onCreated () {
     const tagKeyMap: any = {}
     rlz.forEach((r: any) => {
         if (r.tags && r.tags.length) {
-            console.log(r.tags)
             const tagKeyArr = r.tags.map((t: any) => t.key)
             if (tagKeyArr && tagKeyArr.length) {
                 tagKeyArr.forEach((tk: string) => {tagKeyMap[tk] = true})
@@ -972,10 +970,29 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
                         uuid
                         version
                         org
-                        artifacts
                         artifactDetails {
                             uuid
                             metrics { dependencyTrackFullUri }
+                        }
+                        sourceCodeEntryDetails {
+                            artifactDetails {
+                                uuid
+                                metrics { dependencyTrackFullUri }
+                            }
+                        }
+                        inboundDeliverableDetails {
+                            artifactDetails {
+                                uuid
+                                metrics { dependencyTrackFullUri }
+                            }
+                        }
+                        variantDetails {
+                            outboundDeliverableDetails {
+                                artifactDetails {
+                                    uuid
+                                    metrics { dependencyTrackFullUri }
+                                }
+                            }
                         }
                         metrics {
                             vulnerabilityDetails { purl vulnId severity }
@@ -994,7 +1011,26 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
         if (releaseData) {
             // populate per-release context for D-Track linking
             currentReleaseOrgUuid.value = releaseData.org || ''
-            currentReleaseArtifacts.value = Array.isArray(releaseData.artifactDetails) ? releaseData.artifactDetails : []
+            const releaseOwnArtifacts = Array.isArray(releaseData.artifactDetails) ? releaseData.artifactDetails : []
+            const releaseInboundArtifacts =
+                (Array.isArray(releaseData?.inboundDeliverableDetails)
+                    ? releaseData.inboundDeliverableDetails
+                    : (releaseData?.inboundDeliverableDetails ? [releaseData.inboundDeliverableDetails] : [])
+                ).flatMap((e: any) => e?.artifactDetails ?? []);
+            const releaseVariantArtifacts = (
+                Array.isArray(releaseData?.variantDetails)
+                    ? releaseData.variantDetails
+                    : (releaseData?.variantDetails ? [releaseData.variantDetails] : [])
+            )
+                .flatMap((v: any) => v?.outboundDeliverableDetails ?? [])
+                .flatMap((d: any) => d?.artifactDetails ?? []);
+            const releaseSourceCodeArtifacts =
+                (Array.isArray(releaseData?.sourceCodeEntryDetails)
+                    ? releaseData.sourceCodeEntryDetails
+                    : (releaseData?.sourceCodeEntryDetails ? [releaseData.sourceCodeEntryDetails] : [])
+                ).flatMap((e: any) => e?.artifactDetails ?? []);
+            const releaseArtifacts = [...releaseOwnArtifacts, ...releaseInboundArtifacts, ...releaseVariantArtifacts, ...releaseSourceCodeArtifacts]
+            currentReleaseArtifacts.value = releaseArtifacts
             const projectUuids: string[] = []
             currentReleaseArtifacts.value.forEach((artifact: any) => {
                 if (artifact.metrics && artifact.metrics.dependencyTrackFullUri) {

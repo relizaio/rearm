@@ -2551,18 +2551,14 @@ const changelogTableFields: DataTableColumns<any> = [
                                 await Swal.fire({
                                     icon: 'warning',
                                     title: 'Not Found',
-                                    text: 'Purl not found in known SBOMs',
-                                    timer: 2500,
-                                    showConfirmButton: false
+                                    text: 'Purl not found in known SBOMs'
                                 })
                             }
                         } else {
                             await Swal.fire({
                                 icon: 'warning',
                                 title: 'Not Found',
-                                text: 'Purl not found in known SBOMs',
-                                timer: 2500,
-                                showConfirmButton: false
+                                text: 'Purl not found in known SBOMs'
                             })
                         }
                     }
