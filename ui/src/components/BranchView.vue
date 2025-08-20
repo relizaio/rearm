@@ -280,7 +280,6 @@ import graphqlQueries  from '@/utils/graphqlQueries'
 import { Copy, LayoutColumns, Filter, Trash } from '@vicons/tabler'
 import { Edit24Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
-import { SecurityUpdateWarningOutlined } from '@vicons/material'
 import { processMetricsData, buildVulnerabilityColumns } from '@/utils/metrics'
 
 async function loadApprovalMatrix (org: string, resourceGroup: string) {
@@ -915,11 +914,11 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: help;'}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: help;'}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: help;'}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: help;'}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: help;'}, row.metrics.unassigned)
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -932,20 +931,10 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: help;'}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: help;'}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: help;'}, row.metrics.policyViolationsOperationalTotal)
-                const detailedMetricsEl = h(
-                    NIcon,
-                    {
-                        title: 'View Detailed Vulnerability, Weakness and Violation Data',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)
-                    },
-                    { default: () => h(SecurityUpdateWarningOutlined) }
-                )
-                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl, detailedMetricsEl])]
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.policyViolationsOperationalTotal)
+                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
             return els

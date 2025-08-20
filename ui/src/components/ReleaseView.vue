@@ -164,23 +164,15 @@
                     </n-gi>
                     <n-gi span="2">
                         <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
-                            <span title="Criticial Severity Vulnerabilities" class="circle" style="background: #f86c6b; cursor: help;">{{ updatedRelease.metrics.critical }}</span>    
-                            <span title="High Severity Vulnerabilities" class="circle" style="background: #fd8c00; cursor: help;">{{ updatedRelease.metrics.high }}</span>
-                            <span title="Medium Severity Vulnerabilities" class="circle" style="background: #ffc107; cursor: help;">{{ updatedRelease.metrics.medium }}</span>
-                            <span title="Low Severity Vulnerabilities" class="circle" style="background: #4dbd74; cursor: help;">{{ updatedRelease.metrics.low }}</span>
-                            <span title="Vulnerabilities with Unassigned Severity" class="circle" style="background: #777; cursor: help;">{{ updatedRelease.metrics.unassigned }}</span>
+                            <span title="Criticial Severity Vulnerabilities" class="circle" style="background: #f86c6b; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">{{ updatedRelease.metrics.critical }}</span>    
+                            <span title="High Severity Vulnerabilities" class="circle" style="background: #fd8c00; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">{{ updatedRelease.metrics.high }}</span>
+                            <span title="Medium Severity Vulnerabilities" class="circle" style="background: #ffc107; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">{{ updatedRelease.metrics.medium }}</span>
+                            <span title="Low Severity Vulnerabilities" class="circle" style="background: #4dbd74; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">{{ updatedRelease.metrics.low }}</span>
+                            <span title="Vulnerabilities with Unassigned Severity" class="circle" style="background: #777; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">{{ updatedRelease.metrics.unassigned }}</span>
                             <div style="width: 30px;"></div>
-                            <span title="Licensing Policy Violations" class="circle" style="background: blue; cursor: help;">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
-                            <span title="Security Policy Violations" class="circle" style="background: red; cursor: help;">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
-                            <span title="Operational Policy Violations" class="circle" style="background: grey; cursor: help;">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
-                            <n-icon 
-                                title="View Detailed Vulnerability, Weakness and Violation Data for Release"
-                                class="icons clickable"
-                                size="25"
-                                style="margin-left: 10px;"
-                                @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">
-                                <SecurityUpdateWarningOutlined />
-                            </n-icon>
+                            <span title="Licensing Policy Violations" class="circle" style="background: blue; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
+                            <span title="Security Policy Violations" class="circle" style="background: red; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
+                            <span title="Operational Policy Violations" class="circle" style="background: grey; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid)">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
                         </n-space>
                     </n-gi>
                     <n-gi span="1">
@@ -534,7 +526,6 @@ import { CirclePlus, ClipboardCheck, Download, Edit, GitCompare, Link, Trash, Re
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined } from '@vicons/antd'
-import { SecurityUpdateWarningOutlined } from '@vicons/material'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, NotificationType, DataTableColumns, NModal } from 'naive-ui'
 import Swal from 'sweetalert2'
@@ -2112,11 +2103,11 @@ const artifactsTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: help;'}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: help;'}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: help;'}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: help;'}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: help;'}, row.metrics.unassigned)
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid)}, row.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid)}, row.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid)}, row.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid)}, row.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid)}, row.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2129,9 +2120,9 @@ const artifactsTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: help;'}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: help;'}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: help;'}, row.metrics.policyViolationsOperationalTotal)
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid)}, row.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid)}, row.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid)}, row.metrics.policyViolationsOperationalTotal)
                 els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2164,17 +2155,6 @@ const artifactsTableFields: DataTableColumns<any> = [
                     onClick: () => uploadNewBomVersion(row)
                 }, { default: () => h(Edit) })
             els.push(uploadEl)
-
-            if (row.metrics && row.metrics.lastScanned) {
-                const detailedMetricsEl = h(NIcon,
-                    {
-                        title: 'View Detailed Vulnerability, Weakness and Violation Data',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => viewDetailedVulnerabilities(row.uuid)
-                    }, { default: () => h(SecurityUpdateWarningOutlined) })
-                els.push(detailedMetricsEl)
-            }
 
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
                 const dtrackElIcon = h(NIcon,
