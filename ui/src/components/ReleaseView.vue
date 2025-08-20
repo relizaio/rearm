@@ -64,10 +64,13 @@
                     <n-form-item>
                         Top Level Dependencies Only:<n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
+                    <n-form-item>
+                        Ignore Dev Dependencies:<n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
+                    </n-form-item>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
                             :disabled="bomExportPending"
-                            @click="exportReleaseSbom(tldOnly, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
+                            @click="exportReleaseSbom(tldOnly, ignoreDev, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
                             <span v-if="bomExportPending" class="ml-2">Exporting...</span>
                             <span v-else>Export</span>
                         </n-button>
@@ -696,6 +699,7 @@ const rebomTypes: ComputedRef<any[]> = computed((): any[] => {
 const exportBomType: Ref<string> = ref('SBOM')
 const selectedRebomType: Ref<string> = ref('')
 const tldOnly: Ref<boolean> = ref(true)
+const ignoreDev: Ref<boolean> = ref(false)
 const selectedBomStructureType: Ref<string> = ref('FLAT')
 const bomExportQuery: ComputedRef<string> = computed((): string => {
     let queryOptions = '?tldOnly=false'
@@ -1604,18 +1608,19 @@ const downloadRawArtifact = async (art: any) => {
     })
 }
 
-async function exportReleaseSbom (tldOnly: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
+async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
     try {
         bomExportPending.value = true
         const gqlResp: any = await graphqlClient.mutate({
             mutation: gql`
-                mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType) {
-                    releaseSbomExport(release: $release, tldOnly: $tldOnly, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType)
+                mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType) {
+                    releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType)
                 }
             `,
             variables: {
                 release: updatedRelease.value.uuid,
                 tldOnly: tldOnly,
+                ignoreDev: ignoreDev,
                 structure: selectedBomStructureType,
                 belongsTo: selectedRebomType ? selectedRebomType : null,
                 mediaType: mediaType.toUpperCase()
