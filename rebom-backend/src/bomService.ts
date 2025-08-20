@@ -312,7 +312,7 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
   export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: string): Promise<any> {
     try {
       let mergedBom = null
-      const bomObjs = await findBomsForMerge(ids, rebomOptions.tldOnly, org)
+      const bomObjs = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
       if (bomObjs && bomObjs.length)
         mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
       return mergedBom
@@ -340,13 +340,22 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
     }
   }
 
-  async function findBomsForMerge(ids: string[], tldOnly: boolean, org: string) {
+  async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: boolean, org: string) {
     logger.info(`findBomsForMerge: ${ids}`)
     let bomRecords =  await Promise.all(ids.map(async(id) => findBomObjectById(id, org)))
     let bomObjs: any[] = []
     logger.info(`bomrecords found # ${bomRecords.length}`)
     if (bomRecords && bomRecords.length) {
-      bomObjs = bomRecords.map(bomRecord => tldOnly ? extractTldFromBom(bomRecord) : bomRecord)
+      bomObjs = bomRecords.map(bomRecord => {
+        let processedBom = bomRecord;
+        if (tldOnly) {
+          processedBom = extractTldFromBom(processedBom);
+        }
+        if (ignoreDev) {
+          processedBom = extractDevFilteredBom(processedBom);
+        }
+        return processedBom;
+      });
     }
     return bomObjs
   }
@@ -395,7 +404,104 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
     logger.info(`Bom components length FATER tld extract: ${finalBom.components.length}`)
 
     return finalBom
+}
+
+/**
+ * Development dependency detection patterns for different ecosystems
+ */
+const DEV_DEPENDENCY_PATTERNS = {
+  maven: {
+    propertyName: 'cdx:maven:component_scope',
+    devValues: ['test']  // 'runtime' and 'compile' are production
+  },
+  npm: {
+    propertyName: 'cdx:npm:package:development', 
+    devValues: ['true']
+  },
+  nuget: {
+    propertyName: 'cdx:nuget:development',
+    devValues: ['true']
+  },
+  golang: {
+    propertyName: 'cdx:go:build_tag',
+    devValues: ['test', 'testing', 'dev', 'development']
+  },
+  // Extensible for future ecosystems
+  gradle: {
+    propertyName: 'cdx:gradle:component_scope',
+    devValues: ['testImplementation', 'testCompile', 'testRuntime']
   }
+};
+
+/**
+ * Checks if a component is a development dependency based on its properties
+ */
+function isDevDependency(component: any): boolean {
+  if (!component.properties || !Array.isArray(component.properties)) {
+    return false;
+  }
+
+  for (const [ecosystem, pattern] of Object.entries(DEV_DEPENDENCY_PATTERNS)) {
+    const property = component.properties.find((prop: any) => 
+      prop.name === pattern.propertyName
+    );
+    
+    if (property && pattern.devValues.includes(property.value)) {
+      logger.debug(`Component ${component['bom-ref']} marked as dev dependency (${ecosystem}): ${property.name}=${property.value}`);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Filters out development dependencies from BOM components and dependencies
+ * Similar to extractTldFromBom but focuses on dev dependency filtering
+ */
+function extractDevFilteredBom(bom: any): any {
+  logger.info(`Filtering dev dependencies - original components: ${bom.components?.length || 0}`);
+  
+  if (!bom.components || !Array.isArray(bom.components)) {
+    logger.warn('No components found in BOM for dev filtering');
+    return bom;
+  }
+
+  // Filter out dev dependencies from components
+  const prodComponents = bom.components.filter((component: any) => !isDevDependency(component));
+  const filteredComponentRefs = new Set(prodComponents.map((comp: any) => comp['bom-ref']));
+  
+  logger.info(`After dev filtering - remaining components: ${prodComponents.length}`);
+  
+  // Update dependencies to remove references to dev dependencies
+  let newDependencies = [];
+  if (bom.dependencies && Array.isArray(bom.dependencies)) {
+    newDependencies = bom.dependencies.map((dep: any) => {
+      if (!dep.dependsOn || !Array.isArray(dep.dependsOn)) {
+        return dep;
+      }
+      
+      // Filter dependsOn to only include production components
+      const filteredDependsOn = dep.dependsOn.filter((ref: string) => 
+        filteredComponentRefs.has(ref)
+      );
+      
+      return {
+        ...dep,
+        dependsOn: filteredDependsOn
+      };
+    }).filter((dep: any) => {
+      // Keep dependency if its ref is in production components or if it's the root component
+      return filteredComponentRefs.has(dep.ref) || dep.ref === bom.metadata?.component?.['bom-ref'];
+    });
+  }
+
+  return {
+    ...bom,
+    components: prodComponents,
+    dependencies: newDependencies
+  };
+}
 
 
 

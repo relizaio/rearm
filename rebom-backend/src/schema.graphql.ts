@@ -54,6 +54,7 @@ const typeDefs = gql`
     notes: String
     stripBom: String
     serialNumber: ID
+    ignoreDev: Boolean
   }
 
   type BomDiffResult {
@@ -114,6 +115,7 @@ input RebomOptions {
     bomDigest: String
     purl: String
     rootComponentMergeMode: RootComponentMergeMode
+    ignoreDev: Boolean
   }
 
   input BomSearch {

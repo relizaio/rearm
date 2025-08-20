@@ -72,7 +72,8 @@ export type RebomOptions = {
     stripBom: string,
     bomVersion: string,
     purl?: string,
-    rootComponentMergeMode?: RootComponentMergeMode
+    rootComponentMergeMode?: RootComponentMergeMode,
+    ignoreDev?: boolean
 }
 
 export type BomSearch = {
