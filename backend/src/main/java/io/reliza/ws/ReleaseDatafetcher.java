@@ -220,6 +220,7 @@ public class ReleaseDatafetcher {
 	public String releaseSbomExport(
 			@InputArgument("release") String releaseUuidStr,
 			@InputArgument("tldOnly") Boolean tldOnly,
+			@InputArgument("ignoreDev") Boolean ignoreDev,
 			@InputArgument("structure") BomStructureType structure,
 			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
 			@InputArgument("mediaType") BomMediaType mediaType
@@ -242,7 +243,7 @@ public class ReleaseDatafetcher {
 			mediaType = BomMediaType.JSON;
 		}
 		log.info("mediaType: {}", mediaType);
-		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, belongsTo, structure, mediaType, rd.getOrg(), wu);
+		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

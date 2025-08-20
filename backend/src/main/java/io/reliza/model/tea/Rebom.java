@@ -26,6 +26,7 @@ public class Rebom {
         ArtifactBelongsTo belongsTo,
         String hash,
         Boolean tldOnly,
+        Boolean ignoreDev,
         BomStructureType structure,
         String notes,
         StripBom stripBom,
@@ -36,23 +37,31 @@ public class Rebom {
     ) {
         // create opts
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl) {
-            this(name, group, version, belongsTo, hash, tldOnly, structure, notes, stripBom, serialNumber, bomDigest, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
+            this(name, group, version, belongsTo, hash, tldOnly, false, structure, notes, stripBom, serialNumber, bomDigest, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
+        }
+
+        public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl) {
+            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, structure, notes, stripBom, serialNumber, bomDigest, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
         }
 
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly,  BomStructureType structure, RootComponentMergeMode rootComponentMergeMode) {
-            this(null, null,  null, belongsTo, null, tldOnly, structure, "sent from ReArm", StripBom.TRUE, "", "", "", rootComponentMergeMode);
+            this(null, null,  null, belongsTo, null, tldOnly, false, structure, "sent from ReArm", StripBom.TRUE, "", "", "", rootComponentMergeMode);
         }
         public RebomOptions() {
-            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "", "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
+            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, false, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "", "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
         }
     
 
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, StripBom stripBom, String purl) {
-            this(name, group,  version, belongsTo, hash, false, BomStructureType.FLAT, "sent from ReArm", stripBom, "", "", purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
+            this(name, group,  version, belongsTo, hash, false, false, BomStructureType.FLAT, "sent from ReArm", stripBom, "", "", purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
         }
         // merge opts
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly,  BomStructureType structure) {
-            this(null, null,  null, belongsTo, null, tldOnly, structure, "sent from ReArm", StripBom.TRUE, "", "", "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
+            this(null, null,  null, belongsTo, null, tldOnly, false, structure, "sent from ReArm", StripBom.TRUE, "", "", "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
+        }
+
+        public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure) {
+            this(null, null,  null, belongsTo, null, tldOnly, ignoreDev, structure, "sent from ReArm", StripBom.TRUE, "", "", "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT);
         }
     }
 

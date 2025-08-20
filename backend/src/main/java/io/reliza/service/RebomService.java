@@ -168,7 +168,7 @@ public class RebomService {
         return bomJson;
     }
     
-    public record BomMeta (String name, String group, String bomVersion, String hash, String belongsTo, Boolean tldOnly, String structure,
+    public record BomMeta (String name, String group, String bomVersion, String hash, String belongsTo, Boolean tldOnly, Boolean ignoreDev, String structure,
     		String notes, String stripBom, String serialNumber) {}
     
     public List<BomMeta> resolveBomMetas(UUID bomSerialNumber, UUID org) {
@@ -181,6 +181,7 @@ public class RebomService {
 					    hash
 					    belongsTo
 					    tldOnly
+					    ignoreDev
 					    serialNumber
                     }
                 }""";

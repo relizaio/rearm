@@ -130,7 +130,7 @@ type Mutation {
 	removeReleaseArtifact(artifactUuid: ID!, releaseUuid: ID!): Boolean
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
-	releaseSbomExport(release: ID!, tldOnly: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType): String
+	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType): String
 
 	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
 
@@ -1237,6 +1237,7 @@ input IntegrationInput {
 input ReleaseSbomExportInput {
 	release: ID
 	tldOnly: Boolean
+	ignoreDev: Boolean
 	structure: BomStructureType
 	belongsTo: ArtifactBelongsToEnum
 }
