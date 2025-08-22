@@ -174,7 +174,7 @@ export function buildVulnerabilityColumns(
             window.open(href, '_blank')
           }
         }
-        if (id.startsWith('CVE-')) {
+        if (id.startsWith('CVE-') || id.startsWith('GHSA-')) {
           const href = `https://osv.dev/vulnerability/${id}`
           return h('a', {
             href,
