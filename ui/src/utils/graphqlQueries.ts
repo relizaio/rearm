@@ -385,17 +385,6 @@ const singleReleaseDataNoParent = `
         }
         lifecycle
     }
-    ticketDetails {
-        uuid
-        identifier
-        status
-        org
-        summary
-        content
-        doneInRelease
-        dateDone
-        uri
-    }
     tags {
         key
         value
