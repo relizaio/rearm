@@ -63,15 +63,15 @@ public class ArtifactWs {
     ) throws Exception {
         JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
         var oud = userService.getUserDataByAuth(auth);
-        Optional<ArtifactData> oad = (version == null)
-            ? artifactService.getArtifactData(uuid)
-            : artifactService.getArtifactDataByVersion(uuid, version);
-        log.debug("oad is present? {}", oad.isPresent());
-        log.debug("oad is  {}", oad.get());
-		RelizaObject ro = oad.isPresent() ? oad.get() : null;
+		Optional<ArtifactData> latestOad = artifactService.getArtifactData(uuid);
+        log.debug("latestOad is present? {}", latestOad.isPresent());
+        log.debug("latestOad is  {}", latestOad.get());
+		RelizaObject ro = latestOad.isPresent() ? latestOad.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
-		
 		if (response.isCommitted()) return null;
+        Optional<ArtifactData> oad = (version == null)
+            ? latestOad
+            : artifactService.getArtifactDataByVersion(uuid, version);
 		if (oad.isEmpty()) {
             throw new RelizaException("Artifact not found; uuid: " + uuid.toString());
         }
@@ -90,15 +90,15 @@ public class ArtifactWs {
     ) throws Exception {
         JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
         var oud = userService.getUserDataByAuth(auth);
-		Optional<ArtifactData> oad = (version == null)
-    ? artifactService.getArtifactData(uuid)
-    : artifactService.getArtifactDataByVersion(uuid, version);
-        log.debug("oad is present? {}", oad.isPresent());
-        log.debug("oad is  {}", oad.get());
-		RelizaObject ro = oad.isPresent() ? oad.get() : null;
+		Optional<ArtifactData> latestOad = artifactService.getArtifactData(uuid);
+        log.debug("latestOad is present? {}", latestOad.isPresent());
+        log.debug("latestOad is  {}", latestOad.get());
+		RelizaObject ro = latestOad.isPresent() ? latestOad.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
-		
-		if (response.isCommitted()) return null;
+        if (response.isCommitted()) return null;
+		Optional<ArtifactData> oad = (version == null)
+            ? latestOad
+            : artifactService.getArtifactDataByVersion(uuid, version);		
 		if (oad.isEmpty()) {
             throw new RelizaException("Artifact not found; uuid: " + uuid.toString());
         }
