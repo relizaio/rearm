@@ -100,6 +100,76 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		OCI_STORAGE,
 		REARM // custom digest calculated only on components and dependencies
 	}
+	
+	/**
+	 * Immutable snapshot of an artifact version for version history
+	 * Preserves essential artifact state at a specific point in time
+	 */
+	public record ArtifactVersionSnapshot(
+		UUID originalUuid,        // CRITICAL: Preserve original UUID for replacement scenarios
+		ZonedDateTime versionDate,
+		String version,
+		ArtifactType type,
+		String displayIdentifier,
+		List<Link> downloadLinks,
+		List<InventoryType> inventoryTypes,
+		BomFormat bomFormat,
+		StoredIn storedIn,
+		InternalBom internalBom,
+		Set<DigestRecord> digestRecords,
+		List<TagRecord> tags,
+		StatusEnum status,
+		DependencyTrackIntegration metrics,
+		List<UUID> artifacts
+	) {
+		/**
+		 * Creates a version snapshot from current ArtifactData state
+		 */
+		public static ArtifactVersionSnapshot fromArtifactData(ArtifactData ad) {
+			return new ArtifactVersionSnapshot(
+				ad.getUuid(),
+				ZonedDateTime.now(),
+				ad.getVersion(),
+				ad.getType(),
+				ad.getDisplayIdentifier(),
+				ad.getDownloadLinks() != null ? new ArrayList<>(ad.getDownloadLinks()) : new ArrayList<>(),
+				ad.getInventoryTypes() != null ? new ArrayList<>(ad.getInventoryTypes()) : new ArrayList<>(),
+				ad.getBomFormat(),
+				ad.getStoredIn(),
+				ad.getInternalBom(),
+				ad.getDigestRecords() != null ? new LinkedHashSet<>(ad.getDigestRecords()) : new LinkedHashSet<>(),
+				ad.getTags() != null ? new ArrayList<>(ad.getTags()) : new ArrayList<>(),
+				ad.getStatus(),
+				ad.getMetrics(),
+				ad.getArtifacts() != null ? new ArrayList<>(ad.getArtifacts()) : new ArrayList<>()
+			);
+		}
+		
+		/**
+		 * Converts an ArtifactVersionSnapshot back to ArtifactData for GraphQL response
+		 */
+		public static ArtifactData fromSnapshot(ArtifactVersionSnapshot snapshot) {
+			ArtifactData ad = new ArtifactData();
+			ad.setUuid(snapshot.originalUuid());
+			ad.setCreatedDate(snapshot.versionDate());
+			ad.setUpdatedDate(snapshot.versionDate());
+			ad.setVersion(snapshot.version());
+			ad.setType(snapshot.type());
+			ad.setDisplayIdentifier(snapshot.displayIdentifier());
+			ad.setDownloadLinks(snapshot.downloadLinks());
+			ad.setInventoryTypes(snapshot.inventoryTypes());
+			ad.setBomFormat(snapshot.bomFormat());
+			ad.setStoredIn(snapshot.storedIn());
+			ad.setInternalBom(snapshot.internalBom());
+			ad.setDigestRecords(snapshot.digestRecords());
+			ad.setTags(snapshot.tags());
+			ad.setStatus(snapshot.status());
+			ad.setMetrics(snapshot.metrics());
+			ad.setArtifacts(snapshot.artifacts());
+			// Note: previousVersions is intentionally not set to avoid infinite nesting
+			return ad;
+		}
+	}
 
 	public record DigestRecord(
 		TeaArtifactChecksumType algo, 
@@ -196,6 +266,10 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	 * Artifact may have its own artifacts - this is for signature related artifacts, maybe there will be more use cases discovered later
 	 */
 	private List<UUID> artifacts = new ArrayList<>();
+	
+	@Getter(AccessLevel.PUBLIC)
+	@Setter(AccessLevel.PRIVATE)
+	private List<ArtifactVersionSnapshot> previousVersions = new ArrayList<>();
 
 	// FIND OUT UNIQUENESS HERE?
 
@@ -261,5 +335,35 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		if (this.type == ArtifactType.SIGNATURE || this.type == ArtifactType.CERTIFICATE_PGP || this.type == ArtifactType.CERTIFICATE_X_509 
 				|| this.type == ArtifactType.PUBLIC_KEY || this.type == ArtifactType.SIGNED_PAYLOAD) return true;
 			else return false;
+	}
+	
+	/**
+	 * Adds a version snapshot to the history in chronological order
+	 * This is the only way to modify version history - maintains immutability from external access
+	 */
+	public void addVersionSnapshot(ArtifactVersionSnapshot snapshot) {
+		if (this.previousVersions == null) {
+			this.previousVersions = new ArrayList<>();
+		}
+		this.previousVersions.add(snapshot);
+	}
+	
+	/**
+	 * Transfers version history from another artifact (used during replacement scenarios)
+	 * Maintains chronological order by appending existing history first, then the replaced artifact
+	 */
+	public void transferVersionHistory(ArtifactData replacedArtifact) {
+		if (this.previousVersions == null) {
+			this.previousVersions = new ArrayList<>();
+		}
+		
+		// First, add all existing version history from the replaced artifact
+		if (replacedArtifact.getPreviousVersions() != null) {
+			this.previousVersions.addAll(replacedArtifact.getPreviousVersions());
+		}
+		
+		// Then add the replaced artifact itself as a version
+		ArtifactVersionSnapshot replacedSnapshot = ArtifactVersionSnapshot.fromArtifactData(replacedArtifact);
+		this.previousVersions.add(replacedSnapshot);
 	}
 }

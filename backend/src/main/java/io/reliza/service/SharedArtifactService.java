@@ -162,6 +162,16 @@ public class SharedArtifactService {
 		Optional<Artifact> oa = getArtifact(a.getUuid());
 		if (oa.isPresent()) {
 			log.debug("existing artifact object: {}", oa.get());
+			
+			// Create version snapshot of current state before updating
+			ArtifactData currentArtifactData = ArtifactData.dataFromRecord(oa.get());
+			ArtifactData.ArtifactVersionSnapshot currentSnapshot = ArtifactData.ArtifactVersionSnapshot.fromArtifactData(currentArtifactData);
+			
+			// Add version snapshot to the new artifact data
+			ArtifactData newArtifactData = Utils.OM.convertValue(recordData, ArtifactData.class);
+			newArtifactData.addVersionSnapshot(currentSnapshot);
+			recordData = Utils.dataToRecord(newArtifactData);
+			
 			auditService.createAndSaveAuditRecord(TableName.ARTIFACTS, a);
 			a.setLastUpdatedDate(ZonedDateTime.now());
 		}

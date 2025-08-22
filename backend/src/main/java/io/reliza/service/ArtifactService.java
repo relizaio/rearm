@@ -112,7 +112,28 @@ public class ArtifactService {
 		}
 		return aData;
 	}
-	
+
+    /**
+     * Returns the artifact data for a specific version. If version is null or matches the current version, returns the latest.
+     * Otherwise, searches previousVersions for a matching version.
+     */
+    public Optional<ArtifactData> getArtifactDataByVersion(UUID uuid, Integer version) {
+        Optional<ArtifactData> latestOpt = getArtifactData(uuid);
+        if (version == null || latestOpt.isEmpty()) return latestOpt;
+        ArtifactData latest = latestOpt.get();
+        if (latest.getVersion() != null && version.toString().equals(latest.getVersion())) {
+            return latestOpt;
+        }
+        if (latest.getPreviousVersions() != null) {
+            for (ArtifactData.ArtifactVersionSnapshot snap : latest.getPreviousVersions()) {
+                if (snap.version() != null && version.toString().equals(snap.version())) {
+                    return Optional.of(ArtifactData.ArtifactVersionSnapshot.fromSnapshot(snap));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
 	public List<Artifact> getArtifacts (Iterable<UUID> uuids) {
 		return (List<Artifact>) repository.findAllById(uuids);
 	}
@@ -275,6 +296,9 @@ public class ArtifactService {
 					log.error("Error reading Json", e);
 					throw new RelizaException(e.getMessage());
 				}
+				String newbomVerString = bomJson.get("version").asText();
+				Integer newBomVersion = Integer.valueOf(newbomVerString);
+				artifactDto.setVersion(newbomVerString);
 				//case of update
 				if(null != existingAd){
 					// find the existing artifact data
@@ -286,12 +310,8 @@ public class ArtifactService {
 					if(newBomSerial.startsWith("urn")){
 						newBomSerial = newBomSerial.replace("urn:uuid:","");
 					}
-					String newbomVerString = bomJson.get("version").toString();
-					Integer newBomVersion = Integer.valueOf(newbomVerString);
-
-					//validate and proceed accordingly
-
-							// compare if lesser
+					
+					// compare if lesser
 					// reject
 					if(oldBomSerial.equals(newBomSerial)){
 						if(newBomVersion <= oldBomVersion)
@@ -524,22 +544,56 @@ public class ArtifactService {
 		JsonNode bom;
 		try {
 			bom = rebomService.findBomByIdJson(id, org);
-		} catch (JsonProcessingException e) {
-			log.error("Error finding bom by ID", e);
-			throw new RelizaException(e.getMessage());
+		} catch (Exception e) {
+			throw new RelizaException("Error retrieving BOM for artifact: " + e.getMessage());
 		}
-		//
-		return bom.get("version").toString();
-	}
-	// public void updateArtifactManual(ArtifactData ad ,ArtifactDto artifactDto, UUID orgUuid, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws Exception{
+		
+		if (bom == null || bom.isEmpty()) {
+			throw new RelizaException("BOM not found for artifact");
+		}
 
-	// 	var newBom = Utils.readJsonFromResource(file);
+		JsonNode version = bom.get("version");
+		if (version != null) {
+			return version.asText();
+		}
 		
-	// 	String newBomSerial = newBom.get("serialNumber").textValue();
-		
-	// 	log.info("newBomSerial: {}", newBomSerial);
-	// 	if(newBomSerial.startsWith("urn")){
-	// 		newBomSerial = newBomSerial.replace("urn:uuid:","");
+		throw new RelizaException("Version not found in BOM");
+	}
+	
+	/**
+	 * Transfers version history from one artifact to another during replacement scenarios
+	 * @param oldArtifactUuid UUID of the artifact being replaced
+	 * @param newArtifactUuid UUID of the new artifact that should receive the version history
+	 * @param wu WhoUpdated information for audit trail
+	 * @return true if transfer was successful, false otherwise
+	 */
+	@Transactional
+	public boolean transferArtifactVersionHistory(UUID oldArtifactUuid, UUID newArtifactUuid, WhoUpdated wu) {
+		try {
+			Optional<ArtifactData> oldArtifactOpt = getArtifactData(oldArtifactUuid);
+			Optional<ArtifactData> newArtifactOpt = getArtifactData(newArtifactUuid);
+			
+			if (oldArtifactOpt.isPresent() && newArtifactOpt.isPresent()) {
+				ArtifactData newArtifact = newArtifactOpt.get();
+				ArtifactData oldArtifact = oldArtifactOpt.get();
+				
+				// Transfer version history from old artifact to new artifact
+				newArtifact.transferVersionHistory(oldArtifact);
+				
+				// Save the updated artifact with version history
+				Map<String, Object> artifactRecordData = Utils.dataToRecord(newArtifact);
+				Artifact newArtifactRecord = sharedArtifactService.getArtifact(newArtifactUuid).get();
+				sharedArtifactService.saveArtifact(newArtifactRecord, artifactRecordData, wu);
+				
+				return true;
+			}
+			
+			return false;
+		} catch (Exception e) {
+			log.error("Error transferring version history from {} to {}: {}", oldArtifactUuid, newArtifactUuid, e.getMessage());
+			return false;
+		}
+	}
 	// 	}
 	// 	String newbomVerString = newBom.get("version").toString();
 

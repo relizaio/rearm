@@ -54,15 +54,18 @@ public class ArtifactWs {
 
     @GetMapping("api/manual/v1/artifact/{uuid}/download")
     public Mono<ResponseEntity<byte[]>> downloadArtifact(
-    	@RequestHeader HttpHeaders headers,
+        @RequestHeader HttpHeaders headers,
         @PathVariable("uuid") UUID uuid,
+        @org.springframework.web.bind.annotation.RequestParam(value = "version", required = false) Integer version,
         ServletWebRequest request,
         @AuthenticationPrincipal OAuth2User oAuth2User,
         HttpServletResponse response
     ) throws Exception {
         JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
         var oud = userService.getUserDataByAuth(auth);
-		Optional<ArtifactData> oad = artifactService.getArtifactData(uuid);
+        Optional<ArtifactData> oad = (version == null)
+            ? artifactService.getArtifactData(uuid)
+            : artifactService.getArtifactDataByVersion(uuid, version);
         log.debug("oad is present? {}", oad.isPresent());
         log.debug("oad is  {}", oad.get());
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
@@ -78,15 +81,18 @@ public class ArtifactWs {
     }
     @GetMapping("api/manual/v1/artifact/{uuid}/rawdownload")
     public Mono<ResponseEntity<byte[]>> downloadRawArtifact(
-    	@RequestHeader HttpHeaders headers,
+        @RequestHeader HttpHeaders headers,
         @PathVariable("uuid") UUID uuid,
+        @org.springframework.web.bind.annotation.RequestParam(value = "version", required = false) Integer version,
         ServletWebRequest request,
         @AuthenticationPrincipal OAuth2User oAuth2User,
         HttpServletResponse response
     ) throws Exception {
         JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
         var oud = userService.getUserDataByAuth(auth);
-		Optional<ArtifactData> oad = artifactService.getArtifactData(uuid);
+		Optional<ArtifactData> oad = (version == null)
+    ? artifactService.getArtifactData(uuid)
+    : artifactService.getArtifactDataByVersion(uuid, version);
         log.debug("oad is present? {}", oad.isPresent());
         log.debug("oad is  {}", oad.get());
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;

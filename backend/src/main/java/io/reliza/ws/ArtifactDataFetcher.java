@@ -74,6 +74,33 @@ public class ArtifactDataFetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "artifactVersionHistory")
+	public List<ArtifactData> getArtifactVersionHistory(@InputArgument("artifactUuid") String artifactUuidStr) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID artifactUuid = UUID.fromString(artifactUuidStr);
+		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
+		RelizaObject ro = oad.isPresent() ? oad.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		
+		ArtifactData currentArtifact = oad.get();
+		List<ArtifactData> versionHistory = new LinkedList<>();
+		
+		// Convert version snapshots back to ArtifactData objects
+		if (currentArtifact.getPreviousVersions() != null) {
+			// Return in reverse chronological order (newest first)
+			List<ArtifactData.ArtifactVersionSnapshot> snapshots = currentArtifact.getPreviousVersions();
+			for (int i = snapshots.size() - 1; i >= 0; i--) {
+				ArtifactData.ArtifactVersionSnapshot snapshot = snapshots.get(i);
+				ArtifactData historicalArtifact = ArtifactData.ArtifactVersionSnapshot.fromSnapshot(snapshot);
+				versionHistory.add(historicalArtifact);
+			}
+		}
+		
+		return versionHistory;
+	}
+
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifactTypes")
 	public Set<String> getArtifactTypes() {
 		var valList = Arrays.asList(ArtifactType.values());

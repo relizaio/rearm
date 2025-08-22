@@ -781,6 +781,9 @@ public class ReleaseDatafetcher {
 				} else { //default case, attach to the release
 					releaseService.replaceArtifact(inputArtifactUuid, artId, ord.get().getUuid(),  wu);
 				}
+				
+				// Transfer version history from old artifact to new artifact
+				artifactService.transferArtifactVersionHistory(inputArtifactUuid, artId, wu);
 			} else {
 				var releases = sharedReleaseService.findReleasesByReleaseArtifact(artId, rd.getOrg());
 				releases.forEach(r -> acollectionService.resolveReleaseCollection(r.getUuid(), wu));
