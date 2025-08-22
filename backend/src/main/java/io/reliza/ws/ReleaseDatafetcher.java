@@ -96,6 +96,7 @@ import io.reliza.service.IntegrationService.ComponentPurlToDtrackProject;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.RebomService;
 import io.reliza.service.ReleaseService;
+import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
@@ -143,6 +144,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	ArtifactService artifactService;
+	
+	@Autowired
+	SharedArtifactService sharedArtifactService;
 	
 	@Autowired
 	GetComponentService getComponentService;
@@ -783,7 +787,7 @@ public class ReleaseDatafetcher {
 				}
 				
 				// Transfer version history from old artifact to new artifact
-				artifactService.transferArtifactVersionHistory(inputArtifactUuid, artId, wu);
+				sharedArtifactService.transferArtifactVersionHistory(inputArtifactUuid, artId, wu);
 			} else {
 				var releases = sharedReleaseService.findReleasesByReleaseArtifact(artId, rd.getOrg());
 				releases.forEach(r -> acollectionService.resolveReleaseCollection(r.getUuid(), wu));

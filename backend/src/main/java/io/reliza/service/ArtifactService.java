@@ -30,7 +30,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import io.reliza.common.CommonVariables;
@@ -560,40 +559,6 @@ public class ArtifactService {
 		throw new RelizaException("Version not found in BOM");
 	}
 	
-	/**
-	 * Transfers version history from one artifact to another during replacement scenarios
-	 * @param oldArtifactUuid UUID of the artifact being replaced
-	 * @param newArtifactUuid UUID of the new artifact that should receive the version history
-	 * @param wu WhoUpdated information for audit trail
-	 * @return true if transfer was successful, false otherwise
-	 */
-	@Transactional
-	public boolean transferArtifactVersionHistory(UUID oldArtifactUuid, UUID newArtifactUuid, WhoUpdated wu) {
-		try {
-			Optional<ArtifactData> oldArtifactOpt = getArtifactData(oldArtifactUuid);
-			Optional<ArtifactData> newArtifactOpt = getArtifactData(newArtifactUuid);
-			
-			if (oldArtifactOpt.isPresent() && newArtifactOpt.isPresent()) {
-				ArtifactData newArtifact = newArtifactOpt.get();
-				ArtifactData oldArtifact = oldArtifactOpt.get();
-				
-				// Transfer version history from old artifact to new artifact
-				newArtifact.transferVersionHistory(oldArtifact);
-				
-				// Save the updated artifact with version history
-				Map<String, Object> artifactRecordData = Utils.dataToRecord(newArtifact);
-				Artifact newArtifactRecord = sharedArtifactService.getArtifact(newArtifactUuid).get();
-				sharedArtifactService.saveArtifact(newArtifactRecord, artifactRecordData, wu);
-				
-				return true;
-			}
-			
-			return false;
-		} catch (Exception e) {
-			log.error("Error transferring version history from {} to {}: {}", oldArtifactUuid, newArtifactUuid, e.getMessage());
-			return false;
-		}
-	}
 	// 	}
 	// 	String newbomVerString = newBom.get("version").toString();
 

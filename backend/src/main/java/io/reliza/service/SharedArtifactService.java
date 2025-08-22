@@ -148,6 +148,30 @@ public class SharedArtifactService {
 	}
 	
 	
+	/**
+	 * Saves an artifact without adding a version snapshot.
+	 * Used for version history transfers where we don't want to create a new snapshot.
+	 */
+	@Transactional
+	protected Artifact saveArtifactWithoutSnapshot(Artifact a, Map<String, Object> recordData, WhoUpdated wu) {
+		if(recordData.containsKey("uuid") && null != recordData.get("uuid") && recordData.get("uuid").toString().equals(a.getUuid().toString())){
+			log.debug("record and object ids equal");
+		}else{
+			log.warn("unequal record and object id");
+			log.warn("record data: {}", recordData);
+			log.warn("art object: {}", a);
+		}
+		
+		Optional<Artifact> oa = getArtifact(a.getUuid());
+		if (oa.isPresent()) {
+			auditService.createAndSaveAuditRecord(TableName.ARTIFACTS, a);
+			a.setLastUpdatedDate(ZonedDateTime.now());
+		}
+		a.setRecordData(recordData);
+		a = (Artifact) WhoUpdated.injectWhoUpdatedData(a, wu);
+		return repository.save(a);
+	}
+
 	@Transactional
 	protected Artifact saveArtifact (Artifact a, Map<String, Object> recordData, WhoUpdated wu) {
 		if(recordData.containsKey("uuid") && null != recordData.get("uuid") && recordData.get("uuid").toString().equals(a.getUuid().toString())){
@@ -167,8 +191,17 @@ public class SharedArtifactService {
 			ArtifactData currentArtifactData = ArtifactData.dataFromRecord(oa.get());
 			ArtifactData.ArtifactVersionSnapshot currentSnapshot = ArtifactData.ArtifactVersionSnapshot.fromArtifactData(currentArtifactData);
 			
-			// Add version snapshot to the new artifact data
+			// Preserve existing version history and add new snapshot
 			ArtifactData newArtifactData = Utils.OM.convertValue(recordData, ArtifactData.class);
+			// Preserve any existing version history from the current artifact
+			if (currentArtifactData.getPreviousVersions() != null && !currentArtifactData.getPreviousVersions().isEmpty()) {
+				// Add existing versions that aren't already present in the new data (avoid duplicates)
+				for (ArtifactData.ArtifactVersionSnapshot existingSnapshot : currentArtifactData.getPreviousVersions()) {
+					if (newArtifactData.getPreviousVersions() == null || !newArtifactData.getPreviousVersions().contains(existingSnapshot)) {
+						newArtifactData.addVersionSnapshot(existingSnapshot);
+					}
+				}
+			}
 			newArtifactData.addVersionSnapshot(currentSnapshot);
 			recordData = Utils.dataToRecord(newArtifactData);
 			
@@ -178,6 +211,39 @@ public class SharedArtifactService {
 		a.setRecordData(recordData);
 		a = (Artifact) WhoUpdated.injectWhoUpdatedData(a, wu);
 		return repository.save(a);
+	}
+
+	/**
+	 * Transfers version history from one artifact to another during replacement scenarios
+	 * @param oldArtifactUuid UUID of the artifact being replaced
+	 * @param newArtifactUuid UUID of the new artifact that should receive the version history
+	 * @param wu WhoUpdated information for audit trail
+	 * @return true if transfer was successful, false otherwise
+	 */
+	@Transactional
+	public boolean transferArtifactVersionHistory(UUID oldArtifactUuid, UUID newArtifactUuid, WhoUpdated wu) {
+		try {
+			Optional<Artifact> oldArtifactOpt = getArtifact(oldArtifactUuid);
+			Optional<Artifact> newArtifactOpt = getArtifact(newArtifactUuid);
+			
+			if (oldArtifactOpt.isPresent() && newArtifactOpt.isPresent()) {
+				ArtifactData newArtifact = ArtifactData.dataFromRecord(newArtifactOpt.get());
+				ArtifactData oldArtifact = ArtifactData.dataFromRecord(oldArtifactOpt.get());
+				
+				// Transfer version history from old artifact to new artifact
+				newArtifact.transferVersionHistory(oldArtifact);
+				
+				// Save the updated artifact WITHOUT adding a self-snapshot
+				Map<String, Object> artifactRecordData = Utils.dataToRecord(newArtifact);
+				saveArtifactWithoutSnapshot(newArtifactOpt.get(), artifactRecordData, wu);
+				return true;
+			}
+			
+			return false;
+		} catch (Exception e) {
+			log.error("Error transferring version history from {} to {}: {}", oldArtifactUuid, newArtifactUuid, e.getMessage());
+			return false;
+		}
 	}
 	
 }
