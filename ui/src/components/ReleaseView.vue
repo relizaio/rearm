@@ -97,6 +97,17 @@
                         </n-radio-button>
                     </n-radio-group>
                 </n-form-item>
+                <n-form-item label="Previous Versions">
+                    <n-select
+                      v-if="artifactVersionHistory.length > 0"
+                      style="width: 100%;"
+                      v-model:value="selectedVersionForDownload"
+                      :options="artifactVersionOptions"
+                      placeholder="Select previous version to download (optional)"
+                      clearable
+                    />
+                    <div v-else style="color: #aaa;">No previous versions found.</div>
+                </n-form-item>
                 <n-button type="success" @click="executeDownload">
                     Download
                 </n-button>
@@ -1189,6 +1200,99 @@ const artifactToUpdate: Ref<any> = ref({})
 const showDownloadArtifactModal: Ref<boolean> = ref(false)
 const selectedArtifactForDownload: Ref<any> = ref({})
 const downloadType: Ref<string> = ref('DOWNLOAD')
+const artifactVersionHistory: Ref<any[]> = ref([])
+const selectedVersionForDownload: Ref<string|null> = ref(null)
+
+const artifactVersionOptions = computed(() => {
+  // Build options for previous versions
+  const previousOpts = artifactVersionHistory.value.map(a => {
+    const version = a.version ? `v${a.version}` : a.uuid;
+    const date = a.createdDate ? new Date(a.createdDate).toLocaleString('en-CA') : '';
+    const value = `${a.uuid}::${a.version || ''}`;
+    return {
+      label: date ? `${version} (${date})` : version,
+      value
+    }
+  });
+  // Always add current artifact as the first option, even if duplicated
+  let current = selectedArtifactForDownload.value;
+  let currentLabel = '';
+  let currentValue = '';
+  if (current) {
+    const version = current.version ? `v${current.version}` : current.uuid;
+    const date = current.createdDate ? new Date(current.createdDate).toLocaleString('en-CA') : '';
+    currentLabel = (date ? `${version} (${date})` : version) + ' (current)';
+    currentValue = `${current.uuid}::${current.version || ''}`;
+  }
+  const currentOption = current && current.uuid ? { label: currentLabel, value: currentValue } : null;
+  const opts = currentOption ? [currentOption, ...previousOpts] : previousOpts;
+  console.log('artifactVersionOptions', opts);
+  return opts;
+});
+
+async function fetchArtifactVersionHistory(artifactUuid: string) {
+  try {
+    const response = await graphqlClient.query({
+      query: gql`
+        query ArtifactVersionHistory($artifactUuid: ID!) {
+          artifactVersionHistory(artifactUuid: $artifactUuid) {
+            uuid
+            version
+            createdDate
+            tags { key value }
+          }
+        }
+      `,
+      variables: { artifactUuid },
+      fetchPolicy: 'no-cache',
+    })
+    artifactVersionHistory.value = response.data.artifactVersionHistory || []
+    console.log('artifactVersionHistory', artifactVersionHistory.value)
+  } catch (e) {
+    artifactVersionHistory.value = []
+  }
+}
+
+function openDownloadArtifactModal(artifact: any) {
+  selectedArtifactForDownload.value = artifact
+  downloadType.value = 'DOWNLOAD'
+  showDownloadArtifactModal.value = true
+  selectedVersionForDownload.value = `${artifact.uuid}::${artifact.version || ''}`
+  fetchArtifactVersionHistory(artifact.uuid)
+}
+
+function executeDownload() {
+  // Use composite key for selection
+  let artifact = selectedArtifactForDownload.value;
+  let version = artifact.version;
+
+  if (selectedVersionForDownload.value) {
+    const [selUuid, selVersion] = selectedVersionForDownload.value.split('::');
+    // Try to find in history first
+    const versionArtifact = artifactVersionHistory.value.find(
+      (a: any) => `${a.uuid}::${a.version || ''}` === selectedVersionForDownload.value
+    );
+    if (versionArtifact) {
+      artifact = versionArtifact;
+      version = versionArtifact.version;
+    } else if (selUuid === artifact.uuid && selVersion === (artifact.version || '')) {
+      // fallback to current
+      version = artifact.version;
+    } else {
+      // fallback: unknown version, just pass uuid
+      version = selVersion;
+    }
+  }
+
+  if (downloadType.value === 'DOWNLOAD') {
+    downloadArtifact(artifact, version);
+  } else if (downloadType.value === 'RAW_DOWNLOAD') {
+    downloadRawArtifact(artifact, version);
+  }
+  showDownloadArtifactModal.value = false;
+  notify('info', 'Processing Download', `Your artifact (version ${version}) is being downloaded...`);
+}
+
 
 // Detailed vulnerabilities modal
 const showDetailedVulnerabilitiesModal: Ref<boolean> = ref(false)
@@ -1351,21 +1455,7 @@ async function addArtifact () {
 
 }
 
-function openDownloadArtifactModal (artifact: any) {
-    selectedArtifactForDownload.value = artifact
-    downloadType.value = 'DOWNLOAD'
-    showDownloadArtifactModal.value = true
-}
 
-function executeDownload () {
-    if (downloadType.value === 'DOWNLOAD') {
-        downloadArtifact(selectedArtifactForDownload.value)
-    } else if (downloadType.value === 'RAW_DOWNLOAD') {
-        downloadRawArtifact(selectedArtifactForDownload.value)
-    }
-    showDownloadArtifactModal.value = false
-    notify('info', 'Processing Download', 'Your artifact is being downloaded...')
-}
 
 function setArtifactBelongsTo (art: any, belongsTo: string, belongsToId?: string,  belongsToUUID?: string) {
     const adc = commonFunctions.deepCopy(art)
@@ -1492,10 +1582,14 @@ const submitForm = async () => {
     })
     
 };
-const downloadArtifact = async (art: any) => {
+const downloadArtifact = async (art: any, version?: string) => {
+    let url = '/api/manual/v1/artifact/' + art.uuid + '/download';
+    if (version) {
+        url += `?version=${encodeURIComponent(version)}`;
+    }
     axios({
         method: 'get',
-        url: '/api/manual/v1/artifact/' + art.uuid + '/download',
+        url,
         responseType: 'arraybuffer',
     }).then(function (response) {
         const artType = art.tags.find((tag: any) => tag.key === 'mediaType')?.value
@@ -1583,10 +1677,14 @@ async function uploadNewBomVersion (art: any) {
     }
     
 }
-const downloadRawArtifact = async (art: any) => {
+const downloadRawArtifact = async (art: any, version?: string) => {
+    let url = '/api/manual/v1/artifact/' + art.uuid + '/rawdownload';
+    if (version) {
+        url += `?version=${encodeURIComponent(version)}`;
+    }
     axios({
         method: 'get',
-        url: '/api/manual/v1/artifact/' + art.uuid + '/rawdownload',
+        url,
         responseType: 'arraybuffer',
     }).then(function (response) {
         const artType = art.tags.find((tag: any) => tag.key === 'mediaType')?.value
