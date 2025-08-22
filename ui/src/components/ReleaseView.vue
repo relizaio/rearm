@@ -1642,7 +1642,7 @@ async function uploadNewBomVersion (art: any) {
     }else{
         Swal.fire(
             'Cancelled',
-            'Cancelled BOM Update',
+            'Cancelled Artifact Update',
             'error'
         )
     }
@@ -2218,7 +2218,7 @@ const artifactsTableFields: DataTableColumns<any> = [
 
             const uploadEl = h(NIcon,
                 {
-                    title: 'Upload New Bom Version',
+                    title: 'Upload New Artifact Version',
                     class: 'icons clickable',
                     size: 25,
                     onClick: () => uploadNewBomVersion(row)
