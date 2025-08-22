@@ -119,7 +119,6 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		Set<DigestRecord> digestRecords,
 		List<TagRecord> tags,
 		StatusEnum status,
-		DependencyTrackIntegration metrics,
 		List<UUID> artifacts
 	) {
 		/**
@@ -140,7 +139,6 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 				ad.getDigestRecords() != null ? new LinkedHashSet<>(ad.getDigestRecords()) : new LinkedHashSet<>(),
 				ad.getTags() != null ? new ArrayList<>(ad.getTags()) : new ArrayList<>(),
 				ad.getStatus(),
-				ad.getMetrics(),
 				ad.getArtifacts() != null ? new ArrayList<>(ad.getArtifacts()) : new ArrayList<>()
 			);
 		}
@@ -164,7 +162,6 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 			ad.setDigestRecords(snapshot.digestRecords());
 			ad.setTags(snapshot.tags());
 			ad.setStatus(snapshot.status());
-			ad.setMetrics(snapshot.metrics());
 			ad.setArtifacts(snapshot.artifacts());
 			// Note: previousVersions is intentionally not set to avoid infinite nesting
 			return ad;
