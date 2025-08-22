@@ -166,6 +166,7 @@ public class BranchDataFetcher {
 		roList.add(ro);
 		if (obd.isPresent() && null != obd.get().getDependencies() && !obd.get().getDependencies().isEmpty()) {
 			obd.get().getDependencies().forEach((dep) -> {
+				roList.add(getComponentService.getComponentData(dep.getUuid()).orElseThrow());
 				roList.add(branchService.getBranchData(dep.getBranch()).orElseThrow());
 				if (null != dep.getRelease()) {
 					roList.add(sharedReleaseService.getReleaseData(dep.getRelease()).orElseThrow());
@@ -174,6 +175,7 @@ public class BranchDataFetcher {
 		}
 		if (null != updateBranchInput.getDependencies() && !updateBranchInput.getDependencies().isEmpty()) {
 			updateBranchInput.getDependencies().forEach((dep) -> {
+				roList.add(getComponentService.getComponentData(dep.getUuid()).orElseThrow());
 				roList.add(branchService.getBranchData(dep.getBranch()).orElseThrow());
 				if (null != dep.getRelease()) {
 					roList.add(sharedReleaseService.getReleaseData(dep.getRelease()).orElseThrow());
