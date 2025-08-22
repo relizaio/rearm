@@ -280,7 +280,8 @@ import graphqlQueries  from '@/utils/graphqlQueries'
 import { Copy, LayoutColumns, Filter, Trash } from '@vicons/tabler'
 import { Edit24Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
-import { processMetricsData, buildVulnerabilityColumns } from '@/utils/metrics'
+import { buildVulnerabilityColumns } from '@/utils/metrics'
+import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 
 async function loadApprovalMatrix (org: string, resourceGroup: string) {
     let amxResponse = await graphqlClient.query({
@@ -953,7 +954,7 @@ const currentReleaseOrgUuid: Ref<string> = ref('')
 const currentDtrackProjectUuids: Ref<string[]> = ref([])
 
 const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, {
-    hasKnownDependencyTrackIntegration: () => currentReleaseArtifacts.value.some((artifact: any) => artifact.metrics && artifact.metrics.dependencyTrackFullUri),
+    hasKnownDependencyTrackIntegration: () => ReleaseVulnerabilityService.hasKnownDependencyTrackIntegration(currentReleaseArtifacts.value),
     getArtifacts: () => currentReleaseArtifacts.value,
     getOrgUuid: () => currentReleaseOrgUuid.value,
     getDtrackProjectUuids: () => currentDtrackProjectUuids.value
@@ -963,90 +964,16 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
     loadingVulnerabilities.value = true
     showDetailedVulnerabilitiesModal.value = true
     try {
-        const response = await graphqlClient.query({
-            query: gql`
-                query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
-                    release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
-                        uuid
-                        version
-                        org
-                        artifactDetails {
-                            uuid
-                            metrics { dependencyTrackFullUri }
-                        }
-                        sourceCodeEntryDetails {
-                            artifactDetails {
-                                uuid
-                                metrics { dependencyTrackFullUri }
-                            }
-                        }
-                        inboundDeliverableDetails {
-                            artifactDetails {
-                                uuid
-                                metrics { dependencyTrackFullUri }
-                            }
-                        }
-                        variantDetails {
-                            outboundDeliverableDetails {
-                                artifactDetails {
-                                    uuid
-                                    metrics { dependencyTrackFullUri }
-                                }
-                            }
-                        }
-                        metrics {
-                            vulnerabilityDetails { purl vulnId severity }
-                            violationDetails { purl type License violationDetails }
-                            weaknessDetails { cweId ruleId location fingerprint severity }
-                        }
-                    }
-                }
-            `,
-            variables: {
-                releaseUuid,
-                orgUuid: branchData.value.org
-            }
-        })
-        const releaseData = response.data.release
-        if (releaseData) {
-            // populate per-release context for D-Track linking
-            currentReleaseOrgUuid.value = releaseData.org || ''
-            const releaseOwnArtifacts = Array.isArray(releaseData.artifactDetails) ? releaseData.artifactDetails : []
-            const releaseInboundArtifacts =
-                (Array.isArray(releaseData?.inboundDeliverableDetails)
-                    ? releaseData.inboundDeliverableDetails
-                    : (releaseData?.inboundDeliverableDetails ? [releaseData.inboundDeliverableDetails] : [])
-                ).flatMap((e: any) => e?.artifactDetails ?? []);
-            const releaseVariantArtifacts = (
-                Array.isArray(releaseData?.variantDetails)
-                    ? releaseData.variantDetails
-                    : (releaseData?.variantDetails ? [releaseData.variantDetails] : [])
-            )
-                .flatMap((v: any) => v?.outboundDeliverableDetails ?? [])
-                .flatMap((d: any) => d?.artifactDetails ?? []);
-            const releaseSourceCodeArtifacts =
-                (Array.isArray(releaseData?.sourceCodeEntryDetails)
-                    ? releaseData.sourceCodeEntryDetails
-                    : (releaseData?.sourceCodeEntryDetails ? [releaseData.sourceCodeEntryDetails] : [])
-                ).flatMap((e: any) => e?.artifactDetails ?? []);
-            const releaseArtifacts = [...releaseOwnArtifacts, ...releaseInboundArtifacts, ...releaseVariantArtifacts, ...releaseSourceCodeArtifacts]
-            currentReleaseArtifacts.value = releaseArtifacts
-            const projectUuids: string[] = []
-            currentReleaseArtifacts.value.forEach((artifact: any) => {
-                if (artifact.metrics && artifact.metrics.dependencyTrackFullUri) {
-                    const parts = String(artifact.metrics.dependencyTrackFullUri).split('/projects/')
-                    if (parts.length > 1) {
-                        const projectUuid = parts[parts.length - 1]
-                        if (projectUuid && !projectUuids.includes(projectUuid)) projectUuids.push(projectUuid)
-                    }
-                }
-            })
-            currentDtrackProjectUuids.value = projectUuids
-
-            if (releaseData.metrics) {
-                detailedVulnerabilitiesData.value = processMetricsData(releaseData.metrics)
-            }
-        }
+        const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
+            releaseUuid,
+            branchData.value.org
+        )
+        
+        // Update reactive values with the processed data
+        currentReleaseArtifacts.value = releaseData.artifacts
+        currentReleaseOrgUuid.value = releaseData.orgUuid
+        currentDtrackProjectUuids.value = releaseData.dtrackProjectUuids
+        detailedVulnerabilitiesData.value = releaseData.vulnerabilityData
     } catch (error) {
         console.error('Error fetching release details:', error)
         notify('error', 'Error', 'Failed to load vulnerability details for release')

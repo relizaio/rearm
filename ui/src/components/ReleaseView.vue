@@ -545,7 +545,8 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
-import { processMetricsData, buildVulnerabilityColumns } from '@/utils/metrics'
+import { buildVulnerabilityColumns } from '@/utils/metrics'
+import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { searchDtrackComponentByPurl as searchDtrackComponentByPurlUtil } from '@/utils/dtrack'
 
 const route = useRoute()    
@@ -1293,11 +1294,16 @@ const showDetailedVulnerabilitiesModal: Ref<boolean> = ref(false)
 const detailedVulnerabilitiesData: Ref<any[]> = ref([])
 const loadingVulnerabilities: Ref<boolean> = ref(false)
 
+// Per-modal context for Dependency-Track linking (same as BranchView)
+const currentReleaseArtifacts: Ref<any[]> = ref([])
+const currentReleaseOrgUuid: Ref<string> = ref('')
+const currentDtrackProjectUuids: Ref<string[]> = ref([])
+
 const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, {
-    hasKnownDependencyTrackIntegration: () => hasKnownDependencyTrackIntegration.value,
-    getArtifacts: () => artifacts.value,
-    getOrgUuid: () => release.value.orgDetails.uuid,
-    getDtrackProjectUuids: () => dtrackProjectUuids.value
+    hasKnownDependencyTrackIntegration: () => ReleaseVulnerabilityService.hasKnownDependencyTrackIntegration(currentReleaseArtifacts.value),
+    getArtifacts: () => currentReleaseArtifacts.value,
+    getOrgUuid: () => currentReleaseOrgUuid.value,
+    getDtrackProjectUuids: () => currentDtrackProjectUuids.value
 })
 
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
@@ -1305,45 +1311,16 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
     showDetailedVulnerabilitiesModal.value = true
     
     try {
-        const response = await graphqlClient.query({
-            query: gql`
-                query getReleaseDetails($releaseUuid: ID!, $orgUuid: ID) {
-                    release(releaseUuid: $releaseUuid, orgUuid: $orgUuid) {
-                        uuid
-                        version
-                        metrics {
-                            vulnerabilityDetails {
-                                purl
-                                vulnId
-                                severity
-                            }
-                            violationDetails {
-                                purl
-                                type
-                                License
-                                violationDetails
-                            }
-                            weaknessDetails {
-                                cweId
-                                ruleId
-                                location
-                                fingerprint
-                                severity
-                            }
-                        }
-                    }
-                }
-            `,
-            variables: { 
-                releaseUuid,
-                orgUuid: release.value.org
-            }
-        })
+        const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
+            releaseUuid,
+            release.value.org
+        )
         
-        const releaseData = response.data.release
-        if (releaseData && releaseData.metrics) {
-            detailedVulnerabilitiesData.value = processMetricsData(releaseData.metrics)
-        }
+        // Update reactive values with the processed data (same as BranchView)
+        currentReleaseArtifacts.value = releaseData.artifacts
+        currentReleaseOrgUuid.value = releaseData.orgUuid
+        currentDtrackProjectUuids.value = releaseData.dtrackProjectUuids
+        detailedVulnerabilitiesData.value = releaseData.vulnerabilityData
     } catch (error) {
         console.error('Error fetching release details:', error)
         notify('error', 'Error', 'Failed to load vulnerability details for release')
