@@ -922,12 +922,14 @@ type ConditionGroup = {
 }
 
 type InputTrigger = {
+    uuid: string;
     name: string;
     conditionGroup: ConditionGroup;
     outputEvents: string[];
 }
 
 const inputTrigger: Ref<InputTrigger> = ref({
+    uuid: '',
     name: '',
     conditionGroup: {
         conditionGroups: [],
@@ -939,6 +941,7 @@ const inputTrigger: Ref<InputTrigger> = ref({
 
 function resetInputTrigger () {
     inputTrigger.value = {
+        uuid: '',
         name: '',
         conditionGroup: {
             conditionGroups: [],
@@ -1506,12 +1509,30 @@ async function deleteOutputTrigger (uuid: string) {
 }
 
 
+function editInputTrigger (trigger: any) {
+    inputTrigger.value = commonFunctions.deepCopy(trigger)
+    showCreateInputTriggerModal.value = true
+}
+
 async function addInputTrigger () {
     if (!updatedComponent.value.releaseInputTriggers) {
         updatedComponent.value.releaseInputTriggers = []
     }
     const inputTriggerToPush = commonFunctions.deepCopy(inputTrigger.value)
-    updatedComponent.value.releaseInputTriggers.push(inputTriggerToPush)
+    if (inputTriggerToPush.uuid) {
+        // Check if trigger with this UUID already exists
+        const existingIndex = updatedComponent.value.releaseInputTriggers.findIndex((ot: any) => ot.uuid === inputTriggerToPush.uuid)
+        if (existingIndex > -1) {
+            // Replace existing trigger
+            updatedComponent.value.releaseInputTriggers[existingIndex] = inputTriggerToPush
+        } else {
+            // Add new trigger
+            updatedComponent.value.releaseInputTriggers.push(inputTriggerToPush)
+        }
+    } else {
+        // Add new trigger (no UUID means it's a new trigger)
+        updatedComponent.value.releaseInputTriggers.push(inputTriggerToPush)
+    }
     save()
     resetInputTrigger()
     showCreateInputTriggerModal.value = false
@@ -1644,6 +1665,18 @@ const inputTriggerTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (isWritable) {
+                const editEl = h(NIcon, {
+                    title: 'Edit Trigger',
+                    class: 'icons clickable',
+                    size: 20,
+                    onClick: () => {
+                        editInputTrigger(row)
+                    }
+                }, 
+                { 
+                    default: () => h(Edit) 
+                }
+                )
                 const deleteEl = h(NIcon, {
                     title: 'Delete Trigger',
                     class: 'icons clickable',
@@ -1656,7 +1689,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
                     default: () => h(Trash) 
                 }
                 )
-                els.push(deleteEl)
+                els.push(editEl, deleteEl)
             }
             if (!els.length) els = [h('div'), 'N/A']
             return els
