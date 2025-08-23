@@ -857,27 +857,6 @@ public class ReleaseDatafetcher {
 		releaseFinalizerService.scheduleFinalizeRelease(rd.getUuid());
 		return true;
 	}
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "removeReleaseArtifact")
-	public Boolean removeReleaseArtifact(DgsDataFetchingEnvironment dfe,
-		@InputArgument("artifactUuid") String artifactUuidStr,
-		@InputArgument("releaseUuid") String releaseUuidStr
-	) {
-
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		
-		UUID artifactUuid = UUID.fromString(artifactUuidStr);
-		UUID releaseUuid = UUID.fromString(releaseUuidStr);
-		
-		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
-
-		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		
-		return releaseService.removeArtifact(artifactUuid, releaseUuid, wu);
-	}
 	
 	public static record SearchDigestVersionResponse (List<ReleaseData> commitReleases) {}
 	

@@ -1346,37 +1346,6 @@ public class ReleaseService {
 	}
 
 	@Transactional
-	public Boolean removeArtifact(UUID artifactUuid, UUID releaseUuid, WhoUpdated wu){
-		Boolean removed = false;
-		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);
-		if (rOpt.isPresent()) {
-			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
-			// remove artifact from release only if release is in draft state.
-			if(ReleaseLifecycle.isAssemblyAllowed(rd.getLifecycle())){
-				List<UUID> artifacts = rd.getArtifacts();
-				artifacts.remove(artifactUuid);
-				rd.setArtifacts(artifacts);
-				Map<String,Object> recordData = Utils.dataToRecord(rd);
-				ossReleaseService.saveRelease(rOpt.get(), recordData, wu);
-				removed = true;
-			}
-			
-		}
-		
-		if (removed) {
-			Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
-			if (oad.isPresent()) {
-				List<Release> or = sharedReleaseService.findReleasesByReleaseArtifact(artifactUuid, oad.get().getOrg());
-				if (or.isEmpty()) {
-					// archive artifact
-					artifactService.archiveArtifact(artifactUuid, wu);
-				}
-			}
-		}
-		return removed;
-	}
-
-	@Transactional
 	public Boolean addArtifact(UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
 		Boolean added = false;
 		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);

@@ -55,6 +55,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.service.AcollectionService;
+import io.reliza.service.ArtifactService;
 import io.reliza.service.AuditService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
@@ -105,6 +106,10 @@ public class OssReleaseService {
 		
 	@Autowired
 	private AcollectionService acollectionService;
+
+	@Autowired
+	private ArtifactService artifactService;
+			
 	private final ReleaseRepository repository;
 	
 	OssReleaseService(ReleaseRepository repository) {
@@ -185,9 +190,9 @@ public class OssReleaseService {
 				String branch, ReleaseLifecycle lifecycle, ConditionGroup cg) throws RelizaException {
 		Optional<ReleaseData> retRd = Optional.empty();
 		Optional<ReleaseData> optRd = Optional.empty();
-	
+
 		UUID projectOrProductToResolve = (null == productUuid) ? componentUuid : productUuid;
-	
+
 		Optional<Branch> b = branchService.findBranchByName(projectOrProductToResolve, branch);
 		
 		if (b.isPresent()) {
@@ -313,13 +318,24 @@ public class OssReleaseService {
 	}
 	
 
-	private Release doUpdateRelease (Release r, ReleaseData rData, ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
+	private Release doUpdateRelease (final Release r, ReleaseData rData, ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
 		log.debug("updating exisiting rd, with dto: {}", releaseDto);
 		List<UuidDiff> artDiff = Utils.diffUuidLists(rData.getArtifacts(), releaseDto.getArtifacts());
 		if (!artDiff.isEmpty()) {
 			rData.setArtifacts(releaseDto.getArtifacts());
-			artDiff.forEach(ad -> rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.ARTIFACT, ad.diffAction(), null, null,
-					ad.object(), ZonedDateTime.now(), wu)));
+			artDiff.forEach(ad -> {
+				rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.ARTIFACT, ad.diffAction(), null, null,
+					ad.object(), ZonedDateTime.now(), wu));
+				if (ad.diffAction() == ReleaseUpdateAction.REMOVED) {
+					Optional<ArtifactData> oad = artifactService.getArtifactData(ad.object());
+					if (oad.isPresent()) {
+						List<Release> or = sharedReleaseService.findReleasesByReleaseArtifact(ad.object(), oad.get().getOrg());
+						if (or.isEmpty() || (or.size() == 1 && or.get(0).getUuid().equals(r.getUuid()))) {
+							artifactService.archiveArtifact(ad.object(), wu);
+						}
+					}
+				}
+			});
 		}
 		if (StringUtils.isNotEmpty(releaseDto.getVersion()) && !releaseDto.getVersion().equals(rData.getVersion())) {
 			rData.setVersion(releaseDto.getVersion());
@@ -396,8 +412,7 @@ public class OssReleaseService {
 		}
 		Map<String,Object> recordData = Utils.dataToRecord(rData);
 		log.debug("saving release with recordData: {}", recordData);
-		r = saveRelease(r, recordData, wu);
-		return r;
+		return saveRelease(r, recordData, wu);
 	}
 	
 	@Transactional
@@ -515,7 +530,8 @@ public class OssReleaseService {
 		
 		ActionEnum action = ActionEnum.BUMP;
 	
-		List<ParentRelease> currentReleases = new ArrayList<ParentRelease>(sharedReleaseService.getCurrentProductParentRelease(featureSetUuid, ReleaseLifecycle.DRAFT));
+		List<ParentRelease> currentReleases = new ArrayList<ParentRelease>(
+				sharedReleaseService.getCurrentProductParentRelease(featureSetUuid, ReleaseLifecycle.DRAFT));
 		action = getLargestActionFromComponents(productUuid, featureSetUuid, currentReleases);
 		
 		return action;

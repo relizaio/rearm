@@ -128,7 +128,6 @@ type Mutation {
 	approveReleaseManual(release: ID!, approvals: [ReleaseApprovalInput!]): Release
 	
 	addArtifactManual(artifactInput: CreateArtifactInput, artifactUuid: ID): Release
-	removeReleaseArtifact(artifactUuid: ID!, releaseUuid: ID!): Boolean
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
 	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType): String
