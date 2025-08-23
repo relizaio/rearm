@@ -31,6 +31,7 @@ import io.reliza.common.Utils;
 import io.reliza.common.Utils.UuidDiff;
 import io.reliza.common.ValidationResult;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ArtifactData;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.AutoIntegrateState;
