@@ -1378,44 +1378,6 @@ async function viewDetailedVulnerabilities(artifactUuid: string) {
     }
 }
 
-function deleteArtifact (artifactUuid: string, releaseUuid: string) {
-    Swal.fire({
-        title: `Are you sure you want to archive this Artifact?`,
-        text: `If you proceed, the artifact will be archived and you will not have access to its data.`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, archive!',
-        cancelButtonText: 'No, cancel'
-    }).then(async result => {
-        if (result.value) {
-            try {
-                await graphqlClient.mutate({
-                    mutation: gql`
-                        mutation removeReleaseArtifact($artifactUuid: ID!, $releaseUuid: ID!) {
-                            removeReleaseArtifact(artifactUuid: $artifactUuid, releaseUuid: $releaseUuid)
-                        }`,
-                    variables: {
-                        artifactUuid: artifactUuid,
-                        releaseUuid: releaseUuid
-                    }
-                })
-                fetchRelease()
-            } catch (err: any) {
-                Swal.fire(
-                    'Error!',
-                    commonFunctions.parseGraphQLError(err.message),
-                    'error'
-                )
-            }
-        } else if (result.dismiss === Swal.DismissReason.cancel) {
-            Swal.fire(
-                'Cancelled',
-                `Artifact archiving cancelled. The artifact is still active.`,
-                'info'
-            )
-        }
-    })
-}
 async function addArtifact () {
     await fetchRelease()
     showReleaseAddProducesArtifactModal.value = false
@@ -1425,8 +1387,6 @@ async function addArtifact () {
     showAddNewBomVersionModal.value = false
 
 }
-
-
 
 function setArtifactBelongsTo (art: any, belongsTo: string, belongsToId?: string,  belongsToUUID?: string) {
     const adc = commonFunctions.deepCopy(art)
@@ -1601,6 +1561,31 @@ const getBomVersion = async(id: string) => {
     })
     return response.data.artifactBomLatestVersion
 }
+async function deleteArtifactFromRelease(artifactUuid: string) {
+    const swalResult = await Swal.fire({
+        title: 'Delete Artifact',
+        text: 'Are you sure you want to remove this artifact from the release?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, delete it!'
+    })
+
+    if (swalResult.isConfirmed) {
+        try {
+            updatedRelease.value.artifacts = updatedRelease.value.artifacts.filter(
+                (artifact: any) => artifact !== artifactUuid
+            )
+            await save()
+            notify('success', 'Success', 'Artifact removed from release')
+        } catch (error: any) {
+            console.error('Error deleting artifact from release:', error)
+            notify('error', 'Error', 'Failed to remove artifact from release')
+        }
+    }
+}
+
 async function uploadNewBomVersion (art: any) {
     
     const isBomArtifact = commonFunctions.isCycloneDXBomArtifact(art)
@@ -2253,6 +2238,19 @@ const artifactsTableFields: DataTableColumns<any> = [
                     }, { default: () => h(Refresh) })
                 els.push(dtrackRefetchEl)
             }
+            
+            // Add delete icon for Draft releases
+            if (release.value.lifecycle === 'DRAFT' && row.belongsTo === 'Release') {
+                const deleteEl = h(NIcon,
+                    {
+                        title: 'Delete Artifact from Release',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => deleteArtifactFromRelease(row.uuid)
+                    }, { default: () => h(Trash) })
+                els.push(deleteEl)
+            }
+            
             if (!els.length) els.push(h('span', 'N/A'))
             return h('div', els)
         }
