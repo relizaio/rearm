@@ -468,7 +468,7 @@ import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 import axios from '../utils/axios'
-import { Link as LinkIcon, Copy, CirclePlus, Trash } from '@vicons/tabler'
+import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import gql from 'graphql-tag'
@@ -848,6 +848,7 @@ const createBranchObject: Ref<any> = ref({
 })
 
 const outputTrigger = ref({
+    uuid: '',
     name: '',
     type: '',
     toReleaseLifecycle: null,
@@ -862,6 +863,7 @@ const outputTrigger = ref({
 
 function resetOutputTrigger () {
     outputTrigger.value = {
+        uuid: '',
         name: '',
         type: '',
         toReleaseLifecycle: null,
@@ -1458,10 +1460,30 @@ async function addOutputTrigger () {
         updatedComponent.value.outputTriggers = []
     }
     const outputTriggerToPush = commonFunctions.deepCopy(outputTrigger.value)
-    updatedComponent.value.outputTriggers.push(outputTriggerToPush)
+    
+    if (outputTriggerToPush.uuid) {
+        // Check if trigger with this UUID already exists
+        const existingIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === outputTriggerToPush.uuid)
+        if (existingIndex > -1) {
+            // Replace existing trigger
+            updatedComponent.value.outputTriggers[existingIndex] = outputTriggerToPush
+        } else {
+            // Add new trigger
+            updatedComponent.value.outputTriggers.push(outputTriggerToPush)
+        }
+    } else {
+        // Add new trigger (no UUID means it's a new trigger)
+        updatedComponent.value.outputTriggers.push(outputTriggerToPush)
+    }
+    
     save()
     resetOutputTrigger()
     showCreateOutputTriggerModal.value = false
+}
+
+function editOutputTrigger (trigger: any) {
+    outputTrigger.value = commonFunctions.deepCopy(trigger)
+    showCreateOutputTriggerModal.value = true
 }
 
 async function deleteOutputTrigger (uuid: string) {
@@ -1527,6 +1549,18 @@ const outputTriggerTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (isWritable) {
+                const editEl = h(NIcon, {
+                    title: 'Edit Trigger',
+                    class: 'icons clickable',
+                    size: 20,
+                    onClick: () => {
+                        editOutputTrigger(row)
+                    }
+                }, 
+                { 
+                    default: () => h(Edit) 
+                }
+                )
                 const deleteEl = h(NIcon, {
                     title: 'Delete Trigger',
                     class: 'icons clickable',
@@ -1539,7 +1573,7 @@ const outputTriggerTableFields: DataTableColumns<any> = [
                     default: () => h(Trash) 
                 }
                 )
-                els.push(deleteEl)
+                els.push(editEl, deleteEl)
             }
             if (!els.length) els = [h('div'), 'N/A']
             return els
