@@ -37,6 +37,7 @@ import io.reliza.model.ArtifactData;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
@@ -140,7 +141,11 @@ public class DeliverableDataFetcher {
 		}
 		
 		if (null == addDeliverablesInput.deliverables() || addDeliverablesInput.deliverables().isEmpty()) {
-			throw new RuntimeException("At least one deliverable must be provided.");
+			throw new RelizaException("At least one deliverable must be provided.");
+		}
+
+		if (ord.isPresent() && ord.get().getLifecycle() != ReleaseLifecycle.DRAFT) {
+			throw new RelizaException("Only DRAFT releases may have new outbound deliverables added.");
 		}
 		
 		if (ovd.isEmpty()) {
