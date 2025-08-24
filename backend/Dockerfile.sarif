@@ -1,0 +1,18 @@
+FROM maven:3.9.11-eclipse-temurin-21-noble@sha256:fe1de86d91ca06519b58fc85ff737e159c18c0d0a8c7f4c66601b74dba136c5c
+ARG CODEQL_BUNDLE_VERSION=2.22.4
+ARG CODEQL_URL="https://github.com/github/codeql-action/releases/download/codeql-bundle-v${CODEQL_BUNDLE_VERSION}/codeql-bundle-linux64.tar.gz"
+
+RUN curl -sSL "$CODEQL_URL" -o /tmp/codeql.tgz \
+    && echo "0df7d8d8f23b1d404d0d813086a2b6a4b09776cf9fcbc1542d933a66736dee4b  /tmp/codeql.tgz" | sha256sum -c - \
+    && mkdir -p /opt/codeql \
+    && tar -xzf /tmp/codeql.tgz -C /opt/codeql --strip-components=1 \
+    && rm /tmp/codeql.tgz
+
+ENV PATH="/opt/codeql:${PATH}"
+
+RUN mkdir /workspace && mkdir /sarif
+WORKDIR /workspace
+
+COPY . .
+RUN codeql database create qldb --language=java
+RUN codeql database analyze qldb --format=sarifv2.1.0 --output=/sarif/results.sarif

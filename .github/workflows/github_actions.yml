@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@128ff24039999b9d575e4c0f5bb3aa23fd63cbd4 # codeql-experimental
+        uses: relizaio/reliza-docker-action@6e79b018e88d69944bbfdbd3b69d4f371a1b6231 # codeql-experimental
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -109,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@128ff24039999b9d575e4c0f5bb3aa23fd63cbd4 # codeql-experimental
+        uses: relizaio/reliza-docker-action@6e79b018e88d69944bbfdbd3b69d4f371a1b6231 # codeql-experimental
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -126,7 +126,7 @@ jobs:
           source_code_sbom_type: 'custom'
           rearm_enable_public_cosign_sigstore: 'true'
           rearm_enable_codeql: 'true'
-          rearm_codeql_language: 'java'
+          rearm_codeql_language: 'custom'
   build-oci-service:
     permissions:
       id-token: write
