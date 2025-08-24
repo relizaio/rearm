@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@176bdbaafa6e924cf98a8e57006107f36a07e633 # codeql-experimental
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -100,30 +100,8 @@ jobs:
           rearm_api_key: ${{ secrets.REARM_REARM_UI_API_KEY }}
           source_code_sbom_type: 'npm'
           rearm_enable_public_cosign_sigstore: 'true'
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript
-          source-root: ./ui
-          queries: security-and-quality
-      - name: Analyze CodeQL (write SARIF to folder, do not upload)
-        uses: github/codeql-action/analyze@v3
-        with:
-          upload: false
-          output: codeql-results   # folder; action will place .sarif files here
-      - name: List and count SARIF lines
-        run: |
-          ls -lR codeql-results
-          # If there may be multiple SARIF files (by language/category):
-          find codeql-results -name '*.sarif' -print -exec wc -l {} \;
-      #- name: Analyze CodeQL
-      #  run: |
-      #    "${CODEQL_DIST}/codeql" database analyze \
-      #      "$RUNNER_TEMP/codeql_databases/javascript" \
-      #      --format=sarifv2.1.0 \
-      #      --output=codeql-results.sarif
-      #    ls -lh codeql-results.sarif
-      #    cat codeql-results.sarif | wc -l
+          rearm_enable_codeql: 'true'
+          rearm_codeql_language: 'javascript'
   build-backend:
     permissions:
       id-token: write
