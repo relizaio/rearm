@@ -548,6 +548,7 @@ import { DownloadLink} from '@/utils/commonTypes'
 import { buildVulnerabilityColumns } from '@/utils/metrics'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { searchDtrackComponentByPurl as searchDtrackComponentByPurlUtil } from '@/utils/dtrack'
+import { processMetricsData } from '@/utils/metrics'
 
 const route = useRoute()    
 const router = useRouter()
