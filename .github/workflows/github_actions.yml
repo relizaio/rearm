@@ -108,8 +108,8 @@ jobs:
           queries: security-and-quality
       - name: Analyze CodeQL
         run: |
-          codeql database analyze \
-            ./codeql_databases/javascript \
+          "${CODEQL_DIST}/codeql" database analyze \
+            "$RUNNER_TEMP/codeql_databases/javascript" \
             --format=sarifv2.1.0 \
             --output=codeql-results.sarif
           ls -lh codeql-results.sarif
