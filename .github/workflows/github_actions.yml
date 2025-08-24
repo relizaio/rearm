@@ -87,7 +87,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: javascript
-          working-directory: ./ui
+          source-root: ./ui
           queries: security-and-quality
       - name: Analyze CodeQL
         run: |
@@ -96,7 +96,8 @@ jobs:
             --format=sarifv2.1.0 \
             --output=codeql-results.sarif
           ls -lh codeql-results.sarif
-          cat codeql-results.sarif | wc -l    
+          cat codeql-results.sarif | wc -l
+          exit 1
       - name: RelizaHub Build And Submit UI Release
         uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
