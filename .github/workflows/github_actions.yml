@@ -99,7 +99,7 @@ jobs:
           rearm_api_id: ${{ secrets.REARM_REARM_UI_API_ID }}
           rearm_api_key: ${{ secrets.REARM_REARM_UI_API_KEY }}
           source_code_sbom_type: 'npm'
-          rearm_enable_public_cosign_sigstore: 'true'
+          rearm_enable_public_cosign_sigstore: 'false'
           rearm_enable_codeql: 'true'
           rearm_codeql_language: 'javascript'
   build-backend:
