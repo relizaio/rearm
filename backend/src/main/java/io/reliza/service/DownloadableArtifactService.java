@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import io.reliza.common.CommonVariables;
@@ -35,7 +36,14 @@ public class DownloadableArtifactService {
 		this.registryHost = registryHost;
         this.url= url;
         this.ociRepository = registryNamespace + "/downloadable-artifacts";
-		this.webClient = WebClient.builder().baseUrl(this.url)
+		// Configure WebClient with increased buffer size for large OCI artifacts
+		ExchangeStrategies strategies = ExchangeStrategies.builder()
+			.codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(50 * 1024 * 1024)) // 50MB buffer
+			.build();
+		
+		this.webClient = WebClient.builder()
+			.baseUrl(this.url)
+			.exchangeStrategies(strategies)
 			.build();
 	}
 

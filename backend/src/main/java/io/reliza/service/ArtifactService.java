@@ -28,6 +28,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -94,7 +95,14 @@ public class ArtifactService {
 		this.registryHost = registryHost;
         this.url= url;
         this.ociRepository = registryNamespace + "/downloadable-artifacts";
-		this.webClient = WebClient.builder().baseUrl(this.url)
+		// Configure WebClient with increased buffer size for large OCI artifacts
+		ExchangeStrategies strategies = ExchangeStrategies.builder()
+			.codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(50 * 1024 * 1024)) // 50MB buffer
+			.build();
+		
+		this.webClient = WebClient.builder()
+			.baseUrl(this.url)
+			.exchangeStrategies(strategies)
 			.build();
 	}
 	
