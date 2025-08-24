@@ -83,21 +83,6 @@ jobs:
     name: Build And Push ReARM UI
     runs-on: ubuntu-latest
     steps:
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript
-          source-root: ./ui
-          queries: security-and-quality
-      - name: Analyze CodeQL
-        run: |
-          codeql database analyze \
-            ./codeql_databases/javascript \
-            --format=sarifv2.1.0 \
-            --output=codeql-results.sarif
-          ls -lh codeql-results.sarif
-          cat codeql-results.sarif | wc -l
-          exit 1
       - name: RelizaHub Build And Submit UI Release
         uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
         with:
@@ -115,6 +100,20 @@ jobs:
           rearm_api_key: ${{ secrets.REARM_REARM_UI_API_KEY }}
           source_code_sbom_type: 'npm'
           rearm_enable_public_cosign_sigstore: 'true'
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+          source-root: ./ui
+          queries: security-and-quality
+      - name: Analyze CodeQL
+        run: |
+          codeql database analyze \
+            ./codeql_databases/javascript \
+            --format=sarifv2.1.0 \
+            --output=codeql-results.sarif
+          ls -lh codeql-results.sarif
+          cat codeql-results.sarif | wc -l
   build-backend:
     permissions:
       id-token: write
