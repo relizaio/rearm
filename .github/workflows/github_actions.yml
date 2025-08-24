@@ -106,14 +106,24 @@ jobs:
           languages: javascript
           source-root: ./ui
           queries: security-and-quality
-      - name: Analyze CodeQL
+      - name: Analyze CodeQL (write SARIF to folder, do not upload)
+        uses: github/codeql-action/analyze@v3
+        with:
+          upload: false
+          output: codeql-results   # folder; action will place .sarif files here
+      - name: List and count SARIF lines
         run: |
-          "${CODEQL_DIST}/codeql" database analyze \
-            "$RUNNER_TEMP/codeql_databases/javascript" \
-            --format=sarifv2.1.0 \
-            --output=codeql-results.sarif
-          ls -lh codeql-results.sarif
-          cat codeql-results.sarif | wc -l
+          ls -lR codeql-results
+          # If there may be multiple SARIF files (by language/category):
+          find codeql-results -name '*.sarif' -print -exec wc -l {} \;
+      #- name: Analyze CodeQL
+      #  run: |
+      #    "${CODEQL_DIST}/codeql" database analyze \
+      #      "$RUNNER_TEMP/codeql_databases/javascript" \
+      #      --format=sarifv2.1.0 \
+      #      --output=codeql-results.sarif
+      #    ls -lh codeql-results.sarif
+      #    cat codeql-results.sarif | wc -l
   build-backend:
     permissions:
       id-token: write
