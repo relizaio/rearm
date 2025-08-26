@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@2db2d01ed29229b61f50e1acee556938f143b73f # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@a04c5d7148bd4ea7ad12a5990c262651d64dec95 # v3.7
+        uses: relizaio/reliza-helm-action@c63d479f4fd1fce07a5b13a928afb1a196bb83a1 # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Helm metadata action
-        uses: relizaio/reliza-helm-action@a04c5d7148bd4ea7ad12a5990c262651d64dec95 # v3.7
+        uses: relizaio/reliza-helm-action@c63d479f4fd1fce07a5b13a928afb1a196bb83a1 # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@a04c5d7148bd4ea7ad12a5990c262651d64dec95 # v3.7
+        uses: relizaio/reliza-helm-action@c63d479f4fd1fce07a5b13a928afb1a196bb83a1 # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@2db2d01ed29229b61f50e1acee556938f143b73f # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -100,6 +100,8 @@ jobs:
           rearm_api_key: ${{ secrets.REARM_REARM_UI_API_KEY }}
           source_code_sbom_type: 'npm'
           rearm_enable_public_cosign_sigstore: 'true'
+          rearm_enable_codeql: 'true'
+          rearm_codeql_language: 'javascript'
   build-backend:
     permissions:
       id-token: write
@@ -107,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@2db2d01ed29229b61f50e1acee556938f143b73f # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -123,6 +125,8 @@ jobs:
           rearm_api_key: ${{ secrets.REARM_REARM_BACKEND_API_KEY }}
           source_code_sbom_type: 'custom'
           rearm_enable_public_cosign_sigstore: 'true'
+          rearm_enable_codeql: 'true'
+          rearm_codeql_language: 'custom'
   build-oci-service:
     permissions:
       id-token: write
@@ -130,7 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM OCI Service Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@2db2d01ed29229b61f50e1acee556938f143b73f # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -146,6 +150,8 @@ jobs:
           rearm_api_key: ${{ secrets.REARM_REARM_OCI_ARTIFACT_API_KEY }}
           source_code_sbom_type: 'other'
           rearm_enable_public_cosign_sigstore: 'true'
+          rearm_enable_codeql: 'true'
+          rearm_codeql_language: 'custom'
   build-keycloak:
     permissions:
       id-token: write
@@ -153,7 +159,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Keycloak Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@2db2d01ed29229b61f50e1acee556938f143b73f # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -174,7 +180,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@2db2d01ed29229b61f50e1acee556938f143b73f # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -190,7 +196,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@2db2d01ed29229b61f50e1acee556938f143b73f # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -208,7 +214,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@8a191a7957c09f7c2987e8fbc5007339e032e28c # v3.7
+        uses: relizaio/reliza-docker-action@2db2d01ed29229b61f50e1acee556938f143b73f # v3.8
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -224,3 +230,5 @@ jobs:
           rearm_api_key: ${{ secrets.REARM_REBOM_BACKEND_API_KEY }}
           source_code_sbom_type: 'npm'
           rearm_enable_public_cosign_sigstore: 'true'
+          rearm_enable_codeql: 'true'
+          rearm_codeql_language: 'javascript'
