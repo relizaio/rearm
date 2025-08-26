@@ -1281,9 +1281,9 @@ function executeDownload() {
     }
 
     if (downloadType.value === 'DOWNLOAD') {
-        downloadArtifact(artifact, version);
+        downloadArtifact(artifact, false, version);
     } else if (downloadType.value === 'RAW_DOWNLOAD') {
-        downloadRawArtifact(artifact, version);
+        downloadArtifact(artifact, true, version);
     }
     showDownloadArtifactModal.value = false;
     notify('info', 'Processing Download', `Your artifact (version ${version}) is being downloaded...`);
@@ -1514,24 +1514,34 @@ const submitForm = async () => {
     })
     
 };
-const downloadArtifact = async (art: any, version?: string) => {
-    let url = '/api/manual/v1/artifact/' + art.uuid + '/download';
+const downloadArtifact = async (art: any, raw: boolean, version?: string) => {
+    let url = '/api/manual/v1/artifact/' + art.uuid
+    if (raw) {
+        url += '/rawdownload'
+    }else{
+        url += '/download'
+    }
     if (version) {
         url += `?version=${encodeURIComponent(version)}`;
     }
-    axios({
-        method: 'get',
-        url,
-        responseType: 'arraybuffer',
-    }).then(function (response) {
+    try {
+        const downloadResp = await axios({
+            method: 'get',
+            url,
+            responseType: 'arraybuffer',
+        })
         const artType = art.tags.find((tag: any) => tag.key === 'mediaType')?.value
         const fileName = art.tags.find((tag: any) => tag.key === 'fileName')?.value
-        let blob = new Blob([response.data], { type: artType })
+        let blob = new Blob([downloadResp.data], { type: artType })
         let link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
         link.download = fileName
         link.click()
-    })
+    } catch (err) {
+        notify('error', 'Error', 'Error on artifact download' + err)
+        console.error(err)
+    }
+
 }
 
 const findReleasesSharedByArtifact = async(id: string) => {
@@ -1633,25 +1643,6 @@ async function uploadNewBomVersion (art: any) {
         )
     }
     
-}
-const downloadRawArtifact = async (art: any, version?: string) => {
-    let url = '/api/manual/v1/artifact/' + art.uuid + '/rawdownload';
-    if (version) {
-        url += `?version=${encodeURIComponent(version)}`;
-    }
-    axios({
-        method: 'get',
-        url,
-        responseType: 'arraybuffer',
-    }).then(function (response) {
-        const artType = art.tags.find((tag: any) => tag.key === 'mediaType')?.value
-        const fileName = art.tags.find((tag: any) => tag.key === 'fileName')?.value
-        let blob = new Blob([response.data], { type: artType })
-        let link = document.createElement('a')
-        link.href = window.URL.createObjectURL(blob)
-        link.download = fileName
-        link.click()
-    })
 }
 
 async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
