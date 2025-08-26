@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	ociSpecv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -110,12 +110,13 @@ func downloadFile(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Error creating oras client: ", err)
 		return
 	}
-	dirToDownload := strings.Replace(form.Tag, "sha256:", "", 1)
-	err = oc.PullArtifact(c, form.Tag, dirToDownload)
+	dirToDownload := uuid.New().String()
+	_, err = oc.PullArtifact(c, form.Tag, dirToDownload)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error Pulling artifact: ", err)
 		return
 	}
+
 	targetDir := filepath.Join("/tmp", dirToDownload)
 	files, err := os.ReadDir(targetDir)
 	if err != nil {
