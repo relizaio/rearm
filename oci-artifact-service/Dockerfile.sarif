@@ -1,0 +1,22 @@
+FROM golang:1.25.0-trixie@sha256:a733d0a3a4c2349114bfaa61b2f41bfd611d5dc4a95d0d12c485ff385bd285b3 AS build-stage
+ARG CODEQL_BUNDLE_VERSION=2.22.4
+ARG CODEQL_URL="https://github.com/github/codeql-action/releases/download/codeql-bundle-v${CODEQL_BUNDLE_VERSION}/codeql-bundle-linux64.tar.gz"
+
+RUN curl -sSL "$CODEQL_URL" -o /tmp/codeql.tgz \
+    && echo "0df7d8d8f23b1d404d0d813086a2b6a4b09776cf9fcbc1542d933a66736dee4b  /tmp/codeql.tgz" | sha256sum -c - \
+    && mkdir -p /opt/codeql \
+    && tar -xzf /tmp/codeql.tgz -C /opt/codeql --strip-components=1 \
+    && rm /tmp/codeql.tgz
+
+ENV PATH="/opt/codeql:${PATH}"
+
+RUN mkdir /sarif
+
+WORKDIR /build
+ENV CGO_ENABLED=0
+COPY go.mod go.sum ./
+COPY ./internal/imports ./internal/imports
+RUN go build ./internal/imports
+COPY . .
+RUN codeql database create qldb --language=go
+RUN codeql database analyze qldb --format=sarifv2.1.0 --output=/sarif/results.sarif
