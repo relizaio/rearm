@@ -518,8 +518,12 @@ function extractDevFilteredBom(bom: any): any {
       if (rebomOptions.rootComponentMergeMode) {
         command.push('--root-component-merge-mode', rebomOptions.rootComponentMergeMode);
       }
+      if (rebomOptions.structure) {
+        command.push('--structure', rebomOptions.structure)
+      }else {
+        command.push('--structure', 'FLAT')
+      }
       command.push(
-        '--structure', rebomOptions.structure,
         '--group', rebomOptions.group,
         '--name', rebomOptions.name,
         '--version', rebomOptions.version
@@ -528,8 +532,6 @@ function extractDevFilteredBom(bom: any): any {
         command.push('--input-files', path)
       })
       command.push('--purl', purl)
-     
-
       const mergeResponse: string = await utils.shellExec('rearm-cli',command)
       // utils.deleteTmpFiles(bomPaths)s
 
