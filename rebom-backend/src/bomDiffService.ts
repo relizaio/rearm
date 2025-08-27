@@ -56,12 +56,14 @@ async function mergeBomsForDiff(ids:[string], org: string){
   }
 
   export async function bomDiffExec(fromIds:[string], toIds: [string], org: string): Promise<BomDiffResult> {
+    let fromBomPath: string = ''
+    let toBomPath: string = ''
     try {
       const fromBomObj = await mergeBomsForDiff(fromIds, org)
       const toBomObj = await mergeBomsForDiff(toIds, org)
     
-      const fromBomPath : string = await utils.createTempFile(fromBomObj)
-      const toBomPath : string = await utils.createTempFile(toBomObj)
+      fromBomPath = await utils.createTempFile(fromBomObj)
+      toBomPath = await utils.createTempFile(toBomObj)
       const command = ['diff']
       // logger.info(`fromBomPath: ${fromBomPath}`)
       // logger.info(`toBomPath: ${toBomPath}`)
@@ -76,9 +78,21 @@ async function mergeBomsForDiff(ids:[string], org: string){
 
       const diffResultString: string = await utils.shellExec('cyclonedx-cli',command)
       const diffResult: BomDiffResult = JSON.parse(diffResultString)
+      
+      // Clean up temporary files after successful diff
+      await utils.deleteTempFile(fromBomPath)
+      await utils.deleteTempFile(toBomPath)
+      
       return diffResult
     } catch (e) {
       logger.error("Error During diff", e)
+      // Clean up temporary files in case of error
+      if (fromBomPath) {
+        await utils.deleteTempFile(fromBomPath)
+      }
+      if (toBomPath) {
+        await utils.deleteTempFile(toBomPath)
+      }
       throw e
     }
 

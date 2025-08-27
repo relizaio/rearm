@@ -506,13 +506,14 @@ function extractDevFilteredBom(bom: any): any {
 
 
   export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOptions): Promise<any> {
+    let bomPaths: string[] = []
     try {
       bomObjects.forEach(async (bobjs: any) => {
         await validateBom(bobjs)
       })
       
       const purl = establishPurl(undefined, rebomOptions)
-      const bomPaths: string[] = await utils.createTmpFiles(bomObjects)
+      bomPaths = await utils.createTmpFiles(bomObjects)
       const command = ['bomutils', 'merge-boms']
       
       if (rebomOptions.rootComponentMergeMode) {
@@ -533,7 +534,9 @@ function extractDevFilteredBom(bom: any): any {
       })
       command.push('--purl', purl)
       const mergeResponse: string = await utils.shellExec('rearm-cli',command)
-      // utils.deleteTmpFiles(bomPaths)s
+      
+      // Clean up temporary files after successful merge
+      await utils.deleteTmpFiles(bomPaths)
 
       const jsonObj = JSON.parse(mergeResponse)
       jsonObj.metadata.tools = []
@@ -547,6 +550,10 @@ function extractDevFilteredBom(bom: any): any {
 
     } catch (e) {
       logger.error("Error During merge", e)
+      // Clean up temporary files in case of error
+      if (bomPaths.length > 0) {
+        await utils.deleteTmpFiles(bomPaths)
+      }
       throw e
     }
 
