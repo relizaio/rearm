@@ -47,9 +47,7 @@ public class ReleaseFinalizerService {
             ReleaseData rd = ord.get();
             UUID branch = rd.getBranch();
             UUID org = rd.getOrg();
-            if(!rd.getLifecycle().equals(ReleaseLifecycle.DRAFT)){
-                throw new RuntimeException("Only DRAFT releases can be finalized.");
-            }
+           
             acollectionService.releaseBomChangelogRoutine(releaseUuid, branch, org);
             // Add more finalization steps here as needed
         }
