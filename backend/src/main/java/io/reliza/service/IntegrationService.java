@@ -540,21 +540,14 @@ public class IntegrationService {
 	private DependencyTrackIntegration obtainDepdencyTrackProjectMetrics (URI dtrackBaseUri,
 			String apiToken, ArtifactData ad) throws JsonMappingException, JsonProcessingException {
 		String dtrackProject = ad.getMetrics().getDependencyTrackProject();
-		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/metrics/project/" + dtrackProject + "/current");
-		var resp = dtrackWebClient
-				.get()
-				.uri(dtrackUri)
-				.header("X-API-Key", apiToken)
-				.retrieve()
-				.toEntity(String.class)
-				.block();
-		var dti = Utils.OM.readValue(resp.getBody(), DependencyTrackIntegration.class);
+		DependencyTrackIntegration dti = new DependencyTrackIntegration();
 		List<VulnerabilityDto> vulnerabilityDetails = fetchDependencyTrackVulnerabilityDetails(
 				dtrackBaseUri, apiToken, dtrackProject);
 		List<ViolationDto> violationDetails = fetchDependencyTrackViolationDetails(
 				dtrackBaseUri, apiToken, dtrackProject);
 		dti.setVulnerabilityDetails(vulnerabilityDetails);
 		dti.setViolationDetails(violationDetails);
+		dti.computeMetricsFromFacts();
 		if (null == dti.getDependencyTrackProject()) dti.setDependencyTrackProject(ad.getMetrics().getDependencyTrackProject());
 		if (null == dti.getProjectName()) dti.setProjectName(ad.getMetrics().getProjectName());
 		if (null == dti.getProjectVersion()) dti.setProjectVersion(ad.getMetrics().getProjectVersion());
