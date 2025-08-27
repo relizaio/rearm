@@ -246,7 +246,7 @@
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
                         <div v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
                             <h3>Changes in SBOM Components
-                                <Icon v-if="isWritable && updatedRelease.lifecycle === 'DRAFT'" 
+                                <Icon v-if="isWritable" 
                                     class="clickable addIcon" 
                                     size="20" 
                                     title="Refresh Changes" 
