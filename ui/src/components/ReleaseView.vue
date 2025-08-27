@@ -245,7 +245,16 @@
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
                         <div v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
-                            <h3>Changes in SBOM Components</h3>
+                            <h3>Changes in SBOM Components
+                                <Icon v-if="isWritable && updatedRelease.lifecycle === 'DRAFT'" 
+                                    class="clickable addIcon" 
+                                    size="20" 
+                                    title="Refresh Changes" 
+                                    @click="triggerReleaseCompletionFinalizer"
+                                    :style="{ opacity: refreshPending ? 0.5 : 1 }">
+                                    <Refresh/>
+                                </Icon>
+                            </h3>
                             <n-data-table
                                 :data="combinedChangelogData"
                                 :columns="changelogTableFields"
@@ -1085,6 +1094,7 @@ const isUpdatable: ComputedRef<boolean> = computed(
 
 const approvalPending: Ref<boolean> = ref(false)
 const bomExportPending: Ref<boolean> = ref(false)
+const refreshPending: Ref<boolean> = ref(false)
 
 async function lifecycleChange(newLifecycle: string) {
     approvalPending.value = true
@@ -1688,6 +1698,37 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         )
     } finally {
         bomExportPending.value = false
+    }
+}
+
+async function triggerReleaseCompletionFinalizer() {
+    try {
+        refreshPending.value = true
+        const gqlResp: any = await graphqlClient.mutate({
+            mutation: gql`
+                mutation triggerReleasecompletionfinalizer($release: ID!) {
+                    triggerReleasecompletionfinalizer(release: $release)
+                }
+            `,
+            variables: {
+                release: releaseUuid.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        if (gqlResp.data.triggerReleasecompletionfinalizer) {
+            notify('success', 'Refresh Triggered', 'Changes refresh has been triggered successfully')
+            // Optionally refresh the release data
+            await fetchRelease()
+        }
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    } finally {
+        refreshPending.value = false
     }
 }
 
