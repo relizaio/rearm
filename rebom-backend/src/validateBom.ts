@@ -24,9 +24,9 @@ export default async function validateBom(data: any): Promise<boolean> {
         }
     } catch (err) {
         if (err instanceof CDX.Validation.MissingOptionalDependencyError) {
-            logger.info('JSON validation skipped:', err)
+            logger.info({ err }, 'JSON validation skipped')
         } else {
-            logger.error(err)
+            logger.error({ err })
             throw err
         }
     }

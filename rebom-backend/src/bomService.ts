@@ -317,7 +317,7 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
         mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
       return mergedBom
     } catch (e) {
-      logger.error("Error During merge", e)
+      logger.error({ err: e }, "Error During merge")
       throw e
     }
   }
@@ -335,7 +335,7 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
       const bomRecord = await addBom(bomInput)
       return bomRecord
     } catch (e) {
-      logger.error("Error During merge", e)
+      logger.error({ err: e }, "Error During merge")
       throw e
     }
   }
@@ -378,7 +378,7 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
         throw new Error("Need root component purl to be defined to extract top level dependencies")
       }
     } catch (e) {
-      logger.error(e)
+      logger.error({ err: e })
       throw new Error("Top level dependecy can be extracted only for cdxgen boms")
     }
     let rootDepObj: any
@@ -549,7 +549,7 @@ function extractDevFilteredBom(bom: any): any {
       return processedBom
 
     } catch (e) {
-      logger.error("Error During merge", e)
+      logger.error({ err: e }, "Error During merge")
       // Clean up temporary files in case of error
       if (bomPaths.length > 0) {
         await utils.deleteTmpFiles(bomPaths)
@@ -897,7 +897,7 @@ function computeRootDepIndex (bom: any) : number {
       return JSON.parse(jsonString)
       // return bom
     } catch (e) {
-      logger.error("Error sanitizing bom", e)
-      throw new Error("Error sanitizing bom: " + e);
+      logger.error({ err: e }, "Error sanitizing bom")
+      throw new Error("Error sanitizing bom: " + (e instanceof Error ? e.message : String(e)));
     }
   }

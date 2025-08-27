@@ -85,7 +85,7 @@ async function mergeBomsForDiff(ids:[string], org: string){
       
       return diffResult
     } catch (e) {
-      logger.error("Error During diff", e)
+      logger.error({ err: e }, "Error During diff")
       // Clean up temporary files in case of error
       if (fromBomPath) {
         await utils.deleteTempFile(fromBomPath)

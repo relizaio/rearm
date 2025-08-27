@@ -28,9 +28,6 @@
   "dependencies": {
     "@apollo/server": "^5.0.0",
     "@cyclonedx/cyclonedx-library": "^8.5.0",
-    "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1",
-    "ajv-formats-draft2019": "^1.6.1",
     "axios": "^1.9.0",
     "canonicalize": "^2.1.0",
     "exceljs": "^4.4.0",
@@ -38,13 +35,14 @@
     "graphql": "^16.11.0",
     "graphql-tag": "^2.12.6",
     "packageurl-js": "^2.0.1",
-    "pg": "^8.16.0",
-    "pino": "^9.7.0",
-    "pino-pretty": "^13.0.0",
-    "typescript": "^5.8.3",
+    "pg": "^8.16.3",
+    "pino": "^9.9.0",
+    "pino-pretty": "^13.1.1",
+    "typescript": "^5.9.2",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "@tsconfig/recommended": "^1.0.8"
+    "@tsconfig/recommended": "^1.0.10",
+    "@types/node": "^24.3.0"
   }
 }

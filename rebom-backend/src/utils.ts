@@ -99,7 +99,7 @@ export async function deleteTmpFiles(filePaths: string[]): Promise<void> {
         try {
             await fs.promises.unlink(filePath);
         } catch (error) {
-            logger.error(`Failed to delete temporary file ${filePath}:`, error);
+            logger.error({ err: error }, `Failed to delete temporary file ${filePath}`);
         }
     }
 }
@@ -108,7 +108,7 @@ export async function deleteTempFile(filePath: string): Promise<void> {
     try {
         await fs.promises.unlink(filePath);
     } catch (error) {
-        logger.error(`Failed to delete temporary file ${filePath}:`, error);
+        logger.error({ err: error }, `Failed to delete temporary file ${filePath}`);
     }
 }
 
