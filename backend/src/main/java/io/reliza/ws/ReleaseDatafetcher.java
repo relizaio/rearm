@@ -861,6 +861,29 @@ public class ReleaseDatafetcher {
 		releaseFinalizerService.scheduleFinalizeRelease(rd.getUuid());
 		return true;
 	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "triggerReleasecompletionfinalizer")
+	public Boolean triggerReleasecompletionfinalizer(@InputArgument("release") UUID releaseId, DgsDataFetchingEnvironment dfe) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		
+		if (ord.isEmpty()) throw new RuntimeException("Wrong release");
+
+		ReleaseData rd = ord.get();
+
+		if(!rd.getLifecycle().equals(ReleaseLifecycle.DRAFT)){
+			throw new RuntimeException("Only DRAFT releases can be finalized.");
+		}
+	
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+
+		releaseFinalizerService.finalizeRelease(rd.getUuid());
+		return true;
+	}
 	
 	public static record SearchDigestVersionResponse (List<ReleaseData> commitReleases) {}
 	

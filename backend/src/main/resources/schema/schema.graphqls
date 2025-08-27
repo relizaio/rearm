@@ -145,6 +145,7 @@ type Mutation {
 	approveReleaseProgrammatic(releaseApprovals: ReleaseApprovalProgrammaticInput!): Release
 	synchronizeLiveBranches(synchronizeBranchInput: SynchronizeBranchInput!): Boolean
 	releasecompletionfinalizerProgrammatic(release: ID!): Boolean
+	triggerReleasecompletionfinalizer(release: ID!): Boolean
 	removeUser(orgUuid: ID!, userUuid: ID!): Boolean
 
 
