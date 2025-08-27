@@ -25,13 +25,12 @@
     <java.version>21</java.version>
     <main-class>org.springframework.boot.loader.launch.JarLauncher</main-class>
     <start-class>io.reliza.ws.App</start-class>
-    <log4j2.version>2.23.1</log4j2.version>
   </properties>
   
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.4.8</version>
+        <version>3.5.5</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     
@@ -41,7 +40,7 @@
 	            <groupId>com.netflix.graphql.dgs</groupId>
 	            <artifactId>graphql-dgs-platform-dependencies</artifactId>
 	            <!-- The DGS BOM/platform dependency. This is the only place you set version of DGS -->
-	            <version>10.1.2</version>
+	            <version>10.2.4</version>
 	            <type>pom</type>
 	            <scope>import</scope>
 	        </dependency>
