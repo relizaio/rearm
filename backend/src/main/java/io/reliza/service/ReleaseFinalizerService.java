@@ -13,6 +13,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import io.reliza.model.ReleaseData;
+import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -46,6 +47,9 @@ public class ReleaseFinalizerService {
             ReleaseData rd = ord.get();
             UUID branch = rd.getBranch();
             UUID org = rd.getOrg();
+            if(!rd.getLifecycle().equals(ReleaseLifecycle.DRAFT)){
+                throw new RuntimeException("Only DRAFT releases can be finalized.");
+            }
             acollectionService.releaseBomChangelogRoutine(releaseUuid, branch, org);
             // Add more finalization steps here as needed
         }

@@ -847,6 +847,10 @@ public class ReleaseDatafetcher {
 		if (ord.isEmpty()) throw new RuntimeException("Wrong release");
 
 		ReleaseData rd = ord.get();
+
+		if(!rd.getLifecycle().equals(ReleaseLifecycle.DRAFT)){
+			throw new RuntimeException("Only DRAFT releases can be finalized.");
+		}
 		UUID componentId = rd.getComponent();
 
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
