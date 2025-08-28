@@ -12,3 +12,9 @@ Major updates inlcude *Coverage* - where previously SBOMs were required to provi
 Another major update is inclusion of *Component Hash*. This is currently one of contentious points, as there are cases where it is difficult to pinpoint what this hash should be (i.e. for embedded libraries).
 
 The document is also clarifying definitions of several fields, including *SBOM Author* and *Software Producer*.
+
+Another new interesting document that is currently open for public comments is [NIST SP 1800-44A](https://www.nccoe.nist.gov/sites/default/files/2025-07/nist-sp-1800-44a-ipd.pdf) - Secure Software Development, Security, and Operations (DevSecOps) Practices. This is a high-level document that outlines a set of practices that are expected to be followed by organizations to ensure secure software development, security, and operations.
+
+An interesting point is that it references [NIST SP 800-218 - Secure Software Development Framework (SSDF)](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-218.pdf). As we previously [wrote](https://rearmhq.com/blog/sbom-remains-attestations-out-amending-executive-order-14144/), SSDF is identified as a foundation upon which future industry guidance in regards to SBOMs and attestations will be built.
+
+Therefore, while the current document is very high level, it should be seen in conjuction with upcoming SSDF updates.
