@@ -216,8 +216,8 @@ import commonFunctions from '../utils/commonFunctions'
 import { Ref, ref, watch } from 'vue'
 import { NRadioGroup, NRadioButton, NSelect, NFormItem } from 'naive-ui'
 
-async function getComponentChangelog (org: string, component: string,
-    branch: string, aggregationType: string) {
+async function getComponentChangelog (org: string, aggregationType: string, component?: string,
+    branch?: string) {
     let changelog = {}
     if (component && branch) {
         let fetchRlzParams = {
@@ -231,7 +231,7 @@ async function getComponentChangelog (org: string, component: string,
     return changelog
 }
 
-async function getChangelog (org: string, release1: string, release2: string, aggregationType: string) {
+async function getChangelog (org: string, aggregationType: string, release1?: string, release2?: string) {
     let changelog = {}
     if (release1 && release2) {
         let fetchRlzParams = {
@@ -246,14 +246,14 @@ async function getChangelog (org: string, release1: string, release2: string, ag
 }
 
 const props = defineProps<{
-    release1prop?: String,
-    release2prop?: String,
-    componentprop?: String,
-    orgprop: String,
-    branchprop?: String,
-    componenttypeprop: String,
-    isrouterlink?: Boolean,
-    iscomponentchangelog: Boolean
+    release1prop?: string,
+    release2prop?: string,
+    componentprop?: string,
+    orgprop: string,
+    branchprop?: string,
+    componenttypeprop: string,
+    isrouterlink?: boolean,
+    iscomponentchangelog: boolean
 }>()
 
 const aggregationType : Ref<string> = ref('NONE')
@@ -269,9 +269,9 @@ const componentType = props.componenttypeprop
 
 const getAggregatedChangelog = async function () {
     if (props.iscomponentchangelog) {
-        changelog.value = await getComponentChangelog(props.orgprop, props.componentprop, props.branchprop, aggregationType.value)
+        changelog.value = await getComponentChangelog(props.orgprop, aggregationType.value, props.componentprop, props.branchprop)
     } else {
-        changelog.value = await getChangelog(props.orgprop, props.release1prop, props.release2prop, aggregationType.value)
+        changelog.value = await getChangelog(props.orgprop, aggregationType.value, props.release1prop, props.release2prop)
     }
 }
 
