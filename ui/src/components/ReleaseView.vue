@@ -2166,7 +2166,7 @@ const artifactsTableFields: DataTableColumns<any> = [
             if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
             if (row.artifactDetails && row.artifactDetails.length) {
                 row.artifactDetails.forEach((ad: any) => {
-                    factContent.push(h('li', {}, [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad)}, 'download')]))
+                    factContent.push(h('li', {}, [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]))
                 })
             }
             const els: any[] = [
