@@ -379,24 +379,6 @@
         </div>
         <n-modal
             style="width: 90%;"
-            v-model:show="showDisapproveProductsConfirmationModal"
-            preset="dialog"
-            :show-icon="false" >
-            <n-card title="NOTICE: Disapprove Product Releases">
-                Select products to disapprove parent releases:
-                <div v-if="updatedRelease.inProducts && updatedRelease.inProducts.length" class="m-4">
-                    <n-form label-placement="left" :style="{maxWidth: '640px'}" size="medium">
-                        <n-checkbox-group v-model:value="productsForDisapproval" :options="productOptions">
-                            <n-checkbox v-for="b in productOptions" :key="b.value" :value="b.value" :label="b.label"></n-checkbox>
-                        </n-checkbox-group>
-                        <n-button attr-type="submit" @click="approve" type="success">Save</n-button>
-                        <n-button attr-type="reset" @click="resetApprovals">Reset</n-button>
-                    </n-form>
-                </div>
-            </n-card>
-        </n-modal>
-        <n-modal
-            style="width: 90%;"
             v-model:show="showAddComponentReleaseModal"
             preset="dialog"
             :show-icon="false" >
@@ -882,16 +864,6 @@ function requestApproval(type: string) {
     })
 }
 
-const productsForDisapproval: Ref<any[]> = ref([])
-const showDisapproveProductsConfirmationModal: Ref<boolean> = ref(false)
-const productOptions: ComputedRef<any> = computed((): any => {
-    let productOptions: any[] = []
-    if (updatedRelease.value.inProducts && updatedRelease.value.inProducts.length) {
-        productOptions = updatedRelease.value.inProducts.map((b:any) => { return { 'label': b.componentDetails.name + ' - ' + b.version, 'value': b.uuid } })
-    }
-    return productOptions
-})
-
 async function triggerApproval() {
     approvalPending.value = true
     const approvals = computeApprovals()
@@ -970,7 +942,6 @@ async function approve(approvals: ApprovalInput[]) {
     })
 }
 function resetApprovals () {
-    showDisapproveProductsConfirmationModal.value = false
     approvalPending.value = false
     updatedRelease.value.approvals = release.value.approvals
 }
