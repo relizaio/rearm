@@ -1627,7 +1627,7 @@ async function uploadNewBomVersion (art: any) {
 
 
     }else {
-        const fileDigest = art.digestRecords.find(dr => dr.scope === 'ORIGINAL_FILE').digest
+        const fileDigest = art.digestRecords.find((dr: any) => dr.scope === 'ORIGINAL_FILE').digest
         questionText = `This Artifact has a file with digest \`${fileDigest}\` and version \`${art.version}\`. \nIf you upload a new file, the artifact reference will be switched to the file you are uploading.`
     }
 
