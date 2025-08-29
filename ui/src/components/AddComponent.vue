@@ -63,13 +63,13 @@ import constants from '../utils/constants'
 
 
 const props = defineProps<{
-    orgProp: String,
-    inputType?: String,
-    addExtOrg: Boolean,
-    inputProj?: String,
-    inputBranch?: String,
-    inputStatus?: String,
-    inputRelease?: String
+    orgProp: string,
+    inputType?: string,
+    addExtOrg: boolean,
+    inputProj?: string,
+    inputBranch?: string,
+    inputStatus?: string,
+    inputRelease?: string
 }>()
 
 const emit = defineEmits(['addedComponent'])
