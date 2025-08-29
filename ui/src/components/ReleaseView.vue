@@ -338,6 +338,7 @@
                                     :release2prop="selectedReleaseId"
                                     :orgprop="updatedRelease.orgDetails.uuid"
                                     :componenttypeprop="release.componentDetails.type" 
+                                    :iscomponentchangelog="false"
                                 />
                             </div>
                         </div>
