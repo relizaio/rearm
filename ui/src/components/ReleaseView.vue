@@ -2305,6 +2305,21 @@ const deliverableTableFields: DataTableColumns<any> = [
                 }
                 )
             ]
+            // If this is a container and SHA_256 digest is present, add a copy icon to copy
+            // displayIdentifier@sha256:<digest>
+            if (row.type === 'CONTAINER' && row.softwareMetadata && row.softwareMetadata.digestRecords && row.softwareMetadata.digestRecords.length) {
+                const sha256 = row.softwareMetadata.digestRecords.find((d: any) => d.algo === 'SHA_256')
+                if (sha256 && row.displayIdentifier) {
+                    const copyRefEl = h(NIcon,
+                        {
+                            title: 'Copy container image reference with digest)',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => copyToClipboard(`${row.displayIdentifier}@sha256:${sha256.digest}`)
+                        }, { default: () => h(ClipboardCheck) })
+                    els.push(copyRefEl)
+                }
+            }
             return h('div', els)
         }
     },
