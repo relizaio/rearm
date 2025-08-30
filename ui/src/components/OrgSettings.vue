@@ -545,6 +545,18 @@ const showCreateApprovalRole = ref(false)
 
 const showCIIntegrationModal = ref(false)
 
+const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
+const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
+    let isOrgAdmin = false
+    if (myUser.value && myUser.value.permissions) {
+        let orgPermission = myUser.value.permissions.permissions.find((p: any) => (p.org === orgResolved.value && p.object === orgResolved.value && p.scope === 'ORGANIZATION'))
+        if (orgPermission && orgPermission.type === 'ADMIN') {
+            isOrgAdmin = true
+        }
+    }
+    return isOrgAdmin
+})
+
 const approvalRoleFields: any[] = [
     {
         key: 'id',
@@ -1411,11 +1423,12 @@ async function loadConfiguredIntegrations(useCache: boolean) {
 }
 
 async function loadCiIntegrations(useCache: boolean) {
-    let cachePolicy: FetchPolicy = "network-only"
-    if (useCache) cachePolicy = "cache-first"
-    try {
-        const resp = await graphqlClient.query({
-            query: gql`
+    if (myUser.value && myUser.value.installationType !== 'OSS') {
+        let cachePolicy: FetchPolicy = "network-only"
+        if (useCache) cachePolicy = "cache-first"
+        try {
+            const resp = await graphqlClient.query({
+                query: gql`
                           query ciIntegrations($org: ID!) {
                                 ciIntegrations(org: $org) {
                                 	uuid
@@ -1430,12 +1443,13 @@ async function loadCiIntegrations(useCache: boolean) {
                 org: orgResolved.value
             },
             fetchPolicy: cachePolicy
-        })
-        if (resp.data && resp.data.ciIntegrations) {
-            ciIntegrations.value = resp.data.ciIntegrations
+            })
+            if (resp.data && resp.data.ciIntegrations) {
+                ciIntegrations.value = resp.data.ciIntegrations
+            }
+        } catch (err) { 
+            console.error(err)
         }
-    } catch (err) { 
-        console.error(err)
     }
 }
 
@@ -1900,17 +1914,6 @@ const jiraIntegrationData: ComputedRef<any> = computed((): any => {
         return store.getters.myorg.jiraIntegrationData
     }
     return false
-})
-const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
-const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
-    let isOrgAdmin = false
-    if (myUser.value && myUser.value.permissions) {
-        let orgPermission = myUser.value.permissions.permissions.find((p: any) => (p.org === orgResolved.value && p.object === orgResolved.value && p.scope === 'ORGANIZATION'))
-        if (orgPermission && orgPermission.type === 'ADMIN') {
-            isOrgAdmin = true
-        }
-    }
-    return isOrgAdmin
 })
 const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.map((accesKey: any) => {
