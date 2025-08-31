@@ -312,7 +312,6 @@ public class OssReleaseService {
 				throw new RelizaException("Cannot update release in the current lifecycle with requested properties");
 			}
 			doUpdateRelease (r, rData, releaseDto, wu);
-			processReleaseLifecycleEvents (rData, releaseDto.getLifecycle(), oldLifecycle);
 		}
 		
 		return r;
