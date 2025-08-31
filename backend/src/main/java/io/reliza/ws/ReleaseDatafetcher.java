@@ -569,9 +569,9 @@ public class ReleaseDatafetcher {
 				
 				for (int i = 0; i < commitList.size(); i++) {
 					var com = commitList.get(i);
-					log.info("PSDEBUG: Processing commitList element [{}]: {}", i, com);
+					log.debug("Processing commitList element [{}]: {}", i, com);
 				}
-				log.info("PSDEBUG: Current sceMap contents: {}", sceMap);
+				log.debug("Current sceMap contents: {}", sceMap);
 
 				// use the first commit of commitlist to fill in the missing fields of source code entry
 				if (!commitList.isEmpty() && (
@@ -609,7 +609,7 @@ public class ReleaseDatafetcher {
 							.endpoint(endpoint);
 			var rd = ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDtoBuilder.build(),
 					ar.getWhoUpdated()));
-			log.info("release created: {}", rd);
+			log.debug("release created: {}", rd);
 			if (null != outboundDeliverablesList && !outboundDeliverablesList.isEmpty()) {
 				List<UUID> outboundDeliverables = deliverableService
 						.prepareListofDeliverables(outboundDeliverablesList, bd.getUuid(), version, ar.getWhoUpdated());

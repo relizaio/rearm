@@ -742,11 +742,9 @@ public class OssReleaseService {
 			ReleaseData existingRd = ord.get();
 			if (existingRd.getLifecycle() != ReleaseLifecycle.PENDING)
 				throw new RelizaException("Cannot create release because this version already belongs to another non-pending release, version = " + rData.getVersion());
-			
-			r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
-			
 			releaseDto.setUuid(existingRd.getUuid());
 			r = updateRelease(releaseDto, UpdateReleaseStrength.DRAFT_PENDING, wu);
+			r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
 			rData = ReleaseData.dataFromRecord(r);
 		} else if (ova.isPresent()) {
 			r = saveRelease(r, recordData, wu);
