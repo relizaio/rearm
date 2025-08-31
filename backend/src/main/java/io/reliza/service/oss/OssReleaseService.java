@@ -753,22 +753,26 @@ public class OssReleaseService {
 			va.setRelease(r.getUuid());
 			va.setAssignmentType(AssignmentTypeEnum.ASSIGNED);
 			versionAssignmentService.saveVersionAssignment(va);
+			handleNewReleaseNotifications(rData, bdOpt.get());
 		} else { // ova empty
 			r = saveRelease(r, recordData, wu);
 			rData = ReleaseData.dataFromRecord(r);
-
 			variantService.ensureBaseVariantForRelease(rData, wu);
 			versionAssignmentService.createNewVersionAssignment(rData.getBranch(), rData.getVersion(), r.getUuid());
+			handleNewReleaseNotifications(rData, bdOpt.get());
 		}
-		if (rData.getLifecycle() == ReleaseLifecycle.PENDING) {
-			notificationService.processReleaseEvent(rData, bdOpt.get(), ReleaseEventType.RELEASE_SCHEDULED);
-		} else {
-			notificationService.processReleaseEvent(rData, bdOpt.get(), ReleaseEventType.NEW_RELEASE);
-			if (rData.getLifecycle() == ReleaseLifecycle.ASSEMBLED ) {
-				autoIntegrateProducts(rData);
-			}
+		if (rData.getLifecycle() == ReleaseLifecycle.ASSEMBLED ) {
+			autoIntegrateProducts(rData);
 		}
 		return r;
+	}
+
+	private void handleNewReleaseNotifications(ReleaseData rData, BranchData bd) {
+		if (rData.getLifecycle() == ReleaseLifecycle.PENDING) {
+			notificationService.processReleaseEvent(rData, bd, ReleaseEventType.RELEASE_SCHEDULED);
+		} else {
+			notificationService.processReleaseEvent(rData, bd, ReleaseEventType.NEW_RELEASE);
+		}
 	}
 
 	
