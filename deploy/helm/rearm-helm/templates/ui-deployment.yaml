@@ -39,13 +39,15 @@ spec:
               value: keycloak
             - name: KEYCLOAK_PORT
               value: "9080"
+            {{- end}}
             - name: MAX_BODY_SIZE
               value: {{ .Values.max_upload_size_in_MB }}M
-            {{- end}}
             - name: KEYCLOAK_ADMIN_ACCESS
               value: ""
             - name: KEYCLOAK_RELIZA_ADMIN_ACCESS
               value: ""
+            - name: REARM_PRODUCT_VERSION
+              value: {{ .Chart.AppVersion }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
