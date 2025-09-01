@@ -13,6 +13,21 @@
                             <left-nav-bar />
                         </n-layout-content>
                     </n-layout>
+                    <n-layout>
+                        <n-layout-content>
+                            <div class="footer-container">
+                                <n-divider />
+                                <div class="footer-content">
+                                    <div class="footer-text">
+                                        {{ footerContent }}
+                                    </div>
+                                    <div class="footer-links">
+                                        <a href="mailto:info@reliza.io" class="footer-link">Support</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </n-layout-content>
+                    </n-layout>
                 </n-space>
                 <sign-up-flow v-if="showSignUpFlow === 'signup'" />
                 <verify-email v-if="showSignUpFlow === 'verifyEmail'" />
@@ -28,7 +43,7 @@ export default {
 </script>
 <script lang="ts" setup>
 import { ref, ComputedRef, computed } from 'vue'
-import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider } from 'naive-ui'
+import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider, NDivider } from 'naive-ui'
 import TopNavBar from './TopNavBar.vue'
 import LeftNavBar from './LeftNavBar.vue'
 import { useStore } from 'vuex'
@@ -119,8 +134,57 @@ const onCreate = async function () {
 
 await onCreate()
 
+const footerContent = ref('© Reliza Incorporated, 2019-2025')
+
 </script>
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
+a {
+  color: inherit;
+  text-decoration: none;
+}
+.footer-container {
+  margin-top: auto;
+  padding: 0 20px;
+}
+
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  color: #666;
+  font-size: 14px;
+  
+  @media (max-width: 768px) {
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+  }
+}
+
+.footer-text {
+  font-weight: 500;
+}
+
+.footer-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-link {
+  cursor: pointer;
+  transition: color 0.2s ease;
+  
+  &:hover {
+    color: #18a058;
+  }
+}
+
+.footer-separator {
+  color: #ccc;
+  margin: 0 4px;
+}
 </style>
