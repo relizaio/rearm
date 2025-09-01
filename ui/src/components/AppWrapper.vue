@@ -1,34 +1,37 @@
 <template>
-    <div>
+    <div class="app-wrapper">
         <n-config-provider>
             <n-notification-provider placement="bottom-right">
-                <n-space vertical v-if="!showSignUpFlow">
-                    <n-layout>
-                        <n-layout-content >
-                            <top-nav-bar />
-                        </n-layout-content>
-                    </n-layout>
-                    <n-layout>
-                        <n-layout-content >
-                            <left-nav-bar />
-                        </n-layout-content>
-                    </n-layout>
-                    <n-layout>
-                        <n-layout-content>
-                            <div class="footer-container">
-                                <n-divider />
-                                <div class="footer-content">
-                                    <div class="footer-text">
-                                        {{ footerContent }}
-                                    </div>
-                                    <div class="footer-links">
-                                        <a href="mailto:info@reliza.io" class="footer-link">Support</a>
-                                    </div>
-                                </div>
+                <div class="main-content" v-if="!showSignUpFlow">
+                    <div class="content-area">
+                        <n-layout>
+                            <n-layout-content >
+                                <top-nav-bar />
+                            </n-layout-content>
+                        </n-layout>
+                        <n-layout>
+                            <n-layout-content >
+                                <left-nav-bar />
+                            </n-layout-content>
+                        </n-layout>
+                    </div>
+                    <div class="footer-container">
+                        <n-divider />
+                        <div class="footer-content">
+                            <div class="footer-text">
+                                {{ footerVersionText }}
                             </div>
-                        </n-layout-content>
-                    </n-layout>
-                </n-space>
+                            <div class="footer-text">
+                                © Reliza Incorporated, 2019-2025
+                            </div>
+                            <div class="footer-links">
+                                <a href="https://docs.rearmhq.com" rel="noopener noreferrer" target="_blank" class="footer-link">Documentation</a>
+                                <span class="footer-separator">•</span>
+                                <a href="mailto:info@reliza.io" class="footer-link">Support</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <sign-up-flow v-if="showSignUpFlow === 'signup'" />
                 <verify-email v-if="showSignUpFlow === 'verifyEmail'" />
                 <join-organization v-if="showSignUpFlow === 'joinOrganization'" />
@@ -62,6 +65,16 @@ const store = useStore()
 await fetchCsrfToken()
 await store.dispatch('fetchMyUser')
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
+const rearmProductVersion: string = '54ab89bb-f1f1-459c-afbf-e4d78655b298'
+const footerVersionText: ComputedRef<string> = computed((): string => {
+    const flavor = myUser.value?.installationType === 'OSS' ? 'ReARM CE' : 'ReARM Pro'
+    const rearmProductVersionComparisonString: string = '54ab89bb-f1f1-459c' + '-afbf-e4d78655b298'
+    if (rearmProductVersion !== rearmProductVersionComparisonString) {
+        return `${flavor} v${rearmProductVersion}`
+    } else {
+        return flavor
+    }
+})
 
 const showSignUpFlow = ref('')
 async function fetchCsrfToken() {
@@ -134,16 +147,26 @@ const onCreate = async function () {
 
 await onCreate()
 
-const footerContent = ref('© Reliza Incorporated, 2019-2025')
-
 </script>
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
-a {
-  color: inherit;
-  text-decoration: none;
+.app-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.content-area {
+  flex: 1;
+}
+
 .footer-container {
   margin-top: auto;
   padding: 0 20px;
@@ -174,17 +197,8 @@ a {
   gap: 8px;
 }
 
-.footer-link {
-  cursor: pointer;
-  transition: color 0.2s ease;
-  
-  &:hover {
-    color: #18a058;
-  }
-}
-
-.footer-separator {
-  color: #ccc;
-  margin: 0 4px;
+a {
+  color: inherit;
+  text-decoration: none;
 }
 </style>

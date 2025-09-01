@@ -29,11 +29,6 @@
                     <router-link :to="{ name: 'systemSettings'}"><vue-feather class="clickable" type="settings" title="Global Admin Settings" /></router-link>
                 </span>
                 <span>
-                    <a href="https://docs.rearmhq.com" rel="noopener noreferrer" target="_blank">
-                        <vue-feather class="clickable" type="help-circle" title="Documentation" />
-                    </a>
-                </span>
-                <span>
                     <span v-if="myUser"><vue-feather class="clickable" @click="logout" type="log-out" title="Sign Out" /></span>
                 </span>
             </div>
@@ -153,6 +148,7 @@ body {
 
 .horizontalNavIcons i {
     padding-top: 15px;
+    padding-left: 7%;
 }
 
 </style>
