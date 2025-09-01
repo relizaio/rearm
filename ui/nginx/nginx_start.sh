@@ -7,7 +7,7 @@ fi
 
 if [ ! -z "$REARM_PRODUCT_VERSION" ]
 then
-    find /usr/share/nginx/html/assets/ -type f -exec sed -i "s,54ab89bb-f1f1-459c-afbf-e4d78655b298,$REARM_PRODUCT_VERSION" {} \;
+    find /usr/share/nginx/html/assets/ -type f -exec sed -i "s|54ab89bb-f1f1-459c-afbf-e4d78655b298|$REARM_PRODUCT_VERSION|" {} \;
 fi
 
 # run regular entrypoint
