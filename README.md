@@ -52,7 +52,7 @@ ReARM is a xBOM management system that allows organizations to maintain complian
 While highlighting regulatory pressure, we strive to make sure that ReARM bears minimum or no overhead on developers and more so provides real value in terms of managing technology releases and their metadata. In other words, our goal is creating a product that would be useful for developers and managers, while also solving the compliance problem.
 
 ## Present Capabilities
-1. Storage and retrieval of SBOMs / xBOMs for software and hardware, per release, including signatures and signing details
+1. Storage and retrieval of SBOMs / xBOMs for software and hardware, per release, including signatures and signing details with rich export capabilities (e.g., option to exclude Dev / Test dependencies or option to list only top level dependencies)
 2. Seamless creation of aggregated BOMs on Component and Product Release levels
 3. Maintaining representation of organization's products and components with branches and releases
 4. Automated creation of release versions and changelogs between releases
@@ -64,7 +64,7 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 10. Component release-level alerts and changelog for changes in SBOM dependencies
 
 ## Future Capabilities (Medium-Term Roadmap)
-1. Extended options to configure retrieved aggregated BOMs (via tagging and detailed component analysis, i.e., option to exclude Test dependencies)
+1. Improved VEX workflow
 2. Resource group authorization hierarchy 
 3. Better handling and prescribed workflows for Attestations
 4. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
