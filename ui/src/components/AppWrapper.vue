@@ -45,7 +45,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ref, ComputedRef, computed } from 'vue'
+import { Ref, ref, ComputedRef, computed } from 'vue'
 import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider, NDivider } from 'naive-ui'
 import TopNavBar from './TopNavBar.vue'
 import LeftNavBar from './LeftNavBar.vue'
@@ -65,12 +65,12 @@ const store = useStore()
 await fetchCsrfToken()
 await store.dispatch('fetchMyUser')
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
-const rearmProductVersion: string = '54ab89bb-f1f1-459c-afbf-e4d78655b298'
+const rearmProductVersion: Ref<string> = ref('54ab89bb-f1f1-459c-afbf-e4d78655b298')
 const footerVersionText: ComputedRef<string> = computed((): string => {
     const flavor = myUser.value?.installationType === 'OSS' ? 'ReARM CE' : 'ReARM Pro'
     const rearmProductVersionComparisonString: string = '54ab89bb-f1f1-459c' + '-afbf-e4d78655b298'
-    if (rearmProductVersion !== rearmProductVersionComparisonString) {
-        return `${flavor} v${rearmProductVersion}`
+    if (rearmProductVersion.value !== rearmProductVersionComparisonString) {
+        return `${flavor} v${rearmProductVersion.value}`
     } else {
         return flavor
     }
