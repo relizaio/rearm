@@ -36,7 +36,7 @@ ReARM was the first project that introduced the principles of [Product-Component
 - Reliza Versioning: https://github.com/relizaio/versioning
 
 ## ReARM Product Status Information
-- ReARM itself - Public Beta
+- ReARM itself - General Availability
 - Transparency Exchange API (TEA) implementation - in the process of implementation of TEA Beta 1 - Public Alpha available on ReARM Demo Instance (see below for details)
 
 ## Motivation
