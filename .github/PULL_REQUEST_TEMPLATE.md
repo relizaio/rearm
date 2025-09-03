@@ -7,7 +7,7 @@
 - Key changes in this PR
 - Notable refactors or files of interest
 
-## Screenshots / Demos (if UI)
+## Screenshots / Demos (if UI, optional)
 - Add before/after screenshots or a short clip
 
 ## Testing
@@ -33,8 +33,7 @@
 - [ ] Title follows conventional commits (feat, fix, chore, docs, refactor, build, ci)
 - [ ] Description clearly explains the change and context
 - [ ] Tests added/updated or rationale provided
-- [ ] Linting passes locally
-- [ ] Documentation updated (README, docs/, comments)
+- [ ] Documentation updated
 - [ ] No sensitive data committed (keys, tokens, secrets)
 - [ ] Backward compatibility considered
 
