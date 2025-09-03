@@ -285,7 +285,7 @@
                         <n-data-table :data="updatedRelease.inProducts" :columns="inProductsTableFields" :row-key="artifactsRowKey" />
                     </div>
                 </n-tab-pane>
-                <n-tab-pane name="approvals" tab="Approvals">
+                <n-tab-pane v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" name="approvals" tab="Approvals">
                     <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER'">
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
                         <n-spin :show="approvalPending" small style="margin-top: 5px;">
