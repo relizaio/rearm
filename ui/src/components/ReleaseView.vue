@@ -1313,11 +1313,12 @@ async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
 }
 
 async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrackProject: string) {
-    currentReleaseArtifacts.value = [artifactUuid]
+    // Scan all artifacts from the current release context and filter by uuid
+    currentReleaseArtifacts.value = artifacts.value.filter((a: any) => a?.uuid === artifactUuid)
+    showDetailedVulnerabilitiesModal.value = true
     currentDtrackProjectUuids.value = [dependencyTrackProject]
     currentReleaseOrgUuid.value = release.value.org
     loadingVulnerabilities.value = true
-    showDetailedVulnerabilitiesModal.value = true
     
     try {
         const response = await graphqlClient.query({
@@ -2165,11 +2166,12 @@ const artifactsTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, row.metrics.dependencyTrackProject)}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, row.metrics.dependencyTrackProject)}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, row.metrics.dependencyTrackProject)}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, row.metrics.dependencyTrackProject)}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, row.metrics.dependencyTrackProject)}, row.metrics.unassigned)
+                const dependencyTrackProject = row.metrics.dependencyTrackFullUri.split('/').pop()
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2182,9 +2184,10 @@ const artifactsTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, row.metrics.dependencyTrackProject)}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, row.metrics.dependencyTrackProject)}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, row.metrics.dependencyTrackProject)}, row.metrics.policyViolationsOperationalTotal)
+                const dependencyTrackProject = row.metrics.dependencyTrackFullUri.split('/').pop()
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.policyViolationsOperationalTotal)
                 els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
