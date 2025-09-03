@@ -2166,7 +2166,7 @@ const artifactsTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const dependencyTrackProject = row.metrics.dependencyTrackFullUri.split('/').pop()
+                const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
                 const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.critical)
                 const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.high)
                 const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.medium)
@@ -2184,7 +2184,7 @@ const artifactsTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const dependencyTrackProject = row.metrics.dependencyTrackFullUri.split('/').pop()
+                const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
                 const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.policyViolationsLicenseTotal)
                 const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.policyViolationsSecurityTotal)
                 const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject)}, row.metrics.policyViolationsOperationalTotal)
