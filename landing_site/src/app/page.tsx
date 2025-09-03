@@ -76,6 +76,22 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Trusted */}
+      <div className="container-fluid container2">
+        <div className="row">
+          <h3 className="text-center C2_title">Trusted By</h3>
+          <div className="d-flex justify-content-center integrationsFlexWrap">
+            {[
+              "kdm.png",
+              "iq.png",
+              "wysdom.png"
+            ].map((file) => (
+              <img key={file} src={`/home/${file}`} alt="" className="favAppIcons" />
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Alternating features (array2 in CRA) */}
       <div className="container-fluid container4">
         {[
