@@ -84,7 +84,7 @@ export default function Home() {
             {[
               "kdm.png",
               "iq.png",
-              "wysdom.png"
+              "ascr.png"
             ].map((file) => (
               <img key={file} src={`/home/${file}`} alt="" className="favAppIcons" />
             ))}
