@@ -67,6 +67,8 @@ export default function Home() {
               "msteams.png",
               "oci.png",
               "sendgrid.png",
+              "semgrep.png",
+              "checkov.png",
             ].map((file) => (
               <img key={file} src={`/home/${file}`} alt="" className="favAppIcons" />
             ))}
