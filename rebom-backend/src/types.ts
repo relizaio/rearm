@@ -144,6 +144,13 @@ export type SarifResult = {
     partialFingerprints?: {
         [key: string]: string;
     };
+    // Additional, non-standardized fields some tools include
+    properties?: {
+        [key: string]: any;
+        tags?: string[];
+        'security-severity'?: string;
+        severity?: string;
+    };
 }
 
 export type SarifRule = {
@@ -151,6 +158,13 @@ export type SarifRule = {
     properties?: {
         tags?: string[];
         'security-severity'?: string;
+        // Allow arbitrary extra properties that some tools add
+        [key: string]: any;
+    };
+    // Some tools specify default configuration including a default level
+    defaultConfiguration?: {
+        level?: string;
+        [key: string]: any;
     };
     relationships?: Array<{
         target: {

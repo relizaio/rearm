@@ -14,16 +14,31 @@ export function parseSarifToWeaknesses(sarifData: SarifReport): WeaknessDto[] {
             const rules = run.tool.driver.rules || [];
             const results = run.results || [];
 
-            // Create a map of rule index to rule for quick lookup
-            const ruleMap = new Map<number, SarifRule>();
+            // Create maps for rule lookup by index and by id. Some SARIF (e.g., CodeQL) put rules in extensions.
+            const ruleIndexMap = new Map<number, SarifRule>();
             rules.forEach((rule, index) => {
-                ruleMap.set(index, rule);
+                ruleIndexMap.set(index, rule);
             });
 
+            const ruleIdMap = new Map<string, SarifRule>();
+            rules.forEach((rule) => {
+                if (rule?.id) ruleIdMap.set(rule.id, rule);
+            });
+            // Also load rules from extensions if present
+            const extensions = (run as any)?.tool?.extensions as Array<{ rules?: SarifRule[] }> | undefined;
+            if (extensions) {
+                for (const ext of extensions) {
+                    (ext.rules || []).forEach(r => {
+                        if (r?.id) ruleIdMap.set(r.id, r);
+                    });
+                }
+            }
+
             for (const result of results) {
-                const weakness = extractWeaknessFromResult(result, ruleMap);
+                const weakness = extractWeaknessFromResult(result, ruleIndexMap, ruleIdMap);
                 if (weakness) {
                     weaknesses.push(weakness);
+                    console.log(weakness)
                 }
             }
         }
@@ -38,12 +53,14 @@ export function parseSarifToWeaknesses(sarifData: SarifReport): WeaknessDto[] {
 /**
  * Extracts weakness information from a single SARIF result
  */
-function extractWeaknessFromResult(result: SarifResult, ruleMap: Map<number, SarifRule>): WeaknessDto | null {
+function extractWeaknessFromResult(result: SarifResult, ruleIndexMap: Map<number, SarifRule>, ruleIdMap: Map<string, SarifRule>): WeaknessDto | null {
     try {
         // Get rule information
         let rule: SarifRule | undefined;
-        if (result.ruleIndex !== undefined) {
-            rule = ruleMap.get(result.ruleIndex);
+        if (result.ruleId && ruleIdMap.has(result.ruleId)) {
+            rule = ruleIdMap.get(result.ruleId);
+        } else if (result.ruleIndex !== undefined) {
+            rule = ruleIndexMap.get(result.ruleIndex);
         }
 
         const ruleId = result.ruleId || rule?.id || 'unknown';
@@ -89,14 +106,12 @@ function extractCweId(rule?: SarifRule): string {
         }
     }
 
-    // Check tags for CWE references
+    // Check tags for CWE references (support patterns like 'external/cwe/cwe-079')
     if (rule.properties?.tags) {
         for (const tag of rule.properties.tags) {
-            if (tag.toUpperCase().startsWith('CWE-') || tag.toUpperCase().includes('CWE')) {
-                const cweMatch = tag.toUpperCase().match(/CWE-(\d+)/);
-                if (cweMatch) {
-                    return `CWE-${cweMatch[1]}`;
-                }
+            const match = tag.match(/cwe[-_/: ]*0*(\d+)/i);
+            if (match) {
+                return `CWE-${match[1]}`;
             }
         }
     }
@@ -169,6 +184,50 @@ function determineSeverity(result: SarifResult, rule?: SarifRule): Vulnerability
     // Check result level first
     if (result.level) {
         switch (result.level.toLowerCase()) {
+            case 'error':
+                return VulnerabilitySeverity.HIGH;
+            case 'warning':
+                return VulnerabilitySeverity.MEDIUM;
+            case 'note':
+            case 'info':
+                return VulnerabilitySeverity.LOW;
+        }
+    }
+
+    // Some tools put severity in result.properties
+    const rp: any = (result as any).properties;
+    if (rp) {
+        if (typeof rp['security-severity'] === 'string') {
+            const score = parseFloat(rp['security-severity']);
+            if (!isNaN(score)) {
+                if (score >= 9.0) return VulnerabilitySeverity.CRITICAL;
+                if (score >= 7.0) return VulnerabilitySeverity.HIGH;
+                if (score >= 4.0) return VulnerabilitySeverity.MEDIUM;
+                return VulnerabilitySeverity.LOW;
+            }
+        }
+        const propSeverity: string | undefined = rp['problem.severity'] || rp['severity'];
+        if (propSeverity) {
+            switch (propSeverity.toLowerCase()) {
+                case 'critical':
+                    return VulnerabilitySeverity.CRITICAL;
+                case 'high':
+                case 'error':
+                    return VulnerabilitySeverity.HIGH;
+                case 'medium':
+                case 'warning':
+                    return VulnerabilitySeverity.MEDIUM;
+                case 'low':
+                case 'note':
+                case 'info':
+                    return VulnerabilitySeverity.LOW;
+            }
+        }
+    }
+
+    // Fallback to rule default configuration level if present
+    if (rule?.defaultConfiguration?.level) {
+        switch (rule.defaultConfiguration.level.toLowerCase()) {
             case 'error':
                 return VulnerabilitySeverity.HIGH;
             case 'warning':
