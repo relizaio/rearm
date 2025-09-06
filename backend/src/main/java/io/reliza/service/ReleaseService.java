@@ -1545,7 +1545,7 @@ public class ReleaseService {
 			rmd.mergeWithByContent(ad.get().getMetrics());
 		});
 		rmd.mergeWithByContent(rollUpProductReleaseMetrics(rd));
-		if (null == originalMetrics.getLastScanned() || lastScanned.isAfter(originalMetrics.getLastScanned())) {
+		if (null == originalMetrics || null == originalMetrics.getLastScanned() || lastScanned.isAfter(originalMetrics.getLastScanned())) {
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			rmd.setLastScanned(lastScanned);
 			rd.setMetrics(rmd);
@@ -1568,8 +1568,7 @@ public class ReleaseService {
 		return rmd;
 	}
 	
-	protected void computeMetricsForAllUnprocessedReleases () {
-		ZonedDateTime lastScanned = ZonedDateTime.now();
+	protected void computeMetricsForAllUnprocessedReleases (ZonedDateTime lastScanned) {
 		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect();
 		var releasesBySce = repository.findReleasesForMetricsComputeBySce();
 		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables();

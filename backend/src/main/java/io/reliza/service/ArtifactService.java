@@ -5,6 +5,7 @@
 package io.reliza.service;
 
 import java.io.IOException;
+import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -464,15 +465,15 @@ public class ArtifactService {
 		return artifactUploadResponse;
 	}
 	
-	protected void initialProcessArtifactsOnDependencyTrack () {
+	protected void initialProcessArtifactsOnDependencyTrack (ZonedDateTime lastScanned) {
 		List<Artifact> initialArts = repository.listInitialArtifactsPendingOnDependencyTrack();
 		log.debug("PSDEBUG: located " + initialArts.size() + " to process initially on dep track");
-		initialArts.forEach(a -> fetchDependencyTrackDataForArtifact(a));
+		initialArts.forEach(a -> fetchDependencyTrackDataForArtifact(a, lastScanned));
 	}
 	
-	public boolean fetchDependencyTrackDataForArtifact (Artifact a) {
+	public boolean fetchDependencyTrackDataForArtifact (Artifact a, ZonedDateTime lastScanned) {
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
-		var dti = integrationService.resolveDependencyTrackProcessingStatus(ad);
+		var dti = integrationService.resolveDependencyTrackProcessingStatus(ad, lastScanned);
 		boolean doUpdate = false;
 		if (null != dti) {
 			log.debug("PSDEBUG: setting dti to last scanned = " + dti.getLastScanned() + " on artifact = " + a.getUuid());
@@ -486,7 +487,7 @@ public class ArtifactService {
 		if (doUpdate) sharedArtifactService.updateArtifactDti(a, dti, WhoUpdated.getAutoWhoUpdated());
 		return true;
 	}
-	
+
 	/**
 	 * Sync dependency track data for all unsynced projects
 	 * Retrieves unsynced projects from Dependency Track, finds associated artifacts,
@@ -520,9 +521,10 @@ public class ArtifactService {
 		
 		// Process each artifact
 		int processedCount = 0;
+		ZonedDateTime lastScanned = ZonedDateTime.now();
 		for (Artifact artifact : artifacts) {
 			try {
-				fetchDependencyTrackDataForArtifact(artifact);
+				fetchDependencyTrackDataForArtifact(artifact, lastScanned);
 				processedCount++;
 				log.debug("Successfully processed artifact {} for dependency track sync", artifact.getUuid());
 			} catch (Exception e) {
@@ -538,7 +540,7 @@ public class ArtifactService {
 		int errorCount = artifacts.size() - processedCount;
 		if (errorCount == 0) {
 			// Update last sync time to current time only if all artifacts processed successfully
-			systemInfoService.setLastDtrackSync(java.time.ZonedDateTime.now());
+			systemInfoService.setLastDtrackSync(lastScanned);
 			log.debug("Updated last dependency track sync time to current time - no errors encountered");
 		} else {
 			log.warn("Skipping last sync time update due to {} errors during processing", errorCount);

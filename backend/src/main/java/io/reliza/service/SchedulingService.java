@@ -3,6 +3,8 @@
 */
 package io.reliza.service;
 
+import java.time.ZonedDateTime;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -68,8 +70,9 @@ public class SchedulingService {
             log.debug("resolve dependency track lock acquired {}", lock);
 			if (lock) {
 				try {
-					artifactService.initialProcessArtifactsOnDependencyTrack();
-					releaseService.computeMetricsForAllUnprocessedReleases();
+					ZonedDateTime lastScanned = ZonedDateTime.now();
+					artifactService.initialProcessArtifactsOnDependencyTrack(lastScanned);
+					releaseService.computeMetricsForAllUnprocessedReleases(lastScanned);
 				} catch (Exception e) {
 					log.error("Exception in resolving dependency track", e);
 				} finally {

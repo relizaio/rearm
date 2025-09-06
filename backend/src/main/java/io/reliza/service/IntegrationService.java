@@ -502,7 +502,8 @@ public class IntegrationService {
 		return new DependencyTrackUploadResult(projectId.toString(), token, projectName, projectVersion, fullDtrackUri);
 	}
 	
-	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad) {
+	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad, ZonedDateTime lastScanned) {
+		if (null == lastScanned) lastScanned = ZonedDateTime.now();
 		DependencyTrackIntegration dti = null;
 		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(ad.getOrg(), IntegrationType.DEPENDENCYTRACK,
 				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
@@ -528,7 +529,7 @@ public class IntegrationService {
 					dti.setDependencyTrackFullUri(fullDtrackUri);
 					dti.setDependencyTrackProject(ad.getMetrics().getDependencyTrackProject());
 					dti.setUploadToken(ad.getMetrics().getUploadToken());
-					dti.setLastScanned(ZonedDateTime.now());
+					dti.setLastScanned(lastScanned);
 				}
 			} catch (Exception e) {
 				log.error("Exception processing status of artifact on dependency track with id = " + ad.getUuid(), e);
