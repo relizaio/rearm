@@ -4,6 +4,7 @@
 package io.reliza.ws;
 
 import java.net.URI;
+import java.time.ZonedDateTime;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -117,7 +118,7 @@ public class IntegrationDataFetcher {
 		
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
 		
-		return artifactService.fetchDependencyTrackDataForArtifact(oa.get());
+		return artifactService.fetchDependencyTrackDataForArtifact(oa.get(), ZonedDateTime.now());
 	}
 	
 	@PreAuthorize("isAuthenticated()")
