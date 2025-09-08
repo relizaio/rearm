@@ -279,7 +279,11 @@ public class NotificationService {
             StringBuilder addedBlock = new StringBuilder();
             addedBlock.append("```\n");
             for (AcollectionData.DiffComponent dc : changelog.added()) {
-                addedBlock.append("- ").append(dc.purl()).append(" : ").append(dc.version()).append("\n");
+
+                addedBlock.append("- ").append(dc.purl());
+				if(StringUtils.isNotBlank(dc.version()))
+					addedBlock.append(" : ").append(dc.version());
+				addedBlock.append("\n");
                 count++;
                 if (count >= max) break;
             }
@@ -299,7 +303,10 @@ public class NotificationService {
             StringBuilder removedBlock = new StringBuilder();
             removedBlock.append("```\n");
             for (AcollectionData.DiffComponent dc : changelog.removed()) {
-                removedBlock.append("- ").append(dc.purl()).append(" : ").append(dc.version()).append("\n");
+                removedBlock.append("- ").append(dc.purl());
+				if(StringUtils.isNotBlank(dc.version()))
+					removedBlock.append(" : ").append(dc.version());
+				removedBlock.append("\n");
                 count++;
                 if (count >= max) break;
             }
