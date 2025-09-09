@@ -96,7 +96,7 @@
                             <n-input v-model:value="emailProps.smtpProps.smtpHost"
                                 placeholder="SMTP Host" />
                         </n-form-item>
-                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP Hostname:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP Port:'>
                             <n-input number clearable v-model:value.number="emailProps.smtpProps.port" placeholder="SMTP Port" />
                         </n-form-item>
                         <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='Require STARTTLS:'>
