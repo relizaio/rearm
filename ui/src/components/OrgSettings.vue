@@ -1605,7 +1605,7 @@ async function removeUser(userUuid: string) {
                 }
             })
             if (resp.data.removeUser) {
-                notify('success', 'Removed', `Removed the user ${userDisplay} from the organization cancelled successfully!`)
+                notify('success', 'Removed', `Removed the user ${userDisplay} from the organization successfully!`)
             } else {
                 notify('error', 'Error', `Error when removing the user ${userDisplay} from the organization!`)
             }
