@@ -15,9 +15,11 @@ import java.util.UUID;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
@@ -25,8 +27,10 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ResourceGroupData;
+import io.reliza.model.UserData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.UserData.OrgUserData;
@@ -170,6 +174,23 @@ public class OrganizationDataFetcher {
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		apiKeyService.deleteApiKey(apiKeyUuid, wu);
+		return true;
+	}
+
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "removeUser")
+	public Boolean removeUser (@InputArgument("org") UUID org, @InputArgument("user") UUID user) {
+		Optional<UserData> oud = Optional.empty();
+		try {
+			JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+			oud = userService.getUserDataByAuth(auth);
+			authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), org, CallType.ADMIN);
+			WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+			userService.removeUserFromOrg(org, user, wu);
+		} catch (Exception e) {
+			throw new AccessDeniedException("Error removing user from organization, please contact support at info@reliza.io");
+		}
 		return true;
 	}
 }
