@@ -52,7 +52,7 @@
                         :options="artifactTypes" />
             </n-form-item>
             <n-form-item 
-                        v-if="artifact.type === 'BOM' || artifact.type === 'VEX' || artifact.type === 'VDR' || artifact.type === 'BOV'" 
+                        v-if="bomRequiredTypes.includes(artifact.type)"
                         path='bomFormat'
                         label='Bom Format'>
                         <n-select
@@ -226,7 +226,11 @@ const onSubmit = async () => {
     } catch (validationErrors) {
         return
     }
-    
+
+    if (!bomRequiredTypes.includes(artifact.value.type)) {
+        artifact.value.bomFormat = null
+    }
+
     artifact.value.tags = artifactTags.value
     artifact.value.downloadLinks = downloadLinks.value
     artifact.value.file = fileList.value?.file?.file
@@ -297,6 +301,9 @@ const onCreateDigests = () => {
         digest: ''
     } as DigestRecord
 }
+
+// Array of artifact types that require BOM format selection
+const bomRequiredTypes = ['BOM', 'VEX', 'VDR', 'BOV']
 const branches: ComputedRef<any> = computed((): any => {
     let branches = []
     if (compuuid.value) {
@@ -373,28 +380,6 @@ const onReset = function () {
     }
 }
 
-// const onSubmit = function () {
-//     createArtifactForm.value?.validate((errors) => {
-//         if (!errors) {
-            
-//             const artifactInput: any = {}
-//             artifactInput.release = props.inputRelease
-//             artifactInput.component = props.inputComponent
-//             artifactInput.artifacts = artifact.value
-//             if (artifactInput.release) {
-//                 store.dispatch('addArtifactManual', artifactInput).then(response => {
-//                     emit('addArtifact')
-//                 })
-//             } else {
-//                 //deprecated
-//                 // store.dispatch('createArtifact', artifactInput).then(response => {
-//                 //     emit('addArtifact', response)
-//                 // })
-//             }
-//         }
-//     })
-// }
-
 
 await store.dispatch('fetchMyOrganizations')
 if (props.inputOrgUuid) {
@@ -406,7 +391,7 @@ const artTypesResp = await graphqlClient.query({
             artifactTypes
         }`
 })
-//axios.get('/api/manual/v1/artifact/getTypes')
+
 const artifactTypes = artTypesResp.data.artifactTypes.map((t: string) => {
     return {
         label: t,
