@@ -1,6 +1,6 @@
 # Add a User to a Reliza-managed ReARM Pro instance
 
-This section will describe how to manually add a user to a Reliza-managed ReARM Pro instance. Note that this approach is not needed if you are using SSO integration, such as with [Microsoft Entra ID](/integrations/microsoft-entra-id.md).
+This section will describe how to manually add a user to a Reliza-managed ReARM Pro instance. Note that this approach is not needed if you are using SSO integration, such as with [Microsoft Entra ID](/integrations/identityProviders/microsoft.md).
 
 As your instance is provisioned, you will have one or more administrative account. With this account, log in to your ReARM Pro managed instance adding `/kauth/admin/Reliza/console/` to the end of your ReARM Pro URL.
 
