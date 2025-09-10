@@ -1356,10 +1356,6 @@ async function genUserRegistryToken(type: string, notes: string) {
     })
 }
 
-function initiateJiraIntegration() {
-    console.log('redirecting to: ' + '/api/manual/v1/integration/jira/redirect/' + orgResolved.value)
-    window.location.href = '/api/manual/v1/integration/jira/redirect/' + orgResolved.value
-}
 async function inviteUser() {
     processingMode.value = true
     let isError = false
@@ -1540,13 +1536,6 @@ function formatValuesForApiKeys (apiKeyEntry: any) {
     return updEntry
 }
 
-function loadRegistryHost() {
-    axios.get('/api/manual/v1/component/repository/host').then(resp => {
-        const { hostname } = new URL(resp.data)
-        registryHost.value = hostname
-    })
-}
-
 async function onAddIntegration(type: string) {
     createIntegrationObject.value.type = type
     const resp = await graphqlClient.mutate({
@@ -1591,30 +1580,47 @@ async function addCiIntegration() {
     showCIIntegrationModal.value = false
 }
 
-function removeUser(userUuid: string) {
-    let userName = users.value.find(u => (u.uuid === userUuid)).name
-    Swal.fire({
-        title: 'Are you sure you want to remove the user ' + userName + '?',
-        text: 'If you proceed, this user will not be able to access this organization until reinvited.',
+async function removeUser(userUuid: string) {
+    let userDisplay = users.value.find(u => (u.uuid === userUuid)).name
+    if (!userDisplay) userDisplay = users.value.find(u => (u.uuid === userUuid)).email
+    const swalResult = await Swal.fire({
+        title: 'Are you sure you want to remove the user ' + userDisplay + '?',
+        text: 'If you proceed, this user will not be able to access this organization, until reinvited.',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Yes, remove!',
         cancelButtonText: 'No, cancel it'
-    }).then((result) => {
-        if (result.value) {
-            axios.delete('/api/manual/v1/organization/removeUser/' + orgResolved.value + '/' + userUuid).then(response => {
-                if (response.data) {
-                    users.value = users.value.filter(u => (u.uuid !== userUuid))
+    })
+
+    if (swalResult.value) {
+        try {
+            const resp = await graphqlClient.mutate({
+                mutation: gql`
+                            mutation removeUser($org: ID!, $user: ID!) {
+                                removeUser(org: $org, user: $user)
+                            }`,
+                variables: {
+                    user: userUuid,
+                    org: orgResolved.value
                 }
             })
-        } else if (result.dismiss === Swal.DismissReason.cancel) {
-            Swal.fire(
-                'Cancelled',
-                'User removal cancelled.',
-                'error'
-            )
+            if (resp.data.removeUser) {
+                notify('success', 'Removed', `Removed the user ${userDisplay} from the organization cancelled successfully!`)
+            } else {
+                notify('error', 'Error', `Error when removing the user ${userDisplay} from the organization!`)
+            }
+            loadUsers()
+        } catch (e: any) {
+            console.error(e)
+            notify('error', 'Error', `Error when removing the user ${userDisplay} from the organization!`)
         }
-    })
+    } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
+        Swal.fire(
+            'Cancelled',
+            'User removal cancelled.',
+            'error'
+        )
+    }
 }
 
 async function cancelInvite(email: string) {
