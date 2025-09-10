@@ -84,9 +84,13 @@
                             <n-input type="password" id="sendgridKey" password v-model:value="emailProps.sendGridKey"
                                 placeholder="SendGrid Key" />
                         </n-form-item>
-                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP User Name:'>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='Sender Name:'>
+                            <n-input v-model:value="emailProps.smtpProps.fromName"
+                                placeholder="SMTP Sender Name" />
+                        </n-form-item>
+                        <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP Authentication User Name:'>
                             <n-input v-model:value="emailProps.smtpProps.userName"
-                                placeholder="SMTP User Name" />
+                                placeholder="SMTP Authentication User Name" />
                         </n-form-item>
                         <n-form-item v-if="emailProps.emailSendType === 'SMTP'" label='SMTP Password:'>
                             <n-input type="password" password v-model:value="emailProps.smtpProps.password"
@@ -277,6 +281,7 @@ const emailProps = ref({
     sendGridKey: '',
     smtpProps: {
         userName: '',
+        fromName: '',
         password: '',
         smtpHost: '',
         port: 587,
@@ -295,6 +300,7 @@ function resetEmailProps () {
         sendGridKey: '',
         smtpProps: {
             userName: '',
+            fromName: '',
             password: '',
             smtpHost: '',
             port: 587,
