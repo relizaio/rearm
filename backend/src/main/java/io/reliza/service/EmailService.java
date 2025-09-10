@@ -73,7 +73,7 @@ public class EmailService {
 				}
 			}).toList();
 			email.setTo(toAddresses);
-			email.setFrom(systemInfoService.getFromEmail());
+			email.setFrom(systemInfoService.getFromEmail(), smtpProps.fromName());
 			email.setContentType(contentType);
 			email.setHtmlMsg(contentStr);
 			email.setTextMsg(contentStr);

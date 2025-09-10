@@ -70,7 +70,7 @@ public class SystemInfoService {
 		var givenSmtpProps = sysInfo.getSmtpProps();
 		String decPass = encryptionService.decrypt(givenSmtpProps.password());
 		SmtpProps decSmtpProps = new SmtpProps(givenSmtpProps.userName(), decPass, givenSmtpProps.smtpHost(), 
-				givenSmtpProps.port(), givenSmtpProps.isStarttls(), givenSmtpProps.isSsl());
+				givenSmtpProps.port(), givenSmtpProps.isStarttls(), givenSmtpProps.isSsl(), givenSmtpProps.fromName());
 		return decSmtpProps;
 	}
 	
@@ -79,7 +79,7 @@ public class SystemInfoService {
 		return sysInfo.getEmailSendType();
 	}
 	
-	protected UUID getDefaultOrg () {
+	public UUID getDefaultOrg () {
 		var sysInfo = findSystemInfo();
 		return sysInfo.getDefaultOrg();
 	}
@@ -108,7 +108,7 @@ public class SystemInfoService {
 		if (null != givenSmtpProps) {
 			String encPass = encryptionService.encrypt(givenSmtpProps.password());
 			SmtpProps encSmtpProps = new SmtpProps(givenSmtpProps.userName(), encPass, givenSmtpProps.smtpHost(), 
-					givenSmtpProps.port(), givenSmtpProps.isStarttls(), givenSmtpProps.isSsl());
+					givenSmtpProps.port(), givenSmtpProps.isStarttls(), givenSmtpProps.isSsl(), givenSmtpProps.fromName());
 			sd.setSmtpProps(encSmtpProps);
 		}
 		saveSystemInfo(sysInfo, sd);

@@ -1207,6 +1207,7 @@ input SmtpPropsInput {
 	port: Int
 	isStarttls: Boolean
 	isSsl: Boolean 
+	fromName: String
 }
 
 input InviteUserInput {

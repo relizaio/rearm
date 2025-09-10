@@ -18,7 +18,7 @@ public class SystemInfoData extends RelizaDataParent{
 
 	public record EncProps (String password, String salt, String oldPassword, String oldSalt) {}
 	public record SmtpProps (String userName, String password, String smtpHost,
-			Integer port, Boolean isStarttls, Boolean isSsl) {}
+			Integer port, Boolean isStarttls, Boolean isSsl, String fromName) {}
 	public enum EmailSendType {
 		UNSET,
 		SMTP,
@@ -32,6 +32,7 @@ public class SystemInfoData extends RelizaDataParent{
 		private SmtpProps smtpProps;
 		private EmailSendType emailSendType;
 		private String fromEmail;
+		private String fromName;
 	}
 	
     private boolean systemSealed = true;
