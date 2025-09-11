@@ -88,8 +88,8 @@ postgresql:
   image:
     registry: registry.relizahub.com
     repository: library/rearm-postgres
-    tag: "0.0.2"
-    digest: ""
+    tag: "0.1.0"
+    digest: "sha256:b15503aa3dbd5c3c1c9519ba1f2ce5c1c0e322132fb6f666ecc5780157f123c3"
     ## Specify a imagePullPolicy
     ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
     ## ref: https://kubernetes.io/docs/user-guide/images/#pre-pulling-images
