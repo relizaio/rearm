@@ -9,7 +9,7 @@ version: 0.0.19
 appVersion: "25.08.115"
 
 dependencies:
-- name: postgresql
-  version: "11.9.13"
-  repository: "https://charts.bitnami.com/bitnami"
+- name: reliza-postgresql
+  version: 0.0.2
+  repository: oci://registry.relizahub.com/library
   condition: postgresql.enabled

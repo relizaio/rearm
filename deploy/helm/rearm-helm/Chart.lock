@@ -1,6 +1,6 @@
 dependencies:
-- name: postgresql
-  repository: https://charts.bitnami.com/bitnami
-  version: 11.9.13
-digest: sha256:051285066cef2799e39e2953c4abd405c36510a09e9e1bd1833a29224daffddb
-generated: "2025-08-09T11:55:19.8483489-04:00"
+- name: reliza-postgresql
+  repository: oci://registry.relizahub.com/library
+  version: 0.0.2
+digest: sha256:05aeca28c4675abc946f156d72c6e201ed261409361e09f8baa26b3a16b01728
+generated: "2025-09-11T23:05:38.80644977+05:30"
