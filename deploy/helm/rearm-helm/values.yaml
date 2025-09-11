@@ -86,9 +86,9 @@ leHost: rearm.localhost
 
 postgresql:
   image:
-    registry: docker.io
-    repository: bitnami/postgresql
-    tag: 17.5.0-debian-12-r4
+    registry: registry.relizahub.com
+    repository: library/rearm-postgres
+    tag: "0.0.2"
     digest: ""
     ## Specify a imagePullPolicy
     ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
