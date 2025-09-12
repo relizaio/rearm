@@ -46,19 +46,22 @@ import lombok.extern.slf4j.Slf4j;
 public class AuthorizationService {
 	
 	@Autowired
-	OrganizationService organizationService;
+	private OrganizationService organizationService;
+	
+	@Autowired
+	private GetOrganizationService getOrganizationService;
 	
 	@Autowired 
-	ResourceGroupService resourceGroupService;
+	private ResourceGroupService resourceGroupService;
 	
 	@Autowired
-	GetComponentService getComponentService;
+	private GetComponentService getComponentService;
 	
 	@Autowired
-	ApiKeyService apiKeyService;
+	private ApiKeyService apiKeyService;
 	
 	@Autowired
-	UserService userService;
+	private UserService userService;
 	
 	public AuthHeaderParse authenticateProgrammatic (HttpHeaders headers, ServletWebRequest servletWebRequest) {
 		AuthHeaderParse ahp = null;
@@ -164,10 +167,10 @@ public class AuthorizationService {
 			Optional<ComponentData> ocd = getComponentService.getComponentData(ahp.getObjUuid());
 			ro = ocd.isPresent() ? ocd.get() : null;
 		} else if (classType.equals(CommonVariables.ORGANIZATION_FIELD) && ApiTypeEnum.USER == ahp.getType()) {
-			Optional<OrganizationData> od = organizationService.getOrganizationData(ahp.getOrgUuid());
+			Optional<OrganizationData> od = getOrganizationService.getOrganizationData(ahp.getOrgUuid());
 			ro = od.isPresent() ? od.get() : null;
 		} else if (classType.equals(CommonVariables.ORGANIZATION_FIELD)) {
-			Optional<OrganizationData> od = organizationService.getOrganizationData(ahp.getObjUuid());
+			Optional<OrganizationData> od = getOrganizationService.getOrganizationData(ahp.getObjUuid());
 			ro = od.isPresent() ? od.get() : null;
 		}
 		return ro;

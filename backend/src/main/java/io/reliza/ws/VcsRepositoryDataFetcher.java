@@ -30,7 +30,7 @@ import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.AuthorizationService;
-import io.reliza.service.OrganizationService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
 import lombok.extern.slf4j.Slf4j;
@@ -40,16 +40,16 @@ import lombok.extern.slf4j.Slf4j;
 public class VcsRepositoryDataFetcher {
 	
 	@Autowired
-	AuthorizationService authorizationService;
+	private AuthorizationService authorizationService;
 	
 	@Autowired
-	OrganizationService organizationService;
+	private GetOrganizationService getOrganizationService;
 	
 	@Autowired
-	VcsRepositoryService vcsRepositoryService;
+	private VcsRepositoryService vcsRepositoryService;
 	
 	@Autowired
-	UserService userService;
+	private UserService userService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "vcsRepository")
@@ -70,7 +70,7 @@ public class VcsRepositoryDataFetcher {
 		UUID orgUuid = UUID.fromString(orgUuidStr);	
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		Optional<OrganizationData> od = organizationService.getOrganizationData(orgUuid);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		return vcsRepositoryService.listVcsRepoDataByOrg(orgUuid);
@@ -90,7 +90,7 @@ public class VcsRepositoryDataFetcher {
 		Map<String, Object> vcsRepositoryInput = dfe.getArgument("vcsRepository");
 		String orgUuidStr = (String) vcsRepositoryInput.get(CommonVariables.ORGANIZATION_FIELD);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		Optional<OrganizationData> od = organizationService.getOrganizationData(orgUuid);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());

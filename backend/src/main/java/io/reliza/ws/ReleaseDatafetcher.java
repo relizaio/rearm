@@ -9,13 +9,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -67,7 +65,6 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
-import io.reliza.model.UserData;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.changelog.entry.AggregationType;
@@ -82,26 +79,22 @@ import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.service.AcollectionService;
-import io.reliza.service.ApiKeyService;
-import io.reliza.service.ArtifactGatherService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetDeliverableService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.IntegrationService;
 import io.reliza.service.IntegrationService.ComponentPurlToDtrackProject;
-import io.reliza.service.OrganizationService;
-import io.reliza.service.RebomService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
-import io.reliza.service.VcsRepositoryService;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
@@ -113,70 +106,58 @@ import lombok.extern.slf4j.Slf4j;
 public class ReleaseDatafetcher {
 	
 	@Autowired
-	ReleaseService releaseService;
+	private ReleaseService releaseService;
 	
 	@Autowired
-	SharedReleaseService sharedReleaseService;
+	private SharedReleaseService sharedReleaseService;
 	
 	@Autowired
-	OssReleaseService ossReleaseService;
+	private OssReleaseService ossReleaseService;
 	
 	@Autowired
-	BranchService branchService;
-	
-	@Autowired
-	OrganizationService organizationService;
-	
-	@Autowired
-	VcsRepositoryService vcsRepositoryService;
-	
-	@Autowired
-	SourceCodeEntryService sourceCodeEntryService;
-	
-	@Autowired
-	GetSourceCodeEntryService getSourceCodeEntryService;
-	
-	@Autowired
-	DeliverableService deliverableService;
-	
-	@Autowired
-	GetDeliverableService getDeliverableService;
-	
-	@Autowired
-	ArtifactService artifactService;
-	
-	@Autowired
-	SharedArtifactService sharedArtifactService;
-	
-	@Autowired
-	GetComponentService getComponentService;
-	
-	@Autowired
-	AuthorizationService authorizationService;
-	
-	@Autowired
-	UserService userService;
-	
-	@Autowired
-	ApiKeyService apiKeyService;
-	
-	@Autowired
-	RebomService rebomService;
-	
-	@Autowired
-	VariantService variantService;
-	
-	@Autowired
-	ArtifactGatherService artifactGatherService;
-	
-	@Autowired
-	AcollectionService acollectionService;
-	
-	@Autowired
-	IntegrationService integrationService;
+	private BranchService branchService;
 
 	@Autowired
-	ReleaseFinalizerService releaseFinalizerService;
+	private GetOrganizationService getOrganizationService;
+		
+	@Autowired
+	private SourceCodeEntryService sourceCodeEntryService;
+	
+	@Autowired
+	private GetSourceCodeEntryService getSourceCodeEntryService;
+	
+	@Autowired
+	private DeliverableService deliverableService;
+	
+	@Autowired
+	private GetDeliverableService getDeliverableService;
+	
+	@Autowired
+	private ArtifactService artifactService;
+	
+	@Autowired
+	private SharedArtifactService sharedArtifactService;
+	
+	@Autowired
+	private GetComponentService getComponentService;
+	
+	@Autowired
+	private AuthorizationService authorizationService;
+	
+	@Autowired
+	private UserService userService;
+	
+	@Autowired
+	private VariantService variantService;
+	
+	@Autowired
+	private AcollectionService acollectionService;
+	
+	@Autowired
+	private IntegrationService integrationService;
+
+	@Autowired
+	private ReleaseFinalizerService releaseFinalizerService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "release")
@@ -287,7 +268,7 @@ public class ReleaseDatafetcher {
 			var obd = branchService.getBranchData(branchFilter);
 			ro = obd.isPresent() ? obd.get() : null;
 		} else if (null != orgFilter && ro == null) {
-			var od = organizationService.getOrganizationData(orgFilter);
+			var od = getOrganizationService.getOrganizationData(orgFilter);
 			ro = od.isPresent() ? od.get() : null;
 		}
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
@@ -338,7 +319,7 @@ public class ReleaseDatafetcher {
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject robranch = obd.isPresent() ? obd.get() : null;
 		UUID orgUuid = releaseDto.getOrg();
-		Optional<OrganizationData> ood = organizationService.getOrganizationData(orgUuid);
+		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject roorg = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), List.of(robranch, roorg), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
@@ -512,7 +493,7 @@ public class ReleaseDatafetcher {
 		var outboundDeliverablesList = (List<Map<String,Object>>) progReleaseInput.get("outboundDeliverables");
 		Utils.addReleaseProgrammaticValidateDeliverables(outboundDeliverablesList, bd);
 		
-		OrganizationData od = organizationService.getOrganizationData(ocd.get().getOrg()).get();
+		OrganizationData od = getOrganizationService.getOrganizationData(ocd.get().getOrg()).get();
 		
 		URI endpoint = null;
 		String endpointStr = (String) progReleaseInput.get(CommonVariables.ENDPOINT_FIELD);
@@ -676,7 +657,7 @@ public class ReleaseDatafetcher {
 		ReleaseData rd = ord.get();
 
 		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).orElseThrow();
-		OrganizationData od = organizationService.getOrganizationData(rd.getOrg()).orElseThrow();
+		OrganizationData od = getOrganizationService.getOrganizationData(rd.getOrg()).orElseThrow();
 
 		ArtifactBelongsTo belongsTo = ArtifactBelongsTo.RELEASE;
 		if(artifactInput.containsKey("belongsTo") && StringUtils.isNotEmpty((String)artifactInput.get("belongsTo")))
@@ -1102,7 +1083,7 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Release", field = "orgDetails")
 	public OrganizationData orgOfRelease(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
-		return organizationService.getOrganizationData(rd.getOrg()).get();
+		return getOrganizationService.getOrganizationData(rd.getOrg()).get();
 	}
 	
 	@DgsData(parentType = "Release", field = "variantDetails")

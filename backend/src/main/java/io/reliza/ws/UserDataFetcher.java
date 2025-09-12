@@ -21,7 +21,6 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
-import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.User;
@@ -32,9 +31,8 @@ import io.reliza.model.dto.ApiKeyForUserDto;
 import io.reliza.model.dto.UserWebDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
-import io.reliza.service.OrganizationService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.UserService;
-import io.reliza.service.SystemInfoService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -42,20 +40,17 @@ import lombok.extern.slf4j.Slf4j;
 public class UserDataFetcher {
 	
 	@Autowired
-	AuthorizationService authorizationService;
+	private AuthorizationService authorizationService;
 	
 	@Autowired
-	UserService userService;
+	private UserService userService;
 	
 	@Autowired
-	ApiKeyService apiKeyService;
-	
+	private ApiKeyService apiKeyService;
+
 	@Autowired
-	OrganizationService organizationService;
-	
-	@Autowired
-	SystemInfoService systemInfoService;
-	
+	private GetOrganizationService getOrganizationService;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "acceptUserPolicies")
 	public UserWebDto acceptUserPolicies (
@@ -97,7 +92,7 @@ public class UserDataFetcher {
 	public ApiKeyForUserDto setUserOrgApiKey(@InputArgument("orgUuid") UUID orgUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		Optional<OrganizationData> ood = organizationService.getOrganizationData(orgUuid);
+		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
@@ -119,7 +114,7 @@ public class UserDataFetcher {
 	@DgsData(parentType = "Query", field = "healthCheck")
 	public String getHealthCheck() {
 		log.trace("in healthcheck query");
-		Optional<OrganizationData> ood = organizationService.getOrganizationData(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
+		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
 		if (ood.isPresent() && ood.get().getUuid().equals(CommonVariables.EXTERNAL_PROJ_ORG_UUID)) {
 			return "OK";
 		} else {

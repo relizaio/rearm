@@ -39,6 +39,7 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.UserStatus;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.InvitedObject;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
@@ -70,6 +71,9 @@ public class UserService {
 	
 	@Autowired
 	private SystemInfoService systemInfoService;
+	
+	@Autowired
+	private GetOrganizationService getOrganizationService;
 
 	private static final Logger log = LoggerFactory.getLogger(UserService.class);
 			
@@ -733,11 +737,15 @@ public class UserService {
 					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.NONE;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
+					OrganizationData od = getOrganizationService.getOrganizationData(USER_ORG).get();
+					sendEmailToOrgAdminsOnUserJoined(od, email, pt);
 				} else if (InstallationType.DEMO == getInstallationType()) {
 					boolean isFirstUser = !repository.findAll().iterator().hasNext();
 					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.READ_ONLY;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
+					OrganizationData od = getOrganizationService.getOrganizationData(USER_ORG).get();
+					sendEmailToOrgAdminsOnUserJoined(od, email, pt);
 				} else if (InstallationType.MANAGED_SERVICE == getInstallationType()) {
 					UUID defaultOrg = systemInfoService.getDefaultOrg();
 					if ( null == defaultOrg && !repository.findAll().iterator().hasNext() ) {
@@ -748,6 +756,8 @@ public class UserService {
 					} else {
 						u = createUser(name, email, true, List.of(defaultOrg), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 						u = setUserPermission(u.getUuid(), defaultOrg, PermissionScope.ORGANIZATION, defaultOrg, PermissionType.NONE, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
+						OrganizationData od = getOrganizationService.getOrganizationData(defaultOrg).get();
+						sendEmailToOrgAdminsOnUserJoined(od, email, PermissionType.NONE);
 					}
 				} else {
 					Boolean isEmailVerified = Boolean.parseBoolean(creds.getClaimAsString("email_verified"));
@@ -782,6 +792,23 @@ public class UserService {
 			.map(du -> getUserDataWithOrg(du, org).get().getEmail(org))
 			.collect(Collectors.toSet());
 		return emailService.sendEmail(emails, subject, contentType, contentStr);
+	}
+
+	public void sendEmailToOrgAdminsOnUserJoined(OrganizationData od, String userEmail, PermissionType permissionType) {
+		String adminEmailSub = "New user joined the organizaiton " + od.getName() + " on ReARM at " + relizaConfigProps.getBaseuri();
+		String adminEmailContent = "A new user with the email " + userEmail + 
+		" joined the organization "+ od.getName() 
+		+ " on ReARM with permission: " + permissionType.toString() + ".";
+		if (PermissionType.NONE == permissionType) {
+			adminEmailContent += "\n\nPlease open Organization Settings view in ReARM and assign permissions for this user.";
+		}
+		sendEmailToOrgAdmins(adminEmailSub, adminEmailContent, od.getUuid());
+	}
+	
+	private void sendEmailToOrgAdmins(String subject, String content, UUID orgUuid) {
+		List<String> adminEmails = listOrgAdminUsersDataByOrg(orgUuid)
+					.stream().map(admin -> admin.getEmail()).toList();
+		emailService.sendEmail(adminEmails, subject, "text/html", content);
 	}
 
 }

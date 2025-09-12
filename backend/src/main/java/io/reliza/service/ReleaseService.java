@@ -44,11 +44,9 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.github.packageurl.PackageURL;
 
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
@@ -58,7 +56,6 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.exceptions.RelizaException;
-import io.reliza.model.ArtifactData;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.ChildComponent;
@@ -136,7 +133,7 @@ public class ReleaseService {
 	private ChangeLogService changeLogService;
 	
 	@Autowired
-	private OrganizationService organizationService;
+	private GetOrganizationService getOrganizationService;
 	
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
@@ -608,7 +605,7 @@ public class ReleaseService {
 			for (Component c : components) {
 				bom.addComponent(c);
 			}
-			var orgData = organizationService.getOrganizationData(ord.get().getOrg()).get();
+			var orgData = getOrganizationService.getOrganizationData(ord.get().getOrg()).get();
 			var cData = getComponentService.getComponentData(ord.get().getComponent()).get();
 			Component bomComponent = new Component();
 			bomComponent.setName(cData.getName());
@@ -712,7 +709,7 @@ public class ReleaseService {
 
 		if(bomIds.size() > 0){
 			ComponentData pd = getComponentService.getComponentData(rd.getComponent()).get();
-			OrganizationData od = organizationService.getOrganizationData(rd.getOrg()).get();
+			OrganizationData od = getOrganizationService.getOrganizationData(rd.getOrg()).get();
 			String purl = null;
 			Optional<TeaIdentifier> purlId = Optional.empty();
 			if (null != rd.getIdentifiers()) purlId = rd.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();
@@ -773,7 +770,7 @@ public class ReleaseService {
 					if(bomIds.size() == 1){
 						retRebomId = bomIds.getFirst();
 					} else {
-						var od = organizationService.getOrganizationData(rd.getOrg()).get();
+						var od = getOrganizationService.getOrganizationData(rd.getOrg()).get();
 						String purl = null;
 						Optional<TeaIdentifier> purlId = Optional.empty();
 						if (null != rd.getIdentifiers()) purlId = rd.getIdentifiers().stream().filter(id -> id.getIdType() == TeaIdentifierType.PURL).findFirst();

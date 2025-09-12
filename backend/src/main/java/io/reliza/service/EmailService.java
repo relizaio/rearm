@@ -10,6 +10,7 @@ import java.util.List;
 import javax.mail.internet.AddressException;
 import javax.mail.internet.InternetAddress;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.mail2.javax.HtmlEmail;
 import org.apache.commons.validator.routines.EmailValidator;
 import org.slf4j.Logger;
@@ -73,7 +74,8 @@ public class EmailService {
 				}
 			}).toList();
 			email.setTo(toAddresses);
-			email.setFrom(systemInfoService.getFromEmail(), smtpProps.fromName());
+			String fromName = StringUtils.isNotEmpty(smtpProps.fromName()) ? smtpProps.fromName() : "ReARM - Do Not Reply";
+			email.setFrom(systemInfoService.getFromEmail(), fromName);
 			email.setContentType(contentType);
 			email.setHtmlMsg(contentStr);
 			email.setTextMsg(contentStr);

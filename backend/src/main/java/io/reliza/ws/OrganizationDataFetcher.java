@@ -27,7 +27,6 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
-import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ResourceGroupData;
 import io.reliza.model.UserData;
@@ -37,10 +36,10 @@ import io.reliza.model.UserData.OrgUserData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.ApiKeyForUserDto;
-import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ResourceGroupService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -50,22 +49,22 @@ import lombok.extern.slf4j.Slf4j;
 public class OrganizationDataFetcher {
 	
 	@Autowired
-	ApiKeyService apiKeyService;
-
-	@Autowired
-	ApiKeyAccessService apiKeyAccessService;
+	private ApiKeyService apiKeyService;
 	
 	@Autowired
-	AuthorizationService authorizationService;
+	private AuthorizationService authorizationService;
 	
 	@Autowired
-	OrganizationService organizationService;
+	private GetOrganizationService getOrganizationService;
 	
 	@Autowired
-	UserService userService;
+	private OrganizationService organizationService;
 	
 	@Autowired
-	ResourceGroupService resourceGroupService;
+	private UserService userService;
+	
+	@Autowired
+	private ResourceGroupService resourceGroupService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "organizations")
@@ -85,7 +84,7 @@ public class OrganizationDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		Optional<OrganizationData> od = organizationService.getOrganizationData(orgUuid);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		InstallationType systemInstallationType = userService.getInstallationType();
 		CallType ct = CallType.READ;
 		if (InstallationType.DEMO == systemInstallationType) {
@@ -122,7 +121,7 @@ public class OrganizationDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
-		Optional<OrganizationData> od = organizationService.getOrganizationData(orgUuid);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		return apiKeyService.listApiKeyDtoByOrgWithLastAccessDate(od.get().getUuid());
 	}
 	
@@ -139,7 +138,7 @@ public class OrganizationDataFetcher {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		Optional<OrganizationData> od = organizationService.getOrganizationData(orgUuid);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		String apiKey = null;
 		String keyId = null;
 		if (keyType == ApiTypeEnum.APPROVAL) {

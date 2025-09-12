@@ -3,8 +3,6 @@
 */
 package io.reliza.service;
 
-import static io.reliza.common.LambdaExceptionWrappers.*;
-
 import java.time.ZonedDateTime;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -16,8 +14,6 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,8 +57,8 @@ public class DeliverableService {
     private BranchService branchService;
 	
 	@Autowired
-    private OrganizationService organizationService;
-
+    private GetOrganizationService getOrganizationService;
+	
 	@Autowired
     private GetComponentService getComponentService;
 
@@ -143,7 +139,7 @@ public class DeliverableService {
 		
 		var bd = branchService.getBranchData(branchUUID).orElseThrow();
 		ComponentData cd = getComponentService.getComponentData(bd.getComponent()).orElseThrow();
-		OrganizationData od = organizationService.getOrganizationData(bd.getOrg()).orElseThrow();
+		OrganizationData od = getOrganizationService.getOrganizationData(bd.getOrg()).orElseThrow();
 		for (Map<String, Object> deliverableItem : deliverablesList) {
 			//extract arts
 			@SuppressWarnings("unchecked")

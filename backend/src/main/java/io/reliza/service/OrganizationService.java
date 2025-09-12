@@ -65,6 +65,9 @@ public class OrganizationService {
 	@Autowired
     private EncryptionService encryptionService;
 	
+	@Autowired
+    private GetOrganizationService getOrganizationService;
+
 	private final OrganizationRepository repository;
 	
 	private static final Logger log = LoggerFactory.getLogger(OrganizationService.class);
@@ -80,30 +83,12 @@ public class OrganizationService {
 	    this.repository = repository;
 	}
 	
-	public Optional<Organization> getOrganization (@NonNull UUID uuid) {
-		return repository.findById(uuid);
-	}
-	
-	public Optional<OrganizationData> getOrganizationData (@NonNull UUID uuid) {
-		Optional<OrganizationData> orgData = Optional.empty();
-		Optional<Organization> org = getOrganization(uuid);
-		if (org.isPresent()) {
-			orgData = Optional
-							.of(
-								OrganizationData
-									.orgDataFromDbRecord(org
-										.get()
-								));
-		}
-		return orgData;
-	}
-	
 	@Transactional
 	private Organization saveOrganization (Organization org, Map<String,Object> recordData, WhoUpdated wu) {
 		if (null == recordData || recordData.isEmpty() ||  StringUtils.isEmpty((String) recordData.get(CommonVariables.NAME_FIELD))) {
 			throw new IllegalStateException("Organization must have name in record data");
 		}
-		Optional<Organization> oo = getOrganization(org.getUuid());
+		Optional<Organization> oo = getOrganizationService.getOrganization(org.getUuid());
 		if (oo.isPresent()) {
 			auditService.createAndSaveAuditRecord(TableName.ORGANIZATIONS, org);
 			org.setRevision(org.getRevision() + 1);
@@ -149,7 +134,7 @@ public class OrganizationService {
 	public Optional<OrganizationData> getOrganizationDataFromEncryptedUUID(String encryptedUuidStr){
 		String uuidStr = encryptionService.decrypt(encryptedUuidStr);
 		UUID orgUUID = UUID.fromString(uuidStr);
-		return getOrganizationData(orgUUID);
+		return getOrganizationService.getOrganizationData(orgUUID);
 	}
 
 	@Transactional
@@ -174,7 +159,7 @@ public class OrganizationService {
 		boolean authorized = false;
 		try {
 			Optional<OrganizationData> od = Optional.empty();
-			if (null != org) od = getOrganizationData(org);
+			if (null != org) od = getOrganizationService.getOrganizationData(org);
 			
 			authorized = (od.isPresent() && null != ud && ud.isGlobalAdmin());
 			boolean acceptedAndVerified = (null != ud && ud.isPoliciesAccepted() && ud.isPrimaryEmailVerified() &&
@@ -249,7 +234,7 @@ public class OrganizationService {
 		// we generate secret first, then store hash in the database
 		OrganizationData od = null;
 		try {
-			od = getOrganizationData(org).get();
+			od = getOrganizationService.getOrganizationData(org).get();
 
 			StringBuilder keyBuilder = new StringBuilder();
 			for (int i=0; i<2; i++) {
@@ -263,7 +248,7 @@ public class OrganizationService {
 			Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 			String secret = encoder.encode(urlSafeKey);
 			od.addInvitee(secret, type, userEmail, wu.getLastUpdatedBy());
-			Organization o = saveOrganization(getOrganization(od.getUuid()).get(), Utils.dataToRecord(od), wu);
+			Organization o = saveOrganization(getOrganizationService.getOrganization(od.getUuid()).get(), Utils.dataToRecord(od), wu);
 			String orgName = od.getName();
 			String emailSubject = "You are invited to join organization " + orgName + " on ReARM";
 			String contentStr = "Please click <a clicktracking=off href=\"" + relizaConfigProps.getBaseuri() + "/joinOrganization/" 
@@ -293,7 +278,7 @@ public class OrganizationService {
 		String[] splitSecret = secret.split(CommonVariables.JOIN_SECRET_SEPARATOR);
 		String orgUuidStr = encryptionService.decrypt(splitSecret[0]);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		Optional<Organization> oorg = getOrganization(orgUuid);
+		Optional<Organization> oorg = getOrganizationService.getOrganization(orgUuid);
 		if (oorg.isPresent()) {
 			Organization org = oorg.get();
 			OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
@@ -312,14 +297,7 @@ public class OrganizationService {
 				saveOrganization(org, Utils.dataToRecord(od), WhoUpdated.getWhoUpdated(ud));
 				oud = Optional.of(ud);
 
-				//send email to admins about user joining the organization
-				String adminEmailSub = "New user joined the organizaiton " + od.getName() + " on ReARM";
-				String adminEmailContent = "A new user with the email " + oio.get().getEmail() + 
-				" joined the organization "+ od.getName() 
-				+ " on ReARM with permission: " + oio.get().getType().toString() + ".";
-				List<String> adminEmails = userService.listOrgAdminUsersDataByOrg(od.getUuid())
-						.stream().map(admin -> admin.getEmail()).toList();
-				emailService.sendEmail(adminEmails, adminEmailSub, "text/html", adminEmailContent);
+				userService.sendEmailToOrgAdminsOnUserJoined(od, oio.get().getEmail(), oio.get().getType());
 			}
 		}
 		return oud;
@@ -336,9 +314,9 @@ public class OrganizationService {
 	@Transactional
 	public OrganizationData removeInvitedUserFromOrganization (@NonNull UUID org, @NonNull String userEmail, @NonNull WhoUpdated wu) {
 		try {
-			OrganizationData od = getOrganizationData(org).get();
+			OrganizationData od = getOrganizationService.getOrganizationData(org).get();
 			od.removeInvitee(userEmail, wu.getLastUpdatedBy());
-			Organization o = saveOrganization(getOrganization(od.getUuid()).get(), Utils.dataToRecord(od), wu);
+			Organization o = saveOrganization(getOrganizationService.getOrganization(od.getUuid()).get(), Utils.dataToRecord(od), wu);
 			od = OrganizationData.orgDataFromDbRecord(o);
 			return od;
 		} catch (Exception e) {

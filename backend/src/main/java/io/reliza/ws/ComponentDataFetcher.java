@@ -26,8 +26,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.ServletWebRequest;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
@@ -70,15 +68,13 @@ import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.IntegrationService;
-import io.reliza.service.OrganizationService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.ReleaseVersionService;
-import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
-import io.reliza.service.VersionAssignmentService;
 import io.reliza.service.VersionAssignmentService.GetNewVersionDto;
 import io.reliza.service.saas.ApprovalPolicyService;
 import lombok.extern.slf4j.Slf4j;
@@ -88,46 +84,40 @@ import lombok.extern.slf4j.Slf4j;
 public class ComponentDataFetcher {
 	
 	@Autowired
-	ReleaseService releaseService;
+	private ReleaseService releaseService;
 	
 	@Autowired
-	UserService userService;
+	private UserService userService;
 	
 	@Autowired
-	ComponentService componentService;
+	private ComponentService componentService;
 	
 	@Autowired
-	GetComponentService getComponentService;
+	private GetComponentService getComponentService;
 	
 	@Autowired
-	BranchService branchService;
+	private BranchService branchService;
 	
 	@Autowired
-	AuthorizationService authorizationService;
+	private AuthorizationService authorizationService;
 	
 	@Autowired
-	OrganizationService organizationService;
+	private GetOrganizationService getOrganizationService;
 	
 	@Autowired
-	VcsRepositoryService vcsRepositoryService;
+	private VcsRepositoryService vcsRepositoryService;
 	
 	@Autowired
-	SourceCodeEntryService sourceCodeEntryService;
+	private ApiKeyService apiKeyService;
 	
 	@Autowired
-	ApiKeyService apiKeyService;
+	private ReleaseVersionService releaseVersionService;
 	
 	@Autowired
-	VersionAssignmentService versionAssignmentService;
+	private IntegrationService integrationService;
 	
 	@Autowired
-	ReleaseVersionService releaseVersionService;
-	
-	@Autowired
-	IntegrationService integrationService;
-	
-	@Autowired
-	ApprovalPolicyService approvalPolicyService;
+	private ApprovalPolicyService approvalPolicyService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "component")
@@ -192,7 +182,7 @@ public class ComponentDataFetcher {
 		Map<String, Object> createComponentInputMap = dfe.getArgument("component");
 		CreateComponentDto cpd = Utils.OM.convertValue(createComponentInputMap, CreateComponentDto.class);
 		List<RelizaObject> ros = new LinkedList<>();
-		if (null != cpd.getOrganization()) ros.add(organizationService.getOrganizationData(cpd.getOrganization()).orElse(null));
+		if (null != cpd.getOrganization()) ros.add(getOrganizationService.getOrganizationData(cpd.getOrganization()).orElse(null));
 		if (null != cpd.getVcs()) ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
 		if (null != cpd.getApprovalPolicy()) ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
@@ -374,7 +364,7 @@ public class ComponentDataFetcher {
 		}
 		
 		List<RelizaObject> ros = new LinkedList<>();
-		Optional<OrganizationData> ood = organizationService.getOrganizationData(orgUuid);
+		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);
 		ros.add(ood.orElse(null));
 		ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
 		ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
