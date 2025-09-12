@@ -9,16 +9,16 @@ import org.springframework.stereotype.Service;
 
 import io.reliza.model.Organization;
 import io.reliza.service.UserService;
-import io.reliza.service.OrganizationService;
+import io.reliza.service.GetOrganizationService;
 
 @Service
 public class TestInitializer {
 
 	@Autowired
-    private OrganizationService organizationService;
+    private GetOrganizationService getOrganizationService;
 	
 	public Organization obtainOrganization() {
-		return organizationService.getOrganization(UserService.USER_ORG).get();
+		return getOrganizationService.getOrganization(UserService.USER_ORG).get();
 	}
 	
 	
