@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX users_email on rearm.users ((record_data->>'email'));
