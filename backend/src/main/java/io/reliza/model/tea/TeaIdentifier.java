@@ -1,15 +1,21 @@
-/**
-* Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
-*/
 package io.reliza.model.tea;
 
+import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
+import com.fasterxml.jackson.annotation.JsonValue;
+import io.reliza.model.tea.TeaIdentifierType;
 import org.springframework.lang.Nullable;
+import org.openapitools.jackson.nullable.JsonNullable;
+import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+
+import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
@@ -18,34 +24,34 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "identifier", description = "An identifier with a specified type")
 @JsonTypeName("identifier")
-@Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaIdentifier {
 
   private @Nullable TeaIdentifierType idType;
 
   private @Nullable String idValue;
 
-  public TeaIdentifier idType(TeaIdentifierType idType) {
+  public TeaIdentifier idType(@Nullable TeaIdentifierType idType) {
     this.idType = idType;
     return this;
   }
 
   /**
-   * Type of identifier, e.g. `tei`, `purl`, `cpe`
+   * Type of identifier, e.g. `TEI`, `PURL`, `CPE`
    * @return idType
    */
   @Valid 
-  @Schema(name = "idType", description = "Type of identifier, e.g. `tei`, `purl`, `cpe`", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "idType", description = "Type of identifier, e.g. `TEI`, `PURL`, `CPE`", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("idType")
-  public TeaIdentifierType getIdType() {
+  public @Nullable TeaIdentifierType getIdType() {
     return idType;
   }
 
-  public void setIdType(TeaIdentifierType idType) {
+  public void setIdType(@Nullable TeaIdentifierType idType) {
     this.idType = idType;
   }
 
-  public TeaIdentifier idValue(String idValue) {
+  public TeaIdentifier idValue(@Nullable String idValue) {
     this.idValue = idValue;
     return this;
   }
@@ -57,11 +63,11 @@ public class TeaIdentifier {
   
   @Schema(name = "idValue", description = "Identifier value", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("idValue")
-  public String getIdValue() {
+  public @Nullable String getIdValue() {
     return idValue;
   }
 
-  public void setIdValue(String idValue) {
+  public void setIdValue(@Nullable String idValue) {
     this.idValue = idValue;
   }
 
@@ -86,7 +92,7 @@ public class TeaIdentifier {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class Identifier {\n");
+    sb.append("class TeaIdentifier {\n");
     sb.append("    idType: ").append(toIndentedString(idType)).append("\n");
     sb.append("    idValue: ").append(toIndentedString(idValue)).append("\n");
     sb.append("}");

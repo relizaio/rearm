@@ -53,9 +53,9 @@ import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
-import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.model.BranchData;
 import io.reliza.model.RelizaData;
+import io.reliza.model.tea.TeaChecksumType;
 import lombok.extern.slf4j.Slf4j;
 
 
@@ -253,7 +253,7 @@ public class Utils {
 				String digestTypeString = digestParts[0];
 				String digestValue = digestParts[1];
 				
-				TeaArtifactChecksumType checksumType = TeaArtifactChecksumType.parseDigestType(digestTypeString);
+				TeaChecksumType checksumType = parseDigestType(digestTypeString);
 				if (null != checksumType) {
 					convertedDigest = Optional.of(new DigestRecord(checksumType, digestValue, scope));
 				}
@@ -261,6 +261,56 @@ public class Utils {
 		}
 		return convertedDigest;
 	}
+	
+	  /**
+	   * Parses a digest type string (e.g., "SHA256", "sha256") to the corresponding enum value.
+	   * Handles common variations and case-insensitive matching.
+	   * 
+	   * @param digestTypeString the digest type string to parse
+	   * @return the corresponding TeaArtifactChecksumType, or null if not supported
+	   */
+	  public static TeaChecksumType parseDigestType(String digestTypeString) {
+	    if (digestTypeString == null || digestTypeString.trim().isEmpty()) {
+	      return null;
+	    }
+	    
+	    String upperCaseType = digestTypeString.toUpperCase().trim();
+	    
+	    switch (upperCaseType) {
+	      case "MD5":
+	        return TeaChecksumType.MD5;
+	      case "SHA1":
+	        return TeaChecksumType.SHA_1;
+	      case "SHA256":
+	        return TeaChecksumType.SHA_256;
+	      case "SHA384":
+	        return TeaChecksumType.SHA_384;
+	      case "SHA512":
+	        return TeaChecksumType.SHA_512;
+	      case "SHA3256":
+	      case "SHA3_256":
+	        return TeaChecksumType.SHA3_256;
+	      case "SHA3384":
+	      case "SHA3_384":
+	        return TeaChecksumType.SHA3_384;
+	      case "SHA3512":
+	      case "SHA3_512":
+	        return TeaChecksumType.SHA3_512;
+	      case "BLAKE2B256":
+	      case "BLAKE2B_256":
+	        return TeaChecksumType.BLAKE2B_256;
+	      case "BLAKE2B384":
+	      case "BLAKE2B_384":
+	        return TeaChecksumType.BLAKE2B_384;
+	      case "BLAKE2B512":
+	      case "BLAKE2B_512":
+	        return TeaChecksumType.BLAKE2B_512;
+	      case "BLAKE3":
+	        return TeaChecksumType.BLAKE3;
+	      default:
+	        return null; // Unsupported digest type
+	    }
+	  }
 
 	public static String getNullable(String nullable) {
 		if (nullable == null || nullable.trim().isEmpty()) {

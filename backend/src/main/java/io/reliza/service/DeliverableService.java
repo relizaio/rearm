@@ -27,7 +27,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
-import io.reliza.model.tea.TeaArtifactChecksumType;
+import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
@@ -282,7 +282,7 @@ public class DeliverableService {
 								String digestTypeString = digestParts[0];
 								String digestValue = digestParts[1];
 								
-								TeaArtifactChecksumType checksumType = TeaArtifactChecksumType.parseDigestType(digestTypeString);
+								TeaChecksumType checksumType = Utils.parseDigestType(digestTypeString);
 								if (checksumType != null) {
 									digestRecords.add(new DigestRecord(checksumType, digestValue, DigestScope.ORIGINAL_FILE));
 								} else {

@@ -27,6 +27,6 @@ public class WellKnownWs {
         ServletWebRequest request,
         HttpServletResponse response
     ) throws IOException {
-        response.sendRedirect("/tea/v0.1.0-beta.1/product/" + uuid);
+        response.sendRedirect("/tea/v0.1.0-beta.1/productRelease/" + uuid);
     }
 }

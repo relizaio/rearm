@@ -1,6 +1,3 @@
-/**
-* Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
-*/
 package io.reliza.model.tea;
 
 import java.net.URI;
@@ -8,11 +5,11 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
+import io.reliza.model.tea.TeaIdentifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-import io.reliza.model.tea.TeaIdentifier;
 import org.springframework.lang.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -30,7 +27,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "component", description = "A TEA component")
 @JsonTypeName("component")
-@Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaComponent {
 
   private UUID uuid;
@@ -143,7 +140,7 @@ public class TeaComponent {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class Component {\n");
+    sb.append("class TeaComponent {\n");
     sb.append("    uuid: ").append(toIndentedString(uuid)).append("\n");
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    identifiers: ").append(toIndentedString(identifiers)).append("\n");

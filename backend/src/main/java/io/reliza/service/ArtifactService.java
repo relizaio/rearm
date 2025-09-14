@@ -52,7 +52,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.OASResponseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
-import io.reliza.model.tea.TeaArtifactChecksumType;
+import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
@@ -379,7 +379,7 @@ public class ArtifactService {
 				artifactDto.setVersion(version);
 				DigestRecord sha256Dr = null;
 				if (null != artifactDto.getDigestRecords() && !artifactDto.getDigestRecords().isEmpty()) {
-					sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaArtifactChecksumType.SHA_256)).findFirst().orElse(null);
+					sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaChecksumType.SHA_256)).findFirst().orElse(null);
 				}
 				String sha256Digest = (null != sha256Dr) ? sha256Dr.digest() : null;
 				artifactUploadResponse = uploadFileToConfiguredOci(file, tag, sha256Digest);
@@ -417,10 +417,10 @@ public class ArtifactService {
 				digestRecords.add(dr.get());
 			}
 			if(StringUtils.isNotEmpty(artifactUploadResponse.getFileSHA256Digest())){
-				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
+				digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
 			}
 			if(null!=rebomResponse && StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
-				digestRecords.add(new DigestRecord(TeaArtifactChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));
+				digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));
 			}
 			artifactDto.setDigestRecords(digestRecords);
 
@@ -569,37 +569,17 @@ public class ArtifactService {
 		throw new RelizaException("Version not found in BOM");
 	}
 	
-	// 	}
-	// 	String newbomVerString = newBom.get("version").toString();
+	public Optional<ArtifactData> getArtifactSignature(ArtifactData ad) {
+		Optional<ArtifactData> retAd = Optional.empty();
+		var signatureAD = getArtifactDataList(ad.getArtifacts()).stream().filter(a -> a.getType() == ArtifactType.SIGNATURE).findFirst();
+		if (signatureAD.isPresent()) {
+			if (!signatureAD.get().getOrg().equals(ad.getOrg())) {
+				log.error(String.format("Signature artifact does not belong to the same organization as the artifact: %s, %s", ad.getUuid(), signatureAD.get().getUuid()));
+				throw new RuntimeException("Org mismatch");
+			}
+			retAd = Optional.of(signatureAD.get());
+		}
+		return retAd;
+	}
 
-	// 	log.info("newbomVerString: {}", newbomVerString);
-	// 	Integer newBomVersion = Integer.valueOf(newbomVerString);
-
-	// 	log.info("newBomVersion: {}", newBomVersion);
-
-	// 	Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(ad.getInternalBom().id(), ad.getOrg()));		
-	// 	String oldBomSerial = ad.getInternalBom().id().toString();
-
-	// 	// compare if lesser
-	// 	// reject
-	// 	if(oldBomSerial.equals(newBomSerial)){
-	// 		if(newBomVersion <= oldBomVersion)
-	// 			throw new RelizaException("Uploaded bom should have an incremented version");
-	// 		else{
-	// 			rebomService.uploadSbom(newBom, rebomOptions, orgUuid);
-	// 		}
-	// 	}else {
-	// 		rebomService.uploadSbom(newBom, rebomOptions, orgUuid);
-	// 		artifactDto.setInternalBom(new InternalBom(UUID.fromString(newBomSerial), ad.getInternalBom().belongsTo()));
-	// 		// upload and update the linkage
-	// 	}
-
-
-	// 	ArtifactData nad = ArtifactData.artifactDataFactory(artifactDto);
-	// 	//call saveArtifact
-	// 	Artifact a = sharedArtifactService.getArtifact(ad.getUuid()).get();
-	// 	Map<String, Object> recordData = Utils.dataToRecord(nad);
-	// 	a = sharedArtifactService.saveArtifact(a, recordData, wu);
-
-	// }
 }

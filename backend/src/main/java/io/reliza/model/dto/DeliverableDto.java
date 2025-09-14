@@ -10,8 +10,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import org.apache.commons.lang3.StringUtils;
-
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -21,12 +19,11 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.model.ArtifactData.DigestRecord;
-import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.DeliverableData.CPUArchitecture;
 import io.reliza.model.DeliverableData.OS;
 import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
-import io.reliza.model.tea.TeaArtifactChecksumType;
+import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.tea.TeaIdentifier;
 import lombok.Builder;
 import lombok.Data;
@@ -89,7 +86,7 @@ public class DeliverableDto {
 			if (null != digests && !digests.isEmpty()) {
 				var shaDigestRec = digests
 							.stream()
-							.filter(digest -> digest.algo() == TeaArtifactChecksumType.SHA_256).findFirst().orElse(null);
+							.filter(digest -> digest.algo() == TeaChecksumType.SHA_256).findFirst().orElse(null);
 				shaDigest = "sha256:" + shaDigestRec.digest();
 			}
 		}

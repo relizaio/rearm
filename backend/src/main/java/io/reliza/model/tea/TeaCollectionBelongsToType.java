@@ -17,21 +17,19 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Enumeration of identifiers types
+ * Indicates whether a collection belongs to a component release or a product release
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
-public enum TeaIdentifierType {
+public enum TeaCollectionBelongsToType {
   
-  CPE("CPE"),
+  RELEASE("RELEASE"),
   
-  TEI("TEI"),
-  
-  PURL("PURL");
+  PRODUCT_RELEASE("PRODUCT_RELEASE");
 
   private final String value;
 
-  TeaIdentifierType(String value) {
+  TeaCollectionBelongsToType(String value) {
     this.value = value;
   }
 
@@ -46,8 +44,8 @@ public enum TeaIdentifierType {
   }
 
   @JsonCreator
-  public static TeaIdentifierType fromValue(String value) {
-    for (TeaIdentifierType b : TeaIdentifierType.values()) {
+  public static TeaCollectionBelongsToType fromValue(String value) {
+    for (TeaCollectionBelongsToType b : TeaCollectionBelongsToType.values()) {
       if (b.value.equals(value)) {
         return b;
       }

@@ -7,6 +7,7 @@ import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import io.reliza.common.Utils;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 
@@ -17,21 +18,39 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Enumeration of identifiers types
+ * Checksum algorithm
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
-public enum TeaIdentifierType {
+public enum TeaChecksumType {
   
-  CPE("CPE"),
+  MD5("MD5"),
   
-  TEI("TEI"),
+  SHA_1("SHA-1"),
   
-  PURL("PURL");
+  SHA_256("SHA-256"),
+  
+  SHA_384("SHA-384"),
+  
+  SHA_512("SHA-512"),
+  
+  SHA3_256("SHA3-256"),
+  
+  SHA3_384("SHA3-384"),
+  
+  SHA3_512("SHA3-512"),
+  
+  BLAKE2B_256("BLAKE2b-256"),
+  
+  BLAKE2B_384("BLAKE2b-384"),
+  
+  BLAKE2B_512("BLAKE2b-512"),
+  
+  BLAKE3("BLAKE3");
 
   private final String value;
 
-  TeaIdentifierType(String value) {
+  TeaChecksumType(String value) {
     this.value = value;
   }
 
@@ -46,9 +65,9 @@ public enum TeaIdentifierType {
   }
 
   @JsonCreator
-  public static TeaIdentifierType fromValue(String value) {
-    for (TeaIdentifierType b : TeaIdentifierType.values()) {
-      if (b.value.equals(value)) {
+  public static TeaChecksumType fromValue(String value) {
+    for (TeaChecksumType b : TeaChecksumType.values()) {
+      if (b.name().equals(value) || b.value.equals(value)) {
         return b;
       }
     }

@@ -34,13 +34,13 @@ import jakarta.annotation.Generated;
 public class ComponentApiController implements ComponentApi {
 
 	@Autowired
-	GetComponentService getComponentService;
+	private GetComponentService getComponentService;
 	
 	@Autowired
-	TeaTransformerService teaTransformerService;
+	private TeaTransformerService teaTransformerService;
 	
 	@Autowired
-	SharedReleaseService sharedReleaseService;
+	private SharedReleaseService sharedReleaseService;
 	
     private final NativeWebRequest request;
 

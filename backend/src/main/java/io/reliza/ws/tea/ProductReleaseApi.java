@@ -6,6 +6,7 @@
 package io.reliza.ws.tea;
 
 import io.reliza.model.tea.TeaCollection;
+import io.reliza.model.tea.TeaProductRelease;
 import java.util.UUID;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,27 +38,27 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Validated
-@Tag(name = "TEA Release", description = "the TEA Release API")
-public interface ReleaseApi {
+@Tag(name = "TEA Product Release", description = "the TEA Product Release API")
+public interface ProductReleaseApi {
 
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
 
     /**
-     * GET /release/{uuid}/collection/{collectionVersion}
-     * Get a specific Collection (by version) for a TEA Release by its UUID
+     * GET /productRelease/{uuid}/collection/{collectionVersion}
+     * Get a specific Collection (by version) for a TEA Product Release by its UUID
      *
-     * @param uuid UUID of TEA Collection in the TEA server (required)
+     * @param uuid UUID of TEA Release in the TEA server (required)
      * @param collectionVersion Version of TEA Collection (required)
      * @return Requested TEA Collection Version found and returned (status code 200)
      *         or Request was Invalid (status code 400)
      *         or Object requested by identifier not found (status code 404)
      */
     @Operation(
-        operationId = "getCollection",
-        description = "Get a specific Collection (by version) for a TEA Release by its UUID",
-        tags = { "TEA Release" },
+        operationId = "getCollectionForProductRelease",
+        description = "Get a specific Collection (by version) for a TEA Product Release by its UUID",
+        tags = { "TEA Product Release" },
         responses = {
             @ApiResponse(responseCode = "200", description = "Requested TEA Collection Version found and returned", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaCollection.class))
@@ -72,12 +73,12 @@ public interface ReleaseApi {
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = "/release/{uuid}/collection/{collectionVersion}",
+        value = "/productRelease/{uuid}/collection/{collectionVersion}",
         produces = { "application/json" }
     )
     
-    default ResponseEntity<TeaCollection> getCollection(
-        @Parameter(name = "uuid", description = "UUID of TEA Collection in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+    default ResponseEntity<TeaCollection> getCollectionForProductRelease(
+        @Parameter(name = "uuid", description = "UUID of TEA Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
         @Parameter(name = "collectionVersion", description = "Version of TEA Collection", required = true, in = ParameterIn.PATH) @PathVariable("collectionVersion") Integer collectionVersion
     ) {
         getRequest().ifPresent(request -> {
@@ -95,18 +96,18 @@ public interface ReleaseApi {
 
 
     /**
-     * GET /release/{uuid}/collections
-     * Get the TEA Collections belonging to the TEA Release
+     * GET /productRelease/{uuid}/collections
+     * Get the TEA Collections belonging to the TEA Product Release
      *
-     * @param uuid UUID of TEA Release in the TEA server (required)
+     * @param uuid UUID of TEA Product Release in the TEA server (required)
      * @return Requested TEA Collection found and returned (status code 200)
      *         or Request was Invalid (status code 400)
      *         or Object requested by identifier not found (status code 404)
      */
     @Operation(
-        operationId = "getCollectionsByReleaseId",
-        description = "Get the TEA Collections belonging to the TEA Release",
-        tags = { "TEA Release" },
+        operationId = "getCollectionsByProductReleaseId",
+        description = "Get the TEA Collections belonging to the TEA Product Release",
+        tags = { "TEA Product Release" },
         responses = {
             @ApiResponse(responseCode = "200", description = "Requested TEA Collection found and returned", content = {
                 @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = TeaCollection.class)))
@@ -121,12 +122,12 @@ public interface ReleaseApi {
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = "/release/{uuid}/collections",
+        value = "/productRelease/{uuid}/collections",
         produces = { "application/json" }
     )
     
-    default ResponseEntity<List<TeaCollection>> getCollectionsByReleaseId(
-        @Parameter(name = "uuid", description = "UUID of TEA Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    default ResponseEntity<List<TeaCollection>> getCollectionsByProductReleaseId(
+        @Parameter(name = "uuid", description = "UUID of TEA Product Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
@@ -143,18 +144,18 @@ public interface ReleaseApi {
 
 
     /**
-     * GET /release/{uuid}/collection/latest
-     * Get the latest TEA Collection belonging to the TEA Release
+     * GET /productRelease/{uuid}/collection/latest
+     * Get the latest TEA Collection belonging to the TEA Product Release
      *
-     * @param uuid UUID of TEA Release in the TEA server (required)
+     * @param uuid UUID of TEA Product Release in the TEA server (required)
      * @return Requested TEA Collection found and returned (status code 200)
      *         or Request was Invalid (status code 400)
      *         or Object requested by identifier not found (status code 404)
      */
     @Operation(
-        operationId = "getLatestCollection",
-        description = "Get the latest TEA Collection belonging to the TEA Release",
-        tags = { "TEA Release" },
+        operationId = "getLatestCollectionForProductRelease",
+        description = "Get the latest TEA Collection belonging to the TEA Product Release",
+        tags = { "TEA Product Release" },
         responses = {
             @ApiResponse(responseCode = "200", description = "Requested TEA Collection found and returned", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaCollection.class))
@@ -169,17 +170,65 @@ public interface ReleaseApi {
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = "/release/{uuid}/collection/latest",
+        value = "/productRelease/{uuid}/collection/latest",
         produces = { "application/json" }
     )
     
-    default ResponseEntity<TeaCollection> getLatestCollection(
-        @Parameter(name = "uuid", description = "UUID of TEA Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    default ResponseEntity<TeaCollection> getLatestCollectionForProductRelease(
+        @Parameter(name = "uuid", description = "UUID of TEA Product Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"date\" : \"2024-03-20T15:30:00Z\", \"updateReason\" : { \"comment\" : \"comment\", \"type\" : \"INITIAL_RELEASE\" }, \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : 0, \"belongsTo\" : \"RELEASE\", \"artifacts\" : [ { \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mimeType\" : \"mimeType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mimeType\" : \"mimeType\", \"url\" : \"http://example.com/aeiou\" } ], \"distributionTypes\" : [ \"distributionTypes\", \"distributionTypes\" ], \"name\" : \"name\", \"type\" : \"ATTESTATION\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mimeType\" : \"mimeType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mimeType\" : \"mimeType\", \"url\" : \"http://example.com/aeiou\" } ], \"distributionTypes\" : [ \"distributionTypes\", \"distributionTypes\" ], \"name\" : \"name\", \"type\" : \"ATTESTATION\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /productRelease/{uuid}
+     * Get a TEA Product Release
+     *
+     * @param uuid UUID of TEA Product Release in the TEA server (required)
+     * @return Requested TEA Product Release found and returned (status code 200)
+     *         or Request was Invalid (status code 400)
+     *         or Object requested by identifier not found (status code 404)
+     */
+    @Operation(
+        operationId = "getTeaProductReleaseByUuid",
+        description = "Get a TEA Product Release",
+        tags = { "TEA Product Release" },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "Requested TEA Product Release found and returned", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaProductRelease.class))
+            }),
+            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
+            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found")
+        },
+        security = {
+            @SecurityRequirement(name = "basicAuth"),
+            @SecurityRequirement(name = "bearerAuth")
+        }
+    )
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/productRelease/{uuid}",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<TeaProductRelease> getTeaProductReleaseByUuid(
+        @Parameter(name = "uuid", description = "UUID of TEA Product Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"preRelease\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

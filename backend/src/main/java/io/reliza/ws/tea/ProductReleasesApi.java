@@ -6,7 +6,7 @@
 package io.reliza.ws.tea;
 
 import io.reliza.model.tea.TeaIdentifierType;
-import io.reliza.model.tea.TeaInlineObject;
+import io.reliza.model.tea.TeaInlineObject1;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -37,31 +37,31 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Validated
-@Tag(name = "TEA Product", description = "the TEA Product API")
-public interface ProductsApi {
+@Tag(name = "TEA Product Release", description = "the TEA Product Release API")
+public interface ProductReleasesApi {
 
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
 
     /**
-     * GET /products
-     * Returns a list of TEA products. Note that multiple products may match.
+     * GET /productReleases
+     * Returns a list of TEA product releases. Note that multiple product releases may match.
      *
      * @param pageOffset Pagination offset (optional, default to 0)
      * @param pageSize Pagination offset (optional, default to 100)
      * @param idType Type of identifier specified in the &#x60;idValue&#x60; parameter (optional)
      * @param idValue If present, only the objects with the given identifier value will be returned. (optional)
-     * @return A paginated response containing TEA Products (status code 200)
+     * @return A paginated response containing TEA Product Releases (status code 200)
      *         or Request was Invalid (status code 400)
      */
     @Operation(
-        operationId = "getTeaProductByIdentifier",
-        description = "Returns a list of TEA products. Note that multiple products may match.",
-        tags = { "TEA Product" },
+        operationId = "getTeaProductReleaseByIdentifier",
+        description = "Returns a list of TEA product releases. Note that multiple product releases may match.",
+        tags = { "TEA Product Release" },
         responses = {
-            @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Products", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaInlineObject.class))
+            @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Product Releases", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaInlineObject1.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid")
         },
@@ -72,11 +72,11 @@ public interface ProductsApi {
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = "/products",
+        value = "/productReleases",
         produces = { "application/json" }
     )
     
-    default ResponseEntity<TeaInlineObject> getTeaProductByIdentifier(
+    default ResponseEntity<TeaInlineObject1> getTeaProductReleaseByIdentifier(
         @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
         @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize,
         @Parameter(name = "idType", description = "Type of identifier specified in the `idValue` parameter", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idType", required = false) @Nullable TeaIdentifierType idType,
@@ -85,7 +85,7 @@ public interface ProductsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
+                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"preRelease\" : true }, { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"preRelease\" : true } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

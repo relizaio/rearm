@@ -1,6 +1,3 @@
-/**
-* Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
-*/
 package io.reliza.model.tea;
 
 import java.net.URI;
@@ -27,14 +24,14 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "collection-update-reason", description = "Reason for the update to the TEA collection")
 @JsonTypeName("collection-update-reason")
-@Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaCollectionUpdateReason {
 
   private @Nullable TeaCollectionUpdateReasonType type;
 
   private @Nullable String comment;
 
-  public TeaCollectionUpdateReason type(TeaCollectionUpdateReasonType type) {
+  public TeaCollectionUpdateReason type(@Nullable TeaCollectionUpdateReasonType type) {
     this.type = type;
     return this;
   }
@@ -46,15 +43,15 @@ public class TeaCollectionUpdateReason {
   @Valid 
   @Schema(name = "type", description = "Type of update reason.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("type")
-  public TeaCollectionUpdateReasonType getType() {
+  public @Nullable TeaCollectionUpdateReasonType getType() {
     return type;
   }
 
-  public void setType(TeaCollectionUpdateReasonType type) {
+  public void setType(@Nullable TeaCollectionUpdateReasonType type) {
     this.type = type;
   }
 
-  public TeaCollectionUpdateReason comment(String comment) {
+  public TeaCollectionUpdateReason comment(@Nullable String comment) {
     this.comment = comment;
     return this;
   }
@@ -66,11 +63,11 @@ public class TeaCollectionUpdateReason {
   
   @Schema(name = "comment", description = "Free text description", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("comment")
-  public String getComment() {
+  public @Nullable String getComment() {
     return comment;
   }
 
-  public void setComment(String comment) {
+  public void setComment(@Nullable String comment) {
     this.comment = comment;
   }
 
@@ -95,7 +92,7 @@ public class TeaCollectionUpdateReason {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class CollectionUpdateReason {\n");
+    sb.append("class TeaCollectionUpdateReason {\n");
     sb.append("    type: ").append(toIndentedString(type)).append("\n");
     sb.append("    comment: ").append(toIndentedString(comment)).append("\n");
     sb.append("}");

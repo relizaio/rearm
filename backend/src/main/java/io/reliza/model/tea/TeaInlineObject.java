@@ -1,6 +1,3 @@
-/**
-* Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
-*/
 package io.reliza.model.tea;
 
 import java.net.URI;
@@ -8,12 +5,11 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
-import java.math.BigDecimal;
+import io.reliza.model.tea.TeaProduct;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import io.reliza.model.tea.TeaProduct;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.lang.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -27,11 +23,11 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * InlineObject
+ * TeaInlineObject
  */
 
 @JsonTypeName("inline_object")
-@Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaInlineObject {
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
@@ -89,7 +85,7 @@ public class TeaInlineObject {
    * Get pageStartIndex
    * @return pageStartIndex
    */
-  @NotNull @Valid 
+  @NotNull 
   @Schema(name = "pageStartIndex", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("pageStartIndex")
   public Long getPageStartIndex() {
@@ -109,7 +105,7 @@ public class TeaInlineObject {
    * Get pageSize
    * @return pageSize
    */
-  @NotNull @Valid 
+  @NotNull 
   @Schema(name = "pageSize", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("pageSize")
   public Long getPageSize() {
@@ -129,7 +125,7 @@ public class TeaInlineObject {
    * Get totalResults
    * @return totalResults
    */
-  @NotNull @Valid 
+  @NotNull 
   @Schema(name = "totalResults", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("totalResults")
   public Long getTotalResults() {
@@ -192,7 +188,7 @@ public class TeaInlineObject {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class InlineObject {\n");
+    sb.append("class TeaInlineObject {\n");
     sb.append("    timestamp: ").append(toIndentedString(timestamp)).append("\n");
     sb.append("    pageStartIndex: ").append(toIndentedString(pageStartIndex)).append("\n");
     sb.append("    pageSize: ").append(toIndentedString(pageSize)).append("\n");

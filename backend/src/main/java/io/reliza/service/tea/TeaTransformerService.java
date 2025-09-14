@@ -4,13 +4,11 @@
 package io.reliza.service.tea;
 
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,19 +23,22 @@ import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ParentRelease;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.tea.TeaArtifact;
-import io.reliza.model.tea.TeaArtifactChecksum;
-import io.reliza.model.tea.TeaArtifactChecksumType;
 import io.reliza.model.tea.TeaArtifactFormat;
 import io.reliza.model.tea.TeaArtifactType;
+import io.reliza.model.tea.TeaChecksum;
 import io.reliza.model.tea.TeaCollection;
+import io.reliza.model.tea.TeaCollectionBelongsToType;
 import io.reliza.model.tea.TeaCollectionUpdateReason;
-import io.reliza.model.tea.TeaCollectionUpdateReasonType;
 import io.reliza.model.tea.TeaComponent;
+import io.reliza.model.tea.TeaComponentRef;
 import io.reliza.model.tea.TeaProduct;
+import io.reliza.model.tea.TeaProductRelease;
 import io.reliza.model.tea.TeaRelease;
 import io.reliza.service.ArtifactService;
+import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.ws.RelizaConfigProps;
 import lombok.extern.slf4j.Slf4j;
@@ -47,10 +48,13 @@ import lombok.extern.slf4j.Slf4j;
 public class TeaTransformerService {
 	
 	@Autowired
-	SharedReleaseService sharedReleaseService;
+	private SharedReleaseService sharedReleaseService;
 	
 	@Autowired
-	ArtifactService artifactService;
+	private ArtifactService artifactService;
+	
+	@Autowired
+	private GetComponentService getComponentService;
 	
 	private RelizaConfigProps relizaConfigProps;
 	
@@ -67,8 +71,34 @@ public class TeaTransformerService {
 		tp.setUuid(rearmCD.getUuid());
 		tp.setName(rearmCD.getName());
 		tp.setIdentifiers(rearmCD.getIdentifiers());
-		tp.setComponents(new LinkedList<>(sharedReleaseService.obtainComponentsOfProductOrComponent(rearmCD.getUuid(), new LinkedHashSet<>())));
 		return tp;
+	}
+	
+	public TeaProductRelease transformProductReleaseToTea (ReleaseData rd) {
+		UUID productUuid = rd.getComponent();
+		ComponentData cd = getComponentService.getComponentData(productUuid).get();
+		if (cd.getType() != ComponentType.PRODUCT) {
+			throw new RuntimeException("Wrong component type");
+		}
+		TeaProductRelease tpr = new TeaProductRelease();
+		tpr.setUuid(rd.getUuid());
+		OffsetDateTime releaseDate = rd.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
+		tpr.setCreatedDate(releaseDate);
+		tpr.setReleaseDate(releaseDate); // TODO (consider using date when release set to shipped or assembled - potentially make configurable)
+		tpr.setIdentifiers(rd.getIdentifiers());
+		tpr.setPreRelease(false);
+		tpr.setProduct(productUuid);
+		tpr.setVersion(rd.getVersion());
+		tpr.setComponents(rd.getParentReleases().stream().map(pr -> transformParentReleaseToComponentRef(pr)).toList());
+		return tpr;
+	}
+	
+	private TeaComponentRef transformParentReleaseToComponentRef(ParentRelease pr) {
+		TeaComponentRef tcr = new TeaComponentRef();
+		ReleaseData rearmRd = sharedReleaseService.getReleaseData(pr.getRelease()).get();
+		tcr.setUuid(rearmRd.getComponent());
+		tcr.setRelease(pr.getRelease());
+		return tcr;
 	}
 	
 	public TeaComponent transformComponentToTea(ComponentData rearmCD) {
@@ -105,6 +135,7 @@ public class TeaTransformerService {
 				break;
 			case VDR:
 			case VEX:
+			case BOV:
 				tat = TeaArtifactType.VULNERABILITIES;
 				break;
 			case USER_DOCUMENT:
@@ -113,7 +144,12 @@ public class TeaTransformerService {
 			case MARKETING_DOCUMENT:
 			case TEST_REPORT:
 			case SARIF:
+			case SIGNED_PAYLOAD:
 			case OTHER:
+			case SIGNATURE:
+			case PUBLIC_KEY:
+			case CERTIFICATE_X_509:
+			case CERTIFICATE_PGP:
 				tat = TeaArtifactType.OTHER;
 				break;
 			case BUILD_META:
@@ -142,63 +178,6 @@ public class TeaTransformerService {
 		return tat;
 	}
 	
-	private List<TeaArtifactChecksum> transformDigestsToTea (Collection<String> digests) {
-		List<TeaArtifactChecksum> tacList = new LinkedList<>();
-		for (String d: digests) {
-			String[] digestEls = d.split(":", 2);
-			TeaArtifactChecksumType tact = null;
-			String rearmDigestTypeString = StringUtils.upperCase(digestEls[0]);
-			switch (rearmDigestTypeString) {
-				case "MD5":
-					tact = TeaArtifactChecksumType.MD5;
-					break;
-				case "SHA1":
-					tact = TeaArtifactChecksumType.SHA1;
-					break;
-				case "SHA256":
-					tact = TeaArtifactChecksumType.SHA_256;
-					break;
-				case "SHA384":
-					tact = TeaArtifactChecksumType.SHA_384;
-					break;
-				case "SHA512":
-					tact = TeaArtifactChecksumType.SHA_512;
-					break;
-				case "SHA3256":
-					tact = TeaArtifactChecksumType.SHA3_256;
-					break;
-				case "SHA3384":
-					tact = TeaArtifactChecksumType.SHA3_384;
-					break;
-				case "SHA3512":
-					tact = TeaArtifactChecksumType.SHA3_512;
-					break;
-				case "BLAKE2B256":
-					tact = TeaArtifactChecksumType.BLAKE2B_256;
-					break;
-				case "BLAKE2B384":
-					tact = TeaArtifactChecksumType.BLAKE2B_384;
-					break;
-				case "BLAKE2B512":
-					tact = TeaArtifactChecksumType.BLAKE2B_512;
-					break;
-				case "BLAKE3":
-					tact = TeaArtifactChecksumType.BLAKE3;
-					break;
-				default:
-					log.warn("Unsupported by TEA ReARM digest: " + rearmDigestTypeString);
-					break;
-			}
-			if (null != tact) {
-				TeaArtifactChecksum tac = new TeaArtifactChecksum();
-				tac.setAlgType(tact);
-				tac.setAlgValue(digestEls[1]);
-				tacList.add(tac);
-			}
-		}
-		return tacList;
-	}
-	
 	private String resolveMediaType(BomFormat bomFormat, String initialType) {
 		String resolvedType;
 		if ("application/json".equals(initialType) && bomFormat == BomFormat.CYCLONEDX) {
@@ -222,27 +201,29 @@ public class TeaTransformerService {
 		List<TeaArtifactFormat> tafList = new LinkedList<>();
 		if (rearmAD.getStoredIn() == StoredIn.REARM) {
 			TeaArtifactFormat taf = new TeaArtifactFormat();
-			taf.setDescription("Raw Artifact as uploaded to ReARM");
+			String bomFormatDisplay = (rearmAD.getBomFormat() != null) ? rearmAD.getBomFormat().toString() + " " : "";
+			taf.setDescription(String.format("%s%s Raw Artifact as Uploaded to ReARM", bomFormatDisplay, rearmAD.getType()));
 			var mediaTypeTag = rearmAD.getTags().stream().filter(t -> CommonVariables.MEDIA_TYPE_FIELD.equals(t.key())).findAny();
 			if (mediaTypeTag.isPresent()) taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
-			// taf.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO: digest is currently from Rebom OCI
 			taf.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + rearmAD.getUuid());
-			taf.setSignatureUrl(null); // TODO
-			List<TeaArtifactChecksum> tacList = new LinkedList<>();
+			Optional<ArtifactData> optSignatureAD = artifactService.getArtifactSignature(rearmAD);
+			if (optSignatureAD.isPresent()) {
+				taf.setSignatureUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + optSignatureAD.get().getUuid());
+			} else taf.setSignatureUrl(null);
+			List<TeaChecksum> tcList = new LinkedList<>();
 			rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
-				TeaArtifactChecksum tac = new TeaArtifactChecksum();
-				tac.setAlgType(d.algo());
-				tac.setAlgValue(d.digest());
-				tacList.add(tac);	
+				TeaChecksum tc = new TeaChecksum();
+				tc.setAlgType(d.algo());
+				tc.setAlgValue(d.digest());
+				tcList.add(tc);	
 			});
-			taf.setChecksums(tacList);
+			taf.setChecksums(tcList);
 			tafList.add(taf);
 			
-			if (rearmAD.getType() == ArtifactType.BOM || rearmAD.getType() == ArtifactType.VDR || rearmAD.getType() == ArtifactType.VEX || rearmAD.getType() == ArtifactType.ATTESTATION) {
+			if (rearmAD.getType() == ArtifactType.BOM && rearmAD.getBomFormat() == BomFormat.CYCLONEDX) {
 				TeaArtifactFormat tafAugmented = new TeaArtifactFormat();
-				tafAugmented.setDescription("Augmented Artifact uploaded to ReARM");
+				tafAugmented.setDescription("CycloneDX BOM Artifact Uploaded to ReARM, Augmented by Rebom");
 				if (mediaTypeTag.isPresent()) tafAugmented.setMimeType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
-				// tafAugmented.setChecksums(transformDigestsToTea(rearmAD.getDigests())); TODO
 				tafAugmented.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/augmented/" + rearmAD.getUuid());
 				tafAugmented.setSignatureUrl(null); // TODO
 				tafList.add(tafAugmented);
@@ -250,16 +231,16 @@ public class TeaTransformerService {
 		} else {
 			for (var dlink : rearmAD.getDownloadLinks()) {
 				TeaArtifactFormat taf = new TeaArtifactFormat();
-				taf.setDescription("External Artifact linked from ReARM");
+				taf.setDescription("External Artifact Linked from ReARM");
 				taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), dlink.getContent().getContentString()));
-				List<TeaArtifactChecksum> tacList = new LinkedList<>();
+				List<TeaChecksum> tcList = new LinkedList<>();
 				rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
-					TeaArtifactChecksum tac = new TeaArtifactChecksum();
-					tac.setAlgType(d.algo());
-					tac.setAlgValue(d.digest());
-					tacList.add(tac);	
+					TeaChecksum tc = new TeaChecksum();
+					tc.setAlgType(d.algo());
+					tc.setAlgValue(d.digest());
+					tcList.add(tc);	
 				});
-				taf.setChecksums(tacList);
+				taf.setChecksums(tcList);
 				taf.setUrl(dlink.getUri());
 				taf.setSignatureUrl(null); // TODO
 				tafList.add(taf);
@@ -288,6 +269,10 @@ public class TeaTransformerService {
 			return transformArtifactToTea(oad.get());
 		}).toList();
 		tc.setArtifacts(teaArtifacts);
+		ReleaseData rd = sharedReleaseService.getReleaseData(acd.getRelease()).get();
+		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).get();
+		TeaCollectionBelongsToType belongsToType = (cd.getType() == ComponentType.COMPONENT) ? TeaCollectionBelongsToType.RELEASE : TeaCollectionBelongsToType.PRODUCT_RELEASE;
+		tc.setBelongsTo(belongsToType);
 		return tc;
 	}
     

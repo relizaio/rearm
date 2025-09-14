@@ -1,6 +1,3 @@
-/**
-* Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
-*/
 package io.reliza.model.tea;
 
 import java.net.URI;
@@ -8,10 +5,10 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
+import io.reliza.model.tea.TeaChecksum;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import io.reliza.model.tea.TeaArtifactChecksum;
 import org.springframework.lang.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -29,7 +26,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "artifact-format", description = "A security-related document in a specific format")
 @JsonTypeName("artifact-format")
-@Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaArtifactFormat {
 
   private @Nullable String mimeType;
@@ -41,9 +38,9 @@ public class TeaArtifactFormat {
   private @Nullable String signatureUrl;
 
   @Valid
-  private List<@Valid TeaArtifactChecksum> checksums = new ArrayList<>();
+  private List<@Valid TeaChecksum> checksums = new ArrayList<>();
 
-  public TeaArtifactFormat mimeType(String mimeType) {
+  public TeaArtifactFormat mimeType(@Nullable String mimeType) {
     this.mimeType = mimeType;
     return this;
   }
@@ -53,17 +50,17 @@ public class TeaArtifactFormat {
    * @return mimeType
    */
   
-  @Schema(name = "mime_type", description = "The MIME type of the document", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("mime_type")
-  public String getMimeType() {
+  @Schema(name = "mimeType", description = "The MIME type of the document", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @JsonProperty("mimeType")
+  public @Nullable String getMimeType() {
     return mimeType;
   }
 
-  public void setMimeType(String mimeType) {
+  public void setMimeType(@Nullable String mimeType) {
     this.mimeType = mimeType;
   }
 
-  public TeaArtifactFormat description(String description) {
+  public TeaArtifactFormat description(@Nullable String description) {
     this.description = description;
     return this;
   }
@@ -75,15 +72,15 @@ public class TeaArtifactFormat {
   
   @Schema(name = "description", description = "A free text describing the artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("description")
-  public String getDescription() {
+  public @Nullable String getDescription() {
     return description;
   }
 
-  public void setDescription(String description) {
+  public void setDescription(@Nullable String description) {
     this.description = description;
   }
 
-  public TeaArtifactFormat url(String url) {
+  public TeaArtifactFormat url(@Nullable String url) {
     this.url = url;
     return this;
   }
@@ -95,15 +92,15 @@ public class TeaArtifactFormat {
   
   @Schema(name = "url", description = "Direct download URL for the artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("url")
-  public String getUrl() {
+  public @Nullable String getUrl() {
     return url;
   }
 
-  public void setUrl(String url) {
+  public void setUrl(@Nullable String url) {
     this.url = url;
   }
 
-  public TeaArtifactFormat signatureUrl(String signatureUrl) {
+  public TeaArtifactFormat signatureUrl(@Nullable String signatureUrl) {
     this.signatureUrl = signatureUrl;
     return this;
   }
@@ -115,20 +112,20 @@ public class TeaArtifactFormat {
   
   @Schema(name = "signatureUrl", description = "Direct download URL for an external signature of the artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("signatureUrl")
-  public String getSignatureUrl() {
+  public @Nullable String getSignatureUrl() {
     return signatureUrl;
   }
 
-  public void setSignatureUrl(String signatureUrl) {
+  public void setSignatureUrl(@Nullable String signatureUrl) {
     this.signatureUrl = signatureUrl;
   }
 
-  public TeaArtifactFormat checksums(List<@Valid TeaArtifactChecksum> checksums) {
+  public TeaArtifactFormat checksums(List<@Valid TeaChecksum> checksums) {
     this.checksums = checksums;
     return this;
   }
 
-  public TeaArtifactFormat addChecksumsItem(TeaArtifactChecksum checksumsItem) {
+  public TeaArtifactFormat addChecksumsItem(TeaChecksum checksumsItem) {
     if (this.checksums == null) {
       this.checksums = new ArrayList<>();
     }
@@ -143,11 +140,11 @@ public class TeaArtifactFormat {
   @Valid 
   @Schema(name = "checksums", description = "List of checksums for the artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("checksums")
-  public List<@Valid TeaArtifactChecksum> getChecksums() {
+  public List<@Valid TeaChecksum> getChecksums() {
     return checksums;
   }
 
-  public void setChecksums(List<@Valid TeaArtifactChecksum> checksums) {
+  public void setChecksums(List<@Valid TeaChecksum> checksums) {
     this.checksums = checksums;
   }
 
@@ -175,7 +172,7 @@ public class TeaArtifactFormat {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class ArtifactFormat {\n");
+    sb.append("class TeaArtifactFormat {\n");
     sb.append("    mimeType: ").append(toIndentedString(mimeType)).append("\n");
     sb.append("    description: ").append(toIndentedString(description)).append("\n");
     sb.append("    url: ").append(toIndentedString(url)).append("\n");

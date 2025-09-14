@@ -7,6 +7,8 @@ import java.util.UUID;
 
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,7 +16,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.tea.TeaProduct;
+import io.reliza.model.tea.TeaProductRelease;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.tea.TeaTransformerService;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -22,6 +26,7 @@ import io.swagger.v3.oas.annotations.enums.ParameterIn;
 
 import org.springframework.web.context.request.NativeWebRequest;
 
+import java.util.List;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
@@ -30,13 +35,16 @@ import jakarta.annotation.Generated;
 @RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.1.0-beta.1}")
 public class ProductApiController implements ProductApi {
 
-    private final NativeWebRequest request;
-
-	@Autowired
-	GetComponentService getComponentService;
+    @Autowired
+	private GetComponentService getComponentService;
 	
 	@Autowired
-	TeaTransformerService teaTransformerService;
+	private TeaTransformerService teaTransformerService;
+	
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
+
+    private final NativeWebRequest request;
 	
     @Autowired
     public ProductApiController(NativeWebRequest request) {
@@ -48,6 +56,20 @@ public class ProductApiController implements ProductApi {
         return Optional.ofNullable(request);
     }
     
+    @Override
+    public ResponseEntity<List<TeaProductRelease>> getReleasesByProductId(
+    @Parameter(name = "uuid", description = "UUID of TEA Product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    ) {
+        var ocd = getComponentService.getComponentData(uuid);
+        if (ocd.isEmpty() || ocd.get().getType() != ComponentType.PRODUCT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
+            return ResponseEntity.notFound().build();
+        } else {
+            var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, 300, 0); // TODO - TEA - pagination
+            var teaProductReleases = releases.stream().map(rd -> teaTransformerService.transformProductReleaseToTea(rd)).toList();
+            return ResponseEntity.ok(teaProductReleases);
+        }
+    }
+
     @Override
     public ResponseEntity<TeaProduct> getTeaProductByUuid(
             @Parameter(name = "uuid", description = "UUID of the TEA product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid

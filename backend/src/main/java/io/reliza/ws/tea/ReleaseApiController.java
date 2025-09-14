@@ -70,7 +70,7 @@ public class ReleaseApiController implements ReleaseApi {
     
     
     @Override
-    public ResponseEntity<TeaCollection> getLatestCollectionByReleaseId(
+    public ResponseEntity<TeaCollection> getLatestCollection(
     		@Parameter(name = "uuid", description = "UUID of TEA Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
         ) {
     		var release = sharedReleaseService.getReleaseData(uuid);
@@ -89,7 +89,7 @@ public class ReleaseApiController implements ReleaseApi {
      }
     
     @Override
-    public ResponseEntity<TeaCollection> getTeaCollectionVersionByCollectionIdAndVersion(
+    public ResponseEntity<TeaCollection> getCollection(
             @Parameter(name = "uuid", description = "UUID of TEA Collection in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
             @Parameter(name = "version", description = "Version of TEA Collection", required = true, in = ParameterIn.PATH) @PathVariable("version") Integer version
         ) {

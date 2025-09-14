@@ -24,7 +24,7 @@ import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.tea.Link;
 import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.TeaArtifactChecksumType;
+import io.reliza.model.tea.TeaChecksumType;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -169,12 +169,12 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	}
 
 	public record DigestRecord(
-		TeaArtifactChecksumType algo, 
+		TeaChecksumType algo, 
 		String digest, 
 		@JsonProperty(defaultValue = "ORIGINAL_FILE")
 		DigestScope scope
 	) {
-		public DigestRecord(TeaArtifactChecksumType algo, String digest){
+		public DigestRecord(TeaChecksumType algo, String digest){
 			this(algo, digest, DigestScope.ORIGINAL_FILE);
 		}
 	}

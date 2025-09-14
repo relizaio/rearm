@@ -1,6 +1,3 @@
-/**
-* Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
-*/
 package io.reliza.model.tea;
 
 import java.net.URI;
@@ -9,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.fasterxml.jackson.annotation.JsonValue;
-import io.reliza.model.tea.TeaArtifactChecksumType;
+import io.reliza.model.tea.TeaChecksumType;
 import org.springframework.lang.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -22,18 +19,18 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * ArtifactChecksum
+ * TeaChecksum
  */
 
-@JsonTypeName("artifact-checksum")
-@Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
-public class TeaArtifactChecksum {
+@JsonTypeName("checksum")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+public class TeaChecksum {
 
-  private @Nullable TeaArtifactChecksumType algType;
+  private @Nullable TeaChecksumType algType;
 
   private @Nullable String algValue;
 
-  public TeaArtifactChecksum algType(TeaArtifactChecksumType algType) {
+  public TeaChecksum algType(@Nullable TeaChecksumType algType) {
     this.algType = algType;
     return this;
   }
@@ -45,15 +42,15 @@ public class TeaArtifactChecksum {
   @Valid 
   @Schema(name = "algType", description = "Checksum algorithm", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("algType")
-  public TeaArtifactChecksumType getAlgType() {
+  public @Nullable TeaChecksumType getAlgType() {
     return algType;
   }
 
-  public void setAlgType(TeaArtifactChecksumType algType) {
+  public void setAlgType(@Nullable TeaChecksumType algType) {
     this.algType = algType;
   }
 
-  public TeaArtifactChecksum algValue(String algValue) {
+  public TeaChecksum algValue(@Nullable String algValue) {
     this.algValue = algValue;
     return this;
   }
@@ -65,11 +62,11 @@ public class TeaArtifactChecksum {
   
   @Schema(name = "algValue", description = "Checksum value", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("algValue")
-  public String getAlgValue() {
+  public @Nullable String getAlgValue() {
     return algValue;
   }
 
-  public void setAlgValue(String algValue) {
+  public void setAlgValue(@Nullable String algValue) {
     this.algValue = algValue;
   }
 
@@ -81,9 +78,9 @@ public class TeaArtifactChecksum {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    TeaArtifactChecksum artifactChecksum = (TeaArtifactChecksum) o;
-    return Objects.equals(this.algType, artifactChecksum.algType) &&
-        Objects.equals(this.algValue, artifactChecksum.algValue);
+    TeaChecksum checksum = (TeaChecksum) o;
+    return Objects.equals(this.algType, checksum.algType) &&
+        Objects.equals(this.algValue, checksum.algValue);
   }
 
   @Override
@@ -94,7 +91,7 @@ public class TeaArtifactChecksum {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class ArtifactChecksum {\n");
+    sb.append("class TeaChecksum {\n");
     sb.append("    algType: ").append(toIndentedString(algType)).append("\n");
     sb.append("    algValue: ").append(toIndentedString(algValue)).append("\n");
     sb.append("}");

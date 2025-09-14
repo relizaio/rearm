@@ -5,8 +5,8 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
+import io.reliza.model.tea.TeaComponentRef;
 import io.reliza.model.tea.TeaIdentifier;
-import io.reliza.model.tea.TeaReleaseDistribution;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,17 +25,17 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A TEA Component Release
+ * A specific release of a TEA product
  */
 
-@Schema(name = "release", description = "A TEA Component Release")
-@JsonTypeName("release")
+@Schema(name = "productRelease", description = "A specific release of a TEA product")
+@JsonTypeName("productRelease")
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
-public class TeaRelease {
+public class TeaProductRelease {
 
   private UUID uuid;
 
-  private @Nullable UUID component;
+  private @Nullable UUID product;
 
   private String version;
 
@@ -51,22 +51,23 @@ public class TeaRelease {
   private List<@Valid TeaIdentifier> identifiers = new ArrayList<>();
 
   @Valid
-  private List<@Valid TeaReleaseDistribution> distributions = new ArrayList<>();
+  private List<@Valid TeaComponentRef> components = new ArrayList<>();
 
-  public TeaRelease() {
+  public TeaProductRelease() {
     super();
   }
 
   /**
    * Constructor with only required parameters
    */
-  public TeaRelease(UUID uuid, String version, OffsetDateTime createdDate) {
+  public TeaProductRelease(UUID uuid, String version, OffsetDateTime createdDate, List<@Valid TeaComponentRef> components) {
     this.uuid = uuid;
     this.version = version;
     this.createdDate = createdDate;
+    this.components = components;
   }
 
-  public TeaRelease uuid(UUID uuid) {
+  public TeaProductRelease uuid(UUID uuid) {
     this.uuid = uuid;
     return this;
   }
@@ -86,37 +87,37 @@ public class TeaRelease {
     this.uuid = uuid;
   }
 
-  public TeaRelease component(@Nullable UUID component) {
-    this.component = component;
+  public TeaProductRelease product(@Nullable UUID product) {
+    this.product = product;
     return this;
   }
 
   /**
    * A UUID
-   * @return component
+   * @return product
    */
   @Valid 
-  @Schema(name = "component", description = "A UUID", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("component")
-  public @Nullable UUID getComponent() {
-    return component;
+  @Schema(name = "product", description = "A UUID", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @JsonProperty("product")
+  public @Nullable UUID getProduct() {
+    return product;
   }
 
-  public void setComponent(@Nullable UUID component) {
-    this.component = component;
+  public void setProduct(@Nullable UUID product) {
+    this.product = product;
   }
 
-  public TeaRelease version(String version) {
+  public TeaProductRelease version(String version) {
     this.version = version;
     return this;
   }
 
   /**
-   * Version number
+   * Version number of the product release
    * @return version
    */
   @NotNull 
-  @Schema(name = "version", example = "1.2.3", description = "Version number", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "version", example = "2.24.3", description = "Version number of the product release", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("version")
   public String getVersion() {
     return version;
@@ -126,7 +127,7 @@ public class TeaRelease {
     this.version = version;
   }
 
-  public TeaRelease createdDate(OffsetDateTime createdDate) {
+  public TeaProductRelease createdDate(OffsetDateTime createdDate) {
     this.createdDate = createdDate;
     return this;
   }
@@ -146,7 +147,7 @@ public class TeaRelease {
     this.createdDate = createdDate;
   }
 
-  public TeaRelease releaseDate(@Nullable OffsetDateTime releaseDate) {
+  public TeaProductRelease releaseDate(@Nullable OffsetDateTime releaseDate) {
     this.releaseDate = releaseDate;
     return this;
   }
@@ -166,7 +167,7 @@ public class TeaRelease {
     this.releaseDate = releaseDate;
   }
 
-  public TeaRelease preRelease(@Nullable Boolean preRelease) {
+  public TeaProductRelease preRelease(@Nullable Boolean preRelease) {
     this.preRelease = preRelease;
     return this;
   }
@@ -186,12 +187,12 @@ public class TeaRelease {
     this.preRelease = preRelease;
   }
 
-  public TeaRelease identifiers(List<@Valid TeaIdentifier> identifiers) {
+  public TeaProductRelease identifiers(List<@Valid TeaIdentifier> identifiers) {
     this.identifiers = identifiers;
     return this;
   }
 
-  public TeaRelease addIdentifiersItem(TeaIdentifier identifiersItem) {
+  public TeaProductRelease addIdentifiersItem(TeaIdentifier identifiersItem) {
     if (this.identifiers == null) {
       this.identifiers = new ArrayList<>();
     }
@@ -200,11 +201,11 @@ public class TeaRelease {
   }
 
   /**
-   * List of identifiers for the component
+   * List of identifiers for the product release
    * @return identifiers
    */
   @Valid 
-  @Schema(name = "identifiers", description = "List of identifiers for the component", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "identifiers", description = "List of identifiers for the product release", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("identifiers")
   public List<@Valid TeaIdentifier> getIdentifiers() {
     return identifiers;
@@ -214,32 +215,32 @@ public class TeaRelease {
     this.identifiers = identifiers;
   }
 
-  public TeaRelease distributions(List<@Valid TeaReleaseDistribution> distributions) {
-    this.distributions = distributions;
+  public TeaProductRelease components(List<@Valid TeaComponentRef> components) {
+    this.components = components;
     return this;
   }
 
-  public TeaRelease addDistributionsItem(TeaReleaseDistribution distributionsItem) {
-    if (this.distributions == null) {
-      this.distributions = new ArrayList<>();
+  public TeaProductRelease addComponentsItem(TeaComponentRef componentsItem) {
+    if (this.components == null) {
+      this.components = new ArrayList<>();
     }
-    this.distributions.add(distributionsItem);
+    this.components.add(componentsItem);
     return this;
   }
 
   /**
-   * List of different formats of this component release
-   * @return distributions
+   * List of component references that compose this product release. A component reference can optionally include the UUID of a specific component release to pin the exact version. 
+   * @return components
    */
-  @Valid 
-  @Schema(name = "distributions", description = "List of different formats of this component release", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("distributions")
-  public List<@Valid TeaReleaseDistribution> getDistributions() {
-    return distributions;
+  @NotNull @Valid 
+  @Schema(name = "components", description = "List of component references that compose this product release. A component reference can optionally include the UUID of a specific component release to pin the exact version. ", requiredMode = Schema.RequiredMode.REQUIRED)
+  @JsonProperty("components")
+  public List<@Valid TeaComponentRef> getComponents() {
+    return components;
   }
 
-  public void setDistributions(List<@Valid TeaReleaseDistribution> distributions) {
-    this.distributions = distributions;
+  public void setComponents(List<@Valid TeaComponentRef> components) {
+    this.components = components;
   }
 
   @Override
@@ -250,34 +251,34 @@ public class TeaRelease {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    TeaRelease release = (TeaRelease) o;
-    return Objects.equals(this.uuid, release.uuid) &&
-        Objects.equals(this.component, release.component) &&
-        Objects.equals(this.version, release.version) &&
-        Objects.equals(this.createdDate, release.createdDate) &&
-        Objects.equals(this.releaseDate, release.releaseDate) &&
-        Objects.equals(this.preRelease, release.preRelease) &&
-        Objects.equals(this.identifiers, release.identifiers) &&
-        Objects.equals(this.distributions, release.distributions);
+    TeaProductRelease productRelease = (TeaProductRelease) o;
+    return Objects.equals(this.uuid, productRelease.uuid) &&
+        Objects.equals(this.product, productRelease.product) &&
+        Objects.equals(this.version, productRelease.version) &&
+        Objects.equals(this.createdDate, productRelease.createdDate) &&
+        Objects.equals(this.releaseDate, productRelease.releaseDate) &&
+        Objects.equals(this.preRelease, productRelease.preRelease) &&
+        Objects.equals(this.identifiers, productRelease.identifiers) &&
+        Objects.equals(this.components, productRelease.components);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(uuid, component, version, createdDate, releaseDate, preRelease, identifiers, distributions);
+    return Objects.hash(uuid, product, version, createdDate, releaseDate, preRelease, identifiers, components);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class TeaRelease {\n");
+    sb.append("class TeaProductRelease {\n");
     sb.append("    uuid: ").append(toIndentedString(uuid)).append("\n");
-    sb.append("    component: ").append(toIndentedString(component)).append("\n");
+    sb.append("    product: ").append(toIndentedString(product)).append("\n");
     sb.append("    version: ").append(toIndentedString(version)).append("\n");
     sb.append("    createdDate: ").append(toIndentedString(createdDate)).append("\n");
     sb.append("    releaseDate: ").append(toIndentedString(releaseDate)).append("\n");
     sb.append("    preRelease: ").append(toIndentedString(preRelease)).append("\n");
     sb.append("    identifiers: ").append(toIndentedString(identifiers)).append("\n");
-    sb.append("    distributions: ").append(toIndentedString(distributions)).append("\n");
+    sb.append("    components: ").append(toIndentedString(components)).append("\n");
     sb.append("}");
     return sb.toString();
   }
