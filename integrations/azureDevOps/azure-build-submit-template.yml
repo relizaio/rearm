@@ -40,6 +40,7 @@ parameters:
     default: placeholder
   - name: rearmCliVersion
     type: string
+    default: "25.08.6"
 
 
 jobs:
@@ -57,11 +58,11 @@ jobs:
     fetchDepth: "0"
   - bash: |
       ls
-  - task: gitversion/setup@3.1.1
+  - task: gitversion/setup@4.1.0
     displayName: Install GitVersion
     inputs:
-      versionSpec: '6.0.x'
-  - task: gitversion/execute@3.1.1
+      versionSpec: '6.4.0'
+  - task: gitversion/execute@4.1.0
     displayName: Determine Version
     inputs:
       useConfigFile: true
@@ -90,7 +91,7 @@ jobs:
       containerRegistry: ${{ parameters.dockerRegistryServiceConnection }}
   - task: UseNode@1
     inputs:
-      version: '20.x'
+      version: '22.19.0'
     displayName: 'Install Node.js'
   - bash: npm install --global @cyclonedx/cyclonedx-npm
     condition: ${{ eq(parameters.sbomType, 'npm') }}
@@ -103,7 +104,7 @@ jobs:
   - bash: dotnet tool install --global CycloneDX
     condition: ${{ eq(parameters.sbomType, 'dotnet') }}
     displayName: 'Install cyclonedx .NET'
-  - bash: npm install -g @cyclonedx/cdxgen@11.0.10
+  - bash: npm install -g @cyclonedx/cdxgen@11.7.0
     displayName: 'Install cdxgen cli'
   - bash: |
       exit_code=0
@@ -167,13 +168,13 @@ jobs:
         if [ "${{ parameters.sbomType }}" = "dotnet" ]; then
             dotnet-CycloneDX ${{ parameters.dotnetSlnFilePath }} -o ./ -fn fs.cdx.bom.json -j
         elif [ "${{ parameters.sbomType }}" = "npm" ]; then
-            npm install
+            npm ci
             cyclonedx-npm > fs.cdx.bom.json
         else
             cdxgen ./ --project-version "$(GitVersion_FullSemVer)" -o fs.cdx.bom.json
         fi
         echo -n "--scearts '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/fs.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-        cdxgen -t docker -o docker.cdx.bom.tmp.json --project-version $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)
+        cdxgen -t docker --lifecycle build -o docker.cdx.bom.tmp.json --project-version $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)
         # touch docker.cdx.bom.json
         # docker run --rm -v $(pwd)/:/data registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixocipurl -f /data/docker.cdx.bom.tmp.json -o /data/docker.cdx.bom.json --ociimage ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}@$(echo $docker_sha_256)
         cat docker.cdx.bom.tmp.json | docker run -i --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixpurl --newpurl "${purl}" > docker.cdx.bom.json
