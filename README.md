@@ -106,16 +106,8 @@ And then copied into tea-spec/ directory in this repository as well.
 To generate initial tea-server spring service, run
 
 ```
-npx @openapitools/openapi-generator-cli generate -i tea-spec/openapi.yaml -g spring -o tea-server/ --additional-properties=useSpringBoot3=true
+npx @openapitools/openapi-generator-cli generate -i tea-spec/openapi.yaml -g spring -o tea-server/ --additional-properties="useSpringBoot3=true,modelPackage=io.reliza.model.tea,apiPackage=io.reliza.ws.tea,modelNamePrefix=Tea"
 ```
-
-Then rename model files to Tea prefix (from ReARM repo root directory):
-
-```bash
-./scripts/rename_with_tea.sh ./tea-server/src/main/java/org/openapitools/model
-```
-
-
 
 ### Local Development
 
