@@ -4,6 +4,7 @@ import { useMemo } from "react";
 function getRegionPrices() {
   let startup = "$190";
   let standard = "$1990";
+  let enterprise = "$72";
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
     let type: "US" | "EU" | "CA" | "GB" = "US";
@@ -39,15 +40,18 @@ function getRegionPrices() {
     if (type === "EU") {
       startup = "€150";
       standard = "€1690";
+      enterprise = "€61";
     } else if (type === "CA") {
       startup = "C$240";
       standard = "C$2490";
+      enterprise = "C$95";
     } else if (type === "GB") {
       startup = "£130";
       standard = "£1490";
+      enterprise = "£52";
     }
   } catch {}
-  return { startup, standard };
+  return { startup, standard, enterprise };
 }
 
 export default function PricingPlan() {
@@ -73,7 +77,7 @@ export default function PricingPlan() {
       amount: prices.startup,
       type: "Per Month",
       bullets: [
-        "Up to 3 team members",
+        "Up to 5 team members",
         "Premium support",
         "Managed Dependency-Track Integration",
         "Approvals, Triggers & Marketing Releases",
@@ -99,14 +103,14 @@ export default function PricingPlan() {
     {
       id: 3,
       title: "ReARM Pro - Enterprise",
-      amount: "Contact",
-      type: "for pricing",
+      amount: prices.enterprise,
+      type: "per user per month",
       bullets: [
         "30+ team members",
         "Premium support",
         "Managed Dependency-Track Integration",
         "Approvals, Triggers & Marketing Releases",
-        "Managed Service with SSO, on‑prem installation available",
+        "Managed Service with SSO, or on‑prem (air-gap ready)",
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
     },
