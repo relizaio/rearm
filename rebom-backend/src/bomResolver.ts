@@ -11,7 +11,7 @@ const resolvers = {
 		allBoms: async (): Promise<BomDto[]> => BomService.findAllBoms(),
 		findBom: async (_:any, bomSearch: BomSearch): Promise<BomDto[]> => BomService.findBom(bomSearch),
 		bomById: async (_:any, input: any): Promise<Object> => BomService.findBomObjectById(input.id, input.org),
-		rawBomId: async (_:any, input: any): Promise<Object> => BomService.findRawBomObjectById(input.id, input.org),
+		rawBomId: async (_:any, input: any): Promise<Object> => BomService.findRawBomObjectById(input.id, input.org, input.format),
 		bomByIdCsv: async (_:any, input: any): Promise<string> => {
 			const bom = await BomService.findBomObjectById(input.id, input.org);
 			return BomService.bomToCsv(bom);

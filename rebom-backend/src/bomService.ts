@@ -3,12 +3,14 @@ import ExcelJS from 'exceljs';
 import * as BomRepository from './bomRespository';
 import { logger } from './logger';
 import { fetchFromOci, OASResponse, pushToOci } from './ociService';
-import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, HIERARCHICHAL, RebomOptions, SearchObject } from './types';
+import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, HIERARCHICHAL, RebomOptions, SearchObject, BomFormat, SpdxBomRecord } from './types';
 import validateBom from './validateBom';
 const canonicalize = require ('canonicalize')
 import { createHash } from 'crypto';
 import { PackageURL } from 'packageurl-js'
 import { v4 as uuidv4 } from 'uuid'
+import { SpdxService } from './spdxService';
+import * as SpdxRepository from './spdxRepository';
 
 const utils = require('./utils')
 
@@ -186,8 +188,16 @@ export async function findAllBoms(): Promise<BomDto[]> {
 
 // TODO switch this one back to use UUID instead of serial number
 export async function findBomObjectById(id: string, org: string): Promise<Object> {
-
-  const bomById = (await BomRepository.bomBySerialNumber(id, org))[0]
+  logger.debug({ id, org }, "findBomObjectById called");
+  
+  const bomResults = await BomRepository.bomBySerialNumber(id, org);
+  logger.debug({ resultsCount: bomResults.length, id, org }, "bomBySerialNumber results");
+  
+  const bomById = bomResults[0];
+  if (!bomById) {
+    throw new Error(`BOM not found for id: ${id}, org: ${org}`);
+  }
+  
   const bomDto = await bomRecordToDto(bomById)
     // logger.info("writing to file bomrecord")
     // await writeFileAsync("/home/r/work/reliza/rebom/boms/"+id+".byID.json", JSON.stringify(bomById))
@@ -208,11 +218,59 @@ export async function findBomBySerialNumberAndVersion(serialNumber: string, vers
   return bomDto.bom
 }
 
-export async function findRawBomObjectById(id: string, org: string): Promise<Object> {
+export async function findRawBomObjectById(id: string, org: string, format?: BomFormat): Promise<Object> {
+  // Always start by fetching the BOM record from boms table
+  logger.debug({ id, org, format }, "findRawBomObjectById called");
+  
   let bomById = (await BomRepository.bomBySerialNumber(id, org))[0]
-
-    return await fetchFromOci(bomById.uuid)
+  logger.debug({ 
+    found: !!bomById, 
+    bomUuid: bomById?.uuid,
+    sourceFormat: bomById?.source_format,
+    sourceSpdxUuid: bomById?.source_spdx_uuid 
+  }, "BOM record lookup result");
+  
+  if (!bomById) {
+    throw new Error(`BOM not found with id: ${id}`);
   }
+
+  if (format === 'CYCLONEDX') {
+    // Always return raw CycloneDX regardless of SPDX relation
+    return await fetchFromOci(bomById.uuid);
+  } 
+  else if (format === 'SPDX') {
+    // Query boms table and find SPDX relation from there
+    if (bomById.source_format === 'SPDX' && bomById.source_spdx_uuid) {
+      const spdxBom = await SpdxRepository.findSpdxBomById(bomById.source_spdx_uuid, org);
+      if (spdxBom?.oci_response) {
+        return await fetchFromOci(spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid);
+      }
+    }
+    throw new Error(`No SPDX source found for BOM: ${id}`);
+  } 
+  else {
+    // No format specified - check for SPDX relation and return raw SPDX if exists
+    if (bomById.source_format === 'SPDX' && bomById.source_spdx_uuid) {
+      logger.debug({ sourceSpdxUuid: bomById.source_spdx_uuid }, "Fetching SPDX BOM record");
+      const spdxBom = await SpdxRepository.findSpdxBomById(bomById.source_spdx_uuid, org);
+      logger.debug({ 
+        spdxBomFound: !!spdxBom,
+        spdxBomUuid: spdxBom?.uuid,
+        hasOciResponse: !!spdxBom?.oci_response,
+        ociDigest: spdxBom?.oci_response?.ociResponse?.digest
+      }, "SPDX BOM record lookup result");
+      
+      if (spdxBom?.oci_response) {
+        const fetchId = spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid;
+        logger.debug({ fetchId }, "Fetching SPDX content from OCI");
+        return await fetchFromOci(fetchId);
+      }
+    }
+    // Fallback to CycloneDX if no SPDX relation exists
+    logger.debug("Falling back to CycloneDX BOM");
+    return await fetchFromOci(bomById.uuid);
+  }
+}
 
 
   export async function findBom(bomSearch: BomSearch): Promise<BomDto[]> {
@@ -324,18 +382,25 @@ export async function findRawBomObjectById(id: string, org: string): Promise<Obj
 
   export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOptions, org: string): Promise<BomRecord> {
     try {
+      logger.info({ bomIds: ids, serialNumber: rebomOptions.serialNumber, org }, "Starting BOM merge and store operation")
+      
       const mergedBom = await mergeBoms(ids, rebomOptions, org)
+      logger.debug({ componentCount: mergedBom?.components?.length || 0 }, "BOM merge completed")
+      
       const bomInput : BomInput = {
         bomInput: {
+          format: 'CYCLONEDX',
           rebomOptions: rebomOptions,
           bom: mergedBom,
           org: org
         }
       }
       const bomRecord = await addBom(bomInput)
+      logger.info({ bomUuid: bomRecord.uuid, serialNumber: rebomOptions.serialNumber }, "BOM merge and store completed successfully")
+      
       return bomRecord
     } catch (e) {
-      logger.error({ err: e }, "Error During merge")
+      logger.error({ err: e, bomIds: ids, serialNumber: rebomOptions.serialNumber }, "Error during BOM merge and store")
       throw e
     }
   }
@@ -579,6 +644,12 @@ function extractDevFilteredBom(bom: any): any {
 function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions): string {
     let purlStr = rebomOverride.purl
     if (!purlStr) {
+      // Ensure required fields exist
+      if (!rebomOverride.name || !rebomOverride.version || !rebomOverride.group) {
+        logger.error({ rebomOverride }, "Missing required fields for PURL generation");
+        throw new Error(`Missing required fields for PURL generation: name=${rebomOverride.name}, version=${rebomOverride.version}, group=${rebomOverride.group}`);
+      }
+      
       let origPurlParsed: PackageURL | undefined = undefined
       if (origPurl) origPurlParsed = PackageURL.fromString(origPurl)
       const type = (origPurlParsed && origPurlParsed.type && origPurlParsed.type !== "container" && origPurlParsed.type !== "application") ? origPurlParsed.type : 'generic'
@@ -590,7 +661,7 @@ function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions
       if (rebomOverride.belongsTo) qualifiers.belongsTo = rebomOverride.belongsTo
       if (rebomOverride.hash) qualifiers.hash = rebomOverride.hash
       if (rebomOverride.tldOnly) qualifiers.tldOnly = 'true'
-      if (rebomOverride.structure.toLowerCase() === HIERARCHICHAL.toLowerCase()) qualifiers.structure = HIERARCHICHAL
+      if (rebomOverride.structure && rebomOverride.structure.toLowerCase() === HIERARCHICHAL.toLowerCase()) qualifiers.structure = HIERARCHICHAL
       const purl = new PackageURL(
         type,
         namespace,
@@ -601,7 +672,7 @@ function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions
       )
       purlStr = purl.toString()
     }
-    return purlStr
+    return purlStr || ''
 }
 
 export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, lastUpdatedDate?: string | Date): any {
@@ -682,20 +753,25 @@ function attachRebomToolToBom(finalBom: any): any {
 }
 
 function computeRootDepIndex (bom: any) : number {
-    const rootComponentPurl: string = bom.metadata.component["bom-ref"]
+    const rootComponentPurl: string = bom.metadata?.component?.["bom-ref"]
+    if (!rootComponentPurl) {
+        logger.error("No bom-ref found in metadata.component");
+        return -1;
+    }
+    
     let rootdepIndex : number = bom.dependencies?.findIndex((dep: any) => {
         return dep.ref === rootComponentPurl
     })
     if (rootdepIndex < 0) {
         // Try with decoded comparison
         const decodedRootPurl = decodeURIComponent(rootComponentPurl)
-        rootdepIndex = bom.dependencies.findIndex((dep: any) => {
+        rootdepIndex = bom.dependencies?.findIndex((dep: any) => {
             return decodeURIComponent(dep.ref) === decodedRootPurl
         })
     }
     if (rootdepIndex < 0) {
         const versionStrippedRootComponentPurl = rootComponentPurl.split("@")[0]
-        rootdepIndex = bom.dependencies.findIndex((dep: any) => {
+        rootdepIndex = bom.dependencies?.findIndex((dep: any) => {
             return dep.ref === versionStrippedRootComponentPurl
         })
     }
@@ -746,6 +822,15 @@ function computeRootDepIndex (bom: any) : number {
 }
 
   export async function addBom(bomInput: BomInput): Promise<BomRecord> {
+    const format: BomFormat = (bomInput.bomInput as any).format || 'CYCLONEDX';
+    if (format === 'SPDX') {
+        return await addSpdxBom(bomInput);
+    } else {
+        return await addCycloneDxBom(bomInput);
+    }
+  }
+
+  async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     let bomObj = await processBomObj(bomInput.bomInput.bom)
 
     let proceed: boolean = await validateBom(bomObj)
@@ -773,8 +858,8 @@ function computeRootDepIndex (bom: any) : number {
       // urn must be unique - if same urn is supplied, we update current record
       // similarly it works for version, component group, component name, component version
       // check if urn is set on bom
-      let queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization) VALUES ($1, $2, $3, $4, $5) RETURNING *'
-      let queryParams = [newUuid, rebomOptions, oasResponse, bomInput.bomInput.tags, bomInput.bomInput.org]
+      let queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *'
+      let queryParams = [newUuid, rebomOptions, oasResponse, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX']
       if (rebomOptions.serialNumber) {
         let bomSearch: BomSearch = {
           bomSearch: {
@@ -810,6 +895,110 @@ function computeRootDepIndex (bom: any) : number {
     //   bomRecord.duplicate = true
     // }
     return bomRecord
+  }
+
+  async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
+    try {
+        const spdxContent = bomInput.bomInput.bom;
+        
+        // 1. Validate SPDX format
+        if (!SpdxService.validateSpdxFormat(spdxContent)) {
+            throw new Error('Invalid SPDX format');
+        }
+
+        // 2. Extract metadata from SPDX for database storage
+        const spdxMetadata = SpdxService.extractSpdxMetadata(spdxContent);
+        const fileHash = SpdxService.calculateSpdxHash(spdxContent);
+        
+        // 3. Upload SPDX to OCI
+        const spdxUuid = uuidv4();
+        let spdxOciResponse: OASResponse;
+        
+        if (process.env.OCI_STORAGE_ENABLED) {
+            spdxOciResponse = await pushToOci(spdxUuid, spdxContent);
+        } else {
+            throw new Error("OCI Storage not enabled");
+        }
+
+        // 4. Store SPDX metadata in spdx_boms table with OCI response
+        const spdxRecord = await SpdxRepository.createSpdxBom({
+            uuid: spdxUuid, // Use the same UUID as OCI upload
+            spdx_metadata: spdxMetadata,
+            oci_response: spdxOciResponse,
+            organization: bomInput.bomInput.org,
+            file_sha256: fileHash,
+            conversion_status: 'pending',
+            tags: bomInput.bomInput.tags,
+            public: false
+        });
+
+        // 5. Convert SPDX to CycloneDX
+        const conversionResult = await SpdxService.convertSpdxToCycloneDx(spdxContent);
+        
+        if (!conversionResult.success) {
+            // Update conversion status to failed
+            await SpdxRepository.updateSpdxBomConversionStatus(
+                spdxRecord.uuid, 
+                'failed', 
+                conversionResult.error
+            );
+            throw new Error(`SPDX conversion failed: ${conversionResult.error}`);
+        }
+
+        // 6. Generate RebomOptions from SPDX metadata
+        const rebomOptions = SpdxService.generateRebomOptionsFromSpdx(spdxMetadata);
+        const mergedOptions = { ...rebomOptions, ...bomInput.bomInput.rebomOptions };
+        
+        // Use serial number from rearm-cli converted BOM if available, otherwise generate one
+        let serialNumber: string;
+        if (conversionResult.convertedBom.serialNumber) {
+            serialNumber = conversionResult.convertedBom.serialNumber;
+            mergedOptions.serialNumber = serialNumber;
+            logger.info({ serialNumber }, "Using serial number from rearm-cli converted BOM");
+        } else {
+            // Fallback: generate UUID if rearm-cli didn't provide serial number
+            const generatedSerialNumber = uuidv4();
+            serialNumber = `urn:uuid:${generatedSerialNumber}`;
+            mergedOptions.serialNumber = serialNumber;
+            logger.warn({ serialNumber }, "Generated fallback serial number - rearm-cli output missing serialNumber");
+        }
+        
+        
+        // 8. Store converted BOM in boms table with source reference
+        const convertedBomUuid = uuidv4();
+        let cycloneDxOciResponse: OASResponse;
+        
+        if (process.env.OCI_STORAGE_ENABLED) {
+            cycloneDxOciResponse = await pushToOci(convertedBomUuid, conversionResult.convertedBom);
+        } else {
+            throw new Error("OCI Storage not enabled");
+        }
+
+        const queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format, source_spdx_uuid) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *';
+        const queryParams = [
+            convertedBomUuid, 
+            mergedOptions, 
+            cycloneDxOciResponse, 
+            bomInput.bomInput.tags, 
+            bomInput.bomInput.org,
+            'SPDX',
+            spdxRecord.uuid
+        ];
+
+        const queryRes = await utils.runQuery(queryText, queryParams);
+        const bomRecord: BomRecord = queryRes.rows[0];
+
+        // 8. Link SPDX and CycloneDX records
+        await SpdxRepository.linkConvertedBom(spdxRecord.uuid, bomRecord.uuid);
+        await SpdxRepository.updateSpdxBomConversionStatus(spdxRecord.uuid, 'success');
+
+        logger.info(`Successfully processed SPDX BOM: ${spdxRecord.uuid} -> ${bomRecord.uuid}`);
+        return bomRecord;
+
+    } catch (error) {
+        logger.error({ err: error }, "Error processing SPDX BOM");
+        throw error;
+    }
   }
 
 

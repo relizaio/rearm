@@ -19,7 +19,7 @@ export function getPool() {
     return pool
 }
 
-export async function runQuery (query: string, params: string[]) : Promise<any> {
+export async function runQuery (query: string, params: any[]) : Promise<any> {
     const client = await pool.connect()
     try {
       return await client.query(query, params)

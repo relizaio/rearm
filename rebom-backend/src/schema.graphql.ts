@@ -10,7 +10,7 @@ const typeDefs = gql`
     allBoms: [Bom]
     findBom(bomSearch: BomSearch): [Bom]
     bomById(id: ID, org: ID): Object
-    rawBomId(id: ID, org: ID): Object
+    rawBomId(id: ID, org: ID, format: BomFormat): Object
     bomByIdCsv(id: ID, org: ID): String
     rawBomIdCsv(id: ID, org: ID): String
     bomBySerialNumberAndVersion(serialNumber: ID!, version: Int!, org: ID!, raw: Boolean): Object
@@ -41,6 +41,8 @@ const typeDefs = gql`
     name: String
     version: String
     duplicate: Boolean
+    sourceFormat: BomFormat
+    sourceSpdxUuid: ID
   }
 
   type BomMeta {
@@ -91,6 +93,7 @@ const typeDefs = gql`
   input BomInput {
     meta: String
     bom: Object
+    format: BomFormat
     tags: Object
     org: ID
     rebomOptions: RebomOptions
@@ -134,6 +137,11 @@ input RebomOptions {
     version: String,
     name: String,
     group: String
+  }
+
+  enum BomFormat {
+    CYCLONEDX
+    SPDX
   }
 
   scalar Object

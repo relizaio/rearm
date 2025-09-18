@@ -13,22 +13,36 @@ export async function fetchFromOci(tag: string): Promise<Object>{
     if(tag.startsWith("urn")){
         tag = tag.replace("urn:uuid:","")
     }
-    if(!tag.startsWith('rebom')){
+    // Don't add rebom- prefix to digests (sha256:...)
+    if(!tag.startsWith('rebom') && !tag.startsWith('sha256:')){
         tag = 'rebom-' + tag
     }
-    const resp: AxiosResponse = await client.get('/pull', { 
-        params: {
-            registry: registryHost,
-            repo: repository,
-            tag: tag
-        },
-        headers: {
-            Accept: 'application/json'
-        }
-    });
-    const bom: any = resp.data
-
-    return bom
+    logger.debug({ originalTag: arguments[0], processedTag: tag }, "Fetching from OCI");
+    
+    try {
+        const resp: AxiosResponse = await client.get('/pull', { 
+            params: {
+                registry: registryHost,
+                repo: repository,
+                tag: tag
+            },
+            headers: {
+                Accept: 'application/json'
+            }
+        });
+        
+        logger.debug({ 
+            status: resp.status, 
+            dataType: typeof resp.data,
+            dataKeys: resp.data ? Object.keys(resp.data) : 'null'
+        }, "OCI response received");
+        
+        const bom: any = resp.data
+        return bom
+    } catch (error) {
+        logger.error({ tag, error: error instanceof Error ? error.message : String(error) }, "OCI fetch failed");
+        throw error;
+    }
 }
 
 export type OASResponse = {
