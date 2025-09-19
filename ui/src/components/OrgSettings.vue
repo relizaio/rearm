@@ -269,6 +269,93 @@
                 </div>
             </n-tab-pane>
 
+            <n-tab-pane name="userGroups" tab="User Groups">
+                <div class="userGroupBlock mt-4">
+                    <h5>User Groups ({{ userGroups.length }})</h5>
+                    <n-data-table :columns="userGroupFields" :data="userGroups" class="table-hover">
+                    </n-data-table>
+                    <n-form v-if="isOrgAdmin" class="createUserGroupForm" @submit="createUserGroup">
+                        <n-input-group class="mt-3">
+                            <n-input id="settings-create-user-group-name-input" v-model:value="newUserGroup.name" required
+                                placeholder="User Group Name" />
+                            <n-input id="settings-create-user-group-description-input" v-model:value="newUserGroup.description"
+                                placeholder="Description (optional)" />
+                            <n-button :loading="processingMode" @click="createUserGroup" type="info">Create Group</n-button>
+                        </n-input-group>
+                    </n-form>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;" 
+                        v-model:show="showUserGroupPermissionsModal" 
+                        :title="'User Group Settings for ' + selectedUserGroup.name"
+                    >
+                        <n-flex vertical>
+                            <n-space style="margin-top: 20px; margin-bottom: 20px;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Basic Information:
+                                    </n-text>
+                                </n-h5>
+                                <n-form-item label="Name">
+                                    <n-input v-model:value="selectedUserGroup.name" placeholder="User Group Name" />
+                                </n-form-item>
+                                <n-form-item label="Description">
+                                    <n-input v-model:value="selectedUserGroup.description" placeholder="Description" />
+                                </n-form-item>
+                                <n-form-item label="Status">
+                                    <n-select v-model:value="selectedUserGroup.status" :options="userGroupStatusOptions" />
+                                </n-form-item>
+                            </n-space>
+                            
+                            <n-space style="margin-bottom: 20px;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Users in Group:
+                                    </n-text>
+                                </n-h5>
+                                <n-select
+                                    v-model:value="selectedUserGroup.users"
+                                    multiple
+                                    :options="userOptions"
+                                    placeholder="Select users to add to group"
+                                />
+                            </n-space>
+
+                            <n-space style="margin-bottom: 20px;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        SSO Connected Groups:
+                                    </n-text>
+                                </n-h5>
+                                <n-dynamic-input
+                                    v-model:value="selectedUserGroup.connectedSsoGroups"
+                                    :on-create="onCreateSsoGroup"
+                                    placeholder="Add SSO group name"
+                                />
+                            </n-space>
+
+                            <n-space style="margin-bottom: 20px;" v-if="myorg.approvalRoles && myorg.approvalRoles.length">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Group Permissions:
+                                    </n-text>
+                                </n-h5>
+                                <n-checkbox-group id="modal-org-settings-user-group-permissions-approval-checkboxes"
+                                    v-model:value="selectedUserGroup.approvals"
+                                >
+                                    <n-checkbox v-for="a in myorg.approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" ></n-checkbox>
+                                </n-checkbox-group>
+                            </n-space>
+                        </n-flex>
+                        <n-space>
+                            <n-button type="success" @click="updateUserGroup">Save Changes</n-button>
+                            <n-button type="warning" @click="editUserGroup(selectedUserGroup.uuid)">Reset Changes</n-button>
+                        </n-space>
+                    </n-modal>
+                </div>
+            </n-tab-pane>
+
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access">
                 <div class="programmaticAccessBlock mt-4">
                     <h5>Programmatic Access</h5>
@@ -476,7 +563,7 @@
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
@@ -522,6 +609,8 @@ const showOrgApiKeyModal = ref(false)
 const showOrgSettingsProgPermissionsModal = ref(false)
 
 const showOrgSettingsUserPermissionsModal = ref(false)
+
+const showUserGroupPermissionsModal = ref(false)
 
 const showUserApiKeyModal = ref(false)
 
@@ -833,6 +922,66 @@ async function loadUsers() {
     userEmailColumnReactive.sortOrder = 'ascend'
 }
 
+// User Groups
+const userGroups: Ref<any[]> = ref([])
+const selectedUserGroup: Ref<any> = ref({})
+const newUserGroup: Ref<any> = ref({
+    name: '',
+    description: '',
+    org: orgResolved.value
+})
+
+function resetNewUserGroup() {
+    newUserGroup.value = {
+        name: '',
+        description: '',
+        org: orgResolved.value
+    }
+}
+
+async function loadUserGroups() {
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query getUserGroups($org: ID!) {
+                    getUserGroups(org: $org) {
+                        uuid
+                        name
+                        description
+                        status
+                        users
+                        userDetails {
+                            uuid
+                            name
+                            email
+                        }
+                        permissions {
+                            permissions {
+                                org
+                                scope
+                                object
+                                type
+                                meta
+                                approvals
+                            }
+                        }
+                        connectedSsoGroups
+                        createdDate
+                        lastUpdatedBy
+                    }
+                }`,
+            variables: {
+                org: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        userGroups.value = response.data.getUserGroups || []
+    } catch (error: any) {
+        console.error('Error loading user groups:', error)
+        notify('error', 'Error', 'Failed to load user groups')
+    }
+}
+
 
 const userEmailColumn = 
     {
@@ -961,6 +1110,75 @@ const inviteeFields = [
     }
 ]
 
+// User Group Fields
+const userGroupFields = [
+    {
+        key: 'name',
+        title: 'Group Name'
+    },
+    {
+        key: 'description',
+        title: 'Description'
+    },
+    {
+        key: 'status',
+        title: 'Status'
+    },
+    {
+        key: 'userCount',
+        title: 'Users',
+        render(row: any) {
+            const userCount = row.userDetails ? row.userDetails.length : 0
+            return h('div', `${userCount} users`)
+        }
+    },
+    {
+        key: 'connectedSsoGroups',
+        title: 'SSO Groups',
+        render(row: any) {
+            const ssoGroups = row.connectedSsoGroups || []
+            return h('div', ssoGroups.length > 0 ? ssoGroups.join(', ') : 'None')
+        }
+    },
+    {
+        key: 'createdDate',
+        title: 'Created',
+        render(row: any) {
+            return h('div', row.createdDate ? (new Date(row.createdDate)).toLocaleString('en-CA') : '')
+        }
+    },
+    {
+        key: 'controls',
+        title: 'Manage',
+        render(row: any) {
+            let els: any[] = []
+            if (isOrgAdmin.value) {
+                els = [
+                    h(
+                        NIcon,
+                        {
+                            title: 'Edit User Group',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => editUserGroup(row.uuid)
+                        }, { default: () => h(EditIcon) }
+                    ),
+                    h(
+                        NIcon,
+                        {
+                            title: 'Delete User Group',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => deleteUserGroup(row.uuid)
+                        }, { default: () => h(Trash) }
+                    )
+                ]
+            }
+            return h('div', els)
+        }
+    }
+]
+
 const ciIntegrationTableFields = [
     {
         key: 'note',
@@ -977,6 +1195,23 @@ const props = defineProps<{
 }>()
 
 const processingMode = ref(false)
+
+// User Group Options
+const userGroupStatusOptions = [
+    { label: 'Active', value: 'ACTIVE' },
+    { label: 'Inactive', value: 'INACTIVE' }
+]
+
+const userOptions: ComputedRef<any[]> = computed((): any => {
+    return users.value.map((user: any) => ({
+        label: `${user.name} (${user.email})`,
+        value: user.uuid
+    }))
+})
+
+function onCreateSsoGroup() {
+    return '' // Return empty string for new SSO group entry
+}
 
 async function addApprovalRole () {
     if (newApprovalRole.value.id) {
@@ -1389,6 +1624,151 @@ async function inviteUser() {
     //    store.dispatch('fetchMyOrganizations')
 }
 
+// User Group Functions
+async function createUserGroup() {
+    if (!newUserGroup.value.name.trim()) {
+        notify('error', 'Validation Error', 'User group name is required')
+        return
+    }
+    
+    processingMode.value = true
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation createUserGroup($userGroup: CreateUserGroupInput!) {
+                    createUserGroup(userGroup: $userGroup) {
+                        uuid
+                        name
+                        description
+                        status
+                    }
+                }`,
+            variables: {
+                userGroup: newUserGroup.value
+            }
+        })
+        
+        if (response.data && response.data.createUserGroup) {
+            notify('success', 'Created', `Successfully created user group "${newUserGroup.value.name}"`)
+            resetNewUserGroup()
+            loadUserGroups()
+        }
+    } catch (error: any) {
+        console.error('Error creating user group:', error)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+    }
+    processingMode.value = false
+}
+
+async function updateUserGroup() {
+    if (!selectedUserGroup.value.uuid) return
+    
+    try {
+        const updateInput = {
+            groupId: selectedUserGroup.value.uuid,
+            name: selectedUserGroup.value.name,
+            description: selectedUserGroup.value.description,
+            users: selectedUserGroup.value.users || [],
+            status: selectedUserGroup.value.status,
+            connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
+            permissions: selectedUserGroup.value.approvals ? 
+                selectedUserGroup.value.approvals.map((approval: string) => ({
+                    scope: 'ORGANIZATION',
+                    objectId: orgResolved.value,
+                    type: 'APPROVAL'
+                })) : []
+        }
+        
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateUserGroup($userGroup: UpdateUserGroupInput!) {
+                    updateUserGroup(userGroup: $userGroup) {
+                        uuid
+                        name
+                        description
+                        status
+                        users
+                        connectedSsoGroups
+                    }
+                }`,
+            variables: {
+                userGroup: updateInput
+            }
+        })
+        
+        if (response.data && response.data.updateUserGroup) {
+            notify('success', 'Updated', `Successfully updated user group "${selectedUserGroup.value.name}"`)
+            showUserGroupPermissionsModal.value = false
+            loadUserGroups()
+        }
+    } catch (error: any) {
+        console.error('Error updating user group:', error)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+    }
+}
+
+function editUserGroup(groupUuid: string) {
+    const group = userGroups.value.find(g => g.uuid === groupUuid)
+    if (group) {
+        selectedUserGroup.value = commonFunctions.deepCopy(group)
+        // Extract approvals from permissions
+        if (group.permissions && group.permissions.length) {
+            selectedUserGroup.value.approvals = group.permissions
+                .filter((p: any) => p.scope === 'ORGANIZATION')
+                .map((p: any) => p.objectId)
+        } else {
+            selectedUserGroup.value.approvals = []
+        }
+        // Ensure arrays are initialized
+        selectedUserGroup.value.users = selectedUserGroup.value.users || []
+        selectedUserGroup.value.connectedSsoGroups = selectedUserGroup.value.connectedSsoGroups || []
+        showUserGroupPermissionsModal.value = true
+    }
+}
+
+async function deleteUserGroup(groupUuid: string) {
+    const group = userGroups.value.find(g => g.uuid === groupUuid)
+    if (!group) return
+    
+    const onSwalConfirm = async function () {
+        try {
+            // Note: The GraphQL schema doesn't show a delete mutation, so we'll update status to INACTIVE
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateUserGroup($userGroup: UpdateUserGroupInput!) {
+                        updateUserGroup(userGroup: $userGroup) {
+                            uuid
+                            name
+                            status
+                        }
+                    }`,
+                variables: {
+                    userGroup: {
+                        groupId: groupUuid,
+                        status: 'INACTIVE'
+                    }
+                }
+            })
+            
+            if (response.data && response.data.updateUserGroup) {
+                notify('success', 'Deactivated', `Successfully deactivated user group "${group.name}"`)
+                loadUserGroups()
+            }
+        } catch (error: any) {
+            console.error('Error deactivating user group:', error)
+            notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+        }
+    }
+    
+    const swalData: SwalData = {
+        questionText: `Are you sure you want to deactivate the user group "${group.name}"?`,
+        successTitle: 'Deactivated!',
+        successText: `The user group "${group.name}" has been deactivated.`,
+        dismissText: 'The user group remains active.'
+    }
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+}
+
 function initializeResourceGroup() {
     if (!myapp.value.uuid) {
         myapp.value = resourceGroups.value.find((app: any) => app.uuid === '00000000-0000-0000-0000-000000000000')
@@ -1492,6 +1872,9 @@ async function handleTabSwitch(tabName: string) {
     if (tabName === "users") {
         await loadUsers()
         loadInvitedUsers(true)
+    } else if (tabName === "userGroups") {
+        await loadUsers() // Load users for the user selection dropdown
+        loadUserGroups()
     } else if (tabName === "programmaticAccess") {
         await loadUsers()
         loadProgrammaticAccessKeys(true)
@@ -2188,6 +2571,10 @@ async function fetchApprovalPolicies () {
 }
 
 .inviteUserForm {
+    margin-bottom: 10px;
+}
+
+.createUserGroupForm {
     margin-bottom: 10px;
 }
 </style>
