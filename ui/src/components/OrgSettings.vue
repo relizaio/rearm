@@ -1193,6 +1193,48 @@ const userGroupFields = [
         }
     },
     {
+        key: 'permission',
+        title: 'Org Wide Permissions',
+        render(row: any) {
+            if (row.permissions && row.permissions.permissions && row.permissions.permissions.length) {
+                const orgPermissions = row.permissions.permissions.filter((p: any) => 
+                    p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value
+                )
+                if (orgPermissions.length > 0) {
+                    return h('div', translatePermissionName(orgPermissions[0].type))
+                }
+            }
+            return h('div', 'None')
+        }
+    },
+    {
+        key: 'approvals',
+        title: 'Approvals',
+        render(row: any) {
+            let approvalContent = ''
+            if (row.permissions && row.permissions.permissions && row.permissions.permissions.length) {
+                const orgPermissions = row.permissions.permissions.filter((p: any) => 
+                    p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value
+                )
+                if (orgPermissions.length > 0) {
+                    const orgPerm = orgPermissions[0]
+                    if (orgPerm.type === 'ADMIN') {
+                        approvalContent = 'Any (as Admin)'
+                    } else if (orgPerm.approvals && orgPerm.approvals.length) {
+                        approvalContent = orgPerm.approvals.toString()
+                    } else {
+                        approvalContent = 'Not Granted'
+                    }
+                } else {
+                    approvalContent = 'Not Granted'
+                }
+            } else {
+                approvalContent = 'Not Granted'
+            }
+            return h('div', approvalContent)
+        }
+    },
+    {
         key: 'connectedSsoGroups',
         title: 'SSO Groups',
         render(row: any) {
