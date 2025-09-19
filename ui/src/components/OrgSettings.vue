@@ -333,10 +333,26 @@
                                 />
                             </n-space>
 
-                            <n-space style="margin-bottom: 20px;" v-if="myorg.approvalRoles && myorg.approvalRoles.length">
+                            <n-space style="margin-bottom: 20px;">
                                 <n-h5>
                                     <n-text depth="1">
-                                        Group Permissions:
+                                        Organization-Wide Permissions:
+                                    </n-text>
+                                </n-h5>
+                                <n-radio-group v-model:value="selectedUserGroup.orgPermissionType">
+                                    <n-radio-button
+                                        v-for="pt in permissionTypeswAdmin"
+                                        :key="pt"
+                                        :value="pt"
+                                        :label="translatePermissionName(pt)"
+                                    />
+                                </n-radio-group>
+                            </n-space>
+
+                            <n-space style="margin-bottom: 20px;" v-if="selectedUserGroup.orgPermissionType !== 'ADMIN' && myorg.approvalRoles && myorg.approvalRoles.length">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Approval Permissions:
                                     </n-text>
                                 </n-h5>
                                 <n-checkbox-group id="modal-org-settings-user-group-permissions-approval-checkboxes"
@@ -1701,6 +1717,18 @@ async function updateUserGroup() {
     if (!selectedUserGroup.value.uuid) return
     
     try {
+        const permissions = []
+        
+        // Add organization-wide permission with approvals
+        if (selectedUserGroup.value.orgPermissionType && selectedUserGroup.value.orgPermissionType !== 'NONE') {
+            permissions.push({
+                scope: 'ORGANIZATION',
+                objectId: orgResolved.value,
+                type: selectedUserGroup.value.orgPermissionType,
+                approvals: []
+            })
+        }
+        
         const updateInput = {
             groupId: selectedUserGroup.value.uuid,
             name: selectedUserGroup.value.name,
@@ -1708,12 +1736,9 @@ async function updateUserGroup() {
             users: selectedUserGroup.value.users || [],
             status: selectedUserGroup.value.status,
             connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
-            permissions: selectedUserGroup.value.approvals ? 
-                selectedUserGroup.value.approvals.map((approval: string) => ({
-                    scope: 'ORGANIZATION',
-                    objectId: orgResolved.value,
-                    type: 'APPROVAL'
-                })) : []
+            permissions,
+            approvals: selectedUserGroup.value.orgPermissionType !== 'ADMIN' ? 
+                (selectedUserGroup.value.approvals || []) : []
         }
         
         const response = await graphqlClient.mutate({
@@ -1748,15 +1773,26 @@ function editUserGroup(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (group) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
-        // Extract approvals from permissions (handle nested structure)
+        
+        // Extract organization-wide permission type and approvals from permissions (handle nested structure)
         if (group.permissions && group.permissions.permissions && group.permissions.permissions.length) {
-            selectedUserGroup.value.approvals = group.permissions.permissions
-                .filter((p: any) => p.scope === 'ORGANIZATION')
-                .map((p: any) => p.approvals || [])
-                .flat()
+            const orgPermissions = group.permissions.permissions.filter((p: any) => 
+                p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value
+            )
+            
+            if (orgPermissions.length > 0) {
+                const orgPerm = orgPermissions[0]
+                selectedUserGroup.value.orgPermissionType = orgPerm.type || 'NONE'
+                selectedUserGroup.value.approvals = orgPerm.approvals || []
+            } else {
+                selectedUserGroup.value.orgPermissionType = 'NONE'
+                selectedUserGroup.value.approvals = []
+            }
         } else {
+            selectedUserGroup.value.orgPermissionType = 'NONE'
             selectedUserGroup.value.approvals = []
         }
+        
         // Ensure arrays are initialized
         selectedUserGroup.value.users = selectedUserGroup.value.users || []
         selectedUserGroup.value.connectedSsoGroups = selectedUserGroup.value.connectedSsoGroups || []
