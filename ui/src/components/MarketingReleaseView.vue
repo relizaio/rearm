@@ -93,17 +93,17 @@
                     <div class="container">
                         <div>
                             <h3>Notes</h3>
-                            <n-input type="textarea" v-if="userPermission && userPermission !== 'READ_ONLY'"
+                            <n-input type="textarea" v-if="isWritable"
                                 v-model:value="updatedMarketingRelease.notes" rows="2" />
                             <n-input type="textarea" v-else :value="updatedMarketingRelease.notes" rows="2" readonly />
-                            <n-button v-if="userPermission && userPermission !== 'READ_ONLY'" @click="save"
+                            <n-button v-if="isWritable" @click="save"
                                 v-show="marketingRelease.notes !== updatedMarketingRelease.notes">Save Notes</n-button>
                         </div>
                         <div>
                             <h3 class="mt-3">Tags</h3>
                             <n-data-table :columns="releaseTagsFields" :data="updatedMarketingRelease.tags" class="table-hover"></n-data-table>
                             <n-form class="pb-5 mb-5" 
-                                v-if="userPermission && userPermission !== 'READ_ONLY'">
+                                v-if="isWritable">
                                 <n-input-group>
                                     <n-select class="w-50" v-model:value="newTagKey" placeholder="Input or select tag key"
                                     filterable tag :options="releaseTagKeys" required />

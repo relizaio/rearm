@@ -24,7 +24,7 @@ function isWritable (org : string, myUser : any, type : string, objectId?: strin
     const userPermission = getUserPermission(org, myUser)
     if(userPermission.org === 'ADMIN')
         return true
-    let isWritable: boolean = (userPermission.org !== '' && userPermission.org !== 'READ_ONLY')
+    let isWritable: boolean = (userPermission.org === 'READ_WRITE' || userPermission.org === 'ADMIN')
     if (type === 'INSTANCE' && objectId && objectId.length && myUser.permissions) {
         Object.keys(myUser.permissions.permissions).forEach(key => {
             if (myUser.permissions.permissions[key]['org'] === org && myUser.permissions.permissions[key]['object'] === objectId && myUser.permissions.permissions[key]['scope'] === 'INSTANCE') {

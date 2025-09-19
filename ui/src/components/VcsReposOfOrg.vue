@@ -1,7 +1,7 @@
 <template>
     <div>
         <h4>VCS Repositories</h4>
-        <Icon @click="modalVcsOfOrgAddVcsRepo=true" v-if="userPermission !== 'READ_ONLY' && userPermission !== ''" size="30" class="clickable" title="Add New VCS Repository" ><CirclePlus/></Icon>  
+        <Icon @click="modalVcsOfOrgAddVcsRepo=true" v-if="userPermission === 'READ_WRITE' || userPermission === 'ADMIN'" size="30" class="clickable" title="Add New VCS Repository" ><CirclePlus/></Icon>  
 
         <n-data-table 
             :columns="vcsRepoFields"
@@ -175,7 +175,7 @@ const vcsRepoFields: any[] = [
                 }))
             }
 
-            if(userPermission.value && userPermission.value !== 'READ_ONLY'){
+            if(userPermission.value === 'READ_WRITE' || userPermission.value === 'ADMIN'){
                 if(!selected){
                     els.push(h(NIcon,{
                         title: 'Select New VCS Repository',
@@ -219,7 +219,7 @@ const vcsRepoFields: any[] = [
                 }))
             }
 
-            if(userPermission.value && userPermission.value !== 'READ_ONLY'){
+            if(userPermission.value === 'READ_WRITE' || userPermission.value === 'ADMIN'){
                 if(!selected){
                     els.push(h(NIcon,{
                         title: 'Select New VCS Repository',

@@ -162,7 +162,7 @@
                         <router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
                             <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
                         </router-link>
-                        <vue-feather v-if="userPermission !== 'READ_ONLY' && release.componentDetails.type === 'PRODUCT'"
+                        <vue-feather v-if="isWritable && release.componentDetails.type === 'PRODUCT'"
                             size="16px"
                             class="clickable icons versionIcon"
                             type="copy"
@@ -171,7 +171,7 @@
                             style="margin-left:10px;"
                         />
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
-                        <Icon v-if="release.lifecycle === 'ASSEMBLED' && release.componentDetails.versionType === 'MARKETING' && userPermission !== 'READ_ONLY'" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
+                        <Icon v-if="release.lifecycle === 'ASSEMBLED' && release.componentDetails.versionType === 'MARKETING' && isWritable" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
                     </n-gi>
                     <n-gi span="2">
                         <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
@@ -188,12 +188,12 @@
                     </n-gi>
                     <n-gi span="1">
                         <span class="lifecycle" style="float: right; margin-right: 80px;">
-                            <span v-if="userPermission !== 'READ_ONLY'">
+                            <span v-if="isWritable">
                                 <n-dropdown v-if="updatedRelease.lifecycle" trigger="hover" :options="lifecycleOptions" @select="lifecycleChange">
                                     <n-tag type="success">{{ lifecycleOptions.find(lo => lo.key === updatedRelease.lifecycle)?.label }}</n-tag>
                                 </n-dropdown>
                             </span>
-                            <span v-if="userPermission === 'READ_ONLY'">
+                            <span v-if="!isWritable">
                                 <n-tag type="success">{{ updatedRelease.lifecycle }}</n-tag>
                             </span>
                         </span>
@@ -215,19 +215,6 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="updatedRelease.parentReleases" :columns="parentReleaseTableFields" :row-key="artifactsRowKey" />
-                        <ul>
-                            <div v-for="cr in updatedRelease.parentReleases" :key="'parRel' + cr.release">
-                                <!-- release-el :uuid="cr.release" 
-                                            :org="updatedRelease.org"
-                                            :updatable="userPermission !== 'READ_ONLY'" 
-                                            :deletable="userPermission !== 'READ_ONLY'"
-                                            @removeRelease="removeRelease" 
-                                            @releaseUpdated="releaseUpdated"
-                                            class="releaseElInList" 
-                                            :showParents="release.componentDetails.type === 'PRODUCT'"
-                                / -->
-                            </div>
-                        </ul>
                     </div>
                     <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER' && updatedRelease.componentDetails.type !== 'PRODUCT'">
                         <h3>Source Code Entries
@@ -354,17 +341,17 @@
                     <div class="container">
                         <div>
                             <h3>Notes</h3>
-                            <n-input type="textarea" v-if="userPermission && userPermission !== 'READ_ONLY'"
+                            <n-input type="textarea" v-if="isWritable"
                                 v-model:value="updatedRelease.notes" rows="2" />
                             <n-input type="textarea" v-else :value="updatedRelease.notes" rows="2" readonly />
-                            <n-button v-if="userPermission && userPermission !== 'READ_ONLY'" @click="save"
+                            <n-button v-if="isWritable" @click="save"
                                 v-show="release.notes !== updatedRelease.notes">Save Notes</n-button>
                         </div>
                         <div>
                             <h3 class="mt-3">Tags</h3>
                             <n-data-table :columns="releaseTagsFields" :data="updatedRelease.tags" class="table-hover" />
                             <n-form class="pb-5 mb-5" 
-                                v-if="userPermission && userPermission !== 'READ_ONLY'">
+                                v-if="isWritable">
                                 <n-input-group>
                                     <n-select class="w-50" v-model:value="newTagKey" placeholder="Input or select tag key"
                                     filterable tag :options="releaseTagKeys" required />
@@ -1060,7 +1047,7 @@ const userPermission: ComputedRef<any> = computed((): any => {
     return userPermission
 })
 
-const isWritable: ComputedRef<boolean> = computed((): any => userPermission.value !== 'READ_ONLY')
+const isWritable: ComputedRef<boolean> = computed((): any => (userPermission.value === 'READ_WRITE' || userPermission.value === 'ADMIN'))
 const isUpdatable: ComputedRef<boolean> = computed(
     (): any => updatedRelease.value.lifecycle === 'DRAFT' )
 

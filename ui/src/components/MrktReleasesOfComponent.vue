@@ -1,7 +1,7 @@
 <template>
     <div>
         <h5>Marketing Releases</h5>
-        <Icon v-if="userPermission !== 'READ_ONLY' && userPermission !== ''" @click="modalMrktReleasesAddMrktRelease = true" size="30" class="clickable" title="Add Marketing Release"><CirclePlus/></Icon>  
+        <Icon v-if="isWritable" @click="modalMrktReleasesAddMrktRelease = true" size="30" class="clickable" title="Add Marketing Release"><CirclePlus/></Icon>  
 
         <n-data-table 
             :columns="mrktReleasesFields"
@@ -154,6 +154,8 @@ const mrktReleasesFields: any[] = [
         title: 'Lifecycle'
     }
 ]
+
+const isWritable: ComputedRef<boolean> = computed((): any => (userPermission.value === 'READ_WRITE' || userPermission.value === 'ADMIN'))
 
 loadMarketingReleases()
 </script>
