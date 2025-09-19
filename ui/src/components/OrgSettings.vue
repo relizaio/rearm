@@ -303,9 +303,6 @@
                                 <n-form-item label="Description">
                                     <n-input v-model:value="selectedUserGroup.description" placeholder="Description" />
                                 </n-form-item>
-                                <n-form-item label="Status">
-                                    <n-select v-model:value="selectedUserGroup.status" :options="userGroupStatusOptions" />
-                                </n-form-item>
                             </n-space>
                             
                             <n-space style="margin-bottom: 20px;">
@@ -319,6 +316,7 @@
                                     multiple
                                     :options="userOptions"
                                     placeholder="Select users to add to group"
+                                    style="width: 100%; min-width: 400px;"
                                 />
                             </n-space>
 
@@ -1114,22 +1112,68 @@ const inviteeFields = [
 const userGroupFields = [
     {
         key: 'name',
-        title: 'Group Name'
-    },
-    {
-        key: 'description',
-        title: 'Description'
-    },
-    {
-        key: 'status',
-        title: 'Status'
+        title: 'Group Name',
+        render(row: any) {
+            if (row.description && row.description.trim()) {
+                return h('div', [
+                    h('span', row.name),
+                    h(
+                        NTooltip,
+                        {
+                            trigger: 'hover'
+                        }, 
+                        {
+                            trigger: () => {
+                                return h(
+                                    NIcon,
+                                    {
+                                        class: 'icons',
+                                        size: 20,
+                                        style: 'margin-left: 8px;'
+                                    }, { default: () => h(Info20Regular) }
+                                )
+                            },
+                            default: () => row.description
+                        }
+                    )
+                ])
+            } else {
+                return h('div', row.name)
+            }
+        }
     },
     {
         key: 'userCount',
         title: 'Users',
         render(row: any) {
             const userCount = row.userDetails ? row.userDetails.length : 0
-            return h('div', `${userCount} users`)
+            if (userCount > 0 && row.userDetails) {
+                const userList = row.userDetails.map((u: any) => `${u.name} (${u.email})`).join('\n')
+                return h('div', [
+                    h('span', `${userCount} users`),
+                    h(
+                        NTooltip,
+                        {
+                            trigger: 'hover'
+                        }, 
+                        {
+                            trigger: () => {
+                                return h(
+                                    NIcon,
+                                    {
+                                        class: 'icons',
+                                        size: 20,
+                                        style: 'margin-left: 8px;'
+                                    }, { default: () => h(Info20Regular) }
+                                )
+                            },
+                            default: () => h('div', { style: 'white-space: pre-line;' }, userList)
+                        }
+                    )
+                ])
+            } else {
+                return h('div', `${userCount} users`)
+            }
         }
     },
     {
@@ -1138,13 +1182,6 @@ const userGroupFields = [
         render(row: any) {
             const ssoGroups = row.connectedSsoGroups || []
             return h('div', ssoGroups.length > 0 ? ssoGroups.join(', ') : 'None')
-        }
-    },
-    {
-        key: 'createdDate',
-        title: 'Created',
-        render(row: any) {
-            return h('div', row.createdDate ? (new Date(row.createdDate)).toLocaleString('en-CA') : '')
         }
     },
     {
@@ -1203,9 +1240,9 @@ const userGroupStatusOptions = [
 ]
 
 const userOptions: ComputedRef<any[]> = computed((): any => {
-    return users.value.map((user: any) => ({
-        label: `${user.name} (${user.email})`,
-        value: user.uuid
+    return users.value.map((u: any) => ({
+        label: `${u.name} (${u.email})`,
+        value: u.uuid
     }))
 })
 
@@ -1711,11 +1748,12 @@ function editUserGroup(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (group) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
-        // Extract approvals from permissions
-        if (group.permissions && group.permissions.length) {
-            selectedUserGroup.value.approvals = group.permissions
+        // Extract approvals from permissions (handle nested structure)
+        if (group.permissions && group.permissions.permissions && group.permissions.permissions.length) {
+            selectedUserGroup.value.approvals = group.permissions.permissions
                 .filter((p: any) => p.scope === 'ORGANIZATION')
-                .map((p: any) => p.objectId)
+                .map((p: any) => p.approvals || [])
+                .flat()
         } else {
             selectedUserGroup.value.approvals = []
         }
