@@ -89,7 +89,7 @@
                 :show-icon="false" >
                 <n-form-item label="Select Download Type">
                     <n-radio-group v-model:value="downloadType" name="downloadType">
-                        <n-radio-button v-if="selectedArtifactForDownload.type === 'BOM' && selectedArtifactForDownload.bomFormat === 'CYCLONEDX'" value="DOWNLOAD">
+                        <n-radio-button v-if="selectedArtifactForDownload.type === 'BOM'" value="DOWNLOAD">
                             Augmented Artifact
                         </n-radio-button>
                         <n-radio-button value="RAW_DOWNLOAD">
