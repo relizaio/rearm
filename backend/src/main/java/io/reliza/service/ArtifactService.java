@@ -5,6 +5,8 @@
 package io.reliza.service;
 
 import java.io.IOException;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
 import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.HashSet;
@@ -42,12 +44,12 @@ import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
-import io.reliza.model.OrganizationData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.OASResponseDto;
@@ -234,7 +236,6 @@ public class ArtifactService {
 	public boolean isRebomStoreable (ArtifactDto artifactDto) {
 		return null!= artifactDto.getBomFormat() 
 				&& null != artifactDto.getType() 
-				&& artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) 
 				&& (
 					artifactDto.getType().equals(ArtifactType.BOM)
 				);
@@ -242,7 +243,6 @@ public class ArtifactService {
 	
 	public boolean isRebomStoreable (ArtifactData artifactData) {
 		return  null != artifactData.getBomFormat()
-				&& artifactData.getBomFormat().equals(BomFormat.CYCLONEDX) 
 				&& null != artifactData.getType() && (
 					artifactData.getType().equals(ArtifactType.BOM)
 			);
@@ -304,32 +304,35 @@ public class ArtifactService {
 					log.error("Error reading Json", e);
 					throw new RelizaException(e.getMessage());
 				}
-				String newbomVerString = bomJson.get("version").asText();
-				Integer newBomVersion = Integer.valueOf(newbomVerString);
-				artifactDto.setVersion(newbomVerString);
-				//case of update
-				if(null != existingAd){
-					// find the existing artifact data
-					Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg()));		
-					String oldBomSerial = existingAd.getInternalBom().id().toString();
-			
+				if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
+					String newbomVerString = bomJson.get("version").asText();
+					Integer newBomVersion = Integer.valueOf(newbomVerString);
+					artifactDto.setVersion(newbomVerString);
+					//case of update
+					if(null != existingAd){
+						// find the existing artifact data
+						Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg()));		
+						String oldBomSerial = existingAd.getInternalBom().id().toString();
+				
 
-					String newBomSerial = bomJson.get("serialNumber").textValue();
-					if(newBomSerial.startsWith("urn")){
-						newBomSerial = newBomSerial.replace("urn:uuid:","");
-					}
-					
-					// compare if lesser
-					// reject
-					if(oldBomSerial.equals(newBomSerial)){
-						if(newBomVersion <= oldBomVersion)
-							throw new RelizaException("Uploaded bom should have an incremented version");
-					}else{
-						artifactDto.setUuid(UUID.randomUUID());
+						String newBomSerial = bomJson.get("serialNumber").textValue();
+						if(newBomSerial.startsWith("urn")){
+							newBomSerial = newBomSerial.replace("urn:uuid:","");
+						}
+						
+						// compare if lesser
+						// reject
+						if(oldBomSerial.equals(newBomSerial)){
+							if(newBomVersion <= oldBomVersion)
+								throw new RelizaException("Uploaded bom should have an incremented version");
+						}else{
+							artifactDto.setUuid(UUID.randomUUID());
+						}
 					}
 				}
 
-				rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, orgUuid);
+
+				rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, artifactDto.getBomFormat(), orgUuid);
 
 				// UUID internalBomId = rebomOptions.serialNumber();
 				UUID internalBomId;
@@ -357,6 +360,14 @@ public class ArtifactService {
 						}
 					}
 					if(null == dtur){
+						// for an SPDX bom, we fetch the converted CycloneDX bomJson
+						if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
+							try {
+								bomJson = rebomService.findRawBomById(internalBomId, orgUuid, BomFormat.CYCLONEDX);
+							} catch (JsonProcessingException e) {
+								throw new RelizaException("Failed to process BOM JSON: " + e.getMessage());
+							}
+						}
 						String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
 						UploadableBom ub = new UploadableBom(bomJson, null, false);
 						dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);

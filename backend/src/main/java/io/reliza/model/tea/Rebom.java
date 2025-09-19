@@ -16,7 +16,6 @@ import io.reliza.service.RebomService.BomStructureType;
 import io.reliza.common.Utils.RootComponentMergeMode;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Rebom {
-    public record BomInput(JsonNode bom, RebomOptions rebomOptions) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record RebomOptions(

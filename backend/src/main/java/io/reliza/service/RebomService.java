@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
+import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.WeaknessDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
@@ -62,7 +63,7 @@ public class RebomService {
                                 ).build();
 	}
 
-    public record BomInput(JsonNode bom, RebomOptions rebomOptions, UUID org) {}
+    public record BomInput(JsonNode bom, RebomOptions rebomOptions, BomFormat format, UUID org) {}
 
     public record GraphQLResponse<T>(T data, List<Object> errors) {}
 
@@ -88,7 +89,7 @@ public class RebomService {
                 return gqlResp;
             });
     }   
-    private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions, UUID org){
+    private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions, BomFormat bomFormat, UUID org){
         String mutation = """
             mutation addBom ($bomInput: BomInput!) {
                 addBom(bomInput: $bomInput) {
@@ -100,7 +101,7 @@ public class RebomService {
             }""";
         
         Map<String, Object> variables = new HashMap<>();
-        BomInput bomInput = new BomInput(bomJson, rebomOptions, org);
+        BomInput bomInput = new BomInput(bomJson, rebomOptions, bomFormat, org);
         variables.put("bomInput", bomInput);
         Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
         //TODO: deserialize bom response as an object of ArtifactUploadRseponseDTO
@@ -154,14 +155,28 @@ public class RebomService {
     }
 
     public JsonNode findRawBomById(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
-        String query = """
-            query rawBomId ($id: ID, $org: ID) {
-                rawBomId(id: $id, org: $org)
-            }""";
-        
+        return findRawBomById(bomSerialNumber, org, null);
+    }
+
+    public JsonNode findRawBomById(UUID bomSerialNumber, UUID org, BomFormat format) throws JsonProcessingException{
+        String query;
         Map<String, Object> variables = new HashMap<>();
         variables.put("id", bomSerialNumber.toString());
         variables.put("org", org.toString());
+        
+        if (format != null) {
+            query = """
+                query rawBomId ($id: ID, $org: ID, $format: BomFormat) {
+                    rawBomId(id: $id, org: $org, format: $format)
+                }""";
+            variables.put("format", format);
+        } else {
+            query = """
+                query rawBomId ($id: ID, $org: ID) {
+                    rawBomId(id: $id, org: $org)
+                }""";
+        }
+        
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         var br = response.get("rawBomId");
         JsonNode bomJson = Utils.OM.valueToTree(br);
@@ -224,8 +239,8 @@ public class RebomService {
         ArtifactChangelog diffResult = Utils.OM.convertValue(br, new TypeReference<ArtifactChangelog>() {});
         return diffResult;
     }
-    public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride, UUID org)  throws RelizaException{
-        return uploadRebomRequest(bomJson, rebomOverride, org);
+    public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride, BomFormat bomFormat, UUID org)  throws RelizaException{
+        return uploadRebomRequest(bomJson, rebomOverride, bomFormat, org);
     }
 
     // public JsonNode mergeBoms(List<UUID> bomIds, RebomOptions rebomOptions) throws RelizaException{ 
