@@ -10,9 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -67,6 +69,9 @@ public class OrganizationService {
 	
 	@Autowired
     private GetOrganizationService getOrganizationService;
+	
+	@Autowired
+    private UserGroupService userGroupService;
 
 	private final OrganizationRepository repository;
 	
@@ -154,6 +159,26 @@ public class OrganizationService {
 		return repository.getNumericAnalytics(orgUuid.toString());
 	}
 	
+	public Optional<UserPermission> obtainUserOrgPermission(UserData ud, UUID org) {
+		Optional<UserPermission> oup = ud.getPermission(org, PermissionScope.ORGANIZATION, org);
+		Set<String> approvals = (oup.isPresent() && null != oup.get().getApprovals()) ? new HashSet<>(oup.get().getApprovals()) : new HashSet<>();
+		if (!(oup.isPresent() && oup.get().getType() == PermissionType.ADMIN)) {
+			var userGroups = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), org);
+			if (null != userGroups && !userGroups.isEmpty()) {
+				var ugIter = userGroups.iterator();
+				while (ugIter.hasNext() && (oup.isEmpty() || oup.get().getType() != PermissionType.ADMIN)) {
+					var ugd = ugIter.next();
+					Optional<UserPermission> oupFromGroup = ugd.getPermission(PermissionScope.ORGANIZATION, org);
+					if (oupFromGroup.isPresent() && null != oupFromGroup.get().getApprovals()) approvals.addAll(oupFromGroup.get().getApprovals());
+					if (oupFromGroup.isPresent() && (oup.isEmpty() || oupFromGroup.get().getType().ordinal() > oup.get().getType().ordinal())) {
+						oup = oupFromGroup;
+					}
+				}
+			}
+		}
+		return oup;
+	}
+	
 	protected AuthorizationStatus isUserAuthorizedOrgWide(UserData ud, UUID org, CallType ct) {
 		AuthorizationStatus as = AuthorizationStatus.AUTHORIZED;
 		boolean authorized = false;
@@ -169,8 +194,8 @@ public class OrganizationService {
 					authorized = true;
 			}
 			if (!authorized && od.isPresent() && acceptedAndVerified) {
-				// for now, all permissions are only resolved on org level - TODO - allow by component
-				Optional<UserPermission> oup = ud.getPermission(org, PermissionScope.ORGANIZATION, org);
+				// for now, all permissions are only resolved on org level - TODO - allow by resource group
+				Optional<UserPermission> oup = obtainUserOrgPermission(ud, org);
 				switch (ct) {
 				case ADMIN:
 					if (oup.isPresent() && oup.get().getType() == PermissionType.ADMIN) {

@@ -7,12 +7,20 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.User;
+import jakarta.persistence.LockModeType;
 
 public interface UserRepository extends CrudRepository<User, UUID> {
+	
+	@Transactional
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query(value = "SELECT u FROM User u where u.uuid = :uuid")
+	public Optional<User> findByIdWriteLocked(UUID uuid);
 	
 	@Query(
 			value = VariableQueries.FIND_USERS_BY_ORGANIZATION,

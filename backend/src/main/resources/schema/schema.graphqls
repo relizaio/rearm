@@ -66,6 +66,9 @@ type Query {
 	getSystemInfoIsSet: SystemInfoIsSet
 	
 	exportAsObomManual(releaseUuid: ID!): String
+	
+	# User Groups
+	getUserGroups(org: ID!): [UserGroupWebDto]
 }
 
 type Mutation {
@@ -157,6 +160,10 @@ type Mutation {
 	logout: Boolean
 	updateEmailAddress(oldEmail: String!, newEmail: String!, makePrimary: Boolean!, acceptMarketing: Boolean!): Boolean
 	resendEmailVerification: Boolean
+	
+	# User Groups
+	createUserGroup(userGroup: CreateUserGroupInput!): UserGroupWebDto
+	updateUserGroup(userGroup: UpdateUserGroupInput!): UserGroupWebDto
 }
 
 enum BomMediaType {
@@ -289,6 +296,20 @@ type User {
 	systemSealed: Boolean
 	installationType: String
 	isGlobalAdmin: Boolean
+}
+
+type UserGroupWebDto {
+	uuid: ID
+	name: String
+	description: String
+	org: ID
+	users: [ID]
+	userDetails: [OrgUserData]
+	permissions: Permissions
+	status: UserGroupStatus
+	connectedSsoGroups: [String]
+	createdDate: DateTime
+	lastUpdatedBy: ID
 }
 
 type EmailObject {
@@ -1216,6 +1237,30 @@ input InviteUserInput {
 	type: PermissionType!
 }
 
+input CreateUserGroupInput {
+	name: String!
+	description: String
+	org: ID!
+}
+
+input UpdateUserGroupInput {
+	groupId: ID!
+	name: String
+	description: String
+	users: [ID]
+	permissions: [UserGroupPermissionInput]
+	approvals: [String]
+	status: UserGroupStatus
+	connectedSsoGroups: [String]
+}
+
+input UserGroupPermissionInput {
+	scope: PermissionScope!
+	objectId: ID!
+	type: PermissionType!
+	approvals: [String]
+}
+
 input ReleaseApprovalProgrammaticInput {
 	approvals: [ReleaseApprovalInput]
 	release: ID
@@ -1427,6 +1472,11 @@ enum Status {
 	REJECTED
 	REQUIRED
 	TRANSIENT
+}
+
+enum UserGroupStatus {
+	ACTIVE
+	INACTIVE
 }
 
 enum VisibilitySetting {

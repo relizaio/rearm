@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -54,6 +55,7 @@ import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.BranchData;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaData;
 import io.reliza.model.tea.TeaChecksumType;
 import lombok.extern.slf4j.Slf4j;
@@ -560,4 +562,15 @@ public class Utils {
         PRESERVE_UNDER_NEW_ROOT,
         FLATTEN_UNDER_NEW_ROOT
     }
+
+	public static boolean isSanitizedApprovalsSent (Collection<String> approvals, OrganizationData od) {
+		boolean isSanitized = true;
+		var knownApprovalTypes = od.getApprovalRoles().stream().map(x -> x.id()).collect(Collectors.toUnmodifiableSet());
+		Iterator<String> approvalIterator = approvals.iterator();
+		while (isSanitized && approvalIterator.hasNext()) {
+			String approvalToCheck = approvalIterator.next();
+			if (!knownApprovalTypes.contains(approvalToCheck)) isSanitized = false;
+		}
+		return isSanitized;
+	}
 }

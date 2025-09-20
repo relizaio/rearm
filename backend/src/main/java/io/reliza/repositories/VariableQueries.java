@@ -673,9 +673,31 @@ class VariableQueries {
 	/*
 	 * Artifact Collections
 	 */
-	public static final String FIND_ACOLLECTIONS_BY_RELEASE = """
+	protected static final String FIND_ACOLLECTIONS_BY_RELEASE = """
 			SELECT * from rearm.acollections a
 			    WHERE a.record_data->>'release' = :releaseUuidAsString
 			    ORDER BY a.record_data->'version' DESC
+			""";
+	
+	/*
+	 * User Groups
+	 */
+	protected static final String FIND_USER_GROUPS_BY_ORGANIZATION = """
+			SELECT * FROM rearm.user_groups
+				WHERE record_data->>'org' = :orgUuidAsString 
+				AND record_data->>'status' = 'ACTIVE'
+			""";
+	
+	protected static final String FIND_USER_GROUP_BY_NAME_AND_ORGANIZATION = """
+			SELECT * FROM rearm.user_groups
+				WHERE record_data->>'org' = :orgUuidAsString 
+				AND record_data->>'name' = :name
+			""";
+	
+	protected static final String FIND_USER_GROUPS_BY_USER_AND_ORGANIZATION = """
+			SELECT * FROM rearm.user_groups
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND jsonb_contains(record_data, jsonb_build_object('users', jsonb_build_array(:userUuidAsString)))
+				AND record_data->>'status' = 'ACTIVE'
 			""";
 }

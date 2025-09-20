@@ -10,8 +10,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +32,7 @@ import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
@@ -44,6 +47,7 @@ import io.reliza.model.OrganizationData.InvitedObject;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
 import io.reliza.model.UserData.OrgUserData;
+import io.reliza.model.UserGroupData;
 import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -74,6 +78,9 @@ public class UserService {
 	
 	@Autowired
 	private GetOrganizationService getOrganizationService;
+	
+	@Autowired
+	private UserGroupService userGroupService;
 
 	private static final Logger log = LoggerFactory.getLogger(UserService.class);
 			
@@ -389,6 +396,8 @@ public class UserService {
 				String sub = creds.getClaimAsString("sub");
 				ou = getUserByOauthIdAndType(oauthType, sub);
 				break;
+			default:
+				break;
 			}
 		}
 		return ou;
@@ -399,8 +408,78 @@ public class UserService {
 		var ou = getUserByAuth(auth);
 		if (ou.isPresent()) {
 			oud = Optional.of(UserData.dataFromRecord(ou.get()));
+			Jwt creds = (Jwt) auth.getCredentials();
+			List<String> groups = null != creds.getClaimAsStringList("groups") ? creds.getClaimAsStringList("groups") : new LinkedList<>();
+			synchronizeUserWithGroups(oud.get(), new LinkedHashSet<>(groups));
 		}
 		return oud;
+	}
+	
+	private void synchronizeUserWithGroups (UserData ud, Set<String> presentSsoGroups) {
+		for (var uOrg : ud.getOrganizations()) {
+			synchronizeUserWithGroupsPerOrg(ud, presentSsoGroups, uOrg);
+		}
+		
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	private void synchronizeUserWithGroupsPerOrg (UserData ud, Set<String> presentSsoGroups, UUID uOrg) {
+		Set<UserGroupData> orgGroups = userGroupService.getUserGroupsByOrganization(uOrg)
+		.stream().filter(x -> {
+			return null != x.getConnectedSsoGroups() && !x.getConnectedSsoGroups().isEmpty() 
+					&& !Collections.disjoint(x.getConnectedSsoGroups(), presentSsoGroups);
+			})
+		.collect(Collectors.toSet());
+
+		List<UserGroupData> userGroups = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), uOrg);
+
+		// check equality - extract UUID sets from each and compare
+		Set<UUID> expectedGroupUuids = orgGroups.stream()
+			.map(UserGroupData::getUuid)
+			.collect(Collectors.toSet());
+		
+		Set<UUID> currentGroupUuids = userGroups.stream()
+			.map(UserGroupData::getUuid)
+			.collect(Collectors.toSet());
+		
+		boolean areEqual = expectedGroupUuids.equals(currentGroupUuids);
+		if (!areEqual) {
+			// write lock user
+			Optional<User> ou = repository.findByIdWriteLocked(ud.getUuid());
+			if (ou.isPresent()) {
+				// double check equality
+				Set<UserGroupData> orgGroups2 = userGroupService.getUserGroupsByOrganization(uOrg)
+				.stream().filter(x -> null != x.getConnectedSsoGroups() && !x.getConnectedSsoGroups().isEmpty() 
+					&& !Collections.disjoint(x.getConnectedSsoGroups(), presentSsoGroups))
+				.collect(Collectors.toSet());
+		
+				List<UserGroupData> userGroups2 = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), uOrg);
+		
+				// check equality - extract UUID sets from each and compare
+				Set<UUID> expectedGroupUuids2 = orgGroups2.stream()
+					.map(UserGroupData::getUuid)
+					.collect(Collectors.toSet());
+				
+				Set<UUID> currentGroupUuids2 = userGroups2.stream()
+					.map(UserGroupData::getUuid)
+					.collect(Collectors.toSet());
+				
+				boolean areEqual2 = expectedGroupUuids2.equals(currentGroupUuids2);
+				if (!areEqual2) {
+					// update user groups
+					for (var orgGroup : expectedGroupUuids2) {
+						if (!currentGroupUuids2.contains(orgGroup)) {
+							userGroupService.addUserToGroup(orgGroup, ud.getUuid(), WhoUpdated.getAutoWhoUpdated());
+						}
+					}
+					for (var orgGroup : currentGroupUuids2) {
+						if (!expectedGroupUuids2.contains(orgGroup)) {
+							userGroupService.removeUserFromGroup(orgGroup, ud.getUuid(), WhoUpdated.getAutoWhoUpdated());
+						}
+					}
+				}
+			}			
+		}
 	}
 	
 	public User parsePostSignupData(UUID userUuid, boolean acceptPolicies, boolean acceptMarketing,

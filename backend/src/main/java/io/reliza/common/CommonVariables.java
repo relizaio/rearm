@@ -117,6 +117,7 @@ public class CommonVariables {
 	public static final String APP_SERVICE_FIELD = "appService";
 	public static final String ORCHESTRATOR_FIELD = "orchestrator";
 	public static final String USER_FIELD = "user";
+	public static final String USERS_FIELD = "users";
 	public static final String GLOBAL_ADMIN_FIELD = "isGlobalAdmin";
 	public static final String API_KEY_ID_FIELD = "apiKeyId";
 	public static final String API_KEY_FIELD = "apiKey";
@@ -365,6 +366,13 @@ public class CommonVariables {
 		private UserStatus () {}
 	}
 	
+	public enum UserGroupStatus {
+		ACTIVE,
+		INACTIVE;
+		
+		private UserGroupStatus () {}
+	}
+	
 	public enum TableName {
 		API_KEYS("api_keys"),
 		API_KEY_ACCESS("api_key_access"),
@@ -392,6 +400,7 @@ public class CommonVariables {
 		SECRETS("secrets"),
 		SOURCE_CODE_ENTRIES("source_code_entries"),
 		USERS("users"),
+		USER_GROUPS("user_groups"),
 		VARIANTS("variants"),
 		VCS_REPOSITORIES("vcs_repositories"),
 		VERSION_ASSIGNMENTS("version_assignments")
