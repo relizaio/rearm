@@ -269,7 +269,7 @@
                 </div>
             </n-tab-pane>
 
-            <n-tab-pane name="userGroups" tab="User Groups">
+            <n-tab-pane v-if="isOrgAdmin" name="userGroups" tab="User Groups">
                 <div class="userGroupBlock mt-4">
                     <h5>User Groups ({{ userGroups.length }})</h5>
                     <n-data-table :columns="userGroupFields" :data="userGroups" class="table-hover">
