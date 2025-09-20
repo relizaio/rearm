@@ -621,6 +621,10 @@ onMounted(async () => {
     
     // Load data for the current tab (from URL or default) without router update
     const tabName = currentTab.value
+    loadTabSpecificData(tabName)
+})
+
+async function loadTabSpecificData (tabName: string) {
     if (tabName === "users") {
         await loadUsers()
         loadInvitedUsers(true)
@@ -634,7 +638,7 @@ onMounted(async () => {
         fetchApprovalEntries()
         fetchApprovalPolicies()
     }
-})
+}
 
 const showOrgApiKeyModal = ref(false)
 
@@ -2016,20 +2020,7 @@ async function handleTabSwitch(tabName: string) {
         query: { ...route.query, tab: tabName }
     })
     
-    // Load tab-specific data
-    if (tabName === "users") {
-        await loadUsers()
-        loadInvitedUsers(true)
-    } else if (tabName === "userGroups") {
-        await loadUsers() // Load users for the user selection dropdown
-        loadUserGroups()
-    } else if (tabName === "programmaticAccess") {
-        await loadUsers()
-        loadProgrammaticAccessKeys(true)
-    } else if (tabName === "approvalPolicies") {
-        fetchApprovalEntries()
-        fetchApprovalPolicies()
-    }
+    loadTabSpecificData(tabName)
 }
 
 async function loadInvitedUsers(useCache: boolean) {
