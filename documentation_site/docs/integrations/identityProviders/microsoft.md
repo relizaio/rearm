@@ -110,4 +110,8 @@ and save the manifest.
 3. Click `Access Management` and select `OpenID Connect Groups`.
 4. Create groups based on desired Keycloak groups and map them to corresponding Dependency-Track teams.
 
+## Optional Other Steps
+1. In Keycloak, in Reliza realm, open `Realm roles`, click on `default-roles-reliza` and remove `manage-account` - will ensure that users can only use SSO for login.
+
+
 You should now be able to login to ReARM using your Microsoft identities.
