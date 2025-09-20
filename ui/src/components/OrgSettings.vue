@@ -1,7 +1,7 @@
 <template>
     <div>
         <h4>Organization Settings</h4>
-        <n-tabs type="line" @update:value="handleTabSwitch">
+        <n-tabs type="line" :value="currentTab" @update:value="handleTabSwitch">
             <n-tab-pane name="integrations" tab="Integrations" v-if="isOrgAdmin">
                 <div class="integrationsBlock mt-4">
                     <h5>Organization-Wide Integrations</h5>
@@ -167,7 +167,7 @@
                 </n-modal>
             </n-tab-pane>
 
-            <n-tab-pane name="users" tab="Users">
+            <n-tab-pane name="users" tab="Users" v-if="isOrgAdmin">
                 <div class="userBlock mt-4">
                     <h5>Users ({{ users.length }})</h5>
                     <n-data-table :columns="userFields" :data="users" class="table-hover">
@@ -370,7 +370,7 @@
                 </div>
             </n-tab-pane>
 
-            <n-tab-pane name="programmaticAccess" tab="Programmatic Access">
+            <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
                 <div class="programmaticAccessBlock mt-4">
                     <h5>Programmatic Access</h5>
                     <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys"
@@ -581,7 +581,7 @@ import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NC
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
-import { useRoute, RouterLink } from 'vue-router'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Edit as EditIcon, Trash, LockOpen, CirclePlus } from '@vicons/tabler'
 import { Info20Regular, Edit24Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
@@ -598,8 +598,10 @@ import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 
 const route = useRoute()
+const router = useRouter()
 const store = useStore()
 const notification = useNotification()
+
 const notify = async function (type: NotificationType, title: string, content: string) {
     notification[type]({
         content: content,
@@ -649,6 +651,14 @@ const showCreateApprovalRole = ref(false)
 const showCIIntegrationModal = ref(false)
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
+
+const orgResolved: Ref<string> = ref('')
+const myorg: ComputedRef<any> = computed((): any => store.getters.orgById(orgResolved.value))
+if (route.params.orguuid) {
+    orgResolved.value = route.params.orguuid.toString()
+} else {
+    orgResolved.value = myorg.value.uuid
+}
 const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
     let isOrgAdmin = false
     if (myUser.value && myUser.value.permissions) {
@@ -659,6 +669,10 @@ const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
     }
     return isOrgAdmin
 })
+
+// Tab management with router integration
+const defaultTab = isOrgAdmin.value ? 'integrations' : 'approvalPolicies'
+const currentTab = ref(route.query.tab as string || defaultTab)
 
 const approvalRoleFields: any[] = [
     {
@@ -695,13 +709,6 @@ const approvalRoleFields: any[] = [
     }
 ]
 
-const orgResolved: Ref<string> = ref('')
-const myorg: ComputedRef<any> = computed((): any => store.getters.orgById(orgResolved.value))
-if (route.params.orguuid) {
-    orgResolved.value = route.params.orguuid.toString()
-} else {
-    orgResolved.value = myorg.value.uuid
-}
 const apiKey: Ref<string> = ref('')
 const apiKeyId: Ref<string> = ref('')
 const apiKeyHeader: Ref<string> = ref('')
@@ -1985,6 +1992,15 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
 }
 
 async function handleTabSwitch(tabName: string) {
+    // Update current tab
+    currentTab.value = tabName
+    
+    // Update router query parameter
+    await router.push({
+        query: { ...route.query, tab: tabName }
+    })
+    
+    // Load tab-specific data
     if (tabName === "users") {
         await loadUsers()
         loadInvitedUsers(true)
