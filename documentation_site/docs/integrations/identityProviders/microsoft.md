@@ -2,6 +2,11 @@
 
 This will allow you to use Microsoft Entra ID to log in to your ReARM instance.
 
+## Notes
+1. It is highly recommended to have your Entra ID users' emails set in Entra ID and to trust those emails to be correct. If you do not have this information set up or do not trust Entra emails, you may set up email verification in ReARM as described below.
+2. Choose your grouping strategy. You may group users based on your organization structure, i.e. ADMINISTRATORS, DEVELOPERS, QA, LEGAL or based on permissions, i.e. `READ_ONLY`, `READ_WRITE`, `ADMINISTRATOR`. If you are planning to use ReARM approval workflows, it is recommended to group users based on your organization structure so you can easily map them to approval permissions.
+
+
 ## Azure Part
 1. You would need to create Azure Service Principal to register Microsoft as an identity provider. For this, in Azure Portal search, search for `App registrations`, click on it and once on the `App registrations` page, click on the `New registration` button.
 
@@ -17,35 +22,35 @@ This will allow you to use Microsoft Entra ID to log in to your ReARM instance.
 
 7. Click on the `Certificates & secrets` in the menu on the left, under `Client secrets` tab click on the `New client secret`. Enter desired secret description, i.e. `ReARM Identity Provider Credential`, choose desired expiration timeframe and click `Add`. On the next page, note created secret value - you will need it later.
 
-8. Click on the `Manifest` in the menu on the left, and define desired roles inside the `"appRoles":[]` section via manifest like this (amend roles as desired and generate new uuids for roles instead of samples provided below):
+8. Click on the `Manifest` in the menu on the left, and define desired roles inside the `"appRoles":[]` section via manifest like this (amend roles as desired based on your grouping strategy and generate new uuids for roles instead of samples provided below):
 
 ```json
 "appRoles": [
   {
     "allowedMemberTypes": [ "User" ],
-    "displayName": "ReARM Administrator",
-    "description": "ReARM and Dependency-Track Administrator",
+    "displayName": "ReARM Administrators",
+    "description": "ReARM and Dependency-Track Administrators",
     "id": "3aef8d86-cf12-4f3b-9a72-dbcbe0596854",
     "isEnabled": true,
-    "value": "rearm_admin",
+    "value": "REARM_ADMINISTRATORS",
     "origin": "Application"
   },
   {
     "allowedMemberTypes": [ "User" ],
-    "displayName": "ReARM Write User and Dependency-Track Collaborator",
-    "description": "Gives organization Read-Write access to ReARM and Read access to Dependency-Track with permissions to participate in vulnerability and violation triage and audit",
+    "displayName": "ReARM Developers",
+    "description": "Gives organization Read-Write access to ReARM with DEV Approval permissions and Read access to Dependency-Track with permissions to participate in vulnerability and violation triage and audit",
     "id": "9da53c67-d18a-48a9-9ae3-6df633e96f43",
     "isEnabled": true,
-    "value": "rearm_write_user",
+    "value": "REARM_DEVELOPERS",
     "origin": "Application"
   },
   {
     "allowedMemberTypes": [ "User" ],
-    "displayName": "ReARM and Dependency-Track Read User",
-    "description": "Gives organization Read-Only access to ReARM and Read-Only access to Dependency-Track",
+    "displayName": "ReARM and Dependency-Track QA",
+    "description": "Gives organization Read-Only access to ReARM with QA Approval permissions and Read-Only access to Dependency-Track",
     "id": "aa2c66d0-1fd4-4532-95ba-3695d7c5183d",
     "isEnabled": true,
-    "value": "rearm_read_user",
+    "value": "REARM_QA",
     "origin": "Application"
   }
 ]
@@ -58,10 +63,7 @@ and save the manifest.
 ## ReARM Part - Configure Keycloak Groups
 1. Login to Keycloak with your administrative account by adding /kauth path to your ReARM URI.
 2. In Keycloak, select Reliza realm.
-3. Open `Groups` section and create desired groups for your users.
-4. If you're using Keycloak for Dependency-Track authentication (default way in ReARM Pro), create groups for Dependency-Track as well.
-
-Groups may be based on your organization structure, i.e. ADMINISTRATORS, DEVELOPERS, QA, LEGAL or based on permissions, i.e. `READ_ONLY`, `READ_WRITE`, `ADMINISTRATOR`.
+3. Open `Groups` section and create desired groups for your users based on your grouping strategy.
 
 ## ReARM Part - Registering Microsoft as an Identity Provider
 1. Continue in Keycloak Reliza realm.
@@ -77,15 +79,15 @@ Groups may be based on your organization structure, i.e. ADMINISTRATORS, DEVELOP
 2. Once identity provider is configured, set `Sync mode` to `Force` and set `Trust Email` to `On` if your users' emails are set in Entra ID and you trust those emails to be correct. Otherwise, set `Trust Email` to `Off`.
 3. Make sure your Realm Settings -> Login has `Verify email` enabled and your SMTP email settings are configured. The later setting will ensure that Keycloak verifies the email addresses of your users.
 4. Configure Mappers - for each of your roles, on the `Mappers` tab click on `Add mapper`, then: 
-4.1. Enter Name based on your role name, in the `Mapper type` select `Advanced Claim to Group`. 
-4.2. Click `Add Claims`
-4.3. In the claim's `Key` enter `roles` and in the `Value` enter your role name based on the manifest you set up.
-4.4. In the `Group` field enter desired `Keycloak` groups withch should be mapped to this role.
-4.5. Click `Save`.
+   1. Enter Name based on your role name, in the `Mapper type` select `Advanced Claim to Group`. 
+   2. Click `Add Claims`
+   3. In the claim's `Key` enter `roles` and in the `Value` enter your role name based on the manifest you set up.
+   4. In the `Group` field enter desired `Keycloak` groups withch should be mapped to this role.
+   5. Click `Save`.
 
 ## ReARM Part - Configure Client Group Mapper
 1. Continue in Keycloak Reliza realm.
-2. Open `Clients` section, and select `login-app` client`.
+2. Open `Clients` section, and select `login-app` client.
 3. Click `Client scopes` tab.
 4. Click on `login-app-dedicated`.
 5. In the `Mappers` tab, click `Configure a new mapper`.
