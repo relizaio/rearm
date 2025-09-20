@@ -17,9 +17,7 @@ This will allow you to use Microsoft Entra ID to log in to your ReARM instance.
 
 7. Click on the `Certificates & secrets` in the menu on the left, under `Client secrets` tab click on the `New client secret`. Enter desired secret description, i.e. `ReARM Identity Provider Credential`, choose desired expiration timeframe and click `Add`. On the next page, note created secret value - you will need it later.
 
-8. Click on the `Token configuration` in the menu on the left. Click `Add optional claim`. Select `ID` token type and check `email` and click 'Add'.
-
-8. Click on the `Manifest` in the menu on the left, and define desired roles inside the `"appRoles":[]` section via manifest like this (generate new uuids for roles instead of samples, also roles may be amended as desired):
+8. Click on the `Manifest` in the menu on the left, and define desired roles inside the `"appRoles":[]` section via manifest like this (amend roles as desired and generate new uuids for roles instead of samples provided below):
 
 ```json
 "appRoles": [
@@ -51,49 +49,63 @@ This will allow you to use Microsoft Entra ID to log in to your ReARM instance.
     "origin": "Application"
   }
 ]
+```
 
 and save the manifest.
 
 9. In the Entra admin center or in the Azure portal, navigate to the `Enterprise applications` section, and find the application you just created. Click on it. Open `Users and groups` from the menu on the left and assign users to roles as desired via clicking `Add user/group`.
-```
-## ReARM Part - Registering Microsoft as an Identity Provider
 
+## ReARM Part - Configure Keycloak Groups
 1. Login to Keycloak with your administrative account by adding /kauth path to your ReARM URI.
-
 2. In Keycloak, select Reliza realm.
+3. Open `Groups` section and create desired groups for your users.
+4. If you're using Keycloak for Dependency-Track authentication (default way in ReARM Pro), create groups for Dependency-Track as well.
 
-3. Open Identity providers section, and add OpenID Connect v1.0.
+Groups may be based on your organization structure, i.e. ADMINISTRATORS, DEVELOPERS, QA, LEGAL or based on permissions, i.e. `READ_ONLY`, `READ_WRITE`, `ADMINISTRATOR`.
 
-4. Change Alias to `entra` and Display Name to `Entra ID`.
-
-5. Use `https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration` for `Discovery endpoint` (where tenant id is your Azure application tenant id).
-
-4. Enter your Client ID as noted above in the `Client ID` field.
-
-5. Enter your Client Secret as noted above in the `Client Secret` field.
-
-6. Click "Save"
+## ReARM Part - Registering Microsoft as an Identity Provider
+1. Continue in Keycloak Reliza realm.
+2. Open Identity providers section, and add OpenID Connect v1.0.
+3. Change Alias to `entra` and Display Name to `Entra ID`.
+4. Use `https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration` for `Discovery endpoint` (where tenant id is your Azure application tenant id).
+5. Enter your Client ID as noted above in the `Client ID` field.
+6. Enter your Client Secret as noted above in the `Client Secret` field.
+7. Click "Save"
 
 ## ReARM Part - Configuring Microsoft as an Identity Provider
+1. Continue in Keycloak Reliza realm.
+2. Once identity provider is configured, set `Sync mode` to `Force` and set `Trust Email` to `On` if your users' emails are set in Entra ID and you trust those emails to be correct. Otherwise, set `Trust Email` to `Off`.
+3. Make sure your Realm Settings -> Login has `Verify email` enabled and your SMTP email settings are configured. The later setting will ensure that Keycloak verifies the email addresses of your users.
+4. Configure Mappers - for each of your roles, on the `Mappers` tab click on `Add mapper`, then: 
+4.1. Enter Name based on your role name, in the `Mapper type` select `Advanced Claim to Group`. 
+4.2. Click `Add Claims`
+4.3. In the claim's `Key` enter `roles` and in the `Value` enter your role name based on the manifest you set up.
+4.4. In the `Group` field enter desired `Keycloak` groups withch should be mapped to this role.
+4.5. Click `Save`.
 
-1. Once identity provider is configured, set `Sync mode` to `Force` and set `Trust Email` to `On`.
+## ReARM Part - Configure Client Group Mapper
+1. Continue in Keycloak Reliza realm.
+2. Open `Clients` section, and select `login-app` client`.
+3. Click `Client scopes` tab.
+4. Click on `login-app-dedicated`.
+5. In the `Mappers` tab, click `Configure a new mapper`.
+6. Choose `Group Membership`.
+7. Use `groups` as Name and as `Token claim name`.
+8. Toggle all selectors to On except `Full group path`.
+9. Click `Save`.
 
-2. Set  "Scopes" to "openid email"
-2. Configure Mappers - for each of your roles, on the `Mappers` tab click on `Add mapper`, then: 
-2.1. Enter Name based on your role name, in the `Mapper type` select `Advanced Claim to Group`. 
-2.2. Click `Add Claims`
-2.3. In the claim's `Key` enter `roles` and in the `Value` enter your role name based on the manifest you set up.
-2.4. In the `Group` field enter desired `Keycloak` groups.
-2.5. Click `Save`.
+## ReARM Part - Configure Keycloak Group Mapping to ReARM application
+1. Log in to ReARM as administrative user
+2. Open the `Organization Settings` view from the left menu.
+3. Open the `User Groups` tab.
+4. Create desired User Groups, then set permissions for each group as desired.
+5. For each groups in SSO groups list, add desired mapped Keycloak groups.
 
-## ReARM Part - Configure Client Mapper
-1. Open `Clients` section, and select `login-app` client`.
-2. Click `Client scopes` tab.
-3. Click on `login-app-dedicated`.
-4. In the `Mappers` tab, click `Configure a new mapper`.
-5. Choose `Group Membership`.
-6. Use `groups` as Name and as `Token claim name`.
-7. Toggle all selectors to On except `Full group path`.
-8. Click `Save`.
+
+## Dependency-Track Part (if using Keycloak for Dependency-Track auth)
+1. Log in to Dependency-Track as administrative user.
+2. Open the `Administration` view from the menu on the left.
+3. Click `Access Management` and select `OpenID Connect Groups`.
+4. Create groups based on desired Keycloak groups and map them to corresponding Dependency-Track teams.
 
 You should now be able to login to ReARM using your Microsoft identities.
