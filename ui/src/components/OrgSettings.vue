@@ -611,13 +611,29 @@ const notify = async function (type: NotificationType, title: string, content: s
     })
 }
 
-onMounted(() => {
+onMounted(async () => {
     store.dispatch('fetchComponents', orgResolved.value)
     store.dispatch('fetchResourceGroups', orgResolved.value)
     if (false && myUser.value.installationType !== 'OSS') initializeResourceGroup()
     loadConfiguredIntegrations(true)
     loadCiIntegrations(true)
     isWritable.value = commonFunctions.isWritable(orgResolved.value, myUser.value, 'ORG')
+    
+    // Load data for the current tab (from URL or default) without router update
+    const tabName = currentTab.value
+    if (tabName === "users") {
+        await loadUsers()
+        loadInvitedUsers(true)
+    } else if (tabName === "userGroups") {
+        await loadUsers() // Load users for the user selection dropdown
+        loadUserGroups()
+    } else if (tabName === "programmaticAccess") {
+        await loadUsers()
+        loadProgrammaticAccessKeys(true)
+    } else if (tabName === "approvalPolicies") {
+        fetchApprovalEntries()
+        fetchApprovalPolicies()
+    }
 })
 
 const showOrgApiKeyModal = ref(false)
