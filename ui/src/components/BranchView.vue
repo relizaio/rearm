@@ -192,7 +192,7 @@
                 v-model:show="showReleaseModal"
                 preset="dialog"
                 :show-icon="false" >
-                <release-view :uuidprop="showReleaseUuid" @closeRelease="showReleaseModal=false" />
+                <release-view :uuidprop="showReleaseUuid" @closeRelease="closeReleaseModal" />
             </n-modal>
         </div>
         <n-modal
@@ -413,9 +413,31 @@ const archiveBranch = async function() {
 
 const showReleaseModal: Ref<boolean> = ref(false)
 const showReleaseUuid: Ref<string> = ref('')
+
+// Initialize release modal from URL query parameter
+if (route.query.release) {
+    showReleaseUuid.value = route.query.release as string
+    showReleaseModal.value = true
+}
 const showRelease = async function(uuid: string) {
     showReleaseUuid.value = uuid
     showReleaseModal.value = true
+    
+    // Update router query parameter
+    await router.push({
+        query: { ...route.query, release: uuid }
+    })
+}
+
+const closeReleaseModal = async function() {
+    showReleaseModal.value = false
+    showReleaseUuid.value = ''
+    
+    // Remove release query parameter from URL
+    const { release, ...queryWithoutRelease } = route.query
+    await router.push({
+        query: queryWithoutRelease
+    })
 }
 
 const cloneReleaseToFsObj = ref({
