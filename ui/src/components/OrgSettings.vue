@@ -1193,7 +1193,7 @@ const userGroupFields = [
             if (userCount > 0 && row.userDetails) {
                 const userList = row.userDetails.map((u: any) => `${u.name} (${u.email})`).join('\n')
                 return h('div', [
-                    h('span', `${userCount} users`),
+                    h('span', `${userCount} ${userCount === 1 ? 'user' : 'users'}`),
                     h(
                         NTooltip,
                         {
