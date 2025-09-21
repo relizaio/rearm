@@ -128,7 +128,12 @@
                             </template>
                             <strong>UUID: </strong> {{ releaseUuid }} 
                             <Icon class="clickable" style="margin-left: 5px;" size="14" @click="copyToClipboard(releaseUuid)"><Copy20Regular/></Icon> 
-                            <div v-if="purl"><strong>PURL:</strong> {{ purl }}</div>
+                            <div v-if="updatedRelease.identifiers && updatedRelease.identifiers.length > 0">
+                                <strong>Identifiers:</strong>
+                                <div v-for="identifier in updatedRelease.identifiers" :key="identifier.idType + identifier.idValue" style="margin-left: 20px;">
+                                    <strong>{{ identifier.idType }}:</strong> {{ identifier.idValue }}
+                                </div>
+                            </div>
                             <div><strong>Marketing Version: </strong>{{ updatedRelease && updatedRelease.marketingVersion ? updatedRelease.marketingVersion : 'Not Set' }}</div>
                             <div class=""><strong>Organization:</strong> {{ release.orgDetails.name }}</div>
                             <div class="" v-if="updatedRelease.endpoint">
