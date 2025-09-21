@@ -82,8 +82,8 @@
                     v-model:value="deliverable.softwareMetadata.downloadLinks"
                     :on-create="onCreateDownloadLink">
                     <template #default="{ value }">
-                        <n-input v-model:value="value.uri" type="text" />
-                        <n-input v-model:value="value.content" type="text" />
+                        <n-input v-model:value="value.uri" placeholder="Enter download link URI" type="text" />
+                        <n-input v-model:value="value.content" placeholder="Enter download link content" type="text" />
                     </template>
                 </n-dynamic-input>
             </n-form-item>
