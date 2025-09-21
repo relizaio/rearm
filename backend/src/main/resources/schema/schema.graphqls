@@ -1698,7 +1698,7 @@ enum IdentifierType {
 
 enum TeaArtifactChecksumType {
 	MD5
-	SHA1
+	SHA_1
 	SHA_256
 	SHA_384
 	SHA_512
