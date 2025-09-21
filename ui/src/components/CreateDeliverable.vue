@@ -152,7 +152,8 @@ interface Deliverable {
 
 interface DigestRecord {
     algo: string,
-    digest: string
+    digest: string,
+    scope: string
 }
 
 interface SoftwareMetadata {
@@ -258,7 +259,8 @@ function onCreateIdentifier () {
 function onCreateDigestRecords () {
     return {
         algo: '',
-        digest: ''
+        digest: '',
+        scope: 'ORIGINAL_FILE'
     } as DigestRecord
 }
 

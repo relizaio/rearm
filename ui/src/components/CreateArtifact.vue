@@ -146,7 +146,8 @@ const artifactTags: Ref<Tag[]> = ref([])
 
 type DigestRecord = {
     algo: string,
-    digest: string
+    digest: string,
+    scope: 'ORIGINAL_FILE'
 }
 
 
@@ -298,7 +299,8 @@ const onCreateDownloadLinks = () => {
 const onCreateDigests = () => {
     return {
         algo: '',
-        digest: ''
+        digest: '',
+        scope: 'ORIGINAL_FILE'
     } as DigestRecord
 }
 
