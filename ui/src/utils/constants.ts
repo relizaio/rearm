@@ -56,7 +56,7 @@ enum TeaArtifactChecksumType {
 
 const TEA_ARTIFACT_CHECKSUM_TYPES = [
     {value: 'MD5', label: 'MD5'},
-    {value: 'SHA1', label: 'SHA1'},
+    {value: 'SHA_1', label: 'SHA1'},
     {value: 'SHA_256', label: 'SHA_256'},
     {value: 'SHA_384', label: 'SHA_384'},
     {value: 'SHA_512', label: 'SHA_512'},
