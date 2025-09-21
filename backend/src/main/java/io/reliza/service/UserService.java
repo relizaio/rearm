@@ -574,12 +574,13 @@ public class UserService {
 	@Transactional
 	public boolean removeUserFromOrg(UUID orgUuid, UUID userUuid, WhoUpdated wu) {
 		boolean removed = false;
-		Optional<User> ou = getUser(userUuid);
+		Optional<User> ou = repository.findByIdWriteLocked(userUuid);
 		if (ou.isPresent()) {
 			UserData ud = UserData.dataFromRecord(ou.get());
 			removed = ud.removeOrganization(orgUuid);
 			if (removed) {
 				ud.revokeAllOrgPermissions(orgUuid);
+				userGroupService.removeUserFromAllGroupsInOrg(userUuid, orgUuid, wu);
 			}
 			componentService.handleRemoveUserFromTriggers(orgUuid, userUuid, wu);
 			saveUser(ou.get(), Utils.dataToRecord(ud), wu);

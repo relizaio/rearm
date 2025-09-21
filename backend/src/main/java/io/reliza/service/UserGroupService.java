@@ -136,7 +136,7 @@ public class UserGroupService {
 	/**
 	 * Adds a user to a user group
 	 */
-	protected UserGroupData addUserToGroup(UUID groupUuid, UUID userUuid, WhoUpdated wu) {
+	public UserGroupData addUserToGroup(UUID groupUuid, UUID userUuid, WhoUpdated wu) {
 		Optional<UserGroup> existingGroup = userGroupRepository.findById(groupUuid);
 		if (existingGroup.isEmpty()) {
 			throw new IllegalArgumentException("User group not found: " + groupUuid);
@@ -154,9 +154,19 @@ public class UserGroupService {
 	}
 	
 	/**
+	 * Removes a user from all user groups in an organization
+	 */
+	public void removeUserFromAllGroupsInOrg(UUID userUuid, UUID orgUuid, WhoUpdated wu) {
+		List<UserGroupData> userGroups = getUserGroupsByUserAndOrg(userUuid, orgUuid);
+		for (UserGroupData group : userGroups) {
+			removeUserFromGroup(group.getUuid(), userUuid, wu);
+		}
+	}
+	
+	/**
 	 * Removes a user from a user group
 	 */
-	protected UserGroupData removeUserFromGroup(UUID groupUuid, UUID userUuid, WhoUpdated wu) {
+	public UserGroupData removeUserFromGroup(UUID groupUuid, UUID userUuid, WhoUpdated wu) {
 		Optional<UserGroup> existingGroup = userGroupRepository.findById(groupUuid);
 		if (existingGroup.isEmpty()) {
 			throw new IllegalArgumentException("User group not found: " + groupUuid);
