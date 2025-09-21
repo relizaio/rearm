@@ -83,7 +83,7 @@
                     :on-create="onCreateDownloadLinks">
                     <template #default="{ value }">
                         <n-input v-model:value="value.uri" type="text" placeholder='uri'/>
-                        <n-select :options="contentTypes" v-model:value="value.content" placeholder='select content type'/>
+                        <n-select :options="constants.ContentTypes" v-model:value="value.content" placeholder='select content type'/>
                     </template>
                 </n-dynamic-input>
             </n-form-item>
@@ -404,12 +404,6 @@ const bomFormats = [
     {value: 'SPDX', label: 'SPDX'},
 ]
 
-const contentTypes = [
-    {value: 'OCI', label: 'OCI'},
-    {value: 'PLAIN_JSON', label: 'Plain JSON'},
-    {value: 'OCTET_STREAM', label: 'Octet Stream'},
-    {value: 'PLAIN_XML', label: 'Plain XML'},
-]
 
 
 

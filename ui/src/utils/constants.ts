@@ -69,6 +69,13 @@ const TEA_ARTIFACT_CHECKSUM_TYPES = [
     {value: 'BLAKE3', label: 'BLAKE3'},
 ]
 
+const CONTENT_TYPES = [
+    {value: 'OCI', label: 'OCI'},
+    {value: 'PLAIN_JSON', label: 'Plain JSON'},
+    {value: 'OCTET_STREAM', label: 'Octet Stream'},
+    {value: 'PLAIN_XML', label: 'Plain XML'},
+]
+
 export default {
     VersionTypes: VERSION_TYPES,
     ExternalPublicComponentsOrg: EXTERNAL_PUBLIC_COMPONENTS_ORG,
@@ -89,5 +96,6 @@ export default {
     CpuArchitectures: CPU_ARCHITECTURES.map((pt: string) => {return {label: pt, value: pt}}),
     LifecycleOptions: LIFECYCLE_OPTIONS,
     TeaArtifactChecksumType,
-    TeaArtifactChecksumTypes: TEA_ARTIFACT_CHECKSUM_TYPES
+    TeaArtifactChecksumTypes: TEA_ARTIFACT_CHECKSUM_TYPES,
+    ContentTypes: CONTENT_TYPES
 }

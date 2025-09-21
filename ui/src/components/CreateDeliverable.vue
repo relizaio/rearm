@@ -83,7 +83,7 @@
                     :on-create="onCreateDownloadLink">
                     <template #default="{ value }">
                         <n-input v-model:value="value.uri" placeholder="Enter download link URI" type="text" />
-                        <n-input v-model:value="value.content" placeholder="Enter download link content" type="text" />
+                        <n-select :options="constants.ContentTypes" v-model:value="value.content" placeholder="Select content type" />
                     </template>
                 </n-dynamic-input>
             </n-form-item>
