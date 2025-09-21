@@ -159,6 +159,7 @@
                                 </a>
                             </div>
                         </n-tooltip>
+                        <Icon v-if="updatedRelease.lifecycle === 'DRAFT' && isWritable" @click="openEditIdentifiersModal" class="clickable" style="margin-left:10px;" size="16" title="Edit Release Identifiers"><Edit24Regular/></Icon>
                         <router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
                             <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
                         </router-link>
@@ -490,6 +491,31 @@
             </n-form-item>
             <n-button @click="submitForm">Submit</n-button>
         </n-modal>
+        <n-modal
+            v-model:show="showEditIdentifiersModal"
+            title='Edit Release Identifiers'
+            preset="dialog"
+            style="width: 70%;"
+            :show-icon="false">
+            <n-form>
+                <n-form-item label="Release Identifiers">
+                    <n-dynamic-input v-model:value="updatedRelease.identifiers" :on-create="onCreateIdentifier">
+                        <template #create-button-default>
+                            Add Identifier
+                        </template>
+                        <template #default="{ value }">
+                            <n-select style="width: 200px;" v-model:value="value.idType"
+                                :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
+                            <n-input type="text" minlength="100" v-model:value="value.idValue" placeholder="Enter identifier value" />
+                        </template>
+                    </n-dynamic-input>
+                </n-form-item>
+                <n-space>
+                    <n-button type="success" @click="saveIdentifiers">Save Changes</n-button>
+                    <n-button @click="cancelIdentifierEdit">Cancel</n-button>
+                </n-space>
+            </n-form>
+        </n-modal>
     </div>
     
 
@@ -511,13 +537,13 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
-import { GlobeAdd24Regular, Info24Regular } from '@vicons/fluent'
+import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { CirclePlus, ClipboardCheck, Download, Edit, GitCompare, Link, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, NotificationType, DataTableColumns, NModal } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -713,6 +739,8 @@ const exportSbomWithConfig = async function() {
 const showMarketingVersionModal: Ref<boolean> = ref(false)
 const nextMarketingVersion: Ref<string> = ref(release.value.marketingVersion)
 const updatedMarketingVersion: Ref<string> = ref(release.value.marketingVersion ?? nextMarketingVersion.value)
+
+const showEditIdentifiersModal: Ref<boolean> = ref(false)
 const openMarketingVersionModal = async function(){
     await getNextVersion(release.value.branchDetails.uuid)
     showMarketingVersionModal.value = true
@@ -764,6 +792,39 @@ const setMarketingVersion = async function (){
     }
 
 }
+
+const onCreateIdentifier = () => {
+    return {
+        idType: '',
+        idValue: ''
+    }
+}
+
+const openEditIdentifiersModal = () => {
+    // Initialize identifiers array if it doesn't exist
+    if (!updatedRelease.value.identifiers) {
+        updatedRelease.value.identifiers = []
+    }
+    showEditIdentifiersModal.value = true
+}
+
+const saveIdentifiers = async () => {
+    try {
+        await save()
+        showEditIdentifiersModal.value = false
+        notify('success', 'Saved', 'Release identifiers updated successfully.')
+    } catch (error: any) {
+        console.error('Error saving identifiers:', error)
+        notify('error', 'Error', 'Failed to save release identifiers.')
+    }
+}
+
+const cancelIdentifierEdit = () => {
+    // Restore original identifiers from server data
+    updatedRelease.value.identifiers = JSON.parse(JSON.stringify(release.value.identifiers || []))
+    showEditIdentifiersModal.value = false
+}
+
 function deepCopyRelease (rlz: any) {
     return JSON.parse(JSON.stringify(rlz))
 }

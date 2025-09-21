@@ -1146,7 +1146,8 @@ const storeObject : any = {
                 org: release.org,
                 sourceCodeEntry: release.sourceCodeEntry,
                 uuid: release.uuid,
-                version: release.version
+                version: release.version,
+                identifiers: release.identifiers || []
             }
             if (release.parentReleases && release.parentReleases.length) {
                 console.log(release.parentReleases)
