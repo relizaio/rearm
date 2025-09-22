@@ -54,6 +54,7 @@ export default function Home() {
             {[
               "dtrack.png",
               "cdx.png",
+              "spdx.png",
               "ado.png",
               "github.png",
               "gitlab.png",
