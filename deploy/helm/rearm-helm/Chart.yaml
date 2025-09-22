@@ -4,7 +4,7 @@ description: ReARM Helm chart for Kubernetes
 
 type: application
 
-version: 0.0.22
+version: 0.0.23
 
 appVersion: "25.09.37"
 
