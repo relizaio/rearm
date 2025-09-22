@@ -46,7 +46,7 @@ spec:
               containerPort: 5432
               protocol: TCP
           volumeMounts:
-          - mountPath: "/bitnami/postgresql"
+          - mountPath: "/relizaio/postgresql"
             name: keycloak-postgres-data
           - mountPath: "/docker-entrypoint-initdb.d"
             name: init-volume

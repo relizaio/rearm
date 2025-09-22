@@ -68,7 +68,7 @@ spec:
           ports:
           - containerPort: 5432
           volumeMounts:
-          - mountPath: "/bitnami/postgresql"
+          - mountPath: "/relizaio/postgresql"
             name: postgres-data
             subPath: postgres
   volumeClaimTemplates:
