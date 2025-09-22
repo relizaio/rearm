@@ -6,7 +6,7 @@ type: application
 
 version: 0.0.22
 
-appVersion: "25.08.115"
+appVersion: "25.09.37"
 
 dependencies:
 - name: reliza-postgresql
