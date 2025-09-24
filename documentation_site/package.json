@@ -11,6 +11,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "vitepress": "1.6.3"
+    "vitepress": "1.6.4"
   }
 }
