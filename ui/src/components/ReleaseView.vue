@@ -1389,7 +1389,7 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                             violationDetails {
                                 purl
                                 type
-                                License
+                                license
                                 violationDetails
                             }
                             weaknessDetails {

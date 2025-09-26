@@ -37,7 +37,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         id: violation.type,
         purl: violation.purl,
         severity: '-',
-        details: `${violation.type}: ${violation.License || ''} ${violation.violationDetails || ''}`.trim(),
+        details: `${violation.type}: ${violation.license || ''} ${violation.violationDetails || ''}`.trim(),
         location: '-',
         fingerprint: '-'
       })
