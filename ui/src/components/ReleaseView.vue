@@ -1385,12 +1385,30 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                 purl
                                 vulnId
                                 severity
+                                aliases {
+                                    type
+                                    aliasId
+                                }
+                                sources {
+                                    artifact
+                                    release
+                                    variant
+                                }
+                                severities {
+                                    source
+                                    severity
+                                }
                             }
                             violationDetails {
                                 purl
                                 type
                                 license
                                 violationDetails
+                                sources {
+                                    artifact
+                                    release
+                                    variant
+                                }
                             }
                             weaknessDetails {
                                 cweId
@@ -1398,6 +1416,11 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                 location
                                 fingerprint
                                 severity
+                                sources {
+                                    artifact
+                                    release
+                                    variant
+                                }
                             }
                         }
                     }
