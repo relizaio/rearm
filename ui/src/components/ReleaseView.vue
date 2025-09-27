@@ -1335,7 +1335,7 @@ const currentReleaseArtifacts: Ref<any[]> = ref([])
 const currentReleaseOrgUuid: Ref<string> = ref('')
 const currentDtrackProjectUuids: Ref<string[]> = ref([])
 
-const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, {
+const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, RouterLink, {
     hasKnownDependencyTrackIntegration: () => ReleaseVulnerabilityService.hasKnownDependencyTrackIntegration(currentReleaseArtifacts.value),
     getArtifacts: () => currentReleaseArtifacts.value,
     getOrgUuid: () => currentReleaseOrgUuid.value,
@@ -1399,6 +1399,9 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                             name
                                         }
                                     }
+                                    artifactDetails {
+                                        type
+                                    }
                                 }
                                 severities {
                                     source
@@ -1420,6 +1423,9 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                             name
                                         }
                                     }
+                                    artifactDetails {
+                                        type
+                                    }
                                 }
                             }
                             weaknessDetails {
@@ -1437,6 +1443,9 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                         componentDetails {
                                             name
                                         }
+                                    }
+                                    artifactDetails {
+                                        type
                                     }
                                 }
                             }

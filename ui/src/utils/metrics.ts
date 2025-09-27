@@ -13,6 +13,7 @@ export type DetailedMetric = {
   fingerprint: string
   aliases?: any[]
   severities?: any[]
+  sources?: any[]
 }
 
 // Helper function to create vulnerability links with confirmation dialog
@@ -91,6 +92,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         details: vuln.vulnId,
         aliases: vuln.aliases,
         severities: vuln.severities,
+        sources: vuln.sources,
         location: '-',
         fingerprint: '-'
       })
@@ -105,6 +107,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         purl: violation.purl,
         severity: '-',
         details: `${violation.type}: ${violation.license || ''} ${violation.violationDetails || ''}`.trim(),
+        sources: violation.sources,
         location: '-',
         fingerprint: '-'
       })
@@ -119,6 +122,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         purl: weakness.location,
         severity: weakness.severity,
         details: weakness.ruleId,
+        sources: weakness.sources,
         location: weakness.location,
         fingerprint: weakness.fingerprint
       })
@@ -134,6 +138,7 @@ export function buildVulnerabilityColumns(
   NTag: any,
   NTooltip: any,
   NIcon: any,
+  RouterLink?: any,
   options?: {
     hasKnownDependencyTrackIntegration?: () => boolean
     getArtifacts?: () => any[]
@@ -304,6 +309,54 @@ export function buildVulnerabilityColumns(
         }
         
         return elements.length > 0 ? h('span', {}, elements) : '-'
+      }
+    },
+    {
+      title: 'Sources',
+      key: 'sources',
+      width: 350,
+      ellipsis: { tooltip: true },
+      render: (row: any) => {
+        if (!row.sources || row.sources.length === 0) return '-'
+        
+        const sourceElements = row.sources.map((source: any, index: number) => {
+          const elements = []
+          
+          // Add release information with link if available
+          if (elements.length > 0) elements.push(h('br'))
+          if (source.release && source.releaseDetails && source.releaseDetails.componentDetails) {
+            const releaseText = `${source.releaseDetails.componentDetails.name || 'Unknown'} ${source.releaseDetails.version || ''}, `
+            
+            if (RouterLink && options?.getOrgUuid) {
+              const releaseLink = h(RouterLink, {
+                to: {
+                  name: 'ReleaseView',
+                  params: {
+                    uuid: source.release
+                  }
+                },
+                style: 'text-decoration: none; color: #0066cc;'
+              }, () => releaseText)
+              elements.push(releaseLink)
+            } else {
+              elements.push(h('span', {}, releaseText))
+            }
+          }
+          
+          // Add artifact type information
+          if (source.artifactDetails?.type) {
+            elements.push(h('span', {}, `${source.artifactDetails.type}`))
+          }
+          
+          // Add separator between sources (except for the last one)
+          if (index < row.sources.length - 1) {
+            elements.push(h('hr', { style: 'margin: 8px 0; border: none; border-top: 1px solid #eee;' }))
+          }
+          
+          return elements
+        }).flat()
+        
+        return h('div', {}, sourceElements)
       }
     }
   ]
