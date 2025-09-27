@@ -191,7 +191,8 @@
                 style="min-height: 95vh; background-color: white;" 
                 v-model:show="showReleaseModal"
                 preset="dialog"
-                :show-icon="false" >
+                :show-icon="false"
+                :on-after-leave="closeReleaseModal">
                 <release-view :uuidprop="showReleaseUuid" @closeRelease="closeReleaseModal" />
             </n-modal>
         </div>
