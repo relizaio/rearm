@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -53,8 +54,12 @@ import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.TextPayload;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.IntegrationWebDto;
+import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
+import io.reliza.model.dto.ReleaseMetricsDto.SeveritySourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationType;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasType;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.dto.TriggerIntegrationInputDto;
@@ -543,9 +548,9 @@ public class IntegrationService {
 		String dtrackProject = ad.getMetrics().getDependencyTrackProject();
 		DependencyTrackIntegration dti = new DependencyTrackIntegration();
 		List<VulnerabilityDto> vulnerabilityDetails = fetchDependencyTrackVulnerabilityDetails(
-				dtrackBaseUri, apiToken, dtrackProject);
+				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid());
 		List<ViolationDto> violationDetails = fetchDependencyTrackViolationDetails(
-				dtrackBaseUri, apiToken, dtrackProject);
+				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid());
 		dti.setVulnerabilityDetails(vulnerabilityDetails);
 		dti.setViolationDetails(violationDetails);
 		dti.computeMetricsFromFacts();
@@ -562,13 +567,16 @@ public class IntegrationService {
 	private record DtrackComponentRaw(String purl, DtrackResolvedLicenseRaw resolvedLicense) {}
 	
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	private record DtrackVulnRaw (String vulnId, VulnerabilitySeverity severity, List<DtrackComponentRaw> components) {}
+	private record DtrackAliasRaw(String cveId, String ghsaId, String uuid) {}
+
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	private record DtrackVulnRaw (String vulnId, VulnerabilitySeverity severity, List<DtrackComponentRaw> components, List<DtrackAliasRaw> aliases) {}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
 	
 	private List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject) throws JsonMappingException, JsonProcessingException {
+			String apiToken, String dtrackProject, UUID artifactUuid) throws JsonMappingException, JsonProcessingException {
 		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject + "?pageNumber=1&pageSize=10000");
 		var resp = dtrackWebClient
 				.get()
@@ -580,10 +588,26 @@ public class IntegrationService {
 		@SuppressWarnings("unchecked")
 		List<Object> vulnDetailsRaw = Utils.OM.readValue(resp.getBody(), List.class);
 		List<VulnerabilityDto> vulnerabilityDetails = new LinkedList<>();
+		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		vulnDetailsRaw.forEach(vd -> {
 			DtrackVulnRaw dvr = Utils.OM.convertValue(vd, DtrackVulnRaw.class);
+			Set<VulnerabilityAliasDto> aliases = new LinkedHashSet<>();
+			if (null != dvr.aliases() && !dvr.aliases().isEmpty()) {
+				dvr.aliases().forEach(a -> {
+					if (a.cveId() != null && !a.cveId().trim().isEmpty()) {
+						aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.CVE, a.cveId()));
+					}
+					if (a.ghsaId() != null && !a.ghsaId().trim().isEmpty()) {
+						aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.GHSA, a.ghsaId()));
+					}
+				});
+			}
+			
+			// Create severity source based on the main vulnerability ID
+			SeveritySourceDto severitySource = Utils.createSeveritySourceDto(dvr.vulnId(), dvr.severity());
+			
 			dvr.components().forEach(c -> {
-				VulnerabilityDto vdto = new VulnerabilityDto(c.purl(), dvr.vulnId(), dvr.severity());
+				VulnerabilityDto vdto = new VulnerabilityDto(c.purl(), dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource));
 				vulnerabilityDetails.add(vdto);
 			});
 		});
@@ -591,7 +615,7 @@ public class IntegrationService {
 	}
 	
 	private List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject) throws JsonMappingException, JsonProcessingException {
+			String apiToken, String dtrackProject, UUID artifactUuid) throws JsonMappingException, JsonProcessingException {
 		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject + "?pageNumber=1&pageSize=10000");
 		var resp = dtrackWebClient
 				.get()
@@ -603,11 +627,13 @@ public class IntegrationService {
 		@SuppressWarnings("unchecked")
 		List<Object> violationDetailsRaw = Utils.OM.readValue(resp.getBody(), List.class);
 		List<ViolationDto> violationDetails = new LinkedList<>();
+		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
+		final Set<FindingSourceDto> sources = Set.of(source);
 		violationDetailsRaw.forEach(vd -> {
 			DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
 			String licenseId = (null != dvr.component().resolvedLicense()) ? dvr.component().resolvedLicense().licenseId() : "undetected";
 			ViolationDto vdto = new ViolationDto(dvr.component().purl(), dvr.type(),
-					licenseId, null);
+					licenseId, null, sources);
 			violationDetails.add(vdto);
 		});
 		return violationDetails;

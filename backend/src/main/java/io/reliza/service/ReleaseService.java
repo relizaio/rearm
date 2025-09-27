@@ -92,6 +92,7 @@ import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ComponentJsonDto.ComponentJsonDtoBuilder;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.Rebom.RebomOptions;
@@ -1557,7 +1558,9 @@ public class ReleaseService {
 			try {
 				ReleaseData parentRd = sharedReleaseService
 						.getReleaseData(r.getRelease(), rd.getOrg()).get();
-				rmd.mergeWithByContent(parentRd.getMetrics());
+				ReleaseMetricsDto parentReleaseMetrics = parentRd.getMetrics();
+				parentReleaseMetrics.enrichSourcesWithRelease(r.getRelease());
+				rmd.mergeWithByContent(parentReleaseMetrics);
 			} catch (RelizaException e) {
 				log.error("Error on getting parent release", e);
 			}

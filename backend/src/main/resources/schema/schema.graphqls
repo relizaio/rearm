@@ -880,17 +880,50 @@ enum VulnerabilitySeverity {
 	UNASSIGNED
 }
 
+enum VulnerabilityAliasType {
+	CVE
+	GHSA
+}
+
+enum SeveritySource {
+	NVD
+	GHSA
+	OTHER
+}
+
+type FindingSourceDto {
+	artifact: ID
+	release: ID
+	variant: ID
+	releaseDetails: Release
+	artifactDetails: Artifact
+}
+
+type VulnerabilityAliasDto {
+	type: VulnerabilityAliasType
+	aliasId: String
+}
+
+type SeveritySourceDto {
+	source: SeveritySource
+	severity: VulnerabilitySeverity
+}
+
 type Vulnerability {
 	purl: String
 	vulnId: String
 	severity: VulnerabilitySeverity
+	aliases: [VulnerabilityAliasDto]
+	sources: [FindingSourceDto]
+	severities: [SeveritySourceDto]
 }
 
 type Violation {
 	purl: String
 	type: ViolationType
-	License: String
+	license: String
 	violationDetails: String
+	sources: [FindingSourceDto]
 }
 
 type Weakness {
@@ -899,6 +932,7 @@ type Weakness {
 	location: String
 	fingerprint: String
 	severity: VulnerabilitySeverity
+	sources: [FindingSourceDto]
 }
 
 type SearchDigestVersionResponse {

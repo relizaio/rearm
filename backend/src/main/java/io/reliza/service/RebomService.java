@@ -4,8 +4,10 @@
 package io.reliza.service;
 
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +27,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.WeaknessDto;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
@@ -301,7 +304,7 @@ public class RebomService {
         return UUID.fromString(bomSerialNumber);
     }
 
-    public ReleaseMetricsDto parseSarifOnRebom(String sarifContent) {
+    public ReleaseMetricsDto parseSarifOnRebom(String sarifContent, UUID artifactUuid) {
         String query = """
             query parseSarifContent($sarifContent: String!) {
                 parseSarifContent(sarifContent: $sarifContent) {
@@ -322,6 +325,8 @@ public class RebomService {
         // Directly convert to WeaknessDto using a custom TypeReference
         List<Map<String, Object>> rawWeaknesses = Utils.OM.convertValue(weaknessesResponse, new TypeReference<List<Map<String, Object>>>() {});
         
+        final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
+        
         ReleaseMetricsDto rmd = new ReleaseMetricsDto();
         
         // Map raw response to WeaknessDto objects
@@ -331,7 +336,8 @@ public class RebomService {
                 (String) w.get("ruleId"), 
                 (String) w.get("location"), 
                 (String) w.get("fingerprint"), 
-                mapSeverity((String) w.get("severity"))
+                mapSeverity((String) w.get("severity")),
+                Set.of(source)
             ))
             .toList();
         
@@ -341,7 +347,7 @@ public class RebomService {
         return rmd;
     }
     
-    public ReleaseMetricsDto parseCycloneDxContent(String vdrContent) {
+    public ReleaseMetricsDto parseCycloneDxContent(String vdrContent, UUID artifactUuid) {
         String query = """
             query parseCycloneDxContent($vdrContent: String!) {
                 parseCycloneDxContent(vdrContent: $vdrContent) {
@@ -360,12 +366,22 @@ public class RebomService {
         List<Map<String, Object>> rawVulns = Utils.OM.convertValue(vulnsResponse, new TypeReference<List<Map<String, Object>>>() {});
         
         ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+        final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
         List<ReleaseMetricsDto.VulnerabilityDto> vulnerabilityDtos = rawVulns.stream()
-            .map(v -> new ReleaseMetricsDto.VulnerabilityDto(
-                (String) v.get("purl"),
-                (String) v.get("vulnId"),
-                mapSeverity((String) v.get("severity"))
-            ))
+            .map(v -> {
+                String vulnId = (String) v.get("vulnId");
+                ReleaseMetricsDto.VulnerabilitySeverity severity = mapSeverity((String) v.get("severity"));
+                ReleaseMetricsDto.SeveritySourceDto severitySource = Utils.createSeveritySourceDto(vulnId, severity);
+                
+                return new ReleaseMetricsDto.VulnerabilityDto(
+                    (String) v.get("purl"),
+                    vulnId,
+                    severity,
+                    new LinkedHashSet<>(),
+                    Set.of(source),
+                    Set.of(severitySource)
+                );
+            })
             .toList();
         rmd.setVulnerabilityDetails(vulnerabilityDtos);
         rmd.computeMetricsFromFacts();

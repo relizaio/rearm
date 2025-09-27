@@ -34,9 +34,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
+import com.netflix.graphql.dgs.DgsDataLoader;
 import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
+
+import org.dataloader.BatchLoader;
+import org.dataloader.DataLoader;
+import org.dataloader.MappedBatchLoader;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.AuthPrincipalType;
@@ -73,6 +80,7 @@ import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ReleaseDto;
+import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.tea.Rebom.RebomOptions;
@@ -1030,9 +1038,15 @@ public class ReleaseDatafetcher {
 	}
 	
 	@DgsData(parentType = "Release", field = "componentDetails")
-	public ComponentData projectOfRelease(DgsDataFetchingEnvironment dfe) {
+	public CompletionStage<Optional<ComponentData>> projectOfRelease(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
-		return getComponentService.getComponentData(rd.getComponent()).get();
+		
+		if (rd.getComponent() == null) {
+			return CompletableFuture.completedFuture(Optional.empty());
+		}
+		
+		DataLoader<ComponentKey, Optional<ComponentData>> dataLoader = dfe.getDataLoader("componentDetailsLoader");
+		return dataLoader.load(new ComponentKey(rd.getComponent()));
 	}
 	
 	@DgsData(parentType = "Release", field = "sourceCodeEntryDetails")
@@ -1100,17 +1114,6 @@ public class ReleaseDatafetcher {
 		return rd.getParentReleases().stream().map(x -> new ParentReleaseDto(x.getRelease(), rd.getOrg())).toList();
 	}
 	
-	@DgsData(parentType = "ParentRelease", field = "releaseDetails")
-	public Optional<ReleaseData> releaseDetailsOfParentRelease (DgsDataFetchingEnvironment dfe) {
-		ParentReleaseDto prd = dfe.getSource();
-		Optional<ReleaseData> ord = Optional.empty();
-		try {
-			ord = releaseService.getReleaseData(prd.release(), prd.org());
-		} catch (RelizaException re) {
-			throw new AccessDeniedException(re.getMessage());
-		}
-		return ord;
-	}
 	
 	
 	@DgsData(parentType = "Variant", field = "outboundDeliverableDetails")
@@ -1145,5 +1148,112 @@ public class ReleaseDatafetcher {
 	public AcollectionData collectionOfRelease(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
 		return acollectionService.getLatestCollectionDataOfRelease(rd.getUuid());
+	}
+	
+	// Data loader for release details to batch multiple release lookups
+	@DgsDataLoader(name = "releaseDetailsLoader")
+	public class MappedBatchLoader implements BatchLoader<ReleaseKey, Optional<ReleaseData>> {
+		
+		@Autowired
+		private SharedReleaseService dataLoaderSharedReleaseService;
+		
+		@Override
+		public CompletionStage<List<Optional<ReleaseData>>> load(List<ReleaseKey> keys) {
+			List<Optional<ReleaseData>> results = new ArrayList<>(keys.size());
+			for (ReleaseKey key : keys) {
+				try {
+					Optional<ReleaseData> releaseData = dataLoaderSharedReleaseService.getReleaseData(key.releaseUuid());
+					results.add(releaseData);
+				} catch (Exception e) {
+					log.error("Error loading release data for key: " + key, e);
+					results.add(Optional.empty());
+				}
+			}
+			return CompletableFuture.completedFuture(results);
+		}
+	}
+	
+	public record ReleaseKey(UUID releaseUuid) {}
+	
+	public record ArtifactKey(UUID artifactUuid) {}
+	
+	public record ComponentKey(UUID componentUuid) {}
+	
+	// Data loader for artifact details to batch multiple artifact lookups
+	@DgsDataLoader(name = "artifactDetailsLoader")
+	public class ArtifactDetailsBatchLoader implements BatchLoader<ArtifactKey, Optional<ArtifactData>> {
+		
+		@Autowired
+		private ArtifactService dataLoaderArtifactService;
+		
+		@Override
+		public CompletionStage<List<Optional<ArtifactData>>> load(List<ArtifactKey> keys) {
+			List<Optional<ArtifactData>> results = new ArrayList<>(keys.size());
+			for (ArtifactKey key : keys) {
+				try {
+					Optional<ArtifactData> artifactData = dataLoaderArtifactService.getArtifactData(key.artifactUuid());
+					results.add(artifactData);
+				} catch (Exception e) {
+					log.error("Error loading artifact data for key: " + key, e);
+					results.add(Optional.empty());
+				}
+			}
+			return CompletableFuture.completedFuture(results);
+		}
+	}
+	
+	// Data loader for component details to batch multiple component lookups
+	@DgsDataLoader(name = "componentDetailsLoader")
+	public class ComponentDetailsBatchLoader implements BatchLoader<ComponentKey, Optional<ComponentData>> {
+		
+		@Autowired
+		private GetComponentService dataLoaderGetComponentService;
+		
+		@Override
+		public CompletionStage<List<Optional<ComponentData>>> load(List<ComponentKey> keys) {
+			List<Optional<ComponentData>> results = new ArrayList<>(keys.size());
+			for (ComponentKey key : keys) {
+				try {
+					Optional<ComponentData> componentData = dataLoaderGetComponentService.getComponentData(key.componentUuid());
+					results.add(componentData);
+				} catch (Exception e) {
+					log.error("Error loading component data for key: " + key, e);
+					results.add(Optional.empty());
+				}
+			}
+			return CompletableFuture.completedFuture(results);
+		}
+	}
+	
+	@DgsData(parentType = "FindingSourceDto", field = "releaseDetails")
+	public CompletionStage<Optional<ReleaseData>> releaseDetailsOfFindingSource(DgsDataFetchingEnvironment dfe) {
+		FindingSourceDto source = dfe.getSource();
+		
+		if (source.release() == null) {
+			return CompletableFuture.completedFuture(Optional.empty());
+		}
+		
+		DataLoader<ReleaseKey, Optional<ReleaseData>> dataLoader = dfe.getDataLoader("releaseDetailsLoader");
+		return dataLoader.load(new ReleaseKey(source.release()));
+	}
+
+	@DgsData(parentType = "FindingSourceDto", field = "artifactDetails")
+	public CompletionStage<Optional<ArtifactData>> artifactDetailsOfFindingSource(DgsDataFetchingEnvironment dfe) {
+		FindingSourceDto source = dfe.getSource();
+		
+		if (source.artifact() == null) {
+			return CompletableFuture.completedFuture(Optional.empty());
+		}
+		
+		DataLoader<ArtifactKey, Optional<ArtifactData>> dataLoader = dfe.getDataLoader("artifactDetailsLoader");
+		return dataLoader.load(new ArtifactKey(source.artifact()));
+	}
+	
+	@DgsData(parentType = "ParentRelease", field = "releaseDetails")
+	public CompletionStage<Optional<ReleaseData>> releaseDetailsOfParentRelease(DgsDataFetchingEnvironment dfe) {
+		ParentReleaseDto prd = dfe.getSource();
+		
+		DataLoader<ReleaseKey, Optional<ReleaseData>> dataLoader = dfe.getDataLoader("releaseDetailsLoader");
+		return dataLoader.load(new ReleaseKey(prd.release()));
 	}
 }

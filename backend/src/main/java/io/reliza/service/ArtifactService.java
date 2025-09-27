@@ -183,6 +183,7 @@ public class ArtifactService {
 		}
 		if(oa.isEmpty()){
 			a = new Artifact();
+			if (null != artifactDto.getUuid()) a.setUuid(artifactDto.getUuid());
 		}else {
 			a = oa.get();
 		}
@@ -294,6 +295,7 @@ public class ArtifactService {
 		if(null != artifactDto.getUuid()){
 			existingAd = getArtifactData(artifactDto.getUuid()).get();
 		}
+		if (null == artifactDto.getUuid()) artifactDto.setUuid(UUID.randomUUID());
 
 		if(artifactDto.getStoredIn().equals(StoredIn.REARM)){
 			if(isRebomStoreable(artifactDto)){
@@ -398,7 +400,7 @@ public class ArtifactService {
 					try {
 						var sarifJson = Utils.readJsonFromResource(file);
 						String sarifString = Utils.OM.writeValueAsString(sarifJson);
-						ReleaseMetricsDto rmd = rebomService.parseSarifOnRebom(sarifString);
+						ReleaseMetricsDto rmd = rebomService.parseSarifOnRebom(sarifString, artifactDto.getUuid());
 						artifactDto.setRmd(rmd);
 					} catch (Exception e) {
 						log.error("Error parsing SARIF file", e);
@@ -409,7 +411,7 @@ public class ArtifactService {
 					try {
 						var vdrJson = Utils.readJsonFromResource(file);
 						String vdrString = Utils.OM.writeValueAsString(vdrJson);
-						ReleaseMetricsDto rmd = rebomService.parseCycloneDxContent(vdrString);
+						ReleaseMetricsDto rmd = rebomService.parseCycloneDxContent(vdrString, artifactDto.getUuid());
 						artifactDto.setRmd(rmd);
 					} catch (Exception e) {
 						log.error("Error parsing CycloneDX VDR/BOV file", e);

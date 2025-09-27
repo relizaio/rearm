@@ -10,11 +10,17 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAlias;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -69,15 +75,36 @@ public class ReleaseMetricsDto implements Cloneable {
 		LOW,
 		UNASSIGNED
 	}
+
+	public static record FindingSourceDto (UUID artifact, UUID release, UUID variant) {}
 	
-	public static record ViolationDto (String purl, ViolationType type, String License, String violationDetails) {}
+	public static record ViolationDto (String purl, ViolationType type, 
+		@JsonProperty("license") @JsonAlias("License") String license,
+		String violationDetails, Set<FindingSourceDto> sources) {}
 	
-	public static record VulnerabilityDto (String purl, String vulnId, VulnerabilitySeverity severity) {}
+	public static record VulnerabilityAliasDto (VulnerabilityAliasType type, String aliasId) {}
+
+	public static enum VulnerabilityAliasType {
+		CVE,
+		GHSA
+	}
+
+	public static enum SeveritySource {
+		NVD,
+		GHSA,
+		OTHER
+	}
+
+	public static record SeveritySourceDto (SeveritySource source, VulnerabilitySeverity severity) {}
+
+	public static record VulnerabilityDto (String purl, String vulnId, VulnerabilitySeverity severity,
+		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities) {}
 
 	/**
 	 * We use weaknessDto to store findngs from SARIF parsing
 	 */
-	public static record WeaknessDto (String cweId, String ruleId, String location, String fingerprint, VulnerabilitySeverity severity) {}
+	public static record WeaknessDto (String cweId, String ruleId, String location,
+		String fingerprint, VulnerabilitySeverity severity, Set<FindingSourceDto> sources) {}
 	
 	@Override
     public ReleaseMetricsDto clone() {
@@ -153,8 +180,10 @@ public class ReleaseMetricsDto implements Cloneable {
   	        policyViolationsOperationalAudited, policyViolationsOperationalUnaudited
   	    );
   	}
+
   	
   	public void computeMetricsFromFacts () {
+		organizeVulnerabilitiesWithAliases();
   		int operationalViolations = 0;
   		int securityViolations = 0;
   		int licenseViolations = 0;
@@ -249,6 +278,119 @@ public class ReleaseMetricsDto implements Cloneable {
 	    }
 	}
 	
+	public void enrichSourcesWithRelease(UUID releaseUuid) {
+		if (releaseUuid == null) {
+			return;
+		}
+		
+		// Enrich vulnerability sources with release UUID
+		if (vulnerabilityDetails != null) {
+			List<VulnerabilityDto> enrichedVulnerabilities = new ArrayList<>();
+			for (VulnerabilityDto vuln : vulnerabilityDetails) {
+				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
+				if (vuln.sources() != null) {
+					for (FindingSourceDto existingSource : vuln.sources()) {
+						// If source is missing release UUID, enrich it
+						if (existingSource.release() == null) {
+							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant()));
+						} 
+						// If source has different release UUID, keep original and add new one
+						else if (!releaseUuid.equals(existingSource.release())) {
+							updatedSources.add(existingSource);
+							updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+						}
+						// If source already has matching release UUID, keep as is
+						else {
+							updatedSources.add(existingSource);
+						}
+					}
+				}
+				
+				VulnerabilityDto enrichedVuln = new VulnerabilityDto(
+					vuln.purl(), 
+					vuln.vulnId(), 
+					vuln.severity(), 
+					vuln.aliases(), 
+					updatedSources,
+					vuln.severities()
+				);
+				enrichedVulnerabilities.add(enrichedVuln);
+			}
+			this.vulnerabilityDetails = enrichedVulnerabilities;
+		}
+		
+		// Enrich violation sources with release UUID
+		if (violationDetails != null) {
+			List<ViolationDto> enrichedViolations = new ArrayList<>();
+			for (ViolationDto violation : violationDetails) {
+				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
+				if (violation.sources() != null) {
+					for (FindingSourceDto existingSource : violation.sources()) {
+						// If source is missing release UUID, enrich it
+						if (existingSource.release() == null) {
+							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant()));
+						} 
+						// If source has different release UUID, keep original and add new one
+						else if (!releaseUuid.equals(existingSource.release())) {
+							updatedSources.add(existingSource);
+							updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+						}
+						// If source already has matching release UUID, keep as is
+						else {
+							updatedSources.add(existingSource);
+						}
+					}
+				}
+				
+				ViolationDto enrichedViolation = new ViolationDto(
+					violation.purl(), 
+					violation.type(), 
+					violation.license(), 
+					violation.violationDetails(), 
+					updatedSources
+				);
+				enrichedViolations.add(enrichedViolation);
+			}
+			this.violationDetails = enrichedViolations;
+		}
+		
+		// Enrich weakness sources with release UUID
+		if (weaknessDetails != null) {
+			List<WeaknessDto> enrichedWeaknesses = new ArrayList<>();
+			for (WeaknessDto weakness : weaknessDetails) {
+				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
+				if (weakness.sources() != null) {
+					for (FindingSourceDto existingSource : weakness.sources()) {
+						// If source is missing release UUID, enrich it
+						if (existingSource.release() == null) {
+							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant()));
+						} 
+						// If source has different release UUID, keep original and add new one
+						else if (!releaseUuid.equals(existingSource.release())) {
+							updatedSources.add(existingSource);
+							updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+						}
+						// If source already has matching release UUID, keep as is
+						else {
+							updatedSources.add(existingSource);
+						}
+					}
+				}
+				
+				WeaknessDto enrichedWeakness = new WeaknessDto(
+					weakness.cweId(), 
+					weakness.ruleId(), 
+					weakness.location(), 
+					weakness.fingerprint(), 
+					weakness.severity(), 
+					updatedSources
+				);
+				enrichedWeaknesses.add(enrichedWeakness);
+			}
+			this.weaknessDetails = enrichedWeaknesses;
+		}
+	}
+	
 	private String getVulnKey (VulnerabilityDto vulnDto) {
 		return vulnDto.purl + vulnDto.vulnId;
 	}
@@ -285,6 +427,236 @@ public class ReleaseMetricsDto implements Cloneable {
 			if (!vulnMap.containsKey(xKey)) vulnMap.put(xKey, x);
 		});
 		return new LinkedList<>(vulnMap.values());
+	}
+	
+	private void organizeVulnerabilitiesWithAliases() {
+		if (vulnerabilityDetails == null || vulnerabilityDetails.isEmpty()) {
+			return;
+		}
+		
+		// Create a map to group vulnerabilities by their purl+identifier composite keys
+		Map<String, List<VulnerabilityDto>> purlIdToVulnsMap = new LinkedHashMap<>();
+		
+		// Collect all identifiers for each vulnerability with purl prefix
+		for (VulnerabilityDto vuln : vulnerabilityDetails) {
+			Set<String> allIds = getAllIdentifiers(vuln);
+			for (String id : allIds) {
+				// Create composite key: purl + "|" + id
+				String compositeKey = (vuln.purl() != null ? vuln.purl() : "") + "|" + id;
+				purlIdToVulnsMap.computeIfAbsent(compositeKey, k -> new ArrayList<>()).add(vuln);
+			}
+		}
+		
+		// Find groups of vulnerabilities that share identifiers within the same purl
+		Set<VulnerabilityDto> processed = new HashSet<>();
+		List<VulnerabilityDto> mergedVulnerabilities = new ArrayList<>();
+		
+		for (VulnerabilityDto vuln : vulnerabilityDetails) {
+			if (processed.contains(vuln)) {
+				continue;
+			}
+			
+			// Find all vulnerabilities that should be merged with this one (same purl + shared identifiers)
+			Set<VulnerabilityDto> toMerge = new HashSet<>();
+			toMerge.add(vuln);
+			processed.add(vuln);
+			
+			// Get all identifiers for current vulnerability
+			Set<String> currentIds = getAllIdentifiers(vuln);
+			
+			// Find all other vulnerabilities that share any identifier within the same purl
+			for (String id : currentIds) {
+				String compositeKey = (vuln.purl() != null ? vuln.purl() : "") + "|" + id;
+				List<VulnerabilityDto> vulnsWithId = purlIdToVulnsMap.get(compositeKey);
+				if (vulnsWithId != null) {
+					for (VulnerabilityDto otherVuln : vulnsWithId) {
+						if (!processed.contains(otherVuln) && 
+							Objects.equals(vuln.purl(), otherVuln.purl())) {
+							toMerge.add(otherVuln);
+							processed.add(otherVuln);
+						}
+					}
+				}
+			}
+			
+			// Merge all vulnerabilities in the group
+			VulnerabilityDto merged = mergeVulnerabilityGroup(toMerge);
+			mergedVulnerabilities.add(merged);
+		}
+		
+		// Replace the vulnerability list with merged results
+		vulnerabilityDetails = mergedVulnerabilities;
+	}
+	
+	private Set<String> getAllIdentifiers(VulnerabilityDto vuln) {
+		Set<String> allIds = new HashSet<>();
+		
+		// Add the main vulnerability ID
+		if (vuln.vulnId() != null && !vuln.vulnId().trim().isEmpty()) {
+			allIds.add(vuln.vulnId().trim());
+		}
+		
+		// Add all alias IDs
+		if (vuln.aliases() != null) {
+			for (VulnerabilityAliasDto alias : vuln.aliases()) {
+				if (alias.aliasId() != null && !alias.aliasId().trim().isEmpty()) {
+					allIds.add(alias.aliasId().trim());
+				}
+			}
+		}
+		
+		return allIds;
+	}
+	
+	private VulnerabilityDto mergeVulnerabilityGroup(Set<VulnerabilityDto> vulnerabilities) {
+		if (vulnerabilities.isEmpty()) {
+			return null;
+		}
+		
+		if (vulnerabilities.size() == 1) {
+			// Even for single vulnerabilities, ensure proper ID prioritization
+			VulnerabilityDto singleVuln = vulnerabilities.iterator().next();
+			Set<String> allIds = getAllIdentifiers(singleVuln);
+			String bestPrimaryId = selectBestPrimaryId(allIds);
+			
+			// If the current primary ID is already the best, still check for alias cleanup
+			if (bestPrimaryId.equals(singleVuln.vulnId())) {
+				// Check if any aliases duplicate the primary ID and clean them up
+				Set<VulnerabilityAliasDto> cleanedAliases = new HashSet<>();
+				if (singleVuln.aliases() != null) {
+					for (VulnerabilityAliasDto alias : singleVuln.aliases()) {
+						// Only keep aliases that don't duplicate the primary ID
+						if (alias.aliasId() != null && !alias.aliasId().trim().equals(bestPrimaryId)) {
+							cleanedAliases.add(alias);
+						}
+					}
+				}
+				
+				// Return with cleaned aliases if needed, otherwise return as-is
+				if (singleVuln.aliases() == null || cleanedAliases.size() != singleVuln.aliases().size()) {
+					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), cleanedAliases, singleVuln.sources(), singleVuln.severities());
+				} else {
+					return singleVuln;
+				}
+			}
+			
+			// Otherwise, reorganize with proper primary ID
+			Set<VulnerabilityAliasDto> finalAliases = new HashSet<>();
+			for (String id : allIds) {
+				if (!id.equals(bestPrimaryId)) {
+					VulnerabilityAliasType type = id.startsWith("CVE-") ? VulnerabilityAliasType.CVE : VulnerabilityAliasType.GHSA;
+					finalAliases.add(new VulnerabilityAliasDto(type, id));
+				}
+			}
+			
+			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), finalAliases, singleVuln.sources(), singleVuln.severities());
+		}
+		
+		// Collect all unique identifiers and find the best primary ID (CVE preferred)
+		Set<String> allIds = new HashSet<>();
+		Set<FindingSourceDto> allSources = new HashSet<>();
+		
+		// Use the first vulnerability's purl as base
+		VulnerabilityDto firstVuln = vulnerabilities.iterator().next();
+		String purl = firstVuln.purl();
+		
+		// Collect all data from all vulnerabilities
+		for (VulnerabilityDto vuln : vulnerabilities) {
+			// Collect main ID
+			if (vuln.vulnId() != null && !vuln.vulnId().trim().isEmpty()) {
+				allIds.add(vuln.vulnId().trim());
+			}
+			
+			// Collect aliases
+			if (vuln.aliases() != null) {
+				for (VulnerabilityAliasDto alias : vuln.aliases()) {
+					if (alias.aliasId() != null && !alias.aliasId().trim().isEmpty()) {
+						allIds.add(alias.aliasId().trim());
+					}
+				}
+			}
+			
+			// Collect sources
+			if (vuln.sources() != null) {
+				allSources.addAll(vuln.sources());
+			}
+		}
+		
+		// Find the best primary ID (CVE preferred over GHSA)
+		String primaryId = selectBestPrimaryId(allIds);
+		
+		// Create aliases set excluding the primary ID
+		Set<VulnerabilityAliasDto> finalAliases = new HashSet<>();
+		for (String id : allIds) {
+			if (!id.equals(primaryId)) {
+				// Determine the type based on the ID format
+				VulnerabilityAliasType type = id.startsWith("CVE-") ? VulnerabilityAliasType.CVE : VulnerabilityAliasType.GHSA;
+				finalAliases.add(new VulnerabilityAliasDto(type, id));
+			}
+		}
+		
+		// Collect all severities and determine the best primary severity
+		Set<SeveritySourceDto> allSeverities = new LinkedHashSet<>();
+		for (VulnerabilityDto vuln : vulnerabilities) {
+			if (vuln.severities() != null) {
+				allSeverities.addAll(vuln.severities());
+			}
+		}
+		
+		// Determine the best severity based on source priority
+		VulnerabilitySeverity bestSeverity = selectBestSeverity(allSeverities);
+		
+		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities);
+	}
+	
+	private String selectBestPrimaryId(Set<String> allIds) {
+		// Prefer CVE IDs over GHSA IDs
+		for (String id : allIds) {
+			if (id.startsWith("CVE-")) {
+				return id;
+			}
+		}
+		
+		// If no CVE found, return the first GHSA or any other ID
+		for (String id : allIds) {
+			if (id.startsWith("GHSA-")) {
+				return id;
+			}
+		}
+		
+		// Return any available ID if neither CVE nor GHSA found
+		return allIds.iterator().next();
+	}
+	
+	private VulnerabilitySeverity selectBestSeverity(Set<SeveritySourceDto> severities) {
+		if (severities == null || severities.isEmpty()) {
+			return VulnerabilitySeverity.UNASSIGNED;
+		}
+		
+		// Priority order: NVD > GHSA > OTHER
+		// First, look for NVD severity
+		for (SeveritySourceDto severityDto : severities) {
+			if (severityDto.source() == SeveritySource.NVD) {
+				return severityDto.severity();
+			}
+		}
+		
+		// If no NVD found, look for GHSA severity
+		for (SeveritySourceDto severityDto : severities) {
+			if (severityDto.source() == SeveritySource.GHSA) {
+				return severityDto.severity();
+			}
+		}
+		
+		// If no NVD or GHSA found, use OTHER or any available
+		for (SeveritySourceDto severityDto : severities) {
+			if (severityDto.source() == SeveritySource.OTHER) {
+				return severityDto.severity();
+			}
+		}
+		
+		// Fallback to first available severity
+		return severities.iterator().next().severity();
 	}
   
 	public void mergeWithByMetrics(ReleaseMetricsDto otherRmd) {

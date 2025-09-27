@@ -48,6 +48,9 @@ import com.github.packageurl.PackageURL;
 import com.github.packageurl.PackageURLBuilder;
 
 import io.reliza.common.CommonVariables.AuthHeaderParse;
+import io.reliza.model.dto.ReleaseMetricsDto.SeveritySource;
+import io.reliza.model.dto.ReleaseMetricsDto.SeveritySourceDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
@@ -572,5 +575,29 @@ public class Utils {
 			if (!knownApprovalTypes.contains(approvalToCheck)) isSanitized = false;
 		}
 		return isSanitized;
+	}
+	
+	/**
+	 * Creates a SeveritySourceDto based on vulnerability ID pattern and severity.
+	 * 
+	 * @param vulnId The vulnerability ID to determine the source from
+	 * @param severity The vulnerability severity
+	 * @return SeveritySourceDto with appropriate source (NVD for CVE-, GHSA for GHSA-, OTHER for everything else)
+	 */
+	public static SeveritySourceDto createSeveritySourceDto(String vulnId, VulnerabilitySeverity severity) {
+		if (vulnId == null || severity == null) {
+			return new SeveritySourceDto(SeveritySource.OTHER, severity != null ? severity : VulnerabilitySeverity.UNASSIGNED);
+		}
+		
+		SeveritySource source;
+		if (vulnId.startsWith("CVE-")) {
+			source = SeveritySource.NVD;
+		} else if (vulnId.startsWith("GHSA-")) {
+			source = SeveritySource.GHSA;
+		} else {
+			source = SeveritySource.OTHER;
+		}
+		
+		return new SeveritySourceDto(source, severity);
 	}
 }
