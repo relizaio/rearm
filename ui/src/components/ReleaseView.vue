@@ -1393,6 +1393,12 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                     artifact
                                     release
                                     variant
+                                    releaseDetails {
+                                        version
+                                        componentDetails {
+                                            name
+                                        }
+                                    }
                                 }
                                 severities {
                                     source
@@ -1408,6 +1414,12 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                     artifact
                                     release
                                     variant
+                                    releaseDetails {
+                                        version
+                                        componentDetails {
+                                            name
+                                        }
+                                    }
                                 }
                             }
                             weaknessDetails {
@@ -1420,6 +1432,12 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                     artifact
                                     release
                                     variant
+                                    releaseDetails {
+                                        version
+                                        componentDetails {
+                                            name
+                                        }
+                                    }
                                 }
                             }
                         }

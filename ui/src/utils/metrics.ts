@@ -116,7 +116,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
       combinedData.push({
         type: 'Weakness',
         id: weakness.cweId,
-        purl: '-',
+        purl: weakness.location,
         severity: weakness.severity,
         details: weakness.ruleId,
         location: weakness.location,
@@ -145,7 +145,7 @@ export function buildVulnerabilityColumns(
     return (row: any) => {
       const purlText = row.purl || ''
       if (!purlText) return ''
-      if (!options || !options.hasKnownDependencyTrackIntegration || !options.hasKnownDependencyTrackIntegration()) {
+      if (!options || !options.hasKnownDependencyTrackIntegration || !options.hasKnownDependencyTrackIntegration() || !purlText.startsWith('pkg:')) {
         return purlText
       }
       return h('a', {
@@ -211,7 +211,7 @@ export function buildVulnerabilityColumns(
         return createVulnerabilityLink(h, id)
       }
     },
-    { title: 'PURL', key: 'purl', width: 300, ellipsis: { tooltip: true }, render: makePurlRenderer() },
+    { title: 'PURL or Location', key: 'purl', width: 300, ellipsis: { tooltip: true }, render: makePurlRenderer() },
     {
       title: 'Severity',
       key: 'severity',
@@ -295,12 +295,6 @@ export function buildVulnerabilityColumns(
           }, [])]))
         } else if (details) {
           elements.push(h('span', {}, details))
-        }
-        
-        // Add location if it exists and is not empty or "-"
-        if (row.location && row.location !== '-' && row.location.trim() !== '') {
-          if (elements.length > 0) elements.push(h('span', {}, ', '))
-          elements.push(h('span', {}, `Location: ${row.location}`))
         }
         
         // Add fingerprint if it exists and is not empty or "-"
