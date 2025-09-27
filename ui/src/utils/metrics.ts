@@ -89,7 +89,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         id: vuln.vulnId,
         purl: vuln.purl,
         severity: vuln.severity,
-        details: vuln.vulnId,
+        details: '-',
         aliases: vuln.aliases,
         severities: vuln.severities,
         sources: vuln.sources,
@@ -106,7 +106,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         id: violation.type,
         purl: violation.purl,
         severity: '-',
-        details: `${violation.type}: ${violation.license || ''} ${violation.violationDetails || ''}`.trim(),
+        details: violation.type === 'LICENSE' ? `License: ${violation.license}` : `${violation.type}: ${violation.violationDetails || ''}`,
         sources: violation.sources,
         location: '-',
         fingerprint: '-'
