@@ -19,12 +19,12 @@ rebom_postgres_ssl: "false"
 traefik_crd_api_version: traefik.containo.us/v1alpha1
 
 image:
-  backEndImage: registry.relizahub.com/library/rearm-backend:25.09.16@sha256:f80dc7a195799911aa343d2b077b8006c6df32e9435f4b71b14f947315bfa09b
-  uiImage: registry.relizahub.com/library/rearm-ui:25.09.11@sha256:8f29fb6b1b5cd981269bf4617142657cd42ca8f7f3b86a0da25366da35494b05
+  backEndImage: registry.relizahub.com/library/rearm-backend:25.09.19@sha256:96f3dfdb8149e93f32f61501363dc1c1c1f13db0caccd607b4cabd0625de9da6
+  uiImage: registry.relizahub.com/library/rearm-ui:25.09.15@sha256:f95525917f2d0a4c069727b576744f10a4121e25f2fe93ff1cc1b5751ba415c4
   ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:25.03.12@sha256:dd8bc100bf04432f9d4643bf31680c3506ea0117bf7dbc58474e4c07870960dc
-  keycloakImage: registry.relizahub.com/library/rearm-keycloak:25.03.9@sha256:a4c9c55fef17550231f342e469462c14a816331a5e7893dcd16c5cd22b0395d2
+  keycloakImage: registry.relizahub.com/library/rearm-keycloak:25.03.10@sha256:fbb829aeba4aaa039bf4a1896962786a072950ea49fd35eda448dba7bb5071ec
   postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.0@sha256:b15503aa3dbd5c3c1c9519ba1f2ce5c1c0e322132fb6f666ecc5780157f123c3
-  rebomBackend: registry.relizahub.com/library/rebom-backend:0.12.1@sha256:3d52fce03c12f366d6f6ff4b9c3c4714f1a8ae4be23581ccf1dc9bc634c58b70
+  rebomBackend: registry.relizahub.com/library/rebom-backend:0.12.3@sha256:ebfad01449cd7e35ac6596bcdc82407889a4cf009cc4242692175f39894080bd
   flywayImage: docker.io/redgate/flyway:11.8.2-alpine@sha256:f7388135fcf0395fae31fcc5398cb1088ff3cce85f70e464e4bfd34a02d29ac1
   pullPolicy: IfNotPresent
 
