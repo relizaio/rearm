@@ -216,11 +216,11 @@ export function buildVulnerabilityColumns(
         return createVulnerabilityLink(h, id)
       }
     },
-    { title: 'PURL or Location', key: 'purl', width: 300, ellipsis: { tooltip: true }, render: makePurlRenderer() },
+    { title: 'PURL or Location', key: 'purl', width: 350, ellipsis: { tooltip: true }, render: makePurlRenderer() },
     {
       title: 'Severity',
       key: 'severity',
-      width: 120,
+      width: 130,
       defaultSortOrder: 'ascend',
       sorter: (rowA: any, rowB: any) => {
         const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
