@@ -265,7 +265,7 @@ export default {
 import { ComputedRef, computed, Ref, ref, h } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, DataTableColumns} from 'naive-ui'
+import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns} from 'naive-ui'
 import AddComponent from './AddComponent.vue'
 import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
@@ -975,7 +975,7 @@ const currentReleaseArtifacts: Ref<any[]> = ref([])
 const currentReleaseOrgUuid: Ref<string> = ref('')
 const currentDtrackProjectUuids: Ref<string[]> = ref([])
 
-const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, {
+const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, {
     hasKnownDependencyTrackIntegration: () => ReleaseVulnerabilityService.hasKnownDependencyTrackIntegration(currentReleaseArtifacts.value),
     getArtifacts: () => currentReleaseArtifacts.value,
     getOrgUuid: () => currentReleaseOrgUuid.value,

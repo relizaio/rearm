@@ -1,6 +1,7 @@
 import type { DataTableColumns } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { searchDtrackComponentByPurl } from '@/utils/dtrack'
+import { Info20Regular } from '@vicons/fluent'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -11,6 +12,7 @@ export type DetailedMetric = {
   location: string
   fingerprint: string
   aliases?: any[]
+  severities?: any[]
 }
 
 // Helper function to create vulnerability links with confirmation dialog
@@ -88,6 +90,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         severity: vuln.severity,
         details: vuln.vulnId,
         aliases: vuln.aliases,
+        severities: vuln.severities,
         location: '-',
         fingerprint: '-'
       })
@@ -129,6 +132,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
 export function buildVulnerabilityColumns(
   h: any,
   NTag: any,
+  NTooltip: any,
+  NIcon: any,
   options?: {
     hasKnownDependencyTrackIntegration?: () => boolean
     getArtifacts?: () => any[]
@@ -232,7 +237,44 @@ export function buildVulnerabilityColumns(
           LOW: 'info',
           UNASSIGNED: 'default'
         }
-        return h(NTag, { type: severityColors[row.severity] || 'default', size: 'small' }, { default: () => row.severity })
+        
+        const severityTag = h(NTag, { type: severityColors[row.severity] || 'default', size: 'small' }, { default: () => row.severity })
+        
+        // Check if severities array exists and has multiple entries
+        if (row.severities && row.severities.length > 0) {
+          // Sort severities: NVD first, then GHSA, then OTHER
+          const sortedSeverities = [...row.severities].sort((a: any, b: any) => {
+            const order = ['NVD', 'GHSA', 'OTHER']
+            const aIndex = order.indexOf(a.source)
+            const bIndex = order.indexOf(b.source)
+            return (aIndex === -1 ? order.length : aIndex) - (bIndex === -1 ? order.length : bIndex)
+          })
+          
+          const severityTooltipContent = sortedSeverities.map((sev: any, index: number) => {
+            const line = `${sev.source}: ${sev.severity}`
+            return index < sortedSeverities.length - 1 
+              ? [line, h('br')] 
+              : line
+          }).flat()
+          
+          return h('div', { }, [
+            severityTag,
+            h(NTooltip, {
+              trigger: 'hover'
+            }, {
+              trigger: () => {
+                return h(NIcon, {
+                  class: 'icons',
+                  size: 16,
+                  style: 'cursor: help;'
+                }, { default: () => h(Info20Regular) })
+              },
+              default: () => severityTooltipContent
+            })
+          ])
+        }
+        
+        return severityTag
       }
     },
     { 

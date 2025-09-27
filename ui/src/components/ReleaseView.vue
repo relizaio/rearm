@@ -1335,7 +1335,7 @@ const currentReleaseArtifacts: Ref<any[]> = ref([])
 const currentReleaseOrgUuid: Ref<string> = ref('')
 const currentDtrackProjectUuids: Ref<string[]> = ref([])
 
-const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, {
+const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, {
     hasKnownDependencyTrackIntegration: () => ReleaseVulnerabilityService.hasKnownDependencyTrackIntegration(currentReleaseArtifacts.value),
     getArtifacts: () => currentReleaseArtifacts.value,
     getOrgUuid: () => currentReleaseOrgUuid.value,
