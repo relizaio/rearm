@@ -30,7 +30,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.5</version>
+        <version>3.5.6</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     
@@ -40,7 +40,7 @@
 	            <groupId>com.netflix.graphql.dgs</groupId>
 	            <artifactId>graphql-dgs-platform-dependencies</artifactId>
 	            <!-- The DGS BOM/platform dependency. This is the only place you set version of DGS -->
-	            <version>10.2.4</version>
+	            <version>10.4.0</version>
 	            <type>pom</type>
 	            <scope>import</scope>
 	        </dependency>
@@ -118,7 +118,7 @@
     <dependency>
         <groupId>org.apache.commons</groupId>
         <artifactId>commons-lang3</artifactId>
-        <version>3.18.0</version>
+        <version>3.19.0</version>
     </dependency>
 <!-- https://mvnrepository.com/artifact/commons-validator/commons-validator -->
     <dependency>
@@ -130,7 +130,7 @@
     <dependency>
         <groupId>org.bouncycastle</groupId>
         <artifactId>bcprov-jdk18on</artifactId>
-        <version>1.81</version>
+        <version>1.82</version>
     </dependency>
     <dependency>
       <groupId>org.projectlombok</groupId>
@@ -152,7 +152,7 @@
     <dependency>
 	  	<groupId>name.nkonev.multipart-spring-graphql</groupId>
 	  	<artifactId>multipart-spring-graphql</artifactId>
-	  	<version>1.5.3</version>
+	  	<version>1.6.0</version>
 	</dependency>
     <dependency>
 		<groupId>org.flywaydb</groupId>
@@ -188,28 +188,28 @@
 	<dependency>
         <groupId>io.jsonwebtoken</groupId>
         <artifactId>jjwt-api</artifactId>
-        <version>0.12.6</version>
+        <version>0.13.0</version>
     </dependency>
 	<dependency>
         <groupId>io.jsonwebtoken</groupId>
         <artifactId>jjwt-impl</artifactId>
-        <version>0.12.6</version>
+        <version>0.13.0</version>
     </dependency>
 	<dependency>
         <groupId>io.jsonwebtoken</groupId>
         <artifactId>jjwt-jackson</artifactId>
-        <version>0.12.6</version>
+        <version>0.13.0</version>
     </dependency>
     <!-- https://mvnrepository.com/artifact/org.jsoup/jsoup -->
     <dependency>
         <groupId>org.jsoup</groupId>
         <artifactId>jsoup</artifactId>
-        <version>1.21.1</version>
+        <version>1.21.2</version>
     </dependency>
     <dependency>
         <groupId>org.openapitools</groupId>
         <artifactId>jackson-databind-nullable</artifactId>
-        <version>0.2.6</version>
+        <version>0.2.7</version>
     </dependency>
     <!-- Bean Validation API support -->
     <dependency>
@@ -219,7 +219,7 @@
 	<dependency>
 	    <groupId>io.swagger.core.v3</groupId>
 	    <artifactId>swagger-annotations</artifactId>
-	    <version>2.2.30</version>
+	    <version>2.2.37</version>
 	</dependency>
     <dependency>
         <groupId>com.github.package-url</groupId>
@@ -256,7 +256,7 @@
         <plugin>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-maven-plugin</artifactId>
-            <version>11.11.0</version>
+            <version>11.13.2</version>
             <configuration>
                 <url>jdbc:postgresql://localhost:5440/postgres</url>
                 <user>postgres</user>
@@ -267,7 +267,7 @@
                 <dependency>
                     <groupId>org.postgresql</groupId>
                     <artifactId>postgresql</artifactId>
-                    <version>42.7.7</version>
+                    <version>42.7.8</version>
                 </dependency>
             </dependencies>
         </plugin>
