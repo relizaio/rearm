@@ -10,6 +10,69 @@ export type DetailedMetric = {
   details: string
   location: string
   fingerprint: string
+  aliases?: any[]
+}
+
+// Helper function to create vulnerability links with confirmation dialog
+function createVulnerabilityLink(h: any, id: string) {
+  const confirmAndOpen = async (e: Event, href: string) => {
+    e.preventDefault()
+    try {
+      const LS_KEY = 'rearm_external_link_consent_until'
+      const now = Date.now()
+      const stored = localStorage.getItem(LS_KEY)
+      if (stored && Number(stored) > now) {
+        window.open(href, '_blank')
+        return
+      }
+
+      const result = await Swal.fire({
+        icon: 'info',
+        title: 'Open external link?\n',
+        text: 'This will open a vulnerability database resource external to ReARM. Please confirm that you want to proceed.',
+        showCancelButton: true,
+        confirmButtonText: 'Open',
+        cancelButtonText: 'Cancel',
+        input: 'checkbox',
+        inputValue: 0,
+        inputPlaceholder: "Don't ask me again for 15 days"
+      })
+      if (result.isConfirmed) {
+        if (result.value === 1) {
+          const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000
+          localStorage.setItem(LS_KEY, String(now + fifteenDaysMs))
+        }
+        window.open(href, '_blank')
+      }
+    } catch (err) {
+      // Fail open on errors to avoid blocking navigation unexpectedly
+      window.open(href, '_blank')
+    }
+  }
+  
+  if (id.startsWith('CVE-') || id.startsWith('GHSA-')) {
+    const href = `https://osv.dev/vulnerability/${id}`
+    return h('a', {
+      href,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      onClick: (e: Event) => confirmAndOpen(e, href)
+    }, id)
+  }
+  if (id.startsWith('CWE-')) {
+    const raw = id.slice(4)
+    const num = String(parseInt(raw, 10))
+    if (num && num !== 'NaN') {
+      const href = `https://cwe.mitre.org/data/definitions/${num}.html`
+      return h('a', {
+        href,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        onClick: (e: Event) => confirmAndOpen(e, href)
+      }, id)
+    }
+  }
+  return id
 }
 
 export function processMetricsData(metrics: any): DetailedMetric[] {
@@ -24,6 +87,7 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         purl: vuln.purl,
         severity: vuln.severity,
         details: vuln.vulnId,
+        aliases: vuln.aliases,
         location: '-',
         fingerprint: '-'
       })
@@ -139,64 +203,7 @@ export function buildVulnerabilityColumns(
       render: (row: any) => {
         const id = String(row.id || '')
         if (!id) return ''
-        const confirmAndOpen = async (e: Event, href: string) => {
-          e.preventDefault()
-          try {
-            const LS_KEY = 'rearm_external_link_consent_until'
-            const now = Date.now()
-            const stored = localStorage.getItem(LS_KEY)
-            if (stored && Number(stored) > now) {
-              window.open(href, '_blank')
-              return
-            }
-
-            const result = await Swal.fire({
-              icon: 'info',
-              title: 'Open external link?\n',
-              text: 'This will open a vulnerability database resource external to ReARM. Please confirm that you want to proceed.',
-              showCancelButton: true,
-              confirmButtonText: 'Open',
-              cancelButtonText: 'Cancel',
-              input: 'checkbox',
-              inputValue: 0,
-              inputPlaceholder: "Don't ask me again for 15 days"
-            })
-            if (result.isConfirmed) {
-              // result.value === 1 when checkbox is checked
-              if (result.value === 1) {
-                const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000
-                localStorage.setItem(LS_KEY, String(now + fifteenDaysMs))
-              }
-              window.open(href, '_blank')
-            }
-          } catch (err) {
-            // Fail open on errors to avoid blocking navigation unexpectedly
-            window.open(href, '_blank')
-          }
-        }
-        if (id.startsWith('CVE-') || id.startsWith('GHSA-')) {
-          const href = `https://osv.dev/vulnerability/${id}`
-          return h('a', {
-            href,
-            target: '_blank',
-            rel: 'noopener noreferrer',
-            onClick: (e: Event) => confirmAndOpen(e, href)
-          }, id)
-        }
-        if (id.startsWith('CWE-')) {
-          const raw = id.slice(4)
-          const num = String(parseInt(raw, 10))
-          if (num && num !== 'NaN') {
-            const href = `https://cwe.mitre.org/data/definitions/${num}.html`
-            return h('a', {
-              href,
-              target: '_blank',
-              rel: 'noopener noreferrer',
-              onClick: (e: Event) => confirmAndOpen(e, href)
-            }, id)
-          }
-        }
-        return id
+        return createVulnerabilityLink(h, id)
       }
     },
     { title: 'PURL', key: 'purl', width: 300, ellipsis: { tooltip: true }, render: makePurlRenderer() },
@@ -228,8 +235,40 @@ export function buildVulnerabilityColumns(
         return h(NTag, { type: severityColors[row.severity] || 'default', size: 'small' }, { default: () => row.severity })
       }
     },
-    { title: 'Details', key: 'details', ellipsis: { tooltip: true } },
-    { title: 'Location', key: 'location', width: 200, ellipsis: { tooltip: true } },
-    { title: 'Fingerprint', key: 'fingerprint', width: 200, ellipsis: { tooltip: true } }
+    { 
+      title: 'Details', 
+      key: 'details', 
+      ellipsis: { tooltip: true },
+      render: (row: any) => {
+        const elements = []
+        let details = row.details || ''
+        
+        // Add aliases if present for vulnerabilities
+        if (row.type === 'Vulnerability' && row.aliases && row.aliases.length > 0) {
+          const aliasLinks = row.aliases.map((alias: any) => createVulnerabilityLink(h, alias.aliasId))
+          elements.push(h('span', {}, ['Aliases: ', ...aliasLinks.reduce((acc: any[], link: any, index: number) => {
+            if (index > 0) acc.push(', ')
+            acc.push(link)
+            return acc
+          }, [])]))
+        } else if (details) {
+          elements.push(h('span', {}, details))
+        }
+        
+        // Add location if it exists and is not empty or "-"
+        if (row.location && row.location !== '-' && row.location.trim() !== '') {
+          if (elements.length > 0) elements.push(h('span', {}, ', '))
+          elements.push(h('span', {}, `Location: ${row.location}`))
+        }
+        
+        // Add fingerprint if it exists and is not empty or "-"
+        if (row.fingerprint && row.fingerprint !== '-' && row.fingerprint.trim() !== '') {
+          if (elements.length > 0) elements.push(h('span', {}, ', '))
+          elements.push(h('span', {}, `Fingerprint: ${row.fingerprint}`))
+        }
+        
+        return elements.length > 0 ? h('span', {}, elements) : '-'
+      }
+    }
   ]
 }
