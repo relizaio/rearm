@@ -19,7 +19,7 @@ rebom_postgres_ssl: "false"
 traefik_crd_api_version: traefik.containo.us/v1alpha1
 
 image:
-  backEndImage: registry.relizahub.com/library/rearm-backend:25.09.19@sha256:96f3dfdb8149e93f32f61501363dc1c1c1f13db0caccd607b4cabd0625de9da6
+  backEndImage: registry.relizahub.com/library/rearm-backend:25.09.20@sha256:894dcac6ec9fc2238b3f30c28c2f998ce7361c204713706c6dfab4805d3474b8
   uiImage: registry.relizahub.com/library/rearm-ui:25.09.15@sha256:f95525917f2d0a4c069727b576744f10a4121e25f2fe93ff1cc1b5751ba415c4
   ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:25.03.12@sha256:dd8bc100bf04432f9d4643bf31680c3506ea0117bf7dbc58474e4c07870960dc
   keycloakImage: registry.relizahub.com/library/rearm-keycloak:25.03.10@sha256:fbb829aeba4aaa039bf4a1896962786a072950ea49fd35eda448dba7bb5071ec
