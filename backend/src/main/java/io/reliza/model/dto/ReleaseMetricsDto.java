@@ -400,7 +400,49 @@ public class ReleaseMetricsDto implements Cloneable {
 				.collect(Collectors.toMap(x -> getVulnKey(x), Function.identity())));
 		list2.forEach(x -> {
 			String xKey = getVulnKey(x);
-			if (!vulnMap.containsKey(xKey)) vulnMap.put(xKey, x);
+			if (vulnMap.containsKey(xKey)) {
+				// Merge sources, aliases, and severities when vulnerability already exists
+				VulnerabilityDto existing = vulnMap.get(xKey);
+				
+				// Handle null-safe merging of sources
+				Set<FindingSourceDto> combinedSources = new LinkedHashSet<>();
+				if (existing.sources() != null) {
+					combinedSources.addAll(existing.sources());
+				}
+				if (x.sources() != null) {
+					combinedSources.addAll(x.sources());
+				}
+				
+				// Handle null-safe merging of aliases
+				Set<VulnerabilityAliasDto> combinedAliases = new LinkedHashSet<>();
+				if (existing.aliases() != null) {
+					combinedAliases.addAll(existing.aliases());
+				}
+				if (x.aliases() != null) {
+					combinedAliases.addAll(x.aliases());
+				}
+				
+				// Handle null-safe merging of severities
+				Set<SeveritySourceDto> combinedSeverities = new LinkedHashSet<>();
+				if (existing.severities() != null) {
+					combinedSeverities.addAll(existing.severities());
+				}
+				if (x.severities() != null) {
+					combinedSeverities.addAll(x.severities());
+				}
+				
+				VulnerabilityDto merged = new VulnerabilityDto(
+					existing.purl(), 
+					existing.vulnId(), 
+					existing.severity(), 
+					combinedAliases, 
+					combinedSources,
+					combinedSeverities
+				);
+				vulnMap.put(xKey, merged);
+			} else {
+				vulnMap.put(xKey, x);
+			}
 		});
 		return new LinkedList<>(vulnMap.values());
 	}
@@ -414,7 +456,30 @@ public class ReleaseMetricsDto implements Cloneable {
 				.collect(Collectors.toMap(x -> getViolationKey(x), Function.identity())));
 		list2.forEach(x -> {
 			String xKey = getViolationKey(x);
-			if (!violationMap.containsKey(xKey)) violationMap.put(xKey, x);
+			if (violationMap.containsKey(xKey)) {
+				// Merge sources when violation already exists
+				ViolationDto existing = violationMap.get(xKey);
+				
+				// Handle null-safe merging of sources
+				Set<FindingSourceDto> combinedSources = new LinkedHashSet<>();
+				if (existing.sources() != null) {
+					combinedSources.addAll(existing.sources());
+				}
+				if (x.sources() != null) {
+					combinedSources.addAll(x.sources());
+				}
+				
+				ViolationDto merged = new ViolationDto(
+					existing.purl(), 
+					existing.type(), 
+					existing.license(), 
+					existing.violationDetails(), 
+					combinedSources
+				);
+				violationMap.put(xKey, merged);
+			} else {
+				violationMap.put(xKey, x);
+			}
 		});
 		return new LinkedList<>(violationMap.values());
 	}
@@ -424,7 +489,31 @@ public class ReleaseMetricsDto implements Cloneable {
 				.collect(Collectors.toMap(x -> x.fingerprint(), Function.identity())));
 		list2.forEach(x -> {
 			String xKey = x.fingerprint();
-			if (!vulnMap.containsKey(xKey)) vulnMap.put(xKey, x);
+			if (vulnMap.containsKey(xKey)) {
+				// Merge sources when weakness already exists
+				WeaknessDto existing = vulnMap.get(xKey);
+				
+				// Handle null-safe merging of sources
+				Set<FindingSourceDto> combinedSources = new LinkedHashSet<>();
+				if (existing.sources() != null) {
+					combinedSources.addAll(existing.sources());
+				}
+				if (x.sources() != null) {
+					combinedSources.addAll(x.sources());
+				}
+				
+				WeaknessDto merged = new WeaknessDto(
+					existing.cweId(), 
+					existing.ruleId(), 
+					existing.location(), 
+					existing.fingerprint(), 
+					existing.severity(), 
+					combinedSources
+				);
+				vulnMap.put(xKey, merged);
+			} else {
+				vulnMap.put(xKey, x);
+			}
 		});
 		return new LinkedList<>(vulnMap.values());
 	}
