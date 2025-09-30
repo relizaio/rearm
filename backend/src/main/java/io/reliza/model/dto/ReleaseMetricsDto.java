@@ -583,6 +583,10 @@ public class ReleaseMetricsDto implements Cloneable {
 		// Add the main vulnerability ID
 		if (vuln.vulnId() != null && !vuln.vulnId().trim().isEmpty()) {
 			allIds.add(vuln.vulnId().trim());
+			if (vuln.vulnId().trim().startsWith("ALPINE-CVE-")) {
+				String nonAlpineId = vuln.vulnId().trim().replaceFirst("ALPINE-", "");
+				allIds.add(nonAlpineId);
+			}
 		}
 		
 		// Add all alias IDs
