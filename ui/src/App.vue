@@ -75,4 +75,13 @@ export default class App extends Vue {
 .swal2-container {
     z-index: 9999;
 }
+
+.n-tooltip a {
+  color: #eee !important;
+  text-decoration: underline;
+}
+
+.n-tooltip a:hover {
+  color: #ddd !important; /* slightly lighter on hover */
+}
 </style>
