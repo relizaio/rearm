@@ -53,7 +53,7 @@ function createVulnerabilityLink(h: any, id: string) {
     }
   }
   
-  if (id.startsWith('CVE-') || id.startsWith('GHSA-')) {
+  if (id.startsWith('ALPINE-CVE-') || id.startsWith('CVE-') || id.startsWith('GHSA-')) {
     const href = `https://osv.dev/vulnerability/${id}`
     return h('a', {
       href,
