@@ -285,6 +285,7 @@ export function buildVulnerabilityColumns(
     { 
       title: 'Details', 
       key: 'details', 
+      minWidth: 400,
       ellipsis: { tooltip: true },
       render: (row: any) => {
         const elements = []
