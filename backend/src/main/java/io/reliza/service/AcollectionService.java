@@ -172,10 +172,12 @@ public class AcollectionService {
 	}
 
 	public void releaseBomChangelogRoutine(UUID releaseId, UUID branch, UUID org){
+		// log.info("RGDEBUG: releaseBomChangelogRoutine called for releaseId: {}, branch: {}, org: {}", releaseId, branch, org);
 
 		UUID prevReleaseId = null;
 
 		AcollectionData acd = getLatestCollectionDataOfRelease(releaseId);
+		// log.info("RGDEBUG: acd is null: {}", acd == null);
 
 		if(null != acd && null != acd.getArtifactComparison() && null != acd.getArtifactComparison().comparedReleaseUuid()) {
 			prevReleaseId = acd.getArtifactComparison().comparedReleaseUuid();
@@ -215,16 +217,21 @@ public class AcollectionService {
 		// log.info("RGDEBUG: nextReleaseId found: {}", nextReleaseId);
 
 		if (prevReleaseId != null) {
-			resolveBomDiff(releaseId, prevReleaseId, org);
+			// Force recalculate during finalization to handle race condition where initial Acollection had incomplete artifacts
+			resolveBomDiff(releaseId, prevReleaseId, org, true);
 		}
 		if (nextReleaseId != null) {
-			resolveBomDiff(nextReleaseId, releaseId, org);
+			resolveBomDiff(nextReleaseId, releaseId, org, true);
 		}
 	}
 
 
 	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org){
-		// log.info("resolveBomDiff for releaseId: {}, prevReleaseId: {} ", releaseId, prevReleaseId);
+		resolveBomDiff(releaseId, prevReleaseId, org, false);
+	}
+
+	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate){
+		// log.info("RGDEBUG: resolveBomDiff called for releaseId: {}, prevReleaseId: {}, forceRecalculate: {}", releaseId, prevReleaseId, forceRecalculate);
 		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
 		AcollectionData prevAcollectionData = getLatestCollectionDataOfRelease(prevReleaseId);
 		
@@ -244,8 +251,10 @@ public class AcollectionService {
 			
 			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(currArtifacts, prevArtifacts, org);
 
-			if (null == currAcollectionData.getArtifactComparison() || null == currAcollectionData.getArtifactComparison().changelog()  || !currAcollectionData.getArtifactComparison().changelog().equals(artifactChangelog)) {
-				log.debug("artifact changelog is different, persisiting!");
+			// If forceRecalculate is true (called from finalization), always update even if changelog appears same
+			// This handles the race condition where initial Acollection had incomplete artifacts
+			if (forceRecalculate || null == currAcollectionData.getArtifactComparison() || null == currAcollectionData.getArtifactComparison().changelog()  || !currAcollectionData.getArtifactComparison().changelog().equals(artifactChangelog)) {
+				
 				persistArtifactChangelogForCollection(artifactChangelog, prevReleaseId, currAcollectionData.getUuid());
 
 			}else{
@@ -275,12 +284,16 @@ public class AcollectionService {
 	}
 	private List<UUID> getInternalBomIdsFromACollection(AcollectionData collection){
 		List<UUID> artIds = collection.getArtifacts().stream().map(VersionedArtifact::artifactUuid).toList();
-		// log.info("RGDEBUG: artIds: {}", artIds);
+		// log.info("RGDEBUG: artIds from Acollection: {}", artIds);
 		List<ArtifactData> artList = artifactService.getArtifactDataList(artIds);
-		return artList.stream()
+		// log.info("RGDEBUG: artList size: {}", artList.size());
+		// artList.forEach(art -> log.info("RGDEBUG: artifact {} has internalBom: {}", art.getUuid(), art.getInternalBom()));
+		List<UUID> bomIds = artList.stream()
 		.filter(art -> null != art.getInternalBom())
 		.map(art -> art.getInternalBom().id())
 		.distinct()
 		.toList();
+		// log.info("RGDEBUG: final bomIds: {}", bomIds);
+		return bomIds;
 	}
 }

@@ -41,7 +41,7 @@ public class ReleaseFinalizerService {
     }
 
     public void finalizeRelease(UUID releaseUuid) {
-        // log.info("RGDEBUG: finalizing release {}", releaseUuid);
+        // log.info("RGDEBUG: finalizeRelease called for release {}", releaseUuid);
         Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
         if (ord.isPresent()) {
             ReleaseData rd = ord.get();
@@ -50,7 +50,8 @@ public class ReleaseFinalizerService {
            
             acollectionService.releaseBomChangelogRoutine(releaseUuid, branch, org);
             // Add more finalization steps here as needed
+        } else {
+            log.warn("RGDEBUG: Release not found for UUID: {}", releaseUuid);
         }
-        // else: log or handle release not found
     }
 }
