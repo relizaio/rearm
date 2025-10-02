@@ -620,7 +620,7 @@ public class SharedReleaseService {
 		List<ReleaseData> sortedReleases = new LinkedList<>();
 		for (Map.Entry<UUID, List<ReleaseData>> entry : releasesByBranch.entrySet()) {
 			UUID branchUuid = entry.getKey();
-			List<ReleaseData> branchReleases = entry.getValue();
+			List<ReleaseData> branchReleases = new LinkedList<>(entry.getValue());
 
 			Optional<BranchData> bdOpt = branchService.getBranchData(branchUuid);
 			if (bdOpt.isPresent()) {
