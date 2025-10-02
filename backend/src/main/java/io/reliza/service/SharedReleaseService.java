@@ -610,7 +610,31 @@ public class SharedReleaseService {
 
 	public List<ReleaseData> gatherReleasesForArtifact(UUID artifactUuid, UUID orgUuid){
 		Set<UUID> releaseIds = gatherReleaseIdsForArtifact(artifactUuid, orgUuid);
-		return getReleaseDataList(releaseIds, orgUuid);
+		var releaseDatas = getReleaseDataList(releaseIds, orgUuid);
+		
+		// Group releases by branch
+		Map<UUID, List<ReleaseData>> releasesByBranch = releaseDatas.stream()
+			.collect(Collectors.groupingBy(ReleaseData::getBranch));
+		
+		// Sort each branch group and collect results
+		List<ReleaseData> sortedReleases = new LinkedList<>();
+		for (Map.Entry<UUID, List<ReleaseData>> entry : releasesByBranch.entrySet()) {
+			UUID branchUuid = entry.getKey();
+			List<ReleaseData> branchReleases = entry.getValue();
+
+			Optional<BranchData> bdOpt = branchService.getBranchData(branchUuid);
+			if (bdOpt.isPresent()) {
+				BranchData bd = bdOpt.get();
+				Optional<ComponentData> pdOpt = getComponentService.getComponentData(bd.getComponent());
+				if (pdOpt.isPresent()) {
+					ComponentData pd = pdOpt.get();
+					Collections.sort(branchReleases, new ReleaseVersionComparator(pd.getVersionSchema(), bd.getVersionSchema()));
+				}
+			}
+			sortedReleases.addAll(branchReleases);
+		}
+		
+		return sortedReleases;
 	}
 	
 	public List<Release> findReleasesByReleaseArtifact (UUID artifactUuid, UUID orgUuid) {
