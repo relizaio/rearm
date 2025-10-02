@@ -484,11 +484,14 @@ class VariableQueries {
 
 	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACT = """
 		WITH
-		unprocessedSces (uuid) AS (
-			SELECT sce.uuid from rearm.source_code_entries sce
+		unprocessedSces (uuid, componentUuid) AS (
+			SELECT sce.uuid, 
+				   (jsonb_array_elements(sce.record_data->'artifacts')->>'componentUuid')::uuid as componentUuid
+			FROM rearm.source_code_entries sce
 			WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(jsonb_build_object('artifactUuid', :artUuidAsString)))))
 		SELECT rlzs.* FROM unprocessedSces, rearm.releases rlzs
-		WHERE record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text);
+		WHERE record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text)
+		  AND (rlzs.record_data->>'component')::uuid = unprocessedSces.componentUuid;
 		""";
 
 	protected static final String FIND_RELEASES_SHARING_DELIVRABLE_ARTIFACT = """
