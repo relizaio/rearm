@@ -611,7 +611,10 @@ public class SharedReleaseService {
 	public List<ReleaseData> gatherReleasesForArtifact(UUID artifactUuid, UUID orgUuid){
 		Set<UUID> releaseIds = gatherReleaseIdsForArtifact(artifactUuid, orgUuid);
 		var releaseDatas = getReleaseDataList(releaseIds, orgUuid);
-		
+		return sortReleasesByBranchAndVersion(releaseDatas);
+	}
+
+	private List<ReleaseData> sortReleasesByBranchAndVersion(List<ReleaseData> releaseDatas) {
 		// Group releases by branch
 		Map<UUID, List<ReleaseData>> releasesByBranch = releaseDatas.stream()
 			.collect(Collectors.groupingBy(ReleaseData::getBranch));
@@ -633,7 +636,6 @@ public class SharedReleaseService {
 			}
 			sortedReleases.addAll(branchReleases);
 		}
-		
 		return sortedReleases;
 	}
 	
@@ -675,7 +677,7 @@ public class SharedReleaseService {
 		arts.forEach(aId -> {
 			releaseIds.addAll(gatherReleaseIdsForArtifact(aId, org));
 		});
-		return getReleaseDataList(releaseIds, org);
+		var releaseDatas = getReleaseDataList(releaseIds, org);
+		return sortReleasesByBranchAndVersion(releaseDatas);
 	}
-
 }
