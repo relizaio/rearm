@@ -649,7 +649,7 @@ public class IntegrationService {
 			IntegrationData dtrackIntegration = oid.get();
 			try {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
-				List<Map<String, Object>> respList = new LinkedList<>()
+				List<Map<String, Object>> respList = new LinkedList<>();
 				if (query.startsWith("pkg:")) {
 					URI componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?purl=" + query + "&pageSize=10000&pageNumber=1");
 					respList = executeDtrackComponentSearch(componentSearchUri, apiToken);
