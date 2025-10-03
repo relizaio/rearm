@@ -649,37 +649,49 @@ public class IntegrationService {
 			IntegrationData dtrackIntegration = oid.get();
 			try {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
-				URI componentSearchUri;
+				List<Map<String, Object>> respList = new LinkedList<>()
 				if (query.startsWith("pkg:")) {
-					componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?purl=" + query + "&pageSize=10000&pageNumber=1");
+					URI componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?purl=" + query + "&pageSize=10000&pageNumber=1");
+					respList = executeDtrackComponentSearch(componentSearchUri, apiToken);
 				} else {
-					componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?name=" + query + "&pageSize=10000&pageNumber=1");	
+					URI componentSearchUri1 = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?name=" + query + "&pageSize=10000&pageNumber=1");
+					URI componentSearchUri2 = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?group=" + query + "&pageSize=10000&pageNumber=1");
+					var respList1 = executeDtrackComponentSearch(componentSearchUri1, apiToken);
+					var respList2 = executeDtrackComponentSearch(componentSearchUri2, apiToken);
+					respList.addAll(respList1);
+					respList.addAll(respList2);
 				}
-				
-				var resp = dtrackWebClient
-						.get()
-						.uri(componentSearchUri)
-						.header("X-API-Key", apiToken)
-						.retrieve()
-						.toEntity(String.class)
-						.block();
-				if (null != resp.getBody()) {
-					List<Map<String, Object>> respList = Utils.OM.readValue(resp.getBody(), List.class);
+				if (null != respList && !respList.isEmpty()) {
 					sbomComponents = respList
 						.stream()
 						.collect(Collectors.groupingBy(x -> URLDecoder.decode((String) x.get("purl"), StandardCharsets.UTF_8), 
 								Collectors.mapping(x -> UUID.fromString(((Map<String, String>) x.get("project")).get("uuid")), 
-										Collectors.toList())))
+											Collectors.toList())))
 						.entrySet().stream()
-						.map(e -> new ComponentPurlToDtrackProject(e.getKey(), e.getValue())).toList();				
-				} else {
-					log.warn("Null body searching components on dtrack for query = " + query + " and org = " + org);
+						.map(e -> new ComponentPurlToDtrackProject(e.getKey(), e.getValue())).toList();
 				}
 			} catch (Exception e) {
 				log.error("Exception searching components on dtrack for query = " + query + " and org = " + org, e);
 			}
 		}
 		return sbomComponents;
+	}
+
+	private List<Map<String, Object>> executeDtrackComponentSearch (URI componentSearchUri, String apiToken) throws JsonMappingException, JsonProcessingException {
+		List<Map<String, Object>> respList = new LinkedList<>();
+		var resp = dtrackWebClient
+			.get()
+			.uri(componentSearchUri)
+			.header("X-API-Key", apiToken)
+			.retrieve()
+			.toEntity(String.class)
+			.block();
+		if (null != resp.getBody()) {
+			respList = Utils.OM.readValue(resp.getBody(), List.class);
+		} else {
+			log.warn("Null body searching components on dtrack for uri = " + componentSearchUri);
+		}
+		return respList;
 	}
 	
 	
