@@ -87,7 +87,7 @@
                                     </n-form>
                                 </n-tab-pane>
                                 <n-tab-pane name="searchreleasesbydsbom" tab="Search by SBOM Components">
-                                    <h5>Search For Releases By SBOM Component Name or Purl</h5>
+                                    <h5>Search For Releases By SBOM Component Name, Group or Purl</h5>
                                     <n-form
                                         inline
                                         @submit="searchSbomComponent">
