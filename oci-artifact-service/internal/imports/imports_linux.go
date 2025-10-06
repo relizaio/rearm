@@ -7,6 +7,8 @@ import (
 	_ "fmt"
 	_ "github.com/gabriel-vasile/mimetype"
 	_ "github.com/gin-gonic/gin"
+	_ "github.com/google/uuid"
+	_ "github.com/klauspost/compress/zstd"
 	_ "github.com/opencontainers/image-spec/specs-go/v1"
 	_ "io"
 	_ "log"

@@ -38,7 +38,7 @@ func NewOrasClient(repoName string) (*OrasClient, error) {
 	return &OrasClient{repo}, nil
 }
 
-func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, tag string) (v1.Descriptor, error) {
+func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, tag string, compressionMeta *CompressionMetadata) (v1.Descriptor, error) {
 	// 0. Create a file store
 	fmt.Println("pushing")
 	resp := v1.Descriptor{}
@@ -54,6 +54,12 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 		return resp, err
 	}
 	mediaType := mimeType.String()
+	
+	// Add compression suffix if compressed
+	if compressionMeta != nil && compressionMeta.Algorithm == CompressionZstd {
+		mediaType += "+zstd"
+	}
+	
 	fileNames := []string{uploadedFile.Name()}
 	fileDescriptors := make([]v1.Descriptor, 0, len(fileNames))
 	for _, name := range fileNames {
@@ -61,6 +67,18 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 		if err != nil {
 			return resp, err
 		}
+		
+		// Add compression annotations
+		if compressionMeta != nil {
+			if fileDescriptor.Annotations == nil {
+				fileDescriptor.Annotations = make(map[string]string)
+			}
+			fileDescriptor.Annotations["io.reliza.compression.algorithm"] = string(compressionMeta.Algorithm)
+			fileDescriptor.Annotations["io.reliza.original.size"] = fmt.Sprintf("%d", compressionMeta.OriginalSize)
+			fileDescriptor.Annotations["io.reliza.compressed.size"] = fmt.Sprintf("%d", compressionMeta.CompressedSize)
+			fileDescriptor.Annotations["io.reliza.original.sha256"] = compressionMeta.OriginalSHA256
+		}
+		
 		fileDescriptors = append(fileDescriptors, fileDescriptor)
 	}
 

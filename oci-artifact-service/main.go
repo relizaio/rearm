@@ -39,9 +39,10 @@ type Form struct {
 }
 
 type OASResponse struct {
-	OciResponse ociSpecv1.Descriptor `json:"ociResponse"`
-	//File digest calculated by
-	FileSHA256Digest string `json:"fileSHA256Digest"`
+	OciResponse      ociSpecv1.Descriptor `json:"ociResponse"`
+	FileSHA256Digest string               `json:"fileSHA256Digest"` // Original file digest
+	Compressed       bool                 `json:"compressed"`       // Whether file was compressed
+	CompressionStats string               `json:"compressionStats,omitempty"` // Compression statistics
 }
 
 func uploadFile(c *gin.Context) {
@@ -71,34 +72,67 @@ func uploadFile(c *gin.Context) {
 		return
 	}
 
-	oc, err := NewOrasClient(form.Repo)
-	if err != nil {
-		c.String(http.StatusInternalServerError, "Error creating oras client: ", err)
-		return
-	}
+	// Calculate checksum on ORIGINAL data (before compression)
 	tempFile, checksum, err := CalculateSHA256(tempFile)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error Calculating Checksum: ", err)
 		return
 	}
 
-	//verify integrity
+	// Verify integrity
 	if len(form.InputDigest) > 0 && form.InputDigest != "" && checksum != form.InputDigest {
-		log.Panic("File Integrity Check Failed: ", err)
+		log.Printf("File Integrity Check Failed: expected %s, got %s", form.InputDigest, checksum)
 		c.String(http.StatusBadRequest, "File Integrity Check Failed")
+		return
 	}
 
-	resp, err := oc.PushArtifact(c, tempFile, form.Tag)
+	// Detect MIME type
+	mimeType, err := DetectMimeType(tempFile)
 	if err != nil {
-		log.Panic("Error Pushing Artifact: ", err)
+		mimeType = "application/octet-stream"
+	}
+
+	// Smart compression based on MIME type
+	fileToUpload := tempFile
+	var compressionMetadata *CompressionMetadata
+	var compressedFile *os.File
+
+	if ShouldCompress(mimeType) {
+		compressedFile, compressionMetadata, err = CompressFile(tempFile, mimeType)
+		if err != nil {
+			log.Printf("Compression failed: %v", err)
+			// Continue with uncompressed file
+		} else if compressionMetadata != nil {
+			fileToUpload = compressedFile
+			defer compressedFile.Close()
+			defer os.Remove(compressedFile.Name())
+		}
+	}
+
+	oc, err := NewOrasClient(form.Repo)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Error creating oras client: ", err)
+		return
+	}
+
+	resp, err := oc.PushArtifact(c, fileToUpload, form.Tag, compressionMetadata)
+	if err != nil {
+		log.Printf("Error Pushing Artifact: %v", err)
 		c.String(http.StatusBadRequest, "Error Pushing Artifact: ", err)
 		return
 	}
 
-	c.JSON(200, &OASResponse{
+	response := &OASResponse{
 		OciResponse:      resp,
-		FileSHA256Digest: checksum,
-	})
+		FileSHA256Digest: checksum, // Original file checksum
+		Compressed:       compressionMetadata != nil,
+	}
+
+	if compressionMetadata != nil {
+		response.CompressionStats = GetCompressionStats(compressionMetadata)
+	}
+
+	c.JSON(200, response)
 
 }
 func downloadFile(c *gin.Context) {
@@ -111,7 +145,7 @@ func downloadFile(c *gin.Context) {
 		return
 	}
 	dirToDownload := uuid.New().String()
-	_, err = oc.PullArtifact(c, form.Tag, dirToDownload)
+	descriptor, err := oc.PullArtifact(c, form.Tag, dirToDownload)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error Pulling artifact: ", err)
 		return
@@ -120,15 +154,57 @@ func downloadFile(c *gin.Context) {
 	targetDir := filepath.Join("/tmp", dirToDownload)
 	files, err := os.ReadDir(targetDir)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "Error Pulling artifact: ", err)
+		c.String(http.StatusInternalServerError, "Error reading directory: ", err)
 		return
 	}
 
 	targetFile := files[0]
-
 	targetPath := filepath.Join("/tmp", dirToDownload, targetFile.Name())
 
-	mimeType, err := mimetype.DetectFile(targetPath)
+	// Check if file is compressed based on annotations or magic number
+	isCompressed := false
+	if descriptor.Annotations != nil {
+		if algo, ok := descriptor.Annotations["io.reliza.compression.algorithm"]; ok && algo == "zstd" {
+			isCompressed = true
+		}
+	}
+
+	// If not detected from annotations, check file magic number
+	if !isCompressed {
+		file, err := os.Open(targetPath)
+		if err == nil {
+			defer file.Close()
+			compressed, err := IsFileCompressed(file)
+			if err == nil && compressed {
+				isCompressed = true
+			}
+		}
+	}
+
+	finalPath := targetPath
+	var decompressedFile *os.File
+
+	if isCompressed {
+		compressedFile, err := os.Open(targetPath)
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Error opening compressed file: ", err)
+			return
+		}
+		defer compressedFile.Close()
+
+		decompressedFile, err = DecompressFile(compressedFile)
+		if err != nil {
+			log.Printf("Decompression failed: %v", err)
+			c.String(http.StatusInternalServerError, "Error decompressing file: ", err)
+			return
+		}
+		defer decompressedFile.Close()
+		defer os.Remove(decompressedFile.Name())
+
+		finalPath = decompressedFile.Name()
+	}
+
+	mimeType, err := mimetype.DetectFile(finalPath)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Error Determining mimetype: ", err)
 		return
@@ -137,7 +213,7 @@ func downloadFile(c *gin.Context) {
 	c.Header("Content-Description", "File Transfer")
 	c.Header("Content-type", mimeType.String())
 	c.Header("Content-Disposition", "attachment; filename="+form.Tag+mimeType.Extension())
-	c.File(targetPath)
+	c.File(finalPath)
 
 	err = os.RemoveAll("/tmp/" + dirToDownload)
 	if err != nil {

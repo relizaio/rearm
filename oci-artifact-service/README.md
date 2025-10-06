@@ -37,3 +37,18 @@ curl -O --location --request GET '/pull?registry<REGISTRY_HOST>=&repo=<REPOSITOR
 --header 'token: <TOKEN>'
 ```
 
+### Health Check
+```bash
+curl http://localhost:8083/health
+```
+
+## Testing
+
+```bash
+go test -v ./...
+```
+
+## Compression
+
+Automatically compresses JSON, XML, YAML, and text files. Skips Docker images, archives, and binaries. Transparent decompression on pull.
+
