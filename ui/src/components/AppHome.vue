@@ -406,6 +406,7 @@ const executeGqlSearchHashVersion = async function (params : any) {
 
 async function searchHashVersion (e: Event) {
     e.preventDefault()
+    document.body.style.cursor = 'wait'
     try {
         const params = {
             org: myorg.value.uuid,
@@ -419,11 +420,14 @@ async function searchHashVersion (e: Event) {
             commonFunctions.parseGraphQLError(err.message),
             'error'
         )
+    } finally {
+        document.body.style.cursor = 'default'
     }
 }
 
 async function searchSbomComponent (e: Event) {
     e.preventDefault()
+    document.body.style.cursor = 'wait'
     try {
         const response = await graphqlClient.query({
             query: gql`
@@ -444,10 +448,13 @@ async function searchSbomComponent (e: Event) {
             commonFunctions.parseGraphQLError(err.message),
             'error'
         )
+    } finally {
+        document.body.style.cursor = 'default'
     }
 }
 
 async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
+    document.body.style.cursor = 'wait'
     try {
         const searchParams = {
             orgUuid: myorg.value.uuid,
@@ -460,6 +467,8 @@ async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
             commonFunctions.parseGraphQLError(err.message),
             'error'
         )
+    } finally {
+        document.body.style.cursor = 'default'
     }
 }
 
@@ -489,14 +498,25 @@ const properties: ComputedRef<any> = computed((): any => {
 
 async function searchReleasesByTags (e: Event) {
     e.preventDefault()
-    const cleanedSearchObj = {
-        org: myorg.value.uuid,
-        tagKey: releaseKeySearchObj.value.key,
-        tagValue: releaseKeySearchObj.value.value
+    document.body.style.cursor = 'wait'
+    try {
+        const cleanedSearchObj = {
+            org: myorg.value.uuid,
+            tagKey: releaseKeySearchObj.value.key,
+            tagValue: releaseKeySearchObj.value.value
+        }
+        const releases = await store.dispatch('searchReleasesByTags', cleanedSearchObj)
+        hashSearchResults.value = {commitReleases: releases, releaseInstances: []}
+        showSearchResultsModal.value = true
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    } finally {
+        document.body.style.cursor = 'default'
     }
-    const releases = await store.dispatch('searchReleasesByTags', cleanedSearchObj)
-    hashSearchResults.value = {commitReleases: releases, releaseInstances: []}
-    showSearchResultsModal.value = true
 }
 const instPropsSearchResults: Ref<any[]> = ref([])
 const showInstPropSearchResultsModal: Ref<boolean> = ref(false)
