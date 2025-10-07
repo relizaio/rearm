@@ -14,4 +14,19 @@ public class OASResponseDto {
 
     @JsonProperty("fileSHA256Digest")
     private String fileSHA256Digest;
+
+    @JsonProperty("compressed")
+    private Boolean compressed;
+
+    @JsonProperty("compressionStats")
+    private String compressionStats;
+
+    @JsonProperty("originalMediaType")
+    private String originalMediaType;
+
+    @JsonProperty("originalSize")
+    private Long originalSize;
+
+    @JsonProperty("compressedSize")
+    private Long compressedSize;
 }

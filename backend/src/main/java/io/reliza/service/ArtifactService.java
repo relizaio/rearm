@@ -438,8 +438,16 @@ public class ArtifactService {
 			artifactDto.setDigestRecords(digestRecords);
 
 			artifactDto.setTags(List.of(
-	            new TagRecord(CommonVariables.SIZE_FEILD, artifactUploadResponse.getOciResponse().getSize(), Removable.NO),
-	            new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, artifactUploadResponse.getOciResponse().getArtifactType(), Removable.NO),
+	            new TagRecord(CommonVariables.SIZE_FEILD, 
+	                artifactUploadResponse.getOriginalSize() != null 
+	                    ? artifactUploadResponse.getOriginalSize().toString() 
+	                    : artifactUploadResponse.getOciResponse().getSize(), 
+	                Removable.NO),
+	            new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, 
+	                artifactUploadResponse.getOriginalMediaType() != null 
+	                    ? artifactUploadResponse.getOriginalMediaType() 
+	                    : artifactUploadResponse.getOciResponse().getMediaType(), 
+	                Removable.NO),
 	            new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
 	            new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
 	            new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
