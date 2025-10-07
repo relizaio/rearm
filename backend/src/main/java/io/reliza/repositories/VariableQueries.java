@@ -427,14 +427,23 @@ class VariableQueries {
 	""";
 
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT = """
-	  WITH
-	  lastComputedRlz (maxVal) AS (
-	    select coalesce(max(cast (record_data->'metrics'->>'lastScanned' as float)), 0) AS lastUpd from rearm.releases
-	  ),
-	  unprocessedArts (uuid) AS (
-	    SELECT ra.uuid from lastComputedRlz, rearm.artifacts ra where coalesce(cast (record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal )
-	  SELECT rlzs.* from unprocessedArts, rearm.releases rlzs
-	    WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(unprocessedArts.uuid)));
+		WITH
+		lastComputedRlz (maxVal) AS (
+			SELECT coalesce(max(cast (record_data->'metrics'->>'lastScanned' as float)), 0) 
+			FROM rearm.releases
+		),
+		unprocessedArts AS (
+			SELECT ra.uuid 
+			FROM lastComputedRlz, rearm.artifacts ra 
+			WHERE coalesce(cast (ra.record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal
+		),
+		releases_with_artifacts AS (
+			SELECT rlzs.*, jsonb_array_elements_text(record_data->'artifacts')::uuid as artifact_uuid
+			FROM rearm.releases rlzs where rlzs.record_data->>'artifacts' != '[]'
+		)
+		SELECT DISTINCT rwa.uuid, rwa.revision, rwa.schema_version, rwa.created_date, rwa.last_updated_date, rwa.record_data
+		FROM releases_with_artifacts rwa
+		INNER JOIN unprocessedArts ua ON ua.uuid = rwa.artifact_uuid;
 	""";
 	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
