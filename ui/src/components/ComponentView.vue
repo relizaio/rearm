@@ -1573,7 +1573,11 @@ const outputTriggerTableFields: DataTableColumns<any> = [
     },
     {
         key: 'toReleaseLifecycle',
-        title: 'Lifecycle to Change To'
+        title: 'Lifecycle to Change To',
+        render: (row: any) => {
+            const option = outputTriggerLifecycleOptions.find(opt => opt.value === row.toReleaseLifecycle)
+            return option ? option.label : row.toReleaseLifecycle
+        }
     },
     {
         key: 'actions',
