@@ -665,6 +665,7 @@ public class IntegrationService {
 				if (null != respList && !respList.isEmpty()) {
 					sbomComponents = respList
 						.stream()
+						.filter(x -> null != x.get("purl") && StringUtils.isNotEmpty((String) x.get("purl")))
 						.collect(Collectors.groupingBy(x -> URLDecoder.decode((String) x.get("purl"), StandardCharsets.UTF_8), 
 								Collectors.mapping(x -> UUID.fromString(((Map<String, String>) x.get("project")).get("uuid")), 
 											Collectors.toList())))
