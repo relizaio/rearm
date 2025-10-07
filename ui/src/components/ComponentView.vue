@@ -4,8 +4,8 @@
             <div class="componentSummary">
                 <h5 v-if="componentData">{{ words.componentFirstUpper }}: {{componentData.name}}</h5>
                 <div class="componentIconsAndSettings">
-                    <n-space>
-                        <vue-feather v-cloak v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
+                    <n-space v-cloak>
+                        <vue-feather v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
                         <vue-feather class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
                         <!-- vue-feather v-if="componentData"
                             @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" / -->
