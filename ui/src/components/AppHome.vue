@@ -330,6 +330,8 @@ import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import { useRouter } from 'vue-router'
 import * as vegaEmbed from 'vega-embed'
+import Swal from 'sweetalert2'
+import commonFunctions from '@/utils/commonFunctions'
 
 const store = useStore()
 const router = useRouter()
@@ -404,43 +406,68 @@ const executeGqlSearchHashVersion = async function (params : any) {
 
 async function searchHashVersion (e: Event) {
     e.preventDefault()
-    const params = {
-        org: myorg.value.uuid,
-        query: hashSearchQuery.value
+    try {
+        const params = {
+            org: myorg.value.uuid,
+            query: hashSearchQuery.value
+        }
+        hashSearchResults.value = await executeGqlSearchHashVersion(params)
+        showSearchResultsModal.value = true
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
     }
-    hashSearchResults.value = await executeGqlSearchHashVersion(params)
-    showSearchResultsModal.value = true
 }
 
 async function searchSbomComponent (e: Event) {
     e.preventDefault()
-    const response = await graphqlClient.query({
-        query: gql`
-            query sbomComponentSearch($orgUuid: ID!, $query: String!) {
-                sbomComponentSearch(orgUuid: $orgUuid, query: $query) {
-                    purl
-                    projects
-                }
-            }`,
-        variables: { orgUuid: myorg.value.uuid, query: sbomSearchQuery.value },
-        fetchPolicy: 'no-cache'
-    })
-    dtrackSearchResults.value = response.data.sbomComponentSearch
-    showDtrackSearchResultsModal.value = true
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query sbomComponentSearch($orgUuid: ID!, $query: String!) {
+                    sbomComponentSearch(orgUuid: $orgUuid, query: $query) {
+                        purl
+                        projects
+                    }
+                }`,
+            variables: { orgUuid: myorg.value.uuid, query: sbomSearchQuery.value },
+            fetchPolicy: 'no-cache'
+        })
+        dtrackSearchResults.value = response.data.sbomComponentSearch
+        showDtrackSearchResultsModal.value = true
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    }
 }
 
 async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
-    const searchParams = {
-        orgUuid: myorg.value.uuid,
-        dtrackProjects
+    try {
+        const searchParams = {
+            orgUuid: myorg.value.uuid,
+            dtrackProjects
+        }
+        dtrackSearchReleases.value = await store.dispatch('searchReleasesByDtrackProject', searchParams)
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
     }
-    dtrackSearchReleases.value = await store.dispatch('searchReleasesByDtrackProject', searchParams)
 }
 
 const instancePropsSearchObj: Ref<any> = ref({
     value: '',
     key: ''
 })
+
 const properties: ComputedRef<any> = computed((): any => {
     let props = []
     if (myorg.value && myorg.value.uuid) {
