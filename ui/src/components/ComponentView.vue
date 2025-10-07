@@ -6,10 +6,10 @@
                 <div class="componentIconsAndSettings">
                     <n-space v-cloak>
                         <vue-feather v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
-                        <vue-feather class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
+                        <vue-feather v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
                         <!-- vue-feather v-if="componentData"
                             @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" / -->
-                        <vue-feather type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
+                        <vue-feather v-if="words.componentFirstUpper" type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
                         <n-tooltip trigger="hover" v-if="componentData && componentData.uuid">
                             <template #trigger>
                                 <vue-feather class="icons" type="info" />
