@@ -218,7 +218,7 @@
                                             <n-form-item label="Type" path="type">
                                                 <n-select v-model:value="outputTrigger.type" required 
                                                     v-on:update:value="value => {if (value === 'EMAIL_NOTIFICATION') loadUsers()}"
-                                                    :options="[{label: 'Release Lifecycle Change', value: 'RELEASE_LIFECYCLE_CHANGE'}, {label: 'Marketing Release Lifecycle Change', value: 'MARKETING_RELEASE_LIFECYCLE_CHANGE'}, {label: 'External Integration', value: 'INTEGRATION_TRIGGER'}, {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'}]" />
+                                                    :options="outputTriggerTypeOptions" />
                                             </n-form-item>
                                             <n-form-item v-if="outputTrigger.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
                                                 <n-select v-model:value="outputTrigger.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
@@ -1021,6 +1021,13 @@ const outputTriggerLifecycleOptions = [
     {label: 'End of Support', value: 'END_OF_SUPPORT'}
 ]
 
+const outputTriggerTypeOptions = [
+    {label: 'Release Lifecycle Change', value: 'RELEASE_LIFECYCLE_CHANGE'},
+    {label: 'Marketing Release Lifecycle Change', value: 'MARKETING_RELEASE_LIFECYCLE_CHANGE'},
+    {label: 'External Integration', value: 'INTEGRATION_TRIGGER'},
+    {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'}
+]
+
 const defaultCloneBrProps = {
     name: '',
     type: '',
@@ -1558,7 +1565,11 @@ const outputTriggerTableFields: DataTableColumns<any> = [
     },
     {
         key: 'type',
-        title: 'Type'
+        title: 'Type',
+        render: (row: any) => {
+            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
+            return option ? option.label : row.type
+        }
     },
     {
         key: 'toReleaseLifecycle',
