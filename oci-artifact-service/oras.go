@@ -53,7 +53,8 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 	if err != nil {
 		return resp, err
 	}
-	mediaType := mimeType.String()
+	originalMediaType := mimeType.String()
+	mediaType := originalMediaType
 	
 	// Add compression suffix if compressed
 	if compressionMeta != nil && compressionMeta.Algorithm == CompressionZstd {
@@ -74,6 +75,7 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 				fileDescriptor.Annotations = make(map[string]string)
 			}
 			fileDescriptor.Annotations["io.reliza.compression.algorithm"] = string(compressionMeta.Algorithm)
+			fileDescriptor.Annotations["io.reliza.original.mediatype"] = originalMediaType
 			fileDescriptor.Annotations["io.reliza.original.size"] = fmt.Sprintf("%d", compressionMeta.OriginalSize)
 			fileDescriptor.Annotations["io.reliza.compressed.size"] = fmt.Sprintf("%d", compressionMeta.CompressedSize)
 			fileDescriptor.Annotations["io.reliza.original.sha256"] = compressionMeta.OriginalSHA256

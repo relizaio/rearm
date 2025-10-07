@@ -39,10 +39,13 @@ type Form struct {
 }
 
 type OASResponse struct {
-	OciResponse      ociSpecv1.Descriptor `json:"ociResponse"`
-	FileSHA256Digest string               `json:"fileSHA256Digest"` // Original file digest
-	Compressed       bool                 `json:"compressed"`       // Whether file was compressed
-	CompressionStats string               `json:"compressionStats,omitempty"` // Compression statistics
+	OciResponse        ociSpecv1.Descriptor `json:"ociResponse"`
+	FileSHA256Digest   string               `json:"fileSHA256Digest"`   // Original file digest
+	Compressed         bool                 `json:"compressed"`         // Whether file was compressed
+	CompressionStats   string               `json:"compressionStats,omitempty"` // Compression statistics
+	OriginalMediaType  string               `json:"originalMediaType,omitempty"` // Original media type before compression
+	OriginalSize       int64                `json:"originalSize,omitempty"`      // Original uncompressed size
+	CompressedSize     int64                `json:"compressedSize,omitempty"`    // Compressed size
 }
 
 func uploadFile(c *gin.Context) {
@@ -130,6 +133,13 @@ func uploadFile(c *gin.Context) {
 
 	if compressionMetadata != nil {
 		response.CompressionStats = GetCompressionStats(compressionMetadata)
+		response.OriginalMediaType = mimeType
+		response.OriginalSize = compressionMetadata.OriginalSize
+		response.CompressedSize = compressionMetadata.CompressedSize
+	} else {
+		// No compression, original and compressed are the same
+		response.OriginalMediaType = mimeType
+		response.OriginalSize = resp.Size
 	}
 
 	c.JSON(200, response)
@@ -163,9 +173,14 @@ func downloadFile(c *gin.Context) {
 
 	// Check if file is compressed based on annotations or magic number
 	isCompressed := false
+	originalMediaType := ""
 	if descriptor.Annotations != nil {
 		if algo, ok := descriptor.Annotations["io.reliza.compression.algorithm"]; ok && algo == "zstd" {
 			isCompressed = true
+		}
+		// Retrieve original media type from annotations
+		if mediaType, ok := descriptor.Annotations["io.reliza.original.mediatype"]; ok {
+			originalMediaType = mediaType
 		}
 	}
 
@@ -204,15 +219,29 @@ func downloadFile(c *gin.Context) {
 		finalPath = decompressedFile.Name()
 	}
 
-	mimeType, err := mimetype.DetectFile(finalPath)
-	if err != nil {
-		c.String(http.StatusInternalServerError, "Error Determining mimetype: ", err)
-		return
+	// Use original media type from annotations if available, otherwise detect
+	var mimeTypeStr string
+	var extension string
+	if originalMediaType != "" {
+		mimeTypeStr = originalMediaType
+		// Try to get extension from mimetype library
+		mt := mimetype.Lookup(originalMediaType)
+		if mt != nil {
+			extension = mt.Extension()
+		}
+	} else {
+		mimeType, err := mimetype.DetectFile(finalPath)
+		if err != nil {
+			c.String(http.StatusInternalServerError, "Error Determining mimetype: ", err)
+			return
+		}
+		mimeTypeStr = mimeType.String()
+		extension = mimeType.Extension()
 	}
 
 	c.Header("Content-Description", "File Transfer")
-	c.Header("Content-type", mimeType.String())
-	c.Header("Content-Disposition", "attachment; filename="+form.Tag+mimeType.Extension())
+	c.Header("Content-type", mimeTypeStr)
+	c.Header("Content-Disposition", "attachment; filename="+form.Tag+extension)
 	c.File(finalPath)
 
 	err = os.RemoveAll("/tmp/" + dirToDownload)
