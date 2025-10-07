@@ -47,7 +47,12 @@ export async function fetchFromOci(tag: string): Promise<Object>{
 
 export type OASResponse = {
     ociResponse?: OciResponse,
-    fileSHA256Digest?: string
+    fileSHA256Digest?: string,
+    compressed?: boolean,
+    compressionStats?: string,
+    originalMediaType?: string,
+    originalSize?: number,
+    compressedSize?: number
 }
 export type OciResponse = {
     mediaType?: string,
