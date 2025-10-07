@@ -20,7 +20,7 @@ import jakarta.persistence.QueryHint;
 public interface VcsRepositoryRepository extends CrudRepository<VcsRepository, UUID> {
 	@Transactional
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
+	@QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
 	@Query(value = "SELECT v FROM VcsRepository v where uuid = :uuid")
 	public Optional<VcsRepository> findByIdWriteLocked(UUID uuid);
 	
