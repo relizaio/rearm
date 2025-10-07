@@ -46,6 +46,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.Integration;
@@ -641,7 +642,7 @@ public class IntegrationService {
 	
 	public record ComponentPurlToDtrackProject (String purl, List<UUID> projects) {}
 	
-	public List<ComponentPurlToDtrackProject> searchDependencyTrackComponent (String query, UUID org) {
+	public List<ComponentPurlToDtrackProject> searchDependencyTrackComponent (String query, UUID org) throws RelizaException {
 		List<ComponentPurlToDtrackProject> sbomComponents = new LinkedList<>();
 		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(org, IntegrationType.DEPENDENCYTRACK,
 				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
@@ -672,6 +673,7 @@ public class IntegrationService {
 				}
 			} catch (Exception e) {
 				log.error("Exception searching components on dtrack for query = " + query + " and org = " + org, e);
+				throw new RelizaException("Error searching SBOM components");
 			}
 		}
 		return sbomComponents;

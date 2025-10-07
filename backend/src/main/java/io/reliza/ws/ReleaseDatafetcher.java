@@ -977,7 +977,7 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Query", field = "sbomComponentSearch")
 	public List<ComponentPurlToDtrackProject> sbomComponentSearch(DgsDataFetchingEnvironment dfe,
 			@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("query") String query) {
+			@InputArgument("query") String query) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
