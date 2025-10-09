@@ -1248,12 +1248,16 @@ public class ReleaseDatafetcher {
 		DataLoader<ArtifactKey, Optional<ArtifactData>> dataLoader = dfe.getDataLoader("artifactDetailsLoader");
 		return dataLoader.load(new ArtifactKey(source.artifact()));
 	}
-	
+
 	@DgsData(parentType = "ParentRelease", field = "releaseDetails")
-	public CompletionStage<Optional<ReleaseData>> releaseDetailsOfParentRelease(DgsDataFetchingEnvironment dfe) {
+	public Optional<ReleaseData> releaseDetailsOfParentRelease (DgsDataFetchingEnvironment dfe) {
 		ParentReleaseDto prd = dfe.getSource();
-		
-		DataLoader<ReleaseKey, Optional<ReleaseData>> dataLoader = dfe.getDataLoader("releaseDetailsLoader");
-		return dataLoader.load(new ReleaseKey(prd.release()));
+		Optional<ReleaseData> ord = Optional.empty();
+		try {
+			ord = releaseService.getReleaseData(prd.release(), prd.org());
+		} catch (RelizaException re) {
+			throw new AccessDeniedException(re.getMessage());
+		}
+		return ord;
 	}
 }
