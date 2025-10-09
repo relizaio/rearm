@@ -740,13 +740,11 @@ public class ReleaseService {
 		// match with request
 		// log.info("rebomMergeOptions: {}",rebomMergeOptions);
 		ReleaseBom matchedBom = reboms.stream()
-			.filter(rb -> null != rb.rebomMergeOptions() && null != rb.rebomMergeOptions().tldOnly() 
-				&& null != rb.rebomMergeOptions().belongsTo() && null != rb.rebomMergeOptions().ignoreDev()
-				&& null != rb.rebomMergeOptions().structure() &&
-			Objects.equals(rb.rebomMergeOptions().belongsTo(), rebomMergeOptions.belongsTo()) 
-				&& rb.rebomMergeOptions().tldOnly().equals(rebomMergeOptions.tldOnly()) 
-				&& rb.rebomMergeOptions().ignoreDev().equals(rebomMergeOptions.ignoreDev()) 
-				&& rb.rebomMergeOptions().structure().equals(rebomMergeOptions.structure())
+			.filter(rb -> null != rb.rebomMergeOptions()
+			    && Objects.equals(rb.rebomMergeOptions().belongsTo(), rebomMergeOptions.belongsTo()) 
+			    && Objects.equals(rb.rebomMergeOptions().tldOnly(), rebomMergeOptions.tldOnly())
+			    && Objects.equals(rb.rebomMergeOptions().ignoreDev(), rebomMergeOptions.ignoreDev())
+			    && Objects.equals(rb.rebomMergeOptions().structure(), rebomMergeOptions.structure())
 			).findFirst().orElse(null);
 
 		if(matchedBom == null || forced){
