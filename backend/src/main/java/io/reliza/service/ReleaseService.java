@@ -646,7 +646,8 @@ public class ReleaseService {
 
 	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu) throws RelizaException, JsonProcessingException{
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElseThrow();
-		RebomOptions mergeOptions = new RebomOptions(belongsTo, tldOnly, ignoreDev, structure);
+		if (null == tldOnly) tldOnly = false;
+		final RebomOptions mergeOptions = new RebomOptions(belongsTo, tldOnly, ignoreDev, structure);
 		UUID releaseBomId = matchOrGenerateSingleBomForRelease(rd, mergeOptions, wu);
 		if(null == releaseBomId){
 			throw new RelizaException("No SBOMs found!");
@@ -739,7 +740,9 @@ public class ReleaseService {
 		// match with request
 		// log.info("rebomMergeOptions: {}",rebomMergeOptions);
 		ReleaseBom matchedBom = reboms.stream()
-			.filter(rb -> 	
+			.filter(rb -> null != rb.rebomMergeOptions() && null != rb.rebomMergeOptions().tldOnly() 
+				&& null != rb.rebomMergeOptions().belongsTo() && null != rb.rebomMergeOptions().ignoreDev()
+				&& null != rb.rebomMergeOptions().structure() &&
 			Objects.equals(rb.rebomMergeOptions().belongsTo(), rebomMergeOptions.belongsTo()) 
 				&& rb.rebomMergeOptions().tldOnly().equals(rebomMergeOptions.tldOnly()) 
 				&& rb.rebomMergeOptions().ignoreDev().equals(rebomMergeOptions.ignoreDev()) 
