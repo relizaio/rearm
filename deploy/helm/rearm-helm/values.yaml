@@ -126,6 +126,6 @@ rebom:
     replicaCount: 1
     oci:
       enabled: "true"
-      serviceHost: http://rearm-helm-oci-artifact
+      serviceHost: http://rearm-oci-artifact
       registryHost: registry.relizahub.com
       registryNamespace: 123-placeholder
