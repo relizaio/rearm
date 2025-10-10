@@ -1,4 +1,4 @@
-FROM node:24.9.0-alpine3.22@sha256:77f3c4d1f33c17dfa4af4b0add57d86957187873e313c2c37f52831d117645c8 AS builder
+FROM node:24.10.0-alpine3.22@sha256:6ff78d6d45f2614fe0da54756b44a7c529a15ebcaf9832fab8df036b1d466e73 AS builder
 
 ARG TARGETARCH
 ARG TARGETOS
@@ -25,7 +25,7 @@ RUN sha256sum -c tools.${TARGETARCH}.sha256
 RUN unzip rearm-25.09.2-${TARGETOS}-${TARGETARCH}.zip
 RUN mv rearm /usr/local/bin/rearm-cli
 
-FROM node:24.9.0-alpine3.22@sha256:77f3c4d1f33c17dfa4af4b0add57d86957187873e313c2c37f52831d117645c8 AS package
+FROM node:24.10.0-alpine3.22@sha256:6ff78d6d45f2614fe0da54756b44a7c529a15ebcaf9832fab8df036b1d466e73 AS package
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
