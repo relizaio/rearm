@@ -29,7 +29,7 @@ image:
   pullPolicy: IfNotPresent
 
 imagePullSecrets: [ {"name":"regcred"} ]
-nameOverride: ""
+nameOverride: "rearm"
 fullnameOverride: ""
 
 projectProtocol: http
