@@ -88,6 +88,8 @@ Note that for integration triggers firing on approval policy events, you would n
 
 10. If you require any additional client payload, enter it in the JSON format in the *Optional Client Payload JSON* field.
 
+For example, input: `{"product_version": "$releaseversion"}` to pass the release version on which the trigger fired to the GitHub Actions workflow.
+
 11. Under *CI Repository* click on the Edit icon and select your GitHub repository containing desired GitHub Actions workflow set up above.
 
 12. Click on 'Save', your trigger is now created.
