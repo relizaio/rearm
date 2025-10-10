@@ -6,10 +6,10 @@ type: application
 
 version: 0.3.2
 
-appVersion: "25.10.38"
+appVersion: "25.10.39"
 
 dependencies:
-- name: reliza-postgresql
-  version: 0.0.2
+- name: postgresql
+  version: 0.1.0
   repository: oci://registry.relizahub.com/library
   condition: postgresql.enabled
