@@ -19,13 +19,13 @@ rebom_postgres_ssl: "false"
 traefik_crd_api_version: traefik.containo.us/v1alpha1
 
 image:
-  backEndImage: registry.relizahub.com/library/rearm-backend:25.09.21@sha256:962a0ef12a6e51a56086a3e12f41dbad67cf0ed03eadba83a76780fac27d922f
-  uiImage: registry.relizahub.com/library/rearm-ui:25.09.17@sha256:218e504fd54b860c12e47a48176a64fdfd944cb294891e26b81f032741fbe79c
-  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:25.03.12@sha256:dd8bc100bf04432f9d4643bf31680c3506ea0117bf7dbc58474e4c07870960dc
-  keycloakImage: registry.relizahub.com/library/rearm-keycloak:25.03.10@sha256:fbb829aeba4aaa039bf4a1896962786a072950ea49fd35eda448dba7bb5071ec
-  postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.0@sha256:b15503aa3dbd5c3c1c9519ba1f2ce5c1c0e322132fb6f666ecc5780157f123c3
-  rebomBackend: registry.relizahub.com/library/rebom-backend:0.12.3@sha256:ebfad01449cd7e35ac6596bcdc82407889a4cf009cc4242692175f39894080bd
-  flywayImage: docker.io/redgate/flyway:11.8.2-alpine@sha256:f7388135fcf0395fae31fcc5398cb1088ff3cce85f70e464e4bfd34a02d29ac1
+  backEndImage: registry.relizahub.com/library/rearm-backend:25.09.37@sha256:3310a932644eb2528739c2f52871385f396803c001729a6c7a3fd659036b5fe0
+  uiImage: registry.relizahub.com/library/rearm-ui:25.09.24@sha256:b139f219aea6a12fccf3acae1dd748573918640d387fdb3f05f88de8986ac4d5
+  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:25.10.2@sha256:7c51586f2dbcfca41e68ea18f1c2ab610b6c1fa98033e41d8751f839aad1b41e
+  keycloakImage: registry.relizahub.com/library/rearm-keycloak:25.03.11@sha256:cc709186cbf25e2df6135170695e5302d54d9f7d44e823b212bd528e8749fbb5
+  postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.2@sha256:1d2b05e8662eb69bea12a04e91520e7f364e1ee3696a8a9feb0251c14b0f5950
+  rebomBackend: registry.relizahub.com/library/rebom-backend:0.12.8@sha256:99b040118dfa5f8f23e749274f7d80cfe9f3720dc070b9dbae072057b1b6daa0
+  flywayImage: docker.io/redgate/flyway:11.4.0-alpine@sha256:19a1178e519f9c4448956bb7a7d7c52610e6c46503a5f752d13f04120092c45d
   pullPolicy: IfNotPresent
 
 imagePullSecrets: [ {"name":"regcred"} ]
