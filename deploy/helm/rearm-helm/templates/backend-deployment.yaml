@@ -43,7 +43,7 @@ spec:
             - name: RELIZAPROP_ENABLE_BETA_TEA
               value: {{ .Values.enableBetaTea | default "false" | quote }}
             - name: PG_HOST
-              value: {{ .Release.Name }}-reliza-postgresql
+              value: {{ .Release.Name }}-postgresql
             - name: PG_PORT
               value: "5432"
             - name: PG_DATABASE
