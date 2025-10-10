@@ -84,7 +84,7 @@ Note that there are other ways to set up the secrets in a more secure way, but w
 Once your values file is ready, run the following command to install the helm chart:
 
 ```bash
-helm upgrade --install --create-namespace -n rearm -f rearm-values.yaml rearm oci://registry.relizahub.com/library/rearm
+helm upgrade --install --create-namespace -n rearm -f rearm-values.yaml rearm oci://registry.relizahub.com/library/rearm-helm
 ```
 
 Navigate to the keycloak login path at ReARM URI with `/kauth/` suffix. In this example, this should be `http://rearm.localhost/kauth`.
