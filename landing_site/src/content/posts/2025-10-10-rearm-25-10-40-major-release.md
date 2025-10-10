@@ -3,7 +3,7 @@ title: "ReARM 25.10.40: Major Release with Breaking Changes"
 date: "2025-10-10"
 ---
 
-We're excited to announce a major release of ReARM CE (v25.10.40) and ReARM Pro (v25.10.30).
+We're excited to announce a major release of [ReARM CE (v25.10.40)](https://github.com/relizaio/rearm/releases/25.10.40) and ReARM Pro (v25.10.30).
 
 This release includes significant improvements and important breaking changes that users should be aware of before upgrading.
 
