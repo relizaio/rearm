@@ -485,9 +485,8 @@ a {
   transition: all 0.3s ease;
   position: relative;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-  display: grid;
-  grid-template-rows: auto auto auto 1fr auto; /* title, amount, type, features flex area, CTA */
-  row-gap: 12px; /* consistent spacing between rows */
+  display: flex;
+  flex-direction: column;
   height: 100%; /* stretch to equal height with grid container */
 }
 
@@ -507,8 +506,8 @@ a {
   font-size: 1.5rem;
   font-weight: 700;
   color: #1f2937;
-  margin-bottom: 0; /* use grid gap for spacing */
-  min-height: 5.6rem; /* allow up to ~3 lines for longest titles */
+  margin-bottom: 12px;
+  height: 5.6rem; /* fixed height for alignment */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -518,16 +517,21 @@ a {
   font-size: 2.5rem;
   font-weight: 800;
   color: #fd9468;
-  margin-bottom: 0; /* use grid gap for spacing */
-  line-height: 1.15; /* allow better spacing for two-line amounts */
+  margin-bottom: 12px;
+  line-height: 1.15;
+  height: 3rem; /* fixed height for alignment */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .planType {
   color: #6b7280;
   font-size: 0.95rem;
-  margin-bottom: 0; /* use grid gap for spacing */
+  margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  height: 1.5rem; /* fixed height for alignment */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -536,9 +540,9 @@ a {
 .planFeatures {
   list-style: none;
   padding: 0;
-  margin: 0; /* features grow in the 1fr row, no extra margins */
+  margin: 0 0 12px 0;
   text-align: left;
-  min-height: 0; /* allow grid item to shrink and prevent overflow pushing CTA */
+  flex-grow: 1; /* grow to fill available space, pushing CTA to bottom */
 }
 
 .planFeature {
@@ -549,7 +553,7 @@ a {
   padding-left: 25px;
 }
 
-.planFeature::before {
+.planFeature:not(:empty)::before {
   content: "✓";
   position: absolute;
   left: 0;
@@ -560,7 +564,7 @@ a {
 
 .planCta {
   width: 100%;
-  padding: 12px 24px;
+  padding: 16px 24px;
   background: var(--btn_getStarted-backgroundColor);
   color: var(--btn_getStarted-color);
   border: 1px solid var(--btn_getStarted-color);
@@ -568,7 +572,11 @@ a {
   font-size: 1rem;
   font-weight: 600;
   text-decoration: none;
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  text-align: center;
   transition: all 0.3s ease;
   cursor: pointer;
 }
@@ -590,6 +598,103 @@ a {
 .planCtaSecondary:hover {
   background: var(--btn_getStarted-color);
   color: var(--btn_getStarted-backgroundColor);
+}
+
+/* User Selector Styles */
+.userSelector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 15px 0;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 12px;
+  min-height: 140px; /* fixed height to align all bullet lists */
+}
+
+.userSelectorLabel {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 5px;
+}
+
+.userSelectorInput {
+  width: 100%;
+  padding: 8px 12px;
+  border: 2px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+  text-align: center;
+  transition: border-color 0.2s ease;
+}
+
+.userSelectorInput:focus {
+  outline: none;
+  border-color: #fd9468;
+}
+
+.userSelectorInput::-webkit-inner-spin-button,
+.userSelectorInput::-webkit-outer-spin-button {
+  opacity: 1;
+}
+
+.userSelectorRange {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #e5e7eb;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.userSelectorRange::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fd9468;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: -6px;
+}
+
+.userSelectorRange::-webkit-slider-thumb:hover {
+  background: #ff7a4d;
+  transform: scale(1.1);
+}
+
+.userSelectorRange::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fd9468;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  margin-top: -6px;
+}
+
+.userSelectorRange::-moz-range-thumb:hover {
+  background: #ff7a4d;
+  transform: scale(1.1);
+}
+
+.userSelectorRange::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #fd9468 0%, #fd9468 var(--range-progress, 0%), #e5e7eb var(--range-progress, 0%), #e5e7eb 100%);
+}
+
+.userSelectorRange::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #e5e7eb;
 }
 
 /* Responsive pricing styles */
