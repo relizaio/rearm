@@ -12,7 +12,7 @@ info:
   license:
     name: Apache 2.0
     url: https://github.com/CycloneDX/transparency-exchange-api/blob/main/LICENSE
-  version: 0.1.0-beta.1
+  version: 0.2.0-beta.2
 servers:
   - url: http://localhost/tea/v1
     description: Local development
@@ -52,15 +52,11 @@ paths:
           description: UUID of TEA Product in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
+        - $ref: "#/components/parameters/page-offset"
+        - $ref: "#/components/parameters/page-size"
       responses:
         '200':
-          description: Requested Releases of TEA Product found and returned
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  "$ref": "#/components/schemas/productRelease"
+          $ref: "#/components/responses/paginated-product-release"
         '400':
           $ref: "#/components/responses/400-invalid-request"
         '404':
@@ -94,7 +90,7 @@ paths:
   /productReleases:
     get:
       description: Returns a list of TEA product releases. Note that multiple product releases may match.
-      operationId: getTeaProductReleaseByIdentifier
+      operationId: queryTeaProductReleases
       parameters:
         - $ref: "#/components/parameters/page-offset"
         - $ref: "#/components/parameters/page-size"
@@ -111,7 +107,7 @@ paths:
     get:
       description: Returns a list of TEA products. Note that multiple products may
         match.
-      operationId: getTeaProductByIdentifier
+      operationId: queryTeaProducts
       parameters:
         - $ref: "#/components/parameters/page-offset"
         - $ref: "#/components/parameters/page-size"
@@ -174,15 +170,39 @@ paths:
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
         - TEA Component
-  /release/{uuid}/collection/latest:
+  /componentRelease/{uuid}:
     get:
-      description: Get the latest TEA Collection belonging to the TEA Release
+      description: Get the TEA Component Release with its latest collection
+      operationId: getComponentReleaseById
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Component Release in the TEA server
+          schema:
+            "$ref": "#/components/schemas/uuid"
+      responses:
+        '200':
+          description: Requested TEA Component Release and its latest Collection found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/component-release-with-collection"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Component Release        
+  /componentRelease/{uuid}/collection/latest:
+    get:
+      description: Get the latest TEA Collection belonging to the TEA Component Release
       operationId: getLatestCollection
       parameters:
         - name: uuid
           in: path
           required: true
-          description: UUID of TEA Release in the TEA server
+          description: UUID of TEA Component Release in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
       responses:
@@ -197,7 +217,7 @@ paths:
         '404':
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
-        - TEA Release
+        - TEA Component Release
   /productRelease/{uuid}/collection/latest:
     get:
       description: Get the latest TEA Collection belonging to the TEA Product Release
@@ -222,15 +242,15 @@ paths:
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
         - TEA Product Release
-  /release/{uuid}/collections:
+  /componentRelease/{uuid}/collections:
     get:
-      description: Get the TEA Collections belonging to the TEA Release
+      description: Get the TEA Collections belonging to the TEA Component Release
       operationId: getCollectionsByReleaseId
       parameters:
         - name: uuid
           in: path
           required: true
-          description: UUID of TEA Release in the TEA server
+          description: UUID of TEA Component Release in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
       responses:
@@ -247,7 +267,7 @@ paths:
         '404':
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
-        - TEA Release
+        - TEA Component Release
   /productRelease/{uuid}/collections:
     get:
       description: Get the TEA Collections belonging to the TEA Product Release
@@ -282,7 +302,7 @@ paths:
         - name: uuid
           in: path
           required: true
-          description: UUID of TEA Release in the TEA server
+          description: UUID of TEA Product Release in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
         - name: collectionVersion
@@ -304,9 +324,9 @@ paths:
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
         - TEA Product Release
-  /release/{uuid}/collection/{collectionVersion}:
+  /componentRelease/{uuid}/collection/{collectionVersion}:
     get:
-      description: Get a specific Collection (by version) for a TEA Release by its UUID
+      description: Get a specific Collection (by version) for a TEA Component Release by its UUID
       operationId: getCollection
       parameters:
         - name: uuid
@@ -333,7 +353,7 @@ paths:
         '404':
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
-        - TEA Release
+        - TEA Component Release
   /artifact/{uuid}:
     get:
       description: Get metadata for specific TEA artifact
@@ -358,6 +378,27 @@ paths:
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
         - TEA Artifact
+  /discovery:
+    get:
+      description: Discovery endpoint which resolves TEI into product release UUID.
+      operationId: discoveryByTei
+      parameters:
+        - name: tei
+          in: query
+          required: true
+          description: Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.
+          schema:
+            type: string
+            example: urn%3Atei%3Auuid%3Aproducts.example.com%3Ad4d9f54a-abcf-11ee-ac79-1a52914d44b
+      responses:
+        '200':
+          $ref: "#/components/responses/discovery-response"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Discovery
 components:
   schemas:
     #
@@ -436,6 +477,10 @@ components:
         product:
           description: UUID of the TEA Product this release belongs to
           "$ref": "#/components/schemas/uuid"
+        productName:
+          description: Name of the TEA Product this release belongs to
+          type: string
+          example: Apache Log4j 2
         version:
           description: Version number of the product release
           type: string
@@ -542,7 +587,7 @@ components:
 
 
     #
-    # TEA Release and related objects
+    # TEA Component Release and related objects
     #
     release:
       type: object
@@ -554,6 +599,10 @@ components:
         component:
           description: UUID of the TEA Component this release belongs to
           "$ref": "#/components/schemas/uuid"
+        componentName:
+          description: Name of the TEA Component this release belongs to
+          type: string
+          example: tomcat
         version:
           description: Version number
           type: string
@@ -707,6 +756,57 @@ components:
           url: https://dlcdn.apache.org/tomcat/tomcat-11/v11.0.7/bin/apache-tomcat-11.0.7.exe
           signatureUrl: https://downloads.apache.org/tomcat/tomcat-11/v11.0.7/bin/apache-tomcat-11.0.7.exe.asc
 
+    component-release-with-collection:
+      type: object
+      description: A TEA Component Release combined with its latest collection
+      properties:
+        release:
+          description: The TEA Component Release information
+          $ref: "#/components/schemas/release"
+        latestCollection:
+          description: The latest TEA Collection for this component release
+          $ref: "#/components/schemas/collection"
+      required:
+        - release
+        - latestCollection
+      examples:
+        - release:
+            uuid: 605d0ecb-1057-40e4-9abf-c400b10f0345
+            version: "11.0.7"
+            createdDate: 2025-05-07T18:08:00Z
+            releaseDate: 2025-05-12T18:08:00Z
+            identifiers:
+              - idType: PURL
+                idValue: pkg:maven/org.apache.tomcat/tomcat@11.0.7
+          latestCollection:
+            uuid: 605d0ecb-1057-40e4-9abf-c400b10f0345
+            version: 2
+            date: 2025-05-12T18:08:00Z
+            belongsTo: COMPONENT_RELEASE
+            updateReason:
+              type: INITIAL_RELEASE
+              comment: Initial collection for this release
+            artifacts:
+              - uuid: 1cb47b95-8bf8-3bad-a5a4-0d54d86e10ce
+                name: Build SBOM
+                type: BOM
+                formats:
+                  - mimeType: application/vnd.cyclonedx+xml
+                    description: CycloneDX SBOM (XML)
+                    url: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.7-cyclonedx.xml
+                    checksums:
+                      - algType: SHA-256
+                        algValue: 9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1
+              - uuid: dfa35519-9734-4259-bba1-3e825cf4be06
+                name: Vulnerability Disclosure Report
+                type: VULNERABILITIES
+                formats:
+                  - mimeType: application/vnd.cyclonedx+xml
+                    description: CycloneDX VDR (XML)
+                    url: https://tomcat.apache.org/cyclonedx/vdr.xml
+                    checksums:
+                      - algType: SHA-256
+                        algValue: 75b81020b3917cb682b1a7605ade431e062f7a4c01a412f0b87543b6e995ad2a
 
     #
     # TEA Collection and related objects
@@ -797,7 +897,7 @@ components:
       type: string
       description: Indicates whether a collection belongs to a component release or a product release
       enum:
-        - RELEASE
+        - COMPONENT_RELEASE
         - PRODUCT_RELEASE
 
     #
@@ -895,9 +995,51 @@ components:
         - BLAKE2b-384
         - BLAKE2b-512
         - BLAKE3
+    unknown-error-type:
+      type: string
+      description: Classification of TEA error response
+      enum:
+        - OBJECT_UNKNOWN
+        - OBJECT_NOT_SHAREABLE
     #
     # Types used in API responses
     #
+    error-response:
+      type: object
+      description: Error response
+      additionalProperties: false
+      properties:
+        error:
+          $ref: "#/components/schemas/unknown-error-type"
+      required:
+        - error
+
+    discovery-info:
+      type: object
+      description: Discovery information for a TEI
+      additionalProperties: false
+      properties:
+        productReleaseUuid:
+          description: UUID of the resolved TEA Product Release
+          $ref: "#/components/schemas/uuid"
+          example: d4d9f54a-abcf-11ee-ac79-1a52914d44b
+        rootUrl:
+          description: Root URL of the TEA server for this TEI without trailing slash
+          type: string
+          format: uri
+          example: https://api.teaexample.com
+        versions:
+          description: Supported TEA API versions at this server without v prefix
+          type: array
+          minItems: 1
+          items:
+            type: string
+          example: ["0.2.0-beta.2", "1.0.0"]
+      required:
+        - productReleaseUuid
+        - rootUrl
+        - versions
+
     pagination-details:
       type: object
       properties:
@@ -921,6 +1063,30 @@ components:
         - pageStartIndex
         - pageSize
         - totalResults
+    
+    paginated-product-response:
+      type: object
+      description: A paginated response containing TEA Products
+      allOf:
+        - $ref: "#/components/schemas/pagination-details"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/product"
+    
+    paginated-product-release-response:
+      type: object
+      description: A paginated response containing TEA Product Releases
+      allOf:
+        - $ref: "#/components/schemas/pagination-details"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/productRelease"
   responses:
     204-common-delete:
       description: Object deleted successfully
@@ -937,33 +1103,27 @@ components:
     404-object-by-id-not-found:
       description: Object requested by identifier not found
       content:
-        application/json: {}
+        application/json:
+          schema:
+            $ref: "#/components/schemas/error-response"
+    discovery-response:
+      description: Discovery information for the requested TEI
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/discovery-info"
     paginated-product:
       description: A paginated response containing TEA Products
       content:
         application/json:
           schema:
-            allOf:
-              - $ref: "#/components/schemas/pagination-details"
-              - type: object
-                properties:
-                  results:
-                    type: array
-                    items:
-                      "$ref": "#/components/schemas/product"
+            $ref: "#/components/schemas/paginated-product-response"
     paginated-product-release:
       description: A paginated response containing TEA Product Releases
       content:
         application/json:
           schema:
-            allOf:
-              - $ref: "#/components/schemas/pagination-details"
-              - type: object
-                properties:
-                  results:
-                    type: array
-                    items:
-                      "$ref": "#/components/schemas/productRelease"
+            $ref: "#/components/schemas/paginated-product-release-response"
   parameters:
     # Pagination
     page-offset:
@@ -1037,8 +1197,9 @@ tags:
   - name: TEA Product
   - name: TEA Product Release
   - name: TEA Component
-  - name: TEA Release
+  - name: TEA Component Release
   - name: TEA Artifact
+  - name: TEA Discovery
 externalDocs:
   description: Transparency Exchange API specification
   url: https://github.com/CycloneDX/transparency-exchange-api
