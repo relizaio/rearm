@@ -22,6 +22,6 @@ public class WellKnownWs {
 
     @GetMapping(value = "/.well-known/tea", produces = "application/json")
     public Map<String, Object> teaWellKnown ()  {
-    	return Map.of("schemaVersion", 1, "endpoints", Map.of("url", teaTransformerService.getServerBaseUri(), "versions", List.of("0.2.0-beta.2")));
+    	return Map.of("schemaVersion", 1, "endpoints", List.of(Map.of("url", teaTransformerService.getServerBaseUri(), "versions", List.of("0.2.0-beta.2"))));
     }
 }
