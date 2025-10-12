@@ -17,39 +17,19 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Checksum algorithm
+ * Classification of TEA error response
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
-public enum TeaChecksumType {
+public enum TeaUnknownErrorType {
   
-  MD5("MD5"),
+  OBJECT_UNKNOWN("OBJECT_UNKNOWN"),
   
-  SHA_1("SHA-1"),
-  
-  SHA_256("SHA-256"),
-  
-  SHA_384("SHA-384"),
-  
-  SHA_512("SHA-512"),
-  
-  SHA3_256("SHA3-256"),
-  
-  SHA3_384("SHA3-384"),
-  
-  SHA3_512("SHA3-512"),
-  
-  BLAKE2B_256("BLAKE2b-256"),
-  
-  BLAKE2B_384("BLAKE2b-384"),
-  
-  BLAKE2B_512("BLAKE2b-512"),
-  
-  BLAKE3("BLAKE3");
+  OBJECT_NOT_SHAREABLE("OBJECT_NOT_SHAREABLE");
 
   private final String value;
 
-  TeaChecksumType(String value) {
+  TeaUnknownErrorType(String value) {
     this.value = value;
   }
 
@@ -64,8 +44,8 @@ public enum TeaChecksumType {
   }
 
   @JsonCreator
-  public static TeaChecksumType fromValue(String value) {
-    for (TeaChecksumType b : TeaChecksumType.values()) {
+  public static TeaUnknownErrorType fromValue(String value) {
+    for (TeaUnknownErrorType b : TeaUnknownErrorType.values()) {
       if (b.value.equals(value)) {
         return b;
       }

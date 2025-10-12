@@ -30,12 +30,14 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "release", description = "A TEA Component Release")
 @JsonTypeName("release")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaRelease {
 
   private UUID uuid;
 
   private @Nullable UUID component;
+
+  private @Nullable String componentName;
 
   private String version;
 
@@ -104,6 +106,26 @@ public class TeaRelease {
 
   public void setComponent(@Nullable UUID component) {
     this.component = component;
+  }
+
+  public TeaRelease componentName(@Nullable String componentName) {
+    this.componentName = componentName;
+    return this;
+  }
+
+  /**
+   * Name of the TEA Component this release belongs to
+   * @return componentName
+   */
+  
+  @Schema(name = "componentName", example = "tomcat", description = "Name of the TEA Component this release belongs to", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @JsonProperty("componentName")
+  public @Nullable String getComponentName() {
+    return componentName;
+  }
+
+  public void setComponentName(@Nullable String componentName) {
+    this.componentName = componentName;
   }
 
   public TeaRelease version(String version) {
@@ -253,6 +275,7 @@ public class TeaRelease {
     TeaRelease release = (TeaRelease) o;
     return Objects.equals(this.uuid, release.uuid) &&
         Objects.equals(this.component, release.component) &&
+        Objects.equals(this.componentName, release.componentName) &&
         Objects.equals(this.version, release.version) &&
         Objects.equals(this.createdDate, release.createdDate) &&
         Objects.equals(this.releaseDate, release.releaseDate) &&
@@ -263,7 +286,7 @@ public class TeaRelease {
 
   @Override
   public int hashCode() {
-    return Objects.hash(uuid, component, version, createdDate, releaseDate, preRelease, identifiers, distributions);
+    return Objects.hash(uuid, component, componentName, version, createdDate, releaseDate, preRelease, identifiers, distributions);
   }
 
   @Override
@@ -272,6 +295,7 @@ public class TeaRelease {
     sb.append("class TeaRelease {\n");
     sb.append("    uuid: ").append(toIndentedString(uuid)).append("\n");
     sb.append("    component: ").append(toIndentedString(component)).append("\n");
+    sb.append("    componentName: ").append(toIndentedString(componentName)).append("\n");
     sb.append("    version: ").append(toIndentedString(version)).append("\n");
     sb.append("    createdDate: ").append(toIndentedString(createdDate)).append("\n");
     sb.append("    releaseDate: ").append(toIndentedString(releaseDate)).append("\n");

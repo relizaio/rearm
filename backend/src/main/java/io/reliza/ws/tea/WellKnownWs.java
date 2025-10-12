@@ -3,30 +3,25 @@
 */
 package io.reliza.ws.tea;
 
-import java.io.IOException;
-import java.util.UUID;
+import java.util.List;
+import java.util.Map;
 
-import org.springframework.http.HttpHeaders;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.context.request.ServletWebRequest;
 
-import jakarta.servlet.http.HttpServletResponse;
+import io.reliza.service.tea.TeaTransformerService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RestController
 public class WellKnownWs {
+	
+	@Autowired
+	private TeaTransformerService teaTransformerService;
 
-    @GetMapping("/.well-known/tea/{uuid}")
-    public void teaDiscoveryRedirect (
-    	@RequestHeader HttpHeaders headers,
-        @PathVariable("uuid") UUID uuid,
-        ServletWebRequest request,
-        HttpServletResponse response
-    ) throws IOException {
-        response.sendRedirect("/tea/v0.1.0-beta.1/productRelease/" + uuid);
+    @GetMapping(value = "/.well-known/tea", produces = "application/json")
+    public Map<String, Object> teaWellKnown ()  {
+    	return Map.of("schemaVersion", 1, "endpoints", Map.of("url", teaTransformerService.getServerBaseUri(), "versions", List.of("0.2.0-beta.2")));
     }
 }

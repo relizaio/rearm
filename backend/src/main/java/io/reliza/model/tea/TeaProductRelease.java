@@ -30,12 +30,14 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "productRelease", description = "A specific release of a TEA product")
 @JsonTypeName("productRelease")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaProductRelease {
 
   private UUID uuid;
 
   private @Nullable UUID product;
+
+  private @Nullable String productName;
 
   private String version;
 
@@ -105,6 +107,26 @@ public class TeaProductRelease {
 
   public void setProduct(@Nullable UUID product) {
     this.product = product;
+  }
+
+  public TeaProductRelease productName(@Nullable String productName) {
+    this.productName = productName;
+    return this;
+  }
+
+  /**
+   * Name of the TEA Product this release belongs to
+   * @return productName
+   */
+  
+  @Schema(name = "productName", example = "Apache Log4j 2", description = "Name of the TEA Product this release belongs to", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @JsonProperty("productName")
+  public @Nullable String getProductName() {
+    return productName;
+  }
+
+  public void setProductName(@Nullable String productName) {
+    this.productName = productName;
   }
 
   public TeaProductRelease version(String version) {
@@ -254,6 +276,7 @@ public class TeaProductRelease {
     TeaProductRelease productRelease = (TeaProductRelease) o;
     return Objects.equals(this.uuid, productRelease.uuid) &&
         Objects.equals(this.product, productRelease.product) &&
+        Objects.equals(this.productName, productRelease.productName) &&
         Objects.equals(this.version, productRelease.version) &&
         Objects.equals(this.createdDate, productRelease.createdDate) &&
         Objects.equals(this.releaseDate, productRelease.releaseDate) &&
@@ -264,7 +287,7 @@ public class TeaProductRelease {
 
   @Override
   public int hashCode() {
-    return Objects.hash(uuid, product, version, createdDate, releaseDate, preRelease, identifiers, components);
+    return Objects.hash(uuid, product, productName, version, createdDate, releaseDate, preRelease, identifiers, components);
   }
 
   @Override
@@ -273,6 +296,7 @@ public class TeaProductRelease {
     sb.append("class TeaProductRelease {\n");
     sb.append("    uuid: ").append(toIndentedString(uuid)).append("\n");
     sb.append("    product: ").append(toIndentedString(product)).append("\n");
+    sb.append("    productName: ").append(toIndentedString(productName)).append("\n");
     sb.append("    version: ").append(toIndentedString(version)).append("\n");
     sb.append("    createdDate: ").append(toIndentedString(createdDate)).append("\n");
     sb.append("    releaseDate: ").append(toIndentedString(releaseDate)).append("\n");

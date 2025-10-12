@@ -23,12 +23,13 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * TeaInlineObject
+ * A paginated response containing TEA Products
  */
 
-@JsonTypeName("inline_object")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
-public class TeaInlineObject {
+@Schema(name = "paginated-product-response", description = "A paginated response containing TEA Products")
+@JsonTypeName("paginated-product-response")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+public class TeaPaginatedProductResponse {
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime timestamp;
@@ -42,21 +43,21 @@ public class TeaInlineObject {
   @Valid
   private List<@Valid TeaProduct> results = new ArrayList<>();
 
-  public TeaInlineObject() {
+  public TeaPaginatedProductResponse() {
     super();
   }
 
   /**
    * Constructor with only required parameters
    */
-  public TeaInlineObject(OffsetDateTime timestamp, Long pageStartIndex, Long pageSize, Long totalResults) {
+  public TeaPaginatedProductResponse(OffsetDateTime timestamp, Long pageStartIndex, Long pageSize, Long totalResults) {
     this.timestamp = timestamp;
     this.pageStartIndex = pageStartIndex;
     this.pageSize = pageSize;
     this.totalResults = totalResults;
   }
 
-  public TeaInlineObject timestamp(OffsetDateTime timestamp) {
+  public TeaPaginatedProductResponse timestamp(OffsetDateTime timestamp) {
     this.timestamp = timestamp;
     return this;
   }
@@ -76,7 +77,7 @@ public class TeaInlineObject {
     this.timestamp = timestamp;
   }
 
-  public TeaInlineObject pageStartIndex(Long pageStartIndex) {
+  public TeaPaginatedProductResponse pageStartIndex(Long pageStartIndex) {
     this.pageStartIndex = pageStartIndex;
     return this;
   }
@@ -96,7 +97,7 @@ public class TeaInlineObject {
     this.pageStartIndex = pageStartIndex;
   }
 
-  public TeaInlineObject pageSize(Long pageSize) {
+  public TeaPaginatedProductResponse pageSize(Long pageSize) {
     this.pageSize = pageSize;
     return this;
   }
@@ -116,7 +117,7 @@ public class TeaInlineObject {
     this.pageSize = pageSize;
   }
 
-  public TeaInlineObject totalResults(Long totalResults) {
+  public TeaPaginatedProductResponse totalResults(Long totalResults) {
     this.totalResults = totalResults;
     return this;
   }
@@ -136,12 +137,12 @@ public class TeaInlineObject {
     this.totalResults = totalResults;
   }
 
-  public TeaInlineObject results(List<@Valid TeaProduct> results) {
+  public TeaPaginatedProductResponse results(List<@Valid TeaProduct> results) {
     this.results = results;
     return this;
   }
 
-  public TeaInlineObject addResultsItem(TeaProduct resultsItem) {
+  public TeaPaginatedProductResponse addResultsItem(TeaProduct resultsItem) {
     if (this.results == null) {
       this.results = new ArrayList<>();
     }
@@ -172,12 +173,12 @@ public class TeaInlineObject {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    TeaInlineObject inlineObject = (TeaInlineObject) o;
-    return Objects.equals(this.timestamp, inlineObject.timestamp) &&
-        Objects.equals(this.pageStartIndex, inlineObject.pageStartIndex) &&
-        Objects.equals(this.pageSize, inlineObject.pageSize) &&
-        Objects.equals(this.totalResults, inlineObject.totalResults) &&
-        Objects.equals(this.results, inlineObject.results);
+    TeaPaginatedProductResponse paginatedProductResponse = (TeaPaginatedProductResponse) o;
+    return Objects.equals(this.timestamp, paginatedProductResponse.timestamp) &&
+        Objects.equals(this.pageStartIndex, paginatedProductResponse.pageStartIndex) &&
+        Objects.equals(this.pageSize, paginatedProductResponse.pageSize) &&
+        Objects.equals(this.totalResults, paginatedProductResponse.totalResults) &&
+        Objects.equals(this.results, paginatedProductResponse.results);
   }
 
   @Override
@@ -188,7 +189,7 @@ public class TeaInlineObject {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class TeaInlineObject {\n");
+    sb.append("class TeaPaginatedProductResponse {\n");
     sb.append("    timestamp: ").append(toIndentedString(timestamp)).append("\n");
     sb.append("    pageStartIndex: ").append(toIndentedString(pageStartIndex)).append("\n");
     sb.append("    pageSize: ").append(toIndentedString(pageSize)).append("\n");

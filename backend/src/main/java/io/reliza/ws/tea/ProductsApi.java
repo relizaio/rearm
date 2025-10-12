@@ -6,7 +6,7 @@
 package io.reliza.ws.tea;
 
 import io.reliza.model.tea.TeaIdentifierType;
-import io.reliza.model.tea.TeaInlineObject;
+import io.reliza.model.tea.TeaPaginatedProductResponse;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -35,7 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Validated
 @Tag(name = "TEA Product", description = "the TEA Product API")
 public interface ProductsApi {
@@ -56,12 +56,12 @@ public interface ProductsApi {
      *         or Request was Invalid (status code 400)
      */
     @Operation(
-        operationId = "getTeaProductByIdentifier",
+        operationId = "queryTeaProducts",
         description = "Returns a list of TEA products. Note that multiple products may match.",
         tags = { "TEA Product" },
         responses = {
             @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Products", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaInlineObject.class))
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedProductResponse.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid")
         },
@@ -76,7 +76,7 @@ public interface ProductsApi {
         produces = { "application/json" }
     )
     
-    default ResponseEntity<TeaInlineObject> getTeaProductByIdentifier(
+    default ResponseEntity<TeaPaginatedProductResponse> queryTeaProducts(
         @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
         @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize,
         @Parameter(name = "idType", description = "Type of identifier specified in the `idValue` parameter", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idType", required = false) @Nullable TeaIdentifierType idType,

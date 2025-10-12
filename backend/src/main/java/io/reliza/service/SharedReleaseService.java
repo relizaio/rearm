@@ -267,6 +267,23 @@ public class SharedReleaseService {
 		return releases.stream().map(ReleaseData::dataFromRecord).toList();
 	}
 	
+	public List<ReleaseData> listProductReleasesOfOrg (UUID org, Long limit, Long offset) {
+		String limitAsStr = null;
+		if (null == limit || limit < 1) {
+			limitAsStr = "ALL";
+		} else {
+			limitAsStr = limit.toString();
+		}
+		String offsetAsStr = null;
+		if (null == offset || offset < 0) {
+			offsetAsStr = "0";
+		} else {
+			offsetAsStr = offset.toString();
+		}
+		var releases = repository.findProductReleasesOfOrg(org.toString(), limitAsStr,  offsetAsStr);
+		return releases.stream().map(ReleaseData::dataFromRecord).toList();
+	}
+	
 	/**
 	 * This method parses 10 most recent releases of a product (could be a component as well) to establish component level dependencies
 	 * @param componentUuid
@@ -679,5 +696,12 @@ public class SharedReleaseService {
 		});
 		var releaseDatas = getReleaseDataList(releaseIds, org);
 		return sortReleasesByBranchAndVersion(releaseDatas);
+	}
+	
+	public Optional<ReleaseData> findReleaseDataByOrgAndPurl(UUID org, String purl) {
+		Optional<ReleaseData> ord = Optional.empty();
+		var or = repository.findReleaseByOrgAndPurl(org.toString(), purl);
+		if (or.isPresent()) ord = Optional.of(ReleaseData.dataFromRecord(or.get()));
+		return ord;
 	}
 }

@@ -6,6 +6,7 @@
 package io.reliza.ws.tea;
 
 import io.reliza.model.tea.TeaComponent;
+import io.reliza.model.tea.TeaErrorResponse;
 import io.reliza.model.tea.TeaRelease;
 import java.util.UUID;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
@@ -36,7 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Validated
 @Tag(name = "TEA Component", description = "the TEA Component API")
 public interface ComponentApi {
@@ -63,7 +64,9 @@ public interface ComponentApi {
                 @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = TeaRelease.class)))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found")
+            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
         },
         security = {
             @SecurityRequirement(name = "basicAuth"),
@@ -82,7 +85,12 @@ public interface ComponentApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"component\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"distributionType\" : \"distributionType\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"distributionType\" : \"distributionType\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true }, { \"component\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"distributionType\" : \"distributionType\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"distributionType\" : \"distributionType\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true } ]";
+                    String exampleString = "[ { \"component\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"distributionType\" : \"distributionType\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"distributionType\" : \"distributionType\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true }, { \"component\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"distributionType\" : \"distributionType\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"distributionType\" : \"distributionType\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -111,7 +119,9 @@ public interface ComponentApi {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaComponent.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found")
+            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
         },
         security = {
             @SecurityRequirement(name = "basicAuth"),
@@ -131,6 +141,11 @@ public interface ComponentApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

@@ -13,8 +13,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.tea.TeaPaginatedProductReleaseResponse;
 import io.reliza.model.tea.TeaProduct;
 import io.reliza.model.tea.TeaProductRelease;
 import io.reliza.service.GetComponentService;
@@ -26,13 +28,17 @@ import io.swagger.v3.oas.annotations.enums.ParameterIn;
 
 import org.springframework.web.context.request.NativeWebRequest;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
 
 @Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.1.0-beta.1}")
+@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.2.0-beta.2}")
 public class ProductApiController implements ProductApi {
 
     @Autowired
@@ -57,16 +63,22 @@ public class ProductApiController implements ProductApi {
     }
     
     @Override
-    public ResponseEntity<List<TeaProductRelease>> getReleasesByProductId(
-    @Parameter(name = "uuid", description = "UUID of TEA Product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
-    ) {
+        public ResponseEntity<TeaPaginatedProductReleaseResponse> getReleasesByProductId(
+                @Parameter(name = "uuid", description = "UUID of TEA Product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+                @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
+                @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize
+            ) {
         var ocd = getComponentService.getComponentData(uuid);
         if (ocd.isEmpty() || ocd.get().getType() != ComponentType.PRODUCT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
             return ResponseEntity.notFound().build();
         } else {
-            var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, 300, 0); // TODO - TEA - pagination
+        	TeaPaginatedProductReleaseResponse tpprr = new TeaPaginatedProductReleaseResponse();
+            var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, 300, 0); // TODO - proper pagination
             var teaProductReleases = releases.stream().map(rd -> teaTransformerService.transformProductReleaseToTea(rd)).toList();
-            return ResponseEntity.ok(teaProductReleases);
+        	tpprr.setResults(teaProductReleases);
+        	tpprr.setTotalResults((long) teaProductReleases.size());
+        	tpprr.setTimestamp(OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.SECONDS));
+            return ResponseEntity.ok(tpprr);
         }
     }
 

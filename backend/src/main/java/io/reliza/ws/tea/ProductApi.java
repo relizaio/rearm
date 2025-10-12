@@ -5,8 +5,9 @@
  */
 package io.reliza.ws.tea;
 
+import io.reliza.model.tea.TeaErrorResponse;
+import io.reliza.model.tea.TeaPaginatedProductReleaseResponse;
 import io.reliza.model.tea.TeaProduct;
-import io.reliza.model.tea.TeaProductRelease;
 import java.util.UUID;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
@@ -36,7 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Validated
 @Tag(name = "TEA Product Release", description = "the TEA Product Release API")
 public interface ProductApi {
@@ -50,7 +51,9 @@ public interface ProductApi {
      * Get releases of the product
      *
      * @param uuid UUID of TEA Product in the TEA server (required)
-     * @return Requested Releases of TEA Product found and returned (status code 200)
+     * @param pageOffset Pagination offset (optional, default to 0)
+     * @param pageSize Pagination offset (optional, default to 100)
+     * @return A paginated response containing TEA Product Releases (status code 200)
      *         or Request was Invalid (status code 400)
      *         or Object requested by identifier not found (status code 404)
      */
@@ -59,11 +62,13 @@ public interface ProductApi {
         description = "Get releases of the product",
         tags = { "TEA Product Release" },
         responses = {
-            @ApiResponse(responseCode = "200", description = "Requested Releases of TEA Product found and returned", content = {
-                @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = TeaProductRelease.class)))
+            @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Product Releases", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedProductReleaseResponse.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found")
+            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
         },
         security = {
             @SecurityRequirement(name = "basicAuth"),
@@ -76,13 +81,20 @@ public interface ProductApi {
         produces = { "application/json" }
     )
     
-    default ResponseEntity<List<TeaProductRelease>> getReleasesByProductId(
-        @Parameter(name = "uuid", description = "UUID of TEA Product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    default ResponseEntity<TeaPaginatedProductReleaseResponse> getReleasesByProductId(
+        @Parameter(name = "uuid", description = "UUID of TEA Product in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
+        @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"preRelease\" : true }, { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"preRelease\" : true } ]";
+                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"productName\" : \"Apache Log4j 2\", \"preRelease\" : true }, { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"productName\" : \"Apache Log4j 2\", \"preRelease\" : true } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -111,7 +123,9 @@ public interface ProductApi {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaProduct.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found")
+            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
         },
         security = {
             @SecurityRequirement(name = "basicAuth"),
@@ -131,6 +145,11 @@ public interface ProductApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

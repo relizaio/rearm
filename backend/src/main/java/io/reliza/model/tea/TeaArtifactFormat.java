@@ -26,7 +26,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "artifact-format", description = "A security-related document in a specific format")
 @JsonTypeName("artifact-format")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaArtifactFormat {
 
   private @Nullable String mimeType;

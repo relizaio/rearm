@@ -6,7 +6,7 @@
 package io.reliza.ws.tea;
 
 import io.reliza.model.tea.TeaIdentifierType;
-import io.reliza.model.tea.TeaInlineObject1;
+import io.reliza.model.tea.TeaPaginatedProductReleaseResponse;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -35,7 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Validated
 @Tag(name = "TEA Product Release", description = "the TEA Product Release API")
 public interface ProductReleasesApi {
@@ -56,12 +56,12 @@ public interface ProductReleasesApi {
      *         or Request was Invalid (status code 400)
      */
     @Operation(
-        operationId = "getTeaProductReleaseByIdentifier",
+        operationId = "queryTeaProductReleases",
         description = "Returns a list of TEA product releases. Note that multiple product releases may match.",
         tags = { "TEA Product Release" },
         responses = {
             @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Product Releases", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaInlineObject1.class))
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedProductReleaseResponse.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid")
         },
@@ -76,7 +76,7 @@ public interface ProductReleasesApi {
         produces = { "application/json" }
     )
     
-    default ResponseEntity<TeaInlineObject1> getTeaProductReleaseByIdentifier(
+    default ResponseEntity<TeaPaginatedProductReleaseResponse> queryTeaProductReleases(
         @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
         @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize,
         @Parameter(name = "idType", description = "Type of identifier specified in the `idValue` parameter", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idType", required = false) @Nullable TeaIdentifierType idType,
@@ -85,7 +85,7 @@ public interface ProductReleasesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"preRelease\" : true }, { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"preRelease\" : true } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
+                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"productName\" : \"Apache Log4j 2\", \"preRelease\" : true }, { \"product\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"components\" : [ { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"release\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ], \"createdDate\" : \"2024-03-20T15:30:00Z\", \"releaseDate\" : \"2024-03-20T15:30:00Z\", \"identifiers\" : [ { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" }, { \"idType\" : \"CPE\", \"idValue\" : \"idValue\" } ], \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"version\" : \"2.24.3\", \"productName\" : \"Apache Log4j 2\", \"preRelease\" : true } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

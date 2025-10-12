@@ -20,10 +20,10 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * Indicates whether a collection belongs to a component release or a product release
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public enum TeaCollectionBelongsToType {
   
-  RELEASE("RELEASE"),
+  COMPONENT_RELEASE("COMPONENT_RELEASE"),
   
   PRODUCT_RELEASE("PRODUCT_RELEASE");
 

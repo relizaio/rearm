@@ -45,6 +45,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findReleasesOfOrg(String orgUuidAsString);
 	
 	@Query(
+			value = VariableQueries.FIND_ALL_PRODUCT_RELEASES_OF_ORG,
+			nativeQuery = true)
+	List<Release> findProductReleasesOfOrg(String orgUuidAsString, String limitAsStr, String offsetAsStr);
+	
+	@Query(
 			value = VariableQueries.FIND_ALL_RELEASES_OF_COMPONENT,
 			nativeQuery = true)
 	List<Release> findReleasesOfComponent(String componentUuidAsString, String limitAsStr, String offsetAsStr);
@@ -186,9 +191,15 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 		value = VariableQueries.FIND_RELEASES_SHARING_SCE_ARTIFACT,
 		nativeQuery = true)
 		List<Release> findReleasesSharingSceArtifact(String artUuidAsString);
+
 	@Query(
 		value = VariableQueries.FIND_RELEASES_SHARING_DELIVRABLE_ARTIFACT,
 		nativeQuery = true)
 		List<Release> findReleasesSharingDeliverableArtifact(String artUuidAsString);
+
+	@Query(
+		value = VariableQueries.FIND_RELEASE_BY_ORG_AND_PURL,
+		nativeQuery = true)
+		Optional<Release> findReleaseByOrgAndPurl(String orgUuidAsString, String purl);
 	
 }

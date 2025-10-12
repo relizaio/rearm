@@ -39,7 +39,7 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.1.0-beta.1}")
+@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.2.0-beta.2}")
 @Slf4j
 public class ProductReleaseApiController implements ProductReleaseApi {
 
@@ -67,7 +67,7 @@ public class ProductReleaseApiController implements ProductReleaseApi {
     @Override
     public ResponseEntity<TeaCollection> getCollectionForProductRelease(
             @Parameter(name = "uuid", description = "UUID of TEA Product Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
-            @Parameter(name = "version", description = "Version of TEA Collection", required = true, in = ParameterIn.PATH) @PathVariable("version") Integer version
+            @Parameter(name = "collectionVersion", description = "Version of TEA Collection", required = true, in = ParameterIn.PATH) @PathVariable("collectionVersion") Integer collectionVersion
         ) {
     		var release = sharedReleaseService.getReleaseData(uuid);
     		if (release.isEmpty() || !UserService.USER_ORG.equals(release.get().getOrg())) {
@@ -78,13 +78,13 @@ public class ProductReleaseApiController implements ProductReleaseApi {
 	    			log.warn("Empty collections list return for release = " + uuid);
 	    			return ResponseEntity.notFound().build();
 	    		} else {
-	    			Long verLong = Long.valueOf(version);
+	    			Long verLong = Long.valueOf(collectionVersion);
 	    			var colVer = collections.stream().filter(c -> c.getVersion() == verLong).findFirst();
 	    			if (colVer.isEmpty()) {
 	    				return ResponseEntity.notFound().build();
 	    			} else {
 	    				var teaCollection = teaTransformerService.transformAcollectionToTea(colVer.get());
-			    		return ResponseEntity.ok(teaCollection);	
+		    		return ResponseEntity.ok(teaCollection);	
 	    			}
 	    		}
     		}

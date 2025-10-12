@@ -5,9 +5,8 @@
  */
 package io.reliza.ws.tea;
 
-import io.reliza.model.tea.TeaArtifact;
+import io.reliza.model.tea.TeaDiscoveryInfo;
 import io.reliza.model.tea.TeaErrorResponse;
-import java.util.UUID;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -38,29 +37,29 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Validated
-@Tag(name = "TEA Artifact", description = "the TEA Artifact API")
-public interface ArtifactApi {
+@Tag(name = "TEA Discovery", description = "the TEA Discovery API")
+public interface DiscoveryApi {
 
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
 
     /**
-     * GET /artifact/{uuid}
-     * Get metadata for specific TEA artifact
+     * GET /discovery
+     * Discovery endpoint which resolves TEI into product release UUID.
      *
-     * @param uuid UUID of TEA Artifact in the TEA server (required)
-     * @return Requested TEA Artifact metadata found and returned (status code 200)
+     * @param tei Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987. (required)
+     * @return Discovery information for the requested TEI (status code 200)
      *         or Request was Invalid (status code 400)
      *         or Object requested by identifier not found (status code 404)
      */
     @Operation(
-        operationId = "getArtifact",
-        description = "Get metadata for specific TEA artifact",
-        tags = { "TEA Artifact" },
+        operationId = "discoveryByTei",
+        description = "Discovery endpoint which resolves TEI into product release UUID.",
+        tags = { "TEA Discovery" },
         responses = {
-            @ApiResponse(responseCode = "200", description = "Requested TEA Artifact metadata found and returned", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaArtifact.class))
+            @ApiResponse(responseCode = "200", description = "Discovery information for the requested TEI", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaDiscoveryInfo.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid"),
             @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
@@ -74,17 +73,17 @@ public interface ArtifactApi {
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = "/artifact/{uuid}",
+        value = "/discovery",
         produces = { "application/json" }
     )
     
-    default ResponseEntity<TeaArtifact> getArtifact(
-        @Parameter(name = "uuid", description = "UUID of TEA Artifact in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    default ResponseEntity<TeaDiscoveryInfo> discoveryByTei(
+        @NotNull @Parameter(name = "tei", description = "Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.", required = true, in = ParameterIn.QUERY) @Valid @RequestParam(value = "tei", required = true) String tei
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mimeType\" : \"mimeType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" }, { \"algValue\" : \"algValue\", \"algType\" : \"MD5\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mimeType\" : \"mimeType\", \"url\" : \"http://example.com/aeiou\" } ], \"distributionTypes\" : [ \"distributionTypes\", \"distributionTypes\" ], \"name\" : \"name\", \"type\" : \"ATTESTATION\", \"uuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }";
+                    String exampleString = "{ \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"productReleaseUuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"rootUrl\" : \"https://api.teaexample.com\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

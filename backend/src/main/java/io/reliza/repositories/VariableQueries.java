@@ -332,6 +332,14 @@ class VariableQueries {
 	protected static final String FIND_ALL_RELEASES_OF_ORG = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString";
 	
+	protected static final String FIND_ALL_PRODUCT_RELEASES_OF_ORG = """
+			SELECT * FROM rearm.releases r WHERE r.record_data->>'org' = :orgUuidAsString
+			 AND r.record_data->>'parentReleases' != '[]'
+			 ORDER BY r.created_date desc 
+			 LIMIT cast (:limitAsStr as bigint)
+			 OFFSET cast (:offsetAsStr as bigint)
+			""";
+	
 	protected static final String FIND_ALL_RELEASES_OF_COMPONENT = """
 			SELECT * FROM rearm.releases r WHERE r.record_data->>'component' = :componentUuidAsString 
 				ORDER BY r.created_date desc LIMIT cast (:limitAsStr as bigint)
@@ -387,7 +395,13 @@ class VariableQueries {
 			select * from rearm.releases r where r.record_data->>'org'
 			 = :orgUuidAsString AND 
 			 jsonb_contains(jsonb_path_query_array(record_data, 
-			 '$.parentReleases[*].release'), cast (:releaseArrString as jsonb));
+			 '$.parentReleases[*].release'), cast (:releaseArrString as jsonb))
+	""";
+	
+	protected static final String FIND_RELEASE_BY_ORG_AND_PURL = """
+		SELECT * FROM rearm.releases where record_data->>'org' = :orgUuidAsString 
+		AND jsonb_contains(record_data, jsonb_build_object('identifiers', 
+		jsonb_build_array(jsonb_build_object('idType', 'PURL', 'idValue', :purl))))
 	""";
 			
 	protected static final String FIND_PENDING_RELEASES_AFTER_CUTOFF = "SELECT * FROM rearm.releases r WHERE r.record_data->>'"

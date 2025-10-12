@@ -3,6 +3,7 @@
 */
 package io.reliza.service.tea;
 
+import java.net.URI;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedList;
@@ -34,12 +35,16 @@ import io.reliza.model.tea.TeaCollectionBelongsToType;
 import io.reliza.model.tea.TeaCollectionUpdateReason;
 import io.reliza.model.tea.TeaComponent;
 import io.reliza.model.tea.TeaComponentRef;
+import io.reliza.model.tea.TeaComponentReleaseWithCollection;
+import io.reliza.model.tea.TeaDiscoveryInfo;
 import io.reliza.model.tea.TeaProduct;
 import io.reliza.model.tea.TeaProductRelease;
 import io.reliza.model.tea.TeaRelease;
+import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.UserService;
 import io.reliza.ws.RelizaConfigProps;
 import lombok.extern.slf4j.Slf4j;
 
@@ -55,6 +60,9 @@ public class TeaTransformerService {
 	
 	@Autowired
 	private GetComponentService getComponentService;
+	
+	@Autowired
+	private AcollectionService acollectionService;
 	
 	private RelizaConfigProps relizaConfigProps;
 	
@@ -88,6 +96,7 @@ public class TeaTransformerService {
 		tpr.setIdentifiers(rd.getIdentifiers());
 		tpr.setPreRelease(false);
 		tpr.setProduct(productUuid);
+		tpr.setProductName(cd.getName());
 		tpr.setVersion(rd.getVersion());
 		tpr.setComponents(rd.getParentReleases().stream().map(pr -> transformParentReleaseToComponentRef(pr)).toList());
 		return tpr;
@@ -121,6 +130,59 @@ public class TeaTransformerService {
 		tr.setReleaseDate(releaseDate);
 		tr.setIdentifiers(rearmRD.getIdentifiers());
 		return tr;
+	}
+	
+	public TeaComponentReleaseWithCollection transformComponentReleaseWithCollectionToTea(ReleaseData rearmRD) {
+		TeaComponentReleaseWithCollection tcr = new TeaComponentReleaseWithCollection();
+		TeaRelease tr = new TeaRelease();
+		tr.setUuid(rearmRD.getUuid());
+		tr.setVersion(rearmRD.getVersion());
+		tr.setPreRelease(false);
+		OffsetDateTime releaseDate = rearmRD.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
+		tr.setReleaseDate(releaseDate); // TODO consider separate release date
+		tr.setCreatedDate(releaseDate);
+		tr.setIdentifiers(rearmRD.getIdentifiers());
+		ComponentData cd = getComponentService.getComponentData(rearmRD.getComponent()).get();
+		tr.setComponent(rearmRD.getComponent());
+		tr.setComponentName(cd.getName());
+		tcr.setRelease(tr);
+		var acd = acollectionService.getLatestCollectionDataOfRelease(rearmRD.getUuid());
+		var teaAcd = transformAcollectionToTea(acd);
+		tcr.setLatestCollection(teaAcd);
+		return tcr;
+	}
+	
+	public Optional<TeaDiscoveryInfo> performTeiDiscovery (String decodedTei) {
+		String[] teiEls = decodedTei.split(":");
+		UUID foundRelease = null;
+		if ("uuid".equals(teiEls[2])) {
+			String uuidStr = teiEls[teiEls.length - 1];
+			UUID releaseUuid = UUID.fromString(uuidStr);
+			var optRelease = sharedReleaseService.getRelease(releaseUuid, UserService.USER_ORG); // TODO handle other orgs
+			if (optRelease.isPresent()) foundRelease = releaseUuid;
+		} else if ("purl".equals(teiEls[2])) {
+			StringBuilder purlBuilder = new StringBuilder();
+			boolean foundPurlStart = false;
+			for (int i = 4; i < teiEls.length; i++) {
+				if (!foundPurlStart && "pkg".equals(teiEls[i])) foundPurlStart = true;
+				if (foundPurlStart) {
+					purlBuilder.append(teiEls[i]);
+					if (i < teiEls.length - 1) purlBuilder.append(":");
+				}
+			}
+			String purl = purlBuilder.toString();
+			var optRelease = sharedReleaseService.findReleaseDataByOrgAndPurl(UserService.USER_ORG, purl); // TODO handle other orgs
+			if (optRelease.isPresent()) foundRelease = optRelease.get().getUuid();
+		}
+		Optional<TeaDiscoveryInfo> otdi = Optional.empty();
+		if (null != foundRelease) {
+			TeaDiscoveryInfo tdi = new TeaDiscoveryInfo();
+			tdi.setRootUrl(URI.create(relizaConfigProps.getBaseuri()));
+			tdi.setVersions(List.of("0.2.0-beta.2"));
+			tdi.setProductReleaseUuid(foundRelease);
+			otdi = Optional.of(tdi);
+		}
+		return otdi;
 	}
 	
 	private TeaArtifactType transformArtifactTypeToTea (ArtifactType rearmAT) {
@@ -271,9 +333,13 @@ public class TeaTransformerService {
 		tc.setArtifacts(teaArtifacts);
 		ReleaseData rd = sharedReleaseService.getReleaseData(acd.getRelease()).get();
 		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).get();
-		TeaCollectionBelongsToType belongsToType = (cd.getType() == ComponentType.COMPONENT) ? TeaCollectionBelongsToType.RELEASE : TeaCollectionBelongsToType.PRODUCT_RELEASE;
+		TeaCollectionBelongsToType belongsToType = (cd.getType() == ComponentType.COMPONENT) ? TeaCollectionBelongsToType.COMPONENT_RELEASE : TeaCollectionBelongsToType.PRODUCT_RELEASE;
 		tc.setBelongsTo(belongsToType);
 		return tc;
+	}
+	
+	public String getServerBaseUri() {
+		return relizaConfigProps.getBaseuri() + "/tea";
 	}
     
 }

@@ -23,12 +23,13 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * TeaInlineObject1
+ * A paginated response containing TEA Product Releases
  */
 
-@JsonTypeName("inline_object_1")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
-public class TeaInlineObject1 {
+@Schema(name = "paginated-product-release-response", description = "A paginated response containing TEA Product Releases")
+@JsonTypeName("paginated-product-release-response")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+public class TeaPaginatedProductReleaseResponse {
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime timestamp;
@@ -42,21 +43,21 @@ public class TeaInlineObject1 {
   @Valid
   private List<@Valid TeaProductRelease> results = new ArrayList<>();
 
-  public TeaInlineObject1() {
+  public TeaPaginatedProductReleaseResponse() {
     super();
   }
 
   /**
    * Constructor with only required parameters
    */
-  public TeaInlineObject1(OffsetDateTime timestamp, Long pageStartIndex, Long pageSize, Long totalResults) {
+  public TeaPaginatedProductReleaseResponse(OffsetDateTime timestamp, Long pageStartIndex, Long pageSize, Long totalResults) {
     this.timestamp = timestamp;
     this.pageStartIndex = pageStartIndex;
     this.pageSize = pageSize;
     this.totalResults = totalResults;
   }
 
-  public TeaInlineObject1 timestamp(OffsetDateTime timestamp) {
+  public TeaPaginatedProductReleaseResponse timestamp(OffsetDateTime timestamp) {
     this.timestamp = timestamp;
     return this;
   }
@@ -76,7 +77,7 @@ public class TeaInlineObject1 {
     this.timestamp = timestamp;
   }
 
-  public TeaInlineObject1 pageStartIndex(Long pageStartIndex) {
+  public TeaPaginatedProductReleaseResponse pageStartIndex(Long pageStartIndex) {
     this.pageStartIndex = pageStartIndex;
     return this;
   }
@@ -96,7 +97,7 @@ public class TeaInlineObject1 {
     this.pageStartIndex = pageStartIndex;
   }
 
-  public TeaInlineObject1 pageSize(Long pageSize) {
+  public TeaPaginatedProductReleaseResponse pageSize(Long pageSize) {
     this.pageSize = pageSize;
     return this;
   }
@@ -116,7 +117,7 @@ public class TeaInlineObject1 {
     this.pageSize = pageSize;
   }
 
-  public TeaInlineObject1 totalResults(Long totalResults) {
+  public TeaPaginatedProductReleaseResponse totalResults(Long totalResults) {
     this.totalResults = totalResults;
     return this;
   }
@@ -136,12 +137,12 @@ public class TeaInlineObject1 {
     this.totalResults = totalResults;
   }
 
-  public TeaInlineObject1 results(List<@Valid TeaProductRelease> results) {
+  public TeaPaginatedProductReleaseResponse results(List<@Valid TeaProductRelease> results) {
     this.results = results;
     return this;
   }
 
-  public TeaInlineObject1 addResultsItem(TeaProductRelease resultsItem) {
+  public TeaPaginatedProductReleaseResponse addResultsItem(TeaProductRelease resultsItem) {
     if (this.results == null) {
       this.results = new ArrayList<>();
     }
@@ -172,12 +173,12 @@ public class TeaInlineObject1 {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    TeaInlineObject1 inlineObject1 = (TeaInlineObject1) o;
-    return Objects.equals(this.timestamp, inlineObject1.timestamp) &&
-        Objects.equals(this.pageStartIndex, inlineObject1.pageStartIndex) &&
-        Objects.equals(this.pageSize, inlineObject1.pageSize) &&
-        Objects.equals(this.totalResults, inlineObject1.totalResults) &&
-        Objects.equals(this.results, inlineObject1.results);
+    TeaPaginatedProductReleaseResponse paginatedProductReleaseResponse = (TeaPaginatedProductReleaseResponse) o;
+    return Objects.equals(this.timestamp, paginatedProductReleaseResponse.timestamp) &&
+        Objects.equals(this.pageStartIndex, paginatedProductReleaseResponse.pageStartIndex) &&
+        Objects.equals(this.pageSize, paginatedProductReleaseResponse.pageSize) &&
+        Objects.equals(this.totalResults, paginatedProductReleaseResponse.totalResults) &&
+        Objects.equals(this.results, paginatedProductReleaseResponse.results);
   }
 
   @Override
@@ -188,7 +189,7 @@ public class TeaInlineObject1 {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class TeaInlineObject1 {\n");
+    sb.append("class TeaPaginatedProductReleaseResponse {\n");
     sb.append("    timestamp: ").append(toIndentedString(timestamp)).append("\n");
     sb.append("    pageStartIndex: ").append(toIndentedString(pageStartIndex)).append("\n");
     sb.append("    pageSize: ").append(toIndentedString(pageSize)).append("\n");
