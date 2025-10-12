@@ -127,24 +127,18 @@ public class TeaTransformerService {
 		tr.setVersion(rearmRD.getVersion());
 		tr.setPreRelease(false);
 		OffsetDateTime releaseDate = rearmRD.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
-		tr.setReleaseDate(releaseDate);
-		tr.setIdentifiers(rearmRD.getIdentifiers());
-		return tr;
-	}
-	
-	public TeaComponentReleaseWithCollection transformComponentReleaseWithCollectionToTea(ReleaseData rearmRD) {
-		TeaComponentReleaseWithCollection tcr = new TeaComponentReleaseWithCollection();
-		TeaRelease tr = new TeaRelease();
-		tr.setUuid(rearmRD.getUuid());
-		tr.setVersion(rearmRD.getVersion());
-		tr.setPreRelease(false);
-		OffsetDateTime releaseDate = rearmRD.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
 		tr.setReleaseDate(releaseDate); // TODO consider separate release date
 		tr.setCreatedDate(releaseDate);
 		tr.setIdentifiers(rearmRD.getIdentifiers());
 		ComponentData cd = getComponentService.getComponentData(rearmRD.getComponent()).get();
 		tr.setComponent(rearmRD.getComponent());
 		tr.setComponentName(cd.getName());
+		return tr;
+	}
+	
+	public TeaComponentReleaseWithCollection transformComponentReleaseWithCollectionToTea(ReleaseData rearmRD) {
+		TeaComponentReleaseWithCollection tcr = new TeaComponentReleaseWithCollection();
+		TeaRelease tr = transformReleaseToTea(rearmRD);
 		tcr.setRelease(tr);
 		var acd = acollectionService.getLatestCollectionDataOfRelease(rearmRD.getUuid());
 		var teaAcd = transformAcollectionToTea(acd);
