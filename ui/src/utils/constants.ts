@@ -30,6 +30,10 @@ const VERSION_TYPES = [
     {
         label: 'Single Component (Major)',
         value: 'Major'
+    },
+    {
+        label: 'Custom',
+        value: 'custom_version'
     }
 ]
 

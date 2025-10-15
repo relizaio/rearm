@@ -28,6 +28,10 @@
                             filterable
                             :placeholder="'Enter ' + componentProductWords.component + ' version schema'"
                             :options="constants.VersionTypes" />
+                <n-input
+                            v-if="component.versionSchema === 'custom_version'"
+                            v-model:value="customVersionSchema"
+                            placeholder="Custom Version Schema" />
             </n-form-item>
             <n-form-item    v-if="myUser.installationType !== 'OSS'"
                             path="marketingversionSchema"
@@ -116,6 +120,7 @@ const createComponentForm = ref<FormInst | null>(null)
 
 const customFeatureBranchVersioning = ref('')
 const customMarketingVersion = ref('')
+const customVersionSchema = ref('')
 
 const defaultBranchNames = [
     { label: 'main', value: 'main' },
@@ -169,6 +174,9 @@ const onSubmit = async function () {
 }
 
 const onSubmitSuccess = async function () {
+    if (component.value.versionSchema === 'custom_version') {
+        component.value.versionSchema = customVersionSchema.value
+    }
     if (component.value.marketingVersionSchema === 'custom_version') {
         component.value.marketingVersionSchema = customMarketingVersion.value
     }
