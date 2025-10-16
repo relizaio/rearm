@@ -171,12 +171,15 @@ public class TeaTransformerService {
 	
 	private TeaReleaseDistribution transformDeliverableToTeaDistribution (DeliverableData dd) {
 		TeaReleaseDistribution trd = new TeaReleaseDistribution();
-		trd.setUrl(dd.getDisplayIdentifier());
 		trd.setDescription(dd.getNotes());
 		trd.setIdentifiers(dd.getIdentifiers());
 		if (null != dd.getSoftwareMetadata()) {
 			var tcList = transformDigestRecordToTeaChecksum(dd.getSoftwareMetadata().getDigestRecords());
 			trd.setChecksums(tcList);
+			var downloadLinks = dd.getSoftwareMetadata().getDownloadLinks();
+			if (null != downloadLinks && !downloadLinks.isEmpty()) {
+				trd.setUrl(downloadLinks.iterator().next().getUri());
+			}
 		}
 		// trd.setDistributionType(dd.getSoftwareMetadata().getPackageType()); TODO + refer to https://github.com/CycloneDX/transparency-exchange-api/issues/198
 		// trd.setSignatureUrl(); // TODO
