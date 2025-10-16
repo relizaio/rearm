@@ -35,7 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Validated
 @Tag(name = "TEA Discovery", description = "the TEA Discovery API")
 public interface DiscoveryApi {
@@ -59,7 +59,7 @@ public interface DiscoveryApi {
         tags = { "TEA Discovery" },
         responses = {
             @ApiResponse(responseCode = "200", description = "Discovery information for the requested TEI", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaDiscoveryInfo.class))
+                @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = TeaDiscoveryInfo.class)))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid"),
             @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
@@ -77,13 +77,13 @@ public interface DiscoveryApi {
         produces = { "application/json" }
     )
     
-    default ResponseEntity<TeaDiscoveryInfo> discoveryByTei(
+    default ResponseEntity<List<TeaDiscoveryInfo>> discoveryByTei(
         @NotNull @Parameter(name = "tei", description = "Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.", required = true, in = ParameterIn.QUERY) @Valid @RequestParam(value = "tei", required = true) String tei
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"productReleaseUuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\", \"rootUrl\" : \"https://api.teaexample.com\" }";
+                    String exampleString = "[ { \"servers\" : [ { \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.teaexample.com\" }, { \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.teaexample.com\" } ], \"productReleaseUuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" }, { \"servers\" : [ { \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.teaexample.com\" }, { \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.teaexample.com\" } ], \"productReleaseUuid\" : \"046b6c7f-0b8a-43b9-b35d-6489e6daee91\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

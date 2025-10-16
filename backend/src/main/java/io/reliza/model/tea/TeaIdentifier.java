@@ -24,7 +24,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "identifier", description = "An identifier with a specified type")
 @JsonTypeName("identifier")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaIdentifier {
 
   private @Nullable TeaIdentifierType idType;

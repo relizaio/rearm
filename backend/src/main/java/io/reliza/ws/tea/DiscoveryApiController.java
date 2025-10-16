@@ -56,17 +56,17 @@ public class DiscoveryApiController implements DiscoveryApi {
     
     @Override
     @SuppressWarnings("unchecked")
-    public ResponseEntity<TeaDiscoveryInfo> discoveryByTei(
+    public ResponseEntity<List<TeaDiscoveryInfo>> discoveryByTei(
             @NotNull @Parameter(name = "tei", description = "Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.", required = true, in = ParameterIn.QUERY) @Valid @RequestParam(value = "tei", required = true) String tei
         ) {
     		String decodedTEI = URLDecoder.decode(tei, StandardCharsets.UTF_8);
     		
-            var otdi = teaTransformerService.performTeiDiscovery(decodedTEI);
-            if (otdi.isEmpty()) {
+            var tdiList = teaTransformerService.performTeiDiscovery(decodedTEI);
+            if (tdiList.isEmpty()) {
             	TeaErrorResponse errorResponse = new TeaErrorResponse(TeaUnknownErrorType.OBJECT_UNKNOWN);
-            	return (ResponseEntity<TeaDiscoveryInfo>) (ResponseEntity<?>) ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+            	return (ResponseEntity<List<TeaDiscoveryInfo>>) (ResponseEntity<?>) ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
             } else {
-                return new ResponseEntity<>(otdi.get(), HttpStatus.OK);
+                return new ResponseEntity<>(tdiList, HttpStatus.OK);
             }
 
         }

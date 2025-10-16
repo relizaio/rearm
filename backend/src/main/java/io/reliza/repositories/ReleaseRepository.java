@@ -198,8 +198,8 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 		List<Release> findReleasesSharingDeliverableArtifact(String artUuidAsString);
 
 	@Query(
-		value = VariableQueries.FIND_RELEASE_BY_ORG_AND_PURL,
+		value = VariableQueries.FIND_RELEASES_BY_ORG_AND_IDENTIFIER,
 		nativeQuery = true)
-		Optional<Release> findReleaseByOrgAndPurl(String orgUuidAsString, String purl);
+		List<Release> findReleasesByOrgAndIdentifier(String orgUuidAsString, String idType, String idValue);
 	
 }

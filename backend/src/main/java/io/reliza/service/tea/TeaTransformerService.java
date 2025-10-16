@@ -6,9 +6,11 @@ package io.reliza.service.tea;
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
@@ -37,9 +39,11 @@ import io.reliza.model.tea.TeaComponent;
 import io.reliza.model.tea.TeaComponentRef;
 import io.reliza.model.tea.TeaComponentReleaseWithCollection;
 import io.reliza.model.tea.TeaDiscoveryInfo;
+import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.TeaProduct;
 import io.reliza.model.tea.TeaProductRelease;
 import io.reliza.model.tea.TeaRelease;
+import io.reliza.model.tea.TeaTeaServerInfo;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.GetComponentService;
@@ -146,37 +150,49 @@ public class TeaTransformerService {
 		return tcr;
 	}
 	
-	public Optional<TeaDiscoveryInfo> performTeiDiscovery (String decodedTei) {
-		String[] teiEls = decodedTei.split(":");
-		UUID foundRelease = null;
-		if ("uuid".equals(teiEls[2])) {
-			String uuidStr = teiEls[teiEls.length - 1];
-			UUID releaseUuid = UUID.fromString(uuidStr);
-			var optRelease = sharedReleaseService.getRelease(releaseUuid, UserService.USER_ORG); // TODO handle other orgs
-			if (optRelease.isPresent()) foundRelease = releaseUuid;
-		} else if ("purl".equals(teiEls[2])) {
-			StringBuilder purlBuilder = new StringBuilder();
-			boolean foundPurlStart = false;
-			for (int i = 4; i < teiEls.length; i++) {
-				if (!foundPurlStart && "pkg".equals(teiEls[i])) foundPurlStart = true;
-				if (foundPurlStart) {
-					purlBuilder.append(teiEls[i]);
-					if (i < teiEls.length - 1) purlBuilder.append(":");
+	public List<TeaDiscoveryInfo> performTeiDiscovery (String decodedTei) {
+		Set<UUID> foundReleases = new LinkedHashSet<>();
+		var releasesByTei = sharedReleaseService.findReleasesByOrgAndIdentifier(UserService.USER_ORG, TeaIdentifierType.TEI, decodedTei); // TODO handle other orgs
+		if (!releasesByTei.isEmpty()) foundReleases.addAll(releasesByTei.stream().map(x -> x.getUuid()).toList());
+		if (foundReleases.isEmpty()) {
+			String[] teiEls = decodedTei.split(":");
+			if ("uuid".equals(teiEls[2])) {
+				String uuidStr = teiEls[teiEls.length - 1];
+				UUID releaseUuid = UUID.fromString(uuidStr);
+				var optRelease = sharedReleaseService.getRelease(releaseUuid, UserService.USER_ORG); // TODO handle other orgs
+				if (optRelease.isPresent()) foundReleases.add(releaseUuid);
+			} else if ("purl".equals(teiEls[2])) {
+				StringBuilder purlBuilder = new StringBuilder();
+				boolean foundPurlStart = false;
+				for (int i = 4; i < teiEls.length; i++) {
+					if (!foundPurlStart && "pkg".equals(teiEls[i])) foundPurlStart = true;
+					if (foundPurlStart) {
+						purlBuilder.append(teiEls[i]);
+						if (i < teiEls.length - 1) purlBuilder.append(":");
+					}
 				}
+				String purl = purlBuilder.toString();
+				var releasesByPurl = sharedReleaseService.findReleasesByOrgAndIdentifier(UserService.USER_ORG, TeaIdentifierType.PURL, purl); // TODO handle other orgs
+				if (!releasesByPurl.isEmpty()) foundReleases.addAll(releasesByPurl.stream().map(x -> x.getUuid()).toList());
 			}
-			String purl = purlBuilder.toString();
-			var optRelease = sharedReleaseService.findReleaseDataByOrgAndPurl(UserService.USER_ORG, purl); // TODO handle other orgs
-			if (optRelease.isPresent()) foundRelease = optRelease.get().getUuid();
 		}
-		Optional<TeaDiscoveryInfo> otdi = Optional.empty();
-		if (null != foundRelease) {
-			TeaDiscoveryInfo tdi = new TeaDiscoveryInfo();
-			tdi.setRootUrl(URI.create(relizaConfigProps.getBaseuri()));
-			tdi.setVersions(List.of("0.2.0-beta.2"));
-			tdi.setProductReleaseUuid(foundRelease);
-			otdi = Optional.of(tdi);
+
+		List<TeaDiscoveryInfo> teaDiscoveryList = new LinkedList<>();
+		if (!foundReleases.isEmpty()) {
+			teaDiscoveryList = foundReleases.stream().map(x -> convertReleaseUuidToTdi(x)).toList();
 		}
-		return otdi;
+		return teaDiscoveryList;
+	}
+	
+	private TeaDiscoveryInfo convertReleaseUuidToTdi (UUID releaseUuid) {
+		TeaDiscoveryInfo tdi = new TeaDiscoveryInfo();
+		tdi.setProductReleaseUuid(releaseUuid);
+		TeaTeaServerInfo ttsi = new TeaTeaServerInfo();
+		ttsi.setRootUrl(URI.create(getServerBaseUri()));
+		ttsi.setVersions(List.of("0.2.0-beta.2"));
+		ttsi.setPriority((float) 1.0);
+		tdi.setServers(List.of(ttsi));
+		return tdi;
 	}
 	
 	private TeaArtifactType transformArtifactTypeToTea (ArtifactType rearmAT) {
@@ -258,7 +274,7 @@ public class TeaTransformerService {
 		if (rearmAD.getStoredIn() == StoredIn.REARM) {
 			TeaArtifactFormat taf = new TeaArtifactFormat();
 			String bomFormatDisplay = (rearmAD.getBomFormat() != null) ? rearmAD.getBomFormat().toString() + " " : "";
-			taf.setDescription(String.format("%s%s Raw Artifact as Uploaded to ReARM", bomFormatDisplay, rearmAD.getType()));
+			taf.setDescription(String.format("%s%s Raw Artifact as Uploaded", bomFormatDisplay, rearmAD.getType()));
 			var mediaTypeTag = rearmAD.getTags().stream().filter(t -> CommonVariables.MEDIA_TYPE_FIELD.equals(t.key())).findAny();
 			if (mediaTypeTag.isPresent()) taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
 			taf.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + rearmAD.getUuid());
@@ -278,7 +294,7 @@ public class TeaTransformerService {
 			
 			if (rearmAD.getType() == ArtifactType.BOM && rearmAD.getBomFormat() == BomFormat.CYCLONEDX) {
 				TeaArtifactFormat tafAugmented = new TeaArtifactFormat();
-				tafAugmented.setDescription("CycloneDX BOM Artifact Uploaded to ReARM, Augmented by Rebom");
+				tafAugmented.setDescription("CycloneDX BOM Artifact Augmented by Rebom");
 				if (mediaTypeTag.isPresent()) tafAugmented.setMimeType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
 				tafAugmented.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/augmented/" + rearmAD.getUuid());
 				tafAugmented.setSignatureUrl(null); // TODO
@@ -287,7 +303,7 @@ public class TeaTransformerService {
 		} else {
 			for (var dlink : rearmAD.getDownloadLinks()) {
 				TeaArtifactFormat taf = new TeaArtifactFormat();
-				taf.setDescription("External Artifact Linked from ReARM");
+				taf.setDescription("External Artifact");
 				taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), dlink.getContent().getContentString()));
 				List<TeaChecksum> tcList = new LinkedList<>();
 				rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {

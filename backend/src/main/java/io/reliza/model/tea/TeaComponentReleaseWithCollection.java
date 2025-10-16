@@ -24,7 +24,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "component-release-with-collection", description = "A TEA Component Release combined with its latest collection")
 @JsonTypeName("component-release-with-collection")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaComponentReleaseWithCollection {
 
   private TeaRelease release;

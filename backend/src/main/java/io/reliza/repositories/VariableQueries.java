@@ -398,10 +398,10 @@ class VariableQueries {
 			 '$.parentReleases[*].release'), cast (:releaseArrString as jsonb))
 	""";
 	
-	protected static final String FIND_RELEASE_BY_ORG_AND_PURL = """
+	protected static final String FIND_RELEASES_BY_ORG_AND_IDENTIFIER = """
 		SELECT * FROM rearm.releases where record_data->>'org' = :orgUuidAsString 
 		AND jsonb_contains(record_data, jsonb_build_object('identifiers', 
-		jsonb_build_array(jsonb_build_object('idType', 'PURL', 'idValue', :purl))))
+		jsonb_build_array(jsonb_build_object('idType', :idType, 'idValue', :idValue))))
 	""";
 			
 	protected static final String FIND_PENDING_RELEASES_AFTER_CUTOFF = "SELECT * FROM rearm.releases r WHERE r.record_data->>'"

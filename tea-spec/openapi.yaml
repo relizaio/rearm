@@ -389,7 +389,7 @@ paths:
           description: Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.
           schema:
             type: string
-            example: urn%3Atei%3Auuid%3Aproducts.example.com%3Ad4d9f54a-abcf-11ee-ac79-1a52914d44b
+            example: urn%3Atei%3Auuid%3Aproducts.example.com%3A443%3Ad4d9f54a-abcf-11ee-ac79-1a52914d44b
       responses:
         '200':
           $ref: "#/components/responses/discovery-response"
@@ -1014,15 +1014,11 @@ components:
       required:
         - error
 
-    discovery-info:
+    tea-server-info:
       type: object
-      description: Discovery information for a TEI
+      description: TEA server information including URL, versions, and optional priority
       additionalProperties: false
       properties:
-        productReleaseUuid:
-          description: UUID of the resolved TEA Product Release
-          $ref: "#/components/schemas/uuid"
-          example: d4d9f54a-abcf-11ee-ac79-1a52914d44b
         rootUrl:
           description: Root URL of the TEA server for this TEI without trailing slash
           type: string
@@ -1035,10 +1031,35 @@ components:
           items:
             type: string
           example: ["0.2.0-beta.2", "1.0.0"]
+        priority:
+          description: Optional priority for this server (0.0 to 1.0, where 1.0 is highest priority)
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.8
       required:
-        - productReleaseUuid
         - rootUrl
         - versions
+
+    discovery-info:
+      type: object
+      description: Discovery information for a TEI
+      additionalProperties: false
+      properties:
+        productReleaseUuid:
+          description: UUID of the resolved TEA Product Release
+          $ref: "#/components/schemas/uuid"
+          example: d4d9f54a-abcf-11ee-ac79-1a52914d44b
+        servers:
+          description: Array of TEA server information
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/tea-server-info"
+      required:
+        - productReleaseUuid
+        - servers
 
     pagination-details:
       type: object
@@ -1111,7 +1132,9 @@ components:
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/discovery-info"
+            type: array
+            items:
+              $ref: "#/components/schemas/discovery-info"
     paginated-product:
       description: A paginated response containing TEA Products
       content:

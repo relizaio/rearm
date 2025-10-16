@@ -28,7 +28,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "paginated-product-release-response", description = "A paginated response containing TEA Product Releases")
 @JsonTypeName("paginated-product-release-response")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaPaginatedProductReleaseResponse {
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)

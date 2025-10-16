@@ -698,10 +698,10 @@ public class SharedReleaseService {
 		return sortReleasesByBranchAndVersion(releaseDatas);
 	}
 	
-	public Optional<ReleaseData> findReleaseDataByOrgAndPurl(UUID org, String purl) {
-		Optional<ReleaseData> ord = Optional.empty();
-		var or = repository.findReleaseByOrgAndPurl(org.toString(), purl);
-		if (or.isPresent()) ord = Optional.of(ReleaseData.dataFromRecord(or.get()));
-		return ord;
+	public List<ReleaseData> findReleasesByOrgAndIdentifier(UUID org, TeaIdentifierType idType, String idValue) {
+		List<ReleaseData> rds = new LinkedList<>();
+		List<Release> releases = repository.findReleasesByOrgAndIdentifier(org.toString(), idType.name(), idValue);
+		if (!releases.isEmpty()) rds = releases.stream().map(ReleaseData::dataFromRecord).toList();
+		return rds;
 	}
 }

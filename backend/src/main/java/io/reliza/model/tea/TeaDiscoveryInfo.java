@@ -5,7 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
-import java.net.URI;
+import io.reliza.model.tea.TeaTeaServerInfo;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,15 +27,13 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "discovery-info", description = "Discovery information for a TEI")
 @JsonTypeName("discovery-info")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-11T15:33:29.932635600-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 public class TeaDiscoveryInfo {
 
   private UUID productReleaseUuid;
 
-  private URI rootUrl;
-
   @Valid
-  private List<String> versions = new ArrayList<>();
+  private List<TeaTeaServerInfo> servers = new ArrayList<>();
 
   public TeaDiscoveryInfo() {
     super();
@@ -44,10 +42,9 @@ public class TeaDiscoveryInfo {
   /**
    * Constructor with only required parameters
    */
-  public TeaDiscoveryInfo(UUID productReleaseUuid, URI rootUrl, List<String> versions) {
+  public TeaDiscoveryInfo(UUID productReleaseUuid, List<TeaTeaServerInfo> servers) {
     this.productReleaseUuid = productReleaseUuid;
-    this.rootUrl = rootUrl;
-    this.versions = versions;
+    this.servers = servers;
   }
 
   public TeaDiscoveryInfo productReleaseUuid(UUID productReleaseUuid) {
@@ -70,52 +67,32 @@ public class TeaDiscoveryInfo {
     this.productReleaseUuid = productReleaseUuid;
   }
 
-  public TeaDiscoveryInfo rootUrl(URI rootUrl) {
-    this.rootUrl = rootUrl;
+  public TeaDiscoveryInfo servers(List<TeaTeaServerInfo> servers) {
+    this.servers = servers;
     return this;
   }
 
-  /**
-   * Root URL of the TEA server for this TEI without trailing slash
-   * @return rootUrl
-   */
-  @NotNull @Valid 
-  @Schema(name = "rootUrl", example = "https://api.teaexample.com", description = "Root URL of the TEA server for this TEI without trailing slash", requiredMode = Schema.RequiredMode.REQUIRED)
-  @JsonProperty("rootUrl")
-  public URI getRootUrl() {
-    return rootUrl;
-  }
-
-  public void setRootUrl(URI rootUrl) {
-    this.rootUrl = rootUrl;
-  }
-
-  public TeaDiscoveryInfo versions(List<String> versions) {
-    this.versions = versions;
-    return this;
-  }
-
-  public TeaDiscoveryInfo addVersionsItem(String versionsItem) {
-    if (this.versions == null) {
-      this.versions = new ArrayList<>();
+  public TeaDiscoveryInfo addServersItem(TeaTeaServerInfo serversItem) {
+    if (this.servers == null) {
+      this.servers = new ArrayList<>();
     }
-    this.versions.add(versionsItem);
+    this.servers.add(serversItem);
     return this;
   }
 
   /**
-   * Supported TEA API versions at this server without v prefix
-   * @return versions
+   * Array of TEA server information
+   * @return servers
    */
-  @NotNull @Size(min = 1) 
-  @Schema(name = "versions", example = "[0.2.0-beta.2, 1.0.0]", description = "Supported TEA API versions at this server without v prefix", requiredMode = Schema.RequiredMode.REQUIRED)
-  @JsonProperty("versions")
-  public List<String> getVersions() {
-    return versions;
+  @NotNull @Valid @Size(min = 1) 
+  @Schema(name = "servers", description = "Array of TEA server information", requiredMode = Schema.RequiredMode.REQUIRED)
+  @JsonProperty("servers")
+  public List<TeaTeaServerInfo> getServers() {
+    return servers;
   }
 
-  public void setVersions(List<String> versions) {
-    this.versions = versions;
+  public void setServers(List<TeaTeaServerInfo> servers) {
+    this.servers = servers;
   }
 
   @Override
@@ -128,13 +105,12 @@ public class TeaDiscoveryInfo {
     }
     TeaDiscoveryInfo discoveryInfo = (TeaDiscoveryInfo) o;
     return Objects.equals(this.productReleaseUuid, discoveryInfo.productReleaseUuid) &&
-        Objects.equals(this.rootUrl, discoveryInfo.rootUrl) &&
-        Objects.equals(this.versions, discoveryInfo.versions);
+        Objects.equals(this.servers, discoveryInfo.servers);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(productReleaseUuid, rootUrl, versions);
+    return Objects.hash(productReleaseUuid, servers);
   }
 
   @Override
@@ -142,8 +118,7 @@ public class TeaDiscoveryInfo {
     StringBuilder sb = new StringBuilder();
     sb.append("class TeaDiscoveryInfo {\n");
     sb.append("    productReleaseUuid: ").append(toIndentedString(productReleaseUuid)).append("\n");
-    sb.append("    rootUrl: ").append(toIndentedString(rootUrl)).append("\n");
-    sb.append("    versions: ").append(toIndentedString(versions)).append("\n");
+    sb.append("    servers: ").append(toIndentedString(servers)).append("\n");
     sb.append("}");
     return sb.toString();
   }
