@@ -220,7 +220,7 @@
                                 <CirclePlus/>
                             </Icon>
                         </h3>
-                        <n-data-table :data="updatedRelease.parentReleases" :columns="parentReleaseTableFields" :row-key="artifactsRowKey" />
+                        <n-data-table :data="updatedRelease.parentReleases" :columns="parentReleaseTableFields" :row-key="parentReleaseRowKey" />
                     </div>
                     <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER' && updatedRelease.componentDetails.type !== 'PRODUCT'">
                         <h3>Source Code Entries
@@ -1141,7 +1141,7 @@ async function save() {
     if (release.value.lifecycle === 'DRAFT' || updatedRelease.value.lifecycle === 'DRAFT') {
         try {
             await store.dispatch('updateRelease', updatedRelease.value)
-            fetchRelease()
+            await fetchRelease()
             notify('success', 'Saved', 'Release saved.')
         } catch (err: any) {
             updatedRelease.value = deepCopyRelease(release.value)
@@ -1156,7 +1156,7 @@ async function save() {
         JSON.stringify(release.value.tags) !== JSON.stringify(updatedRelease.value.tags)) {
         try {
             await store.dispatch('updateReleaseTagsMeta', updatedRelease.value)
-            fetchRelease()
+            await fetchRelease()
             notify('success', 'Saved', 'Release saved.')
         } catch (err: any) {
             updatedRelease.value = deepCopyRelease(release.value)
@@ -1180,7 +1180,7 @@ function renderIcon (icon: Component) {
 // Components
 const showAddComponentReleaseModal: Ref<boolean> = ref(false)
 
-function addComponentRelease (rlz: any) {
+async function addComponentRelease (rlz: any) {
     if (!updatedRelease.value.parentReleases || !updatedRelease.value.parentReleases.length) {
         updatedRelease.value.parentReleases = []
     }
@@ -1188,7 +1188,7 @@ function addComponentRelease (rlz: any) {
         release: rlz.uuid
     })
     showAddComponentReleaseModal.value=false
-    save()
+    await save()
 }
 
 function deleteComponentRelease (uuid: string) {
@@ -2194,6 +2194,7 @@ const purl: ComputedRef<string | undefined> = computed((): string | undefined =>
 })
 
 const artifactsRowKey = (row: any) => row.uuid
+const parentReleaseRowKey = (row: any) => row.release
 
 const artifactsTableFields: DataTableColumns<any> = [
     {
@@ -2566,7 +2567,7 @@ const parentReleaseTableFields: DataTableColumns<any> = [
         title: 'Vulnerabilities',
         render: (row: any) => {
             let els: any[] = []
-            if (row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
+            if (row.releaseDetails && row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
                 const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release)}, row.releaseDetails.metrics.critical)
                 const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release)}, row.releaseDetails.metrics.high)
                 const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release)}, row.releaseDetails.metrics.medium)
@@ -2583,7 +2584,7 @@ const parentReleaseTableFields: DataTableColumns<any> = [
         title: 'Violations',
         render: (row: any) => {
             let els: any[] = []
-            if (row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
+            if (row.releaseDetails && row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
                 const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release)}, row.releaseDetails.metrics.policyViolationsLicenseTotal)
                 const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release)}, row.releaseDetails.metrics.policyViolationsSecurityTotal)
                 const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release)}, row.releaseDetails.metrics.policyViolationsOperationalTotal)
