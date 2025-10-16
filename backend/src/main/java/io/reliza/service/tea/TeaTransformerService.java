@@ -6,6 +6,7 @@ package io.reliza.service.tea;
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -22,9 +23,11 @@ import io.reliza.model.AcollectionData;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
+import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ComponentData;
+import io.reliza.model.DeliverableData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.ReleaseData;
@@ -43,12 +46,15 @@ import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.TeaProduct;
 import io.reliza.model.tea.TeaProductRelease;
 import io.reliza.model.tea.TeaRelease;
+import io.reliza.model.tea.TeaReleaseDistribution;
 import io.reliza.model.tea.TeaTeaServerInfo;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.GetDeliverableService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
+import io.reliza.service.VariantService;
 import io.reliza.ws.RelizaConfigProps;
 import lombok.extern.slf4j.Slf4j;
 
@@ -67,6 +73,12 @@ public class TeaTransformerService {
 	
 	@Autowired
 	private AcollectionService acollectionService;
+	
+	@Autowired
+	private VariantService variantService;
+	
+	@Autowired
+	private GetDeliverableService getDeliverableService;
 	
 	private RelizaConfigProps relizaConfigProps;
 	
@@ -137,7 +149,38 @@ public class TeaTransformerService {
 		ComponentData cd = getComponentService.getComponentData(rearmRD.getComponent()).get();
 		tr.setComponent(rearmRD.getComponent());
 		tr.setComponentName(cd.getName());
+		var distributions = gatherDistributionsPerRelease(rearmRD);
+		tr.setDistributions(distributions);
 		return tr;
+	}
+	
+	private List<TeaReleaseDistribution> gatherDistributionsPerRelease(ReleaseData rearmRD) {
+		List<TeaReleaseDistribution> distributions = new LinkedList<>();
+		var vd = variantService.getBaseVariantForRelease(rearmRD);
+		if (null != vd.getOutboundDeliverables() && !vd.getOutboundDeliverables().isEmpty()) {
+			for (UUID delUuid : vd.getOutboundDeliverables()) {
+				var deliverableData = getDeliverableService
+											.getDeliverableData(delUuid)
+											.get();
+				var trd = transformDeliverableToTeaDistribution(deliverableData);
+				distributions.add(trd);
+			}
+		}
+		return distributions;
+	}
+	
+	private TeaReleaseDistribution transformDeliverableToTeaDistribution (DeliverableData dd) {
+		TeaReleaseDistribution trd = new TeaReleaseDistribution();
+		trd.setUrl(dd.getDisplayIdentifier());
+		trd.setDescription(dd.getNotes());
+		trd.setIdentifiers(dd.getIdentifiers());
+		if (null != dd.getSoftwareMetadata()) {
+			var tcList = transformDigestRecordToTeaChecksum(dd.getSoftwareMetadata().getDigestRecords());
+			trd.setChecksums(tcList);
+		}
+		// trd.setDistributionType(dd.getSoftwareMetadata().getPackageType()); TODO + refer to https://github.com/CycloneDX/transparency-exchange-api/issues/198
+		// trd.setSignatureUrl(); // TODO
+		return trd;
 	}
 	
 	public TeaComponentReleaseWithCollection transformComponentReleaseWithCollectionToTea(ReleaseData rearmRD) {
@@ -262,6 +305,19 @@ public class TeaTransformerService {
 		return resolvedType;
 	}
 	
+	private List<TeaChecksum> transformDigestRecordToTeaChecksum (Collection<DigestRecord> digestRecords) {
+		List<TeaChecksum> tcList = new LinkedList<>();
+		if (null != digestRecords && !digestRecords.isEmpty()) {
+			digestRecords.stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
+				TeaChecksum tc = new TeaChecksum();
+				tc.setAlgType(d.algo());
+				tc.setAlgValue(d.digest());
+				tcList.add(tc);	
+			});
+		}
+		return tcList;
+	}
+	
 	public TeaArtifact transformArtifactToTea(ArtifactData rearmAD) {
 		TeaArtifact ta = new TeaArtifact();
 		ta.setUuid(rearmAD.getUuid());
@@ -282,13 +338,7 @@ public class TeaTransformerService {
 			if (optSignatureAD.isPresent()) {
 				taf.setSignatureUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + optSignatureAD.get().getUuid());
 			} else taf.setSignatureUrl(null);
-			List<TeaChecksum> tcList = new LinkedList<>();
-			rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
-				TeaChecksum tc = new TeaChecksum();
-				tc.setAlgType(d.algo());
-				tc.setAlgValue(d.digest());
-				tcList.add(tc);	
-			});
+			var tcList = transformDigestRecordToTeaChecksum(rearmAD.getDigestRecords());
 			taf.setChecksums(tcList);
 			tafList.add(taf);
 			
