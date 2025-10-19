@@ -882,7 +882,21 @@ public class ReleaseService {
 					}
 				}
 				
-				c.setVersion(version);
+				// For container components, use Docker-safe version to ensure compatibility with Docker/OCI tag constraints
+				// For all other types, keep semantic version as-is
+				String componentVersion = version;
+				if (cycloneComponentType == Component.Type.CONTAINER) {
+					if (StringUtils.isNotEmpty(version)) {
+						componentVersion = Utils.dockerTagSafeVersion(version);
+					} else {
+						// Container artifacts should always have a version
+						// If missing, log warning and use 'latest' as fallback
+						log.warn("Container artifact '{}' missing version, using 'latest' as fallback", dd.getDisplayIdentifier());
+						componentVersion = "latest";
+					}
+				}
+				
+				c.setVersion(componentVersion);
 				
 				if (null != rd.properties() && !rd.properties().isEmpty()) {
 					List<Property> addProps = rd.properties().entrySet()
