@@ -101,10 +101,17 @@ public class TeaTransformerService {
 	public TeaProductRelease transformProductReleaseToTea (ReleaseData rd) {
 		UUID productUuid = rd.getComponent();
 		ComponentData cd = getComponentService.getComponentData(productUuid).get();
-		if (cd.getType() != ComponentType.PRODUCT) {
+		TeaProductRelease tpr = new TeaProductRelease();
+		if (cd.getType() == ComponentType.COMPONENT) {
+			TeaComponentRef tcr = new TeaComponentRef();
+			tcr.setUuid(cd.getUuid());
+			tcr.setRelease(rd.getUuid());
+			tpr.setComponents(List.of(tcr));
+		} else if (cd.getType() == ComponentType.PRODUCT) {
+			tpr.setComponents(rd.getParentReleases().stream().map(pr -> transformParentReleaseToComponentRef(pr)).toList());	
+		} else {
 			throw new RuntimeException("Wrong component type");
 		}
-		TeaProductRelease tpr = new TeaProductRelease();
 		tpr.setUuid(rd.getUuid());
 		OffsetDateTime releaseDate = rd.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
 		tpr.setCreatedDate(releaseDate);
@@ -114,7 +121,6 @@ public class TeaTransformerService {
 		tpr.setProduct(productUuid);
 		tpr.setProductName(cd.getName());
 		tpr.setVersion(rd.getVersion());
-		tpr.setComponents(rd.getParentReleases().stream().map(pr -> transformParentReleaseToComponentRef(pr)).toList());
 		return tpr;
 	}
 	
