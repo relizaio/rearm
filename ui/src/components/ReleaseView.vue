@@ -467,7 +467,7 @@
         </n-modal>
         <n-modal
             v-model:show="showDetailedVulnerabilitiesModal"
-            title='Detailed Vulnerability, Weakness and Violation Data'
+            :title="`Vulnerabilities, violations, weaknesses for ${release.componentDetails?.name || ''}, version ${updatedRelease.version || ''}`"
             style="width: 95%;"
             preset="dialog"
             :show-icon="false" >

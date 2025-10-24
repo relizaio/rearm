@@ -243,7 +243,7 @@
             preset="dialog"
             :show-icon="false"
             style="width: 95%"
-            title="Detailed Vulnerabilities / Violations / Weaknesses"
+            :title="`Vulnerabilities, violations, weaknesses for ${selectedReleaseForModal?.componentDetails?.name || branchData.componentDetails?.name || ''}, version ${selectedReleaseForModal?.version || ''}`"
         >
             <n-spin :show="loadingVulnerabilities">
                 <n-data-table
@@ -936,11 +936,11 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.unassigned)
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row)}, row.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row)}, row.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row)}, row.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row)}, row.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row)}, row.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -953,9 +953,9 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
         render: (row: any) => {
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.uuid)}, row.metrics.policyViolationsOperationalTotal)
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row)}, row.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row)}, row.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row)}, row.metrics.policyViolationsOperationalTotal)
                 els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -970,6 +970,7 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
 const showDetailedVulnerabilitiesModal = ref(false)
 const detailedVulnerabilitiesData: Ref<any[]> = ref([])
 const loadingVulnerabilities: Ref<boolean> = ref(false)
+const selectedReleaseForModal: Ref<any> = ref(null)
 
 // Per-modal context for Dependency-Track linking
 const currentReleaseArtifacts: Ref<any[]> = ref([])
@@ -983,12 +984,13 @@ const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h,
     getDtrackProjectUuids: () => currentDtrackProjectUuids.value
 })
 
-async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
+async function viewDetailedVulnerabilitiesForRelease(releaseRow: any) {
     loadingVulnerabilities.value = true
     showDetailedVulnerabilitiesModal.value = true
+    selectedReleaseForModal.value = releaseRow
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
-            releaseUuid,
+            releaseRow.uuid,
             branchData.value.org
         )
         
