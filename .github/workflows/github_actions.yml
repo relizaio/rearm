@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@c63d479f4fd1fce07a5b13a928afb1a196bb83a1 # v3.8
+        uses: relizaio/reliza-helm-action@da27aba62c724a3ab4116d96c3fe43bb50d807a7 # v3.11
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
