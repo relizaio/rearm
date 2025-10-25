@@ -93,7 +93,7 @@ jobs:
     inputs:
       version: '22.19.0'
     displayName: 'Install Node.js'
-  - bash: npm install --global @cyclonedx/cyclonedx-npm
+  - bash: npm install --global @cyclonedx/cyclonedx-npm@4.0.0 --ignore-scripts
     condition: ${{ eq(parameters.sbomType, 'npm') }}
     displayName: 'Install cyclonedx npm'
   - task: UseDotNet@2
@@ -104,7 +104,7 @@ jobs:
   - bash: dotnet tool install --global CycloneDX
     condition: ${{ eq(parameters.sbomType, 'dotnet') }}
     displayName: 'Install cyclonedx .NET'
-  - bash: npm install -g @cyclonedx/cdxgen@11.7.0
+  - bash: npm install -g @cyclonedx/cdxgen@11.9.0 --ignore-scripts
     displayName: 'Install cdxgen cli'
   - bash: |
       exit_code=0
@@ -201,3 +201,7 @@ jobs:
     env: 
       REARM_API_KEY: ${{ parameters.rearmApiKey }}
       REARM_API_KEY_ID: ${{ parameters.rearmApiKeyId }}
+  - bash: |
+      rm -rf $(Pipeline.Workspace)/variables/*
+    displayName: 'Clean up variables directory'
+    condition: always()
