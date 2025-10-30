@@ -5,7 +5,7 @@ date: "2025-10-30"
 
 We’re excited to introduce Oolong - a lightweight, MIT-licensed implementation of [Transparency Exchange API (TEA)](https://github.com/CycloneDX/transparency-exchange-api) designed for simplicity and portability.
 
-Oolong is available on GitHub: https://github.com/relizaio/oolong
+Oolong is available on GitHub: [https://github.com/relizaio/oolong](https://github.com/relizaio/oolong)
 
 ## Why Oolong
 
@@ -33,8 +33,8 @@ Oolong serves TEA content directly from a set of YAML files, exposed via the TEA
 
 We added helpful commands to ReARM CLI for both Oolong content operations and TEA API interactions:
 
-- Oolong commands: https://github.com/relizaio/rearm-cli/blob/main/docs/oolong.md
-- TEA operations: https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md
-- Install ReARM CLI: https://github.com/relizaio/rearm-cli
+- Oolong commands: [https://github.com/relizaio/rearm-cli/blob/main/docs/oolong.md](https://github.com/relizaio/rearm-cli/blob/main/docs/oolong.md)
+- TEA operations: [https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md)
+- Install ReARM CLI: [https://github.com/relizaio/rearm-cli](https://github.com/relizaio/rearm-cli)
 
 If you try Oolong, we’d love your feedback and contributions!
