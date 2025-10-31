@@ -145,6 +145,7 @@ export function buildVulnerabilityColumns(
     getArtifacts?: () => any[]
     getOrgUuid?: () => string
     getDtrackProjectUuids?: () => string[]
+    onEditFinding?: (row: any) => void
   }
 ): DataTableColumns<any> {
   function makePurlRenderer() {
@@ -367,12 +368,13 @@ export function buildVulnerabilityColumns(
       width: 80,
       render: (row: any) => {
         const editIcon = h(NIcon, {
-          title: 'Edit Finding',
+          title: 'Create Analysis',
           class: 'icons clickable',
           size: 25,
           onClick: () => {
-            // Placeholder - no action yet
-            console.log('Edit clicked for:', row)
+            if (options?.onEditFinding) {
+              options.onEditFinding(row)
+            }
           }
         }, { default: () => h(Edit) })
         

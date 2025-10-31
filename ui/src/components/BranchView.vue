@@ -247,6 +247,10 @@
             :artifacts="currentReleaseArtifacts"
             :org-uuid="currentReleaseOrgUuid"
             :dtrack-project-uuids="currentDtrackProjectUuids"
+            :release-uuid="selectedReleaseForModal?.uuid || ''"
+            :branch-uuid="branchData.uuid || ''"
+            :component-uuid="branchData.componentDetails?.uuid || ''"
+            :artifact-view-only="false"
         />
     </div>
 </template>

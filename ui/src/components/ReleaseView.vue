@@ -475,6 +475,10 @@
             :artifacts="currentReleaseArtifacts"
             :org-uuid="currentReleaseOrgUuid"
             :dtrack-project-uuids="currentDtrackProjectUuids"
+            :release-uuid="currentArtifactDisplayId ? '' : releaseUuid"
+            :branch-uuid="release.branchDetails?.uuid || ''"
+            :component-uuid="release.componentDetails?.uuid || ''"
+            :artifact-view-only="!!currentArtifactDisplayId"
         />
         <n-modal
             v-model:show="showUploadArtifactModal"
@@ -1377,6 +1381,8 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                 purl
                                 vulnId
                                 severity
+                                analysisState
+                                analysisDate
                                 aliases {
                                     type
                                     aliasId
@@ -1405,6 +1411,8 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                 type
                                 license
                                 violationDetails
+                                analysisState
+                                analysisDate
                                 sources {
                                     artifact
                                     release
@@ -1426,6 +1434,8 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                 location
                                 fingerprint
                                 severity
+                                analysisState
+                                analysisDate
                                 sources {
                                     artifact
                                     release
