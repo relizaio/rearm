@@ -469,6 +469,7 @@
             v-model:show="showDetailedVulnerabilitiesModal"
             :component-name="release.componentDetails?.name || ''"
             :version="updatedRelease.version || ''"
+            :artifact-display-id="currentArtifactDisplayId"
             :data="detailedVulnerabilitiesData"
             :loading="loadingVulnerabilities"
             :artifacts="currentReleaseArtifacts"
@@ -1330,10 +1331,12 @@ const loadingVulnerabilities: Ref<boolean> = ref(false)
 const currentReleaseArtifacts: Ref<any[]> = ref([])
 const currentReleaseOrgUuid: Ref<string> = ref('')
 const currentDtrackProjectUuids: Ref<string[]> = ref([])
+const currentArtifactDisplayId: Ref<string> = ref('')
 
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
     loadingVulnerabilities.value = true
     showDetailedVulnerabilitiesModal.value = true
+    currentArtifactDisplayId.value = '' // Clear artifact display ID for release view
     
     try {
         const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
@@ -1448,6 +1451,7 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
         const artifact = response.data.artifact
         if (artifact && artifact.metrics) {
             detailedVulnerabilitiesData.value = processMetricsData(artifact.metrics)
+            currentArtifactDisplayId.value = artifact.displayIdentifier || ''
         }
     } catch (error) {
         console.error('Error fetching artifact details:', error)
