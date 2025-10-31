@@ -15,6 +15,8 @@ export type DetailedMetric = {
   aliases?: any[]
   severities?: any[]
   sources?: any[]
+  analysisState?: string
+  analysisDate?: string
 }
 
 // Helper function to create vulnerability links with confirmation dialog
@@ -95,7 +97,9 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         severities: vuln.severities,
         sources: vuln.sources,
         location: '-',
-        fingerprint: '-'
+        fingerprint: '-',
+        analysisState: vuln.analysisState,
+        analysisDate: vuln.analysisDate
       })
     })
   }
@@ -110,7 +114,9 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         details: violation.type === 'LICENSE' ? `License: ${violation.license}` : `${violation.type}: ${violation.violationDetails || ''}`,
         sources: violation.sources,
         location: '-',
-        fingerprint: '-'
+        fingerprint: '-',
+        analysisState: violation.analysisState,
+        analysisDate: violation.analysisDate
       })
     })
   }
@@ -125,7 +131,9 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         details: weakness.ruleId,
         sources: weakness.sources,
         location: weakness.location,
-        fingerprint: weakness.fingerprint
+        fingerprint: weakness.fingerprint,
+        analysisState: weakness.analysisState,
+        analysisDate: weakness.analysisDate
       })
     })
   }
