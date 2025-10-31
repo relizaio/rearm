@@ -2,6 +2,7 @@ import type { DataTableColumns } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { searchDtrackComponentByPurl } from '@/utils/dtrack'
 import { Info20Regular } from '@vicons/fluent'
+import { Edit } from '@vicons/tabler'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -195,7 +196,7 @@ export function buildVulnerabilityColumns(
     {
       title: 'Type',
       key: 'type',
-      width: 120,
+      width: 100,
       sorter: 'default',
       render: (row: any) => {
         const typeColors: any = {
@@ -209,18 +210,18 @@ export function buildVulnerabilityColumns(
     {
       title: 'Issue ID',
       key: 'id',
-      width: 150,
+      width: 130,
       render: (row: any) => {
         const id = String(row.id || '')
         if (!id) return ''
         return createVulnerabilityLink(h, id)
       }
     },
-    { title: 'PURL or Location', key: 'purl', width: 350, ellipsis: { tooltip: true }, render: makePurlRenderer() },
+    { title: 'PURL or Location', key: 'purl', width: 400, ellipsis: { tooltip: true }, render: makePurlRenderer() },
     {
       title: 'Severity',
       key: 'severity',
-      width: 130,
+      width: 120,
       defaultSortOrder: 'ascend',
       sorter: (rowA: any, rowB: any) => {
         const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
@@ -285,7 +286,7 @@ export function buildVulnerabilityColumns(
     { 
       title: 'Details', 
       key: 'details', 
-      minWidth: 400,
+      minWidth: 200,
       ellipsis: { tooltip: true },
       render: (row: any) => {
         const elements = []
@@ -315,7 +316,7 @@ export function buildVulnerabilityColumns(
     {
       title: 'Sources',
       key: 'sources',
-      width: 400,
+      width: 280,
       ellipsis: { tooltip: true },
       render: (row: any) => {
         if (!row.sources || row.sources.length === 0) return '-'
@@ -358,6 +359,24 @@ export function buildVulnerabilityColumns(
         }).flat()
         
         return h('div', {}, sourceElements)
+      }
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 80,
+      render: (row: any) => {
+        const editIcon = h(NIcon, {
+          title: 'Edit Finding',
+          class: 'icons clickable',
+          size: 25,
+          onClick: () => {
+            // Placeholder - no action yet
+            console.log('Edit clicked for:', row)
+          }
+        }, { default: () => h(Edit) })
+        
+        return h('div', {}, [editIcon])
       }
     }
   ]
