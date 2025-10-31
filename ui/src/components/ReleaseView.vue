@@ -465,20 +465,16 @@
                 <n-button type="success" @click="createFsFromRelease">Create</n-button>
             </n-form>
         </n-modal>
-        <n-modal
+        <vulnerability-modal
             v-model:show="showDetailedVulnerabilitiesModal"
-            :title="`Vulnerabilities, violations, weaknesses for ${release.componentDetails?.name || ''}, version ${updatedRelease.version || ''}`"
-            style="width: 95%;"
-            preset="dialog"
-            :show-icon="false" >
-            <n-spin :show="loadingVulnerabilities">
-                <n-data-table
-                    :columns="vulnerabilityColumns"
-                    :data="detailedVulnerabilitiesData"
-                    :pagination="{ pageSize: 10 }"
-                />
-            </n-spin>
-        </n-modal>
+            :component-name="release.componentDetails?.name || ''"
+            :version="updatedRelease.version || ''"
+            :data="detailedVulnerabilitiesData"
+            :loading="loadingVulnerabilities"
+            :artifacts="currentReleaseArtifacts"
+            :org-uuid="currentReleaseOrgUuid"
+            :dtrack-project-uuids="currentDtrackProjectUuids"
+        />
         <n-modal
             v-model:show="showUploadArtifactModal"
             title='Upload Artifact'
@@ -537,6 +533,7 @@ import CreateArtifact from '@/components/CreateArtifact.vue'
 import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
+import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import axios from '../utils/axios'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
@@ -555,7 +552,6 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
-import { buildVulnerabilityColumns } from '@/utils/metrics'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { searchDtrackComponentByPurl as searchDtrackComponentByPurlUtil } from '@/utils/dtrack'
 import { processMetricsData } from '@/utils/metrics'
@@ -1334,13 +1330,6 @@ const loadingVulnerabilities: Ref<boolean> = ref(false)
 const currentReleaseArtifacts: Ref<any[]> = ref([])
 const currentReleaseOrgUuid: Ref<string> = ref('')
 const currentDtrackProjectUuids: Ref<string[]> = ref([])
-
-const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, RouterLink, {
-    hasKnownDependencyTrackIntegration: () => ReleaseVulnerabilityService.hasKnownDependencyTrackIntegration(currentReleaseArtifacts.value),
-    getArtifacts: () => currentReleaseArtifacts.value,
-    getOrgUuid: () => currentReleaseOrgUuid.value,
-    getDtrackProjectUuids: () => currentDtrackProjectUuids.value
-})
 
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string) {
     loadingVulnerabilities.value = true

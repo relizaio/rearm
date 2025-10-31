@@ -238,22 +238,16 @@
                 <n-button type="success" @click="setNextVersion">Create</n-button>
             </n-form>
         </n-modal>
-        <n-modal
+        <vulnerability-modal
             v-model:show="showDetailedVulnerabilitiesModal"
-            preset="dialog"
-            :show-icon="false"
-            style="width: 95%"
-            :title="`Vulnerabilities, violations, weaknesses for ${selectedReleaseForModal?.componentDetails?.name || branchData.componentDetails?.name || ''}, version ${selectedReleaseForModal?.version || ''}`"
-        >
-            <n-spin :show="loadingVulnerabilities">
-                <n-data-table
-                    :columns="vulnerabilityColumns"
-                    :data="detailedVulnerabilitiesData"
-                    :row-key="(row: any) => row.type + '-' + row.id + '-' + row.purl"
-                    :pagination="{ pageSize: 10 }"
-                />
-            </n-spin>
-        </n-modal>
+            :component-name="selectedReleaseForModal?.componentDetails?.name || branchData.componentDetails?.name || ''"
+            :version="selectedReleaseForModal?.version || ''"
+            :data="detailedVulnerabilitiesData"
+            :loading="loadingVulnerabilities"
+            :artifacts="currentReleaseArtifacts"
+            :org-uuid="currentReleaseOrgUuid"
+            :dtrack-project-uuids="currentDtrackProjectUuids"
+        />
     </div>
 </template>
 
@@ -272,6 +266,7 @@ import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
 import SideBySide from './SideBySide.vue'
 import LinkVcs from './LinkVcs.vue'
+import VulnerabilityModal from './VulnerabilityModal.vue'
 import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
@@ -281,7 +276,6 @@ import graphqlQueries  from '@/utils/graphqlQueries'
 import { Copy, LayoutColumns, Filter, Trash } from '@vicons/tabler'
 import { Edit24Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
-import { buildVulnerabilityColumns } from '@/utils/metrics'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 
 async function loadApprovalMatrix (org: string, resourceGroup: string) {
@@ -976,13 +970,6 @@ const selectedReleaseForModal: Ref<any> = ref(null)
 const currentReleaseArtifacts: Ref<any[]> = ref([])
 const currentReleaseOrgUuid: Ref<string> = ref('')
 const currentDtrackProjectUuids: Ref<string[]> = ref([])
-
-const vulnerabilityColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, RouterLink, {
-    hasKnownDependencyTrackIntegration: () => ReleaseVulnerabilityService.hasKnownDependencyTrackIntegration(currentReleaseArtifacts.value),
-    getArtifacts: () => currentReleaseArtifacts.value,
-    getOrgUuid: () => currentReleaseOrgUuid.value,
-    getDtrackProjectUuids: () => currentDtrackProjectUuids.value
-})
 
 async function viewDetailedVulnerabilitiesForRelease(releaseRow: any) {
     loadingVulnerabilities.value = true
