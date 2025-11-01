@@ -205,7 +205,7 @@ export function buildVulnerabilityColumns(
     {
       title: 'Type',
       key: 'type',
-      width: 100,
+      width: 124,
       sorter: 'default',
       render: (row: any) => {
         const typeColors: any = {
@@ -213,7 +213,39 @@ export function buildVulnerabilityColumns(
           Violation: 'warning',
           Weakness: 'info'
         }
-        return h(NTag, { type: typeColors[row.type] || 'default', size: 'small' }, { default: () => row.type })
+        const isSuppressed = row.analysisState === 'FALSE_POSITIVE' || row.analysisState === 'NOT_AFFECTED'
+        const tagStyle = isSuppressed ? { textDecoration: 'line-through' } : {}
+        const typeTag = h(NTag, { 
+          type: typeColors[row.type] || 'default', 
+          size: 'small',
+          style: tagStyle
+        }, { default: () => row.type })
+        
+        if (isSuppressed) {
+          const tooltipContent = [
+            `State: ${row.analysisState || 'Unknown'}`,
+            h('br'),
+            `Date: ${row.analysisDate ? new Date(row.analysisDate).toLocaleString() : 'Unknown'}`
+          ]
+          
+          return h('div', {}, [
+            typeTag,
+            h(NTooltip, {
+              trigger: 'hover'
+            }, {
+              trigger: () => {
+                return h(NIcon, {
+                  class: 'icons',
+                  size: 16,
+                  style: 'cursor: help; margin-left: 4px;'
+                }, { default: () => h(Info20Regular) })
+              },
+              default: () => tooltipContent
+            })
+          ])
+        }
+        
+        return typeTag
       }
     },
     {
