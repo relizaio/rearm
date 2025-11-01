@@ -225,7 +225,7 @@ export function buildVulnerabilityColumns(
           const tooltipContent = [
             `State: ${row.analysisState || 'Unknown'}`,
             h('br'),
-            `Date: ${row.analysisDate ? new Date(row.analysisDate).toLocaleString() : 'Unknown'}`
+            `Date: ${row.analysisDate ? new Date(row.analysisDate).toLocaleString('en-CA', {hour12: false}) : 'Unknown'}`
           ]
           
           return h('div', {}, [
