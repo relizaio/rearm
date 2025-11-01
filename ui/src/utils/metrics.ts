@@ -2,7 +2,7 @@ import type { DataTableColumns } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { searchDtrackComponentByPurl } from '@/utils/dtrack'
 import { Info20Regular } from '@vicons/fluent'
-import { Edit } from '@vicons/tabler'
+import { Edit, Eye } from '@vicons/tabler'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -154,6 +154,7 @@ export function buildVulnerabilityColumns(
     getOrgUuid?: () => string
     getDtrackProjectUuids?: () => string[]
     onEditFinding?: (row: any) => void
+    onViewAnalysis?: (row: any) => void
   }
 ): DataTableColumns<any> {
   function makePurlRenderer() {
@@ -407,18 +408,34 @@ export function buildVulnerabilityColumns(
       key: 'actions',
       width: 80,
       render: (row: any) => {
-        const editIcon = h(NIcon, {
-          title: 'Create Analysis',
-          class: 'icons clickable',
-          size: 25,
-          onClick: () => {
-            if (options?.onEditFinding) {
-              options.onEditFinding(row)
+        // If analysisState exists, show view (eye) icon, otherwise show edit icon
+        if (row.analysisState) {
+          const viewIcon = h(NIcon, {
+            title: 'View Analysis',
+            class: 'icons clickable',
+            size: 25,
+            onClick: () => {
+              if (options?.onViewAnalysis) {
+                options.onViewAnalysis(row)
+              }
             }
-          }
-        }, { default: () => h(Edit) })
-        
-        return h('div', {}, [editIcon])
+          }, { default: () => h(Eye) })
+          
+          return h('div', {}, [viewIcon])
+        } else {
+          const editIcon = h(NIcon, {
+            title: 'Create Analysis',
+            class: 'icons clickable',
+            size: 25,
+            onClick: () => {
+              if (options?.onEditFinding) {
+                options.onEditFinding(row)
+              }
+            }
+          }, { default: () => h(Edit) })
+          
+          return h('div', {}, [editIcon])
+        }
       }
     }
   ]
