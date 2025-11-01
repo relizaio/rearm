@@ -7,14 +7,31 @@
         style="width: 90%;"
     >
         <n-spin :show="loading">
-            <n-data-table
-                :columns="columns"
-                :data="analysisRecords"
-                :pagination="{ pageSize: 10 }"
-                :row-key="(row: any) => row.uuid"
-            />
+            <n-space vertical>
+                <n-data-table
+                    :columns="columns"
+                    :data="analysisRecords"
+                    :pagination="{ pageSize: 10 }"
+                    :row-key="(row: any) => row.uuid"
+                />
+                <n-button v-if="hasAvailableScopes" type="primary" @click="handleAddScope">
+                    Add Scope
+                </n-button>
+            </n-space>
         </n-spin>
     </n-modal>
+    
+    <create-vuln-analysis-modal
+        v-model:show="showCreateAnalysisModal"
+        :finding-row="findingRowData"
+        :org-uuid="orgUuid"
+        :release-uuid="releaseUuid"
+        :branch-uuid="branchUuid"
+        :component-uuid="componentUuid"
+        :artifact-view-only="artifactViewOnly"
+        :available-scopes-only="availableScopes"
+        @created="onAnalysisCreated"
+    />
 </template>
 
 <script lang="ts">
@@ -25,9 +42,10 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NDataTable, NTag, NSpace, useNotification, DataTableColumns } from 'naive-ui'
+import { NModal, NSpin, NDataTable, NTag, NSpace, NButton, useNotification, DataTableColumns } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
+import CreateVulnAnalysisModal from './CreateVulnAnalysisModal.vue'
 
 interface Props {
     show: boolean
@@ -35,9 +53,20 @@ interface Props {
     location: string
     findingId: string
     findingType: string
+    findingAliases?: any[]
+    releaseUuid?: string
+    branchUuid?: string
+    componentUuid?: string
+    artifactViewOnly?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+    findingAliases: () => [],
+    releaseUuid: '',
+    branchUuid: '',
+    componentUuid: '',
+    artifactViewOnly: false
+})
 
 const emit = defineEmits<{
     'update:show': [value: boolean]
@@ -46,6 +75,7 @@ const emit = defineEmits<{
 const notification = useNotification()
 const loading = ref(false)
 const analysisRecords = ref<any[]>([])
+const showCreateAnalysisModal = ref(false)
 
 const isVisible = computed({
     get: () => props.show,
@@ -55,6 +85,68 @@ const isVisible = computed({
 const modalTitle = computed(() => {
     return `Vulnerability Analysis Records - ${props.findingType}: ${props.findingId}, location: ${props.location}`
 })
+
+// Helper function to check if a specific scope with UUID exists in analysis records
+const hasScopeWithUuid = (scope: string, scopeUuid: string): boolean => {
+    return analysisRecords.value.some(record => 
+        record.scope === scope && record.scopeUuid === scopeUuid
+    )
+}
+
+// Compute available scopes based on context and existing records
+const availableScopes = computed(() => {
+    const scopes: string[] = []
+    
+    // Check if ORG scope with current org UUID exists
+    if (!hasScopeWithUuid('ORG', props.orgUuid)) {
+        scopes.push('ORG')
+    }
+    
+    if (!props.artifactViewOnly) {
+        // Check if COMPONENT scope with current component UUID exists
+        if (props.componentUuid && !hasScopeWithUuid('COMPONENT', props.componentUuid)) {
+            scopes.push('COMPONENT')
+        }
+        // Check if BRANCH scope with current branch UUID exists
+        if (props.branchUuid && !hasScopeWithUuid('BRANCH', props.branchUuid)) {
+            scopes.push('BRANCH')
+        }
+        // Check if RELEASE scope with current release UUID exists
+        if (props.releaseUuid && !hasScopeWithUuid('RELEASE', props.releaseUuid)) {
+            scopes.push('RELEASE')
+        }
+    }
+    
+    return scopes
+})
+
+const hasAvailableScopes = computed(() => {
+    return availableScopes.value.length > 0
+})
+
+// Create finding row data for the CreateVulnAnalysisModal
+const findingRowData = computed(() => {
+    return {
+        id: props.findingId,
+        type: props.findingType,
+        purl: props.location,
+        location: props.location,
+        aliases: props.findingAliases
+    }
+})
+
+const handleAddScope = () => {
+    showCreateAnalysisModal.value = true
+}
+
+const onAnalysisCreated = async () => {
+    notification.success({
+        content: 'Vulnerability analysis created successfully',
+        duration: 3000
+    })
+    // Refresh the analysis records
+    await fetchAnalysisRecords()
+}
 
 const columns: DataTableColumns<any> = [
     {

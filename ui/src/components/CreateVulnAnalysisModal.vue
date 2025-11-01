@@ -115,13 +115,16 @@ interface Props {
     componentUuid?: string
     // If true, only ORG scope is allowed (artifact view)
     artifactViewOnly?: boolean
+    // If provided, only these scopes will be available for selection
+    availableScopesOnly?: string[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
     releaseUuid: '',
     branchUuid: '',
     componentUuid: '',
-    artifactViewOnly: false
+    artifactViewOnly: false,
+    availableScopesOnly: () => []
 })
 
 const emit = defineEmits<{
@@ -157,6 +160,17 @@ const locationTypeOptions = [
 ]
 
 const scopeOptions = computed(() => {
+    // If availableScopesOnly is provided, filter to only those scopes
+    if (props.availableScopesOnly && props.availableScopesOnly.length > 0) {
+        const allOptions = [
+            { label: 'Organization', value: 'ORG' },
+            { label: 'Component', value: 'COMPONENT' },
+            { label: 'Branch', value: 'BRANCH' },
+            { label: 'Release', value: 'RELEASE' }
+        ]
+        return allOptions.filter(opt => props.availableScopesOnly!.includes(opt.value))
+    }
+    
     if (props.artifactViewOnly) {
         return [{ label: 'Organization', value: 'ORG' }]
     }
@@ -204,6 +218,32 @@ const rules: FormRules = {
     state: [{ required: true, message: 'Analysis state is required', trigger: 'change' }]
 }
 
+// Helper function to set default scope based on available options
+const setDefaultScope = () => {
+    const availableOptions = scopeOptions.value
+    if (availableOptions.length > 0) {
+        const defaultScope = availableOptions[0].value
+        formData.value.scope = defaultScope
+        
+        // Set the corresponding UUID
+        switch (defaultScope) {
+            case 'RELEASE':
+                formData.value.scopeUuid = props.releaseUuid
+                break
+            case 'BRANCH':
+                formData.value.scopeUuid = props.branchUuid
+                break
+            case 'COMPONENT':
+                formData.value.scopeUuid = props.componentUuid
+                break
+            case 'ORG':
+            default:
+                formData.value.scopeUuid = props.orgUuid
+                break
+        }
+    }
+}
+
 // Watch for changes in the finding row and populate form
 watch(() => props.findingRow, (newRow) => {
     if (newRow) {
@@ -213,24 +253,13 @@ watch(() => props.findingRow, (newRow) => {
         formData.value.location = newRow.purl || newRow.location || ''
         formData.value.locationType = newRow.purl ? 'PURL' : 'CODE_POINT'
         
-        // Set default scope based on context
-        if (props.artifactViewOnly) {
-            formData.value.scope = 'ORG'
-            formData.value.scopeUuid = props.orgUuid
-        } else if (props.releaseUuid) {
-            formData.value.scope = 'RELEASE'
-            formData.value.scopeUuid = props.releaseUuid
-        } else if (props.branchUuid) {
-            formData.value.scope = 'BRANCH'
-            formData.value.scopeUuid = props.branchUuid
-        } else if (props.componentUuid) {
-            formData.value.scope = 'COMPONENT'
-            formData.value.scopeUuid = props.componentUuid
-        } else {
-            formData.value.scope = 'ORG'
-            formData.value.scopeUuid = props.orgUuid
-        }
+        setDefaultScope()
     }
+}, { immediate: true })
+
+// Watch for changes in availableScopesOnly to update default scope
+watch(() => props.availableScopesOnly, () => {
+    setDefaultScope()
 }, { immediate: true })
 
 const onScopeChange = (value: string) => {
