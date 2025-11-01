@@ -21,6 +21,12 @@
         </n-spin>
     </n-modal>
     
+    <update-vuln-analysis-modal
+        v-model:show="showUpdateAnalysisModal"
+        :analysis-record="selectedAnalysisRecord"
+        @updated="onAnalysisUpdated"
+    />
+    
     <create-vuln-analysis-modal
         v-model:show="showCreateAnalysisModal"
         :finding-row="findingRowData"
@@ -42,10 +48,12 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NDataTable, NTag, NSpace, NButton, useNotification, DataTableColumns } from 'naive-ui'
+import { NModal, NSpin, NDataTable, NTag, NSpace, NButton, NIcon, useNotification, DataTableColumns } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import CreateVulnAnalysisModal from './CreateVulnAnalysisModal.vue'
+import UpdateVulnAnalysisModal from './UpdateVulnAnalysisModal.vue'
+import { Edit } from '@vicons/tabler'
 
 interface Props {
     show: boolean
@@ -76,6 +84,8 @@ const notification = useNotification()
 const loading = ref(false)
 const analysisRecords = ref<any[]>([])
 const showCreateAnalysisModal = ref(false)
+const showUpdateAnalysisModal = ref(false)
+const selectedAnalysisRecord = ref<any>(null)
 
 const isVisible = computed({
     get: () => props.show,
@@ -139,9 +149,23 @@ const handleAddScope = () => {
     showCreateAnalysisModal.value = true
 }
 
+const handleEditAnalysis = (record: any) => {
+    selectedAnalysisRecord.value = record
+    showUpdateAnalysisModal.value = true
+}
+
 const onAnalysisCreated = async () => {
     notification.success({
         content: 'Vulnerability analysis created successfully',
+        duration: 3000
+    })
+    // Refresh the analysis records
+    await fetchAnalysisRecords()
+}
+
+const onAnalysisUpdated = async () => {
+    notification.success({
+        content: 'Vulnerability analysis updated successfully',
         duration: 3000
     })
     // Refresh the analysis records
@@ -232,6 +256,21 @@ const columns: DataTableColumns<any> = [
                     ])
                 })
             })
+        }
+    },
+    {
+        title: 'Actions',
+        key: 'actions',
+        width: 80,
+        render: (row: any) => {
+            const editIcon = h(NIcon, {
+                title: 'Edit Analysis',
+                class: 'icons clickable',
+                size: 25,
+                onClick: () => handleEditAnalysis(row)
+            }, { default: () => h(Edit) })
+            
+            return h('div', {}, [editIcon])
         }
     }
 ]

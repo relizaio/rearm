@@ -104,6 +104,7 @@ import { ref, computed, watch } from 'vue'
 import { NModal, NForm, NFormItem, NInput, NSelect, NButton, NSpace, NTag, NDynamicInput, useNotification, FormInst, FormRules } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
+import { ANALYSIS_STATE_OPTIONS, ANALYSIS_JUSTIFICATION_OPTIONS } from '@/constants/vulnAnalysis'
 
 interface Props {
     show: boolean
@@ -154,11 +155,6 @@ const formData = ref({
     details: ''
 })
 
-const locationTypeOptions = [
-    { label: 'PURL', value: 'PURL' },
-    { label: 'Code Point', value: 'CODE_POINT' }
-]
-
 const scopeOptions = computed(() => {
     // If availableScopesOnly is provided, filter to only those scopes
     if (props.availableScopesOnly && props.availableScopesOnly.length > 0) {
@@ -190,24 +186,8 @@ const scopeOptions = computed(() => {
     return options
 })
 
-const stateOptions = [
-    { label: 'Exploitable', value: 'EXPLOITABLE' },
-    { label: 'In Triage', value: 'IN_TRIAGE' },
-    { label: 'False Positive', value: 'FALSE_POSITIVE' },
-    { label: 'Not Affected', value: 'NOT_AFFECTED' }
-]
-
-const justificationOptions = [
-    { label: 'Code Not Present', value: 'CODE_NOT_PRESENT' },
-    { label: 'Code Not Reachable', value: 'CODE_NOT_REACHABLE' },
-    { label: 'Requires Configuration', value: 'REQUIRES_CONFIGURATION' },
-    { label: 'Requires Dependency', value: 'REQUIRES_DEPENDENCY' },
-    { label: 'Requires Environment', value: 'REQUIRES_ENVIRONMENT' },
-    { label: 'Protected by Compiler', value: 'PROTECTED_BY_COMPILER' },
-    { label: 'Protected at Runtime', value: 'PROTECTED_AT_RUNTIME' },
-    { label: 'Protected at Perimeter', value: 'PROTECTED_AT_PERIMETER' },
-    { label: 'Protected by Mitigating Control', value: 'PROTECTED_BY_MITIGATING_CONTROL' }
-]
+const stateOptions = ANALYSIS_STATE_OPTIONS
+const justificationOptions = ANALYSIS_JUSTIFICATION_OPTIONS
 
 const rules: FormRules = {
     findingId: [{ required: true, message: 'Finding ID is required', trigger: 'blur' }],
@@ -292,7 +272,7 @@ const handleSubmit = async () => {
         await formRef.value.validate()
         submitting.value = true
         
-        const input = {
+        const input: any = {
             org: props.orgUuid,
             location: formData.value.location,
             locationType: formData.value.locationType,
@@ -302,8 +282,11 @@ const handleSubmit = async () => {
             scope: formData.value.scope,
             scopeUuid: formData.value.scopeUuid,
             state: formData.value.state,
-            justification: formData.value.justification,
             details: formData.value.details || null
+        }
+
+        if (formData.value.justification) {
+            input.justification = formData.value.justification
         }
         
         const response = await graphqlClient.mutate({
