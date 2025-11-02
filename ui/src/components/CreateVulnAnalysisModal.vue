@@ -230,8 +230,12 @@ watch(() => props.findingRow, (newRow) => {
         formData.value.findingId = newRow.id || ''
         formData.value.findingAliases = newRow.aliases?.map((a: any) => a.aliasId) || []
         formData.value.findingType = newRow.type?.toUpperCase() || 'VULNERABILITY'
-        formData.value.location = newRow.purl || newRow.location || ''
-        formData.value.locationType = newRow.purl ? 'PURL' : 'CODE_POINT'
+        
+        // Determine location and type
+        const location = newRow.purl || newRow.location || ''
+        formData.value.location = location
+        // Check if location is actually a PURL (starts with 'pkg:')
+        formData.value.locationType = location.startsWith('pkg:') ? 'PURL' : 'CODE_POINT'
         
         setDefaultScope()
     }
