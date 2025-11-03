@@ -222,9 +222,10 @@ export function buildVulnerabilityColumns(
           style: tagStyle
         }, { default: () => row.type })
         
-        if (isSuppressed) {
+        // Show info icon for any finding with an analysis state
+        if (row.analysisState) {
           const tooltipContent = [
-            `State: ${row.analysisState || 'Unknown'}`,
+            `State: ${row.analysisState}`,
             h('br'),
             `Date: ${row.analysisDate ? new Date(row.analysisDate).toLocaleString('en-CA', {hour12: false}) : 'Unknown'}`
           ]
