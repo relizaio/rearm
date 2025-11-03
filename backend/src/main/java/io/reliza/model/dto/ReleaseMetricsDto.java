@@ -634,6 +634,10 @@ public class ReleaseMetricsDto implements Cloneable {
 			return null;
 		}
 		
+		// Select the vulnerability to use as the base for analysis state
+		// Priority: 1) Has analysisState, 2) CVE- ID, 3) GHSA- ID, 4) Any
+		VulnerabilityDto baseVuln = selectBaseVulnerability(vulnerabilities);
+		
 		if (vulnerabilities.size() == 1) {
 			// Even for single vulnerabilities, ensure proper ID prioritization
 			VulnerabilityDto singleVuln = vulnerabilities.iterator().next();
@@ -677,9 +681,8 @@ public class ReleaseMetricsDto implements Cloneable {
 		Set<String> allIds = new HashSet<>();
 		Set<FindingSourceDto> allSources = new HashSet<>();
 		
-		// Use the first vulnerability's purl as base
-		VulnerabilityDto firstVuln = vulnerabilities.iterator().next();
-		String purl = firstVuln.purl();
+		// Use the base vulnerability's purl
+		String purl = baseVuln.purl();
 		
 		// Collect all data from all vulnerabilities
 		for (VulnerabilityDto vuln : vulnerabilities) {
@@ -727,7 +730,58 @@ public class ReleaseMetricsDto implements Cloneable {
 		// Determine the best severity based on source priority
 		VulnerabilitySeverity bestSeverity = selectBestSeverity(allSeverities);
 		
-		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, null, null);
+		// Use analysis state and date from the selected base vulnerability
+		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate());
+	}
+	
+	/**
+	 * Select the base vulnerability to preserve analysis state from.
+	 * Priority: 1) Has analysisState (audited), 2) CVE- ID, 3) GHSA- ID, 4) First one
+	 */
+	private VulnerabilityDto selectBaseVulnerability(Set<VulnerabilityDto> vulnerabilities) {
+		VulnerabilityDto withAnalysis = null;
+		VulnerabilityDto withCve = null;
+		VulnerabilityDto withGhsa = null;
+		VulnerabilityDto first = null;
+		
+		for (VulnerabilityDto vuln : vulnerabilities) {
+			if (first == null) {
+				first = vuln;
+			}
+			
+			// Priority 1: Has analysis state
+			if (vuln.analysisState() != null) {
+				if (withAnalysis == null) {
+					withAnalysis = vuln;
+				}
+			}
+			
+			// Priority 2: CVE ID
+			if (vuln.vulnId() != null && vuln.vulnId().startsWith("CVE-")) {
+				if (withCve == null) {
+					withCve = vuln;
+				}
+			}
+			
+			// Priority 3: GHSA ID
+			if (vuln.vulnId() != null && vuln.vulnId().startsWith("GHSA-")) {
+				if (withGhsa == null) {
+					withGhsa = vuln;
+				}
+			}
+		}
+		
+		// Return in priority order
+		if (withAnalysis != null) {
+			return withAnalysis;
+		}
+		if (withCve != null) {
+			return withCve;
+		}
+		if (withGhsa != null) {
+			return withGhsa;
+		}
+		return first;
 	}
 	
 	private String selectBestPrimaryId(Set<String> allIds) {
