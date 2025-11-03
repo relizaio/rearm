@@ -830,7 +830,7 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                                 size: 25,
                                 onClick: () => compareMode.value = !compareMode.value
                             },
-                            { default: () => h(LayoutColumns) }
+                            () => h(LayoutColumns)
                         )
                     )
                 }
@@ -863,7 +863,7 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                                 size: 25,
                                 color: isReleaseFilterActivated.value ? 'red' : ''
                             },
-                            { default: () => h(Filter) }
+                            () => h(Filter)
                         ),
                         default: () =>  [
                             lifecycleEl,
@@ -871,9 +871,8 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                             h(NButton, {
                                 type: 'warning',
                                 onClick: () => resetReleaseFilter()
-                            },{
-                                default: () => 'Reset'
-                            }),
+                            },
+                            () => 'Reset'),
                         ]
                     }
 
@@ -902,7 +901,7 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                                 size: 25,
                                 onClick: () => cloneReleaseToFs(row.uuid, row.version)
                             },
-                            { default: () => h(Copy) }
+                            () => h(Copy)
                         )
                     )
                 }

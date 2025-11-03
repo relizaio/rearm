@@ -483,7 +483,7 @@ onMounted(async () => {
 })
 
 function renderIcon (icon: Component) {
-    return () => h(NIcon, null, { default: () => h(icon) })
+    return () => h(NIcon, null, () => h(icon))
 }
 
 function isMain (branch : any) {
@@ -1414,7 +1414,7 @@ const branchFields: any[] = [
                                         class: 'icons',
                                         size: 25
                                     },
-                                    { default: () => h(LinkIcon) }
+                                    () => h(LinkIcon)
                                 )
                             ])
                         }
@@ -1457,7 +1457,7 @@ if (!isComponent.value && isWritable){
                     size: 25,
                     onClick: () => {cloneBrProps.value.originalBranch = row; cloneBrProps.value.schema = componentData.value.featureBranchVersioning; showCloneBranchModal.value = true}
                 }, 
-                { default: () => h(Copy) }
+                () => h(Copy)
             )
         }
     })
@@ -1593,9 +1593,7 @@ const outputTriggerTableFields: DataTableColumns<any> = [
                         editOutputTrigger(row)
                     }
                 }, 
-                { 
-                    default: () => h(Edit) 
-                }
+                () => h(Edit)
                 )
                 const deleteEl = h(NIcon, {
                     title: 'Delete Trigger',
@@ -1605,9 +1603,7 @@ const outputTriggerTableFields: DataTableColumns<any> = [
                         deleteOutputTrigger(row.uuid)
                     }
                 }, 
-                { 
-                    default: () => h(Trash) 
-                }
+                () => h(Trash)
                 )
                 els.push(editEl, deleteEl)
             }
@@ -1666,7 +1662,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
                     {
                         class: 'icons',
                         size: 25,
-                    }, { default: () => h(Info20Regular) }),
+                    }, () => h(Info20Regular)),
                 default: () =>  h('ul', factContent)
                 }
                 )
@@ -1688,9 +1684,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
                         editInputTrigger(row)
                     }
                 }, 
-                { 
-                    default: () => h(Edit) 
-                }
+                () => h(Edit)
                 )
                 const deleteEl = h(NIcon, {
                     title: 'Delete Trigger',
@@ -1700,9 +1694,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
                         deleteInputTrigger(row.uuid)
                     }
                 }, 
-                { 
-                    default: () => h(Trash) 
-                }
+                () => h(Trash)
                 )
                 els.push(editEl, deleteEl)
             }

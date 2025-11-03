@@ -1096,7 +1096,7 @@ const deployedOnEnvFields: any[] = [
                             },
                             target: "_blank"
                         },
-                        { default: () => h(renderIcon(GitCompare))}
+                        () => h(renderIcon(GitCompare))
                     ),
                 ]) 
             }
@@ -1175,7 +1175,7 @@ async function save() {
     
 }
 function renderIcon (icon: Component) {
-    return () => h(NIcon, null, { default: () => h(icon) })
+    return () => h(NIcon, null, () => h(icon))
 }
 
 // Components
@@ -1927,7 +1927,7 @@ const releaseTagsFields: any[] = [
                     class: 'icons clickable',
                     size: 25,
                     onClick: () => deleteTag(row.key)
-                }, { default: () => h(Trash) }
+                }, () => h(Trash)
             )
         }
     }
@@ -1955,7 +1955,7 @@ const releaseHistoryFields: any[] = [
                                 {
                                     class: 'icons',
                                     size: 25
-                                }, { default: () => h(Info24Regular) }
+                                }, () => h(Info24Regular)
                             )
                         },
                         default: () => row.wu.lastUpdatedBy
@@ -2000,7 +2000,7 @@ const approvalHistoryFields: any[] = [
                                 {
                                     class: 'icons',
                                     size: 25
-                                }, { default: () => h(Info24Regular) }
+                                }, () => h(Info24Regular)
                             )
                         },
                         default: () => row.wu.lastUpdatedBy
@@ -2224,7 +2224,7 @@ const artifactsTableFields: DataTableColumns<any> = [
                         {
                             class: 'icons',
                             size: 25,
-                        }, { default: () => h(Info20Regular) }),
+                        }, () => h(Info20Regular)),
                     default: () =>  h('div', row.belongsToId)
                     }
                     )
@@ -2259,7 +2259,7 @@ const artifactsTableFields: DataTableColumns<any> = [
                     {
                         class: 'icons',
                         size: 25,
-                    }, { default: () => h(Info20Regular) }),
+                    }, () => h(Info20Regular)),
                 default: () =>  h('ul', factContent)
                 }
                 )
@@ -2315,7 +2315,7 @@ const artifactsTableFields: DataTableColumns<any> = [
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => openDownloadArtifactModal(row)
-                    }, { default: () => h(Download) })
+                    }, () => h(Download))
                 els.push(downloadEl)
             }
 
@@ -2325,7 +2325,7 @@ const artifactsTableFields: DataTableColumns<any> = [
                     class: 'icons clickable',
                     size: 25,
                     onClick: () => uploadNewBomVersion(row)
-                }, { default: () => h(Edit) })
+                }, () => h(Edit))
             els.push(uploadEl)
 
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
@@ -2334,7 +2334,7 @@ const artifactsTableFields: DataTableColumns<any> = [
                         title: 'Open Dependency-Track Project in New Window',
                         class: 'icons clickable',
                         size: 25
-                    }, { default: () => h(Link) })
+                    }, () => h(Link))
                 const dtrackEl = h('a', {target: '_blank', href: row.metrics.dependencyTrackFullUri}, dtrackElIcon)
                 els.push(dtrackEl)
 
@@ -2344,7 +2344,7 @@ const artifactsTableFields: DataTableColumns<any> = [
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
-                    }, { default: () => h(SecurityScanOutlined) })
+                    }, () => h(SecurityScanOutlined))
                 els.push(dtrackRescanEl)
 
                 const dtrackRefetchEl = h(NIcon,
@@ -2353,7 +2353,7 @@ const artifactsTableFields: DataTableColumns<any> = [
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => refetchDependencyTrackMetrics(row.uuid)
-                    }, { default: () => h(Refresh) })
+                    }, () => h(Refresh))
                 els.push(dtrackRefetchEl)
             }
             
@@ -2365,7 +2365,7 @@ const artifactsTableFields: DataTableColumns<any> = [
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => deleteArtifactFromRelease(row.uuid)
-                    }, { default: () => h(Trash) })
+                    }, () => h(Trash))
                 els.push(deleteEl)
             }
             
@@ -2413,7 +2413,7 @@ const deliverableTableFields: DataTableColumns<any> = [
                     {
                         class: 'icons',
                         size: 25,
-                    }, { default: () => h(Info20Regular) }),
+                    }, () => h(Info20Regular)),
                 default: () =>  h('ul', factContent)
                 }
                 )
@@ -2429,7 +2429,7 @@ const deliverableTableFields: DataTableColumns<any> = [
                             class: 'icons clickable',
                             size: 25,
                             onClick: () => copyToClipboard(`${row.displayIdentifier}@sha256:${sha256.digest}`)
-                        }, { default: () => h(ClipboardCheck) })
+                        }, () => h(ClipboardCheck))
                     els.push(copyRefEl)
                 }
             }
@@ -2452,7 +2452,7 @@ const deliverableTableFields: DataTableColumns<any> = [
                         showDeliverableAddArtifactModal.value = true
                     
                     }
-                }, { default: () => h(BoxArrowUp20Regular) })
+                }, () => h(BoxArrowUp20Regular))
             els.push(addArtifactEl)
             if (!els.length) els.push(h('span', 'N/A'))
             return h('div', els)
@@ -2664,7 +2664,7 @@ const commitTableFields: DataTableColumns<any> = [
                     {
                         class: 'icons',
                         size: 25,
-                    }, { default: () => h(Info20Regular) }),
+                    }, () => h(Info20Regular)),
                 default: () =>  h('ul', factContent)
                 }
                 )
@@ -2685,7 +2685,7 @@ const commitTableFields: DataTableColumns<any> = [
                             title: 'Open Commit in New Window',
                             class: 'icons clickable',
                             size: 25
-                        }, { default: () => h(Link) })
+                        }, () => h(Link))
                     const ocEl = h('a', {target: '_blank', href: link}, openCommitIcon)
                     els.push(ocEl)
                 }
@@ -2700,7 +2700,7 @@ const commitTableFields: DataTableColumns<any> = [
                         showSCEAddArtifactModal.value = true
                         
                     }
-                }, { default: () => h(BoxArrowUp20Regular) })
+                }, () => h(BoxArrowUp20Regular))
             els.push(addArtifactEl)
             if (!els.length) els.push(h('span', 'N/A'))
             return h('div', els)

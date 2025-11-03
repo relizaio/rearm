@@ -182,7 +182,7 @@ const vcsRepoFields: any[] = [
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => selectVcs(row, true)
-                    }, { default: () => h(EditIcon) }))
+                    }, () => h(EditIcon)))
                 }else{
 
                     els.push(h(NIcon,{
@@ -190,14 +190,14 @@ const vcsRepoFields: any[] = [
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => updateVcsRepository(row.uuid, true)
-                    },{ default: () => h(Check) }))
+                    }, () => h(Check)))
                     
                     els.push(h(NIcon,{
                         title: 'Discard VCS Repository Change',
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => resetSelectVcs(row.uuid, true)
-                    },{ default: () => h(X) }))
+                    }, () => h(X)))
                 }
             }
             return h('div', {style: 'display: flex;'}, els)
@@ -226,7 +226,7 @@ const vcsRepoFields: any[] = [
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => selectVcs(row, false)
-                    }, { default: () => h(EditIcon) }))
+                    }, () => h(EditIcon)))
                 }else{
 
                     els.push(h(NIcon,{
@@ -234,14 +234,14 @@ const vcsRepoFields: any[] = [
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => updateVcsRepository(row.uuid, false)
-                    },{ default: () => h(Check) }))
+                    }, () => h(Check)))
                     
                     els.push(h(NIcon,{
                         title: 'Discard VCS Repository Change',
                         class: 'icons clickable',
                         size: 25,
                         onClick: () => resetSelectVcs(row.uuid, false)
-                    },{ default: () => h(X) }))
+                    }, () => h(X)))
                 }
             }
             return h('div', {style: 'display: flex;'}, els)
@@ -259,7 +259,7 @@ const vcsRepoFields: any[] = [
                     size: 25,
                     onClick: () => copyToClipboard(row.uuid)
                 },
-                { default: () => h(Copy20Regular)}
+                () => h(Copy20Regular)
             )]
             return  h(
                 'div',
@@ -277,7 +277,7 @@ const vcsRepoFields: any[] = [
                                 class: 'icons',
                                 size: 25
                             }, 
-                            { default: () => h(ExternalLink) }
+                            () => h(ExternalLink)
                         )
                     ]),
                     h(
@@ -288,7 +288,7 @@ const vcsRepoFields: any[] = [
                             size: 25,
                             onClick: () => showConnectedComponentsModal(row.uuid)
                         }, 
-                        { default: () => h(Eye) }),
+                        () => h(Eye)),
                     h(
                         NTooltip, {
                             trigger: 'hover'
@@ -296,7 +296,7 @@ const vcsRepoFields: any[] = [
                             {
                                 class: 'icons',
                                 size: 25,
-                            }, { default: () => h(Info20Regular) }),
+                            }, () => h(Info20Regular)),
                         default: () =>  uuidCopy
                         }
                     )

@@ -268,7 +268,7 @@ const columns: DataTableColumns<any> = [
                 class: 'icons clickable',
                 size: 25,
                 onClick: () => handleEditAnalysis(row)
-            }, { default: () => h(Edit) })
+            }, () => h(Edit))
             
             return h('div', {}, [editIcon])
         }

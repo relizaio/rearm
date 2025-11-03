@@ -204,7 +204,7 @@ const secretsFields: any[] = [
                             size: 25,
                             onClick: () => editSecret(row.uuid)
                         }, 
-                        { default: () => h(EditIcon) }
+                        () => h(EditIcon)
                     ),
                     h(
                         NIcon, 
@@ -214,7 +214,7 @@ const secretsFields: any[] = [
                             size: 25,
                             onClick: () => editSecretDistribution(row.uuid)
                         }, 
-                        { default: () => h(VectorBezier) }
+                        () => h(VectorBezier)
                     ),
                     h(
                         NIcon, 
@@ -224,7 +224,7 @@ const secretsFields: any[] = [
                             size: 25,
                             onClick: () => deleteSecret(row.uuid)
                         }, 
-                        { default: () => h(Trash) }
+                        () => h(Trash)
                     ),
                     
                 ]
