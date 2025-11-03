@@ -403,7 +403,8 @@ public class CommonVariables {
 		USER_GROUPS("user_groups"),
 		VARIANTS("variants"),
 		VCS_REPOSITORIES("vcs_repositories"),
-		VERSION_ASSIGNMENTS("version_assignments")
+		VERSION_ASSIGNMENTS("version_assignments"),
+		VULN_ANALYSIS("vuln_analysis")
 		;
 		
 		private String name;

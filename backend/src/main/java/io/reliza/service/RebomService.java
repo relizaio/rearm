@@ -10,7 +10,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -25,7 +27,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData.BomFormat;
+import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.WeaknessDto;
@@ -37,6 +41,11 @@ import reactor.core.publisher.Mono;
 @Slf4j
 @Service
 public class RebomService {
+
+    @Autowired
+    @Lazy
+    private VulnAnalysisService vulnAnalysisService;
+
 	private final WebClient rebomWebClient;
 
     public enum BomStructureType {
@@ -304,7 +313,8 @@ public class RebomService {
         return UUID.fromString(bomSerialNumber);
     }
 
-    public ReleaseMetricsDto parseSarifOnRebom(String sarifContent, UUID artifactUuid) {
+    public ReleaseMetricsDto parseSarifOnRebom(String sarifContent, ArtifactDto artifactDto) {
+        UUID artifactUuid = artifactDto.getUuid();
         String query = """
             query parseSarifContent($sarifContent: String!) {
                 parseSarifContent(sarifContent: $sarifContent) {
@@ -337,17 +347,19 @@ public class RebomService {
                 (String) w.get("location"), 
                 (String) w.get("fingerprint"), 
                 mapSeverity((String) w.get("severity")),
-                Set.of(source)
+                Set.of(source),
+                null,
+                null
             ))
             .toList();
         
         rmd.setWeaknessDetails(weaknessDtos);
-        rmd.computeMetricsFromFacts();
-        
+        vulnAnalysisService.processReleaseMetricsDto(artifactDto.getOrg(), artifactDto.getOrg(), AnalysisScope.ORG, rmd);
         return rmd;
     }
     
-    public ReleaseMetricsDto parseCycloneDxContent(String vdrContent, UUID artifactUuid) {
+    public ReleaseMetricsDto parseCycloneDxContent(String vdrContent, ArtifactDto artifactDto) {
+        UUID artifactUuid = artifactDto.getUuid();
         String query = """
             query parseCycloneDxContent($vdrContent: String!) {
                 parseCycloneDxContent(vdrContent: $vdrContent) {
@@ -379,12 +391,14 @@ public class RebomService {
                     severity,
                     new LinkedHashSet<>(),
                     Set.of(source),
-                    Set.of(severitySource)
+                    Set.of(severitySource),
+                    null,
+                    null
                 );
             })
             .toList();
         rmd.setVulnerabilityDetails(vulnerabilityDtos);
-        rmd.computeMetricsFromFacts();
+        vulnAnalysisService.processReleaseMetricsDto(artifactDto.getOrg(), artifactDto.getOrg(), AnalysisScope.ORG, rmd);
         return rmd;
     }
     

@@ -197,21 +197,29 @@ public class SharedArtifactService {
 			
 			// Create version snapshot of current state before updating
 			ArtifactData currentArtifactData = ArtifactData.dataFromRecord(oa.get());
-			ArtifactData.ArtifactVersionSnapshot currentSnapshot = ArtifactData.ArtifactVersionSnapshot.fromArtifactData(currentArtifactData);
-			
-			// Preserve existing version history and add new snapshot
 			ArtifactData newArtifactData = Utils.OM.convertValue(recordData, ArtifactData.class);
-			// Preserve any existing version history from the current artifact
-			if (currentArtifactData.getPreviousVersions() != null && !currentArtifactData.getPreviousVersions().isEmpty()) {
-				// Add existing versions that aren't already present in the new data (avoid duplicates)
-				for (ArtifactData.ArtifactVersionSnapshot existingSnapshot : currentArtifactData.getPreviousVersions()) {
-					if (newArtifactData.getPreviousVersions() == null || !newArtifactData.getPreviousVersions().contains(existingSnapshot)) {
-						newArtifactData.addVersionSnapshot(existingSnapshot);
+			
+			// Only create version snapshot if version has changed
+			String currentVersion = currentArtifactData.getVersion();
+			String newVersion = newArtifactData.getVersion();
+			boolean versionChanged = (currentVersion == null && newVersion != null) ||
+									 (currentVersion != null && !currentVersion.equals(newVersion));
+			
+			if (versionChanged) {
+				ArtifactData.ArtifactVersionSnapshot currentSnapshot = ArtifactData.ArtifactVersionSnapshot.fromArtifactData(currentArtifactData);
+				
+				// Preserve existing version history from the current artifact
+				if (currentArtifactData.getPreviousVersions() != null && !currentArtifactData.getPreviousVersions().isEmpty()) {
+					// Add existing versions that aren't already present in the new data (avoid duplicates)
+					for (ArtifactData.ArtifactVersionSnapshot existingSnapshot : currentArtifactData.getPreviousVersions()) {
+						if (newArtifactData.getPreviousVersions() == null || !newArtifactData.getPreviousVersions().contains(existingSnapshot)) {
+							newArtifactData.addVersionSnapshot(existingSnapshot);
+						}
 					}
 				}
+				newArtifactData.addVersionSnapshot(currentSnapshot);
+				recordData = Utils.dataToRecord(newArtifactData);
 			}
-			newArtifactData.addVersionSnapshot(currentSnapshot);
-			recordData = Utils.dataToRecord(newArtifactData);
 			
 			auditService.createAndSaveAuditRecord(TableName.ARTIFACTS, a);
 			a.setLastUpdatedDate(ZonedDateTime.now());

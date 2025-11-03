@@ -1,0 +1,29 @@
+/**
+* Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
+*/
+
+package io.reliza.model.dto;
+
+import java.util.UUID;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import io.reliza.model.AnalysisJustification;
+import io.reliza.model.AnalysisState;
+import lombok.Data;
+
+@Data
+public class UpdateVulnAnalysisDto {
+	
+	@JsonProperty("analysisUuid")
+	private UUID analysisUuid;
+	
+	@JsonProperty("state")
+	private AnalysisState state;
+	
+	@JsonProperty("justification")
+	private AnalysisJustification justification;
+	
+	@JsonProperty("details")
+	private String details;
+}

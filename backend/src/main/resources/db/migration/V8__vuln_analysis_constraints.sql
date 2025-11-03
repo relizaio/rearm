@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX vuln_analysis_unique_finding_id on rearm.user_groups 
+    ((record_data->>'name'), (record_data->>'scope'), (record_data->>'findingId'), (record_data->>'scopeUuid'), (record_data->>'findingType'));

@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAlias;
 
+import io.reliza.model.AnalysisState;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -80,13 +81,14 @@ public class ReleaseMetricsDto implements Cloneable {
 	
 	public static record ViolationDto (String purl, ViolationType type, 
 		@JsonProperty("license") @JsonAlias("License") String license,
-		String violationDetails, Set<FindingSourceDto> sources) {}
+		String violationDetails, Set<FindingSourceDto> sources, AnalysisState analysisState, ZonedDateTime analysisDate) {}
 	
 	public static record VulnerabilityAliasDto (VulnerabilityAliasType type, String aliasId) {}
 
 	public static enum VulnerabilityAliasType {
 		CVE,
-		GHSA
+		GHSA,
+		OTHER
 	}
 
 	public static enum SeveritySource {
@@ -98,13 +100,13 @@ public class ReleaseMetricsDto implements Cloneable {
 	public static record SeveritySourceDto (SeveritySource source, VulnerabilitySeverity severity) {}
 
 	public static record VulnerabilityDto (String purl, String vulnId, VulnerabilitySeverity severity,
-		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities) {}
+		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities, AnalysisState analysisState, ZonedDateTime analysisDate) {}
 
 	/**
 	 * We use weaknessDto to store findngs from SARIF parsing
 	 */
 	public static record WeaknessDto (String cweId, String ruleId, String location,
-		String fingerprint, VulnerabilitySeverity severity, Set<FindingSourceDto> sources) {}
+		String fingerprint, VulnerabilitySeverity severity, Set<FindingSourceDto> sources, AnalysisState analysisState, ZonedDateTime analysisDate) {}
 	
 	@Override
     public ReleaseMetricsDto clone() {
@@ -184,6 +186,8 @@ public class ReleaseMetricsDto implements Cloneable {
   	
   	public void computeMetricsFromFacts () {
 		organizeVulnerabilitiesWithAliases();
+		deduplicateViolations();
+		deduplicateWeaknesses();
   		int operationalViolations = 0;
   		int securityViolations = 0;
   		int licenseViolations = 0;
@@ -194,22 +198,30 @@ public class ReleaseMetricsDto implements Cloneable {
   		int unassignedVulns = 0;
   		
   		for (var x: violationDetails) {
-  			switch (x.type()) {
-  			case SECURITY:
-  				++securityViolations;
-  				break;
-  			case OPERATIONAL:
-  				++operationalViolations;
-  				break;
-  			case LICENSE:
-  				++licenseViolations;
-  				break;
-  			default:
-  				break;
-  			}
-  		}
+			// Skip findings with FALSE_POSITIVE or NOT_AFFECTED analysis state
+			if (x.analysisState() == AnalysisState.FALSE_POSITIVE || x.analysisState() == AnalysisState.NOT_AFFECTED) {
+				continue;
+			}
+			switch (x.type()) {
+			case SECURITY:
+				++securityViolations;
+				break;
+			case OPERATIONAL:
+				++operationalViolations;
+				break;
+			case LICENSE:
+				++licenseViolations;
+				break;
+			default:
+				break;
+			}
+		}
   		
   		for (var x: vulnerabilityDetails) {
+			// Skip findings with FALSE_POSITIVE or NOT_AFFECTED analysis state
+			if (x.analysisState() == AnalysisState.FALSE_POSITIVE || x.analysisState() == AnalysisState.NOT_AFFECTED) {
+				continue;
+			}
   			switch (x.severity()) {
   			case CRITICAL:
   				++criticalVulns;
@@ -232,6 +244,10 @@ public class ReleaseMetricsDto implements Cloneable {
   		}
 
 		for (var x: weaknessDetails) {
+			// Skip findings with FALSE_POSITIVE or NOT_AFFECTED analysis state
+			if (x.analysisState() == AnalysisState.FALSE_POSITIVE || x.analysisState() == AnalysisState.NOT_AFFECTED) {
+				continue;
+			}
 			switch (x.severity()) {
 			case CRITICAL:
 				++criticalVulns;
@@ -312,7 +328,9 @@ public class ReleaseMetricsDto implements Cloneable {
 					vuln.severity(), 
 					vuln.aliases(), 
 					updatedSources,
-					vuln.severities()
+					vuln.severities(),
+					vuln.analysisState(),
+					vuln.analysisDate()
 				);
 				enrichedVulnerabilities.add(enrichedVuln);
 			}
@@ -347,7 +365,9 @@ public class ReleaseMetricsDto implements Cloneable {
 					violation.type(), 
 					violation.license(), 
 					violation.violationDetails(), 
-					updatedSources
+					updatedSources,
+					violation.analysisState(),
+					violation.analysisDate()
 				);
 				enrichedViolations.add(enrichedViolation);
 			}
@@ -383,7 +403,9 @@ public class ReleaseMetricsDto implements Cloneable {
 					weakness.location(), 
 					weakness.fingerprint(), 
 					weakness.severity(), 
-					updatedSources
+					updatedSources,
+					weakness.analysisState(),
+					weakness.analysisDate()
 				);
 				enrichedWeaknesses.add(enrichedWeakness);
 			}
@@ -437,7 +459,9 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.severity(), 
 					combinedAliases, 
 					combinedSources,
-					combinedSeverities
+					combinedSeverities,
+					existing.analysisState(),
+					existing.analysisDate()
 				);
 				vulnMap.put(xKey, merged);
 			} else {
@@ -474,7 +498,9 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.type(), 
 					existing.license(), 
 					existing.violationDetails(), 
-					combinedSources
+					combinedSources,
+					existing.analysisState(),
+					existing.analysisDate()
 				);
 				violationMap.put(xKey, merged);
 			} else {
@@ -508,7 +534,9 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.location(), 
 					existing.fingerprint(), 
 					existing.severity(), 
-					combinedSources
+					combinedSources,
+					existing.analysisState(),
+					existing.analysisDate()
 				);
 				vulnMap.put(xKey, merged);
 			} else {
@@ -518,7 +546,7 @@ public class ReleaseMetricsDto implements Cloneable {
 		return new LinkedList<>(vulnMap.values());
 	}
 	
-	private void organizeVulnerabilitiesWithAliases() {
+	public void organizeVulnerabilitiesWithAliases() {
 		if (vulnerabilityDetails == null || vulnerabilityDetails.isEmpty()) {
 			return;
 		}
@@ -627,7 +655,7 @@ public class ReleaseMetricsDto implements Cloneable {
 				
 				// Return with cleaned aliases if needed, otherwise return as-is
 				if (singleVuln.aliases() == null || cleanedAliases.size() != singleVuln.aliases().size()) {
-					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), cleanedAliases, singleVuln.sources(), singleVuln.severities());
+					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), cleanedAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate());
 				} else {
 					return singleVuln;
 				}
@@ -642,7 +670,7 @@ public class ReleaseMetricsDto implements Cloneable {
 				}
 			}
 			
-			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), finalAliases, singleVuln.sources(), singleVuln.severities());
+			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), finalAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate());
 		}
 		
 		// Collect all unique identifiers and find the best primary ID (CVE preferred)
@@ -699,7 +727,7 @@ public class ReleaseMetricsDto implements Cloneable {
 		// Determine the best severity based on source priority
 		VulnerabilitySeverity bestSeverity = selectBestSeverity(allSeverities);
 		
-		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities);
+		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, null, null);
 	}
 	
 	private String selectBestPrimaryId(Set<String> allIds) {
@@ -783,5 +811,96 @@ public class ReleaseMetricsDto implements Cloneable {
 		    this.policyViolationsOperationalAudited += otherRmd.policyViolationsOperationalAudited != null ? otherRmd.policyViolationsOperationalAudited : 0;
 		    this.policyViolationsOperationalUnaudited += otherRmd.policyViolationsOperationalUnaudited != null ? otherRmd.policyViolationsOperationalUnaudited : 0;
 	    }
+	}
+	
+	/**
+	 * Deduplicate violations by purl+type composite key
+	 */
+	public void deduplicateViolations() {
+		if (violationDetails == null || violationDetails.isEmpty()) {
+			return;
+		}
+		
+		// Use LinkedHashMap to preserve insertion order while deduplicating
+		Map<String, ViolationDto> violationMap = new LinkedHashMap<>();
+		
+		for (ViolationDto violation : violationDetails) {
+			// Create composite key: purl + type (same as getViolationKey)
+			String key = violation.purl() + violation.type().name();
+			
+			if (violationMap.containsKey(key)) {
+				// Merge sources if duplicate found
+				ViolationDto existing = violationMap.get(key);
+				Set<FindingSourceDto> combinedSources = new LinkedHashSet<>();
+				if (existing.sources() != null) {
+					combinedSources.addAll(existing.sources());
+				}
+				if (violation.sources() != null) {
+					combinedSources.addAll(violation.sources());
+				}
+				
+				// Keep existing violation but with merged sources
+				ViolationDto merged = new ViolationDto(
+					existing.purl(),
+					existing.type(),
+					existing.license(),
+					existing.violationDetails(),
+					combinedSources,
+					existing.analysisState(),
+					existing.analysisDate()
+				);
+				violationMap.put(key, merged);
+			} else {
+				violationMap.put(key, violation);
+			}
+		}
+		
+		violationDetails = new LinkedList<>(violationMap.values());
+	}
+	
+	/**
+	 * Deduplicate weaknesses by fingerprint
+	 */
+	public void deduplicateWeaknesses() {
+		if (weaknessDetails == null || weaknessDetails.isEmpty()) {
+			return;
+		}
+		
+		// Use LinkedHashMap to preserve insertion order while deduplicating
+		Map<String, WeaknessDto> weaknessMap = new LinkedHashMap<>();
+		
+		for (WeaknessDto weakness : weaknessDetails) {
+			// Use fingerprint as key (same as mergeWeaknessDtos)
+			String key = weakness.fingerprint();
+			
+			if (weaknessMap.containsKey(key)) {
+				// Merge sources if duplicate found
+				WeaknessDto existing = weaknessMap.get(key);
+				Set<FindingSourceDto> combinedSources = new LinkedHashSet<>();
+				if (existing.sources() != null) {
+					combinedSources.addAll(existing.sources());
+				}
+				if (weakness.sources() != null) {
+					combinedSources.addAll(weakness.sources());
+				}
+				
+				// Keep existing weakness but with merged sources
+				WeaknessDto merged = new WeaknessDto(
+					existing.cweId(),
+					existing.ruleId(),
+					existing.location(),
+					existing.fingerprint(),
+					existing.severity(),
+					combinedSources,
+					existing.analysisState(),
+					existing.analysisDate()
+				);
+				weaknessMap.put(key, merged);
+			} else {
+				weaknessMap.put(key, weakness);
+			}
+		}
+		
+		weaknessDetails = new LinkedList<>(weaknessMap.values());
 	}
 }

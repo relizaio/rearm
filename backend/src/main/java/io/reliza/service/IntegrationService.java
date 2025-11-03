@@ -27,6 +27,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -47,6 +48,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.Integration;
@@ -78,6 +80,10 @@ public class IntegrationService {
 	
 	@Autowired
 	private SharedArtifactService sharedArtifactService;
+	
+	@Autowired
+	@Lazy
+	private VulnAnalysisService vulnAnalysisService;
 	
 	private static final Logger log = LoggerFactory.getLogger(IntegrationService.class);
 
@@ -554,7 +560,7 @@ public class IntegrationService {
 				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid());
 		dti.setVulnerabilityDetails(vulnerabilityDetails);
 		dti.setViolationDetails(violationDetails);
-		dti.computeMetricsFromFacts();
+		vulnAnalysisService.processReleaseMetricsDto(ad.getOrg(), ad.getOrg(), AnalysisScope.ORG, dti);
 		if (null == dti.getDependencyTrackProject()) dti.setDependencyTrackProject(ad.getMetrics().getDependencyTrackProject());
 		if (null == dti.getProjectName()) dti.setProjectName(ad.getMetrics().getProjectName());
 		if (null == dti.getProjectVersion()) dti.setProjectVersion(ad.getMetrics().getProjectVersion());
@@ -608,7 +614,7 @@ public class IntegrationService {
 			SeveritySourceDto severitySource = Utils.createSeveritySourceDto(dvr.vulnId(), dvr.severity());
 			
 			dvr.components().forEach(c -> {
-				VulnerabilityDto vdto = new VulnerabilityDto(c.purl(), dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource));
+				VulnerabilityDto vdto = new VulnerabilityDto(c.purl(), dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null);
 				vulnerabilityDetails.add(vdto);
 			});
 		});
@@ -634,7 +640,7 @@ public class IntegrationService {
 			DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
 			String licenseId = (null != dvr.component().resolvedLicense()) ? dvr.component().resolvedLicense().licenseId() : "undetected";
 			ViolationDto vdto = new ViolationDto(dvr.component().purl(), dvr.type(),
-					licenseId, null, sources);
+					licenseId, null, sources, null, null);
 			violationDetails.add(vdto);
 		});
 		return violationDetails;

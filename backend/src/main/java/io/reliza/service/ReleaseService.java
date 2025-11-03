@@ -56,6 +56,7 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.ChildComponent;
@@ -156,6 +157,9 @@ public class ReleaseService {
 	
 	@Autowired
 	private ArtifactGatherService artifactGatherService;
+
+	@Autowired
+	private VulnAnalysisService vulnAnalysisService;
 
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
@@ -1536,31 +1540,50 @@ public class ReleaseService {
 		return ord;
 	}
 	
-	public void computeReleaseMetrics (UUID releaseId) {
+	public void computeReleaseMetrics (UUID releaseId, boolean onRescan) {
 		Optional<Release> or = sharedReleaseService.getRelease(releaseId);
 		if (or.isPresent()) {
-			computeReleaseMetrics(or.get(), ZonedDateTime.now());
+			if (onRescan) {
+				computeReleaseMetricsOnRescan(or.get(), ZonedDateTime.now());
+			} else {
+				computeReleaseMetricsOnNonRescan(or.get());
+			}
 		} else {
 			log.warn("Attempted to compute metrics for non-existent release = " + releaseId);
 		}
 	}
 	
-	public void computeReleaseMetrics (Release r, ZonedDateTime lastScanned) {
+	private void computeReleaseMetricsOnRescan (Release r, ZonedDateTime lastScanned) {
 		var rd = ReleaseData.dataFromRecord(r);
 		var originalMetrics = null != rd.getMetrics() ? rd.getMetrics().clone() : null;
-		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
-		var allReleaseArts = artifactGatherService.gatherReleaseArtifacts(rd);
-		allReleaseArts.forEach(aid -> {
-			var ad = artifactService.getArtifactData(aid);
-			rmd.mergeWithByContent(ad.get().getMetrics());
-		});
-		rmd.mergeWithByContent(rollUpProductReleaseMetrics(rd));
 		if (null == originalMetrics || null == originalMetrics.getLastScanned() || lastScanned.isAfter(originalMetrics.getLastScanned())) {
+			ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+			var allReleaseArts = artifactGatherService.gatherReleaseArtifacts(rd);
+			allReleaseArts.forEach(aid -> {
+				var ad = artifactService.getArtifactData(aid);
+				rmd.mergeWithByContent(ad.get().getMetrics());
+			});
+			rmd.mergeWithByContent(rollUpProductReleaseMetrics(rd));
+			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, rmd);
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			rmd.setLastScanned(lastScanned);
 			rd.setMetrics(rmd);
 			Map<String,Object> recordData = Utils.dataToRecord(rd);
 			ossReleaseService.saveRelease(r, recordData, WhoUpdated.getAutoWhoUpdated());
+		}
+	}
+	
+	private void computeReleaseMetricsOnNonRescan (Release r) {
+		var rd = ReleaseData.dataFromRecord(r);
+		if (null != rd.getMetrics()) {
+			ReleaseMetricsDto originalMetrics = rd.getMetrics();
+			ReleaseMetricsDto clonedMetrics = originalMetrics.clone();
+			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, clonedMetrics);
+			if (!clonedMetrics.equals(originalMetrics)) {
+				rd.setMetrics(clonedMetrics);
+				Map<String,Object> recordData = Utils.dataToRecord(rd);
+				ossReleaseService.saveRelease(r, recordData, WhoUpdated.getAutoWhoUpdated());
+			}
 		}
 	}
 	
@@ -1573,10 +1596,12 @@ public class ReleaseService {
 				ReleaseMetricsDto parentReleaseMetrics = parentRd.getMetrics();
 				parentReleaseMetrics.enrichSourcesWithRelease(r.getRelease());
 				rmd.mergeWithByContent(parentReleaseMetrics);
+				rmd.computeMetricsFromFacts();
 			} catch (RelizaException e) {
 				log.error("Error on getting parent release", e);
 			}
 		});
+		vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), rd.getUuid(), AnalysisScope.RELEASE, rmd);
 		return rmd;
 	}
 	
@@ -1623,7 +1648,7 @@ public class ReleaseService {
 			Set<UUID> dedupProcessedReleases, ZonedDateTime lastScanned) {
 		releaseList.forEach(r -> {
 			if (!dedupProcessedReleases.contains(r.getUuid())) {
-				computeReleaseMetrics(r, lastScanned);
+				computeReleaseMetricsOnRescan(r, lastScanned);
 				dedupProcessedReleases.add(r.getUuid());
 			}
 		});

@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -42,6 +43,7 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
@@ -79,6 +81,10 @@ public class ArtifactService {
 	
 	@Autowired
     private SystemInfoService systemInfoService;
+	
+	@Lazy
+	@Autowired
+	private VulnAnalysisService vulnAnalysisService;
 	
 	private final ArtifactRepository repository;
 
@@ -400,7 +406,7 @@ public class ArtifactService {
 					try {
 						var sarifJson = Utils.readJsonFromResource(file);
 						String sarifString = Utils.OM.writeValueAsString(sarifJson);
-						ReleaseMetricsDto rmd = rebomService.parseSarifOnRebom(sarifString, artifactDto.getUuid());
+						ReleaseMetricsDto rmd = rebomService.parseSarifOnRebom(sarifString, artifactDto);
 						artifactDto.setRmd(rmd);
 					} catch (Exception e) {
 						log.error("Error parsing SARIF file", e);
@@ -411,7 +417,7 @@ public class ArtifactService {
 					try {
 						var vdrJson = Utils.readJsonFromResource(file);
 						String vdrString = Utils.OM.writeValueAsString(vdrJson);
-						ReleaseMetricsDto rmd = rebomService.parseCycloneDxContent(vdrString, artifactDto.getUuid());
+						ReleaseMetricsDto rmd = rebomService.parseCycloneDxContent(vdrString, artifactDto);
 						artifactDto.setRmd(rmd);
 					} catch (Exception e) {
 						log.error("Error parsing CycloneDX VDR/BOV file", e);
@@ -438,19 +444,19 @@ public class ArtifactService {
 			artifactDto.setDigestRecords(digestRecords);
 
 			artifactDto.setTags(List.of(
-	            new TagRecord(CommonVariables.SIZE_FEILD, 
-	                artifactUploadResponse.getOriginalSize() != null 
-	                    ? artifactUploadResponse.getOriginalSize().toString() 
-	                    : artifactUploadResponse.getOciResponse().getSize(), 
-	                Removable.NO),
-	            new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, 
-	                artifactUploadResponse.getOriginalMediaType() != null 
-	                    ? artifactUploadResponse.getOriginalMediaType() 
-	                    : artifactUploadResponse.getOciResponse().getMediaType(), 
-	                Removable.NO),
-	            new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
-	            new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
-	            new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
+			new TagRecord(CommonVariables.SIZE_FEILD, 
+				artifactUploadResponse.getOriginalSize() != null 
+					? artifactUploadResponse.getOriginalSize().toString() 
+					: artifactUploadResponse.getOciResponse().getSize(), 
+				Removable.NO),
+			new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, 
+				artifactUploadResponse.getOriginalMediaType() != null 
+					? artifactUploadResponse.getOriginalMediaType() 
+					: artifactUploadResponse.getOciResponse().getMediaType(), 
+				Removable.NO),
+			new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
+			new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
+			new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
         ));
 		}
 		
@@ -470,7 +476,7 @@ public class ArtifactService {
         formData.add("tag", tag);
 		
 		if(StringUtils.isNotEmpty(sha256Digest))
-        	formData.add("inputDigest", sha256Digest);
+    		formData.add("inputDigest", sha256Digest);
 
 		Mono<OASResponseDto> resp = this.webClient.post().uri("/push")
 		.contentType(MediaType.MULTIPART_FORM_DATA)
@@ -601,6 +607,67 @@ public class ArtifactService {
 			retAd = Optional.of(signatureAD.get());
 		}
 		return retAd;
+	}
+	
+	/**
+	 * Compute artifact metrics by processing vulnerability analysis
+	 * Only saves the artifact if metrics have changed after processing
+	 */
+	public void computeArtifactMetrics(UUID artifactId) {
+		Optional<Artifact> oa = sharedArtifactService.getArtifact(artifactId);
+		if (oa.isPresent()) {
+			var ad = ArtifactData.dataFromRecord(oa.get());
+			if (ad.getMetrics() != null) {
+				ReleaseMetricsDto originalMetrics = ad.getMetrics();
+				ReleaseMetricsDto clonedMetrics = originalMetrics.clone();
+				
+				// Process vulnerability analysis on cloned metrics
+				vulnAnalysisService.processReleaseMetricsDto(ad.getOrg(), ad.getOrg(), AnalysisScope.ORG, clonedMetrics);
+				
+				// Only save if metrics changed
+				if (!clonedMetrics.equals(originalMetrics)) {
+					// Convert ReleaseMetricsDto to DependencyTrackIntegration
+					ArtifactData.DependencyTrackIntegration dti = ArtifactData.DependencyTrackIntegration.fromReleaseMetricsDto(clonedMetrics);
+					// Preserve existing DependencyTrack-specific fields
+					if (ad.getMetrics() != null) {
+						dti.setDependencyTrackProject(ad.getMetrics().getDependencyTrackProject());
+						dti.setUploadToken(ad.getMetrics().getUploadToken());
+						dti.setDependencyTrackFullUri(ad.getMetrics().getDependencyTrackFullUri());
+						dti.setProjectName(ad.getMetrics().getProjectName());
+						dti.setProjectVersion(ad.getMetrics().getProjectVersion());
+					}
+					ad.setMetrics(dti);
+					Map<String, Object> recordData = Utils.dataToRecord(ad);
+					sharedArtifactService.saveArtifact(oa.get(), recordData, WhoUpdated.getAutoWhoUpdated());
+					log.debug("Artifact metrics updated for artifact: {}", artifactId);
+				} else {
+					log.debug("No metrics changes for artifact: {}", artifactId);
+				}
+			}
+		} else {
+			log.warn("Attempted to compute metrics for non-existent artifact = " + artifactId);
+		}
+	}
+	
+	/**
+	 * Find artifacts with matching vulnerability
+	 */
+	public List<Artifact> findArtifactsWithVulnerability(UUID orgUuid, String location, String findingId) {
+		return repository.findArtifactsWithVulnerability(orgUuid.toString(), location, findingId);
+	}
+	
+	/**
+	 * Find artifacts with matching violation
+	 */
+	public List<Artifact> findArtifactsWithViolation(UUID orgUuid, String location, String findingId) {
+		return repository.findArtifactsWithViolation(orgUuid.toString(), location, findingId);
+	}
+	
+	/**
+	 * Find artifacts with matching weakness
+	 */
+	public List<Artifact> findArtifactsWithWeakness(UUID orgUuid, String location, String findingId) {
+		return repository.findArtifactsWithWeakness(orgUuid.toString(), location, findingId);
 	}
 
 }

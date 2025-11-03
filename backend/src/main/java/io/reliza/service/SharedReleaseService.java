@@ -704,4 +704,40 @@ public class SharedReleaseService {
 		if (!releases.isEmpty()) rds = releases.stream().map(ReleaseData::dataFromRecord).toList();
 		return rds;
 	}
+	
+	public List<Release> findReleasesWithVulnerability(UUID org, String location, String findingId) {
+		return repository.findReleasesWithVulnerability(org.toString(), location, findingId);
+	}
+	
+	public List<Release> findReleasesWithViolation(UUID org, String location, String findingId) {
+		return repository.findReleasesWithViolation(org.toString(), location, findingId);
+	}
+	
+	public List<Release> findReleasesWithWeakness(UUID org, String location, String findingId) {
+		return repository.findReleasesWithWeakness(org.toString(), location, findingId);
+	}
+	
+	public List<Release> findReleasesWithVulnerabilityInBranch(UUID org, UUID branch, String location, String findingId) {
+		return repository.findReleasesWithVulnerabilityInBranch(org.toString(), branch.toString(), location, findingId);
+	}
+	
+	public List<Release> findReleasesWithViolationInBranch(UUID org, UUID branch, String location, String findingId) {
+		return repository.findReleasesWithViolationInBranch(org.toString(), branch.toString(), location, findingId);
+	}
+	
+	public List<Release> findReleasesWithWeaknessInBranch(UUID org, UUID branch, String location, String findingId) {
+		return repository.findReleasesWithWeaknessInBranch(org.toString(), branch.toString(), location, findingId);
+	}
+	
+	public List<Release> findReleasesWithVulnerabilityInComponent(UUID org, UUID component, String location, String findingId) {
+		return repository.findReleasesWithVulnerabilityInComponent(org.toString(), component.toString(), location, findingId);
+	}
+	
+	public List<Release> findReleasesWithViolationInComponent(UUID org, UUID component, String location, String findingId) {
+		return repository.findReleasesWithViolationInComponent(org.toString(), component.toString(), location, findingId);
+	}
+	
+	public List<Release> findReleasesWithWeaknessInComponent(UUID org, UUID component, String location, String findingId) {
+		return repository.findReleasesWithWeaknessInComponent(org.toString(), component.toString(), location, findingId);
+	}
 }

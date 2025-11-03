@@ -600,4 +600,36 @@ public class Utils {
 		
 		return new SeveritySourceDto(source, severity);
 	}
+	
+	/**
+	 * Minimizes a PURL by stripping all qualifiers while keeping the core components
+	 * (type, namespace, name, version, subpath).
+	 * 
+	 * @param purl The PURL string to minimize
+	 * @return Minimized PURL string without qualifiers, or null if input is null or invalid
+	 */
+	public static String minimizePurl(String purl) {
+		if (purl == null || purl.isEmpty()) {
+			return null;
+		}
+		
+		try {
+			// Parse the PURL
+			PackageURL packageUrl = new PackageURL(purl);
+			
+			// Build a new PURL with the same components but without qualifiers
+			PackageURLBuilder builder = PackageURLBuilder.aPackageURL()
+					.withType(packageUrl.getType())
+					.withNamespace(packageUrl.getNamespace())
+					.withName(packageUrl.getName())
+					.withVersion(packageUrl.getVersion())
+					.withSubpath(packageUrl.getSubpath());
+			// Note: Not setting qualifiers - they will be empty
+			
+			return builder.build().toString();
+		} catch (MalformedPackageURLException e) {
+			log.warn("Failed to parse PURL for minimization: {}", purl, e);
+			return null;
+		}
+	}
 }

@@ -69,6 +69,10 @@ type Query {
 	
 	# User Groups
 	getUserGroups(org: ID!): [UserGroupWebDto]
+	
+	# Vulnerability Analysis
+	getVulnAnalysis(org: ID!, componentUuid: ID, branchUuid: ID, releaseUuid: ID): [VulnAnalysisWebDto]
+	getVulnAnalysisByLocationAndFinding(org: ID!, location: String!, findingId: String!, findingType: FindingType!): [VulnAnalysisWebDto]
 }
 
 type Mutation {
@@ -164,6 +168,10 @@ type Mutation {
 	# User Groups
 	createUserGroup(userGroup: CreateUserGroupInput!): UserGroupWebDto
 	updateUserGroup(userGroup: UpdateUserGroupInput!): UserGroupWebDto
+	
+	# Vulnerability Analysis
+	createVulnAnalysis(analysis: CreateVulnAnalysisInput!): VulnAnalysisWebDto
+	updateVulnAnalysis(analysis: UpdateVulnAnalysisInput!): VulnAnalysisWebDto
 }
 
 enum BomMediaType {
@@ -916,6 +924,8 @@ type Vulnerability {
 	aliases: [VulnerabilityAliasDto]
 	sources: [FindingSourceDto]
 	severities: [SeveritySourceDto]
+	analysisState: AnalysisState
+	analysisDate: DateTime
 }
 
 type Violation {
@@ -924,6 +934,8 @@ type Violation {
 	license: String
 	violationDetails: String
 	sources: [FindingSourceDto]
+	analysisState: AnalysisState
+	analysisDate: DateTime
 }
 
 type Weakness {
@@ -933,6 +945,8 @@ type Weakness {
 	fingerprint: String
 	severity: VulnerabilitySeverity
 	sources: [FindingSourceDto]
+	analysisState: AnalysisState
+	analysisDate: DateTime
 }
 
 type SearchDigestVersionResponse {
@@ -1782,3 +1796,86 @@ scalar Object
 scalar DateTime
 scalar Long
 scalar Upload
+
+# Vulnerability Analysis Types
+
+type VulnAnalysisWebDto {
+	uuid: ID!
+	org: ID!
+	location: String!
+	locationType: LocationType!
+	findingId: String!
+	findingAliases: [String]
+	findingType: FindingType!
+	scope: AnalysisScope!
+	scopeUuid: ID!
+	analysisState: AnalysisState!
+	analysisJustification: AnalysisJustification
+	analysisHistory: [AnalysisHistoryWebDto]
+}
+
+type AnalysisHistoryWebDto {
+	state: AnalysisState!
+	justification: AnalysisJustification
+	details: String
+	createdDate: DateTime!
+}
+
+input CreateVulnAnalysisInput {
+	org: ID!
+	location: String!
+	locationType: LocationType!
+	findingId: String!
+	findingAliases: [String]
+	findingType: FindingType!
+	scope: AnalysisScope!
+	scopeUuid: ID!
+	state: AnalysisState!
+	justification: AnalysisJustification
+	details: String
+}
+
+input UpdateVulnAnalysisInput {
+	analysisUuid: ID!
+	state: AnalysisState!
+	justification: AnalysisJustification
+	details: String
+}
+
+enum LocationType {
+	PURL
+	CODE_POINT
+}
+
+enum FindingType {
+	VULNERABILITY
+	VIOLATION
+	WEAKNESS
+}
+
+enum AnalysisScope {
+	ORG
+	RESOURCE_GROUP
+	COMPONENT
+	BRANCH
+	RELEASE
+}
+
+enum AnalysisState {
+	EXPLOITABLE
+	IN_TRIAGE
+	FALSE_POSITIVE
+	NOT_AFFECTED
+}
+
+enum AnalysisJustification {
+	CODE_NOT_PRESENT
+	CODE_NOT_REACHABLE
+	REQUIRES_CONFIGURATION
+	REQUIRES_DEPENDENCY
+	REQUIRES_ENVIRONMENT
+	PROTECTED_BY_COMPILER
+	PROTECTED_AT_RUNTIME
+	PROTECTED_AT_PERIMETER
+	PROTECTED_BY_MITIGATING_CONTROL
+}

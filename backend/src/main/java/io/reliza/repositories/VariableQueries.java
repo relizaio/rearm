@@ -202,6 +202,39 @@ class VariableQueries {
 				select * from rearm.artifacts a where a.record_data->'metrics'->>'dependencyTrackProject' in (:dtrackProjectIds)
 			""";
 	
+	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """
+			SELECT * FROM rearm.artifacts
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					WHERE vuln->>'purl' = :location
+					AND vuln->>'vulnId' = :findingId
+				)
+			""";
+	
+	protected static final String FIND_ARTIFACTS_WITH_VIOLATION = """
+			SELECT * FROM rearm.artifacts
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'violationDetails') AS violation
+					WHERE violation->>'purl' = :location
+					AND violation->>'type' = :findingId
+				)
+			""";
+	
+	protected static final String FIND_ARTIFACTS_WITH_WEAKNESS = """
+			SELECT * FROM rearm.artifacts
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'weaknessDetails') AS weakness
+					WHERE weakness->>'location' = :location
+					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
+				)
+			""";
+	
 	/*
 	 * Branches and Feature Sets
 	 */
@@ -530,6 +563,112 @@ class VariableQueries {
 			SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
 				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
 		""";
+
+	protected static final String FIND_RELEASES_WITH_VULNERABILITY = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					WHERE vuln->>'purl' = :location
+					AND vuln->>'vulnId' = :findingId
+				)
+			""";
+	
+	protected static final String FIND_RELEASES_WITH_VIOLATION = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'violationDetails') AS violation
+					WHERE violation->>'purl' = :location
+					AND violation->>'type' = :findingId
+				)
+			""";
+	
+	protected static final String FIND_RELEASES_WITH_WEAKNESS = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'weaknessDetails') AS weakness
+					WHERE weakness->>'location' = :location
+					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
+				)
+			""";
+	
+	protected static final String FIND_RELEASES_WITH_VULNERABILITY_IN_BRANCH = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'branch' = :branchUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					WHERE vuln->>'purl' = :location
+					AND vuln->>'vulnId' = :findingId
+				)
+			""";
+	
+	protected static final String FIND_RELEASES_WITH_VIOLATION_IN_BRANCH = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'branch' = :branchUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'violationDetails') AS violation
+					WHERE violation->>'purl' = :location
+					AND violation->>'type' = :findingId
+				)
+			""";
+	
+	protected static final String FIND_RELEASES_WITH_WEAKNESS_IN_BRANCH = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'branch' = :branchUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'weaknessDetails') AS weakness
+					WHERE weakness->>'location' = :location
+					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
+				)
+			""";
+	
+	protected static final String FIND_RELEASES_WITH_VULNERABILITY_IN_COMPONENT = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'component' = :componentUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					WHERE vuln->>'purl' = :location
+					AND vuln->>'vulnId' = :findingId
+				)
+			""";
+	
+	protected static final String FIND_RELEASES_WITH_VIOLATION_IN_COMPONENT = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'component' = :componentUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'violationDetails') AS violation
+					WHERE violation->>'purl' = :location
+					AND violation->>'type' = :findingId
+				)
+			""";
+	
+	protected static final String FIND_RELEASES_WITH_WEAKNESS_IN_COMPONENT = """
+			SELECT * FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'component' = :componentUuidAsString
+				AND record_data->'metrics' IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'weaknessDetails') AS weakness
+					WHERE weakness->>'location' = :location
+					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
+				)
+			""";
+	
 	
 	/*
 	 * Variants 
@@ -727,5 +866,65 @@ class VariableQueries {
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND jsonb_contains(record_data, jsonb_build_object('users', jsonb_build_array(:userUuidAsString)))
 				AND record_data->>'status' = 'ACTIVE'
+			""";
+	
+	/*
+	 * Vulnerability Analysis
+	 */
+	protected static final String FIND_VULN_ANALYSIS_BY_ORG_LOCATION_FINDING_SCOPE = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'location' = :location
+				AND (record_data->>'findingId' = :findingId OR EXISTS (
+					SELECT 1 FROM jsonb_array_elements_text(record_data->'findingAliases') AS alias
+					WHERE alias = :findingId
+				))
+				AND record_data->>'scope' = :scope
+			""";
+	
+	protected static final String FIND_VULN_ANALYSIS_BY_ORG_LOCATION_FINDING_SCOPE_TYPE = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'location' = :location
+				AND (record_data->>'findingId' = :findingId OR EXISTS (
+					SELECT 1 FROM jsonb_array_elements_text(record_data->'findingAliases') AS alias
+					WHERE alias = :findingId
+				))
+				AND record_data->>'scope' = :scope
+				AND record_data->>'scopeUuid' = :scopeId
+				AND record_data->>'findingType' = :findingType
+			""";
+	
+	protected static final String FIND_VULN_ANALYSIS_BY_ORG_SCOPE_SCOPEUUID = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'scope' = :scope
+				AND record_data->>'scopeUuid' = :scopeUuidAsString
+			""";
+	
+	protected static final String FIND_VULN_ANALYSIS_BY_ORG_LOCATION = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'location' = :location
+			""";
+	
+	protected static final String FIND_VULN_ANALYSIS_BY_ORG_FINDING_ID = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND (record_data->>'findingId' = :findingId OR EXISTS (
+					SELECT 1 FROM jsonb_array_elements_text(record_data->'findingAliases') AS alias
+					WHERE alias = :findingId
+				))
+			""";
+	
+	protected static final String FIND_VULN_ANALYSIS_BY_ORG_LOCATION_FINDING_TYPE = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'location' = :location
+				AND (record_data->>'findingId' = :findingId OR EXISTS (
+					SELECT 1 FROM jsonb_array_elements_text(record_data->'findingAliases') AS alias
+					WHERE alias = :findingId
+				))
+				AND record_data->>'findingType' = :findingType
 			""";
 }
