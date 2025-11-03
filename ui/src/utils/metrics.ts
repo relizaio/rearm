@@ -220,7 +220,7 @@ export function buildVulnerabilityColumns(
           type: typeColors[row.type] || 'default', 
           size: 'small',
           style: tagStyle
-        }, { default: () => row.type })
+        }, () => row.type)
         
         // Show info icon for any finding with an analysis state
         if (row.analysisState) {
@@ -235,13 +235,11 @@ export function buildVulnerabilityColumns(
             h(NTooltip, {
               trigger: 'hover'
             }, {
-              trigger: () => {
-                return h(NIcon, {
-                  class: 'icons',
-                  size: 16,
-                  style: 'cursor: help; margin-left: 4px;'
-                }, { default: () => h(Info20Regular) })
-              },
+              trigger: () => h(NIcon, {
+                class: 'icons',
+                size: 16,
+                style: 'cursor: help; margin-left: 4px;'
+              }, () => h(Info20Regular)),
               default: () => tooltipContent
             })
           ])
@@ -311,13 +309,11 @@ export function buildVulnerabilityColumns(
             h(NTooltip, {
               trigger: 'hover'
             }, {
-              trigger: () => {
-                return h(NIcon, {
-                  class: 'icons',
-                  size: 16,
-                  style: 'cursor: help;'
-                }, { default: () => h(Info20Regular) })
-              },
+              trigger: () => h(NIcon, {
+                class: 'icons',
+                size: 16,
+                style: 'cursor: help;'
+              }, () => h(Info20Regular)),
               default: () => severityTooltipContent
             })
           ])
@@ -418,7 +414,7 @@ export function buildVulnerabilityColumns(
               options.onViewAnalysis(row)
             }
           }
-        }, { default: () => h(Eye) })
+        }, () => h(Eye))
         
         return h('div', {}, [viewIcon])
       }
