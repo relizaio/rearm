@@ -409,34 +409,18 @@ export function buildVulnerabilityColumns(
       key: 'actions',
       width: 80,
       render: (row: any) => {
-        // If analysisState exists, show view (eye) icon, otherwise show edit icon
-        if (row.analysisState) {
-          const viewIcon = h(NIcon, {
-            title: 'View Analysis',
-            class: 'icons clickable',
-            size: 25,
-            onClick: () => {
-              if (options?.onViewAnalysis) {
-                options.onViewAnalysis(row)
-              }
+        const viewIcon = h(NIcon, {
+          title: 'View Analysis',
+          class: 'icons clickable',
+          size: 25,
+          onClick: () => {
+            if (options?.onViewAnalysis) {
+              options.onViewAnalysis(row)
             }
-          }, { default: () => h(Eye) })
-          
-          return h('div', {}, [viewIcon])
-        } else {
-          const editIcon = h(NIcon, {
-            title: 'Create Analysis',
-            class: 'icons clickable',
-            size: 25,
-            onClick: () => {
-              if (options?.onEditFinding) {
-                options.onEditFinding(row)
-              }
-            }
-          }, { default: () => h(Edit) })
-          
-          return h('div', {}, [editIcon])
-        }
+          }
+        }, { default: () => h(Eye) })
+        
+        return h('div', {}, [viewIcon])
       }
     }
   ]
