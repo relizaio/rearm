@@ -9,18 +9,8 @@
     </Suspense>
 </template>
 
-<script lang="ts">
-import { Options, Vue } from 'vue-class-component'
+<script lang="ts" setup>
 import AppWrapper from '@/components/AppWrapper.vue'
-
-@Options({
-    components: {
-        AppWrapper
-    },
-})
-export default class App extends Vue {
-    async setup(/*props : any, { emit } : any*/) {}
-}
 </script>
 
 <style lang="scss">
