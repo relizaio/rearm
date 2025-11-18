@@ -155,19 +155,11 @@ const handleEditAnalysis = (record: any) => {
 }
 
 const onAnalysisCreated = async () => {
-    notification.success({
-        content: 'Vulnerability analysis created successfully',
-        duration: 3000
-    })
     // Refresh the analysis records
     await fetchAnalysisRecords()
 }
 
 const onAnalysisUpdated = async () => {
-    notification.success({
-        content: 'Vulnerability analysis updated successfully',
-        duration: 3000
-    })
     // Refresh the analysis records
     await fetchAnalysisRecords()
 }
