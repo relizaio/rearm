@@ -7,6 +7,21 @@
         style="width: 60%;"
     >
         <n-form ref="formRef" :model="formData" :rules="rules">
+            <n-form-item label="Finding Aliases">
+                <n-dynamic-input
+                    v-model:value="formData.findingAliases"
+                    placeholder="Add alias"
+                    :on-create="() => ''"
+                >
+                    <template #default="{ value, index }">
+                        <n-input
+                            v-model:value="formData.findingAliases[index]"
+                            placeholder="Enter alias"
+                        />
+                    </template>
+                </n-dynamic-input>
+            </n-form-item>
+
             <n-form-item label="Current State" path="state">
                 <n-select
                     v-model:value="formData.state"
@@ -53,7 +68,7 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue'
-import { NModal, NForm, NFormItem, NSelect, NInput, NButton, NSpace, useNotification, FormInst, FormRules } from 'naive-ui'
+import { NModal, NForm, NFormItem, NSelect, NInput, NButton, NSpace, NDynamicInput, useNotification, FormInst, FormRules } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { ANALYSIS_STATE_OPTIONS, ANALYSIS_JUSTIFICATION_OPTIONS } from '@/constants/vulnAnalysis'
@@ -80,6 +95,7 @@ const isVisible = computed({
 })
 
 const formData = ref({
+    findingAliases: [] as string[],
     state: 'IN_TRIAGE',
     justification: null as string | null,
     details: ''
@@ -95,6 +111,7 @@ const rules: FormRules = {
 // Watch for changes in the analysis record and populate form
 watch(() => props.analysisRecord, (newRecord) => {
     if (newRecord) {
+        formData.value.findingAliases = newRecord.findingAliases || []
         formData.value.state = newRecord.analysisState || 'IN_TRIAGE'
         formData.value.justification = newRecord.analysisJustification || null
         formData.value.details = ''
@@ -114,6 +131,7 @@ const handleSubmit = async () => {
         
         const input: any = {
             analysisUuid: props.analysisRecord.uuid,
+            findingAliases: formData.value.findingAliases.length > 0 ? formData.value.findingAliases : null,
             state: formData.value.state,
             details: formData.value.details || null
         }
