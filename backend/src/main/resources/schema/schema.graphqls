@@ -1840,6 +1840,7 @@ input UpdateVulnAnalysisInput {
 	state: AnalysisState!
 	justification: AnalysisJustification
 	details: String
+	findingAliases: [String]
 }
 
 enum LocationType {

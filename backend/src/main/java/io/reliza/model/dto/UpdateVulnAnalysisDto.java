@@ -4,6 +4,7 @@
 
 package io.reliza.model.dto;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -26,4 +27,7 @@ public class UpdateVulnAnalysisDto {
 	
 	@JsonProperty("details")
 	private String details;
+	
+	@JsonProperty("findingAliases")
+	private List<String> findingAliases;
 }

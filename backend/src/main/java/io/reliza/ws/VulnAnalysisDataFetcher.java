@@ -222,6 +222,7 @@ public class VulnAnalysisDataFetcher {
 				updateDto.getState(),
 				updateDto.getJustification(),
 				updateDto.getDetails(),
+				updateDto.getFindingAliases(),
 				wu);
 		
 		return VulnAnalysisWebDto.fromVulnAnalysisData(vad);

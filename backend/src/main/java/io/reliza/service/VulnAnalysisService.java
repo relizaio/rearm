@@ -210,6 +210,7 @@ public class VulnAnalysisService {
 			AnalysisState newState,
 			AnalysisJustification newJustification,
 			String details,
+			List<String> findingAliases,
 			WhoUpdated wu) {
 		
 		Optional<VulnAnalysis> existingAnalysis = vulnAnalysisRepository.findById(analysisUuid);
@@ -219,6 +220,11 @@ public class VulnAnalysisService {
 		
 		VulnAnalysis va = existingAnalysis.get();
 		VulnAnalysisData vad = VulnAnalysisData.dataFromRecord(va);
+		
+		// Update finding aliases if provided
+		if (findingAliases != null) {
+			vad.setFindingAliases(findingAliases);
+		}
 		
 		// Add new history entry and update current state
 		vad.addAnalysisHistoryEntry(newState, newJustification, details, wu);
