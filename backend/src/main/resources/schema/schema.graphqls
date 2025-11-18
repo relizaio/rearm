@@ -891,6 +891,7 @@ enum VulnerabilitySeverity {
 enum VulnerabilityAliasType {
 	CVE
 	GHSA
+	OTHER
 }
 
 enum SeveritySource {
