@@ -316,7 +316,8 @@ const fetchAnalysisRecords = async () => {
                 location: props.location,
                 findingId: props.findingId,
                 findingType: props.findingType
-            }
+            },
+            fetchPolicy: 'no-cache'
         })
         
         analysisRecords.value = response.data.getVulnAnalysisByLocationAndFinding || []
