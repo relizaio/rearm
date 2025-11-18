@@ -479,6 +479,7 @@
             :branch-uuid="release.branchDetails?.uuid || ''"
             :component-uuid="release.componentDetails?.uuid || ''"
             :artifact-view-only="!!currentArtifactDisplayId"
+            @refresh-data="handleRefreshVulnerabilityData"
         />
         <n-modal
             v-model:show="showUploadArtifactModal"
@@ -1468,6 +1469,40 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
         notify('error', 'Error', 'Failed to load vulnerability details')
     } finally {
         loadingVulnerabilities.value = false
+    }
+}
+
+async function handleRefreshVulnerabilityData() {
+    // Check if we are in artifact view or release view
+    if (currentArtifactDisplayId.value) {
+        // We are in artifact view
+        // Need artifact UUID and dependency track project UUID
+        if (currentReleaseArtifacts.value && currentReleaseArtifacts.value.length > 0) {
+            const artifactUuid = currentReleaseArtifacts.value[0].uuid
+            const projectUuid = currentDtrackProjectUuids.value && currentDtrackProjectUuids.value.length > 0 
+                ? currentDtrackProjectUuids.value[0] 
+                : ''
+            
+            if (artifactUuid && projectUuid) {
+                loadingVulnerabilities.value = true
+                // Add a 5 second delay to allow backend to process changes
+                setTimeout(async () => {
+                    // We need to call this to refresh the data
+                    // But wait, calling it sets showDetailedVulnerabilitiesModal to true, which is already true.
+                    // This is fine, it just re-fetches.
+                    await viewDetailedVulnerabilities(artifactUuid, projectUuid)
+                }, 3000)
+            }
+        }
+    } else {
+        // We are in release view
+        if (releaseUuid.value) {
+            loadingVulnerabilities.value = true
+            // Add a 5 second delay to allow backend to process changes
+            setTimeout(async () => {
+                await viewDetailedVulnerabilitiesForRelease(releaseUuid.value)
+            }, 3000)
+        }
     }
 }
 

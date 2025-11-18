@@ -78,6 +78,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
     'update:show': [value: boolean]
+    'analysis-changed': []
 }>()
 
 const notification = useNotification()
@@ -157,11 +158,13 @@ const handleEditAnalysis = (record: any) => {
 const onAnalysisCreated = async () => {
     // Refresh the analysis records
     await fetchAnalysisRecords()
+    emit('analysis-changed')
 }
 
 const onAnalysisUpdated = async () => {
     // Refresh the analysis records
     await fetchAnalysisRecords()
+    emit('analysis-changed')
 }
 
 const columns: DataTableColumns<any> = [

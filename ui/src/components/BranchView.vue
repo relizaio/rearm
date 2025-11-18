@@ -251,6 +251,7 @@
             :branch-uuid="branchData.uuid || ''"
             :component-uuid="branchData.componentDetails?.uuid || ''"
             :artifact-view-only="false"
+            @refresh-data="handleRefreshVulnerabilityData"
         />
     </div>
 </template>
@@ -994,6 +995,16 @@ async function viewDetailedVulnerabilitiesForRelease(releaseRow: any) {
         notify('error', 'Error', 'Failed to load vulnerability details for release')
     } finally {
         loadingVulnerabilities.value = false
+    }
+}
+
+async function handleRefreshVulnerabilityData() {
+    if (selectedReleaseForModal.value) {
+        loadingVulnerabilities.value = true
+        // Add a 5 second delay to allow backend to process changes
+        setTimeout(async () => {
+            await viewDetailedVulnerabilitiesForRelease(selectedReleaseForModal.value)
+        }, 3000)
     }
 }
 
