@@ -406,7 +406,7 @@ export function buildVulnerabilityColumns(
       width: 80,
       render: (row: any) => {
         const viewIcon = h(NIcon, {
-          title: 'View Analysis',
+          title: 'Analysis',
           class: 'icons clickable',
           size: 25,
           onClick: () => {
@@ -414,7 +414,7 @@ export function buildVulnerabilityColumns(
               options.onViewAnalysis(row)
             }
           }
-        }, () => h(Eye))
+        }, () => h(Edit))
         
         return h('div', {}, [viewIcon])
       }
