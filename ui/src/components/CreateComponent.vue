@@ -80,6 +80,17 @@
                             v-model:value="component.vcs"
                             :options="vcsRepos" />
             </n-form-item>
+            <n-form-item 
+                v-if="!isProduct && component.vcs && component.vcs !== 'add_new_repo'"
+                path="repoPath" 
+                label="Repository Path">
+                <n-input
+                    v-model:value="component.repoPath"
+                    placeholder="e.g., services/auth, frontend/web" />
+                <template #feedback>
+                    Optional: Path within repository for monorepo components
+                </template>
+            </n-form-item>
             <n-form-item v-if="!isProduct && isCreateNewRepo"
                         label="Create New VCS Repository">
                 <create-vcs-repository
@@ -196,6 +207,7 @@ const onReset = function () {
         org: props.orgProp,
         type: props.isProduct ? 'PRODUCT' : 'COMPONENT',
         vcs: '',
+        repoPath: '',
         versionSchema: '',
         versionType: 'DEV',
         marketingVersionSchema: '',
@@ -210,6 +222,7 @@ const component = ref({
     org: props.orgProp ? props.orgProp : '',
     type: props.isProduct ? 'PRODUCT' : 'COMPONENT',
     vcs: '',
+    repoPath: '',
     versionSchema: '',
     versionType: 'DEV',
     marketingVersionSchema: '',

@@ -173,6 +173,30 @@
                                     <vue-feather v-if="selectNewVcsRepo && isWritable" type="check" class="clickable" @click="save(); selectNewVcsRepo = false;" title="Save New VCS Repository" />
                                     <vue-feather v-if="selectNewVcsRepo && isWritable" class="clickable" @click="updatedComponent.vcsRepository = componentData.vcsRepository; selectNewVcsRepo = false;" type="x" title="Discard VCS Repository Change" />
                                 </div>
+                                <div class="versionSchemaBlock" v-if="updatedComponent && componentData && componentData.type === 'COMPONENT' && updatedComponent.vcsRepositoryDetails">
+                                    <label>Repository Path</label>
+                                    <n-input 
+                                        v-if="isWritable" 
+                                        v-model:value="updatedComponent.repoPath" 
+                                        placeholder="e.g., services/auth, frontend/web" />
+                                    <vue-feather 
+                                        v-if="updatedComponent.repoPath !== componentData.repoPath && isWritable" 
+                                        @click="updatedComponent.repoPath = componentData.repoPath" 
+                                        type="x" 
+                                        title="Discard Repository Path Changes" 
+                                        class="clickable versionIcon reject" />
+                                    <vue-feather 
+                                        v-if="updatedComponent.repoPath !== componentData.repoPath && isWritable" 
+                                        @click="save" 
+                                        type="check" 
+                                        title="Save Repository Path" 
+                                        class="clickable versionIcon accept" />
+                                    <n-input 
+                                        v-if="!isWritable" 
+                                        type="text" 
+                                        :value="updatedComponent.repoPath || 'Not Set'" 
+                                        readonly />
+                                </div>
                                 <div class="identifierBlock" v-if="updatedComponent && componentData">
                                     <label>Identifiers</label>
                                     <n-dynamic-input v-if="isWritable" v-model:value="updatedComponent.identifiers" :on-create="onCreateIdentifier">

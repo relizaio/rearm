@@ -598,6 +598,7 @@ const COMPONENT_FULL_DATA = `
     versionType
     featureBranchVersioning
     vcs
+    repoPath
     vcsRepositoryDetails {
         uuid
         name

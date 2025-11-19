@@ -780,6 +780,7 @@ const storeObject : any = {
                 name: component.name,
                 versionSchema: component.versionSchema,
                 vcs: component.vcs,
+                repoPath: component.repoPath,
                 featureBranchVersioning: component.featureBranchVersioning,
                 marketingVersionSchema: component.marketingVersionSchema,
                 versionType: component.versionType,
