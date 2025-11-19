@@ -31,7 +31,6 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.context.DgsContext;
-import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import io.reliza.common.CommonVariables;
@@ -184,7 +183,9 @@ public class ComponentDataFetcher {
 		List<RelizaObject> ros = new LinkedList<>();
 		if (null != cpd.getOrganization()) ros.add(getOrganizationService.getOrganizationData(cpd.getOrganization()).orElse(null));
 		if (null != cpd.getVcs()) ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
-		if (null != cpd.getApprovalPolicy()) ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
+		if (null != cpd.getApprovalPolicy() && !cpd.getApprovalPolicy().toString().isEmpty()) {
+			ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
+		}
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
@@ -302,16 +303,24 @@ public class ComponentDataFetcher {
 		
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
 		
-		UUID componentId = Utils.resolveProgrammaticComponentId((String) getNewVersionInput.get(CommonVariables.COMPONENT_FIELD), ahp);
+		// VCS-based component resolution
+		String vcsUri = (String) getNewVersionInput.get("vcsUri");
+		String repoPath = (String) getNewVersionInput.get("repoPath");
+		UUID componentId;
+		
+		if (vcsUri != null) {
+			// VCS-based component resolution
+			ComponentData componentData = componentService.resolveComponentByVcsUriAndPath(ahp.getOrgUuid(), vcsUri, repoPath);
+			componentId = componentData.getUuid();
+		} else {
+			componentId = Utils.resolveProgrammaticComponentId((String) getNewVersionInput.get(CommonVariables.COMPONENT_FIELD), ahp);
+		}
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.VERSION_GEN, ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		log.debug("before get new version programmatic auth");
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
 		if (null != ro)	ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
-
-		log.debug("get new version programmatic ar = " + ar.getAuthorizationStatus());
 		
 		String branchStr = (String) getNewVersionInput.get(CommonVariables.BRANCH_FIELD);
 		String modifier = (String) getNewVersionInput.get(CommonVariables.MODIFIER_FIELD);
@@ -346,7 +355,7 @@ public class ComponentDataFetcher {
 	}
 	
 	@DgsData(parentType = "Mutation", field = "createComponentProgrammatic")
-	public ComponentDto createComponentProgrammatic(DgsDataFetchingEnvironment dfe) {
+	public ComponentDto createComponentProgrammatic(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
@@ -366,8 +375,12 @@ public class ComponentDataFetcher {
 		List<RelizaObject> ros = new LinkedList<>();
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);
 		ros.add(ood.orElse(null));
-		ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
-		ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
+		if (null != cpd.getApprovalPolicy() && !cpd.getApprovalPolicy().toString().isEmpty()) {
+			ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
+		}
+		if (null != cpd.getVcs()) {
+			ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
+		}
 		UUID orgCheckUuid = authorizationService.getMatchingOrg(ros);
 		if (null == orgCheckUuid) throw new AccessDeniedException("Not authorized");
 
@@ -413,7 +426,7 @@ public class ComponentDataFetcher {
 				}
 			
 				if (vcsRepo.isEmpty()) {
-					throw new DgsEntityNotFoundException("Vcs repository not found");
+					throw new RelizaException("Vcs repository not found");
 				}
 				cpd.setVcs(vcsRepo.get().getUuid());
 			}

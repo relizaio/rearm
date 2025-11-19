@@ -61,4 +61,9 @@ public interface ComponentRepository extends CrudRepository<Component, UUID> {
 			value = VariableQueries.FIND_COMPONENTS_BY_APPROVAL_POLICY,
 			nativeQuery = true)
 	List<Component> findComponentsByApprovalPolicy(String approvalPolicyUuid);
+	
+	@Query(
+			value = VariableQueries.FIND_COMPONENT_BY_VCS_AND_PATH,
+			nativeQuery = true)
+	List<Component> findAllComponentsByVcsAndPath(String vcsUuidAsString, String repoPath);
 }

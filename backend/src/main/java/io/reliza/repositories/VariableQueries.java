@@ -299,11 +299,20 @@ class VariableQueries {
 				WHERE c.record_data->>'approvalPolicy' = :approvalPolicyUuid
 				AND c.record_data->>'status' != 'ARCHIVED';
 			""";
+	
+	protected static final String FIND_COMPONENT_BY_VCS_AND_PATH = """
+			SELECT * from rearm.components c 
+			WHERE c.record_data->>'vcs' = :vcsUuidAsString
+			AND (
+				c.record_data->>'repoPath' = :repoPath 
+				OR (NULLIF(c.record_data->>'repoPath', '') IS NULL AND NULLIF(:repoPath, '') IS NULL)
+			)
+			AND c.record_data->>'status' != 'ARCHIVED';
+		""";
 			
 	/*
 	 * ReleaseReboms
 	 */
-
 	 protected static final String FIND_RELEASE_REBOM_BY_RELEASE_AND_ORG = """
 		SELECT * from rearm.release_reboms r where r.record_data->>'release' = :releaseUuidAsString
 		AND r.record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')

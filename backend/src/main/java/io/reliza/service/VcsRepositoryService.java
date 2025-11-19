@@ -63,6 +63,33 @@ public class VcsRepositoryService {
 		return repository.findByIdWriteLocked(uuid);
 	}
 	
+	/**
+	 * Find VCS repository data by URI within an organization (private helper).
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @param uri VCS repository URI
+	 * @return Optional of VcsRepository
+	 */
+	private Optional<VcsRepository> findVcsRepositoryByOrgAndUri(UUID orgUuid, String uri) {
+		return repository.findByOrgAndUri(orgUuid.toString(), uri);
+	}
+	
+	/**
+	 * Find VCS repository data by URI within an organization.
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @param uri VCS repository URI
+	 * @return Optional of VcsRepositoryData
+	 */
+	public Optional<VcsRepositoryData> getVcsRepositoryDataByUri(UUID orgUuid, String uri) {
+		Optional<VcsRepositoryData> vcsData = Optional.empty();
+		Optional<VcsRepository> vr = findVcsRepositoryByOrgAndUri(orgUuid, uri);
+		if (vr.isPresent()) {
+			vcsData = Optional.of(VcsRepositoryData.dataFromRecord(vr.get()));
+		}
+		return vcsData;
+	}
+	
 	public Optional<VcsRepository> getVcsRepositoryByUri (UUID orgUuid, String uri, VcsType type, boolean createIfMissing, WhoUpdated wu) {
 		Optional<VcsRepository> ovr = repository.findByOrgAndUri(orgUuid.toString(), uri);
 		if (ovr.isEmpty() && createIfMissing) {

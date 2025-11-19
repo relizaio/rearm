@@ -84,6 +84,8 @@ public class UpdateComponentDto {
 	@JsonProperty
 	private UUID approvalPolicy;
 	@JsonProperty
+	private String repoPath;
+	@JsonProperty
 	private List<ReleaseInputEvent> releaseInputTriggers;
 	@JsonProperty
 	private List<ReleaseOutputEventInput> outputTriggers;
@@ -123,6 +125,7 @@ public class UpdateComponentDto {
 								.marketingVersionSchema(ucd.getMarketingVersionSchema())
 								.versionType(ucd.getVersionType())
 								.vcs(ucd.getVcs())
+								.repoPath(ucd.getRepoPath())
 								.featureBranchVersioning(ucd.getFeatureBranchVersioning())
 								.repositoryEnabled(ucd.getRepositoryEnabled())
 								.status(ucd.getStatus())

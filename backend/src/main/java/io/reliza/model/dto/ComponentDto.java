@@ -65,4 +65,6 @@ public class ComponentDto {
 	private List<ReleaseOutputEvent> outputTriggers;
 	@JsonProperty
 	private List<TeaIdentifier> identifiers;
+	@JsonProperty
+	private String repoPath;
 }

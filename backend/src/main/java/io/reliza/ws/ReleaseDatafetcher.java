@@ -48,6 +48,7 @@ import java.util.concurrent.CompletionStage;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.AuthPrincipalType;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.common.CommonVariables.RequestType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -90,6 +91,7 @@ import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.service.ComponentService;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetDeliverableService;
@@ -148,6 +150,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	private GetComponentService getComponentService;
+	
+	@Autowired
+	private ComponentService componentService;
 	
 	@Autowired
 	private AuthorizationService authorizationService;
@@ -481,7 +486,19 @@ public class ReleaseDatafetcher {
 		
 		Map<String, Object> progReleaseInput = dfe.getArgument("release");
 		
-		UUID componentId = Utils.resolveProgrammaticComponentId((String) progReleaseInput.get(CommonVariables.COMPONENT_FIELD), ahp);
+		// VCS-based component resolution
+		String vcsUri = (String) progReleaseInput.get("vcsUri");
+		String repoPath = (String) progReleaseInput.get("repoPath");
+		UUID componentId;
+		
+		if (vcsUri != null) {
+			// VCS-based component resolution
+			ComponentData componentData = componentService.resolveComponentByVcsUriAndPath(
+				ahp.getOrgUuid(), vcsUri, repoPath);
+			componentId = componentData.getUuid();
+		} else {
+			componentId = Utils.resolveProgrammaticComponentId((String) progReleaseInput.get(CommonVariables.COMPONENT_FIELD), ahp);
+		}
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
@@ -1072,9 +1089,13 @@ public class ReleaseDatafetcher {
 		ReleaseData rd = dfe.getSource();
 		List<ArtifactData> artList = new LinkedList<>();
 		for (UUID artUuid : rd.getArtifacts()) {
-			artList.add(artifactService
-										.getArtifactData(artUuid)
-										.get());
+			Optional<ArtifactData> artifactOpt = artifactService.getArtifactData(artUuid);
+			if (artifactOpt.isPresent()) {
+				artList.add(artifactOpt.get());
+			} else {
+				log.warn("Artifact not found for UUID: {}, releaseId: {}", artUuid, rd.getUuid());
+				// Skip missing artifacts instead of crashing
+			}
 		}
 		return artList;
 	}

@@ -51,4 +51,6 @@ public class CreateComponentDto {
 	private CreateVcsRepositoryDto vcsRepository; // to set repository
 	
 	private Boolean includeApi; // to create api key right away
+	
+	private String repoPath; // Repository path for monorepo component disambiguation
 }

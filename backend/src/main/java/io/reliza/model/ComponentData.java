@@ -181,6 +181,13 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private List<TeaIdentifier> identifiers = new LinkedList<>();
 	
+	/**
+	 * Repository path for monorepo component disambiguation
+	 * null = legacy component (no specific path)
+	 */
+	@JsonProperty
+	private String repoPath;
+	
 	public List<TeaIdentifier> getIdentifiers () {
 		return new LinkedList<>(this.identifiers);
 	}
@@ -199,6 +206,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		cd.setParent(cpd.getParent());
 		if (null != cpd.getIdentifiers()) cd.setIdentifiers(cpd.getIdentifiers());
 		if (null != cpd.getKind()) cd.setKind(cpd.getKind());
+		if (null != cpd.getRepoPath()) cd.setRepoPath(cpd.getRepoPath());
 		return cd;
 	}
 	
