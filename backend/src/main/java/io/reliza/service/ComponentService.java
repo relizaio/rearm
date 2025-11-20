@@ -35,6 +35,7 @@ import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.DefaultBranchName;
+import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.VcsRepository;
@@ -172,6 +173,26 @@ public class ComponentService {
 	
 	public Component createComponent (CreateComponentDto cpd, WhoUpdated wu) throws RelizaException {
 		Component p = new Component();
+		
+		// Validate version schema configuration
+		if (StringUtils.isEmpty(cpd.getVersionSchema())) {
+			log.error("Component creation failed: Version schema is required for component '{}'", cpd.getName());
+			throw new RelizaException("Version schema is required. Please specify a version schema (e.g., 'semver')");
+		}
+		
+		if (StringUtils.isEmpty(cpd.getFeatureBranchVersioning())) {
+			log.error("Component creation failed: Feature branch versioning is required for component '{}'", cpd.getName());
+			throw new RelizaException("Feature branch versioning is required. Please specify feature branch versioning (e.g., 'Branch.Micro')");
+		}
+		
+		// Set default version type if not provided
+		if (null == cpd.getVersionType()) {
+			cpd.setVersionType(VersionTypeEnum.DEV);
+			log.debug("Version type not specified, defaulting to DEV for component: {}", cpd.getName());
+		}
+		
+		log.info("Creating component '{}' with versionSchema='{}', featureBranchVersioning='{}', versionType='{}'", 
+			cpd.getName(), cpd.getVersionSchema(), cpd.getFeatureBranchVersioning(), cpd.getVersionType());
 		
 		// validate vcs repository
 		if (null != cpd.getVcs()) {
