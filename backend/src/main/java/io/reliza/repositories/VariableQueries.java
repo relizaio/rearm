@@ -303,6 +303,7 @@ class VariableQueries {
 	protected static final String FIND_COMPONENT_BY_VCS_AND_PATH = """
 			SELECT * from rearm.components c 
 			WHERE c.record_data->>'vcs' = :vcsUuidAsString
+			AND c.record_data->>'org' = :orgUuidAsString
 			AND (
 				c.record_data->>'repoPath' = :repoPath 
 				OR (NULLIF(c.record_data->>'repoPath', '') IS NULL AND NULLIF(:repoPath, '') IS NULL)

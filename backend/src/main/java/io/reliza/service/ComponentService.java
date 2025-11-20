@@ -462,18 +462,19 @@ public class ComponentService {
 	}
 	
 	/**
-	 * Find component data by VCS repository UUID and repository path.
+	 * Find component data by VCS repository UUID and repository path within an organization.
 	 * Throws RelizaException if component not found or if multiple components match (ambiguous).
 	 * 
 	 * @param vcsUuid VCS repository UUID
+	 * @param orgUuid Organization UUID
 	 * @param repoPath Repository path (can be null for root)
 	 * @return ComponentData matching the VCS and repoPath
 	 * @throws RelizaException if component not found or multiple components found
 	 */
-	public ComponentData findComponentDataByVcsAndPath(UUID vcsUuid, String repoPath) throws RelizaException {
-		List<Component> components = repository.findAllComponentsByVcsAndPath(vcsUuid.toString(), repoPath);
+	public ComponentData findComponentDataByVcsAndPath(UUID vcsUuid, UUID orgUuid, String repoPath) throws RelizaException {
+		List<Component> components = repository.findAllComponentsByVcsAndPath(vcsUuid.toString(), orgUuid.toString(), repoPath);
 		
-		log.debug("Found {} components for vcsUuid={}, repoPath={}", components.size(), vcsUuid, repoPath);
+		log.debug("Found {} components for vcsUuid={}, orgUuid={}, repoPath={}", components.size(), vcsUuid, orgUuid, repoPath);
 		
 		if (components.isEmpty()) {
 			throw new RelizaException(String.format(
@@ -484,8 +485,8 @@ public class ComponentService {
 			String componentIds = components.stream()
 				.map(c -> c.getUuid().toString())
 				.collect(java.util.stream.Collectors.joining(", "));
-			log.error("Multiple components found (ambiguous): vcsUuid={}, repoPath={}, count={}, componentIds={}", 
-				vcsUuid, repoPath, components.size(), componentIds);
+			log.error("Multiple components found (ambiguous): vcsUuid={}, orgUuid={}, repoPath={}, count={}, componentIds={}", 
+				vcsUuid, orgUuid, repoPath, components.size(), componentIds);
 			throw new RelizaException(String.format(
 				"Multiple components found for VCS UUID '%s' and repo path '%s'. Component IDs: %s. Please use component UUID instead.", 
 				vcsUuid, repoPath, componentIds));
@@ -518,15 +519,15 @@ public class ComponentService {
 		log.debug("VCS repository found : uuid={}, name={}", 
 		 vcsRepoData.get().getUuid(), vcsRepoData.get().getName());
 		
-		// Find component by VCS UUID + repoPath
+		// Find component by VCS UUID + orgUuid + repoPath (org-scoped)
 		try {
-			ComponentData componentData = findComponentDataByVcsAndPath(vcsRepoData.get().getUuid(), repoPath);
+			ComponentData componentData = findComponentDataByVcsAndPath(vcsRepoData.get().getUuid(), orgUuid, repoPath);
 			log.debug("Component resolved : componentId={}, componentName={}, repoPath={}", 
 			 componentData.getUuid(), componentData.getName(), repoPath);
 			return componentData;
 		} catch (RelizaException e) {
-			log.error("Component resolution failed : vcsUri={}, repoPath={}, vcsUuid={}, error={}", 
-			 vcsUri, repoPath, vcsRepoData.get().getUuid(), e.getMessage());
+			log.error("Component resolution failed : vcsUri={}, repoPath={}, vcsUuid={}, orgUuid={}, error={}", 
+			 vcsUri, repoPath, vcsRepoData.get().getUuid(), orgUuid, e.getMessage());
 			throw e;
 		}
 	}
