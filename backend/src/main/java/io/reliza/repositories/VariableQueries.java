@@ -306,7 +306,10 @@ class VariableQueries {
 			AND c.record_data->>'org' = :orgUuidAsString
 			AND (
 				c.record_data->>'repoPath' = :repoPath 
-				OR (NULLIF(c.record_data->>'repoPath', '') IS NULL AND NULLIF(:repoPath, '') IS NULL)
+				OR (
+					(NULLIF(c.record_data->>'repoPath', '') IS NULL OR c.record_data->>'repoPath' = '.') 
+					AND (NULLIF(:repoPath, '') IS NULL OR :repoPath = '.')
+				)
 			)
 			AND c.record_data->>'status' != 'ARCHIVED';
 		""";
