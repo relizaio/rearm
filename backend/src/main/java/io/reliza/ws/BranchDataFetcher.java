@@ -197,7 +197,7 @@ public class BranchDataFetcher {
 	@DgsData(parentType = "Mutation", field = "getNewVersionManual")
 	public VersionResponse getNewBranchVersion(
 			@InputArgument("branchUuid") String branchUuidStr,
-			@InputArgument("action") ActionEnum bumpAction) {
+			@InputArgument("action") ActionEnum bumpAction) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID branchUuid = UUID.fromString(branchUuidStr);
@@ -205,9 +205,16 @@ public class BranchDataFetcher {
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
 		// TODO add WhoUpdated wu = null;
-		if (StringUtils.isEmpty(obd.get().getVersionSchema())) {
-			throw new RuntimeException("Versioning schema not set for the branch");
-		}
+		
+		// Check for missing version schema before attempting version generation
+		BranchData bd = obd.get();
+		ComponentData pd = getComponentService.getComponentData(bd.getComponent()).orElseThrow();
+		if (StringUtils.isEmpty(pd.getVersionSchema()) && StringUtils.isEmpty(bd.getVersionSchema())) {
+			throw new RelizaException(String.format(
+				"Component '%s' (%s) is missing version schema configuration.",
+				pd.getName(), pd.getUuid()
+			));
+		}		
 		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(branchUuid, bumpAction);
 		if (ova.isPresent()) {
 			return new VersionResponse(ova.get().getVersion(), Utils.dockerTagSafeVersion(ova.get().getVersion()), "");

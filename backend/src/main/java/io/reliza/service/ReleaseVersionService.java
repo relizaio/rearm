@@ -69,6 +69,16 @@ public class ReleaseVersionService {
 		BranchData bd = branchService.getBranchDataFromBranchString(getNewVersionDto.branch(), projectId, wu);
 		UUID branchUuid = bd.getUuid();
 
+		// Check for missing version schema before attempting version generation
+		if (StringUtils.isEmpty(pd.getVersionSchema()) && StringUtils.isEmpty(bd.getVersionSchema())) {
+			log.error("Version schema validation failed - Component: {}, UUID: {}, ComponentVersionSchema: {}, BranchVersionSchema: {}", 
+				pd.getName(), pd.getUuid(), pd.getVersionSchema(), bd.getVersionSchema());
+			throw new RelizaException(String.format(
+				"Component '%s' (%s) is missing version schema configuration.",
+				pd.getName(), pd.getUuid()
+			));
+		}
+
 		versionAssignmentService.checkAndUpdateVersionPinOnBranch(pd, bd, getNewVersionDto.versionSchema(), wu);
 
 		ActionEnum bumpAction = getBumpAction(getNewVersionDto.action(), getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), bd, pd);
