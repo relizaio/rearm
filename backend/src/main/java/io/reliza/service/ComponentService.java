@@ -156,7 +156,7 @@ public class ComponentService {
 	}
 	
 	public Component createComponent (String name, UUID orgUuid, ComponentType pt, WhoUpdated wu) throws RelizaException {
-		return createComponent(name, orgUuid, pt, null, null, wu);
+		return createComponent(name, orgUuid, pt, "semver", null, wu);
 	}
 	
 	public Component createComponent (String name, UUID orgUuid, ComponentType pt, String versionSchema, UUID vcsRepoUuid, WhoUpdated wu) throws RelizaException {
@@ -165,6 +165,7 @@ public class ComponentService {
 					.organization(orgUuid)
 					.type(pt)
 					.versionSchema(versionSchema)
+					.featureBranchVersioning("Branch.Micro")
 					.vcs(vcsRepoUuid)
 					.kind(ComponentKind.GENERIC)
 					.build();
