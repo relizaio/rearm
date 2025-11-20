@@ -68,7 +68,7 @@ public class ReleaseTest
 	@Test
 	public void testCreateProductReleaseProper() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component prod = componentService.createComponent("testProductForRelease", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod = componentService.createComponent("testProductForRelease", org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch fs = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		ReleaseDto releaseDto = ReleaseDto.builder()
 				.version("0.0.1-junit-test")
@@ -83,7 +83,7 @@ public class ReleaseTest
 	@Test
 	public void testCreateProjectReleaseProper() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component proj = componentService.createComponent("testProjectForRelease", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component proj = componentService.createComponent("testProjectForRelease", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDto = ReleaseDto.builder()
 				.version("0.0.1-junit-test")
@@ -99,7 +99,7 @@ public class ReleaseTest
 	@Test
 	public void testSearchReleaseDataByVersion() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component proj = componentService.createComponent("testProjectForReleaseSearch2", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component proj = componentService.createComponent("testProjectForReleaseSearch2", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDto = ReleaseDto.builder()
 				.version("0.0.3-junit-version-search-test")
@@ -116,7 +116,7 @@ public class ReleaseTest
 	@Test
 	public void testSearchReleaseDataByVersionEmptyQuery() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component proj = componentService.createComponent("testProjectForReleaseSearch4", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component proj = componentService.createComponent("testProjectForReleaseSearch4", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDto = ReleaseDto.builder()
 				.version("0.0.4-junit-version-search-test")
@@ -133,7 +133,7 @@ public class ReleaseTest
 	@Test
 	public void locateReleasesByIds() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component proj = componentService.createComponent("testProjectForListRlzByIds", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component proj = componentService.createComponent("testProjectForListRlzByIds", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDtoProj1 = ReleaseDto.builder()
 				.version("0.0.1-listrlz-junit-test")
@@ -162,7 +162,7 @@ public class ReleaseTest
 	@Test
 	public void retrieveReleasesBetweenReleasesByDates() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component proj = componentService.createComponent("testProjectRlzComparison", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component proj = componentService.createComponent("testProjectRlzComparison", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBranch = branchService.getBaseBranchOfComponent(proj.getUuid()).get();
 		ReleaseDto releaseDtoProj1 = ReleaseDto.builder()
 				.version("0.0.1-listrlz-junit-test")

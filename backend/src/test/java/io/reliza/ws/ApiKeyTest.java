@@ -31,7 +31,7 @@ import io.reliza.service.ComponentService;
 public class ApiKeyTest
 {
 	@Autowired
-    private ComponentService ComponentService;
+    private ComponentService componentService;
 	
 	@Autowired
 	private ApiKeyService apiKeyService;
@@ -42,7 +42,7 @@ public class ApiKeyTest
 	@Test
 	public void setApiKeyToProject() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component p = ComponentService.createComponent("testApiKeyProj", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component p = componentService.createComponent("testApiKeyProj", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		String apiKey = apiKeyService.setObjectApiKey(p.getUuid(), ApiTypeEnum.COMPONENT, null, null, null, WhoUpdated.getTestWhoUpdated());
 		// verify api key
 		AuthHeaderParseBuilder ahpBuilder = AuthHeaderParse.builder();

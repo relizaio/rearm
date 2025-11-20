@@ -56,7 +56,7 @@ public class VersionAssignmentTest
 	@Test
 	public void testObtainVersionAssignment1Semver() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component prod = componentService.createComponent("testProjectForVersionAssignmentSemver", org.getUuid(), ComponentType.COMPONENT, "semver", null, 
+		Component prod = componentService.createComponent("testProjectForVersionAssignmentSemver", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, 
 				WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto1 = BranchDto.builder()
@@ -81,7 +81,7 @@ public class VersionAssignmentTest
 	public void testObtainVersionAssignment2Calver() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Component prod = componentService.createComponent("testProjectForVersionAssignmentCalver", org.getUuid(), ComponentType.COMPONENT, 
-				VersionType.CALVER_RELIZA_2020.getSchema(), null, WhoUpdated.getTestWhoUpdated());
+				VersionType.CALVER_RELIZA_2020.getSchema(), "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto = BranchDto.builder()
 				.uuid(baseBr.getUuid())
@@ -97,8 +97,7 @@ public class VersionAssignmentTest
 	@Test
 	public void dbPreventsDuplicateVersions() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component prod = componentService.createComponent("testProjectForVersionAssignmentRecovery", org.getUuid(), ComponentType.COMPONENT, "semver", 
-				null, WhoUpdated.getTestWhoUpdated());
+		Component prod = componentService.createComponent("testProjectForVersionAssignmentRecovery", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto = BranchDto.builder()
 				.uuid(baseBr.getUuid())
@@ -114,8 +113,7 @@ public class VersionAssignmentTest
 	@Test
 	public void testNextVersion() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
-		Component prod = componentService.createComponent("testProjectForNextVersion", org.getUuid(), ComponentType.COMPONENT, "semver", 
-				null, WhoUpdated.getTestWhoUpdated());
+		Component prod = componentService.createComponent("testProjectForNextVersion", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto = BranchDto.builder()
 				.uuid(baseBr.getUuid())
@@ -144,7 +142,7 @@ public class VersionAssignmentTest
 		
 		Organization org = testInitializer.obtainOrganization();
 		Component prod = componentService.createComponent("testProjectForNextVersion", org.getUuid(), ComponentType.COMPONENT, VersionType.CALVER_UBUNTU.getSchema(), 
-				null, WhoUpdated.getTestWhoUpdated());
+				"Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch baseBr = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchDto branchDto = BranchDto.builder()
 				.uuid(baseBr.getUuid())

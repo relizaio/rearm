@@ -45,7 +45,7 @@ public class ProductTest
 	@Test
 	public void createdAndFindProductByUuidSuccess() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component prod = componentService.createComponent("testFindProduct", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod = componentService.createComponent("testFindProduct", org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Optional<Component> oProd = getComponentService.getComponent(prod.getUuid());
 		Assertions.assertTrue(oProd.isPresent());
 		Assertions.assertEquals(prod.getUuid(), oProd.get().getUuid());
@@ -57,9 +57,9 @@ public class ProductTest
 		String p1rand = "testFindProductList1" + UUID.randomUUID().toString();
 		String p2rand = "testFindProductList2" + UUID.randomUUID().toString();
 		@SuppressWarnings("unused")
-		Component prod1 = componentService.createComponent(p1rand, org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod1 = componentService.createComponent(p1rand, org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
-		Component prod2 = componentService.createComponent(p2rand, org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod2 = componentService.createComponent(p2rand, org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		List<ComponentData> productList = componentService.listComponentDataByOrganization(org.getUuid(), ComponentType.PRODUCT);
 		Assertions.assertTrue(productList.stream().filter(x -> x.getName().equals(p1rand)).toList().size() == 1);
 		Assertions.assertTrue(productList.stream().filter(x -> x.getName().equals(p2rand)).toList().size() == 1);

@@ -50,7 +50,7 @@ public class ComponentTest
 	@Test
 	public void testcreateComponentWithoutNameThrowsIllegalState() throws RelizaException {
 		Assertions.assertThrows(IllegalStateException.class,
-				() -> componentService.createComponent(null, null, ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated()));
+				() -> componentService.createComponent(null, null, ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated()));
 	}
 	
 	@Test
@@ -63,7 +63,7 @@ public class ComponentTest
 	@Test
 	public void createAndfindProjectByUuidSuccess() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component p = componentService.createComponent("testFindProject", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component p = componentService.createComponent("testFindProject", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Optional<Component> op = getComponentService.getComponent(p.getUuid());
 		Assertions.assertTrue(op.isPresent());
 		Assertions.assertEquals(p.getUuid(), op.get().getUuid());
@@ -75,9 +75,9 @@ public class ComponentTest
 		String c1rand = "testFindComponentList1" + UUID.randomUUID().toString();
 		String c2rand = "testFindComponentList2" + UUID.randomUUID().toString();
 		@SuppressWarnings("unused")
-		Component p1 = componentService.createComponent(c1rand, org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component p1 = componentService.createComponent(c1rand, org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
-		Component p2 = componentService.createComponent(c2rand, org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component p2 = componentService.createComponent(c2rand, org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		List<ComponentData> componentList = componentService.listComponentDataByOrganization(org.getUuid(), ComponentType.COMPONENT);
 		Assertions.assertTrue(componentList.stream().filter(x -> x.getName().equals(c1rand)).toList().size() == 1);
 		Assertions.assertTrue(componentList.stream().filter(x -> x.getName().equals(c2rand)).toList().size() == 1);

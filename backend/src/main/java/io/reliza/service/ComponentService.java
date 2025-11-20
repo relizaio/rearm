@@ -154,18 +154,14 @@ public class ComponentService {
 				.map(ComponentData::dataFromRecord)
 				.collect(Collectors.toList());
 	}
-	
-	public Component createComponent (String name, UUID orgUuid, ComponentType pt, WhoUpdated wu) throws RelizaException {
-		return createComponent(name, orgUuid, pt, "semver", null, wu);
-	}
-	
-	public Component createComponent (String name, UUID orgUuid, ComponentType pt, String versionSchema, UUID vcsRepoUuid, WhoUpdated wu) throws RelizaException {
+
+	public Component createComponent (String name, UUID orgUuid, ComponentType pt, String versionSchema, String featureBranchVersioning, UUID vcsRepoUuid, WhoUpdated wu) throws RelizaException {
 		var cpd = CreateComponentDto.builder()
 					.name(name)
 					.organization(orgUuid)
 					.type(pt)
 					.versionSchema(versionSchema)
-					.featureBranchVersioning("Branch.Micro")
+					.featureBranchVersioning(featureBranchVersioning)
 					.vcs(vcsRepoUuid)
 					.kind(ComponentKind.GENERIC)
 					.build();

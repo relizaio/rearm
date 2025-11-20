@@ -46,7 +46,7 @@ public class FeatureSetTest
 	@Test
 	public void testCreateFeatureSetProper() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component prod = componentService.createComponent("testProductForFeaturSet", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod = componentService.createComponent("testProductForFeaturSet", org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch fs = branchService.createBranch("testFeatureSet", prod.getUuid(),
 																BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
 		Branch fsSaved = branchService.getBranch(fs.getUuid()).get();
@@ -56,7 +56,7 @@ public class FeatureSetTest
 	@Test
 	public void testListFeatureSetsOfProduct() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component prod = componentService.createComponent("testProductForFeaturSetList", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod = componentService.createComponent("testProductForFeaturSetList", org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
 		Branch fs1 = branchService.createBranch("testFeatureSet1", prod.getUuid(),
 				BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
@@ -77,10 +77,10 @@ public class FeatureSetTest
 	@Disabled // TODO switch to dependencies field
 	public void addComponentToFeatureSet() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component prod = componentService.createComponent("testProductForFeaturSet ws ", org.getUuid(), ComponentType.PRODUCT, WhoUpdated.getTestWhoUpdated());
+		Component prod = componentService.createComponent("testProductForFeaturSet ws ", org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch fs = branchService.createBranch("testFeatureSet ws", prod.getUuid(),
 				BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
-		Component proj = componentService.createComponent("test project ws feature set", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component proj = componentService.createComponent("test project ws feature set", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		
 		Branch br = branchService.createBranch("test branch ws feature set", 
 															proj.getUuid(), BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());

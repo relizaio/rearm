@@ -51,9 +51,6 @@ public class BranchTest
     private ComponentService ComponentService;
 	
 	@Autowired
-    private ReleaseService releaseService;
-	
-	@Autowired
     private SharedReleaseService sharedReleaseService;
 	
 	@Autowired
@@ -71,7 +68,7 @@ public class BranchTest
 	@Test
 	public void testCreateBranchProper() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component p = ComponentService.createComponent("testProjectForBranch", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component p = ComponentService.createComponent("testProjectForBranch", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		Branch b = branchService.createBranch("testBranch", p.getUuid(), BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
 		Branch bSaved = branchService.getBranch(b.getUuid()).get();
 		Assertions.assertEquals(b.getUuid(), bSaved.getUuid());
@@ -80,7 +77,7 @@ public class BranchTest
 	@Test
 	public void testListBranchesOfComponent() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
-		Component p = ComponentService.createComponent("testProjectForBranchList", org.getUuid(), ComponentType.COMPONENT, WhoUpdated.getTestWhoUpdated());
+		Component p = ComponentService.createComponent("testProjectForBranchList", org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
 		Branch b1 = branchService.createBranch("testBranch1", p.getUuid(), BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
 		@SuppressWarnings("unused")
@@ -98,10 +95,10 @@ public class BranchTest
 	public void addProjectToBranchAsDependency() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Component projTarget = ComponentService.createComponent("test project branch add proj target", org.getUuid(), ComponentType.COMPONENT, 
-				WhoUpdated.getTestWhoUpdated());
+				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 
 		Component projSource = ComponentService.createComponent("test project branch add proj source", org.getUuid(), ComponentType.COMPONENT, 
-				WhoUpdated.getTestWhoUpdated());
+				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		
 		Branch brSource = branchService.createBranch("test branch add proj", 
 												projSource.getUuid(), BranchType.REGULAR, WhoUpdated.getTestWhoUpdated());
@@ -122,7 +119,7 @@ public class BranchTest
 	public void testRetrieveLatestBranchRelease() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Component prod = ComponentService.createComponent("testProductForLatestRlz", org.getUuid(), 
-				ComponentType.PRODUCT, "semver", null, WhoUpdated.getTestWhoUpdated());
+				ComponentType.PRODUCT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
 		// get base feature set of product
 		Branch fs = branchService.getBaseBranchOfComponent(prod.getUuid()).get();
 		BranchData fsData = BranchData.branchDataFromDbRecord(fs);
