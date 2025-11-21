@@ -733,14 +733,12 @@ class VariableQueries {
 	 */
 	protected static final String FIND_VCS_REPOS_BY_ORG = "select * from rearm.vcs_repositories v"
 			+ " where v.record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString";
-	
-	protected static final String FIND_VCS_REPO_BY_URI = "select * from rearm.vcs_repositories v"
-			+ " where v.record_data->>'" + CommonVariables.URI_FIELD + "' = :uri";
-	
-	protected static final String FIND_VCS_REPO_BY_ORG_AND_URI = "select * from rearm.vcs_repositories v"
-			+ " where v.record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString and"
-			+ " v.record_data->>'" + CommonVariables.URI_FIELD + "' = :uri";
 
+	protected static final String FIND_VCS_REPO_BY_ORG_AND_URI = """
+			select * from rearm.vcs_repositories v
+			where v.record_data->>'org' = :orgUuidAsString and
+			(v.record_data->>'uri' = :uri or v.record_data->>'uri' = 'https://' || :uri or v.record_data->>'uri' = 'http://' || :uri)
+			""";
 	/*
 	 * Version Assignments
 	 */

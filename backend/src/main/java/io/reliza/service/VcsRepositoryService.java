@@ -71,7 +71,14 @@ public class VcsRepositoryService {
 	 * @return Optional of VcsRepository
 	 */
 	private Optional<VcsRepository> findVcsRepositoryByOrgAndUri(UUID orgUuid, String uri) {
-		return repository.findByOrgAndUri(orgUuid.toString(), uri);
+		// Strip https:// or http:// prefix if present
+		String normalizedUri = uri;
+		if (uri.startsWith("https://")) {
+			normalizedUri = uri.substring(8);
+		} else if (uri.startsWith("http://")) {
+			normalizedUri = uri.substring(7);
+		}
+		return repository.findByOrgAndUri(orgUuid.toString(), normalizedUri);
 	}
 	
 	/**
@@ -91,7 +98,7 @@ public class VcsRepositoryService {
 	}
 	
 	public Optional<VcsRepository> getVcsRepositoryByUri (UUID orgUuid, String uri, VcsType type, boolean createIfMissing, WhoUpdated wu) {
-		Optional<VcsRepository> ovr = repository.findByOrgAndUri(orgUuid.toString(), uri);
+		Optional<VcsRepository> ovr = findVcsRepositoryByOrgAndUri(orgUuid, uri);
 		if (ovr.isEmpty() && createIfMissing) {
 			ovr = Optional.of(createVcsRepository(uri, orgUuid, uri, type, wu));
 		}
