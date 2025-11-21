@@ -486,19 +486,7 @@ public class ReleaseDatafetcher {
 		
 		Map<String, Object> progReleaseInput = dfe.getArgument("release");
 		
-		// VCS-based component resolution
-		String vcsUri = (String) progReleaseInput.get("vcsUri");
-		String repoPath = (String) progReleaseInput.get("repoPath");
-		UUID componentId;
-		
-		if (vcsUri != null) {
-			// VCS-based component resolution
-			ComponentData componentData = componentService.resolveComponentByVcsUriAndPath(
-				ahp.getOrgUuid(), vcsUri, repoPath);
-			componentId = componentData.getUuid();
-		} else {
-			componentId = Utils.resolveProgrammaticComponentId((String) progReleaseInput.get(CommonVariables.COMPONENT_FIELD), ahp);
-		}
+		UUID componentId = componentService.resolveComponentIdFromInput(progReleaseInput, ahp);
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);

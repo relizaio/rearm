@@ -1414,6 +1414,8 @@ input ActiveComponentsInput {
 input SynchronizeBranchInput {
 	component: String!
 	liveBranches: [String]
+	vcsUri: String
+	repoPath: String
 }
 
 input IdentifierInput {

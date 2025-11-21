@@ -514,6 +514,40 @@ public class ComponentService {
 	}
 	
 	/**
+	 * Resolve component ID from input map, supporting both VCS-based and traditional resolution.
+	 * This is a convenience method for GraphQL datafetchers that handles both resolution strategies.
+	 * 
+	 * @param inputMap Map containing component resolution parameters (vcsUri, repoPath, component)
+	 * @param ahp Authentication header parse containing org UUID and API key context
+	 * @return UUID of the resolved component
+	 * @throws RelizaException if component resolution fails
+	 */
+	public UUID resolveComponentIdFromInput(Map<String, Object> inputMap, CommonVariables.AuthHeaderParse ahp) throws RelizaException {
+		String vcsUri = (String) inputMap.get("vcsUri");
+		String repoPath = (String) inputMap.get("repoPath");
+		
+		UUID componentId = Utils.resolveProgrammaticComponentId((String) inputMap.get(CommonVariables.COMPONENT_FIELD), ahp);
+		UUID componentIdFromVcs = null;
+
+		if (null == componentId && ApiTypeEnum.ORGANIZATION_RW != ahp.getType()) {
+			throw new RelizaException("Wrong Key Type");
+		}
+		if (vcsUri != null) {
+			ComponentData componentData = resolveComponentByVcsUriAndPath(ahp.getOrgUuid(), vcsUri, repoPath);
+			componentIdFromVcs = componentData.getUuid();
+		}
+		if (null != componentIdFromVcs && null != componentId && !componentIdFromVcs.equals(componentId)) {
+			throw new RelizaException("VCS data does not match component");
+		} else if (null != componentIdFromVcs) {
+			return componentIdFromVcs;
+		} else if (null != componentId) {
+			return componentId;
+		} else {
+			throw new RelizaException("Component not found");
+		}
+	}
+	
+	/**
 	 * Resolve component by VCS URI and repository path within an organization.
 	 * This is a comprehensive method that handles VCS lookup and component resolution.
 	 * 

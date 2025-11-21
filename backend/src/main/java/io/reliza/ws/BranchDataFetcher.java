@@ -46,6 +46,7 @@ import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.service.ComponentService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedReleaseService;
@@ -70,6 +71,9 @@ public class BranchDataFetcher {
 	
 	@Autowired
 	GetComponentService getComponentService;
+	
+	@Autowired
+	ComponentService componentService;
 	
 	@Autowired
 	ReleaseService releaseService;
@@ -263,7 +267,7 @@ public class BranchDataFetcher {
 		
 		Map<String, Object> synchronizeBranchInput = dfe.getArgument("synchronizeBranchInput");
 		
-		UUID componentId = Utils.resolveProgrammaticComponentId((String) synchronizeBranchInput.get(CommonVariables.COMPONENT_FIELD), ahp);
+		UUID componentId = componentService.resolveComponentIdFromInput(synchronizeBranchInput, ahp);
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);

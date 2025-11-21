@@ -303,18 +303,7 @@ public class ComponentDataFetcher {
 		
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
 		
-		// VCS-based component resolution
-		String vcsUri = (String) getNewVersionInput.get("vcsUri");
-		String repoPath = (String) getNewVersionInput.get("repoPath");
-		UUID componentId;
-		
-		if (vcsUri != null) {
-			// VCS-based component resolution
-			ComponentData componentData = componentService.resolveComponentByVcsUriAndPath(ahp.getOrgUuid(), vcsUri, repoPath);
-			componentId = componentData.getUuid();
-		} else {
-			componentId = Utils.resolveProgrammaticComponentId((String) getNewVersionInput.get(CommonVariables.COMPONENT_FIELD), ahp);
-		}
+		UUID componentId = componentService.resolveComponentIdFromInput(getNewVersionInput, ahp);
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.VERSION_GEN, ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
