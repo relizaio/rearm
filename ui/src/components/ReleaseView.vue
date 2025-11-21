@@ -2823,20 +2823,22 @@ function mergeUpdatedComponents(addedItems: any[], removedItems: any[]): any[] {
     addedItems.forEach((addedItem, addedIndex) => {
         if (usedAddedIndices.has(addedIndex)) return
         
-        const addedBaseName = addedItem.purl.split('@')[0]
+        const addedPurl = addedItem.purl || 'PURL unknown'
+        const addedBaseName = addedPurl.split('@')[0]
         
         removedItems.forEach((removedItem, removedIndex) => {
             if (usedRemovedIndices.has(removedIndex)) return
             
-            const removedBaseName = removedItem.purl.split('@')[0]
+            const removedPurl = removedItem.purl || 'PURL unknown'
+            const removedBaseName = removedPurl.split('@')[0]
             
             // If base names match, merge into an "Updated" entry
             if (addedBaseName === removedBaseName) {
                 mergedData.push({
                     ...addedItem,
                     changeType: 'Updated',
-                    oldPurl: removedItem.purl,
-                    newPurl: addedItem.purl
+                    oldPurl: removedPurl,
+                    newPurl: addedPurl
                 })
                 
                 // Mark both items as used
@@ -2853,7 +2855,7 @@ function mergeUpdatedComponents(addedItems: any[], removedItems: any[]): any[] {
                 ...item,
                 changeType: 'Added',
                 oldPurl: '',
-                newPurl: item.purl
+                newPurl: item.purl || 'PURL unknown'
             })
         }
     })
@@ -2864,7 +2866,7 @@ function mergeUpdatedComponents(addedItems: any[], removedItems: any[]): any[] {
             mergedData.push({
                 ...item,
                 changeType: 'Removed',
-                oldPurl: item.purl,
+                oldPurl: item.purl || 'PURL unknown',
                 newPurl: ''
             })
         }
