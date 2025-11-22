@@ -78,6 +78,13 @@ public class VcsRepositoryService {
 		} else if (uri.startsWith("http://")) {
 			normalizedUri = uri.substring(7);
 		}
+		
+		// Strip username@ prefix if present (e.g., myuser@dev.azure.com)
+		int atIndex = normalizedUri.indexOf('@');
+		if (atIndex > 0 && atIndex < normalizedUri.indexOf('/')) {
+			normalizedUri = normalizedUri.substring(atIndex + 1);
+		}
+		
 		return repository.findByOrgAndUri(orgUuid.toString(), normalizedUri);
 	}
 	
