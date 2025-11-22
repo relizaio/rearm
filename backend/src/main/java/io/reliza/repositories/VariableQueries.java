@@ -311,7 +311,7 @@ class VariableQueries {
 					AND (NULLIF(:repoPath, '') IS NULL OR :repoPath = '.')
 				)
 			)
-			AND c.record_data->>'status' != 'ARCHIVED';
+			AND (c.record_data->>'status' IS NULL OR c.record_data->>'status' != 'ARCHIVED');
 		""";
 			
 	/*
