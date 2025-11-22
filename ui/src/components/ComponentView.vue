@@ -97,11 +97,25 @@
                             @update:value="handleTabSwitch"
                         >
                             <n-tab-pane name="Core Settings">
+                                <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable">
+                                    <n-space>
+                                        <n-button type="success" @click="save">
+                                            <template #icon>
+                                                <vue-feather type="check" />
+                                            </template>
+                                            Save Changes
+                                        </n-button>
+                                        <n-button type="warning" @click="resetCoreSettings">
+                                            <template #icon>
+                                                <vue-feather type="x" />
+                                            </template>
+                                            Reset Changes
+                                        </n-button>
+                                    </n-space>
+                                </div>
                                 <div class="componentNameBlock" v-if="updatedComponent && componentData">
                                     <label id="componentNameLabel" for="componentName">{{ words.componentFirstUpper }} Name</label>
                                     <n-input v-if="isWritable" v-model:value="updatedComponent.name" />
-                                    <vue-feather class="clickable versionIcon reject" v-if="updatedComponent.name !== componentData.name && isWritable" @click="updatedComponent.name = componentData.name" type="x" title="Discard Name Changes" />
-                                    <vue-feather class="clickable versionIcon accept" v-if="updatedComponent.name !== componentData.name && isWritable" @click="save" type="check" title="Save Name" />
                                     <n-input v-if="!isWritable" type="text" :value="updatedComponent.name" readonly/>
                                 </div>
                                 <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
@@ -112,8 +126,6 @@
                                         filterable
                                         tag
                                         :options="constants.VersionTypes" />
-                                    <vue-feather class="clickable versionIcon reject" v-if="updatedComponent.versionSchema !== componentData.versionSchema && isWritable" @click="updatedComponent.versionSchema = componentData.versionSchema" type="x" title="Discard Schema Changes" />
-                                    <vue-feather class="clickable versionIcon accept" v-if="updatedComponent.versionSchema !== componentData.versionSchema && isWritable" @click="save" type="check" title="Save Version Schema" />
                                     <n-input v-if="!isWritable" type="text" :value="updatedComponent.versionSchema" readonly/>
                                 </div>
                                 <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
@@ -128,15 +140,11 @@
                                         filterable
                                         tag
                                         :options="constants.VersionTypes" />
-                                    <vue-feather class="clickable versionIcon reject" v-if="updatedComponent.marketingVersionSchema !== componentData.marketingVersionSchema && isWritable" @click="updatedComponent.marketingVersionSchema = componentData.marketingVersionSchema" type="x" title="Discard Marketing Version Schema Changes" />
-                                    <vue-feather class="clickable versionIcon accept" v-if="updatedComponent.marketingVersionSchema !== componentData.marketingVersionSchema && isWritable" @click="save" type="check" title="Save Marketing Version Schema" />
                                     <n-input v-if="!isWritable" type="text" :value="updatedComponent.marketingVersionSchema" readonly/>
                                 </div>
                                 <div class="versionSchemaBlock featureBranchVersioning" v-if="updatedComponent && componentData && updatedComponent.type === 'COMPONENT'">
                                     <label id="componentFeatureBranchVersionSchemaLabel" for="componentFeatureBranchVersionSchema">Feature Branch Versioning Schema</label>
                                     <n-input v-if="isWritable" v-model:value="updatedComponent.featureBranchVersioning" />
-                                    <vue-feather class="clickable versionIcon reject" v-if="updatedComponent.featureBranchVersioning !== componentData.featureBranchVersioning && isWritable" @click="updatedComponent.featureBranchVersioning = componentData.featureBranchVersioning" type="x" title="Discard Schema Changes" />
-                                    <vue-feather class="clickable versionIcon accept" v-if="updatedComponent.featureBranchVersioning !== componentData.featureBranchVersioning && isWritable" @click="save" type="check" title="Save Feature Branch Versioning Schema" />
                                     <n-input v-if="!isWritable" type="text" :value="updatedComponent.featureBranchVersioning" readonly/>
                                 </div>
                                 <div class="versionSchemaBlock" v-if="false && updatedComponent && componentData && (componentData.type === 'COMPONENT')">
@@ -146,32 +154,27 @@
                                 </div>
                                 <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication)">
                                     <label id="componentAuthTypeLabel" for="componentAuthType">Component Authentication Type</label>
-                                    <n-select v-if="isWritable" v-on:update:value="value => {updatedComponent.authentication.type = value; save()}" :options="componentAuthTypes" v-model:value="updatedComponent.authentication.type" />
+                                    <n-select v-if="isWritable" :options="componentAuthTypes" v-model:value="updatedComponent.authentication.type" />
                                     <n-input v-if="!isWritable" type="text" :value="updatedComponent.authentication.type" readonly/>
                                 </div>
                                 <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication && updatedComponent.authentication.type !== 'NOCREDS' && isWritable)">
                                     <label id="componentAuthLoginLabel" for="componentAuthLogin">Component Authentication Login Secret</label>
-                                    <n-select v-on:update:value="value => {updatedComponent.authentication.login = value; save()}" :options="secrets" v-model:value="updatedComponent.authentication.login" />
+                                    <n-select :options="secrets" v-model:value="updatedComponent.authentication.login" />
                                 </div>
                                 <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication && updatedComponent.authentication.type !== 'NOCREDS' && isWritable)">
                                     <label id="componentAuthPasswordLabel" for="componentAuthPassword">Component Authentication Password Secret</label>
-                                    <n-select v-on:update:value="value => {updatedComponent.authentication.password = value; save()}" :options="secrets" v-model:value="updatedComponent.authentication.password" />
+                                    <n-select :options="secrets" v-model:value="updatedComponent.authentication.password" />
                                 </div>
                                 <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && isWritable)">
                                     <label>Helm Values File for Ephemerals</label>
                                     <n-input v-if="isWritable" v-model:value="updatedComponent.defaultConfig" />
-                                    <vue-feather class="clickable versionIcon reject" v-if="updatedComponent.defaultConfig !== componentData.defaultConfig && isWritable" @click="updatedComponent.defaultConfig = componentData.defaultConfig" type="x" title="Discard Changes" />
-                                    <vue-feather class="clickable versionIcon accept" v-if="updatedComponent.defaultConfig !== componentData.defaultConfig && isWritable" @click="save" type="check" title="Save Helm Default Values File for Ephemerals" />
                                     <n-input v-if="!isWritable" type="text" :value="updatedComponent.defaultConfig" readonly/>
                                 </div>
                                 <div class="versionSchemaBlock" v-if="updatedComponent && componentData && componentData.type === 'COMPONENT'">
                                     <label>VCS Repository</label>
-                                    <span v-if="!selectNewVcsRepo && updatedComponent.vcsRepositoryDetails">{{ updatedComponent.vcsRepositoryDetails.uri }} </span>
-                                    <span v-if="!selectNewVcsRepo && !updatedComponent.vcsRepositoryDetails">Not Set </span>
-                                    <n-select style="width: 340px;" v-if="selectNewVcsRepo" :options="vcsRepos" v-model:value="updatedComponent.vcs" />
-                                    <vue-feather v-if="!selectNewVcsRepo && isWritable" type="edit" class="clickable" @click="async () => {await fetchVcsRepos(); selectNewVcsRepo = true;}" title="Select New VCS Repository" />
-                                    <vue-feather v-if="selectNewVcsRepo && isWritable" type="check" class="clickable" @click="save(); selectNewVcsRepo = false;" title="Save New VCS Repository" />
-                                    <vue-feather v-if="selectNewVcsRepo && isWritable" class="clickable" @click="updatedComponent.vcsRepository = componentData.vcsRepository; selectNewVcsRepo = false;" type="x" title="Discard VCS Repository Change" />
+                                    <n-select v-if="isWritable" :options="vcsRepos" v-model:value="updatedComponent.vcs" @focus="fetchVcsRepos" />
+                                    <span v-if="!isWritable && updatedComponent.vcsRepositoryDetails">{{ updatedComponent.vcsRepositoryDetails.uri }}</span>
+                                    <span v-if="!isWritable && !updatedComponent.vcsRepositoryDetails">Not Set</span>
                                 </div>
                                 <div class="versionSchemaBlock" v-if="updatedComponent && componentData && componentData.type === 'COMPONENT' && updatedComponent.vcsRepositoryDetails">
                                     <label>Repository Path</label>
@@ -179,18 +182,6 @@
                                         v-if="isWritable" 
                                         v-model:value="updatedComponent.repoPath" 
                                         placeholder="e.g., services/auth, frontend/web" />
-                                    <vue-feather 
-                                        v-if="updatedComponent.repoPath !== componentData.repoPath && isWritable" 
-                                        @click="updatedComponent.repoPath = componentData.repoPath" 
-                                        type="x" 
-                                        title="Discard Repository Path Changes" 
-                                        class="clickable versionIcon reject" />
-                                    <vue-feather 
-                                        v-if="updatedComponent.repoPath !== componentData.repoPath && isWritable" 
-                                        @click="save" 
-                                        type="check" 
-                                        title="Save Repository Path" 
-                                        class="clickable versionIcon accept" />
                                     <n-input 
                                         v-if="!isWritable" 
                                         type="text" 
@@ -209,8 +200,6 @@
                                             <n-input type="text" minlength="100" v-model:value="value.idValue" />
                                         </template>
                                     </n-dynamic-input>
-                                    <vue-feather class="clickable versionIcon reject" v-if="JSON.stringify(updatedComponent.identifiers) !== JSON.stringify(componentData.identifiers) && isWritable" @click="updatedComponent.identifiers = componentData.identifiers" type="x" title="Discard Changes" />
-                                    <vue-feather class="clickable versionIcon accept" v-if="JSON.stringify(updatedComponent.identifiers) !== JSON.stringify(componentData.identifiers) && isWritable" @click="save" type="check" title="Save Changes" />
                                     <!-- div v-else>{{ resolvedVisibilityLabel }}</div -->
                                     <n-button type="warning" style="margin-top:10px;" v-if="isWritable && updatedComponent.identifiers" @click="populateMissingComponentReleaseIdentifiers">Propagate To Releases With Missing Identifiers</n-button>
                                 </div>
@@ -218,8 +207,24 @@
                                     <label>Approval Policy</label>
                                     <n-select
                                         v-if="isWritable"
-                                        @update:value="value => {updatedComponent.approvalPolicy = value; save()}" :options="approvalPolicies" :value="updatedComponent.approvalPolicy" />
+                                        :options="approvalPolicies" v-model:value="updatedComponent.approvalPolicy" />
                                     <div v-else>{{ resolvedVisibilityLabel }}</div>
+                                </div>
+                                <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable" style="margin-top: 20px;">
+                                    <n-space>
+                                        <n-button type="success" @click="save">
+                                            <template #icon>
+                                                <vue-feather type="check" />
+                                            </template>
+                                            Save Changes
+                                        </n-button>
+                                        <n-button type="warning" @click="resetCoreSettings">
+                                            <template #icon>
+                                                <vue-feather type="x" />
+                                            </template>
+                                            Reset Changes
+                                        </n-button>
+                                    </n-space>
                                 </div>
                             </n-tab-pane>
                             <n-tab-pane name="outputTriggers" tab="Output Triggers" v-if="myUser.installationType !== 'OSS'">
@@ -1138,6 +1143,45 @@ async function save () {
     updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', updatedComponent.value))
 }
 
+const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
+    if (!updatedComponent.value || !componentData.value) return false
+    
+    // Check authentication changes
+    const authChanged = updatedComponent.value.authentication && componentData.value.authentication &&
+        (updatedComponent.value.authentication.type !== componentData.value.authentication.type ||
+         updatedComponent.value.authentication.login !== componentData.value.authentication.login ||
+         updatedComponent.value.authentication.password !== componentData.value.authentication.password)
+    
+    return updatedComponent.value.name !== componentData.value.name ||
+        updatedComponent.value.versionSchema !== componentData.value.versionSchema ||
+        updatedComponent.value.marketingVersionSchema !== componentData.value.marketingVersionSchema ||
+        updatedComponent.value.featureBranchVersioning !== componentData.value.featureBranchVersioning ||
+        updatedComponent.value.defaultConfig !== componentData.value.defaultConfig ||
+        updatedComponent.value.repoPath !== componentData.value.repoPath ||
+        updatedComponent.value.vcs !== componentData.value.vcs ||
+        updatedComponent.value.approvalPolicy !== componentData.value.approvalPolicy ||
+        authChanged ||
+        JSON.stringify(updatedComponent.value.identifiers) !== JSON.stringify(componentData.value.identifiers)
+})
+
+function resetCoreSettings() {
+    if (!componentData.value) return
+    updatedComponent.value.name = componentData.value.name
+    updatedComponent.value.versionSchema = componentData.value.versionSchema
+    updatedComponent.value.marketingVersionSchema = componentData.value.marketingVersionSchema
+    updatedComponent.value.featureBranchVersioning = componentData.value.featureBranchVersioning
+    updatedComponent.value.defaultConfig = componentData.value.defaultConfig
+    updatedComponent.value.repoPath = componentData.value.repoPath
+    updatedComponent.value.vcs = componentData.value.vcs
+    updatedComponent.value.approvalPolicy = componentData.value.approvalPolicy
+    updatedComponent.value.identifiers = commonFunctions.deepCopy(componentData.value.identifiers)
+    
+    // Reset authentication if it exists
+    if (componentData.value.authentication && updatedComponent.value.authentication) {
+        updatedComponent.value.authentication = commonFunctions.deepCopy(componentData.value.authentication)
+    }
+}
+
 const updateComponentResourceGroup = async function () {
     updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponentResourceGroup', updatedComponent.value))
 }
@@ -1899,6 +1943,12 @@ async function handleTabSwitch(tabName: string) {
 
 .inline {
     display: inline;
+}
+.coreSettingsActions {
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 8px;
+    margin-bottom: 15px;
 }
 .versionSchemaBlock, .componentNameBlock {
     padding-top: 15px;
