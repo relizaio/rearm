@@ -70,9 +70,8 @@ public class SchedulingService {
             log.debug("resolve dependency track lock acquired {}", lock);
 			if (lock) {
 				try {
-					ZonedDateTime lastScanned = ZonedDateTime.now();
-					artifactService.initialProcessArtifactsOnDependencyTrack(lastScanned);
-					releaseService.computeMetricsForAllUnprocessedReleases(lastScanned);
+					artifactService.initialProcessArtifactsOnDependencyTrack();
+					releaseService.computeMetricsForAllUnprocessedReleases();
 				} catch (Exception e) {
 					log.error("Exception in resolving dependency track", e);
 				} finally {

@@ -118,7 +118,7 @@ public class IntegrationDataFetcher {
 		
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
 		
-		return artifactService.fetchDependencyTrackDataForArtifact(oa.get(), ZonedDateTime.now());
+		return artifactService.fetchDependencyTrackDataForArtifact(oa.get());
 	}
 	
 	@PreAuthorize("isAuthenticated()")

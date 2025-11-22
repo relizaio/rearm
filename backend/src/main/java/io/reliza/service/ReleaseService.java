@@ -93,7 +93,6 @@ import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ComponentJsonDto.ComponentJsonDtoBuilder;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
-import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.Rebom.RebomOptions;
@@ -1544,7 +1543,7 @@ public class ReleaseService {
 		Optional<Release> or = sharedReleaseService.getRelease(releaseId);
 		if (or.isPresent()) {
 			if (onRescan) {
-				computeReleaseMetricsOnRescan(or.get(), ZonedDateTime.now());
+				computeReleaseMetricsOnRescan(or.get());
 			} else {
 				computeReleaseMetricsOnNonRescan(or.get());
 			}
@@ -1553,7 +1552,8 @@ public class ReleaseService {
 		}
 	}
 	
-	private void computeReleaseMetricsOnRescan (Release r, ZonedDateTime lastScanned) {
+	private void computeReleaseMetricsOnRescan (Release r) {
+		ZonedDateTime lastScanned = ZonedDateTime.now();
 		var rd = ReleaseData.dataFromRecord(r);
 		var originalMetrics = null != rd.getMetrics() ? rd.getMetrics().clone() : null;
 		if (null == originalMetrics || null == originalMetrics.getLastScanned() || lastScanned.isAfter(originalMetrics.getLastScanned())) {
@@ -1605,20 +1605,20 @@ public class ReleaseService {
 		return rmd;
 	}
 	
-	protected void computeMetricsForAllUnprocessedReleases (ZonedDateTime lastScanned) {
+	protected void computeMetricsForAllUnprocessedReleases () {
 		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect();
 		var releasesBySce = repository.findReleasesForMetricsComputeBySce();
 		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables();
 		var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate();
 		Set<UUID> dedupProcessedReleases = new HashSet<>();
-		computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases, lastScanned);
-		computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases, lastScanned);
-		computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases, lastScanned);
-		computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases, lastScanned);
+		computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases);
+		computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases);
+		computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases);
+		computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases);
 		log.debug("processed releases size for metrics = " + dedupProcessedReleases.size());
 		
 		var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases);
-		computeMetricsForReleaseList(productReleases, dedupProcessedReleases, lastScanned);
+		computeMetricsForReleaseList(productReleases, dedupProcessedReleases);
 		
 		log.debug("processed product releases size for metrics = " + productReleases.size());
 	}
@@ -1645,10 +1645,10 @@ public class ReleaseService {
 	}
 
 	private void computeMetricsForReleaseList(List<Release> releaseList,
-			Set<UUID> dedupProcessedReleases, ZonedDateTime lastScanned) {
+			Set<UUID> dedupProcessedReleases) {
 		releaseList.forEach(r -> {
 			if (!dedupProcessedReleases.contains(r.getUuid())) {
-				computeReleaseMetricsOnRescan(r, lastScanned);
+				computeReleaseMetricsOnRescan(r);
 				dedupProcessedReleases.add(r.getUuid());
 			}
 		});

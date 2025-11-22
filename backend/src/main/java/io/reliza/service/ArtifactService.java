@@ -492,13 +492,14 @@ public class ArtifactService {
 		return artifactUploadResponse;
 	}
 	
-	protected void initialProcessArtifactsOnDependencyTrack (ZonedDateTime lastScanned) {
+	protected void initialProcessArtifactsOnDependencyTrack () {
 		List<Artifact> initialArts = repository.listInitialArtifactsPendingOnDependencyTrack();
 		log.debug("PSDEBUG: located " + initialArts.size() + " to process initially on dep track");
-		initialArts.forEach(a -> fetchDependencyTrackDataForArtifact(a, lastScanned));
+		initialArts.forEach(a -> fetchDependencyTrackDataForArtifact(a));
 	}
 	
-	public boolean fetchDependencyTrackDataForArtifact (Artifact a, ZonedDateTime lastScanned) {
+	public boolean fetchDependencyTrackDataForArtifact (Artifact a) {
+		ZonedDateTime lastScanned = ZonedDateTime.now();
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
 		var dti = integrationService.resolveDependencyTrackProcessingStatus(ad, lastScanned);
 		boolean doUpdate = false;
@@ -547,11 +548,11 @@ public class ArtifactService {
 				artifacts.size(), unsyncedProjects.size(), orgUuid);
 		
 		// Process each artifact
-		int processedCount = 0;
 		ZonedDateTime lastScanned = ZonedDateTime.now();
+		int processedCount = 0;
 		for (Artifact artifact : artifacts) {
 			try {
-				fetchDependencyTrackDataForArtifact(artifact, lastScanned);
+				fetchDependencyTrackDataForArtifact(artifact);
 				processedCount++;
 				log.debug("Successfully processed artifact {} for dependency track sync", artifact.getUuid());
 			} catch (Exception e) {
