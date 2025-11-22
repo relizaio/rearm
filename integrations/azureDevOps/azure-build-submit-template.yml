@@ -107,8 +107,7 @@ jobs:
   - bash: npm install -g @cyclonedx/cdxgen@11.9.0 --ignore-scripts
     displayName: 'Install cdxgen cli'
   - bash: |
-      exit_code=0
-      set -e
+      set +e
       set -x
       dirtybranch=${{ parameters.branch }}
       cleanedbranch="${dirtybranch/'refs/heads/'/''}"
@@ -135,12 +134,14 @@ jobs:
         tags+=" -t ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$cleanedbranch"
       fi
 
+      echo "starting build..."
       docker_sha_256=""
       docker buildx build --push \
         $tags \
         --build-arg CI_ENV=azuredevops${{ parameters.tag }} --build-arg GIT_COMMIT=${{ parameters.commit }} --build-arg GIT_BRANCH=${{ parameters.branch }} \
         --build-arg VERSION=$(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) -f ./Dockerfile \
         .
+      exit_code=$?
 
       if [[ $exit_code -eq 0 ]]
       then
@@ -153,41 +154,44 @@ jobs:
       echo "Last Commit: $last_commit"
       if [ ! -z "$last_commit" ] && [ "null" != "$last_commit" ]
       then
-        echo -n "--commits $(git log -100 $last_commit..${{ parameters.commit }} --date=iso-strict --pretty='%H|||%ad|||%s|||%an|||%ae' -- ./ | base64 -w 0) " > $(Pipeline.Workspace)/variables/REARM_COMMAND
+        echo -n "--commits $(git log -100 $last_commit..${{ parameters.commit }} --date=iso-strict --pretty='%H|||%ad|||%s|||%an|||%ae' -- ./ | base64 -w 0) " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       fi
       echo -n "--commit ${{ parameters.commit }} --commitmessage \"$(git log -1 --pretty='%s')\" --date $(git log -1 --date=iso-strict --pretty='%ad') --vcstype git " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       
-      # establish purl
-      url4purl=oci://${{parameters.containerRegistry }}:${{parameters.imageRepository}}
-      docker pull registry.relizahub.com/library/url2purl-cli:25.07.0@sha256:05f849cfedbc31c6c8d11819e42efb4eb5e95198696978ca1ad84b010d52e952
-      purl=$(docker run --rm registry.relizahub.com/library/url2purl-cli:25.07.0@sha256:05f849cfedbc31c6c8d11819e42efb4eb5e95198696978ca1ad84b010d52e952 $url4purl)
-      echo "deliverable purl=$purl"
-      
-      # generate sboms
-      if [ "${{ parameters.enableSbom }}" = "true" ]; then
-        if [ "${{ parameters.sbomType }}" = "dotnet" ]; then
-            dotnet-CycloneDX ${{ parameters.dotnetSlnFilePath }} -o ./ -fn fs.cdx.bom.json -j
-        elif [ "${{ parameters.sbomType }}" = "npm" ]; then
-            npm ci
-            cyclonedx-npm > fs.cdx.bom.json
-        else
-            cdxgen ./ --project-version "$(GitVersion_FullSemVer)" -o fs.cdx.bom.json
+      if [[ $exit_code -eq 0 ]]
+      then
+        # establish purl
+        url4purl=oci://${{parameters.containerRegistry }}:${{parameters.imageRepository}}
+        docker pull registry.relizahub.com/library/url2purl-cli:25.07.0@sha256:05f849cfedbc31c6c8d11819e42efb4eb5e95198696978ca1ad84b010d52e952
+        purl=$(docker run --rm registry.relizahub.com/library/url2purl-cli:25.07.0@sha256:05f849cfedbc31c6c8d11819e42efb4eb5e95198696978ca1ad84b010d52e952 $url4purl)
+        echo "deliverable purl=$purl"
+        
+        # generate sboms
+        if [ "${{ parameters.enableSbom }}" = "true" ]; then
+          if [ "${{ parameters.sbomType }}" = "dotnet" ]; then
+              dotnet-CycloneDX ${{ parameters.dotnetSlnFilePath }} -o ./ -fn fs.cdx.bom.json -j
+          elif [ "${{ parameters.sbomType }}" = "npm" ]; then
+              npm ci
+              cyclonedx-npm > fs.cdx.bom.json
+          else
+              cdxgen ./ --project-version "$(GitVersion_FullSemVer)" -o fs.cdx.bom.json
+          fi
+          echo -n "--scearts '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/fs.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+          cdxgen -t docker --lifecycle build -o docker.cdx.bom.tmp.json --project-version $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)
+          # touch docker.cdx.bom.json
+          # docker run --rm -v $(pwd)/:/data registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixocipurl -f /data/docker.cdx.bom.tmp.json -o /data/docker.cdx.bom.json --ociimage ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}@$(echo $docker_sha_256)
+          cat docker.cdx.bom.tmp.json | docker run -i --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixpurl --newpurl "${purl}" > docker.cdx.bom.json
+          echo -n "--odelartsjson '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/docker.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
         fi
-        echo -n "--scearts '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/fs.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-        cdxgen -t docker --lifecycle build -o docker.cdx.bom.tmp.json --project-version $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:$(cat $(Pipeline.Workspace)/variables/RLZ_SHORT_VER)
-        # touch docker.cdx.bom.json
-        # docker run --rm -v $(pwd)/:/data registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixocipurl -f /data/docker.cdx.bom.tmp.json -o /data/docker.cdx.bom.json --ociimage ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}@$(echo $docker_sha_256)
-        cat docker.cdx.bom.tmp.json | docker run -i --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} bomutils fixpurl --newpurl "${purl}" > docker.cdx.bom.json
-        echo -n "--odelartsjson '[{\"bomFormat\": \"CYCLONEDX\",\"type\": \"BOM\",\"filePath\": \"/data/docker.cdx.bom.json\"}]' " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-      fi
 
-      echo -n "--odelid ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:latest " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-      echo -n "--odelbuildid azuredevops${{ parameters.tag }} " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-      echo -n "--odelbuilduri ${{ parameters.buildUri }} " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-      echo -n "--odelidentifiers \"PURL:${purl}\" " >> rearm_command
-      echo -n "--odelcimeta azuredevops " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-      echo -n "--odeltype CONTAINER " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
-      echo -n "--odeldigests $(echo $docker_sha_256) " >>  $(Pipeline.Workspace)/variables/REARM_COMMAND
+        echo -n "--odelid ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:latest " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+        echo -n "--odelbuildid azuredevops${{ parameters.tag }} " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+        echo -n "--odelbuilduri ${{ parameters.buildUri }} " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+        echo -n "--odelidentifiers \"PURL:${purl}\" " >> rearm_command
+        echo -n "--odelcimeta azuredevops " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+        echo -n "--odeltype CONTAINER " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+        echo -n "--odeldigests $(echo $docker_sha_256) " >>  $(Pipeline.Workspace)/variables/REARM_COMMAND
+      fi
 
       echo -n "-b ${{ parameters.branch }} -k $REARM_API_KEY -i $REARM_API_KEY_ID -v $(cat $(Pipeline.Workspace)/variables/RLZ_FULL_VER) -u "${{ parameters.rearmUrl }}" --component "${{ parameters.componentID }}" " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       echo -n "--datestart $BUILD_START " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
@@ -196,12 +200,43 @@ jobs:
       echo "DEBUG reliza command: $(cat $(Pipeline.Workspace)/variables/REARM_COMMAND)"
       # send data to Rearm
       echo docker run --rm -v $(pwd)/:/data registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} addrelease $(cat $(Pipeline.Workspace)/variables/REARM_COMMAND) > $(Pipeline.Workspace)/variables/RLZ_CMD_EXEC
-      eval $(cat $(Pipeline.Workspace)/variables/RLZ_CMD_EXEC)
+      
+      if rearm_output=$(eval $(cat $(Pipeline.Workspace)/variables/RLZ_CMD_EXEC) 2>&1); then
+        echo "Success: $rearm_output"
+      else
+        send_exit_code=$?
+        echo "Error (exit code $send_exit_code): $rearm_output"
+        exit 1
+      fi
+
+      if [[ $exit_code -eq 0 && $send_exit_code -eq 0 ]]
+      then
+        # Extract only the JSON line (last line that starts with {)
+        json_output=$(echo "$rearm_output" | grep '^{' | tail -1)
+        release_uuid=$(echo "$json_output" | jq -r '.data.addReleaseProgrammatic.uuid // empty')
+        echo "Extracted release UUID: $release_uuid"
+
+        # Conditionally finalize release
+        if [[ -n "$release_uuid" ]]; then
+          echo "Finalizing release with UUID: $release_uuid"
+          docker run --rm -v $(pwd)/:/data registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} releasefinalizer --releaseid $release_uuid -u ${{ parameters.rearmUrl }} -i ${{ parameters.rearmApiKeyId }} -k ${{ parameters.rearmApiKey }}
+        else
+          echo "Could not extract release uuid for finalization"
+          exit 1
+        fi
+        echo "completed sending release metadata"
+      fi
     displayName: 'SBOM and ReARM metadata'
     env: 
       REARM_API_KEY: ${{ parameters.rearmApiKey }}
       REARM_API_KEY_ID: ${{ parameters.rearmApiKeyId }}
   - bash: |
-      rm -rf $(Pipeline.Workspace)/variables/*
+      if grep -q "\-\-lifecycle REJECTED" $(Pipeline.Workspace)/variables/REARM_COMMAND; then
+        echo "Build failed - lifecycle is REJECTED"
+        rm -rf $(Pipeline.Workspace)/variables/*
+        exit 1
+      else
+        rm -rf $(Pipeline.Workspace)/variables/*
+      fi
     displayName: 'Clean up variables directory'
     condition: always()
