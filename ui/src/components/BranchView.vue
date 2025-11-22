@@ -35,28 +35,20 @@
             <div class="branchNameBlock">
                 <label id="branchNameLabel" for="branchName">{{ words.branchFirstUpper }} Name</label>
                 <n-input  v-if="isWritable" v-model:value="modifiedBranch.name" />
-                <vue-feather class="clickable versionIcon reject" v-if="modifiedBranch.name !== branchData.name && isWritable" @click="modifiedBranch.name = branchData.name" type="x" title="Discard Name Changes" />
-                <vue-feather class="clickable versionIcon accept" v-if="modifiedBranch.name !== branchData.name && isWritable" @click="saveModifiedBranch" type="check" title="Save Name" />
                 <n-input v-if="!isWritable" type="text" :value="branchData.name" readonly/>
             </div>
             <div class="versionSchemaBlock">
                 <label id="branchVersionSchemaLabel" for="branchVersionSchema">{{ words.branchFirstUpper }} Version Schema</label>
-                <vue-feather class="clickable versionIcon accept" v-if="branchData && branchData.versionSchema !== modifiedBranch.versionSchema && isWritable" @click="modifiedBranch.versionSchema = branchData.versionSchema" type="x" title="Discard Schema Changes" />
-                <vue-feather class="clickable versionIcon reject" v-if="branchData && branchData.versionSchema !== modifiedBranch.versionSchema && isWritable" @click="saveModifiedBranch" type="check" title="Save Version Schema" />
                 <n-input v-if="isWritable" v-model:value="modifiedBranch.versionSchema" />
                 <n-input v-else type="text" name="versionSchema" :value="modifiedBranch.versionSchema" readonly/>
             </div>
             <div class="versionSchemaBlock" v-if="marketingVersionEnabled">
                 <label id="branchVersionSchemaLabel" for="branchVersionSchema">{{ words.branchFirstUpper }} Marketing Version Schema</label>
-                <vue-feather class="clickable versionIcon accept" v-if="branchData && branchData.marketingVersionSchema !== modifiedBranch.marketingVersionSchema && isWritable" @click="modifiedBranch.marketingVersionSchema = branchData.marketingVersionSchema" type="x" title="Discard Schema Changes" />
-                <vue-feather class="clickable versionIcon reject" v-if="branchData && branchData.marketingVersionSchema !== modifiedBranch.marketingVersionSchema && isWritable" @click="saveModifiedBranch" type="check" title="Save Version Schema" />
                 <n-input v-if="isWritable" v-model:value="modifiedBranch.marketingVersionSchema" />
                 <n-input v-else type="text" name="marketingVersionSchema" :value="modifiedBranch.marketingVersionSchema" readonly/>
             </div>
             <div class="versionMetadataBlock" v-if="false && branchData.componentDetails.type === 'PRODUCT'">
                 <label id="branchVersionMetadataLabel" for="branchVersionMetadata">Generated Version Metadata</label>
-                <vue-feather class="clickable versionIcon accept" v-if="branchData && branchData.metadata !== modifiedBranch.metadata && isWritable" @click="modifiedBranch.metadata = branchData.metadata" type="x" title="Discard Metadata Changes" />
-                <vue-feather class="clickable versionIcon reject" v-if="branchData && branchData.metadata !== modifiedBranch.metadata && isWritable" @click="saveModifiedBranch" type="check" title="Save Metadata" />
                 <n-input v-if="isWritable" id="branchVersionMetadata" v-model:value="modifiedBranch.metadata" />
                 <n-input v-else type="text" id="versionMetadata" name="versionMetadata" :value="modifiedBranch.metadata" readonly/>
             </div>
@@ -65,8 +57,7 @@
                 <n-select
                     v-if="isWritable && branchData.type !== 'BASE'"
                     id="branchType"
-                    @update:value="handleBranchTypeUpdate"
-                    :value="modifiedBranch.type"
+                    v-model:value="modifiedBranch.type"
                     :options="branchSelectOptions" 
                 />
                 <n-input v-else class="w-25" type="text" :value="branchData.type" readonly/>
@@ -74,16 +65,12 @@
             <div class="linkedVcsRepoBlock" v-if="branchData.componentDetails.type === 'COMPONENT'">
                 <h6><strong>Linked VCS Repository:</strong></h6>
                 <div>
-                    <span v-if="modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid && !selectNewVcsRepo">{{ (modifiedBranch.vcsRepositoryDetails.name === modifiedBranch.vcsRepositoryDetails.uri) ? modifiedBranch.vcsRepositoryDetails.name : modifiedBranch.vcsRepositoryDetails.name + ' - ' + modifiedBranch.vcsRepositoryDetails.uri }}</span>
-                    <n-select v-if="selectNewVcsRepo" :options="vcsRepos" v-model:value="modifiedBranch.vcs" />
-                    <vue-feather v-if="!selectNewVcsRepo && isWritable" type="edit" class="clickable" @click="async () => {await fetchVcsRepos(); selectNewVcsRepo = true;}" />
-                    <vue-feather v-if="selectNewVcsRepo && isWritable" type="check" class="clickable" @click="saveModifiedBranch(); selectNewVcsRepo = false;" />
-                    <vue-feather v-if="selectNewVcsRepo && isWritable" class="clickable" @click="modifiedBranch.vcs = branchData.vcs; selectNewVcsRepo = false;" type="x" title="Discard VCS Repository Change" />
+                    <n-select v-if="isWritable" :options="vcsRepos" v-model:value="modifiedBranch.vcs" @focus="fetchVcsRepos" />
+                    <span v-if="!isWritable && modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">{{ (modifiedBranch.vcsRepositoryDetails.name === modifiedBranch.vcsRepositoryDetails.uri) ? modifiedBranch.vcsRepositoryDetails.name : modifiedBranch.vcsRepositoryDetails.name + ' - ' + modifiedBranch.vcsRepositoryDetails.uri }}</span>
+                    <span v-if="!isWritable && !modifiedBranch.vcsRepositoryDetails">Not Set</span>
                 </div>
                 <div class="vcsBranchBlock" v-if="modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">
                     <label for="vcsBranch">VCS Branch</label>
-                    <vue-feather class="clickable versionIcon accept" v-if="branchData && branchData.vcsBranch !== modifiedBranch.vcsBranch && isWritable" @click="modifiedBranch.vcsBranch = branchData.vcsBranch" type="x" title="Discard VCS Branch Changes" />
-                    <vue-feather class="clickable versionIcon reject" v-if="branchData && branchData.vcsBranch !== modifiedBranch.vcsBranch && isWritable" @click="saveModifiedBranch" type="check" title="Save VCS Branch Changes" />
                     <n-input v-if="isWritable" id="vcsBranch" v-model:value="modifiedBranch.vcsBranch" />
                     <n-input v-else type="text" id="vcsBranch" name="vcsBranch" :value="modifiedBranch.vcsBranch" readonly/>
                 </div>
@@ -103,7 +90,7 @@
                 />
             <div v-if="branchData.componentDetails.type === 'PRODUCT'" class="autoIntegrateBlock">
                 <label id="autoIntegrateLabel" style="margin-right:10px;">Auto Integrate </label>
-                <n-select v-if="isWritable" v-on:update:value="value => {modifiedBranch.autoIntegrate = value; saveModifiedBranch()}" :options="[{label: 'ENABLED', value: 'ENABLED'}, {label: 'DISABLED', value: 'DISABLED'}]" v-model:value="modifiedBranch.autoIntegrate" />
+                <n-select v-if="isWritable" :options="[{label: 'ENABLED', value: 'ENABLED'}, {label: 'DISABLED', value: 'DISABLED'}]" v-model:value="modifiedBranch.autoIntegrate" />
                 <n-input v-else type="text" :value="modifiedBranch.autoIntegrate" readonly/>
             </div>
             <div class="componentComponentsBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT'">
@@ -174,6 +161,22 @@
                         <n-button @click="ossArtifact = ''" type="warning" variant="danger">Reset</n-button>
                     </n-form>
                 </n-modal>
+            </div>
+            <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-top: 20px;">
+                <n-space>
+                    <n-button type="success" @click="saveModifiedBranch">
+                        <template #icon>
+                            <vue-feather type="check" />
+                        </template>
+                        Save Changes
+                    </n-button>
+                    <n-button type="warning" @click="resetBranchSettings">
+                        <template #icon>
+                            <vue-feather type="x" />
+                        </template>
+                        Reset Changes
+                    </n-button>
+                </n-space>
             </div>
         </n-modal>
         
@@ -586,13 +589,36 @@ const saveModifiedBranch = async function () {
     try {
         const storeResp = await store.dispatch('updateBranch', modifiedBranch.value)
         modifiedBranch.value = commonFunctions.deepCopy(storeResp)
+        selectNewVcsRepo.value = false
     } catch (err) {
         alert('ERROR: ' + err)
     }
 }
-const handleBranchTypeUpdate = async function (value: string, option: SelectOption) {
-    modifiedBranch.value.type = value
-    saveModifiedBranch()
+
+const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
+    if (!modifiedBranch.value || !branchData.value) return false
+    
+    return modifiedBranch.value.name !== branchData.value.name ||
+        modifiedBranch.value.versionSchema !== branchData.value.versionSchema ||
+        modifiedBranch.value.marketingVersionSchema !== branchData.value.marketingVersionSchema ||
+        modifiedBranch.value.metadata !== branchData.value.metadata ||
+        modifiedBranch.value.type !== branchData.value.type ||
+        modifiedBranch.value.vcs !== branchData.value.vcs ||
+        modifiedBranch.value.vcsBranch !== branchData.value.vcsBranch ||
+        modifiedBranch.value.autoIntegrate !== branchData.value.autoIntegrate
+})
+
+function resetBranchSettings() {
+    if (!branchData.value) return
+    modifiedBranch.value.name = branchData.value.name
+    modifiedBranch.value.versionSchema = branchData.value.versionSchema
+    modifiedBranch.value.marketingVersionSchema = branchData.value.marketingVersionSchema
+    modifiedBranch.value.metadata = branchData.value.metadata
+    modifiedBranch.value.type = branchData.value.type
+    modifiedBranch.value.vcs = branchData.value.vcs
+    modifiedBranch.value.vcsBranch = branchData.value.vcsBranch
+    modifiedBranch.value.autoIntegrate = branchData.value.autoIntegrate
+    selectNewVcsRepo.value = false
 }
 
 const vcsRepos: Ref<any[]> = ref([])
@@ -1102,6 +1128,11 @@ onCreated()
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
+.branchSettingsActions {
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 8px;
+}
 .versionSchemaBlock, .versionMetadataBlock, .branchNameBlock, .branchTypeBlock {
     padding-bottom: 25px;
     label {
