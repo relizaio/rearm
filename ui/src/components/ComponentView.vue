@@ -1903,26 +1903,47 @@ async function handleTabSwitch(tabName: string) {
 .versionSchemaBlock, .componentNameBlock {
     padding-top: 15px;
     padding-bottom: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    
     label {
         display: block;
         font-weight: bold;
-        width: 60%
+        width: 100%;
+        margin-bottom: 4px;
     }
     input {
-        display: inline-block;
-        width: 60%;
+        flex: 1;
+        min-width: 0;
+        max-width: calc(100% - 80px);
     }
     .n-input {
-        display: inline-block;
-        width: 60%;
+        flex: 1;
+        min-width: 200px;
+        max-width: calc(100% - 80px);
+        
+        :deep(.n-input-wrapper) {
+            padding-left: 12px;
+            padding-right: 12px;
+        }
+        :deep(.n-input__input-el) {
+            padding: 0;
+        }
     }
     .n-select {
-        display: inline-block;
-        width: 60%;
+        flex: 1;
+        min-width: 0;
+        max-width: calc(100% - 80px);
     }
     select {
-        display: inline-block;
-        width: 60%;
+        flex: 1;
+        min-width: 0;
+        max-width: calc(100% - 80px);
+    }
+    .versionIcon {
+        flex-shrink: 0;
     }
     .accept {
         color: green;
