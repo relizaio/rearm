@@ -1,11 +1,11 @@
 import { ApolloClient, HttpLink, InMemoryCache } from '@apollo/client/core'
-import { setContext } from '@apollo/client/link/context'
+import { SetContextLink } from '@apollo/client/link/context'
 import kc from './keycloak'
 import UploadHttpLink from "apollo-upload-client/UploadHttpLink.mjs";
 
 const uploadLink = new UploadHttpLink({ uri: '/graphql', credentials: 'same-origin' })
 
-const headerMiddleware = setContext((_, { headers }) => {
+const headerMiddleware = new SetContextLink(({ headers }) => {
     const csrfToken = window.localStorage.getItem('csrf');
     try {
         kc.isTokenExpired() 
