@@ -1,6 +1,6 @@
 services:
   rearm-core:
-    image: registry.relizahub.com/library/rearm-backend:25.06.15
+    image: registry.relizahub.com/library/rearm-backend:25.11.13@sha256:b751f57153c1ff15496586d7d9bfba6627261cd14731da56a4fac177d86222a2
     env_file:
      - path: ./core.env
        required: false
@@ -27,7 +27,7 @@ services:
         parallelism: 1
         delay: 10s
   rearm-ui:
-    image: registry.relizahub.com/library/rearm-ui:25.05.19
+    image: registry.relizahub.com/library/rearm-ui:25.11.9@sha256:ebff8a3db9125e1948289b1ea5ec28b37304025de810f73d0e88d7714519ba47
     ports:
      - "8092:80"
     environment:
@@ -48,7 +48,7 @@ services:
     depends_on:
      - rearm-core
   rearm-postgresql:
-    image: bitnami/postgresql:17.5.0-debian-12-r4
+    image: registry.relizahub.com/library/rearm-postgres:0.1.2@sha256:1d2b05e8662eb69bea12a04e91520e7f364e1ee3696a8a9feb0251c14b0f5950
     ports:
      - "5440:5432"
     environment:
@@ -58,9 +58,9 @@ services:
       restart_policy:
         condition: on-failure
     volumes:
-      - "rearm-postgres-data:/bitnami/postgresql"
+      - "rearm-postgres-data:/relizaio/postgresql"
   keycloak:
-    image: registry.relizahub.com/library/rearm-keycloak:25.03.6
+    image: registry.relizahub.com/library/rearm-keycloak:25.03.13@sha256:47cef60acfe37a0280774824972c05851022bcc13caf79dd71de08518548650d
     # build: ../../keycloak
     ports:
      - "9080:9080"
@@ -88,7 +88,7 @@ services:
         parallelism: 1
         delay: 10s
   keycloak-postgres:
-    image: bitnami/postgresql:17.5.0-debian-12-r4
+    image: registry.relizahub.com/library/rearm-postgres:0.1.2@sha256:1d2b05e8662eb69bea12a04e91520e7f364e1ee3696a8a9feb0251c14b0f5950
     environment:
      - POSTGRES_PASSWORD=relizaPass
     deploy:
@@ -97,9 +97,9 @@ services:
         condition: on-failure
     volumes:
       - ./postgres-keycloak-init.sql:/docker-entrypoint-initdb.d/init.sql
-      - "rearm-keycloak-compose-postgres-data:/bitnami/postgresql"
+      - "rearm-keycloak-compose-postgres-data:/relizaio/postgresql"
   oci-artifact-service:
-    image: registry.relizahub.com/library/rearm-oci-artifact-service:25.03.5
+    image: registry.relizahub.com/library/rearm-oci-artifact-service:25.10.5@sha256:815479318df4481fd91bef199494c08b1804617adc0eeffd0d6d540086ca996d
     env_file:
      - path: ./oci.env
        required: false
@@ -115,7 +115,7 @@ services:
         parallelism: 1
         delay: 10s
   rebom-backend:
-    image: registry.relizahub.com/library/rebom-backend:0.1.11
+    image: registry.relizahub.com/library/rebom-backend:0.12.12@sha256:9a0566cfc6f6d148b7d5adc16566288cef335689393b271b7963b7bae46ecdea
     env_file:
      - path: ./rebom.env
        required: false
@@ -137,7 +137,7 @@ services:
         parallelism: 1
         delay: 10s
   rebom-postgresql:
-    image: bitnami/postgresql:17.5.0-debian-12-r4
+    image: registry.relizahub.com/library/rearm-postgres:0.1.2@sha256:1d2b05e8662eb69bea12a04e91520e7f364e1ee3696a8a9feb0251c14b0f5950
     environment:
      - POSTGRES_PASSWORD=relizaPass
     deploy:
@@ -145,9 +145,9 @@ services:
       restart_policy:
         condition: on-failure
     volumes:
-      - "rebom-postgres-data:/bitnami/postgresql"
+      - "rebom-postgres-data:/relizaio/postgresql"
   rebom-postgres-init:
-    image: 'redgate/flyway:11.8.2-alpine'
+    image: docker.io/redgate/flyway:11.4.0-alpine@sha256:19a1178e519f9c4448956bb7a7d7c52610e6c46503a5f752d13f04120092c45d
     restart: on-failure
     depends_on:
       - rebom-postgresql
