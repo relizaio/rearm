@@ -444,7 +444,8 @@ public class ReleaseDatafetcher {
 	}
 	
 	public static record GetLatestReleaseInput (UUID component, UUID product, String branch,
-			TagRecord tags, ReleaseLifecycle lifecycle, InputConditionGroup conditions) {}
+			TagRecord tags, ReleaseLifecycle lifecycle, InputConditionGroup conditions,
+			String vcsUri, String repoPath) {}
 
 	private BranchData resolveAddReleaseProgrammaticBranchData (final UUID componentId, final String suppliedBranchStr, WhoUpdated wu) {
 		UUID branchUuid = null;

@@ -35,6 +35,7 @@ import io.reliza.service.ApiKeyService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.service.ComponentService;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.OrganizationService;
@@ -84,6 +85,9 @@ public class OssReleaseDatafetcher {
 	GetComponentService getComponentService;
 
 	@Autowired
+	ComponentService componentService;
+
+	@Autowired
 	SourceCodeEntryService sceService;
 	
 	@Autowired
@@ -117,7 +121,7 @@ public class OssReleaseDatafetcher {
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
 		
-		Map<String, String> latestReleaseInput = dfe.getArgument("release");
+		Map<String, Object> latestReleaseInput = dfe.getArgument("release");
 		GetLatestReleaseInput glri = Utils.OM.convertValue(latestReleaseInput, GetLatestReleaseInput.class);
 		
 		// TODO respect tags
@@ -127,11 +131,11 @@ public class OssReleaseDatafetcher {
 		UUID productUuid = glri.product();
 		UUID orgId = null;
 		ComponentData cd;
-		
-		if (ApiTypeEnum.COMPONENT == ahp.getType() && null == glri.component()) {
-			componentUuid = ahp.getObjUuid();
-		} else if (null != glri.component()) {
-			componentUuid = glri.component();
+
+		try {
+			componentUuid = componentService.resolveComponentIdFromInput(latestReleaseInput, ahp);
+		} catch (RelizaException re) {
+			throw new RuntimeException(re.getMessage());
 		}
 		
 		if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {

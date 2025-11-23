@@ -1375,6 +1375,8 @@ input GetLatestReleaseInput {
 	tags: [TagRecordInput]
 	lifecycle: ReleaseLifecycleEnum
 	conditions: ConditionGroupOnGetLatestReleaseInput
+	vcsUri: String
+	repoPath: String
 }
 
 input ConditionGroupOnGetLatestReleaseInput {
