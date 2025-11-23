@@ -38,7 +38,7 @@ parameters:
     default: placeholder
   - name: rearmCliVersion
     type: string
-    default: "25.10.8"
+    default: "25.10.10"
 
 
 jobs:
@@ -147,14 +147,16 @@ jobs:
           # set reliza release lifecycle to ASSEMBLED
           echo "--lifecycle DRAFT " > $(Pipeline.Workspace)/variables/REARM_COMMAND
       fi
-
+      
+      set -e
       last_commit=$(docker run --rm registry.relizahub.com/library/rearm-cli:${{ parameters.rearmCliVersion }} getlatestrelease -k $REARM_API_KEY -i $REARM_API_KEY_ID -u "${{ parameters.rearmUrl }}"  --vcsuri "$BUILD_REPOSITORY_URI" --repo-path "${{ parameters.buildPath }}" --branch "${{ parameters.branch }}" | jq -r ".sourceCodeEntryDetails.commit")
+      set +e
       echo "Last Commit: $last_commit"
       if [ ! -z "$last_commit" ] && [ "null" != "$last_commit" ]
       then
         echo -n "--commits $(git log -100 $last_commit..${{ parameters.commit }} --date=iso-strict --pretty='%H|||%ad|||%s|||%an|||%ae' -- ./ | base64 -w 0) " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       fi
-      echo -n "--commit ${{ parameters.commit }} --commitmessage \"$(git log -1 --pretty='%s')\" --date $(git log -1 --date=iso-strict --pretty='%ad') --vcstype git " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
+      echo -n "--commit ${{ parameters.commit }} --commitmessage '$(git log -1 --pretty='%s')' --date $(git log -1 --date=iso-strict --pretty='%ad') --vcstype git " >> $(Pipeline.Workspace)/variables/REARM_COMMAND
       
       if [[ $exit_code -eq 0 ]]
       then
