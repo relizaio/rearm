@@ -5,7 +5,7 @@ go 1.24.5
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.1
 	oras.land/oras-go/v2 v2.6.0
 )
 
