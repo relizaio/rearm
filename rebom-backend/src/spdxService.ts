@@ -150,6 +150,21 @@ export class SpdxService {
             const result = await shellExec('rearm-cli', args, 60000); // 60 second timeout for rearm-cli
             logger.debug({ conversionOutput: result }, "rearm-cli conversion completed");
 
+            // Validate the converted CycloneDX file
+            const validateCommand = [
+                'validate',
+                '--input-file',
+                outputFile
+            ];
+            try {
+                logger.debug("Starting CycloneDX validation");
+                await shellExec('cyclonedx-cli', validateCommand);
+                logger.debug("CycloneDX validation passed");
+            } catch (validationError) {
+                logger.error({ validationError, outputFile }, "CycloneDX validation failed");
+                throw new Error(`CycloneDX validation failed: ${validationError}`);
+            }
+
             // Read converted CycloneDX file
             const convertedContent = await require('fs/promises').readFile(outputFile, 'utf8');
             const convertedBom = JSON.parse(convertedContent);
