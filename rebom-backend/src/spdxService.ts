@@ -153,6 +153,8 @@ export class SpdxService {
             // Validate the converted CycloneDX file
             const validateCommand = [
                 'validate',
+                '--input-format',
+                'json',
                 '--input-file',
                 outputFile
             ];
