@@ -1,9 +1,9 @@
 import { ApolloClient, HttpLink, InMemoryCache } from '@apollo/client/core'
 import { setContext } from '@apollo/client/link/context'
 import kc from './keycloak'
-import createUploadLink from "apollo-upload-client/createUploadLink.mjs";
+import UploadHttpLink from "apollo-upload-client/UploadHttpLink.mjs";
 
-const uploadLink = createUploadLink({ uri: '/graphql', credentials: 'same-origin' })
+const uploadLink = new UploadHttpLink({ uri: '/graphql', credentials: 'same-origin' })
 
 const headerMiddleware = setContext((_, { headers }) => {
     const csrfToken = window.localStorage.getItem('csrf');
@@ -25,8 +25,5 @@ const headerMiddleware = setContext((_, { headers }) => {
 })
 export default new ApolloClient({
     link:  headerMiddleware.concat(uploadLink),
-    connectToDevTools: false,
-    cache: new InMemoryCache({
-        addTypename: false
-    })
+    cache: new InMemoryCache({})
 })
