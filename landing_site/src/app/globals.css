@@ -92,6 +92,17 @@ a {
   margin-bottom: 30px;
 }
 
+.C1_text_large {
+  font-family: "Inter", Arial, Helvetica, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 32px;
+  line-height: 140%;
+  text-align: center;
+  color: #5c6077;
+  margin-bottom: 30px;
+}
+
 .btn_usingFree {
   font-family: "Inter", Arial, Helvetica, sans-serif;
   font-style: normal;
@@ -259,6 +270,11 @@ a {
   .C1_text {
     font-size: 12px;
     line-height: 180%;
+  }
+
+  .C1_text_large {
+    font-size: 18px;
+    line-height: 140%;
   }
   
   .C2_title {

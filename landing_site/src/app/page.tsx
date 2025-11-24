@@ -10,8 +10,11 @@ export default function Home() {
             <h1 className="C1_title">ReARM</h1>
           </div>
           <div className="col-12">
-            <p className="mx-auto C1_text" style={{ maxWidth: "611px" }}>
-              Supply Chain Security and Asset Management for Releases, SBOMs, xBOMs, Security Artifacts
+            <p className="mx-auto C1_text_large" style={{ maxWidth: "800px" }}>
+              The Evidence Store for Your Entire Supply Chain
+            </p>
+            <p className="mx-auto C1_text" style={{ maxWidth: "680px" }}>
+              SBOMs, xBOMs and every other artifact - stored for 10+ years, versioned and audit-ready
             </p>
           </div>
         </div>
@@ -98,9 +101,9 @@ export default function Home() {
         {[
           {
             image: "rearm_release.png",
-            title: "Digital Asset Management",
+            title: "Asset Management & Evidence Store",
             texts: [
-              { text: "ReARM maintains up-to-date inventory of digital assets and provides storage for Artifacts and Metadata, such as SBOMs / xBOMs, and Attestations, per each Release." },
+              { text: "ReARM is a system of record that collects, stores for 10+ years, versions, and traces all digital artifacts required to prove the integrity, safety, and compliance of software, firmware, and hardware throughout their lifecycle. This includes SBOMs, HBOMs, other xBOMs, VEX, VDR, BOV, SARIF, attestations, build metadata, and more." },
             ],
           },
           {
@@ -114,7 +117,7 @@ export default function Home() {
             image: "rearm_analytics.png",
             title: "Track Vulnerabilities and Violations across your Supply Chain",
             texts: [
-              { text: "ReARM integrates with OWASP Dependency-Track to present real-time view of the state of your supply chain." },
+              { text: "ReARM integrates with various cyber security tools to present real-time security posture of your component and product releases." },
             ],
           },
           {
