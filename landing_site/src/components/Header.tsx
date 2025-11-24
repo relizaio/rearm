@@ -21,7 +21,7 @@ export default function Header() {
                 <a className="nav-link fs-6" href="https://docs.rearmhq.com" target="_blank" style={{ textDecoration: "none" }}>Documentation</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
-                <a className="nav-link fs-6" href="https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_Datasheet_v3_2025-09-03.pdf" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>Datasheet</a>
+                <a className="nav-link fs-6" href="https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_Datasheet_v4_2025-11-24.pdf" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>Datasheet</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
                 <a className="nav-link fs-6" href="/#homePagePricing" style={{ textDecoration: "none" }}>Pricing</a>
