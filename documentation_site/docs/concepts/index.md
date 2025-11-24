@@ -87,3 +87,10 @@ Instance is a medium which runs software built by organization (Components or Pr
 
 ## Cluster
 Cluster is a set of instances. In example, Kubernetes may be considered a cluster with Instances running inside its namespaces.
+
+## Evidence Store
+A Supply-Chain Evidence Store is a system of record that collects, stores, versions, verifies, and traces all digital artefacts required to prove the integrity, safety, and compliance of software, firmware, and hardware throughout their lifecycle.
+
+This includes SBOMs, HBOMs, FBOMs, VEX, BOV, SARIF, attestations, build metadata, and OCI artefacts (all cryptographically linked, diffable, and retained for regulatory and audit-readiness, e.g., EU CRA 10-year and longer retention requirement).
+
+The system provides traceability from sources to build, component, component release, product, product release, deployment and then decomission across multi-tier suppliers, and supports sharing with customers, auditors, and regulators through manual export and sharing and/or controlled transparency APIs.

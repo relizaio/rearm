@@ -5,7 +5,8 @@ titleTemplate: null
 
 hero:
   name: ReARM
-  tagline: Digital Asset Management System for Releases, SBOMs, xBOMs, and more
+  text: The Evidence Store for Your Entire Supply Chain
+  tagline: SBOMs, xBOMs and every other artifact - stored for 10+ years, versioned and audit-ready
   actions:
     - text: Get Started →
       link: /get-started/
