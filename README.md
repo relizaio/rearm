@@ -13,7 +13,7 @@
 [![Discord](https://img.shields.io/discord/757425726143201370.svg?color=%237289da&label=Discord&logo=discord&logoColor=%237289da)](https://discord.gg/UTxjBf9juQ)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-blue.svg?logo=LinkedIn)](https://www.linkedin.com/company/relizaio/)
 
-# ReARM - Supply Chain Security and Asset Management for Releases, SBOMs, xBOMs, Security Artifacts - Community Edition
+# ReARM - The Evidence Store for Your Entire Supply Chain (SBOMs, xBOMs, Security Artifacts) - Community Edition
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
