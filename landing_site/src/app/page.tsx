@@ -14,7 +14,7 @@ export default function Home() {
               The Evidence Store for Your Entire Supply Chain
             </p>
             <p className="mx-auto C1_text" style={{ maxWidth: "680px" }}>
-              SBOMs, xBOMs and every other artifact - stored for 10+ years, versioned and audit-ready
+              SBOMs, xBOMs and every other artifact - stored per release for 10+ years, versioned and audit-ready
             </p>
           </div>
         </div>
