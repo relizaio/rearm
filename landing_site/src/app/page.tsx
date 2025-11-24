@@ -13,7 +13,7 @@ export default function Home() {
             <p className="mx-auto C1_text_large" style={{ maxWidth: "800px" }}>
               The Evidence Store for Your Entire Supply Chain
             </p>
-            <p className="mx-auto C1_text" style={{ maxWidth: "680px" }}>
+            <p className="mx-auto C1_text" style={{ maxWidth: "600px" }}>
               SBOMs, xBOMs and every other artifact - stored per release for 10+ years, versioned and audit-ready
             </p>
           </div>
