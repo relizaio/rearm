@@ -110,7 +110,7 @@ export default function Home() {
             image: "compliance.png",
             title: "Regulatory Compliance",
             texts: [
-              { text: "ReARM ensures supply chain security compliance with various regulations, including EU CRA, NIS2, DORA, US Executive Orders 14028, 14144, Section 524B of the FD&C Act, India's RBI and SEBI." },
+              { text: "ReARM acts as a central SBOM/xBOM and security artifact repository and digital evidence store for all your releases and ensures supply chain security compliance with various regulations, including EU CRA, NIS2, DORA, US Executive Orders 14028, 14144, Section 524B of the FD&C Act, India's RBI and SEBI." },
             ],
           },
           {

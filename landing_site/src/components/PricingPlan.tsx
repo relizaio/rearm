@@ -210,11 +210,6 @@ export default function PricingPlan() {
               <div className="userSelectorLabel">40+ users</div>
             </div>
           )}
-          {p.id === 0 && (
-            <div className="userSelector">
-              <div className="userSelectorLabel" style={{ visibility: 'hidden' }}>Placeholder</div>
-            </div>
-          )}
           <ul className="planFeatures">
             {p.bullets.map((b, i) => (
               <li key={i} className="planFeature">{b}</li>
