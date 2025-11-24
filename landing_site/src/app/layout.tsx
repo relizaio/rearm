@@ -30,13 +30,22 @@ export const metadata: Metadata = {
       "Supply Chain Security and Digital Asset Management for Releases, SBOMs, xBOMs, and Security Artifacts.",
     url: "/",
     siteName: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
+    images: [
+      {
+        url: "/rearm.png",
+        width: 1200,
+        height: 630,
+        alt: "ReARM - Supply Chain Security",
+      },
+    ],
     type: "website",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
     description:
       "Supply Chain Security and Digital Asset Management for Releases, SBOMs, xBOMs, and Security Artifacts.",
+    images: ["/rearm.png"],
   },
 };
 
