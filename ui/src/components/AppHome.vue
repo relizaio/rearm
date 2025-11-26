@@ -593,6 +593,7 @@ async function searchSbomComponent (e: Event) {
     dtrackSearchLoading.value = true
     showDtrackSearchResultsModal.value = true
     dtrackSearchResults.value = []
+    dtrackSearchReleases.value = []
     showSearchProgress.value = true
     searchProgress.value = 0
     searchFailed.value = false
