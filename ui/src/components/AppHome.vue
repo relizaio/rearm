@@ -88,7 +88,12 @@
                                 </n-tab-pane>
                                 <n-tab-pane name="searchreleasesbydsbom" tab="Search by SBOM Components">
                                     <h5>Search For Releases By SBOM Component Name, Group or Purl</h5>
+                                    <n-radio-group v-model:value="sbomSearchMode" style="margin-bottom: 10px;">
+                                        <n-radio-button value="simple">Simple</n-radio-button>
+                                        <n-radio-button value="json">JSON Batch</n-radio-button>
+                                    </n-radio-group>
                                     <n-form
+                                        v-if="sbomSearchMode === 'simple'"
                                         inline
                                         @submit="searchSbomComponent">
                                         <n-input-group>
@@ -107,6 +112,22 @@
                                                 Find
                                             </n-button>
                                         </n-input-group>
+                                    </n-form>
+                                    <n-form
+                                        v-else
+                                        @submit="searchSbomComponent">
+                                        <n-input
+                                            type="textarea"
+                                            placeholder='[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
+                                            v-model:value="sbomSearchJson"
+                                            :rows="4"
+                                            style="margin-bottom: 10px;"
+                                        />
+                                        <n-button
+                                            variant="contained-text"
+                                            attr-type="submit">
+                                            Find
+                                        </n-button>
                                     </n-form>
                                 </n-tab-pane>
                                 <n-tab-pane v-if="false && installationType !== 'OSS'" name="searchinstancesbytags" tab="Search Instances by Tags">
@@ -189,7 +210,12 @@
                         >
                             <div style="height: 700px; overflow: auto;">
                                 <h3>Search by SBOM Components</h3>
+                                <n-radio-group v-model:value="sbomSearchMode" style="margin-bottom: 10px;">
+                                    <n-radio-button value="simple">Simple</n-radio-button>
+                                    <n-radio-button value="json">JSON Batch</n-radio-button>
+                                </n-radio-group>
                                 <n-form
+                                    v-if="sbomSearchMode === 'simple'"
                                     style="margin-bottom:20px;"
                                     inline
                                     @submit="searchSbomComponent">
@@ -209,6 +235,23 @@
                                             Find
                                         </n-button>
                                     </n-input-group>
+                                </n-form>
+                                <n-form
+                                    v-else
+                                    style="margin-bottom:20px;"
+                                    @submit="searchSbomComponent">
+                                    <n-input
+                                        type="textarea"
+                                        placeholder='[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
+                                        v-model:value="sbomSearchJson"
+                                        :rows="4"
+                                        style="margin-bottom: 10px;"
+                                    />
+                                    <n-button
+                                        variant="contained-text"
+                                        attr-type="submit">
+                                        Find
+                                    </n-button>
                                 </n-form>
                                 <n-grid x-gap="3" cols="2">
                                     <n-gi>
@@ -325,7 +368,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider } from 'naive-ui'
+import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup } from 'naive-ui'
 import { useStore } from 'vuex'
 import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
@@ -352,6 +395,8 @@ const installationType: ComputedRef<any> = computed((): any => store.getters.myu
 const hashSearchQuery = ref('')
 const sbomSearchQuery = ref('')
 const sbomSearchVersion = ref('')
+const sbomSearchMode = ref('simple')
+const sbomSearchJson = ref('')
 const selectedPurl = ref('')
 
 onMounted(() => {
@@ -438,18 +483,57 @@ async function searchHashVersion (e: Event) {
     }
 }
 
-async function searchSbomComponent (e: Event) {
-    e.preventDefault()
-    document.body.style.cursor = 'wait'
-    dtrackSearchLoading.value = true
-    showDtrackSearchResultsModal.value = true
-    try {
+function validateSbomSearchInput(input: any): input is { name: string; version?: string } {
+    return typeof input === 'object' && 
+           input !== null && 
+           typeof input.name === 'string' && 
+           input.name.length > 0 &&
+           (input.version === undefined || typeof input.version === 'string')
+}
+
+function parseSbomSearchQueries(): { name: string; version?: string }[] | null {
+    if (sbomSearchMode.value === 'simple') {
         const searchInput: { name: string; version?: string } = {
             name: sbomSearchQuery.value
         }
         if (sbomSearchVersion.value) {
             searchInput.version = sbomSearchVersion.value
         }
+        return [searchInput]
+    } else {
+        try {
+            const parsed = JSON.parse(sbomSearchJson.value)
+            if (!Array.isArray(parsed)) {
+                Swal.fire('Error!', 'JSON must be an array', 'error')
+                return null
+            }
+            if (parsed.length === 0) {
+                Swal.fire('Error!', 'Array must not be empty', 'error')
+                return null
+            }
+            for (const item of parsed) {
+                if (!validateSbomSearchInput(item)) {
+                    Swal.fire('Error!', 'Each element must have a "name" (string, required) and optional "version" (string)', 'error')
+                    return null
+                }
+            }
+            return parsed
+        } catch (err) {
+            Swal.fire('Error!', 'Invalid JSON format', 'error')
+            return null
+        }
+    }
+}
+
+async function searchSbomComponent (e: Event) {
+    e.preventDefault()
+    const queries = parseSbomSearchQueries()
+    if (!queries) return
+    
+    document.body.style.cursor = 'wait'
+    dtrackSearchLoading.value = true
+    showDtrackSearchResultsModal.value = true
+    try {
         const response = await graphqlClient.query({
             query: gql`
                 query sbomComponentSearch($orgUuid: ID!, $queries: [SbomComponentSearchInput!]!) {
@@ -460,7 +544,7 @@ async function searchSbomComponent (e: Event) {
                 }`,
             variables: { 
                 orgUuid: myorg.value.uuid, 
-                queries: [searchInput]
+                queries
             },
             fetchPolicy: 'no-cache'
         })
