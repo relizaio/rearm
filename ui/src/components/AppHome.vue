@@ -92,6 +92,19 @@
                                         <n-radio-button value="simple">Simple</n-radio-button>
                                         <n-radio-button value="json">JSON Batch</n-radio-button>
                                     </n-radio-group>
+                                    <n-tooltip trigger="hover" style="max-width: 500px;">
+                                        <template #trigger>
+                                            <n-icon size="18" style="cursor: pointer; vertical-align: middle; margin-left: 5px;">
+                                                <QuestionMark />
+                                            </n-icon>
+                                        </template>
+                                        <div>
+                                            <p>{{ constants.JsonBatchModeHelp.description }}</p>
+                                            <p><strong>{{ constants.JsonBatchModeHelp.promptIntro }}</strong></p>
+                                            <p style="font-style: italic;">{{ constants.JsonBatchModeHelp.promptText }}</p>
+                                            <p style="font-style: italic;">{{ constants.JsonBatchModeHelp.promptSuffix }}</p>
+                                        </div>
+                                    </n-tooltip>
                                     <n-form
                                         v-if="sbomSearchMode === 'simple'"
                                         inline
@@ -214,6 +227,19 @@
                                     <n-radio-button value="simple">Simple</n-radio-button>
                                     <n-radio-button value="json">JSON Batch</n-radio-button>
                                 </n-radio-group>
+                                <n-tooltip trigger="hover" style="max-width: 500px;">
+                                    <template #trigger>
+                                        <n-icon size="18" style="cursor: pointer; vertical-align: middle; margin-left: 5px;">
+                                            <QuestionMark />
+                                        </n-icon>
+                                    </template>
+                                    <div>
+                                        <p>{{ constants.JsonBatchModeHelp.description }}</p>
+                                        <p><strong>{{ constants.JsonBatchModeHelp.promptIntro }}</strong></p>
+                                        <p style="font-style: italic;">{{ constants.JsonBatchModeHelp.promptText }}</p>
+                                        <p style="font-style: italic;">{{ constants.JsonBatchModeHelp.promptSuffix }}</p>
+                                    </div>
+                                </n-tooltip>
                                 <n-form
                                     v-if="sbomSearchMode === 'simple'"
                                     style="margin-bottom:20px;"
@@ -378,13 +404,14 @@ import InstanceHistory from './InstanceHistory.vue'
 import { RouterLink } from 'vue-router'
 import axios from '../utils/axios'
 import { Commit } from '@vicons/carbon'
-import { AspectRatio, Box, Eye} from '@vicons/tabler'
+import { AspectRatio, Box, Eye, QuestionMark } from '@vicons/tabler'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import { useRouter } from 'vue-router'
 import * as vegaEmbed from 'vega-embed'
 import Swal from 'sweetalert2'
 import commonFunctions from '@/utils/commonFunctions'
+import constants from '@/utils/constants'
 
 const store = useStore()
 const router = useRouter()
