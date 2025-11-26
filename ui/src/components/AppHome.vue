@@ -96,6 +96,11 @@
                                                 placeholder="SBOM Component Name or Purl"
                                                 v-model:value="sbomSearchQuery"
                                             />
+                                            <n-input
+                                                placeholder="Version (Optional)"
+                                                v-model:value="sbomSearchVersion"
+                                                style="max-width: 150px;"
+                                            />
                                             <n-button
                                                 variant="contained-text"
                                                 attr-type="submit">
@@ -192,6 +197,11 @@
                                         <n-input
                                             placeholder="SBOM Component Name or Purl"
                                             v-model:value="sbomSearchQuery"
+                                        />
+                                        <n-input
+                                            placeholder="Version (Optional)"
+                                            v-model:value="sbomSearchVersion"
+                                            style="max-width: 150px;"
                                         />
                                         <n-button
                                             variant="contained-text"
@@ -341,6 +351,7 @@ const installationType: ComputedRef<any> = computed((): any => store.getters.myu
 
 const hashSearchQuery = ref('')
 const sbomSearchQuery = ref('')
+const sbomSearchVersion = ref('')
 const selectedPurl = ref('')
 
 onMounted(() => {
@@ -431,13 +442,17 @@ async function searchSbomComponent (e: Event) {
     try {
         const response = await graphqlClient.query({
             query: gql`
-                query sbomComponentSearch($orgUuid: ID!, $query: String!) {
-                    sbomComponentSearch(orgUuid: $orgUuid, query: $query) {
+                query sbomComponentSearch($orgUuid: ID!, $query: String!, $version: String) {
+                    sbomComponentSearch(orgUuid: $orgUuid, query: $query, version: $version) {
                         purl
                         projects
                     }
                 }`,
-            variables: { orgUuid: myorg.value.uuid, query: sbomSearchQuery.value },
+            variables: { 
+                orgUuid: myorg.value.uuid, 
+                query: sbomSearchQuery.value,
+                version: sbomSearchVersion.value || null
+            },
             fetchPolicy: 'no-cache'
         })
         dtrackSearchResults.value = response.data.sbomComponentSearch
