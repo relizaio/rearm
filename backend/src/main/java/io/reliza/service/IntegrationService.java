@@ -648,7 +648,7 @@ public class IntegrationService {
 	
 	public record ComponentPurlToDtrackProject (String purl, List<UUID> projects) {}
 	
-	public List<ComponentPurlToDtrackProject> searchDependencyTrackComponent (String query, UUID org) throws RelizaException {
+	public List<ComponentPurlToDtrackProject> searchDependencyTrackComponent (String query, UUID org, String version) throws RelizaException {
 		List<ComponentPurlToDtrackProject> sbomComponents = new LinkedList<>();
 		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(org, IntegrationType.DEPENDENCYTRACK,
 				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
@@ -657,12 +657,13 @@ public class IntegrationService {
 			try {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
 				List<Map<String, Object>> respList = new LinkedList<>();
+				String versionParam = StringUtils.isNotEmpty(version) ? "&version=" + version : "";
 				if (query.startsWith("pkg:")) {
-					URI componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?purl=" + query + "&pageSize=10000&pageNumber=1");
+					URI componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?purl=" + query + "&pageSize=10000&pageNumber=1" + versionParam);
 					respList = executeDtrackComponentSearch(componentSearchUri, apiToken);
 				} else {
-					URI componentSearchUri1 = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?name=" + query + "&pageSize=10000&pageNumber=1");
-					URI componentSearchUri2 = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?group=" + query + "&pageSize=10000&pageNumber=1");
+					URI componentSearchUri1 = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?name=" + query + "&pageSize=10000&pageNumber=1" + versionParam);
+					URI componentSearchUri2 = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?group=" + query + "&pageSize=10000&pageNumber=1" + versionParam);
 					var respList1 = executeDtrackComponentSearch(componentSearchUri1, apiToken);
 					var respList2 = executeDtrackComponentSearch(componentSearchUri2, apiToken);
 					respList.addAll(respList1);
