@@ -279,6 +279,15 @@
                                         Find
                                     </n-button>
                                 </n-form>
+                                <div v-if="showSearchProgress" style="margin-bottom: 15px;">
+                                    <p style="margin-bottom: 5px;">{{ searchFailed ? 'Search failed!' : `Search progress: ${searchProgress}%` }}</p>
+                                    <n-progress
+                                        type="line"
+                                        :percentage="searchProgress"
+                                        :show-indicator="true"
+                                        :status="searchFailed ? 'error' : 'success'"
+                                    />
+                                </div>
                                 <n-grid x-gap="3" cols="2">
                                     <n-gi>
                                         <n-data-table
@@ -394,7 +403,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup } from 'naive-ui'
+import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress } from 'naive-ui'
 import { useStore } from 'vuex'
 import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
@@ -424,6 +433,9 @@ const sbomSearchQuery = ref('')
 const sbomSearchVersion = ref('')
 const sbomSearchMode = ref('simple')
 const sbomSearchJson = ref('')
+const searchProgress = ref(0)
+const showSearchProgress = ref(false)
+const searchFailed = ref(false)
 const selectedPurl = ref('')
 
 onMounted(() => {
@@ -552,6 +564,26 @@ function parseSbomSearchQueries(): { name: string; version?: string }[] | null {
     }
 }
 
+const BATCH_SIZE = 100
+
+async function executeSbomSearchBatch(queries: { name: string; version?: string }[]): Promise<any[]> {
+    const response = await graphqlClient.query({
+        query: gql`
+            query sbomComponentSearch($orgUuid: ID!, $queries: [SbomComponentSearchInput!]!) {
+                sbomComponentSearch(orgUuid: $orgUuid, queries: $queries) {
+                    purl
+                    projects
+                }
+            }`,
+        variables: { 
+            orgUuid: myorg.value.uuid, 
+            queries
+        },
+        fetchPolicy: 'no-cache'
+    })
+    return response.data.sbomComponentSearch
+}
+
 async function searchSbomComponent (e: Event) {
     e.preventDefault()
     const queries = parseSbomSearchQueries()
@@ -560,23 +592,36 @@ async function searchSbomComponent (e: Event) {
     document.body.style.cursor = 'wait'
     dtrackSearchLoading.value = true
     showDtrackSearchResultsModal.value = true
+    dtrackSearchResults.value = []
+    showSearchProgress.value = true
+    searchProgress.value = 0
+    searchFailed.value = false
+    
     try {
-        const response = await graphqlClient.query({
-            query: gql`
-                query sbomComponentSearch($orgUuid: ID!, $queries: [SbomComponentSearchInput!]!) {
-                    sbomComponentSearch(orgUuid: $orgUuid, queries: $queries) {
-                        purl
-                        projects
-                    }
-                }`,
-            variables: { 
-                orgUuid: myorg.value.uuid, 
-                queries
-            },
-            fetchPolicy: 'no-cache'
-        })
-        dtrackSearchResults.value = response.data.sbomComponentSearch
+        if (queries.length <= BATCH_SIZE) {
+            // Single batch
+            const results = await executeSbomSearchBatch(queries)
+            dtrackSearchResults.value = results
+            searchProgress.value = 100
+        } else {
+            // Multiple batches - process sequentially
+            const totalBatches = Math.ceil(queries.length / BATCH_SIZE)
+            const allResults: any[] = []
+            
+            for (let i = 0; i < queries.length; i += BATCH_SIZE) {
+                const batch = queries.slice(i, i + BATCH_SIZE)
+                const batchResults = await executeSbomSearchBatch(batch)
+                allResults.push(...batchResults)
+                const completedBatches = Math.floor(i / BATCH_SIZE) + 1
+                searchProgress.value = Math.round((completedBatches / totalBatches) * 100)
+                // Update results incrementally so user sees progress
+                dtrackSearchResults.value = [...allResults]
+            }
+            
+            searchProgress.value = 100
+        }
     } catch (err: any) {
+        searchFailed.value = true
         Swal.fire(
             'Error!',
             commonFunctions.parseGraphQLError(err.message),
