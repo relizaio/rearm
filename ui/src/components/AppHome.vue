@@ -187,7 +187,7 @@
                             :show-icon="false"
                             style="width: 90%"
                         >
-                            <div v-if="dtrackSearchResults.length">
+                            <div style="height: 650px; overflow: auto;">
                                 <h3>Search by SBOM Components</h3>
                                 <n-form
                                     style="margin-bottom:20px;"
@@ -226,9 +226,7 @@
                                         />
                                     </n-gi>
                                 </n-grid>
-                                
                             </div>
-                            <div v-else>No results.</div>
                         </n-modal>
                         <n-modal
                                 v-model:show="showInstPropSearchResultsModal"
