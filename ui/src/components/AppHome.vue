@@ -444,18 +444,23 @@ async function searchSbomComponent (e: Event) {
     dtrackSearchLoading.value = true
     showDtrackSearchResultsModal.value = true
     try {
+        const searchInput: { name: string; version?: string } = {
+            name: sbomSearchQuery.value
+        }
+        if (sbomSearchVersion.value) {
+            searchInput.version = sbomSearchVersion.value
+        }
         const response = await graphqlClient.query({
             query: gql`
-                query sbomComponentSearch($orgUuid: ID!, $query: String!, $version: String) {
-                    sbomComponentSearch(orgUuid: $orgUuid, query: $query, version: $version) {
+                query sbomComponentSearch($orgUuid: ID!, $queries: [SbomComponentSearchInput!]!) {
+                    sbomComponentSearch(orgUuid: $orgUuid, queries: $queries) {
                         purl
                         projects
                     }
                 }`,
             variables: { 
                 orgUuid: myorg.value.uuid, 
-                query: sbomSearchQuery.value,
-                version: sbomSearchVersion.value || null
+                queries: [searchInput]
             },
             fetchPolicy: 'no-cache'
         })
