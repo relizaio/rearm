@@ -187,7 +187,7 @@
                             :show-icon="false"
                             style="width: 90%"
                         >
-                            <div style="height: 650px; overflow: auto;">
+                            <div style="height: 700px; overflow: auto;">
                                 <h3>Search by SBOM Components</h3>
                                 <n-form
                                     style="margin-bottom:20px;"
@@ -216,6 +216,7 @@
                                             :data="dtrackSearchResults"
                                             :columns="dtrackSearchResultRows"
                                             :pagination="pagination"
+                                            :loading="dtrackSearchLoading"
                                         />
                                     </n-gi>
                                     <n-gi>
@@ -223,6 +224,7 @@
                                             :data="dtrackSearchReleases"
                                             :columns="dtrackSearchReleaseRows"
                                             :pagination="releasePagination"
+                                            :loading="dtrackReleasesLoading"
                                         />
                                     </n-gi>
                                 </n-grid>
@@ -396,6 +398,8 @@ const dtrackSearchReleases : Ref<any[]> = ref([])
 const releaseInstances : Ref<any[]> = ref([])
 const showSearchResultsModal : Ref<boolean> = ref(false)
 const showDtrackSearchResultsModal : Ref<boolean> = ref(false)
+const dtrackSearchLoading : Ref<boolean> = ref(false)
+const dtrackReleasesLoading : Ref<boolean> = ref(false)
 
 const executeGqlSearchHashVersion = async function (params : any) {
     const response = await graphqlClient.query({
@@ -437,6 +441,8 @@ async function searchHashVersion (e: Event) {
 async function searchSbomComponent (e: Event) {
     e.preventDefault()
     document.body.style.cursor = 'wait'
+    dtrackSearchLoading.value = true
+    showDtrackSearchResultsModal.value = true
     try {
         const response = await graphqlClient.query({
             query: gql`
@@ -454,7 +460,6 @@ async function searchSbomComponent (e: Event) {
             fetchPolicy: 'no-cache'
         })
         dtrackSearchResults.value = response.data.sbomComponentSearch
-        showDtrackSearchResultsModal.value = true
     } catch (err: any) {
         Swal.fire(
             'Error!',
@@ -463,11 +468,13 @@ async function searchSbomComponent (e: Event) {
         )
     } finally {
         document.body.style.cursor = 'default'
+        dtrackSearchLoading.value = false
     }
 }
 
 async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
     document.body.style.cursor = 'wait'
+    dtrackReleasesLoading.value = true
     try {
         const searchParams = {
             orgUuid: myorg.value.uuid,
@@ -482,6 +489,7 @@ async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
         )
     } finally {
         document.body.style.cursor = 'default'
+        dtrackReleasesLoading.value = false
     }
 }
 
