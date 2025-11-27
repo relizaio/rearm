@@ -58,7 +58,7 @@ type Query {
 	searchDigestVersion(orgUuid: ID!, query: String!): SearchDigestVersionResponse
 	releasesByTags(orgUuid: ID!, branchUuid: ID, tagKey: String!, tagValue:String): [Release]
 	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID]): [Release]
-	sbomComponentSearch(orgUuid: ID!, query: String!, version: String): [ComponentPurlToDtrack]
+	sbomComponentSearch(orgUuid: ID!, queries: [SbomComponentSearchInput!]!): [ComponentPurlToDtrack]
 	searchDtrackComponentByPurlAndProjects(orgUuid: ID!, purl: String!, dtrackProjects: [ID]!): ID
 	
 	getAllOrganizations: [Organization]
@@ -1250,6 +1250,11 @@ input AddDeliverableInput {
 input LinkInput {
 	uri: String
 	content: String
+}
+
+input SbomComponentSearchInput {
+	name: String!
+	version: String
 }
 
 input MarketingReleaseInput {

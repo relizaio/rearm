@@ -983,12 +983,14 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Query", field = "sbomComponentSearch")
 	public List<ComponentPurlToDtrackProject> sbomComponentSearch(DgsDataFetchingEnvironment dfe,
 			@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("query") String query,
-			@InputArgument("version") String version) throws RelizaException {
+			@InputArgument("queries") List<Map<String, String>> queries) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
-		return integrationService.searchDependencyTrackComponent(query, orgUuid, version);
+		List<IntegrationService.SbomComponentSearchQuery> searchQueries = queries.stream()
+			.map(q -> new IntegrationService.SbomComponentSearchQuery(q.get("name"), q.get("version")))
+			.toList();
+		return integrationService.searchDependencyTrackComponentBatch(searchQueries, orgUuid);
 	}
 	
 	@Transactional

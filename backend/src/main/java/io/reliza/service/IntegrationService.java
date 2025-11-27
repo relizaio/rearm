@@ -10,7 +10,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Collection;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -648,7 +654,9 @@ public class IntegrationService {
 	
 	public record ComponentPurlToDtrackProject (String purl, List<UUID> projects) {}
 	
-	public List<ComponentPurlToDtrackProject> searchDependencyTrackComponent (String query, UUID org, String version) throws RelizaException {
+	public record SbomComponentSearchQuery (String name, String version) {}
+	
+	private List<ComponentPurlToDtrackProject> searchDependencyTrackComponent (String query, UUID org, String version) throws RelizaException {
 		List<ComponentPurlToDtrackProject> sbomComponents = new LinkedList<>();
 		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(org, IntegrationType.DEPENDENCYTRACK,
 				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
@@ -685,6 +693,38 @@ public class IntegrationService {
 			}
 		}
 		return sbomComponents;
+	}
+	
+	public List<ComponentPurlToDtrackProject> searchDependencyTrackComponentBatch (List<SbomComponentSearchQuery> queries, UUID org) throws RelizaException {
+		// Use a concurrent map to combine results by purl, merging project lists
+		Map<String, List<UUID>> combinedResults = new ConcurrentHashMap<>();
+		
+		// Execute searches in parallel with up to 4 threads
+		ExecutorService executor = Executors.newFixedThreadPool(Math.min(4, queries.size()));
+		List<Future<List<ComponentPurlToDtrackProject>>> futures = new ArrayList<>();
+		
+		for (SbomComponentSearchQuery query : queries) {
+			futures.add(executor.submit(() -> searchDependencyTrackComponent(query.name(), org, query.version())));
+		}
+		
+		try {
+			for (Future<List<ComponentPurlToDtrackProject>> future : futures) {
+				List<ComponentPurlToDtrackProject> results = future.get();
+				for (ComponentPurlToDtrackProject result : results) {
+					combinedResults.computeIfAbsent(result.purl(), k -> Collections.synchronizedList(new LinkedList<>())).addAll(result.projects());
+				}
+			}
+		} catch (InterruptedException | ExecutionException e) {
+			log.error("Exception during parallel SBOM component search", e);
+			throw new RelizaException("Error searching SBOM components");
+		} finally {
+			executor.shutdown();
+		}
+		
+		// Convert back to list, deduplicating projects per purl
+		return combinedResults.entrySet().stream()
+			.map(e -> new ComponentPurlToDtrackProject(e.getKey(), e.getValue().stream().distinct().toList()))
+			.toList();
 	}
 
 	private List<Map<String, Object>> executeDtrackComponentSearch (URI componentSearchUri, String apiToken) throws JsonMappingException, JsonProcessingException {
