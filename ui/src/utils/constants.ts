@@ -80,11 +80,11 @@ const CONTENT_TYPES = [
     {value: 'PLAIN_XML', label: 'Plain XML'},
 ]
 
-const JSON_BATCH_MODE_HELP = {
-    description: 'JSON batch mode allows you to search for multiple components at once.',
-    promptIntro: 'Use the following prompt in your favorite AI tool to generate correct JSON input:',
-    promptText: '"Transform the following into json [{"name": name, "version": version}], if version is not present it can be skipped it\'s optional. Make sure you don\'t forget outer square braces in JSON output. Only return compressed json in a text file that I can download.',
-    promptSuffix: '<Paste free form list of packages>."'
+const BATCH_MODE_HELP = {
+    description: 'Batch mode allows you to search for multiple components at once.',
+    formatInfo: 'Accepts plain text (one package per line, optionally with version separated by tab) or JSON array format.',
+    examplePlain: '@posthog/clickhouse\\n@fishingbooker/react-loader\\t1.0.7',
+    exampleJson: '[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
 }
 
 export default {
@@ -109,5 +109,5 @@ export default {
     TeaArtifactChecksumType,
     TeaArtifactChecksumTypes: TEA_ARTIFACT_CHECKSUM_TYPES,
     ContentTypes: CONTENT_TYPES,
-    JsonBatchModeHelp: JSON_BATCH_MODE_HELP
+    BatchModeHelp: BATCH_MODE_HELP
 }

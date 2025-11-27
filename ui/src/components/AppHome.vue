@@ -90,7 +90,7 @@
                                     <h5>Search For Releases By SBOM Component Name, Group or Purl</h5>
                                     <n-radio-group v-model:value="sbomSearchMode" style="margin-bottom: 10px;">
                                         <n-radio-button value="simple">Simple</n-radio-button>
-                                        <n-radio-button value="json">JSON Batch</n-radio-button>
+                                        <n-radio-button value="json">Batch</n-radio-button>
                                     </n-radio-group>
                                     <n-tooltip trigger="hover" style="max-width: 500px;">
                                         <template #trigger>
@@ -99,10 +99,11 @@
                                             </n-icon>
                                         </template>
                                         <div>
-                                            <p>{{ constants.JsonBatchModeHelp.description }}</p>
-                                            <p><strong>{{ constants.JsonBatchModeHelp.promptIntro }}</strong></p>
-                                            <p style="font-style: italic;">{{ constants.JsonBatchModeHelp.promptText }}</p>
-                                            <p style="font-style: italic;">{{ constants.JsonBatchModeHelp.promptSuffix }}</p>
+                                            <p>{{ constants.BatchModeHelp.description }}</p>
+                                            <p>{{ constants.BatchModeHelp.formatInfo }}</p>
+                                            <p><strong>Examples:</strong></p>
+                                            <p style="font-style: italic;">Plain text: {{ constants.BatchModeHelp.examplePlain }}</p>
+                                            <p style="font-style: italic;">JSON: {{ constants.BatchModeHelp.exampleJson }}</p>
                                         </div>
                                     </n-tooltip>
                                     <n-form
@@ -131,7 +132,7 @@
                                         @submit="searchSbomComponent">
                                         <n-input
                                             type="textarea"
-                                            placeholder='[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
+                                            placeholder="@posthog/clickhouse&#10;lodash&#9;4.17.21&#10;express"
                                             v-model:value="sbomSearchJson"
                                             :rows="3"
                                             style="margin-bottom: 10px;"
@@ -263,7 +264,7 @@
                                 <h3 style="margin-top:0px;">Search by SBOM Components</h3>
                                 <n-radio-group v-model:value="sbomSearchMode" style="margin-bottom: 10px;">
                                     <n-radio-button value="simple">Simple</n-radio-button>
-                                    <n-radio-button value="json">JSON Batch</n-radio-button>
+                                    <n-radio-button value="json">Batch</n-radio-button>
                                 </n-radio-group>
                                 <n-tooltip trigger="hover" style="max-width: 500px;">
                                     <template #trigger>
@@ -272,10 +273,11 @@
                                         </n-icon>
                                     </template>
                                     <div>
-                                        <p>{{ constants.JsonBatchModeHelp.description }}</p>
-                                        <p><strong>{{ constants.JsonBatchModeHelp.promptIntro }}</strong></p>
-                                        <p style="font-style: italic;">{{ constants.JsonBatchModeHelp.promptText }}</p>
-                                        <p style="font-style: italic;">{{ constants.JsonBatchModeHelp.promptSuffix }}</p>
+                                        <p>{{ constants.BatchModeHelp.description }}</p>
+                                        <p>{{ constants.BatchModeHelp.formatInfo }}</p>
+                                        <p><strong>Examples:</strong></p>
+                                        <p style="font-style: italic;">Plain text: {{ constants.BatchModeHelp.examplePlain }}</p>
+                                        <p style="font-style: italic;">JSON: {{ constants.BatchModeHelp.exampleJson }}</p>
                                     </div>
                                 </n-tooltip>
                                 <n-form
@@ -306,7 +308,7 @@
                                     @submit="searchSbomComponent">
                                     <n-input
                                         type="textarea"
-                                        placeholder='[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
+                                        placeholder="@posthog/clickhouse&#10;lodash&#9;4.17.21&#10;express"
                                         v-model:value="sbomSearchJson"
                                         :rows="3"
                                         style="margin-bottom: 5px;"
@@ -570,6 +572,31 @@ function validateSbomSearchInput(input: any): input is { name: string; version?:
            (input.version === undefined || typeof input.version === 'string')
 }
 
+function parsePlainTextBatch(text: string): { name: string; version?: string }[] | null {
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+    if (lines.length === 0) {
+        Swal.fire('Error!', 'Input must not be empty', 'error')
+        return null
+    }
+    const results: { name: string; version?: string }[] = []
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        // Split by tab or multiple spaces/whitespace
+        const parts = line.split(/\t+|\s{1,}/).map(p => p.trim()).filter(p => p.length > 0)
+        if (parts.length === 0) continue
+        if (parts.length > 2) {
+            Swal.fire('Error!', `Invalid format on line ${i + 1}: "${line}". Each line must have only a package name and optionally a version separated by tab.`, 'error')
+            return null
+        }
+        const entry: { name: string; version?: string } = { name: parts[0] }
+        if (parts.length === 2) {
+            entry.version = parts[1]
+        }
+        results.push(entry)
+    }
+    return results.length > 0 ? results : null
+}
+
 function parseSbomSearchQueries(): { name: string; version?: string }[] | null {
     if (sbomSearchMode.value === 'simple') {
         const searchInput: { name: string; version?: string } = {
@@ -580,26 +607,38 @@ function parseSbomSearchQueries(): { name: string; version?: string }[] | null {
         }
         return [searchInput]
     } else {
-        try {
-            const parsed = JSON.parse(sbomSearchJson.value)
-            if (!Array.isArray(parsed)) {
-                Swal.fire('Error!', 'JSON must be an array', 'error')
-                return null
-            }
-            if (parsed.length === 0) {
-                Swal.fire('Error!', 'Array must not be empty', 'error')
-                return null
-            }
-            for (const item of parsed) {
-                if (!validateSbomSearchInput(item)) {
-                    Swal.fire('Error!', 'Each element must have a "name" (string, required) and optional "version" (string)', 'error')
+        const inputText = sbomSearchJson.value.trim()
+        if (!inputText) {
+            Swal.fire('Error!', 'Input must not be empty', 'error')
+            return null
+        }
+        
+        // Try JSON first if it looks like JSON
+        if (inputText.startsWith('[')) {
+            try {
+                const parsed = JSON.parse(inputText)
+                if (!Array.isArray(parsed)) {
+                    Swal.fire('Error!', 'JSON must be an array', 'error')
                     return null
                 }
+                if (parsed.length === 0) {
+                    Swal.fire('Error!', 'Array must not be empty', 'error')
+                    return null
+                }
+                for (const item of parsed) {
+                    if (!validateSbomSearchInput(item)) {
+                        Swal.fire('Error!', 'Each element must have a "name" (string, required) and optional "version" (string)', 'error')
+                        return null
+                    }
+                }
+                return parsed
+            } catch (err) {
+                Swal.fire('Error!', 'Invalid JSON format', 'error')
+                return null
             }
-            return parsed
-        } catch (err) {
-            Swal.fire('Error!', 'Invalid JSON format', 'error')
-            return null
+        } else {
+            // Plain text format: one package per line, optionally with version separated by tab/whitespace
+            return parsePlainTextBatch(inputText)
         }
     }
 }
