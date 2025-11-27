@@ -1,16 +1,15 @@
 <template>
     <div class="createVcsRepository">
-      <n-form>
+      <n-form ref="formRef" :model="vcsrepo" :rules="rules">
           <n-form-item id="vcsrepo_create_magic_input_group"
                         label="Paste your repository URI"
                         label-for="vcsrepo_create_magic_input"
-                        description="URI of your VCS repository">
+                        path="uri">
               <n-input
                       id ="vcsrepo_create_magic_input"
                       v-model:value="magicInput"
                       v-on:paste="parseMagicInput(100)"
                       v-on:blur="parseMagicInput(0)"
-                      required
                       placeholder="VCS Repository URI" />
           </n-form-item>
           <n-form-item
@@ -18,18 +17,17 @@
                       id="vcsrepo_create_name_group"
                       label="Name"
                       label-for="vcsrepo_create_name"
-                      description="Enter name of your vcs repository">
+                      path="name">
               <n-input
                       id ="vcsrepo_create_name"
                       v-model:value="vcsrepo.name"
-                      required
                       placeholder="Enter VCS repository name" />
           </n-form-item>
           <n-form-item
                       v-if="!props.orguuid"
                       label="Parent Organization"
                       label-for="artifact_create_org"
-                      description="Select organization">
+                      path="org">
               <n-select
                       v-model:value="vcsrepo.org"
                       :options="orgs" />
@@ -39,7 +37,7 @@
                       id="vcsrepo_create_uri_group"
                       label="URI"
                       label-for="vcsrepo_create_uri"
-                      description="Enter URI of your vcs repository">
+                      path="uri">
               <n-input
                       id ="vcsrepo_create_uri"
                       v-model:value="vcsrepo.uri"
@@ -50,7 +48,7 @@
                       id="vcsrepo_create_type_group"
                       label="VCS Type"
                       label-for="vcsrepo_create_type"
-                      description="Enter type of your vcs repository">
+                      path="type">
               <n-select
                       id ="vcsrepo_create_type"
                       v-model:value="vcsrepo.type"
@@ -75,7 +73,7 @@ import { ComputedRef, ref, computed } from 'vue'
 import { useStore } from 'vuex'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
-import { NInput, NForm, NButton, NFormItem, NSelect  } from 'naive-ui'
+import { NInput, NForm, NButton, NFormItem, NSelect, FormInst, FormRules } from 'naive-ui'
 
 const store = useStore()
 const emit = defineEmits(['createdVcsRepo'])
@@ -85,6 +83,7 @@ const props = defineProps<{
 
 const vcsTypes = ref([])
 
+const formRef = ref<FormInst | null>(null)
 const magicInput = ref('')
 const vcsuuid = ref('')
 const vcsrepo = ref({
@@ -93,6 +92,29 @@ const vcsrepo = ref({
     uri: '',
     type: ''
 })
+
+const rules: FormRules = {
+    name: {
+        required: true,
+        message: 'Name is required',
+        trigger: ['blur', 'input']
+    },
+    org: {
+        required: true,
+        message: 'Organization is required',
+        trigger: ['blur', 'change']
+    },
+    uri: {
+        required: true,
+        message: 'URI is required',
+        trigger: ['blur', 'input']
+    },
+    type: {
+        required: true,
+        message: 'VCS Type is required',
+        trigger: ['blur', 'change']
+    }
+}
 
 async function getTypes(){
     const response = await graphqlClient.query({
@@ -105,11 +127,16 @@ async function getTypes(){
 }
 
 function onSubmit(){
-    store.dispatch('createVcsRepo', vcsrepo.value).then(response => {
-        vcsuuid.value = response.uuid
-        vcsrepo.value.name = response.name
-        vcsrepo.value.type = response.type
-        emit('createdVcsRepo', vcsuuid.value)
+    formRef.value?.validate((errors) => {
+        if (errors) {
+            return
+        }
+        store.dispatch('createVcsRepo', vcsrepo.value).then(response => {
+            vcsuuid.value = response.uuid
+            vcsrepo.value.name = response.name
+            vcsrepo.value.type = response.type
+            emit('createdVcsRepo', vcsuuid.value)
+        })
     })
 }
 function resetForm(){
@@ -158,10 +185,13 @@ function parseMagicInput(timeout: number){
                 vcsrepo.value.type = 'Git'
                 vcsrepo.value.uri = `${url.origin}${cleanedPath}`
                 vcsrepo.value.name = cleanedPath.replace(/^\//, '')
-            } else if (url.hostname === 'dev.azure.com') {
+            } else if (url.hostname === 'dev.azure.com' || url.hostname.endsWith('.visualstudio.com')) {
                 vcsrepo.value.type = 'Git'
                 vcsrepo.value.uri = `${url.origin}${cleanedPath}`
                 vcsrepo.value.name = cleanedPath.replace(/^\//, '')
+            } else {
+                console.log(url)
+                vcsrepo.value.uri = `${url.origin}${cleanedPath}`
             }
             // Update magicInput to normalized canonical URL for UX consistency
             magicInput.value = vcsrepo.value.uri || magicInput.value

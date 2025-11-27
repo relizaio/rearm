@@ -126,7 +126,7 @@ function linkifyCommit (uri: string, commit: string): string {
             linkifiedCommit = `${url.origin}${url.pathname}/commit/${encodedCommit}`
         } else if (url.hostname === 'gitlab.com') {
             linkifiedCommit = `${url.origin}${url.pathname}/-/commit/${encodedCommit}`
-        } else if (url.hostname === 'dev.azure.com') {
+        } else if (url.hostname === 'dev.azure.com' || url.hostname.endsWith('.visualstudio.com')) {
             linkifiedCommit = `${url.origin}${url.pathname}/commit/${encodedCommit}`
         }
     } catch (e) {
