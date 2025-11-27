@@ -196,24 +196,62 @@
                             :show-icon="false"
                             style="width: 90%"
                         >
-                            <div class="searchResults" v-if="hashSearchResults.commitReleases && hashSearchResults.commitReleases.length">
-                                <h4>Releases:</h4>
-                                <n-data-table
-                                    :data="hashSearchResults.commitReleases"
-                                    :columns="releaseSearchResultRows"
-                                    :pagination="pagination"
-                                />
+                            <div style="height: 700px; overflow: auto;">
+                                <h3>{{ searchResultsModalMode === 'hash' ? 'Search by Version, Digest, Commit' : 'Search by Tags' }}</h3>
+                                <n-form
+                                    v-if="searchResultsModalMode === 'hash'"
+                                    style="margin-bottom:20px;"
+                                    inline
+                                    @submit="searchHashVersion">
+                                    <n-input-group>
+                                        <n-input
+                                            placeholder="Search by digest, version, commit, tag, build ID"
+                                            v-model:value="hashSearchQuery"
+                                        />
+                                        <n-button
+                                            variant="contained-text"
+                                            attr-type="submit">
+                                            Find
+                                        </n-button>
+                                    </n-input-group>
+                                </n-form>
+                                <n-form
+                                    v-else
+                                    style="margin-bottom:20px;"
+                                    inline
+                                    @submit="searchReleasesByTags">
+                                    <n-input-group>
+                                        <n-select :options="releaseTagKeys" v-model:value="releaseKeySearchObj.key">
+                                        </n-select>
+                                        <n-input
+                                            placeholder="Release Tag Value (Optional)"
+                                            v-model:value="releaseKeySearchObj.value"
+                                        />
+                                        <n-button
+                                            variant="contained-text"
+                                            attr-type="submit">
+                                            Search
+                                        </n-button>
+                                    </n-input-group>
+                                </n-form>
+                                <div class="searchResults">
+                                    <h4>Releases:</h4>
+                                    <n-data-table
+                                        :data="hashSearchResults.commitReleases || []"
+                                        :columns="releaseSearchResultRows"
+                                        :pagination="pagination"
+                                    />
 
-                                <div v-if="releaseInstances && releaseInstances.length">
-                                    <h4>Deployed on Instances:</h4>
-                                    <ul>
-                                        <li v-for="id in releaseInstances" :key="id.uuid">
-                                            <router-link :to="{ name: 'Instance', params: {orguuid: myorg.uuid, instuuid: id.uuid }}">{{ id.uri }}</router-link>
-                                        </li>
-                                    </ul>
+                                    <div v-if="releaseInstances && releaseInstances.length">
+                                        <h4>Deployed on Instances:</h4>
+                                        <ul>
+                                            <li v-for="id in releaseInstances" :key="id.uuid">
+                                                <router-link :to="{ name: 'Instance', params: {orguuid: myorg.uuid, instuuid: id.uuid }}">{{ id.uri }}</router-link>
+                                            </li>
+                                        </ul>
+                                    </div>
                                 </div>
                             </div>
-                            <div v-else>No results.</div>
                         </n-modal>
                         <n-modal
                             v-model:show="showDtrackSearchResultsModal"
@@ -481,6 +519,7 @@ const dtrackSearchResults : Ref<any[]> = ref([])
 const dtrackSearchReleases : Ref<any[]> = ref([])
 const releaseInstances : Ref<any[]> = ref([])
 const showSearchResultsModal : Ref<boolean> = ref(false)
+const searchResultsModalMode : Ref<'hash' | 'tags'> = ref('hash')
 const showDtrackSearchResultsModal : Ref<boolean> = ref(false)
 const dtrackSearchLoading : Ref<boolean> = ref(false)
 const dtrackReleasesLoading : Ref<boolean> = ref(false)
@@ -510,6 +549,7 @@ async function searchHashVersion (e: Event) {
             query: hashSearchQuery.value
         }
         hashSearchResults.value = await executeGqlSearchHashVersion(params)
+        searchResultsModalMode.value = 'hash'
         showSearchResultsModal.value = true
     } catch (err: any) {
         Swal.fire(
@@ -690,6 +730,7 @@ async function searchReleasesByTags (e: Event) {
         }
         const releases = await store.dispatch('searchReleasesByTags', cleanedSearchObj)
         hashSearchResults.value = {commitReleases: releases, releaseInstances: []}
+        searchResultsModalMode.value = 'tags'
         showSearchResultsModal.value = true
     } catch (err: any) {
         Swal.fire(
