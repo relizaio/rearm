@@ -320,7 +320,10 @@
                                     </n-button>
                                 </n-form>
                                 <div v-if="showSearchProgress" style="margin-bottom: 5px;">
-                                    <p style="margin-bottom: 5px;">{{ searchFailed ? 'Search failed!' : `Search progress: ${searchProgress}%` }}</p>
+                                    <p style="margin-bottom: 5px;">
+                                        {{ sbomSearchMode === 'simple' ? `"${sbomSearchQuery}"` : 'Batch' }}
+                                        {{ searchFailed ? 'search failed!' : `search progress: ${searchProgress}%` }}
+                                    </p>
                                     <n-progress
                                         type="line"
                                         :percentage="searchProgress"
