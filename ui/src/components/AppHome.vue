@@ -133,7 +133,7 @@
                                             type="textarea"
                                             placeholder='[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
                                             v-model:value="sbomSearchJson"
-                                            :rows="4"
+                                            :rows="3"
                                             style="margin-bottom: 10px;"
                                         />
                                         <n-button
@@ -196,7 +196,7 @@
                             :show-icon="false"
                             style="width: 90%"
                         >
-                            <div style="height: 700px; overflow: auto;">
+                            <div style="height: 710px; overflow: auto;">
                                 <h3>{{ searchResultsModalMode === 'hash' ? 'Search by Version, Digest, Commit' : 'Search by Tags' }}</h3>
                                 <n-form
                                     v-if="searchResultsModalMode === 'hash'"
@@ -259,8 +259,8 @@
                             :show-icon="false"
                             style="width: 90%"
                         >
-                            <div style="height: 700px; overflow: auto;">
-                                <h3>Search by SBOM Components</h3>
+                            <div style="height: 710px; overflow: auto;">
+                                <h3 style="margin-top:0px;">Search by SBOM Components</h3>
                                 <n-radio-group v-model:value="sbomSearchMode" style="margin-bottom: 10px;">
                                     <n-radio-button value="simple">Simple</n-radio-button>
                                     <n-radio-button value="json">JSON Batch</n-radio-button>
@@ -280,7 +280,7 @@
                                 </n-tooltip>
                                 <n-form
                                     v-if="sbomSearchMode === 'simple'"
-                                    style="margin-bottom:20px;"
+                                    style="margin-bottom:1px;"
                                     inline
                                     @submit="searchSbomComponent">
                                     <n-input-group>
@@ -302,14 +302,14 @@
                                 </n-form>
                                 <n-form
                                     v-else
-                                    style="margin-bottom:20px;"
+                                    style="margin-bottom:5px;"
                                     @submit="searchSbomComponent">
                                     <n-input
                                         type="textarea"
                                         placeholder='[{"name": "lodash", "version": "4.17.21"}, {"name": "express"}]'
                                         v-model:value="sbomSearchJson"
-                                        :rows="4"
-                                        style="margin-bottom: 10px;"
+                                        :rows="3"
+                                        style="margin-bottom: 5px;"
                                     />
                                     <n-button
                                         variant="contained-text"
@@ -317,7 +317,7 @@
                                         Find
                                     </n-button>
                                 </n-form>
-                                <div v-if="showSearchProgress" style="margin-bottom: 15px;">
+                                <div v-if="showSearchProgress" style="margin-bottom: 5px;">
                                     <p style="margin-bottom: 5px;">{{ searchFailed ? 'Search failed!' : `Search progress: ${searchProgress}%` }}</p>
                                     <n-progress
                                         type="line"
@@ -831,8 +831,8 @@ const releaseSearchResultRows = [
         key: 'marketingVersion'
     }
 ]
-const pagination = { pageSize: 10 }
-const releasePagination = { pageSize: 20 }
+const pagination = { pageSize: 7 }
+const releasePagination = { pageSize: 8 }
 
 const dtrackSearchResultRows = [
     {
