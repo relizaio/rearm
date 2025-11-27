@@ -83,7 +83,7 @@ const CONTENT_TYPES = [
 const JSON_BATCH_MODE_HELP = {
     description: 'JSON batch mode allows you to search for multiple components at once.',
     promptIntro: 'Use the following prompt in your favorite AI tool to generate correct JSON input:',
-    promptText: '"Transform the following into json [{"name": name, "version": version}], if version is not present it can be skipped it\'s optional. Only return json without any other text or explanation so I can copy it out easily.',
+    promptText: '"Transform the following into json [{"name": name, "version": version}], if version is not present it can be skipped it\'s optional. Make sure you don\'t forget outer square braces in JSON output. Only return json without any other text or explanation so I can copy it out easily.',
     promptSuffix: '<Paste free form list of packages>."'
 }
 
