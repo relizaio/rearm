@@ -2240,7 +2240,11 @@ const artifactsTableFields: DataTableColumns<any> = [
         title: 'Type',
         render: (row: any) => {
             let content = row.type
-            if (row.type === 'BOM') content += ` - ${row.bomFormat}`
+            if (row.specVersion && row.serializationFormat) {
+                content += ` - ${commonFunctions.formatSpecVersion(row.specVersion)} (${row.serializationFormat})`
+            } else if (row.type === 'BOM') {
+                content += ` - ${row.bomFormat}`
+            }
             return h('div', {}, content)
         }
     },

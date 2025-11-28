@@ -246,6 +246,27 @@ function isCycloneDXBomArtifact (art: any) {
         );
 }
 
+/**
+ * Formats spec version enum to readable text
+ * e.g. CYCLONEDX_1_6 -> "CycloneDX 1.6", SPDX_2_3 -> "SPDX 2.3"
+ */
+function formatSpecVersion(specVersion: string): string {
+    if (!specVersion) return ''
+    // Replace underscores with dots for version numbers, handle format name
+    const parts = specVersion.split('_')
+    if (parts.length < 2) return specVersion
+    
+    // First part is the format name (CYCLONEDX, SPDX)
+    let formatName = parts[0]
+    if (formatName === 'CYCLONEDX') {
+        formatName = 'CycloneDX'
+    }
+    
+    // Remaining parts are version numbers
+    const version = parts.slice(1).join('.')
+    return `${formatName} ${version}`
+}
+
 export default {
     getGeneratedApiKeyHTML,
     getUserPermission,
@@ -260,5 +281,6 @@ export default {
     dateDisplay,
     swalWrapper,
     resolveWords,
-    isCycloneDXBomArtifact
+    isCycloneDXBomArtifact,
+    formatSpecVersion
 }

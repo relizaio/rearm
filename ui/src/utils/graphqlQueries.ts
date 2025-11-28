@@ -158,6 +158,8 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
     }
     type
     bomFormat
+    serializationFormat
+    specVersion
     tags{
         key
         value
@@ -215,6 +217,8 @@ const ARTIFACT_DETAIL_DATA = `
     }
     type
     bomFormat
+    serializationFormat
+    specVersion
     tags{
         key
         value
