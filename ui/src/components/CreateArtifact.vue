@@ -30,7 +30,7 @@
                 </n-radio-group>
             </n-form-item>
             <n-form-item label="Select Artifact: " v-if="artifact.storedIn==='REARM'">
-                <n-upload v-model:value="fileList" @change="onFileChange">
+                <n-upload v-model:value="fileList" :max="1" @change="onFileChange">
                     <n-button>
                     Upload File
                     </n-button>
