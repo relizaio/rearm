@@ -60,6 +60,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         PUBLIC_KEY,
         CERTIFICATE_X_509,
         CERTIFICATE_PGP,
+		RISK_ASSESSMENT,
         OTHER
     }
     
