@@ -50,6 +50,8 @@ import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
+import io.reliza.model.ArtifactData.SerializationFormat;
+import io.reliza.model.ArtifactData.SpecVersion;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
@@ -240,7 +242,7 @@ public class ArtifactService {
 		repository.saveAll(artifacts);
 	}
 
-	public boolean isRebomStoreable (ArtifactDto artifactDto) {
+	private boolean isRebomStoreable (ArtifactDto artifactDto) {
 		return null!= artifactDto.getBomFormat() 
 				&& null != artifactDto.getType() 
 				&& (
@@ -293,137 +295,26 @@ public class ArtifactService {
 	public UUID uploadArtifact(ArtifactDto artifactDto, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException {
 		UUID orgUuid = artifactDto.getOrg();
 		if (null == orgUuid) throw new RelizaException("Missing artifact org.");
-		String tag = "";
 		OASResponseDto artifactUploadResponse = null;
-		DependencyTrackUploadResult dtur = null;
 		ArtifactData existingAd = null;
-		RebomResponse rebomResponse = null;
 		if(null != artifactDto.getUuid()){
 			existingAd = getArtifactData(artifactDto.getUuid()).get();
 		}
 		if (null == artifactDto.getUuid()) artifactDto.setUuid(UUID.randomUUID());
 
+		ArtifactFormatResolution formatResolution = resolveArtifactFormat(file, artifactDto.getType());
+		if (formatResolution != null) {
+			artifactDto.setSerializationFormat(formatResolution.serializationFormat());
+			artifactDto.setSpecVersion(formatResolution.specVersion());
+		}
+		
+		validateBomSpecVersion(artifactDto);
+
 		if(artifactDto.getStoredIn().equals(StoredIn.REARM)){
 			if(isRebomStoreable(artifactDto)){
-				JsonNode bomJson;
-				try {
-					bomJson = Utils.readJsonFromResource(file);
-				} catch (IOException e) {
-					log.error("Error reading Json", e);
-					throw new RelizaException(e.getMessage());
-				}
-				if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
-					String newbomVerString = bomJson.get("version").asText();
-					Integer newBomVersion = Integer.valueOf(newbomVerString);
-					artifactDto.setVersion(newbomVerString);
-					//case of update
-					if(null != existingAd){
-						// find the existing artifact data
-						Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg()));		
-						String oldBomSerial = existingAd.getInternalBom().id().toString();
-				
-
-						String newBomSerial = bomJson.get("serialNumber").textValue();
-						if(newBomSerial.startsWith("urn")){
-							newBomSerial = newBomSerial.replace("urn:uuid:","");
-						}
-						
-						// compare if lesser
-						// reject
-						if(oldBomSerial.equals(newBomSerial)){
-							if(newBomVersion <= oldBomVersion)
-								throw new RelizaException("Uploaded bom should have an incremented version");
-						}else{
-							artifactDto.setUuid(UUID.randomUUID());
-						}
-					}
-				}
-
-
-				rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, artifactDto.getBomFormat(), orgUuid);
-
-				// UUID internalBomId = rebomOptions.serialNumber();
-				UUID internalBomId;
-				try{
-					String bomSerialNumber = rebomResponse.meta().serialNumber();
-					if(bomSerialNumber.startsWith("urn")){
-						bomSerialNumber = bomSerialNumber.replace("urn:uuid:","");
-					}
-					internalBomId = UUID.fromString(bomSerialNumber);
-				}catch (Exception e){
-					throw new RelizaException("Error uploading BOM: " + e.getMessage());
-				}
-				artifactDto.setInternalBom(new InternalBom(internalBomId, rebomOptions.belongsTo()));
-				artifactUploadResponse = rebomResponse.bom();
-				
-				if(null == artifactDto.getUuid()){
-					artifactDto.setUuid(UUID.randomUUID());
-				}
-				if (artifactDto.getType().equals(ArtifactType.BOM)) {
-					if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest()) ){
-						var a = findArtifactByStoredDigest(orgUuid, rebomResponse.meta().bomDigest());
-						if(a.isPresent()){
-							var metrics = ArtifactData.dataFromRecord(a.get()).getMetrics();
-							dtur = new DependencyTrackUploadResult(metrics.getDependencyTrackProject(), metrics.getUploadToken(), metrics.getProjectName(), metrics.getProjectVersion(),metrics.getDependencyTrackFullUri());
-						}
-					}
-					if(null == dtur){
-						// for an SPDX bom, we fetch the converted CycloneDX bomJson
-						if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
-							try {
-								bomJson = rebomService.findRawBomById(internalBomId, orgUuid, BomFormat.CYCLONEDX);
-							} catch (JsonProcessingException e) {
-								throw new RelizaException("Failed to process BOM JSON: " + e.getMessage());
-							}
-						}
-						String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
-						UploadableBom ub = new UploadableBom(bomJson, null, false);
-						dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
-					}
-					artifactDto.setDtur(dtur);
-				}
-				tag = artifactDto.getUuid().toString();
+				artifactUploadResponse = storeArtifactOnRebom(artifactDto, file, existingAd, rebomOptions);
 			} else {
-				String inputVersion = artifactDto.getVersion();
-				String version = StringUtils.isNotEmpty(inputVersion) ? inputVersion : "1";
-				if(null != existingAd && StringUtils.isNotEmpty(existingAd.getVersion())){
-					if(StringUtils.isNotEmpty(inputVersion)){
-						if(Integer.valueOf(inputVersion) <= Integer.valueOf(existingAd.getVersion())){
-							throw new RelizaException("Uploaded artifact should have an incremented version");
-						}
-					}else{
-						version = String.valueOf(Integer.valueOf(existingAd.getVersion()) + 1);
-					}
-				}
-				artifactDto.setVersion(version);
-				DigestRecord sha256Dr = null;
-				if (null != artifactDto.getDigestRecords() && !artifactDto.getDigestRecords().isEmpty()) {
-					sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaChecksumType.SHA_256)).findFirst().orElse(null);
-				}
-				String sha256Digest = (null != sha256Dr) ? sha256Dr.digest() : null;
-				artifactUploadResponse = uploadFileToConfiguredOci(file, tag, sha256Digest);
-				if (artifactDto.getType().equals(ArtifactType.SARIF)) {
-					try {
-						var sarifJson = Utils.readJsonFromResource(file);
-						String sarifString = Utils.OM.writeValueAsString(sarifJson);
-						ReleaseMetricsDto rmd = rebomService.parseSarifOnRebom(sarifString, artifactDto);
-						artifactDto.setRmd(rmd);
-					} catch (Exception e) {
-						log.error("Error parsing SARIF file", e);
-						throw new RelizaException("Error parsing SARIF file");
-					}
-				} else if ((artifactDto.getType().equals(ArtifactType.VDR) || artifactDto.getType().equals(ArtifactType.BOV)) &&
-					artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) ) {
-					try {
-						var vdrJson = Utils.readJsonFromResource(file);
-						String vdrString = Utils.OM.writeValueAsString(vdrJson);
-						ReleaseMetricsDto rmd = rebomService.parseCycloneDxContent(vdrString, artifactDto);
-						artifactDto.setRmd(rmd);
-					} catch (Exception e) {
-						log.error("Error parsing CycloneDX VDR/BOV file", e);
-						throw new RelizaException("Error parsing CycloneDX VDR/BOV file");
-					}
-				}
+				artifactUploadResponse = storeArtifactOnRearmDirect(artifactDto, file, existingAd);
 			}
 		}
 		
@@ -438,32 +329,168 @@ public class ArtifactService {
 			if(StringUtils.isNotEmpty(artifactUploadResponse.getFileSHA256Digest())){
 				digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
 			}
-			if(null!=rebomResponse && StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
-				digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));
-			}
 			artifactDto.setDigestRecords(digestRecords);
 
 			artifactDto.setTags(List.of(
-			new TagRecord(CommonVariables.SIZE_FEILD, 
-				artifactUploadResponse.getOriginalSize() != null 
-					? artifactUploadResponse.getOriginalSize().toString() 
-					: artifactUploadResponse.getOciResponse().getSize(), 
-				Removable.NO),
-			new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, 
-				artifactUploadResponse.getOriginalMediaType() != null 
-					? artifactUploadResponse.getOriginalMediaType() 
-					: artifactUploadResponse.getOciResponse().getMediaType(), 
-				Removable.NO),
-			new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
-			new TagRecord(CommonVariables.TAG_FIELD, tag, Removable.NO),
-			new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
-        ));
+				new TagRecord(CommonVariables.SIZE_FEILD, 
+					artifactUploadResponse.getOriginalSize() != null 
+						? artifactUploadResponse.getOriginalSize().toString() 
+						: artifactUploadResponse.getOciResponse().getSize(), 
+					Removable.NO),
+				new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, 
+					artifactUploadResponse.getOriginalMediaType() != null 
+						? artifactUploadResponse.getOriginalMediaType() 
+						: artifactUploadResponse.getOciResponse().getMediaType(), 
+					Removable.NO),
+				new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
+				new TagRecord(CommonVariables.TAG_FIELD, artifactDto.getUuid().toString(), Removable.NO),
+				new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
+			));
 		}
 		
 		Artifact art = createArtifact(artifactDto, wu);
 		
         return art.getUuid();
     }
+	
+	@Transactional
+	private OASResponseDto storeArtifactOnRearmDirect (ArtifactDto artifactDto, Resource file, ArtifactData existingAd) throws RelizaException {
+		String inputVersion = artifactDto.getVersion();
+		String version = StringUtils.isNotEmpty(inputVersion) ? inputVersion : "1";
+		if(null != existingAd && StringUtils.isNotEmpty(existingAd.getVersion())){
+			if(StringUtils.isNotEmpty(inputVersion)){
+				if(Integer.valueOf(inputVersion) <= Integer.valueOf(existingAd.getVersion())){
+					throw new RelizaException("Uploaded artifact should have an incremented version");
+				}
+			}else{
+				version = String.valueOf(Integer.valueOf(existingAd.getVersion()) + 1);
+			}
+		}
+		artifactDto.setVersion(version);
+		DigestRecord sha256Dr = null;
+		if (null != artifactDto.getDigestRecords() && !artifactDto.getDigestRecords().isEmpty()) {
+			sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaChecksumType.SHA_256)).findFirst().orElse(null);
+		}
+		String sha256Digest = (null != sha256Dr) ? sha256Dr.digest() : null;
+		OASResponseDto artifactUploadResponse = uploadFileToConfiguredOci(file, artifactDto.getUuid().toString(), sha256Digest);
+		if (SpecVersion.SARIF_2_1.equals(artifactDto.getSpecVersion()) || SpecVersion.SARIF_2_0.equals(artifactDto.getSpecVersion())) {
+			try {
+				var sarifJson = Utils.readJsonFromResource(file);
+				String sarifString = Utils.OM.writeValueAsString(sarifJson);
+				ReleaseMetricsDto rmd = rebomService.parseSarifOnRebom(sarifString, artifactDto);
+				artifactDto.setRmd(rmd);
+			} catch (Exception e) {
+				log.error("Error parsing SARIF file", e);
+				throw new RelizaException("Error parsing SARIF file");
+			}
+		} else if ((artifactDto.getType().equals(ArtifactType.VDR) || artifactDto.getType().equals(ArtifactType.BOV)) &&
+			artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX) && SerializationFormat.JSON.equals(artifactDto.getSerializationFormat())) {
+			try {
+				var vdrJson = Utils.readJsonFromResource(file);
+				String vdrString = Utils.OM.writeValueAsString(vdrJson);
+				ReleaseMetricsDto rmd = rebomService.parseCycloneDxContent(vdrString, artifactDto);
+				artifactDto.setRmd(rmd);
+			} catch (Exception e) {
+				log.error("Error parsing CycloneDX VDR/BOV file", e);
+				throw new RelizaException("Error parsing CycloneDX VDR/BOV file");
+			}
+		}
+		return artifactUploadResponse;
+	}
+	
+	/**
+	 * 
+	 * @param artifactDto - Mutates artifactDto
+	 * @param file
+	 * @param existingAd
+	 * @param rebomOptions
+	 * @return
+	 * @throws RelizaException
+	 */
+	@Transactional
+	private OASResponseDto storeArtifactOnRebom (ArtifactDto artifactDto, Resource file, ArtifactData existingAd, RebomOptions rebomOptions) throws RelizaException {
+		UUID orgUuid = artifactDto.getOrg();
+		DependencyTrackUploadResult dtur = null;
+		JsonNode bomJson;
+		try {
+			bomJson = Utils.readJsonFromResource(file);
+		} catch (Exception e) {
+			log.error("Error reading Json", e);
+			throw new RelizaException("Cannot parse artifact JSON. Make sure artifact type is set correctly.");
+		}
+		if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
+			String newbomVerString = bomJson.get("version").asText();
+			Integer newBomVersion = Integer.valueOf(newbomVerString);
+			artifactDto.setVersion(newbomVerString);
+			//case of update
+			if(null != existingAd){
+				// find the existing artifact data
+				Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg()));		
+				String oldBomSerial = existingAd.getInternalBom().id().toString();
+		
+
+				String newBomSerial = bomJson.get("serialNumber").textValue();
+				if(newBomSerial.startsWith("urn")){
+					newBomSerial = newBomSerial.replace("urn:uuid:","");
+				}
+				
+				// compare and reject if lesser
+				if(oldBomSerial.equals(newBomSerial)){
+					if(newBomVersion <= oldBomVersion)
+						throw new RelizaException("Uploaded bom should have an incremented version");
+				}else{
+					artifactDto.setUuid(UUID.randomUUID());
+				}
+			}
+		}
+
+		RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, artifactDto.getBomFormat(), orgUuid);
+		Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
+		if(null!=rebomResponse && StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
+			digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));
+			artifactDto.setDigestRecords(digestRecords);
+		}
+		// UUID internalBomId = rebomOptions.serialNumber();
+		UUID internalBomId;
+		try{
+			String bomSerialNumber = rebomResponse.meta().serialNumber();
+			if(bomSerialNumber.startsWith("urn")){
+				bomSerialNumber = bomSerialNumber.replace("urn:uuid:","");
+			}
+			internalBomId = UUID.fromString(bomSerialNumber);
+		}catch (Exception e){
+			throw new RelizaException("Error uploading BOM: " + e.getMessage());
+		}
+		artifactDto.setInternalBom(new InternalBom(internalBomId, rebomOptions.belongsTo()));
+		
+		if(null == artifactDto.getUuid()){
+			artifactDto.setUuid(UUID.randomUUID());
+		}
+		if (artifactDto.getType().equals(ArtifactType.BOM)) {
+			if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest()) ){
+				var a = findArtifactByStoredDigest(orgUuid, rebomResponse.meta().bomDigest());
+				if(a.isPresent()){
+					var metrics = ArtifactData.dataFromRecord(a.get()).getMetrics();
+					dtur = new DependencyTrackUploadResult(metrics.getDependencyTrackProject(), metrics.getUploadToken(), metrics.getProjectName(), metrics.getProjectVersion(),metrics.getDependencyTrackFullUri());
+				}
+			}
+			if(null == dtur){
+				// for an SPDX bom, we fetch the converted CycloneDX bomJson
+				if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
+					try {
+						bomJson = rebomService.findRawBomById(internalBomId, orgUuid, BomFormat.CYCLONEDX);
+					} catch (JsonProcessingException e) {
+						throw new RelizaException("Failed to process BOM JSON: " + e.getMessage());
+					}
+				}
+				String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
+				UploadableBom ub = new UploadableBom(bomJson, null, false);
+				dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
+			}
+			artifactDto.setDtur(dtur);
+		}
+		return rebomResponse.bom();
+	}
 
 	private OASResponseDto uploadFileToConfiguredOci(Resource file, String tag, String sha256Digest){
 		MultiValueMap<String, Object> formData = new LinkedMultiValueMap<>();
@@ -669,6 +696,176 @@ public class ArtifactService {
 	 */
 	public List<Artifact> findArtifactsWithWeakness(UUID orgUuid, String location, String findingId) {
 		return repository.findArtifactsWithWeakness(orgUuid.toString(), location, findingId);
+	}
+	
+	/**
+	 * Result of artifact format resolution containing serialization format and optional spec version
+	 */
+	public record ArtifactFormatResolution(SerializationFormat serializationFormat, SpecVersion specVersion) {}
+	
+	private static final Set<ArtifactType> RESOLVABLE_ARTIFACT_TYPES = Set.of(
+		ArtifactType.BOM,
+		ArtifactType.ATTESTATION,
+		ArtifactType.VDR,
+		ArtifactType.BOV,
+		ArtifactType.VEX,
+		ArtifactType.CODE_SCANNING_RESULT,
+		ArtifactType.SARIF
+	);
+	
+	private static final Set<SpecVersion> CYCLONEDX_SPEC_VERSIONS = Set.of(
+		SpecVersion.CYCLONEDX_1_0,
+		SpecVersion.CYCLONEDX_1_1,
+		SpecVersion.CYCLONEDX_1_2,
+		SpecVersion.CYCLONEDX_1_3,
+		SpecVersion.CYCLONEDX_1_4,
+		SpecVersion.CYCLONEDX_1_5,
+		SpecVersion.CYCLONEDX_1_6,
+		SpecVersion.CYCLONEDX_1_7
+	);
+	
+	private static final Set<SpecVersion> SPDX_SPEC_VERSIONS = Set.of(
+		SpecVersion.SPDX_2_0,
+		SpecVersion.SPDX_2_1,
+		SpecVersion.SPDX_2_2,
+		SpecVersion.SPDX_2_3,
+		SpecVersion.SPDX_3_0
+	);
+	
+	/**
+	 * Validates that BOM artifacts with known formats have resolvable spec versions
+	 * @throws RelizaException if validation fails
+	 */
+	private void validateBomSpecVersion(ArtifactDto artifactDto) throws RelizaException {
+		if (artifactDto.getBomFormat() == null || artifactDto.getSerializationFormat() != SerializationFormat.JSON) {
+			return;
+		}
+		
+		SpecVersion specVersion = artifactDto.getSpecVersion();
+		
+		if (artifactDto.getBomFormat() == BomFormat.CYCLONEDX) {
+			if (specVersion == null || !CYCLONEDX_SPEC_VERSIONS.contains(specVersion)) {
+				throw new RelizaException("CycloneDX JSON BOM has unrecognized or missing spec version. Supported versions: 1.0-1.7");
+			}
+		}
+		
+		if (artifactDto.getBomFormat() == BomFormat.SPDX) {
+			if (specVersion == null || !SPDX_SPEC_VERSIONS.contains(specVersion)) {
+				throw new RelizaException("SPDX JSON BOM has unrecognized or missing spec version. Supported versions: 2.0-2.3, 3.0");
+			}
+		}
+	}
+	
+	/**
+	 * Validates and resolves artifact format details (serialization format and spec version)
+	 * Only processes specific artifact types: BOM, ATTESTATION, VDR, BOV, VEX, CODE_SCANNING_RESULT, SARIF
+	 * @param file The artifact file resource
+	 * @param artifactType The type of artifact
+	 * @return ArtifactFormatResolution with resolved format and optional spec version, or null if type not resolvable
+	 */
+	private ArtifactFormatResolution resolveArtifactFormat(Resource file, ArtifactType artifactType) {
+		if (artifactType == null || !RESOLVABLE_ARTIFACT_TYPES.contains(artifactType)) {
+			return null;
+		}
+		
+		SerializationFormat serializationFormat = SerializationFormat.OTHER;
+		SpecVersion specVersion = null;
+		
+		try {
+			String content = new String(file.getInputStream().readAllBytes());
+			String trimmed = content.trim();
+			
+			if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+				serializationFormat = SerializationFormat.JSON;
+				specVersion = resolveSpecVersionFromJson(trimmed);
+			} else if (trimmed.startsWith("<?xml") || trimmed.startsWith("<")) {
+				serializationFormat = SerializationFormat.XML;
+			} else if (isYamlContent(trimmed)) {
+				serializationFormat = SerializationFormat.YAML;
+			}
+		} catch (Exception e) {
+			log.warn("Could not read artifact file for format resolution", e);
+		}
+		
+		return new ArtifactFormatResolution(serializationFormat, specVersion);
+	}
+	
+	/**
+	 * Attempts to resolve spec version from JSON content
+	 */
+	private SpecVersion resolveSpecVersionFromJson(String jsonContent) {
+		try {
+			JsonNode root = Utils.OM.readTree(jsonContent);
+			
+			// Check for CycloneDX
+			if (root.has("bomFormat") && "CycloneDX".equalsIgnoreCase(root.get("bomFormat").asText())) {
+				String version = root.has("specVersion") ? root.get("specVersion").asText() : null;
+				if (version != null) {
+					return switch (version) {
+						case "1.0" -> SpecVersion.CYCLONEDX_1_0;
+						case "1.1" -> SpecVersion.CYCLONEDX_1_1;
+						case "1.2" -> SpecVersion.CYCLONEDX_1_2;
+						case "1.3" -> SpecVersion.CYCLONEDX_1_3;
+						case "1.4" -> SpecVersion.CYCLONEDX_1_4;
+						case "1.5" -> SpecVersion.CYCLONEDX_1_5;
+						case "1.6" -> SpecVersion.CYCLONEDX_1_6;
+						case "1.7" -> SpecVersion.CYCLONEDX_1_7;
+						default -> null;
+					};
+				}
+			}
+			
+			// Check for SPDX
+			if (root.has("spdxVersion")) {
+				String version = root.get("spdxVersion").asText();
+				if (version != null) {
+					if (version.contains("2.0")) return SpecVersion.SPDX_2_0;
+					if (version.contains("2.1")) return SpecVersion.SPDX_2_1;
+					if (version.contains("2.2")) return SpecVersion.SPDX_2_2;
+					if (version.contains("2.3")) return SpecVersion.SPDX_2_3;
+					if (version.contains("3.0")) return SpecVersion.SPDX_3_0;
+				}
+			}
+			
+			// Check for SARIF
+			if (root.has("$schema") && root.get("$schema").asText().contains("sarif")) {
+				String version = root.has("version") ? root.get("version").asText() : null;
+				if (version != null) {
+					if (version.startsWith("2.0")) return SpecVersion.SARIF_2_0;
+					if (version.startsWith("2.1")) return SpecVersion.SARIF_2_1;
+				}
+			}
+			
+			// Check for OpenVEX
+			if (root.has("@context") && root.get("@context").asText().contains("openvex")) {
+				return SpecVersion.OPENVEX_0_2;
+			}
+			
+			// Check for CSAF
+			if (root.has("document") && root.get("document").has("csaf_version")) {
+				String version = root.get("document").get("csaf_version").asText();
+				if (version != null) {
+					if (version.startsWith("2.0")) return SpecVersion.CSAF_2_0;
+					if (version.startsWith("2.1")) return SpecVersion.CSAF_2_1;
+				}
+			}
+			
+		} catch (JsonProcessingException e) {
+			log.warn("Could not parse JSON for spec version resolution", e);
+		}
+		
+		return null;
+	}
+	
+	/**
+	 * Simple heuristic to detect YAML content
+	 */
+	private boolean isYamlContent(String content) {
+		// YAML typically starts with key: value or --- or has indentation-based structure
+		return content.startsWith("---") || 
+			   content.contains(":\n") || 
+			   content.contains(": \n") ||
+			   (content.contains(":") && !content.contains("{") && !content.contains("<"));
 	}
 
 }

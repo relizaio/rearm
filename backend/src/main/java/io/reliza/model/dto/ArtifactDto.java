@@ -22,6 +22,8 @@ import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.InventoryType;
+import io.reliza.model.ArtifactData.SerializationFormat;
+import io.reliza.model.ArtifactData.SpecVersion;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.tea.Link;
 import io.reliza.model.tea.Rebom.InternalBom;
@@ -52,6 +54,12 @@ public class ArtifactDto {
 
 	@JsonProperty("bomFormat")
 	private BomFormat bomFormat;
+
+	@JsonProperty("specVersion")
+	private SpecVersion specVersion;
+
+	@JsonProperty("serializationFormat")
+	private SerializationFormat serializationFormat;
 
 	@JsonProperty("date")
 	private ZonedDateTime date;

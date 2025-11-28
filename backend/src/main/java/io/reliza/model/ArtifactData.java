@@ -47,7 +47,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         PROJECT_DOCUMENT,
         MARKETING_DOCUMENT,
         TEST_REPORT,
-        SARIF,
+        CODE_SCANNING_RESULT,
+        @Deprecated SARIF, /* CODE_SCANNING_RESULT should be used instead of SARIF with SARIF set as a format*/
         BUILD_META,
         CERTIFICATION,
         FORMULATION,
@@ -94,6 +95,39 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	public enum BomFormat {
 		CYCLONEDX,
 		SPDX
+	}
+	
+	public enum SerializationFormat {
+		JSON,
+		YAML,
+		XML,
+		OTHER
+	}
+	
+	public enum SpecVersion {
+		// CycloneDX versions
+		CYCLONEDX_1_0,
+		CYCLONEDX_1_1,
+		CYCLONEDX_1_2,
+		CYCLONEDX_1_3,
+		CYCLONEDX_1_4,
+		CYCLONEDX_1_5,
+		CYCLONEDX_1_6,
+		CYCLONEDX_1_7,
+		// SPDX versions
+		SPDX_2_0,
+		SPDX_2_1,
+		SPDX_2_2,
+		SPDX_2_3,
+		SPDX_3_0,
+		// SARIF versions
+		SARIF_2_0,
+		SARIF_2_1,
+		// OpenVEX versions
+		OPENVEX_0_2,
+		// CSAF versions
+		CSAF_2_0,
+		CSAF_2_1
 	}
 
 	public enum DigestScope {
@@ -250,6 +284,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	private List<Link> downloadLinks = new ArrayList<>();
 	private List<InventoryType> inventoryTypes = new ArrayList<>();
 	private BomFormat bomFormat; // FIND ON create
+	private SpecVersion specVersion;
+	private SerializationFormat serializationFormat;
 	private ZonedDateTime date;
 	private StoredIn storedIn; 
 	private InternalBom internalBom; // GENERATE
@@ -306,6 +342,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		if (null != artifactDto.getDownloadLinks()) ad.setDownloadLinks(new ArrayList<>(artifactDto.getDownloadLinks()));
 		if (null != artifactDto.getInventoryTypes()) ad.setInventoryTypes(new ArrayList<>(artifactDto.getInventoryTypes()));
 		ad.setBomFormat(artifactDto.getBomFormat());
+		ad.setSpecVersion(artifactDto.getSpecVersion());
+		ad.setSerializationFormat(artifactDto.getSerializationFormat());
 		ad.setDate(artifactDto.getDate());
 		ad.setStoredIn(artifactDto.getStoredIn());
 		ad.setInternalBom(artifactDto.getInternalBom());

@@ -641,6 +641,8 @@ type Artifact {
 	isInternal: ArtifactBelonging
 	type: ArtifactType
 	bomFormat: BomFormat
+	specVersion: SpecVersion
+	serializationFormat: SerializationFormat
 	notes: String
 	tags: [TagRecord]
 	tagRecords: [TagRecord]
@@ -1795,6 +1797,7 @@ enum ArtifactType {
 	PROJECT_DOCUMENT
 	MARKETING_DOCUMENT
 	TEST_REPORT
+	CODE_SCANNING_RESULT
 	SARIF
 	BUILD_META
 	CERTIFICATION
@@ -1816,6 +1819,39 @@ scalar Object
 scalar DateTime
 scalar Long
 scalar Upload
+
+enum SerializationFormat {
+	JSON
+	YAML
+	XML
+	OTHER
+}
+
+enum SpecVersion {
+	# CycloneDX versions
+	CYCLONEDX_1_0
+	CYCLONEDX_1_1
+	CYCLONEDX_1_2
+	CYCLONEDX_1_3
+	CYCLONEDX_1_4
+	CYCLONEDX_1_5
+	CYCLONEDX_1_6
+	CYCLONEDX_1_7
+	# SPDX versions
+	SPDX_2_0
+	SPDX_2_1
+	SPDX_2_2
+	SPDX_2_3
+	SPDX_3_0
+	# SARIF versions
+	SARIF_2_0
+	SARIF_2_1
+	# OpenVEX versions
+	OPENVEX_0_2
+	# CSAF versions
+	CSAF_2_0
+	CSAF_2_1
+}
 
 # Vulnerability Analysis Types
 
