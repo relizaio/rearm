@@ -34,6 +34,8 @@ public class ArtifactWebDto extends ArtifactData {
 		awd.setDownloadLinks(new LinkedList<>(ad.getDownloadLinks()));
 		awd.setInventoryTypes(new LinkedList<>(ad.getInventoryTypes()));
 		awd.setBomFormat(ad.getBomFormat());
+		awd.setSpecVersion(ad.getSpecVersion());
+		awd.setSerializationFormat(ad.getSerializationFormat());
 		awd.setDate(ad.getDate());
 		awd.setStoredIn(ad.getStoredIn());
 		awd.setInternalBom(ad.getInternalBom());
