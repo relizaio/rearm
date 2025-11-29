@@ -58,6 +58,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	@JsonProperty private Integer policyViolationsOperationalTotal = 0;
 	@JsonProperty private Integer policyViolationsOperationalAudited = 0;
 	@JsonProperty private Integer policyViolationsOperationalUnaudited = 0;
+	@JsonProperty private Integer weaknesses = 0;
 	@JsonProperty private ZonedDateTime lastScanned;
 	@JsonProperty private List<ViolationDto> violationDetails = new LinkedList<>();
 	@JsonProperty private List<VulnerabilityDto> vulnerabilityDetails = new LinkedList<>();
@@ -243,11 +244,13 @@ public class ReleaseMetricsDto implements Cloneable {
   			}
   		}
 
+		int weaknessCount = 0;
 		for (var x: weaknessDetails) {
 			// Skip findings with FALSE_POSITIVE or NOT_AFFECTED analysis state
 			if (x.analysisState() == AnalysisState.FALSE_POSITIVE || x.analysisState() == AnalysisState.NOT_AFFECTED) {
 				continue;
 			}
+			++weaknessCount;
 			switch (x.severity()) {
 			case CRITICAL:
 				++criticalVulns;
@@ -278,6 +281,10 @@ public class ReleaseMetricsDto implements Cloneable {
   		this.policyViolationsSecurityTotal = securityViolations;
   		this.policyViolationsLicenseTotal = licenseViolations;
   		this.policyViolationsOperationalTotal = operationalViolations;
+  		this.policyViolationsTotal = securityViolations + licenseViolations + operationalViolations;
+  		
+  		this.vulnerabilities = criticalVulns + highVulns + mediumVulns + lowVulns + unassignedVulns;
+  		this.weaknesses = weaknessCount;
 
 		if (null == this.lastScanned) this.lastScanned = ZonedDateTime.now();
   	}
