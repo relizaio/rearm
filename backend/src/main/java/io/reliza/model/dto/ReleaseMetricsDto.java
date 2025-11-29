@@ -86,10 +86,59 @@ public class ReleaseMetricsDto implements Cloneable {
 	
 	public static record VulnerabilityAliasDto (VulnerabilityAliasType type, String aliasId) {}
 
+	/**
+	 * Vulnerability ID types based on OSV schema.
+	 * @see <a href="https://ossf.github.io/osv-schema/">OSV Schema</a>
+	 */
 	public static enum VulnerabilityAliasType {
-		CVE,
-		GHSA,
+		CVE,      // CVE-YYYY-NNNNN
+		GHSA,     // GHSA-xxxx-xxxx-xxxx
+		GO,       // GO-YYYY-NNNN
+		PYSEC,    // PYSEC-YYYY-NNN
+		RUST,     // RUSTSEC-YYYY-NNNN
+		OSV,      // OSV-YYYY-NNN
+		DSA,      // DSA-NNNN-N (Debian)
+		DLA,      // DLA-NNNN-N (Debian LTS)
+		RHSA,     // RHSA-YYYY:NNNN (Red Hat)
+		RHBA,     // RHBA-YYYY:NNNN (Red Hat Bug Advisory)
+		RHEA,     // RHEA-YYYY:NNNN (Red Hat Enhancement Advisory)
+		ALAS,     // ALAS-YYYY-NNNN (Amazon Linux)
+		ALAS2,    // ALAS2-YYYY-NNNN (Amazon Linux 2)
+		ALPINE,   // ALPINE-CVE-YYYY-NNNN
+		CGA,      // CGA-xxxx-xxxx-xxxx (Chainguard)
+		MAL,      // MAL-YYYY-NNNN (Malicious packages)
+		GSD,      // GSD-YYYY-NNNNN
 		OTHER
+	}
+	
+	/**
+	 * Determines the VulnerabilityAliasType based on the vulnerability ID format.
+	 * @see <a href="https://ossf.github.io/osv-schema/">OSV Schema</a>
+	 */
+	public static VulnerabilityAliasType detectAliasType(String vulnId) {
+		if (vulnId == null || vulnId.isEmpty()) {
+			return VulnerabilityAliasType.OTHER;
+		}
+		
+		if (vulnId.startsWith("CVE-")) return VulnerabilityAliasType.CVE;
+		if (vulnId.startsWith("GHSA-")) return VulnerabilityAliasType.GHSA;
+		if (vulnId.startsWith("GO-")) return VulnerabilityAliasType.GO;
+		if (vulnId.startsWith("PYSEC-")) return VulnerabilityAliasType.PYSEC;
+		if (vulnId.startsWith("RUSTSEC-")) return VulnerabilityAliasType.RUST;
+		if (vulnId.startsWith("OSV-")) return VulnerabilityAliasType.OSV;
+		if (vulnId.startsWith("DSA-")) return VulnerabilityAliasType.DSA;
+		if (vulnId.startsWith("DLA-")) return VulnerabilityAliasType.DLA;
+		if (vulnId.startsWith("RHSA-")) return VulnerabilityAliasType.RHSA;
+		if (vulnId.startsWith("RHBA-")) return VulnerabilityAliasType.RHBA;
+		if (vulnId.startsWith("RHEA-")) return VulnerabilityAliasType.RHEA;
+		if (vulnId.startsWith("ALAS2-")) return VulnerabilityAliasType.ALAS2;
+		if (vulnId.startsWith("ALAS-")) return VulnerabilityAliasType.ALAS;
+		if (vulnId.startsWith("ALPINE-")) return VulnerabilityAliasType.ALPINE;
+		if (vulnId.startsWith("CGA-")) return VulnerabilityAliasType.CGA;
+		if (vulnId.startsWith("MAL-")) return VulnerabilityAliasType.MAL;
+		if (vulnId.startsWith("GSD-")) return VulnerabilityAliasType.GSD;
+		
+		return VulnerabilityAliasType.OTHER;
 	}
 
 	public static enum SeveritySource {
@@ -676,8 +725,7 @@ public class ReleaseMetricsDto implements Cloneable {
 			Set<VulnerabilityAliasDto> finalAliases = new HashSet<>();
 			for (String id : allIds) {
 				if (!id.equals(bestPrimaryId)) {
-					VulnerabilityAliasType type = id.startsWith("CVE-") ? VulnerabilityAliasType.CVE : VulnerabilityAliasType.GHSA;
-					finalAliases.add(new VulnerabilityAliasDto(type, id));
+					finalAliases.add(new VulnerabilityAliasDto(detectAliasType(id), id));
 				}
 			}
 			
@@ -720,9 +768,7 @@ public class ReleaseMetricsDto implements Cloneable {
 		Set<VulnerabilityAliasDto> finalAliases = new HashSet<>();
 		for (String id : allIds) {
 			if (!id.equals(primaryId)) {
-				// Determine the type based on the ID format
-				VulnerabilityAliasType type = id.startsWith("CVE-") ? VulnerabilityAliasType.CVE : VulnerabilityAliasType.GHSA;
-				finalAliases.add(new VulnerabilityAliasDto(type, id));
+				finalAliases.add(new VulnerabilityAliasDto(detectAliasType(id), id));
 			}
 		}
 		

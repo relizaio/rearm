@@ -328,15 +328,7 @@ public class VulnAnalysisService {
 			// Add aliases from analysis, converting String to VulnerabilityAliasDto
 			if (analysis.getFindingAliases() != null && !analysis.getFindingAliases().isEmpty()) {
 				for (String aliasId : analysis.getFindingAliases()) {
-					// Determine type based on ID format
-					ReleaseMetricsDto.VulnerabilityAliasType type;
-					if (aliasId.startsWith("CVE-")) {
-						type = ReleaseMetricsDto.VulnerabilityAliasType.CVE;
-					} else if (aliasId.startsWith("GHSA-")) {
-						type = ReleaseMetricsDto.VulnerabilityAliasType.GHSA;
-					} else {
-						type = ReleaseMetricsDto.VulnerabilityAliasType.OTHER;
-					}
+					ReleaseMetricsDto.VulnerabilityAliasType type = ReleaseMetricsDto.detectAliasType(aliasId);
 					combinedAliases.add(new ReleaseMetricsDto.VulnerabilityAliasDto(type, aliasId));
 				}
 			}

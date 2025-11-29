@@ -891,9 +891,26 @@ enum VulnerabilitySeverity {
 	UNASSIGNED
 }
 
+# Vulnerability ID types based on OSV schema
+# See: https://ossf.github.io/osv-schema/
 enum VulnerabilityAliasType {
-	CVE
-	GHSA
+	CVE       # CVE-YYYY-NNNNN
+	GHSA      # GHSA-xxxx-xxxx-xxxx
+	GO        # GO-YYYY-NNNN
+	PYSEC     # PYSEC-YYYY-NNN
+	RUST      # RUSTSEC-YYYY-NNNN
+	OSV       # OSV-YYYY-NNN
+	DSA       # DSA-NNNN-N (Debian)
+	DLA       # DLA-NNNN-N (Debian LTS)
+	RHSA      # RHSA-YYYY:NNNN (Red Hat)
+	RHBA      # RHBA-YYYY:NNNN (Red Hat Bug Advisory)
+	RHEA      # RHEA-YYYY:NNNN (Red Hat Enhancement Advisory)
+	ALAS      # ALAS-YYYY-NNNN (Amazon Linux)
+	ALAS2     # ALAS2-YYYY-NNNN (Amazon Linux 2)
+	ALPINE    # ALPINE-CVE-YYYY-NNNN
+	CGA       # CGA-xxxx-xxxx-xxxx (Chainguard)
+	MAL       # MAL-YYYY-NNNN (Malicious packages)
+	GSD       # GSD-YYYY-NNNNN
 	OTHER
 }
 
