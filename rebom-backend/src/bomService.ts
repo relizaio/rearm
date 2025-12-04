@@ -782,17 +782,67 @@ function computeRootDepIndex (bom: any) : number {
     return rootdepIndex
 }
 
-  // function computeSha
-  // enforce StripBom Flag for now
+  
+  // Strips version from a purl/bom-ref string
+  function stripVersionFromPurl(purl: string): string {
+    if (!purl) return purl
+    
+    // Handle purls with version in query params (OCI, Docker, etc.)
+    if (purl.includes('?')) {
+      const [base, query] = purl.split('?')
+      // Remove version-related params: tag, version
+      const params = query.split('&').filter(p => 
+        !p.startsWith('tag=') && !p.startsWith('version=')
+      )
+      return params.length ? `${base}?${params.join('&')}` : base
+    }
+    
+    // Handle standard purls: split on @ to remove version
+    return purl.split("@")[0]
+  }
+
+  /**
+   * Extracts only the identity-relevant fields from components for deduplication.
+   * Uses a whitelist approach to include only fields that define component identity,
+   * ignoring transient data like build paths, evidence, properties, etc.
+   */
+  function extractComponentIdentity(components: any[]): any[] {
+    if (!components) return components
+    
+    return components.map(comp => {
+      // Only include fields that define component identity
+      const identity: any = {}
+      
+      // Core identity fields
+      if (comp.purl) identity.purl = comp.purl
+      if (comp['bom-ref']) identity['bom-ref'] = comp['bom-ref']
+      if (comp.name) identity.name = comp.name
+      if (comp.version) identity.version = comp.version
+      if (comp.group) identity.group = comp.group
+      if (comp.type) identity.type = comp.type
+      
+      // Include hashes as they're part of identity
+      if (comp.hashes) identity.hashes = comp.hashes
+      
+      // Include licenses as they affect compliance
+      if (comp.licenses) identity.licenses = comp.licenses
+      
+      return identity
+    })
+  }
+
   function computeBomDigest(bom: any, stripBom: string): string {
     // strip meta
     let bomForDigest: any = {}
     // if(stripBom === 'TRUE'){
-      bomForDigest["components"] = bom["components"]
-      bomForDigest["dependencies"] = bom["dependencies"]
-      //strip version
+      // Extract only identity-relevant fields from components
+      bomForDigest["components"] = extractComponentIdentity(bom["components"])
+      // Deep clone dependencies to avoid mutating original
+      bomForDigest["dependencies"] = JSON.parse(JSON.stringify(bom["dependencies"]))
+      
+      //strip version from root component ref
       const rootComponentPurl: string = bom.metadata.component["bom-ref"]
-      const versionStrippedRootComponentPurl = rootComponentPurl.split("@")[0]
+      const versionStrippedRootComponentPurl = stripVersionFromPurl(rootComponentPurl)
       
       const rootdepIndex = computeRootDepIndex(bom)
 
