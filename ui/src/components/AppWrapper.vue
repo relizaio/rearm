@@ -114,8 +114,8 @@ const onCreate = async function () {
             showLoaderOnConfirm: true,
             preConfirm: async (secret) => {
                 try{
-                    await graphqlClient.query({
-                        query: gql`
+                    await graphqlClient.mutate({
+                        mutation: gql`
                             mutation unSealSystem($secret: String) {
                                 unSealSystem(secret: $secret)
                             }`,
