@@ -782,25 +782,6 @@ function computeRootDepIndex (bom: any) : number {
     return rootdepIndex
 }
 
-  
-  // Strips version from a purl/bom-ref string
-  function stripVersionFromPurl(purl: string): string {
-    if (!purl) return purl
-    
-    // Handle purls with version in query params (OCI, Docker, etc.)
-    if (purl.includes('?')) {
-      const [base, query] = purl.split('?')
-      // Remove version-related params: tag, version
-      const params = query.split('&').filter(p => 
-        !p.startsWith('tag=') && !p.startsWith('version=')
-      )
-      return params.length ? `${base}?${params.join('&')}` : base
-    }
-    
-    // Handle standard purls: split on @ to remove version
-    return purl.split("@")[0]
-  }
-
   /**
    * Extracts only the identity-relevant fields from components for deduplication.
    * Uses a whitelist approach to include only fields that define component identity,
@@ -840,14 +821,35 @@ function computeRootDepIndex (bom: any) : number {
       // Deep clone dependencies to avoid mutating original
       bomForDigest["dependencies"] = JSON.parse(JSON.stringify(bom["dependencies"]))
       
-      //strip version from root component ref
-      const rootComponentPurl: string = bom.metadata.component["bom-ref"]
-      const versionStrippedRootComponentPurl = stripVersionFromPurl(rootComponentPurl)
+      // Normalize root component ref - use placeholder to ignore root identity variations
+      // This handles: UUIDs, OCI purls with tag=, standard purls with @version
+      const ROOT_PLACEHOLDER = '__ROOT_COMPONENT__'
+      const rootComponentRef: string = bom.metadata?.component?.['bom-ref']
       
       const rootdepIndex = computeRootDepIndex(bom)
-
       if(rootdepIndex > -1){
-        bomForDigest["dependencies"][rootdepIndex]['ref'] = versionStrippedRootComponentPurl
+        bomForDigest["dependencies"][rootdepIndex]['ref'] = ROOT_PLACEHOLDER
+      }
+      
+      // Also replace any dependsOn references to root component and sort for consistency
+      for (const dep of bomForDigest["dependencies"]) {
+        if (dep.dependsOn && Array.isArray(dep.dependsOn)) {
+          dep.dependsOn = dep.dependsOn
+            .map((ref: string) => ref === rootComponentRef ? ROOT_PLACEHOLDER : ref)
+            .sort() // Sort to ensure consistent ordering
+        }
+      }
+      
+      // Sort dependencies array by ref for consistent ordering
+      bomForDigest["dependencies"].sort((a: any, b: any) => 
+        (a.ref || '').localeCompare(b.ref || '')
+      )
+      
+      // Sort components array by bom-ref for consistent ordering
+      if (bomForDigest["components"]) {
+        bomForDigest["components"].sort((a: any, b: any) => 
+          (a['bom-ref'] || a.purl || '').localeCompare(b['bom-ref'] || b.purl || '')
+        )
       }
     // } else {
     //   bomForDigest = bom
@@ -1013,6 +1015,11 @@ function computeRootDepIndex (bom: any) : number {
             logger.warn({ serialNumber }, "Generated fallback serial number - rearm-cli output missing serialNumber");
         }
         
+        // 7. Compute bomDigest on converted CycloneDX BOM for deduplication
+        const convertedBom = conversionResult.convertedBom;
+        const bomDigest = computeBomDigest(convertedBom, mergedOptions.stripBom);
+        mergedOptions.bomDigest = bomDigest;
+        mergedOptions.bomVersion = convertedBom.version;
         
         // 8. Store converted BOM in boms table with source reference
         const convertedBomUuid = uuidv4();
