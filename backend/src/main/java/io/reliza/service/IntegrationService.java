@@ -45,6 +45,8 @@ import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import reactor.core.publisher.Mono;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -509,8 +511,17 @@ public class IntegrationService {
 			.put()
 			.uri(apiUri)
 			.header("X-API-Key", apiToken)
-			.bodyValue(payload).retrieve()
-			.toEntity(String.class)
+			.bodyValue(payload)
+			.exchangeToMono(response -> {
+				if (response.statusCode().isError()) {
+					return response.bodyToMono(String.class)
+						.flatMap(body -> {
+							log.error("DTrack BOM upload failed: status={}, body={}", response.statusCode(), body);
+							return Mono.error(new RuntimeException("DTrack BOM upload error: " + response.statusCode() + " - " + body));
+						});
+				}
+				return response.toEntity(String.class);
+			})
 			.block();
 		@SuppressWarnings("unchecked")
 		Map<String, Object> addBomResp = Utils.OM.readValue(tokenResp.getBody(), Map.class);
