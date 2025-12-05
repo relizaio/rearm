@@ -527,24 +527,33 @@ public class ComponentService {
 		String repoPath = (String) inputMap.get("repoPath");
 		
 		UUID componentId = Utils.resolveProgrammaticComponentId((String) inputMap.get(CommonVariables.COMPONENT_FIELD), ahp);
-		UUID componentIdFromVcs = null;
 
 		if (null == componentId && ApiTypeEnum.ORGANIZATION_RW != ahp.getType()) {
 			throw new RelizaException("Wrong Key Type");
 		}
+		
+		// If componentId is already resolved, use it directly
+		if (null != componentId) {
+			// If vcsUri is also provided, validate it matches the component's VCS
+			if (vcsUri != null) {
+				Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+				if (ocd.isPresent() && ocd.get().getVcs() != null) {
+					Optional<VcsRepositoryData> vcsRepoData = vcsRepositoryService.getVcsRepositoryDataByUri(ahp.getOrgUuid(), vcsUri);
+					if (vcsRepoData.isEmpty() || !vcsRepoData.get().getUuid().equals(ocd.get().getVcs())) {
+						throw new RelizaException("VCS URI does not match component's VCS repository");
+					}
+				}
+			}
+			return componentId;
+		}
+		
+		// Only attempt VCS-based resolution if componentId is not provided
 		if (vcsUri != null) {
 			ComponentData componentData = resolveComponentByVcsUriAndPath(ahp.getOrgUuid(), vcsUri, repoPath);
-			componentIdFromVcs = componentData.getUuid();
+			return componentData.getUuid();
 		}
-		if (null != componentIdFromVcs && null != componentId && !componentIdFromVcs.equals(componentId)) {
-			throw new RelizaException("VCS data does not match component");
-		} else if (null != componentIdFromVcs) {
-			return componentIdFromVcs;
-		} else if (null != componentId) {
-			return componentId;
-		} else {
-			throw new RelizaException("Component not found");
-		}
+		
+		throw new RelizaException("Component not found");
 	}
 	
 	/**
