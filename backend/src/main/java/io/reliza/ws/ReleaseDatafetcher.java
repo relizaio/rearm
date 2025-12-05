@@ -613,6 +613,8 @@ public class ReleaseDatafetcher {
 			}
 			return rd;
 		} catch (RelizaException re) {
+			log.warn("addReleaseProgrammatic failed for component={}, branch={}, version={}: {}",
+				componentId, bd.getUuid(), version, re.getMessage());
 			throw new AccessDeniedException(re.getMessage());
 		}
 	}
