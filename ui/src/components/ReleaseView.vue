@@ -2376,7 +2376,9 @@ const artifactsTableFields: DataTableColumns<any> = [
                     }, () => h(Link))
                 const dtrackEl = h('a', {target: '_blank', href: row.metrics.dependencyTrackFullUri}, dtrackElIcon)
                 els.push(dtrackEl)
+            }
 
+            if (row.type === 'BOM') {
                 const dtrackRescanEl = h(NIcon,
                     {
                         title: 'Request Refresh of Dependency-Track Metrics',
@@ -2385,14 +2387,16 @@ const artifactsTableFields: DataTableColumns<any> = [
                         onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
                     }, () => h(SecurityScanOutlined))
                 els.push(dtrackRescanEl)
+            }
 
+            if (row.metrics && row.metrics.dependencyTrackFullUri) {
                 const dtrackRefetchEl = h(NIcon,
-                    {
-                        title: 'Refetch Dependency-Track Metrics',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => refetchDependencyTrackMetrics(row.uuid)
-                    }, () => h(Refresh))
+                {
+                    title: 'Refetch Dependency-Track Metrics',
+                    class: 'icons clickable',
+                    size: 25,
+                    onClick: () => refetchDependencyTrackMetrics(row.uuid)
+                }, () => h(Refresh))
                 els.push(dtrackRefetchEl)
             }
             
@@ -2895,20 +2899,24 @@ function changelogRowKey(row: any) {
 }
 
 async function refetchDependencyTrackMetrics (artifact: string) {
-    const resp = await graphqlClient.mutate({
-        mutation: gql`
-            mutation refetchDependencyTrackMetrics($artifact: ID!) {
-                refetchDependencyTrackMetrics(artifact: $artifact)
-            }
-            `,
-        variables: { artifact },
-        fetchPolicy: 'no-cache'
-    })
-    if (resp.data && resp.data.refetchDependencyTrackMetrics) {
-        notify('success', 'Metrics Refetched', 'Metrics refetched for the artifact from Dependency-Track.')
-        fetchRelease()
-    } else {
-        notify('error', 'Failed to Refetch Metrics', 'Could not refetch Dependency-Track metrics. Please try again later or contact support.')
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation refetchDependencyTrackMetrics($artifact: ID!) {
+                    refetchDependencyTrackMetrics(artifact: $artifact)
+                }
+                `,
+            variables: { artifact },
+            fetchPolicy: 'no-cache'
+        })
+        if (resp.data && resp.data.refetchDependencyTrackMetrics) {
+            notify('success', 'Metrics Refetched', 'Metrics refetched for the artifact from Dependency-Track.')
+            fetchRelease()
+        } else {
+            notify('error', 'Failed to Refetch Metrics', 'Could not refetch Dependency-Track metrics. Please try again later or contact support.')
+        }
+    } catch (e: any) {
+        notify('error', 'Failed to Refetch Metrics', e.message)
     }
 }
 
