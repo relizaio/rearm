@@ -58,6 +58,7 @@ import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
@@ -531,7 +532,7 @@ public class IntegrationService {
 		return new DependencyTrackUploadResult(projectId.toString(), token, projectName, projectVersion, fullDtrackUri);
 	}
 	
-	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad, ZonedDateTime lastScanned) {
+	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad, ZonedDateTime lastScanned) throws RelizaException {
 		if (null == lastScanned) lastScanned = ZonedDateTime.now();
 		DependencyTrackIntegration dti = null;
 		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(ad.getOrg(), IntegrationType.DEPENDENCYTRACK,
@@ -562,6 +563,7 @@ public class IntegrationService {
 				}
 			} catch (Exception e) {
 				log.error("Exception processing status of artifact on dependency track with id = " + ad.getUuid(), e);
+				throw new RelizaException("Could not refetch Dependency Metrics for artifact id = " + ad.getUuid());
 			}
 		}
 		return dti;
@@ -759,13 +761,21 @@ public class IntegrationService {
 	@Transactional
 	public boolean requestMetricsRefreshOnDependencyTrack (ArtifactData ad) {
 		boolean isRequested = false;
-		Optional<IntegrationData> oid = Optional.empty();
-		String depTrackProject = (null != ad.getMetrics()) ? ad.getMetrics().getDependencyTrackProject() : null;
-		if (StringUtils.isNotEmpty(depTrackProject)) {
-			oid = getIntegrationDataByOrgTypeIdentifier(ad.getOrg(), IntegrationType.DEPENDENCYTRACK,
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(ad.getOrg(), IntegrationType.DEPENDENCYTRACK,
 				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		
+		if (oid.isEmpty() || ad.getType() != ArtifactType.BOM) {
+			// No DTrack integration configured, nothing to do
+			return isRequested;
 		}
-		if (oid.isPresent()) {
+		
+		String depTrackProject = (null != ad.getMetrics()) ? ad.getMetrics().getDependencyTrackProject() : null;
+		
+		if (StringUtils.isEmpty(depTrackProject)) {
+			// No existing project, go straight to resubmit
+			isRequested = resubmitArtifactToDependencyTrack(ad);
+		} else {
+			// Try to refresh existing project, resubmit on 404
 			IntegrationData dtrackIntegration = oid.get();
 			try {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
@@ -781,18 +791,7 @@ public class IntegrationService {
 				else log.warn(processingResp.toString());
 			} catch (WebClientResponseException wcre) {
 				if (wcre.getStatusCode().isSameCodeAs(HttpStatusCode.valueOf(404)) && null != ad.getMetrics()) {
-					// resubmit
-					try {
-						var downloadable = sharedArtifactService.downloadArtifact(ad);
-						String projectVersion = StringUtils.isNotEmpty(ad.getMetrics().getProjectVersion()) ? ad.getMetrics().getProjectVersion() : UUID.randomUUID().toString();
-						String projectName = StringUtils.isNotEmpty(ad.getMetrics().getProjectName()) ? ad.getMetrics().getProjectName() : UUID.randomUUID().toString();  
-						UploadableBom ub = new UploadableBom(null, downloadable.block().getBody(), true);
-						var dtur = sendBomToDependencyTrack(ad.getOrg(), ub, projectName, projectVersion);
-						sharedArtifactService.updateArtifactFromDtur(ad, dtur);
-						isRequested = true;
-					} catch (Exception e) {
-						log.error("Error on downloading artifact for refetching", e);
-					}
+					isRequested = resubmitArtifactToDependencyTrack(ad);
 				} else {
 					log.error("Web exception processing status of artifact on dependency track with id = " + ad.getUuid(), wcre);
 				}
@@ -801,6 +800,23 @@ public class IntegrationService {
 			}
 		}
 		return isRequested;
+	}
+	
+	private boolean resubmitArtifactToDependencyTrack(ArtifactData ad) {
+		try {
+			var downloadable = sharedArtifactService.downloadArtifact(ad);
+			String projectVersion = (null != ad.getMetrics() && StringUtils.isNotEmpty(ad.getMetrics().getProjectVersion())) 
+					? ad.getMetrics().getProjectVersion() : UUID.randomUUID().toString();
+			String projectName = (null != ad.getMetrics() && StringUtils.isNotEmpty(ad.getMetrics().getProjectName())) 
+					? ad.getMetrics().getProjectName() : UUID.randomUUID().toString();  
+			UploadableBom ub = new UploadableBom(null, downloadable.block().getBody(), true);
+			var dtur = sendBomToDependencyTrack(ad.getOrg(), ub, projectName, projectVersion);
+			sharedArtifactService.updateArtifactFromDtur(ad, dtur);
+			return true;
+		} catch (Exception e) {
+			log.error("Error on resubmitting artifact to dependency track, artifact id = " + ad.getUuid(), e);
+			return false;
+		}
 	}
 	
 	/**

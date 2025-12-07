@@ -24,6 +24,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.IntegrationData;
@@ -108,8 +109,8 @@ public class IntegrationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "refetchDependencyTrackMetrics")
-	public boolean refetchDependencyTrackMetrics(
-			@InputArgument("artifact") UUID art) {
+	public boolean refetchDependencyTrackMetrics (
+			@InputArgument("artifact") UUID art) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<Artifact> oa = sharedArtifactService.getArtifact(art);
@@ -117,7 +118,7 @@ public class IntegrationDataFetcher {
 		RelizaObject ro = oa.isPresent() ? ArtifactData.dataFromRecord(oa.get()) : null;
 		
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
-		
+
 		return artifactService.fetchDependencyTrackDataForArtifact(oa.get());
 	}
 	

@@ -522,10 +522,16 @@ public class ArtifactService {
 	protected void initialProcessArtifactsOnDependencyTrack () {
 		List<Artifact> initialArts = repository.listInitialArtifactsPendingOnDependencyTrack();
 		log.debug("PSDEBUG: located " + initialArts.size() + " to process initially on dep track");
-		initialArts.forEach(a -> fetchDependencyTrackDataForArtifact(a));
+		initialArts.forEach(a -> {
+			try {
+				fetchDependencyTrackDataForArtifact(a);
+			} catch (RelizaException e) {
+				log.error("Exception on initial processing artifact on dtrack for id = " + a.getUuid());
+			}
+		});
 	}
 	
-	public boolean fetchDependencyTrackDataForArtifact (Artifact a) {
+	public boolean fetchDependencyTrackDataForArtifact (Artifact a) throws RelizaException {
 		ZonedDateTime lastScanned = ZonedDateTime.now();
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
 		var dti = integrationService.resolveDependencyTrackProcessingStatus(ad, lastScanned);
