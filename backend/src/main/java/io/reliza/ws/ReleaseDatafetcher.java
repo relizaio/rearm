@@ -54,6 +54,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.common.Utils;
+import io.reliza.common.VcsType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ArtifactData.ArtifactType;
@@ -487,14 +488,53 @@ public class ReleaseDatafetcher {
 		
 		Map<String, Object> progReleaseInput = dfe.getArgument("release");
 		
-		UUID componentId = componentService.resolveComponentIdFromInput(progReleaseInput, ahp);
+		// First, try to resolve component normally
+		UUID componentId = null;
+		try {
+			componentId = componentService.resolveComponentIdFromInput(progReleaseInput, ahp);
+		} catch (RelizaException e) {
+			Boolean createComponentIfMissing = (Boolean) progReleaseInput.get("createComponentIfMissing");
+			if (Boolean.TRUE.equals(createComponentIfMissing)) {
+				// Will create component after authorization is established
+				log.info("Component not found, will create due to createComponentIfMissing flag");
+			} else {
+				throw new AccessDeniedException(e.getMessage());
+			}
+		}
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
-		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+		Optional<ComponentData> ocd = (componentId != null) ? getComponentService.getComponentData(componentId) : Optional.empty();
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
 		
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
-		if (null != ro)	ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		if (null != ro) {
+			ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		} else {
+			// Component doesn't exist yet - authorize against org for component creation
+			ro = getOrganizationService.getOrganizationData(ahp.getOrgUuid()).get();
+			ar = authorizationService.isApiKeyAuthorized(ahp, List.of(ApiTypeEnum.ORGANIZATION_RW), ahp.getOrgUuid(), CallType.WRITE, ro);
+		}
+		
+		// If component was not resolved, create it now (authorization was done earlier)
+		if (componentId == null) {
+			String vcsUri = (String) progReleaseInput.get("vcsUri");
+			String repoPath = (String) progReleaseInput.get("repoPath");
+			String versionSchema = (String) progReleaseInput.get("createComponentVersionSchema");
+			String featureBranchVersionSchema = (String) progReleaseInput.get("createComponentFeatureBranchVersionSchema");
+			// Extract vcsType from sourceCodeEntry if provided
+			VcsType vcsType = null;
+			@SuppressWarnings("unchecked")
+			Map<String, Object> sceInput = (Map<String, Object>) progReleaseInput.get("sourceCodeEntry");
+			if (sceInput != null) {
+				String vcsTypeStr = (String) sceInput.get("type");
+				if (StringUtils.isNotEmpty(vcsTypeStr)) {
+					vcsType = VcsType.resolveStringToType(vcsTypeStr);
+				}
+			}
+			ComponentData newComponent = componentService.createComponentFromVcsUri(ahp.getOrgUuid(), vcsUri, repoPath, vcsType, versionSchema, featureBranchVersionSchema, ar.getWhoUpdated());
+			componentId = newComponent.getUuid();
+			ocd = Optional.of(newComponent);
+		}
 		
 		BranchData bd = resolveAddReleaseProgrammaticBranchData(componentId, (String) progReleaseInput.get(CommonVariables.BRANCH_FIELD),
 				ar.getWhoUpdated());

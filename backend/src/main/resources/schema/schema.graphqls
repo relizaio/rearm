@@ -1245,6 +1245,9 @@ input ReleaseInputProg {
 	identifiers: [IdentifierInput]
 	vcsUri: String
 	repoPath: String
+	createComponentIfMissing: Boolean
+	createComponentVersionSchema: String
+	createComponentFeatureBranchVersionSchema: String
 }
 
 input AddArtifactInput {

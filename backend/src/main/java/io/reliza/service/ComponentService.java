@@ -27,6 +27,7 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.VisibilitySetting;
 import io.reliza.common.Utils;
+import io.reliza.common.VcsType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyData;
@@ -554,6 +555,59 @@ public class ComponentService {
 		}
 		
 		throw new RelizaException("Component not found");
+	}
+	
+	/**
+	 * Create a new component from VCS URI and repository path.
+	 * If VCS repository doesn't exist, it will be created as well.
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @param vcsUri VCS repository URI
+	 * @param repoPath Repository path (can be null for root)
+	 * @param vcsType VCS type (defaults to GIT if null)
+	 * @param versionSchema Version schema for the component (can be null)
+	 * @param featureBranchVersionSchema Feature branch version schema (can be null)
+	 * @param wu WhoUpdated for audit
+	 * @return newly created ComponentData
+	 * @throws RelizaException if creation fails
+	 */
+	@Transactional
+	public ComponentData createComponentFromVcsUri(UUID orgUuid, String vcsUri, String repoPath, VcsType vcsType,
+			String versionSchema, String featureBranchVersionSchema, WhoUpdated wu) throws RelizaException {
+		// Find or create VCS repository
+		VcsType effectiveVcsType = (vcsType != null) ? vcsType : VcsType.GIT;
+		Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, vcsUri, effectiveVcsType, true, wu);
+		UUID vcsUuid = vcsRepo.get().getUuid();
+		
+		// Create component
+		String componentName = resolveComponentNameFromVcsUri(vcsUri, repoPath);
+		
+		CreateComponentDto cpd = CreateComponentDto.builder()
+				.organization(orgUuid)
+				.name(componentName)
+				.type(ComponentType.COMPONENT)
+				.vcs(vcsUuid)
+				.repoPath(repoPath)
+				.versionSchema(versionSchema)
+				.featureBranchVersioning(featureBranchVersionSchema)
+				.build();
+		
+		Component component = createComponent(cpd, wu);
+		return ComponentData.dataFromRecord(component);
+	}
+	
+	/**
+	 * Resolve component name from VCS URI and repoPath.
+	 */
+	private String resolveComponentNameFromVcsUri(String vcsUri, String repoPath) {
+		String[] segments = vcsUri.split("/");
+		String componentName = segments[segments.length - 1];
+		
+		if (StringUtils.isNotEmpty(repoPath) && !".".equals(repoPath)) {
+			String[] pathSegments = repoPath.split("/");
+			componentName += "-" + pathSegments[pathSegments.length - 1];
+		}		
+		return componentName;
 	}
 	
 	/**
