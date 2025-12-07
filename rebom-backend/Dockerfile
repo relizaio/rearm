@@ -1,4 +1,4 @@
-FROM node:24.11.1-alpine3.22@sha256:2867d550cf9d8bb50059a0fff528741f11a84d985c732e60e19e8e75c7239c43 AS builder
+FROM node:24.11.1-alpine3.23@sha256:682368d8253e0c3364b803956085c456a612d738bd635926d73fa24db3ce53d7 AS builder
 
 ARG TARGETARCH
 ARG TARGETOS
@@ -19,13 +19,13 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
 fi
 
-ADD https://d7ge14utcyki8.cloudfront.net/rearm-download/25.10.9/rearm-25.10.9-${TARGETOS}-${TARGETARCH}.zip rearm-25.10.9-${TARGETOS}-${TARGETARCH}.zip
+ADD https://d7ge14utcyki8.cloudfront.net/rearm-download/25.12.1/rearm-25.12.1-${TARGETOS}-${TARGETARCH}.zip rearm-25.12.1-${TARGETOS}-${TARGETARCH}.zip
 
 RUN sha256sum -c tools.${TARGETARCH}.sha256
-RUN unzip rearm-25.10.9-${TARGETOS}-${TARGETARCH}.zip
+RUN unzip rearm-25.12.1-${TARGETOS}-${TARGETARCH}.zip
 RUN mv rearm /usr/local/bin/rearm-cli
 
-FROM node:24.11.1-alpine3.22@sha256:2867d550cf9d8bb50059a0fff528741f11a84d985c732e60e19e8e75c7239c43 AS package
+FROM node:24.11.1-alpine3.23@sha256:682368d8253e0c3364b803956085c456a612d738bd635926d73fa24db3ce53d7 AS package
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
