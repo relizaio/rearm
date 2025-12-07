@@ -1248,6 +1248,7 @@ input ReleaseInputProg {
 	createComponentIfMissing: Boolean
 	createComponentVersionSchema: String
 	createComponentFeatureBranchVersionSchema: String
+	rebuildRelease: Boolean
 }
 
 input AddArtifactInput {

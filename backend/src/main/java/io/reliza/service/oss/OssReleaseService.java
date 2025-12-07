@@ -685,6 +685,11 @@ public class OssReleaseService {
 
 	@Transactional
 	public Release createRelease (ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
+		return createRelease(releaseDto, wu, false);
+	}
+	
+	@Transactional
+	public Release createRelease (ReleaseDto releaseDto, WhoUpdated wu, boolean rebuildRelease) throws RelizaException {
 		Release r = new Release();
 		// resolve branch or feature set uuid to its corresponding project or product parent
 		Optional<BranchData> bdOpt = Optional.empty();
@@ -732,19 +737,33 @@ public class OssReleaseService {
 		// consume or create version assignment
 		Optional<VersionAssignment> ova = versionAssignmentService.getVersionAssignment(rData.getComponent(), rData.getVersion());
 		if (ova.isPresent() && null != ova.get().getRelease()) {
-			//Release already exists, proceding with an update to the existing release
+			//Release already exists, proceeding with an update to the existing release
 			Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(ova.get().getRelease());
 			if(ord.isEmpty())
 				throw new RelizaException("Cannot find the existing release data associated with the version = " + rData.getVersion());
 			
-			//allow updates only from a PENDING lifecycle
 			ReleaseData existingRd = ord.get();
-			if (existingRd.getLifecycle() != ReleaseLifecycle.PENDING)
+			
+			// If rebuildRelease is true, strip and rebuild the release regardless of lifecycle
+			if (rebuildRelease) {
+				log.info("Rebuilding release: uuid={}, version={}", existingRd.getUuid(), rData.getVersion());
+				// Strip the existing release - clear artifacts, source code entries, commits
+				releaseDto.setUuid(existingRd.getUuid());
+				releaseDto.setArtifacts(releaseDto.getArtifacts()); // use new artifacts from input
+				releaseDto.setSourceCodeEntry(releaseDto.getSourceCodeEntry()); // use new SCE from input
+				releaseDto.setCommits(releaseDto.getCommits()); // use new commits from input
+				r = updateRelease(releaseDto, UpdateReleaseStrength.FULL, wu);
+				r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
+				rData = ReleaseData.dataFromRecord(r);
+			} else if (existingRd.getLifecycle() != ReleaseLifecycle.PENDING) {
+				// Only allow updates from PENDING lifecycle if rebuildRelease is false
 				throw new RelizaException("Cannot create release because this version already belongs to another non-pending release, version = " + rData.getVersion());
-			releaseDto.setUuid(existingRd.getUuid());
-			r = updateRelease(releaseDto, UpdateReleaseStrength.DRAFT_PENDING, wu);
-			r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
-			rData = ReleaseData.dataFromRecord(r);
+			} else {
+				releaseDto.setUuid(existingRd.getUuid());
+				r = updateRelease(releaseDto, UpdateReleaseStrength.DRAFT_PENDING, wu);
+				r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
+				rData = ReleaseData.dataFromRecord(r);
+			}
 		} else if (ova.isPresent()) {
 			r = saveRelease(r, recordData, wu);
 			rData = ReleaseData.dataFromRecord(r);

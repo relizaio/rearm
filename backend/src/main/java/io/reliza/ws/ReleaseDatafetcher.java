@@ -636,6 +636,10 @@ public class ReleaseDatafetcher {
 			}
 		}
 		
+		// Check if rebuildRelease flag is set
+		Boolean rebuildRelease = (Boolean) progReleaseInput.get("rebuildRelease");
+		boolean shouldRebuild = Boolean.TRUE.equals(rebuildRelease);
+		
 		try {
 			releaseDtoBuilder.version(version)
 							.inboundDeliverables(inboundDeliverables)
@@ -643,7 +647,7 @@ public class ReleaseDatafetcher {
 							.lifecycle(lifecycle)
 							.endpoint(endpoint);
 			var rd = ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDtoBuilder.build(),
-					ar.getWhoUpdated()));
+					ar.getWhoUpdated(), shouldRebuild));
 			log.debug("release created: {}", rd);
 			if (null != outboundDeliverablesList && !outboundDeliverablesList.isEmpty()) {
 				List<UUID> outboundDeliverables = deliverableService
@@ -655,7 +659,7 @@ public class ReleaseDatafetcher {
 		} catch (RelizaException re) {
 			log.warn("addReleaseProgrammatic failed for component={}, branch={}, version={}: {}",
 				componentId, bd.getUuid(), version, re.getMessage());
-			throw new AccessDeniedException(re.getMessage());
+			throw new RelizaException(re.getMessage());
 		}
 	}
 	
