@@ -1228,6 +1228,9 @@ input GetNewVersionInput {
 	commits: [SourceCodeEntryInput]
 	vcsUri: String
 	repoPath: String
+	createComponentIfMissing: Boolean
+	createComponentVersionSchema: String
+	createComponentFeatureBranchVersionSchema: String
 }
 
 input ReleaseInputProg {

@@ -303,13 +303,52 @@ public class ComponentDataFetcher {
 		
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
 		
-		UUID componentId = componentService.resolveComponentIdFromInput(getNewVersionInput, ahp);
+		// First, try to resolve component normally
+		UUID componentId = null;
+		try {
+			componentId = componentService.resolveComponentIdFromInput(getNewVersionInput, ahp);
+		} catch (RelizaException e) {
+			Boolean createComponentIfMissing = (Boolean) getNewVersionInput.get("createComponentIfMissing");
+			if (Boolean.TRUE.equals(createComponentIfMissing)) {
+				// Will create component after authorization is established
+				log.info("Component not found, will create due to createComponentIfMissing flag");
+			} else {
+				throw new AccessDeniedException(e.getMessage());
+			}
+		}
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.VERSION_GEN, ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
-		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+		Optional<ComponentData> ocd = (componentId != null) ? getComponentService.getComponentData(componentId) : Optional.empty();
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
-		if (null != ro)	ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		if (null != ro) {
+			ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		} else {
+			// Component doesn't exist yet - authorize against org for component creation
+			ro = getOrganizationService.getOrganizationData(ahp.getOrgUuid()).get();
+			ar = authorizationService.isApiKeyAuthorized(ahp, List.of(ApiTypeEnum.ORGANIZATION_RW), ahp.getOrgUuid(), CallType.WRITE, ro);
+		}
+		
+		// If component was not resolved, create it now (authorization was done earlier)
+		if (componentId == null) {
+			String vcsUri = (String) getNewVersionInput.get("vcsUri");
+			String repoPath = (String) getNewVersionInput.get("repoPath");
+			String versionSchema = (String) getNewVersionInput.get("createComponentVersionSchema");
+			String featureBranchVersionSchema = (String) getNewVersionInput.get("createComponentFeatureBranchVersionSchema");
+			// Extract vcsType from sourceCodeEntry if provided
+			VcsType vcsType = null;
+			@SuppressWarnings("unchecked")
+			Map<String, Object> sceInput = (Map<String, Object>) getNewVersionInput.get("sourceCodeEntry");
+			if (sceInput != null) {
+				String vcsTypeStr = (String) sceInput.get("type");
+				if (StringUtils.isNotEmpty(vcsTypeStr)) {
+					vcsType = VcsType.resolveStringToType(vcsTypeStr);
+				}
+			}
+			ComponentData newComponent = componentService.createComponentFromVcsUri(ahp.getOrgUuid(), vcsUri, repoPath, vcsType, versionSchema, featureBranchVersionSchema, ar.getWhoUpdated());
+			componentId = newComponent.getUuid();
+			ocd = Optional.of(newComponent);
+		}
 		
 		String branchStr = (String) getNewVersionInput.get(CommonVariables.BRANCH_FIELD);
 		String modifier = (String) getNewVersionInput.get(CommonVariables.MODIFIER_FIELD);
