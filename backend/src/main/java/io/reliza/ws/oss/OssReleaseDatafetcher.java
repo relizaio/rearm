@@ -169,7 +169,12 @@ public class OssReleaseDatafetcher {
 			
 		try {
 			ConditionGroup cg = null;
-			optRd = ossReleaseService.getReleasePerProductComponent(orgId, componentUuid, productUuid, branch, glri.lifecycle(), cg);
+			// Handle upToVersion parameter - return latest release before the specified version
+			if (StringUtils.isNotEmpty(glri.upToVersion())) {
+				optRd = ossReleaseService.getReleaseBeforeVersion(orgId, componentUuid, productUuid, branch, glri.lifecycle(), cg, glri.upToVersion());
+			} else {
+				optRd = ossReleaseService.getReleasePerProductComponent(orgId, componentUuid, productUuid, branch, glri.lifecycle(), cg);
+			}
 		} catch (RelizaException re) {
 			throw new RuntimeException(re.getMessage());
 		}

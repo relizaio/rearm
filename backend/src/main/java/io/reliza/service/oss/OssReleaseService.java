@@ -38,6 +38,7 @@ import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ConditionGroup;
+import io.reliza.model.GenericReleaseData;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
@@ -217,6 +218,63 @@ public class OssReleaseService {
 		return retRd;
 	}
 	
+	/**
+	 * Get the latest release before the specified version.
+	 * If no release with upToVersion exists, throws RelizaException.
+	 */
+	public Optional<ReleaseData> getReleaseBeforeVersion(UUID orgUuid, UUID componentUuid, UUID productUuid,
+			String branch, ReleaseLifecycle lifecycle, ConditionGroup cg, String upToVersion) throws RelizaException {
+		
+		UUID componentOrProductToResolve = (null == productUuid) ? componentUuid : productUuid;
+		Optional<Branch> b = branchService.findBranchByName(componentOrProductToResolve, branch);
+		
+		if (b.isEmpty()) {
+			return Optional.empty();
+		}
+		
+		BranchData bd = BranchData.branchDataFromDbRecord(b.get());
+		ComponentData cd = getComponentService.getComponentData(bd.getComponent()).get();
+		
+		// Get all releases on the branch sorted by version (descending - latest first)
+		List<GenericReleaseData> releases = sharedReleaseService
+				.listReleaseDataOfBranch(bd.getUuid(), orgUuid, lifecycle, SharedReleaseService.DEFAULT_NUM_RELEASES);
+		releases.sort(new ReleaseData.ReleaseVersionComparator(cd.getVersionSchema(), bd.getVersionSchema()));
+		
+		// Find the release with upToVersion
+		int upToVersionIndex = -1;
+		for (int i = 0; i < releases.size(); i++) {
+			if (upToVersion.equals(releases.get(i).getVersion())) {
+				upToVersionIndex = i;
+				break;
+			}
+		}
+		
+		if (upToVersionIndex == -1) {
+			throw new RelizaException("Release with version '" + upToVersion + "' not found");
+		}
+		
+		// Get the release immediately after in the sorted list (which is the previous version)
+		if (upToVersionIndex + 1 >= releases.size()) {
+			return Optional.empty(); // No release before upToVersion
+		}
+		
+		ReleaseData previousRelease = (ReleaseData) releases.get(upToVersionIndex + 1);
+		
+		// Handle product case - find component release within product release
+		if (null != productUuid) {
+			List<ReleaseData> components = sharedReleaseService.unwindReleaseDependencies(previousRelease)
+					.stream()
+					.collect(Collectors.toList());
+			for (ReleaseData rd : components) {
+				if (componentUuid.equals(rd.getComponent())) {
+					return Optional.of(rd);
+				}
+			}
+			return Optional.empty();
+		}
+		
+		return Optional.of(previousRelease);
+	}
 	@Transactional
 	public Release updateReleaseLifecycle (UUID releaseId, ReleaseLifecycle newLifecycle, WhoUpdated wu) {
 		return updateReleaseLifecycle(releaseId, newLifecycle, wu, true);
