@@ -389,27 +389,20 @@ public class ComponentDataFetcher {
 				}
 			
 				if (vcsRepo.isEmpty() && vcsUri != null) {
-					String vcsName = null;
-					VcsType vcsType = null;
-					
-					if (vcsUri.contains("bitbucket.org/")) {
-						vcsName = vcsUri.split("/src/")[0].split("bitbucket.org/")[1];
-						vcsType = VcsType.GIT;
-					} else if (vcsUri.contains("github.com/")) {
-						vcsName = vcsUri.split("/tree/")[0].split("github.com/")[1];
-						vcsType = VcsType.GIT;
-					} else if (vcsUri.contains("gitlab.com/")) {
-						vcsName = vcsUri.split("/-/")[0].split("gitlab.com/")[1];
-						vcsType = VcsType.GIT;
+					// Derive name from URI, but allow override from input
+					String vcsName = Utils.deriveVcsNameFromUri(vcsUri);
+					if (StringUtils.isNotEmpty(cpd.getVcsRepository().getName())) {
+						vcsName = cpd.getVcsRepository().getName();
 					}
-				
-					if (StringUtils.isNotEmpty(cpd.getVcsRepository().getName())) vcsName = cpd.getVcsRepository().getName();
+					
+					// Determine VCS type - default to GIT for known providers
+					VcsType vcsType = VcsType.GIT;
 					if (null != cpd.getVcsRepository().getType()) {
-						// TODO: VcsType very case sensitive, first letter capital rest lowercase
 						String vcsTypeStr = StringUtils.capitalize((cpd.getVcsRepository().getType().toString().toLowerCase()));
 						vcsType = VcsType.resolveStringToType(vcsTypeStr);
 					}
-					if (vcsName != null && vcsType != null) {
+					
+					if (vcsName != null) {
 						vcsRepo = Optional.of(vcsRepositoryService.createVcsRepository(vcsName, orgUuid, vcsUri, vcsType, ar.getWhoUpdated()));
 					}
 				}

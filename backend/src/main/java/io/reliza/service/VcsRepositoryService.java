@@ -71,26 +71,12 @@ public class VcsRepositoryService {
 	 * @return Optional of VcsRepository
 	 */
 	private Optional<VcsRepository> findVcsRepositoryByOrgAndUri(UUID orgUuid, String uri) {
-		// Strip https:// or http:// prefix if present
-		String normalizedUri = uri;
-		if (uri.startsWith("https://")) {
-			normalizedUri = uri.substring(8);
-		} else if (uri.startsWith("http://")) {
-			normalizedUri = uri.substring(7);
-		}
-		
-		// Strip username@ prefix if present (e.g., myuser@dev.azure.com)
-		int atIndex = normalizedUri.indexOf('@');
-		if (atIndex > 0 && atIndex < normalizedUri.indexOf('/')) {
-			normalizedUri = normalizedUri.substring(atIndex + 1);
-		}
-		
+		String normalizedUri = Utils.normalizeVcsUri(uri);
 		return repository.findByOrgAndUri(orgUuid.toString(), normalizedUri);
 	}
 	
 	/**
-	 * Find VCS repository data by URI within an organization.
-	 * 
+	 * Find VCS repository by organization and URI.
 	 * @param orgUuid Organization UUID
 	 * @param uri VCS repository URI
 	 * @return Optional of VcsRepositoryData
@@ -107,7 +93,8 @@ public class VcsRepositoryService {
 	public Optional<VcsRepository> getVcsRepositoryByUri (UUID orgUuid, String uri, VcsType type, boolean createIfMissing, WhoUpdated wu) {
 		Optional<VcsRepository> ovr = findVcsRepositoryByOrgAndUri(orgUuid, uri);
 		if (ovr.isEmpty() && createIfMissing) {
-			ovr = Optional.of(createVcsRepository(uri, orgUuid, uri, type, wu));
+			String vcsName = Utils.deriveVcsNameFromUri(uri);
+			ovr = Optional.of(createVcsRepository(vcsName, orgUuid, uri, type, wu));
 		}
 		return ovr;
 	}

@@ -524,7 +524,7 @@ public class ComponentService {
 	 * @throws RelizaException if component resolution fails
 	 */
 	public UUID resolveComponentIdFromInput(Map<String, Object> inputMap, CommonVariables.AuthHeaderParse ahp) throws RelizaException {
-		String vcsUri = (String) inputMap.get("vcsUri");
+		String vcsUri = Utils.normalizeVcsUri((String) inputMap.get("vcsUri"));
 		String repoPath = (String) inputMap.get("repoPath");
 		
 		UUID componentId = Utils.resolveProgrammaticComponentId((String) inputMap.get(CommonVariables.COMPONENT_FIELD), ahp);
@@ -574,13 +574,16 @@ public class ComponentService {
 	@Transactional
 	public ComponentData createComponentFromVcsUri(UUID orgUuid, String vcsUri, String repoPath, VcsType vcsType,
 			String versionSchema, String featureBranchVersionSchema, WhoUpdated wu) throws RelizaException {
+		// Strip username from URI if present (e.g., https://relizaio@dev.azure.com/ -> https://dev.azure.com/)
+		String cleanVcsUri = Utils.normalizeVcsUri(vcsUri);
+		
 		// Find or create VCS repository
 		VcsType effectiveVcsType = (vcsType != null) ? vcsType : VcsType.GIT;
-		Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, vcsUri, effectiveVcsType, true, wu);
+		Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, cleanVcsUri, effectiveVcsType, true, wu);
 		UUID vcsUuid = vcsRepo.get().getUuid();
 		
-		// Create component
-		String componentName = resolveComponentNameFromVcsUri(vcsUri, repoPath);
+		// Create component (use clean URI for name resolution)
+		String componentName = resolveComponentNameFromVcsUri(cleanVcsUri, repoPath);
 		
 		CreateComponentDto cpd = CreateComponentDto.builder()
 				.organization(orgUuid)
@@ -596,6 +599,7 @@ public class ComponentService {
 		return ComponentData.dataFromRecord(component);
 	}
 	
+		
 	/**
 	 * Resolve component name from VCS URI and repoPath.
 	 */
@@ -621,11 +625,13 @@ public class ComponentService {
 	 * @throws RelizaException if VCS not found, component not found, or multiple components found
 	 */
 	public ComponentData resolveComponentByVcsUriAndPath(UUID orgUuid, String vcsUri, String repoPath) throws RelizaException {
+
+		String cleanVcsUri = Utils.normalizeVcsUri(vcsUri);
 		
-		log.debug("VCS-based component resolution : vcsUri={}, repoPath={}, orgUuid={}", vcsUri, repoPath, orgUuid);
+		log.debug("VCS-based component resolution : vcsUri={}, repoPath={}, orgUuid={}", cleanVcsUri, repoPath, orgUuid);
 		
 		// Find VCS repository within organization
-		Optional<VcsRepositoryData> vcsRepoData = vcsRepositoryService.getVcsRepositoryDataByUri(orgUuid, vcsUri);
+		Optional<VcsRepositoryData> vcsRepoData = vcsRepositoryService.getVcsRepositoryDataByUri(orgUuid, cleanVcsUri);
 		if (!vcsRepoData.isPresent()) {
 			log.error("VCS repository not found : vcsUri={}, orgUuid={}", vcsUri, orgUuid);
 			throw new RelizaException("VCS repository not found: " + vcsUri);

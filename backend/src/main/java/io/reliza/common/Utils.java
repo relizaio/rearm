@@ -238,6 +238,28 @@ public class Utils {
 		return uri1Edited.equalsIgnoreCase(uri2Edited);
 	}
 	
+	/**
+	 * Normalize VCS URI by stripping scheme (https://, http://) and username.
+	 * E.g., https://relizaio@dev.azure.com/path -> dev.azure.com/path
+	 * Used for VCS repository lookups and component creation.
+	 */
+	public static String normalizeVcsUri(String uri) {
+		if (uri == null) return null;
+		String normalized = uri;
+		// Strip scheme
+		if (normalized.startsWith("https://")) {
+			normalized = normalized.substring(8);
+		} else if (normalized.startsWith("http://")) {
+			normalized = normalized.substring(7);
+		}
+		// Strip username@ prefix if present
+		int atIndex = normalized.indexOf('@');
+		if (atIndex > 0 && atIndex < normalized.indexOf('/')) {
+			normalized = normalized.substring(atIndex + 1);
+		}
+		return normalized;
+	}
+	
 	public static String cleanString (String dirtyString) {
 		String cleanString = dirtyString.trim();
 		cleanString = cleanString.replaceFirst("\r\n$", "");
@@ -388,6 +410,80 @@ public class Utils {
 		vcsUri = RegExUtils.replaceFirst(vcsUri, "http(s)?://", "");
 		vcsUri = RegExUtils.replaceFirst(vcsUri, ":", "/"); // only slashs, no colons
 		return vcsUri;
+	}
+	
+	/**
+	 * Derive VCS repository name from URI.
+	 * Handles various Git hosting providers (GitHub, GitLab, Bitbucket, Azure DevOps).
+	 * E.g., https://github.com/owner/repo -> owner/repo
+	 *       git@github.com:owner/repo.git -> owner/repo
+	 *       https://dev.azure.com/org/project/_git/repo -> org/project/_git/repo
+	 */
+	public static String deriveVcsNameFromUri(String uri) {
+		if (uri == null) return null;
+		
+		String input = uri.trim();
+		
+		// Strip .git ending
+		input = RegExUtils.replaceFirst(input, "\\.git$", "");
+		
+		// Normalize SSH-like URLs (e.g., git@github.com:owner/repo) to https for parsing
+		java.util.regex.Pattern sshPattern = java.util.regex.Pattern.compile("^(?:git@|ssh://git@)([^:]+):(.+)$");
+		java.util.regex.Matcher sshMatcher = sshPattern.matcher(input);
+		if (sshMatcher.matches()) {
+			String host = sshMatcher.group(1);
+			String path = sshMatcher.group(2);
+			input = "https://" + host + "/" + path;
+		}
+		
+		// Ensure a scheme for URL parsing
+		if (!input.toLowerCase().startsWith("http://") && !input.toLowerCase().startsWith("https://")) {
+			input = "https://" + input;
+		}
+		
+		// Strip username from URI if present
+		input = input.replaceFirst("(https?://)([^@/]+)@", "$1");
+		
+		try {
+			java.net.URI parsedUri = java.net.URI.create(input);
+			String hostname = parsedUri.getHost();
+			String path = parsedUri.getPath();
+			
+			// Clean provider-specific path suffixes
+			if (hostname.equals("bitbucket.org")) {
+				int idx = path.indexOf("/src/");
+				if (idx != -1) path = path.substring(0, idx);
+			} else if (hostname.equals("github.com")) {
+				int idx = path.indexOf("/tree/");
+				if (idx != -1) path = path.substring(0, idx);
+			} else if (hostname.equals("gitlab.com")) {
+				int idx = path.indexOf("/-/");
+				if (idx != -1) path = path.substring(0, idx);
+			} else if (hostname.equals("dev.azure.com") || hostname.endsWith(".visualstudio.com")) {
+				// Azure DevOps: clean paths after _git/repo (e.g., /pullrequest/123)
+				int gitIdx = path.indexOf("/_git/");
+				if (gitIdx != -1) {
+					int afterGit = gitIdx + 6; // length of "/_git/"
+					int nextSlash = path.indexOf("/", afterGit);
+					if (nextSlash != -1) {
+						path = path.substring(0, nextSlash);
+					}
+				}
+			}
+			
+			// Remove leading slash to get the name
+			if (path.startsWith("/")) {
+				path = path.substring(1);
+			}
+			
+			// URL-encode spaces to match UI behavior
+			path = path.replace(" ", "%20");
+			
+			return path;
+		} catch (IllegalArgumentException e) {
+			// If URL parsing fails, return the cleaned input without scheme
+			return normalizeVcsUri(uri);
+		}
 	}
 	
 
