@@ -522,7 +522,11 @@ public class CommonVariables {
 		}
 	}
 	
-	public record VersionResponse (String version, String dockerTagSafeVersion, String changelog) {}
+	public record VersionResponse (String version, String dockerTagSafeVersion, String changelog, Boolean releaseAlreadyExists) {
+		public VersionResponse(String version, String dockerTagSafeVersion, String changelog) {
+			this(version, dockerTagSafeVersion, changelog, false);
+		}
+	}
 	
 	public enum PullRequestState {
 		OPEN,

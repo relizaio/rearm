@@ -93,7 +93,7 @@ public class ReleaseVersionService {
 						log.info("Found existing release {} for commit {} on branch {}", 
 								existingVersion, sourceCodeEntry.getCommit(), getNewVersionDto.branch());
 						return new VersionResponse(existingVersion, 
-								Utils.dockerTagSafeVersion(existingVersion), null);
+								Utils.dockerTagSafeVersion(existingVersion), null, true);
 					}
 				}
 			}
