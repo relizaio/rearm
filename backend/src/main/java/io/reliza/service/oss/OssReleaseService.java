@@ -806,11 +806,18 @@ public class OssReleaseService {
 			// If rebuildRelease is true, strip and rebuild the release regardless of lifecycle
 			if (rebuildRelease) {
 				log.info("Rebuilding release: uuid={}, version={}", existingRd.getUuid(), rData.getVersion());
-				// Strip the existing release - clear artifacts, source code entries, commits
+				// Strip the existing release - clear artifacts, source code entries, commits, deliverables
 				releaseDto.setUuid(existingRd.getUuid());
 				releaseDto.setArtifacts(releaseDto.getArtifacts()); // use new artifacts from input
 				releaseDto.setSourceCodeEntry(releaseDto.getSourceCodeEntry()); // use new SCE from input
 				releaseDto.setCommits(releaseDto.getCommits()); // use new commits from input
+				// Clear old deliverables - use new ones from input or empty list if not provided
+				if (null == releaseDto.getInboundDeliverables()) {
+					releaseDto.setInboundDeliverables(new LinkedList<>());
+				}
+				if (null == releaseDto.getOutboundDeliverables()) {
+					releaseDto.setOutboundDeliverables(new LinkedList<>());
+				}
 				r = updateRelease(releaseDto, UpdateReleaseStrength.FULL, wu);
 				r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
 				rData = ReleaseData.dataFromRecord(r);

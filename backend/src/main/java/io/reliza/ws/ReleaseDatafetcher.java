@@ -649,10 +649,14 @@ public class ReleaseDatafetcher {
 			var rd = ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDtoBuilder.build(),
 					ar.getWhoUpdated(), shouldRebuild));
 			log.debug("release created: {}", rd);
+			VariantData vd = variantService.getBaseVariantForRelease(rd);
+			// Clear existing outbound deliverables when rebuilding
+			if (shouldRebuild) {
+				variantService.clearOutboundDeliverables(vd.getUuid(), ar.getWhoUpdated());
+			}
 			if (null != outboundDeliverablesList && !outboundDeliverablesList.isEmpty()) {
 				List<UUID> outboundDeliverables = deliverableService
 						.prepareListofDeliverables(outboundDeliverablesList, bd.getUuid(), version, ar.getWhoUpdated());
-				VariantData vd = variantService.getBaseVariantForRelease(rd);
 				variantService.addOutboundDeliverables(outboundDeliverables, vd.getUuid(), ar.getWhoUpdated());
 			}
 			return rd;

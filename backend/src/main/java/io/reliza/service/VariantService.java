@@ -5,6 +5,7 @@ package io.reliza.service;
 
 import java.time.ZonedDateTime;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,6 +27,7 @@ import io.reliza.model.Variant;
 import io.reliza.model.VariantData;
 import io.reliza.model.VariantData.VariantType;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.dto.VariantDto;
@@ -110,6 +112,23 @@ public class VariantService {
 			added = true;			
 		}
 		return added;
+	}
+	
+	@Transactional
+	public void clearOutboundDeliverables(UUID variantUuid, WhoUpdated wu) {
+		Optional<Variant> vOpt = getVariant(variantUuid);
+		if (vOpt.isPresent()) {
+			VariantData vd = VariantData.dataFromRecord(vOpt.get());
+			Set<UUID> existingDeliverables = vd.getOutboundDeliverables();
+			if (existingDeliverables != null && !existingDeliverables.isEmpty()) {
+				existingDeliverables.forEach(du -> vd.addUpdateEvent(new ReleaseUpdateEvent(
+						ReleaseUpdateScope.OUTBOUND_DELIVERY, ReleaseUpdateAction.REMOVED,
+						null, null, du, ZonedDateTime.now(), wu)));
+				vd.setOutboundDeliverables(new HashSet<>());
+				Map<String,Object> recordData = Utils.dataToRecord(vd);
+				saveVariant(vOpt.get(), recordData, wu);
+			}
+		}
 	}
 	
 	@Transactional
