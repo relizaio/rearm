@@ -732,6 +732,7 @@ type Version {
 	version: String
 	dockerTagSafeVersion: String
 	changelog: String
+	releaseAlreadyExists: Boolean
 }
 
 type MarketingReleaseLifecycle {
