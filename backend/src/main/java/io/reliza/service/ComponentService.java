@@ -539,7 +539,9 @@ public class ComponentService {
 			if (vcsUri != null) {
 				Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
 				if (ocd.isPresent() && ocd.get().getVcs() != null) {
-					Optional<VcsRepositoryData> vcsRepoData = vcsRepositoryService.getVcsRepositoryDataByUri(ahp.getOrgUuid(), vcsUri);
+					// Use the component's organization to look up VCS repository
+					UUID componentOrgUuid = ocd.get().getOrg();
+					Optional<VcsRepositoryData> vcsRepoData = vcsRepositoryService.getVcsRepositoryDataByUri(componentOrgUuid, vcsUri);
 					if (vcsRepoData.isEmpty() || !vcsRepoData.get().getUuid().equals(ocd.get().getVcs())) {
 						throw new RelizaException("VCS URI does not match component's VCS repository");
 					}
