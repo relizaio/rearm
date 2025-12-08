@@ -472,6 +472,7 @@ public class ArtifactService {
 			artifactDto.setUuid(UUID.randomUUID());
 		}
 		if (artifactDto.getType().equals(ArtifactType.BOM)) {
+			// Check if we can reuse existing DTrack project info (by digest match)
 			if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest()) ){
 				var a = findArtifactByStoredDigest(orgUuid, rebomResponse.meta().bomDigest());
 				if(a.isPresent()){
@@ -490,7 +491,16 @@ public class ArtifactService {
 				}
 				String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
 				UploadableBom ub = new UploadableBom(bomJson, null, false);
-				dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
+				// If updating an existing artifact with DTrack project, upload to that project
+				if (null != existingAd && null != existingAd.getMetrics() && 
+						StringUtils.isNotEmpty(existingAd.getMetrics().getDependencyTrackProject())) {
+					dtur = integrationService.uploadBomToExistingDtrackProject(orgUuid, ub, 
+							UUID.fromString(existingAd.getMetrics().getDependencyTrackProject()),
+							existingAd.getMetrics().getProjectName(),
+							existingAd.getMetrics().getProjectVersion());
+				} else {
+					dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
+				}
 			}
 			artifactDto.setDtur(dtur);
 		}

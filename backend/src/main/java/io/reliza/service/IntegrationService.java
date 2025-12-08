@@ -532,6 +532,26 @@ public class IntegrationService {
 		return new DependencyTrackUploadResult(projectId.toString(), token, projectName, projectVersion, fullDtrackUri);
 	}
 	
+	/**
+	 * Upload a new BOM to an existing Dependency Track project.
+	 * Used when updating an artifact that already has a DTrack project associated.
+	 */
+	public DependencyTrackUploadResult uploadBomToExistingDtrackProject(UUID orgUuid, UploadableBom bom, 
+			UUID existingProjectId, String projectName, String projectVersion) {
+		DependencyTrackUploadResult dtur = null;
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(orgUuid, IntegrationType.DEPENDENCYTRACK,
+				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		if (oid.isPresent()) {
+			try {
+				dtur = sendBomToDependencyTrackOnCreatedProject(oid.get(), existingProjectId, bom, projectName, projectVersion);
+			} catch (Exception e) {
+				log.error("Error uploading BOM to existing Dependency Track project: " + existingProjectId, e);
+				throw new RuntimeException("Error uploading BOM to existing Dependency Track project");
+			}
+		}
+		return dtur;
+	}
+	
 	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad, ZonedDateTime lastScanned) throws RelizaException {
 		if (null == lastScanned) lastScanned = ZonedDateTime.now();
 		DependencyTrackIntegration dti = null;
