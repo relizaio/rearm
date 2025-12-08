@@ -250,7 +250,8 @@ public class OssReleaseService {
 		}
 		
 		if (upToVersionIndex == -1) {
-			throw new RelizaException("Release with version '" + upToVersion + "' not found");
+			// upToVersion not found - fall back to latest release behavior
+			return getReleasePerProductComponent(orgUuid, componentUuid, productUuid, branch, lifecycle, cg);
 		}
 		
 		// Get the release immediately after in the sorted list (which is the previous version)
