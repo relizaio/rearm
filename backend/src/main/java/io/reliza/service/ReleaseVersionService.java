@@ -23,6 +23,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.VersionAssignment;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ComponentData.ComponentType;
@@ -68,6 +69,35 @@ public class ReleaseVersionService {
 		ComponentData pd = getComponentService.getComponentData(projectId).get();
 		BranchData bd = branchService.getBranchDataFromBranchString(getNewVersionDto.branch(), projectId, wu);
 		UUID branchUuid = bd.getUuid();
+
+		// Check if source code entry commit is already attached to a release on this branch
+		// If found, return the existing version instead of generating a new one
+		SceDto sourceCodeEntry = getNewVersionDto.sourceCodeEntry();
+		if (null == sourceCodeEntry && null != getNewVersionDto.commits() && !getNewVersionDto.commits().isEmpty()) {
+			sourceCodeEntry = getNewVersionDto.commits().get(0);
+		} 
+		if (sourceCodeEntry != null && StringUtils.isNotEmpty(sourceCodeEntry.getCommit())) {
+			UUID vcsUuid = bd.getVcs();
+			if (vcsUuid != null) {
+				List<SourceCodeEntry> existingSces = getSourceCodeEntryService.getSourceCodeEntriesByVcsAndCommits(
+						vcsUuid, List.of(sourceCodeEntry.getCommit()));
+				if (!existingSces.isEmpty()) {
+					SourceCodeEntry existingSce = existingSces.get(0);
+					List<ReleaseData> releasesBySce = sharedReleaseService.findReleaseDatasBySce(
+							existingSce.getUuid(), pd.getOrg());
+					Optional<ReleaseData> matchingRelease = releasesBySce.stream()
+							.filter(rd -> rd.getBranch().equals(branchUuid))
+							.findFirst();
+					if (matchingRelease.isPresent()) {
+						String existingVersion = matchingRelease.get().getVersion();
+						log.info("Found existing release {} for commit {} on branch {}", 
+								existingVersion, sourceCodeEntry.getCommit(), getNewVersionDto.branch());
+						return new VersionResponse(existingVersion, 
+								Utils.dockerTagSafeVersion(existingVersion), null);
+					}
+				}
+			}
+		}
 
 		// Check for missing version schema before attempting version generation
 		if (StringUtils.isEmpty(pd.getVersionSchema()) && StringUtils.isEmpty(bd.getVersionSchema())) {
