@@ -115,7 +115,7 @@ public class OssReleaseDatafetcher {
 	}
 	
 	@DgsData(parentType = "Query", field = "getLatestReleaseProgrammatic")
-	public Optional<ReleaseData> getLatestRelease(DgsDataFetchingEnvironment dfe) {
+	public Optional<ReleaseData> getLatestRelease(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
