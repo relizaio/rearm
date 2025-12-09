@@ -19,7 +19,13 @@ export default async function validateBom(data: any): Promise<boolean> {
         if (validationErrors === null) {
             logger.info('JSON valid')
         } else {
-            throw new Error('JSON Validation Error:\n' + JSON.stringify(validationErrors))
+            let serialNumber = 'unknown'
+            try {
+                serialNumber = data.serialNumber || 'not present'
+            } catch {
+                // ignore parsing errors
+            }
+            throw new Error('JSON Validation Error for BOM serialNumber=' + serialNumber + ':\n' + JSON.stringify(validationErrors))
         }
     } catch (err) {
         if (err instanceof CDX.Validation.MissingOptionalDependencyError) {
