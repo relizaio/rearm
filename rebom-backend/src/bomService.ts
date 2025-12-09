@@ -1190,7 +1190,7 @@ function computeRootDepIndex (bom: any) : number {
       outBom.dependencies = bom.dependencies
     }
 
-    logger.info(`Dedup reduced json from ${Object.keys(bom).length} to ${Object.keys(outBom).length}`)
+    logger.info(`Dedup BOM ${bom.serialNumber} - reduced json from ${Object.keys(bom).length} to ${Object.keys(outBom).length}`)
     return outBom
   }
 
