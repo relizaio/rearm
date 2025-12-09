@@ -175,7 +175,7 @@ public class ComponentDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "createComponent")
-	public ComponentData createComponentManual(DgsDataFetchingEnvironment dfe) {
+	public ComponentData createComponentManual(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> createComponentInputMap = dfe.getArgument("component");
@@ -189,13 +189,8 @@ public class ComponentDataFetcher {
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
-		try {
-			return ComponentData.dataFromRecord(componentService
+		return ComponentData.dataFromRecord(componentService
 									.createComponent(cpd, wu));
-		} catch (RelizaException re) {
-			log.error("Error on creating component", re.getMessage());
-			throw new RuntimeException("Error on creating component");
-		}
 	}
 	
 	@PreAuthorize("isAuthenticated()")

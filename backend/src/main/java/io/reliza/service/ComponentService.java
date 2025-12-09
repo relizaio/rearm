@@ -178,7 +178,7 @@ public class ComponentService {
 			throw new RelizaException("Version schema is required. Please specify a version schema (e.g., 'semver')");
 		}
 		
-		if (StringUtils.isEmpty(cpd.getFeatureBranchVersioning())) {
+		if (cpd.getType() == ComponentType.COMPONENT && StringUtils.isEmpty(cpd.getFeatureBranchVersioning())) {
 			log.error("Component creation failed: Feature branch versioning is required for component '{}'", cpd.getName());
 			throw new RelizaException("Feature branch versioning is required. Please specify feature branch versioning (e.g., 'Branch.Micro')");
 		}
