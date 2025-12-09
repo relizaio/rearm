@@ -154,7 +154,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		Set<DigestRecord> digestRecords,
 		List<TagRecord> tags,
 		StatusEnum status,
-		List<UUID> artifacts
+		List<UUID> artifacts,
+		UUID org  // Organization UUID for rebom lookups
 	) {
 		/**
 		 * Creates a version snapshot from current ArtifactData state
@@ -174,7 +175,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 				ad.getDigestRecords() != null ? new LinkedHashSet<>(ad.getDigestRecords()) : new LinkedHashSet<>(),
 				ad.getTags() != null ? new ArrayList<>(ad.getTags()) : new ArrayList<>(),
 				ad.getStatus(),
-				ad.getArtifacts() != null ? new ArrayList<>(ad.getArtifacts()) : new ArrayList<>()
+				ad.getArtifacts() != null ? new ArrayList<>(ad.getArtifacts()) : new ArrayList<>(),
+				ad.getOrg()
 			);
 		}
 		
@@ -198,6 +200,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 			ad.setTags(snapshot.tags());
 			ad.setStatus(snapshot.status());
 			ad.setArtifacts(snapshot.artifacts());
+			ad.setOrg(snapshot.org());
 			// Note: previousVersions is intentionally not set to avoid infinite nesting
 			return ad;
 		}
@@ -357,6 +360,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 			ad.metrics.uploadToken = artifactDto.getDtur().token();
 			ad.metrics.projectName = artifactDto.getDtur().projectName();
 			ad.metrics.projectVersion = artifactDto.getDtur().projectVersion();
+			ad.metrics.dependencyTrackFullUri = artifactDto.getDtur().fullProjectUri();
 		} else if (null != artifactDto.getRmd()) {
 			ad.metrics = DependencyTrackIntegration.fromReleaseMetricsDto(artifactDto.getRmd());
 		}

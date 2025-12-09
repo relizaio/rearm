@@ -448,8 +448,27 @@ public class ArtifactService {
 				}
 			}
 		}
+		
+		// SPDX versioning: pass existing serialNumber for updates to maintain continuity
+		// Unlike CycloneDX (which auto-detects updates by serialNumber), SPDX always has unique
+		// documentNamespace, so we explicitly pass the existing serialNumber when updating
+		UUID existingSerialNumberForSpdx = null;
+		if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
+			if(null != existingAd && null != existingAd.getInternalBom()){
+				// User is updating existing SPDX artifact - pass existing serialNumber for continuity
+				existingSerialNumberForSpdx = existingAd.getInternalBom().id();
+				// For SPDX, we keep the same artifact UUID (unlike CycloneDX different-serial case)
+				// Version is managed by rebom-backend (bom_version counter)
+			}
+		}
 
-		RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, artifactDto.getBomFormat(), orgUuid);
+		RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, artifactDto.getBomFormat(), orgUuid, existingSerialNumberForSpdx);
+		
+		// For SPDX, set version from rebom response (Rearm-managed bomVersion)
+		if(artifactDto.getBomFormat().equals(BomFormat.SPDX) && rebomResponse.meta().bomVersion() != null){
+			artifactDto.setVersion(rebomResponse.meta().bomVersion());
+		}
+		
 		Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
 		if(null!=rebomResponse && StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
 			digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));

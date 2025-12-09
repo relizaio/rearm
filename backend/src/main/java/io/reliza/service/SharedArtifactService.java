@@ -85,7 +85,19 @@ public class SharedArtifactService {
         log.info("download artifacts for ad: {}", ad);
 
 		if(null != ad.getInternalBom()){
-			String rebom = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg()).toString();
+			String rebom;
+			// For versioned BOMs, use the version-specific query
+			if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
+				try {
+					Integer version = Integer.parseInt(ad.getVersion());
+					rebom = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
+				} catch (NumberFormatException e) {
+					// Version is not numeric, fall back to latest
+					rebom = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg()).toString();
+				}
+			} else {
+				rebom = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg()).toString();
+			}
 			byte[] byteArray = rebom.getBytes();
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);
@@ -125,7 +137,19 @@ public class SharedArtifactService {
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
 
 		if(null != ad.getInternalBom()){
-			String rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+			String rebom;
+			// For versioned BOMs (like SPDX), use the version-specific query
+			if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
+				try {
+					Integer version = Integer.parseInt(ad.getVersion());
+					rebom = rebomService.findRawBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
+				} catch (NumberFormatException e) {
+					// Version is not numeric, fall back to latest
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+				}
+			} else {
+				rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+			}
 			byte[] byteArray = rebom.getBytes();
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);

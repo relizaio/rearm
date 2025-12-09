@@ -75,7 +75,12 @@ public class RebomService {
                                 ).build();
 	}
 
-    public record BomInput(JsonNode bom, RebomOptions rebomOptions, BomFormat format, UUID org) {}
+    public record BomInput(JsonNode bom, RebomOptions rebomOptions, BomFormat format, UUID org, String existingSerialNumber) {
+        // Constructor without existingSerialNumber for backward compatibility
+        public BomInput(JsonNode bom, RebomOptions rebomOptions, BomFormat format, UUID org) {
+            this(bom, rebomOptions, format, org, null);
+        }
+    }
 
     public record GraphQLResponse<T>(T data, List<Object> errors) {}
 
@@ -101,7 +106,7 @@ public class RebomService {
                 return gqlResp;
             });
     }   
-    private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions, BomFormat bomFormat, UUID org){
+    private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions, BomFormat bomFormat, UUID org, String existingSerialNumber){
         String mutation = """
             mutation addBom ($bomInput: BomInput!) {
                 addBom(bomInput: $bomInput) {
@@ -113,7 +118,7 @@ public class RebomService {
             }""";
         
         Map<String, Object> variables = new HashMap<>();
-        BomInput bomInput = new BomInput(bomJson, rebomOptions, bomFormat, org);
+        BomInput bomInput = new BomInput(bomJson, rebomOptions, bomFormat, org, existingSerialNumber);
         variables.put("bomInput", bomInput);
         Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
         //TODO: deserialize bom response as an object of ArtifactUploadRseponseDTO
@@ -134,6 +139,28 @@ public class RebomService {
         variables.put("org", org.toString());
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         var br = response.get("bomById");
+        JsonNode bomJson = Utils.OM.valueToTree(br);
+        return bomJson;
+    }
+
+    /**
+     * Find augmented BOM by serialNumber and specific version.
+     * Used for downloading historical versions of augmented BOMs.
+     */
+    public JsonNode findBomByVersion(UUID bomSerialNumber, UUID org, Integer version) throws JsonProcessingException{
+        String query = """
+            query bomBySerialNumberAndVersion ($serialNumber: ID!, $version: Int!, $org: ID!, $raw: Boolean) {
+                bomBySerialNumberAndVersion(serialNumber: $serialNumber, version: $version, org: $org, raw: $raw)
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("serialNumber", bomSerialNumber.toString());
+        variables.put("version", version);
+        variables.put("org", org.toString());
+        variables.put("raw", false);  // false for augmented
+        
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var br = response.get("bomBySerialNumberAndVersion");
         JsonNode bomJson = Utils.OM.valueToTree(br);
         return bomJson;
     }
@@ -168,6 +195,28 @@ public class RebomService {
 
     public JsonNode findRawBomById(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
         return findRawBomById(bomSerialNumber, org, null);
+    }
+
+    /**
+     * Find BOM by serialNumber and specific version.
+     * Used for downloading historical versions of SPDX BOMs.
+     */
+    public JsonNode findRawBomByVersion(UUID bomSerialNumber, UUID org, Integer version) throws JsonProcessingException{
+        String query = """
+            query bomBySerialNumberAndVersion ($serialNumber: ID!, $version: Int!, $org: ID!, $raw: Boolean) {
+                bomBySerialNumberAndVersion(serialNumber: $serialNumber, version: $version, org: $org, raw: $raw)
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("serialNumber", bomSerialNumber.toString());
+        variables.put("version", version);
+        variables.put("org", org.toString());
+        variables.put("raw", true);
+        
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var br = response.get("bomBySerialNumberAndVersion");
+        JsonNode bomJson = Utils.OM.valueToTree(br);
+        return bomJson;
     }
 
     public JsonNode findRawBomById(UUID bomSerialNumber, UUID org, BomFormat format) throws JsonProcessingException{
@@ -252,7 +301,17 @@ public class RebomService {
         return diffResult;
     }
     public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride, BomFormat bomFormat, UUID org)  throws RelizaException{
-        return uploadRebomRequest(bomJson, rebomOverride, bomFormat, org);
+        return uploadRebomRequest(bomJson, rebomOverride, bomFormat, org, null);
+    }
+    
+    /**
+     * Upload SBOM with optional existingSerialNumber for SPDX updates.
+     * When updating an existing SPDX artifact, pass the existing internalBom.id as existingSerialNumber
+     * to maintain serialNumber continuity for DTrack and artifact identity.
+     */
+    public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride, BomFormat bomFormat, UUID org, UUID existingSerialNumber)  throws RelizaException{
+        String serialStr = existingSerialNumber != null ? existingSerialNumber.toString() : null;
+        return uploadRebomRequest(bomJson, rebomOverride, bomFormat, org, serialStr);
     }
 
     // public JsonNode mergeBoms(List<UUID> bomIds, RebomOptions rebomOptions) throws RelizaException{ 
