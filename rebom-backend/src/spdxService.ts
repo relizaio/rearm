@@ -241,19 +241,29 @@ export class SpdxService {
 
     /**
      * Generate RebomOptions from SPDX metadata
+     * @param spdxMetadata - Extracted SPDX metadata
+     * @param bomVersion - Rearm-managed version number (1, 2, 3...). Defaults to 1 for new uploads.
+     * @param existingSerialNumber - If updating existing artifact, use this serialNumber for continuity
      */
-    static generateRebomOptionsFromSpdx(spdxMetadata: SpdxMetadata): Partial<RebomOptions> {
+    static generateRebomOptionsFromSpdx(
+        spdxMetadata: SpdxMetadata, 
+        bomVersion: number = 1,
+        existingSerialNumber?: string
+    ): Partial<RebomOptions> {
         const firstPackage = spdxMetadata.packages?.[0];
         const metadataString = JSON.stringify(spdxMetadata);
         
+        // Use existing serialNumber if updating, otherwise generate new one
+        const serialNumber = existingSerialNumber || spdxMetadata.SPDXID || `urn:uuid:${uuidv4()}`;
+        
         return {
-            serialNumber: spdxMetadata.SPDXID || `urn:uuid:${uuidv4()}`,
+            serialNumber,
             name: firstPackage?.name || spdxMetadata.documentName || spdxMetadata.name || 'SPDX Document',
             version: firstPackage?.versionInfo || '1.0.0',
             bomState: 'raw',
             mod: 'raw',
             storage: 'oci',
-            bomVersion: '1',
+            bomVersion: String(bomVersion),  // Use passed bomVersion instead of hardcoded '1'
             structure: 'flat',
             belongsTo: 'application',
             hash: createHash('sha256').update(metadataString).digest('hex').substring(0, 16),

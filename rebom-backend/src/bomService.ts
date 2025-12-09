@@ -212,8 +212,32 @@ export async function findBomMetasBySerialNumber(serialNumber: string, org: stri
 }
 
 export async function findBomBySerialNumberAndVersion(serialNumber: string, version: number, org: string, raw?: boolean): Promise<Object> {
-  const bomsBySerialNumber = await BomRepository.bomBySerialNumber(serialNumber, org)
-  const versionedBom = bomsBySerialNumber.filter((b: BomRecord) => b.meta.bomVersion === version.toString())[0]
+  const allBoms = await BomRepository.allBomsBySerialNumber(serialNumber, org)
+  // bomVersion can be stored as number or string, so normalize to number for comparison
+  const versionedBom = allBoms.filter((b: BomRecord) => {
+    const bomVersion = b.meta.bomVersion;
+    const bomVersionNum = typeof bomVersion === 'string' ? parseInt(bomVersion, 10) : bomVersion;
+    return bomVersionNum === version;
+  })[0]
+  if (!versionedBom) {
+    throw new Error(`BOM version ${version} not found for serialNumber: ${serialNumber}`);
+  }
+  
+  // For SPDX source format, return the raw SPDX content
+  if (versionedBom.source_format === 'SPDX' && versionedBom.source_spdx_uuid) {
+    const spdxBom = await SpdxRepository.findSpdxBomById(versionedBom.source_spdx_uuid, org);
+    if (spdxBom?.oci_response) {
+      const fetchId = spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid;
+      return await fetchFromOci(fetchId);
+    }
+  }
+  
+  // For CycloneDX: if raw requested, fetch directly from OCI storage
+  if (raw) {
+    return await fetchFromOci(versionedBom.uuid);
+  }
+  
+  // Otherwise return the augmented/processed BOM content
   const bomDto = await bomRecordToDto(versionedBom)
   return bomDto.bom
 }
@@ -962,7 +986,38 @@ function computeRootDepIndex (bom: any) : number {
         const spdxMetadata = SpdxService.extractSpdxMetadata(spdxContent);
         const fileHash = SpdxService.calculateSpdxHash(spdxContent);
         
-        // 3. Upload SPDX to OCI
+        // 3. Determine version and check for updates
+        let bomVersion = 1;
+        const existingSerialNumber = bomInput.bomInput.existingSerialNumber;
+        
+        if (existingSerialNumber) {
+            // User is updating an existing SPDX artifact
+            // The existingSerialNumber is the serialNumber from the converted CycloneDX BOM (internalBom.id)
+            // We need to find the SPDX record by looking up the bom by serialNumber first
+            const existingSpdx = await SpdxRepository.findSpdxBomBySerialNumber(existingSerialNumber, bomInput.bomInput.org);
+            if (existingSpdx) {
+                bomVersion = existingSpdx.bom_version + 1;
+                logger.info({ existingSerialNumber, oldVersion: existingSpdx.bom_version, newVersion: bomVersion }, 
+                    "User updating existing SPDX artifact - incrementing version");
+            } else {
+                logger.warn({ existingSerialNumber }, "existingSerialNumber provided but no existing SPDX found - treating as new upload");
+            }
+        } else {
+            // New upload - validate namespace is unique
+            const existingByNamespace = await SpdxRepository.findSpdxBomByNamespace(
+                spdxMetadata.documentNamespace || '',
+                bomInput.bomInput.org
+            );
+            
+            if (existingByNamespace) {
+                throw new Error(
+                    `SPDX document with namespace "${spdxMetadata.documentNamespace}" already exists. ` +
+                    `To update an existing artifact, use the update flow with existingSerialNumber.`
+                );
+            }
+        }
+        
+        // 4. Upload SPDX to OCI
         const spdxUuid = uuidv4();
         let spdxOciResponse: OASResponse;
         
@@ -972,7 +1027,7 @@ function computeRootDepIndex (bom: any) : number {
             throw new Error("OCI Storage not enabled");
         }
 
-        // 4. Store SPDX metadata in spdx_boms table with OCI response
+        // 5. Store SPDX metadata in spdx_boms table with OCI response and version
         const spdxRecord = await SpdxRepository.createSpdxBom({
             uuid: spdxUuid, // Use the same UUID as OCI upload
             spdx_metadata: spdxMetadata,
@@ -981,7 +1036,8 @@ function computeRootDepIndex (bom: any) : number {
             file_sha256: fileHash,
             conversion_status: 'pending',
             tags: bomInput.bomInput.tags,
-            public: false
+            public: false,
+            bom_version: bomVersion
         });
 
         // 5. Convert SPDX to CycloneDX
@@ -997,13 +1053,19 @@ function computeRootDepIndex (bom: any) : number {
             throw new Error(`SPDX conversion failed: ${conversionResult.error}`);
         }
 
-        // 6. Generate RebomOptions from SPDX metadata
-        const rebomOptions = SpdxService.generateRebomOptionsFromSpdx(spdxMetadata);
+        // 6. Generate RebomOptions from SPDX metadata with version and serialNumber
+        const rebomOptions = SpdxService.generateRebomOptionsFromSpdx(spdxMetadata, bomVersion, existingSerialNumber);
         const mergedOptions = { ...rebomOptions, ...bomInput.bomInput.rebomOptions };
         
-        // Use serial number from rearm-cli converted BOM if available, otherwise generate one
+        // Determine serialNumber: use existing for updates, otherwise from conversion or generate
         let serialNumber: string;
-        if (conversionResult.convertedBom.serialNumber) {
+        if (existingSerialNumber) {
+            // SPDX update: reuse existing serialNumber for DTrack/artifact continuity
+            serialNumber = existingSerialNumber;
+            mergedOptions.serialNumber = serialNumber;
+            logger.info({ serialNumber, bomVersion }, "Using existing serial number for SPDX update continuity");
+        } else if (conversionResult.convertedBom.serialNumber) {
+            // New upload: use serial number from rearm-cli converted BOM
             serialNumber = conversionResult.convertedBom.serialNumber;
             mergedOptions.serialNumber = serialNumber;
             logger.info({ serialNumber }, "Using serial number from rearm-cli converted BOM");
@@ -1019,7 +1081,7 @@ function computeRootDepIndex (bom: any) : number {
         const convertedBom = conversionResult.convertedBom;
         const bomDigest = computeBomDigest(convertedBom, mergedOptions.stripBom);
         mergedOptions.bomDigest = bomDigest;
-        mergedOptions.bomVersion = convertedBom.version;
+        mergedOptions.bomVersion = String(bomVersion);  // Use Rearm-managed version, not CycloneDX version
         
         // 8. Store converted BOM in boms table with source reference
         const convertedBomUuid = uuidv4();

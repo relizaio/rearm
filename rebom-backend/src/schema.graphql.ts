@@ -97,6 +97,7 @@ const typeDefs = gql`
     tags: Object
     org: ID
     rebomOptions: RebomOptions
+    existingSerialNumber: ID  # For SPDX updates: existing serialNumber to maintain continuity
   }
 
   enum RootComponentMergeMode {
@@ -119,6 +120,7 @@ input RebomOptions {
     purl: String
     rootComponentMergeMode: RootComponentMergeMode
     ignoreDev: Boolean
+    bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
   }
 
   input BomSearch {

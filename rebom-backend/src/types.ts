@@ -47,6 +47,8 @@ export type BomInput = {
         tags?: Object,
         rebomOptions: RebomOptions,
         org: string,
+        // For SPDX updates: existing serialNumber to maintain continuity
+        existingSerialNumber?: string,
     }
 }
 
@@ -236,6 +238,7 @@ export type SpdxBomRecord = {
     conversion_error?: string;
     tags?: Object;
     public: boolean;
+    bom_version: number;  // Rearm-managed incrementing version (1, 2, 3...)
 }
 
 export type ConversionResult = {

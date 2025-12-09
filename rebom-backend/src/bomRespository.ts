@@ -14,11 +14,36 @@ export async function bomById(id: string): Promise<BomRecord[]> {
 }
 
 export async function bomBySerialNumber(serialNumber: string, org: string): Promise<BomRecord[]> {
-    if (!serialNumber.startsWith('urn')) {
-        serialNumber = 'urn:uuid:' + serialNumber
-    }
-    let byIdRows = await utils.runQuery(`select * from rebom.boms where meta->>'serialNumber' = $1 and organization::text = $2 ORDER BY (meta->>'bomVersion')::numeric DESC
-LIMIT 1;`, [serialNumber, org])
+    // Handle both with and without urn:uuid: prefix
+    const serialWithUrn = serialNumber.startsWith('urn:uuid:') ? serialNumber : `urn:uuid:${serialNumber}`;
+    const serialWithoutUrn = serialNumber.replace('urn:uuid:', '');
+    
+    // Returns the latest version (highest bomVersion)
+    let byIdRows = await utils.runQuery(
+        `SELECT * FROM rebom.boms 
+         WHERE (meta->>'serialNumber' = $1 OR meta->>'serialNumber' = $2) 
+         AND organization::text = $3 
+         ORDER BY (meta->>'bomVersion')::numeric DESC NULLS LAST
+         LIMIT 1;`, 
+        [serialWithUrn, serialWithoutUrn, org]
+    );
+    let boms = byIdRows.rows as BomRecord[]
+    return boms
+}
+
+export async function allBomsBySerialNumber(serialNumber: string, org: string): Promise<BomRecord[]> {
+    // Handle both with and without urn:uuid: prefix
+    const serialWithUrn = serialNumber.startsWith('urn:uuid:') ? serialNumber : `urn:uuid:${serialNumber}`;
+    const serialWithoutUrn = serialNumber.replace('urn:uuid:', '');
+    
+    // Returns all versions ordered by bomVersion DESC
+    let byIdRows = await utils.runQuery(
+        `SELECT * FROM rebom.boms 
+         WHERE (meta->>'serialNumber' = $1 OR meta->>'serialNumber' = $2) 
+         AND organization::text = $3 
+         ORDER BY (meta->>'bomVersion')::numeric DESC NULLS LAST;`, 
+        [serialWithUrn, serialWithoutUrn, org]
+    );
     let boms = byIdRows.rows as BomRecord[]
     return boms
 }
