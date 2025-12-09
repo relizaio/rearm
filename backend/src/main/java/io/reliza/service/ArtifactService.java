@@ -8,6 +8,7 @@ import java.io.IOException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -331,21 +332,25 @@ public class ArtifactService {
 			}
 			artifactDto.setDigestRecords(digestRecords);
 
-			artifactDto.setTags(List.of(
-				new TagRecord(CommonVariables.SIZE_FEILD, 
+			// Preserve existing tags and add system tags
+			List<TagRecord> allTags = new ArrayList<>();
+			if (artifactDto.getTags() != null) {
+				allTags.addAll(artifactDto.getTags());
+			}
+			allTags.add(new TagRecord(CommonVariables.SIZE_FEILD, 
 					artifactUploadResponse.getOriginalSize() != null 
 						? artifactUploadResponse.getOriginalSize().toString() 
 						: artifactUploadResponse.getOciResponse().getSize(), 
-					Removable.NO),
-				new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, 
+					Removable.NO));
+			allTags.add(new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, 
 					artifactUploadResponse.getOriginalMediaType() != null 
 						? artifactUploadResponse.getOriginalMediaType() 
 						: artifactUploadResponse.getOciResponse().getMediaType(), 
-					Removable.NO),
-				new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO),
-				new TagRecord(CommonVariables.TAG_FIELD, artifactDto.getUuid().toString(), Removable.NO),
-				new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO)
-			));
+					Removable.NO));
+			allTags.add(new TagRecord(CommonVariables.DOWNLOADABLE_ARTIFACT, "true", Removable.NO));
+			allTags.add(new TagRecord(CommonVariables.TAG_FIELD, artifactDto.getUuid().toString(), Removable.NO));
+			allTags.add(new TagRecord(CommonVariables.FILE_NAME_FIELD, file.getFilename(), Removable.NO));
+			artifactDto.setTags(allTags);
 		}
 		
 		Artifact art = createArtifact(artifactDto, wu);
