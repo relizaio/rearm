@@ -2288,7 +2288,14 @@ const artifactsTableFields: DataTableColumns<any> = [
             if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
             if (row.artifactDetails && row.artifactDetails.length) {
                 row.artifactDetails.forEach((ad: any) => {
-                    factContent.push(h('li', {}, [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]))
+                    console.log(ad)
+                    const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
+                    if (ad.tags && ad.tags.length) {
+                        ad.tags.filter((t: any) => t.key && t.key.startsWith('io.reliza')).forEach((t: any) => {
+                            adChildren.push(h('span', ` | ${t.key}: ${t.value}`))
+                        })
+                    }
+                    factContent.push(h('li', {}, adChildren))
                 })
             }
             const els: any[] = [
