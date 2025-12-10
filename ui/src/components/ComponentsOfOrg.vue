@@ -49,6 +49,7 @@
                     :row-class-name="rowClassName"
                     size="small"
                     @update:filters="handleUpdateFilter"
+                    @update:page="handlePageChange"
                 />
             </div>
             <div class="componentDetailColumn">
@@ -100,6 +101,15 @@ const selectedProjUuid : Ref<string> = ref('')
 if (route.params.compuuid) {
     selectedProjUuid.value = route.params.compuuid.toString()
 }
+
+// Keep selectedProjUuid in sync with route params
+watch(() => route.params.compuuid, (newCompuuid) => {
+    if (newCompuuid) {
+        selectedProjUuid.value = newCompuuid.toString()
+    } else {
+        selectedProjUuid.value = ''
+    }
+})
 
 const isProduct : boolean = (route.name === 'ProductsOfOrg')
 
@@ -179,21 +189,35 @@ const handleUpdateFilter = async function (
 }
 const showSearchInput: Ref<boolean> = ref(false)
 
-const componentPagination = ref({
+const componentPagination = reactive({
     page: 1,
-    pageSize: 10,
-    onChange: (page: number) => {
-        componentPagination.value.page = page
-    }
+    pageSize: 10
 })
 
-watch(components, async (newComponents, oldComponents) => {
-    if(newComponents && newComponents.length){
-        const indexOfComponent =  newComponents.findIndex(component => component.uuid === selectedProjUuid.value)
-        const currentPage = Math.ceil((indexOfComponent + 1) / componentPagination.value.pageSize)
-        componentPagination.value.page = currentPage
+const handlePageChange = (page: number) => {
+    componentPagination.page = page
+}
+
+// Set initial page based on selected component (for deep links)
+if (selectedProjUuid.value && components.value && components.value.length) {
+    const indexOfComponent = components.value.findIndex(component => component.uuid === selectedProjUuid.value)
+    if (indexOfComponent >= 0) {
+        componentPagination.page = Math.ceil((indexOfComponent + 1) / componentPagination.pageSize)
     }
-})
+}
+
+// Also set page when components load after initial mount
+watch(components, (newComponents) => {
+    if (selectedProjUuid.value && newComponents && newComponents.length && componentPagination.page === 1) {
+        const indexOfComponent = newComponents.findIndex(component => component.uuid === selectedProjUuid.value)
+        if (indexOfComponent >= 0) {
+            const targetPage = Math.ceil((indexOfComponent + 1) / componentPagination.pageSize)
+            if (targetPage !== componentPagination.page) {
+                componentPagination.page = targetPage
+            }
+        }
+    }
+}, { once: true })
 
 </script>
 
