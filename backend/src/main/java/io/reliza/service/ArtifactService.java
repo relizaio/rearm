@@ -472,6 +472,10 @@ public class ArtifactService {
 		Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
 		if(null!=rebomResponse && StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
 			digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));
+			// For SPDX, use originalFileDigest for ORIGINAL_FILE scope (hash of original SPDX file)
+			if (StringUtils.isNotEmpty(rebomResponse.meta().originalFileDigest())) {
+				digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rebomResponse.meta().originalFileDigest(), DigestScope.ORIGINAL_FILE));
+			}
 			artifactDto.setDigestRecords(digestRecords);
 		}
 		// UUID internalBomId = rebomOptions.serialNumber();
@@ -523,7 +527,21 @@ public class ArtifactService {
 			}
 			artifactDto.setDtur(dtur);
 		}
-		return rebomResponse.bom();
+		
+		// For SPDX, set original file info from rebom response meta
+		OASResponseDto response = rebomResponse.bom();
+		if (artifactDto.getBomFormat().equals(BomFormat.SPDX)) {
+			if (rebomResponse.meta().originalFileSize() != null) {
+				response.setOriginalSize(rebomResponse.meta().originalFileSize());
+			}
+			if (StringUtils.isNotEmpty(rebomResponse.meta().originalMediaType())) {
+				response.setOriginalMediaType(rebomResponse.meta().originalMediaType());
+			}
+			if (StringUtils.isNotEmpty(rebomResponse.meta().originalFileDigest())) {
+				response.setFileSHA256Digest(rebomResponse.meta().originalFileDigest());
+			}
+		}
+		return response;
 	}
 
 	private OASResponseDto uploadFileToConfiguredOci(Resource file, String tag, String sha256Digest){
