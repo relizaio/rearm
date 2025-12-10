@@ -1180,6 +1180,37 @@ function computeRootDepIndex (bom: any) : number {
       'version': bom.version,
       'metadata': bom.metadata
     }
+    // Preserve optional top-level CycloneDX fields if present
+    if ('signature' in bom) {
+      outBom.signature = bom.signature
+    }
+    if ('annotations' in bom) {
+      outBom.annotations = bom.annotations
+    }
+    if ('formulation' in bom) {
+      outBom.formulation = bom.formulation
+    }
+    if ('declarations' in bom) {
+      outBom.declarations = bom.declarations
+    }
+    if ('definitions' in bom) {
+      outBom.definitions = bom.definitions
+    }
+    if ('vulnerabilities' in bom) {
+      outBom.vulnerabilities = bom.vulnerabilities
+    }
+    if ('compositions' in bom) {
+      outBom.compositions = bom.compositions
+    }
+    if ('services' in bom) {
+      outBom.services = bom.services
+    }
+    if ('externalReferences' in bom) {
+      outBom.externalReferences = bom.externalReferences
+    }
+    if ('properties' in bom) {
+      outBom.properties = bom.properties
+    }
     let purl_dedup_map: any = {}
     let name_dedup_map: any = {}
     let out_components: any[] = []
