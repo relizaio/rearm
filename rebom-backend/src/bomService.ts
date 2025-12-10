@@ -842,8 +842,8 @@ function computeRootDepIndex (bom: any) : number {
     // if(stripBom === 'TRUE'){
       // Extract only identity-relevant fields from components
       bomForDigest["components"] = extractComponentIdentity(bom["components"])
-      // Deep clone dependencies to avoid mutating original
-      bomForDigest["dependencies"] = JSON.parse(JSON.stringify(bom["dependencies"]))
+      // Deep clone dependencies to avoid mutating original (handle missing dependencies)
+      bomForDigest["dependencies"] = bom["dependencies"] ? JSON.parse(JSON.stringify(bom["dependencies"])) : []
       
       // Normalize root component ref - use placeholder to ignore root identity variations
       // This handles: UUIDs, OCI purls with tag=, standard purls with @version
