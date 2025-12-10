@@ -465,7 +465,7 @@
                     <div>
                         <vue-feather v-cloak v-if="isWritable" class="clickable" type="plus-circle" :title="'Create ' + words.branchFirstUpper" @click="showAddBranchModal = true"/>
                     </div>
-                    <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-key="branchTableRowKey" :default-expanded-row-keys="[selectedBranchUuid]" />
+                    <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" :default-expanded-row-keys="[selectedBranchUuid]" />
                 </div>
             </n-gi>
             <n-gi span="7">
@@ -1435,6 +1435,9 @@ const rowProps = (row: any) => {
         
     }
 }
+const branchRowClassName = (row: any) => {
+    return selectedBranchUuid.value === row.uuid ? 'selectedRow' : ''
+}
 const branchFields: any[] = [
     {
         type: 'expand',
@@ -2041,6 +2044,9 @@ async function handleTabSwitch(tabName: string) {
 
 .selectedBranch {
     background-color: #c4c4c4;
+}
+:deep(.selectedRow td){
+    background-color: #f1f1f1 !important;
 }
 .selectedPr {
     background-color: #dedede;
