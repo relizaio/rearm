@@ -29,7 +29,7 @@ public class AdminWs {
 	
 	@GetMapping("/api/manual/v1/fetchCsrf")
     public CsrfToken csrf(CsrfToken token) {
-		log.info("FETCHCSRF called");
+		log.debug("FETCHCSRF called");
  		return token;
     }
 	
