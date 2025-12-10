@@ -1099,6 +1099,9 @@ function computeRootDepIndex (bom: any) : number {
         const convertedBom = conversionResult.convertedBom;
         const bomDigest = computeBomDigest(convertedBom, mergedOptions.stripBom);
         mergedOptions.bomDigest = bomDigest;
+        mergedOptions.originalFileDigest = fileHash;  // Original SPDX file hash for ORIGINAL_FILE digest
+        mergedOptions.originalFileSize = JSON.stringify(spdxContent).length;  // Original SPDX file size
+        mergedOptions.originalMediaType = 'application/spdx+json';  // SPDX JSON media type
         mergedOptions.bomVersion = String(bomVersion);  // Use Rearm-managed version, not CycloneDX version
         
         // 8. Store converted BOM in boms table with source reference

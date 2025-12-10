@@ -74,6 +74,9 @@ export type RebomOptions = {
     mod: string, //[raw, rebom, user?]
     storage: string, //[oci, db]
     bomDigest?: string,
+    originalFileDigest?: string, // SHA256 of original file (for SPDX, this is the original SPDX file hash)
+    originalFileSize?: number,   // Size of original file in bytes (for SPDX)
+    originalMediaType?: string,  // Media type of original file (for SPDX)
     stripBom: string,
     bomVersion: string,
     purl?: string,

@@ -117,6 +117,9 @@ input RebomOptions {
     stripBom: String
     serialNumber: ID
     bomDigest: String
+    originalFileDigest: String  # SHA256 of original file (for SPDX)
+    originalFileSize: Int       # Size of original file in bytes (for SPDX)
+    originalMediaType: String   # Media type of original file (for SPDX)
     purl: String
     rootComponentMergeMode: RootComponentMergeMode
     ignoreDev: Boolean
