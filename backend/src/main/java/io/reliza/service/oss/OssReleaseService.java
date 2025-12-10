@@ -143,22 +143,7 @@ public class OssReleaseService {
 		if (or.isPresent()) {
 			r.setRevision(r.getRevision() + 1);
 			r.setLastUpdatedDate(ZonedDateTime.now());
-			// here we may have a conflict if we have too many releases created at once - then revisions may be non-unique, so we'll introduce some retry mechanics
-			int tries = 5;
-			boolean savedRevision = false;
-			while (tries > 0 && !savedRevision) {
-				try {
-					auditService.createAndSaveAuditRecord(TableName.RELEASES, r);
-					savedRevision = true;
-				} catch (Exception e) {
-					log.error("Error on saving audit record", e);
-					r.setRevision(r.getRevision() + 1);
-				}
-				--tries;
-			}
-			if (tries < 1 && !savedRevision) {
-				throw new IllegalStateException("Could not save release r = " + r.getUuid() + ", revision = " + r.getRevision() + " after 5 tries, aborting.");
-			}
+			auditService.createAndSaveAuditRecord(TableName.RELEASES, r);
 		}
 		r.setRecordData(recordData);
 		log.debug("setting release recordData:{}", recordData);

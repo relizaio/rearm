@@ -1554,7 +1554,15 @@ public class ReleaseService {
 		}
 	}
 	
+	@Transactional
 	private void computeReleaseMetricsOnRescan (Release r) {
+		// Acquire write lock to prevent concurrent modifications
+		Optional<Release> lockedRelease = getReleaseWriteLocked(r.getUuid());
+		if (lockedRelease.isEmpty()) {
+			log.warn("Release {} no longer exists, skipping metrics computation", r.getUuid());
+			return;
+		}
+		r = lockedRelease.get();
 		ZonedDateTime lastScanned = ZonedDateTime.now();
 		var rd = ReleaseData.dataFromRecord(r);
 		var originalMetrics = null != rd.getMetrics() ? rd.getMetrics().clone() : null;
@@ -1575,7 +1583,15 @@ public class ReleaseService {
 		}
 	}
 	
+	@Transactional
 	private void computeReleaseMetricsOnNonRescan (Release r) {
+		// Acquire write lock to prevent concurrent modifications
+		Optional<Release> lockedRelease = getReleaseWriteLocked(r.getUuid());
+		if (lockedRelease.isEmpty()) {
+			log.warn("Release {} no longer exists, skipping metrics computation", r.getUuid());
+			return;
+		}
+		r = lockedRelease.get();
 		var rd = ReleaseData.dataFromRecord(r);
 		if (null != rd.getMetrics()) {
 			ReleaseMetricsDto originalMetrics = rd.getMetrics();
