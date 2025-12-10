@@ -399,9 +399,21 @@ public class Utils {
 	}
 	
 	public static String cleanBranch(String branch) {
-		branch = branch.replaceAll("refs/remotes/origin/", "");
-		branch = branch.replaceAll("refs/heads/", ""); // specifically for github as it may send like this
-		return branch.replaceFirst("origin/", ""); // for Jenkins - Jenkins may send like this
+		// Handle GitHub PR refs FIRST (before generic remote stripping):
+		// refs/remotes/pull/123/merge -> pull/123/merge (remote tracking of PR)
+		// refs/pull/123/merge -> pull/123/merge (direct PR ref)
+		branch = branch.replaceAll("refs/remotes/pull/", "pull/");
+		branch = branch.replaceAll("refs/pull/", "pull/");
+		// Handle Azure DevOps PR refs:
+		// refs/remotes/pullrequest/123/merge -> pullrequest/123/merge
+		// refs/pullrequest/123/merge -> pullrequest/123/merge
+		branch = branch.replaceAll("refs/remotes/pullrequest/", "pullrequest/");
+		branch = branch.replaceAll("refs/pullrequest/", "pullrequest/");
+		// Handle regular remote tracking branches: refs/remotes/{remote}/ -> empty
+		branch = branch.replaceAll("refs/remotes/[^/]+/", "");
+		branch = branch.replaceAll("refs/heads/", ""); // GitHub sends like this
+		branch = branch.replaceFirst("origin/", ""); // Jenkins may send like this
+		return branch;
 	}
 	
 	public static String cleanVcsUri (String vcsUri) {				

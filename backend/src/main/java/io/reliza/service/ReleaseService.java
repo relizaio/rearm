@@ -1441,11 +1441,13 @@ public class ReleaseService {
 	public ComponentJsonDto getComponentChangeLog (UUID branch, UUID org, AggregationType aggregated, String userTimeZone) {
 		ComponentJsonDto changelog = null;
 		List<ReleaseData> releases = sharedReleaseService.listReleaseDataOfBranch(branch, true);
-		ReleaseData rd = releases.get(0);
-		if(rd != null){
-			Optional <ComponentData> opd = getComponentService.getComponentData(rd.getComponent());
-			ComponentData pd = opd.get();
-			changelog = getChangeLogJsonForReleaseDataList(releases, org, false, pd, aggregated, userTimeZone);
+		if (releases != null && !releases.isEmpty()) {
+			ReleaseData rd = releases.get(0);
+			if(rd != null){
+				Optional <ComponentData> opd = getComponentService.getComponentData(rd.getComponent());
+				ComponentData pd = opd.get();
+				changelog = getChangeLogJsonForReleaseDataList(releases, org, false, pd, aggregated, userTimeZone);
+			}
 		}
 		
 		return changelog;

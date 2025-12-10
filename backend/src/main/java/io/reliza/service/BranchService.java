@@ -148,11 +148,16 @@ public class BranchService {
 		Optional<Branch> ob = Optional.empty();
 		List<Branch> branches = listBranchesOfComponent(component, null);
 		Iterator<Branch> brIter = branches.iterator();
+		// Normalize the search name for consistent comparison
+		String cleanedName = Utils.cleanBranch(name);
 		// TODO: disallow attachment of vcs branch to project branch with name matching name of other existing branch 
 		while (ob.isEmpty() && brIter.hasNext()) {
 			Branch testBr = brIter.next();
 			BranchData testBd = BranchData.branchDataFromDbRecord(testBr);
-			if (name.equalsIgnoreCase(testBd.getName()) || name.equalsIgnoreCase(testBd.getVcsBranch())) {
+			// Clean stored values for comparison to handle different ref formats
+			String storedName = Utils.cleanBranch(testBd.getName());
+			String storedVcsBranch = StringUtils.isEmpty(testBd.getVcsBranch()) ? "" : Utils.cleanBranch(testBd.getVcsBranch());
+			if (cleanedName.equalsIgnoreCase(storedName) || cleanedName.equalsIgnoreCase(storedVcsBranch)) {
 				ob = Optional.of(testBr);
 			}
 		}
@@ -161,9 +166,9 @@ public class BranchService {
 			// create new branch and return it
 			// TODO: sort out handling of vcs repository (consider removing it altogether and tying to branch to branch)
 			ComponentData cd = getComponentService.getComponentData(component).get();
-			BranchType bt = BranchData.resolveBranchTypeByName(name);
+			BranchType bt = BranchData.resolveBranchTypeByName(cleanedName);
 			ob = Optional.of(
-					createBranch(name, component, bt, cd.getVcs(), name, cd.getFeatureBranchVersioning(), cd.getMarketingVersionSchema(), wu)
+					createBranch(cleanedName, component, bt, cd.getVcs(), cleanedName, cd.getFeatureBranchVersioning(), cd.getMarketingVersionSchema(), wu)
 			);
 		}
 		
