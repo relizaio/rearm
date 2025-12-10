@@ -1010,8 +1010,26 @@ function computeRootDepIndex (bom: any) : number {
             );
             
             if (existingByNamespace) {
+                // Compare digests - if same content, return existing record
+                if (existingByNamespace.file_sha256 === fileHash) {
+                    logger.warn({ 
+                        namespace: spdxMetadata.documentNamespace, 
+                        fileHash 
+                    }, "SPDX document with same namespace and content already exists - returning existing record");
+                    
+                    // Return the existing BomRecord
+                    if (existingByNamespace.converted_bom_uuid) {
+                        const existingBomRecords = await BomRepository.bomById(existingByNamespace.converted_bom_uuid);
+                        if (existingBomRecords && existingBomRecords.length > 0) {
+                            return existingBomRecords[0];
+                        }
+                    }
+                    throw new Error(`SPDX document exists but linked BOM record not found`);
+                }
+                
+                // Different content - this is an error
                 throw new Error(
-                    `SPDX document with namespace "${spdxMetadata.documentNamespace}" already exists. ` +
+                    `SPDX document with namespace "${spdxMetadata.documentNamespace}" already exists with different content. ` +
                     `To update an existing artifact, use the update flow with existingSerialNumber.`
                 );
             }
