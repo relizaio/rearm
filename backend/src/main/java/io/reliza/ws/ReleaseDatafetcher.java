@@ -14,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -1170,6 +1171,40 @@ public class ReleaseDatafetcher {
 	}
 	
 	public record ParentReleaseDto (UUID release, UUID org) {}
+	
+	/**
+	 * DTO for intermediate failed releases between current release and last successful release.
+	 */
+	public record IntermediateFailedReleaseDto (
+		UUID releaseUuid,
+		String releaseVersion,
+		ReleaseLifecycle releaseLifecycle,
+		java.time.ZonedDateTime releaseCreatedDate,
+		List<SourceCodeEntryData> commits
+	) {}
+	
+	@DgsData(parentType = "Release", field = "intermediateFailedReleases")
+	public List<IntermediateFailedReleaseDto> intermediateFailedReleasesOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		List<ReleaseData> failedReleases = sharedReleaseService.findIntermediateFailedReleases(rd);
+		
+		return failedReleases.stream().map(fr -> {
+			List<SourceCodeEntryData> commits = new LinkedList<>();
+			if (fr.getCommits() != null && !fr.getCommits().isEmpty()) {
+				commits = fr.getCommits().stream()
+					.map(c -> getSourceCodeEntryService.getSourceCodeEntryData(c).orElse(null))
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList());
+			}
+			return new IntermediateFailedReleaseDto(
+				fr.getUuid(),
+				fr.getVersion(),
+				fr.getLifecycle(),
+				fr.getCreatedDate(),
+				commits
+			);
+		}).collect(Collectors.toList());
+	}
 	
 	@DgsData(parentType = "Release", field = "parentReleases")
 	public List<ParentReleaseDto> parentReleasesOfRelease(DgsDataFetchingEnvironment dfe) {

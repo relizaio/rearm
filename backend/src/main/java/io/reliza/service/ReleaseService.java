@@ -174,7 +174,7 @@ public class ReleaseService {
 	
 	public static record TicketRecord(String ticketSubject, List<ChangeRecord> changes) {}
 	
-	public static record ReleaseRecord(UUID uuid, String version, List<ChangeRecord> changes) {}
+	public static record ReleaseRecord(UUID uuid, String version, ReleaseLifecycle lifecycle, List<ChangeRecord> changes) {}
 	
 	public static record ChangeRecord(String changeType, List<CommitMessageRecord> commitRecords) {}
 	
@@ -1059,8 +1059,8 @@ public class ReleaseService {
 			projectJson.org(org)
 				.uuid(pd.getUuid())
 				.name(pd.getName())
-				.firstRelease(new ReleaseRecord(firstRelease.getUuid(), firstRelease.getVersion(), null))
-				.lastRelease(new ReleaseRecord(lastRelease.getUuid(), lastRelease.getVersion(), null));
+				.firstRelease(new ReleaseRecord(firstRelease.getUuid(), firstRelease.getVersion(), firstRelease.getLifecycle(), null))
+				.lastRelease(new ReleaseRecord(lastRelease.getUuid(), lastRelease.getVersion(), lastRelease.getLifecycle(), null));
 		}
 
 		List<VcsRepositoryData> vcsRepoDataList = vcsRepositoryService.listVcsRepoDataByOrg(org);
@@ -1098,6 +1098,7 @@ public class ReleaseService {
 						if(commitIdToConventionalCommitMap.size() > 0){
 							releaseRecordList.add(new ReleaseRecord(release.getUuid(),
 									release.getDecoratedVersionString(userTimeZone),
+									release.getLifecycle(),
 									prepareChangeRecordList(commitIdToConventionalCommitMap, commitIdToRecordMap)));
 						}
 					}
@@ -1236,8 +1237,8 @@ public class ReleaseService {
 			json.org(org)
 				.uuid(pd.getUuid())
 				.name(pd.getName())
-				.firstRelease(new ReleaseRecord(productRdFirst.getUuid(), productRdFirst.getVersion(), null))
-				.lastRelease(new ReleaseRecord(productRdLast.getUuid(), productRdLast.getVersion(), null));
+				.firstRelease(new ReleaseRecord(productRdFirst.getUuid(), productRdFirst.getVersion(), productRdFirst.getLifecycle(), null))
+				.lastRelease(new ReleaseRecord(productRdLast.getUuid(), productRdLast.getVersion(), productRdLast.getLifecycle(), null));
 			
 			Map<UUID, List<ReleaseData>> groupedByComponentData = componentComponentReleaseDataList.stream().collect(
 				Collectors.groupingBy(rd -> rd.getComponent()));
@@ -1290,6 +1291,7 @@ public class ReleaseService {
 							if(commitIdToConventionalCommitMap.size() > 0){
 								releaseRecordList.add(new ReleaseRecord(release.getUuid(),
 										release.getDecoratedVersionString(userTimeZone),
+										release.getLifecycle(),
 										prepareChangeRecordList(commitIdToConventionalCommitMap, commitIdToRecordMap)));
 							}
 						}

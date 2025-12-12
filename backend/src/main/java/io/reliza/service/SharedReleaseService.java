@@ -740,4 +740,58 @@ public class SharedReleaseService {
 	public List<Release> findReleasesWithWeaknessInComponent(UUID org, UUID component, String location, String findingId) {
 		return repository.findReleasesWithWeaknessInComponent(org.toString(), component.toString(), location, findingId);
 	}
+
+	/**
+	 * Find all intermediate failed releases (PENDING or REJECTED) between the current release
+	 * and the previous successful release (DRAFT or higher).
+	 * 
+	 * @param currentRelease The current release to find intermediate failed releases for
+	 * @return List of failed releases between current and last successful release, ordered by date descending
+	 */
+	public List<ReleaseData> findIntermediateFailedReleases(ReleaseData currentRelease) {
+		List<ReleaseData> failedReleases = new LinkedList<>();
+		
+		// Only compute for successful releases (DRAFT or higher, ordinal >= 3)
+		if (currentRelease.getLifecycle().ordinal() < ReleaseLifecycle.DRAFT.ordinal()) {
+			return failedReleases;
+		}
+		
+		UUID branchUuid = currentRelease.getBranch();
+		
+		// Get all releases on this branch, sorted by date descending
+		List<ReleaseData> allReleases = listReleaseDataOfBranch(branchUuid, DEFAULT_NUM_RELEASES, true);
+		
+		// Find the current release index
+		int currentIndex = -1;
+		for (int i = 0; i < allReleases.size(); i++) {
+			if (allReleases.get(i).getUuid().equals(currentRelease.getUuid())) {
+				currentIndex = i;
+				break;
+			}
+		}
+		
+		if (currentIndex == -1 || currentIndex >= allReleases.size() - 1) {
+			// Current release not found or is the oldest release
+			return failedReleases;
+		}
+		
+		// Walk backwards from current release to find intermediate failed releases
+		// Stop when we hit another successful release (DRAFT or higher)
+		for (int i = currentIndex + 1; i < allReleases.size(); i++) {
+			ReleaseData release = allReleases.get(i);
+			ReleaseLifecycle lifecycle = release.getLifecycle();
+			
+			if (lifecycle.ordinal() >= ReleaseLifecycle.DRAFT.ordinal()) {
+				// Found a successful release, stop here
+				break;
+			}
+			
+			// This is a failed release (PENDING, REJECTED, or CANCELLED)
+			if (lifecycle == ReleaseLifecycle.PENDING || lifecycle == ReleaseLifecycle.REJECTED) {
+				failedReleases.add(release);
+			}
+		}
+		
+		return failedReleases;
+	}
 }

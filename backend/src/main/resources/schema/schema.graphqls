@@ -405,6 +405,7 @@ type TicketChangeLog {
 type ReleaseChangeLog {
 	uuid: ID
 	version: String
+	lifecycle: ReleaseLifecycleEnum
 	changes: [ChangeChangeLog]
 }
 
@@ -527,6 +528,15 @@ type Release {
 	metrics: DependencyTrackMetrics
 	identifiers: [Identifier]
 	releaseCollection: ReleaseCollection
+	intermediateFailedReleases: [IntermediateFailedRelease]
+}
+
+type IntermediateFailedRelease {
+	releaseUuid: ID!
+	releaseVersion: String!
+	releaseLifecycle: ReleaseLifecycleEnum!
+	releaseCreatedDate: DateTime
+	commits: [SourceCodeEntry]
 }
 
 type Variant {
