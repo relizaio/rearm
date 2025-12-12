@@ -230,6 +230,17 @@
                         </h3>
                         <n-data-table :data="commits" :columns="commitTableFields" :row-key="artifactsRowKey" />
                     </div>
+                    <div class="container" v-if="updatedRelease.intermediateFailedReleases && updatedRelease.intermediateFailedReleases.length > 0">
+                        <h3>Commits from Failed/Pending Releases</h3>
+                        <div v-for="failedRelease in updatedRelease.intermediateFailedReleases" :key="failedRelease.releaseUuid" style="margin-bottom: 16px;">
+                            <h4 style="margin-bottom: 8px;">
+                                {{ failedRelease.releaseVersion }}
+                                <n-tag v-if="failedRelease.releaseLifecycle === 'REJECTED'" type="error" size="small" style="margin-left: 8px;">REJECTED</n-tag>
+                                <n-tag v-else-if="failedRelease.releaseLifecycle === 'PENDING'" type="warning" size="small" style="margin-left: 8px;">PENDING</n-tag>
+                            </h4>
+                            <n-data-table :data="failedRelease.commits" :columns="failedReleaseCommitTableFields" :row-key="(row) => row.uuid" />
+                        </div>
+                    </div>
                     <div class="container">
                         <h3>Artifacts
                             <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Artifact" @click="showReleaseAddProducesArtifactModal=true">
@@ -2754,6 +2765,40 @@ const commitTableFields: DataTableColumns<any> = [
             els.push(addArtifactEl)
             if (!els.length) els.push(h('span', 'N/A'))
             return h('div', els)
+        }
+    }
+]
+
+const failedReleaseCommitTableFields: DataTableColumns<any> = [
+    {
+        key: 'date',
+        title: 'Date',
+        render: (row: any) => {
+            if (row.dateActual) return (new Date(row.dateActual)).toLocaleString('en-CA')
+        }
+    },
+    {
+        key: 'commitMessage',
+        title: 'Message'
+    },
+    {
+        key: 'author',
+        title: 'Author',
+        render: (row: any) => {
+            let authorContent = ''
+            if (row.commitAuthor) {
+                authorContent += row.commitAuthor
+                if (row.commitEmail) authorContent += ', '
+            }
+            if (row.commitEmail) authorContent += row.commitEmail
+            return authorContent
+        }
+    },
+    {
+        key: 'commit',
+        title: 'Commit Hash',
+        render: (row: any) => {
+            return row.commit ? row.commit.substring(0, 8) : ''
         }
     }
 ]

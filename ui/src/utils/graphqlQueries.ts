@@ -442,6 +442,20 @@ const singleReleaseDataNoParent = `
     releaseCollection {
         ${RELEASE_COLLECTION_DATA}
     }
+    intermediateFailedReleases {
+        releaseUuid
+        releaseVersion
+        releaseLifecycle
+        releaseCreatedDate
+        commits {
+            uuid
+            commit
+            commitMessage
+            commitAuthor
+            commitEmail
+            dateActual
+        }
+    }
 `
 
 const singleReleaseDataParentLast = `
@@ -693,6 +707,7 @@ const CHANGELOG_GQL_DATA = `
         releases {
             uuid
             version
+            lifecycle
             ${CHANGES_GQL_DATA}
         }
         tickets {
@@ -711,6 +726,7 @@ const CHANGELOG_GQL_DATA = `
             releases {
                 uuid
                 version
+                lifecycle
                 ${CHANGES_GQL_DATA}
             }
             tickets {
@@ -728,12 +744,14 @@ const CHANGELOG_GQL_DATA = `
                 releases {
                     uuid
                     version
+                    lifecycle
                     ${CHANGES_GQL_DATA}
                 }
             }
             releases {
                 uuid
                 version
+                lifecycle
                 ${CHANGES_GQL_DATA}
             }
         }

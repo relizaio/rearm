@@ -21,7 +21,11 @@
         </div>
         <div v-if="aggregationType === 'NONE' && componentType === 'COMPONENT' && changelog && changelog.branches && changelog.branches.length === 1">
             <div v-for="release in changelog.branches[0].releases" :key="release.uuid">
-                <h3><router-link :to="{ name: 'ReleaseView', params: {uuid: release.uuid}}">{{release.version}}</router-link></h3>
+                <h3>
+                    <router-link :to="{ name: 'ReleaseView', params: {uuid: release.uuid}}">{{release.version}}</router-link>
+                    <n-tag v-if="release.lifecycle === 'REJECTED'" type="error" size="small" style="margin-left: 8px;">REJECTED</n-tag>
+                    <n-tag v-else-if="release.lifecycle === 'PENDING'" type="warning" size="small" style="margin-left: 8px;">PENDING</n-tag>
+                </h3>
                 <ul>
                     <div v-for="change in release.changes" :key="change.changeType">
                         <li v-if="selectedSeverity === 'ALL' || selectedSeverity === change.changeType">
