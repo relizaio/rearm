@@ -483,6 +483,82 @@ a {
   padding: 50px 0;
 }
 
+.pricingRegionSelector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 24px;
+  margin: 0 20px 28px 20px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.pricingRegionSelectorLabel {
+  font-family: "Inter", Arial, Helvetica, sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pricingRegionSelectorDetected {
+  font-weight: 700;
+  color: #243377;
+  background: linear-gradient(90deg, #243377 0%, #fd9468 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.pricingRegionSelectorButtons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: #ffffff;
+  padding: 4px;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.pricingRegionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pricingRegionButton:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.pricingRegionButtonActive {
+  background: linear-gradient(135deg, #fd9468 0%, #ff7a4d 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(253, 148, 104, 0.35);
+}
+
+.pricingRegionButtonActive:hover {
+  background: linear-gradient(135deg, #ff7a4d 0%, #fd9468 100%);
+  color: #ffffff;
+}
+
+.pricingRegionButtonIcon {
+  font-size: 22px;
+  line-height: 1;
+}
+
 .pricingContainer {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -725,6 +801,10 @@ a {
   .pricingContainer {
     grid-template-columns: 1fr;
     gap: 20px;
+    padding: 0 15px;
+  }
+
+  .pricingRegionSelector {
     padding: 0 15px;
   }
   

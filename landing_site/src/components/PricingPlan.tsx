@@ -1,7 +1,10 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Flag from "react-world-flags";
+import { FiGlobe } from "react-icons/fi";
 
 interface RegionPrices {
+  regionType: RegionType;
   currencySymbol: string;
   startupBase: number;
   startupPerUser: number;
@@ -9,16 +12,15 @@ interface RegionPrices {
   enterprise: string;
 }
 
-function getRegionPrices(): RegionPrices {
-  let currencySymbol = "$";
-  let startupBase = 107;
-  let startupPerUser = 38;
-  let standardPerUser = 60;
-  let enterprise = "$68";
-  
+type RegionType = "US" | "EU" | "CA" | "GB";
+type RegionSelection = RegionType | "AUTO";
+
+const REGION_STORAGE_KEY = "rearm_pricing_region";
+
+function detectRegionType(): RegionType {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-    let type: "US" | "EU" | "CA" | "GB" = "US";
+    let type: RegionType = "US";
     if (tz === "GB" || tz === "GB-Eire") type = "GB";
     else if (tz.includes("Europe")) {
       switch (tz) {
@@ -48,33 +50,63 @@ function getRegionPrices(): RegionPrices {
           type = "US";
       }
     }
-    
-    if (type === "EU") {
-      currencySymbol = "€";
-      startupBase = 92;
-      startupPerUser = 32;
-      standardPerUser = 51;
-      enterprise = "€58";
-    } else if (type === "CA") {
-      currencySymbol = "C$";
-      startupBase = 149;
-      startupPerUser = 53;
-      standardPerUser = 83;
-      enterprise = "C$95";
-    } else if (type === "GB") {
-      currencySymbol = "£";
-      startupBase = 80;
-      startupPerUser = 28;
-      standardPerUser = 44;
-      enterprise = "£51";
-    }
-  } catch {}
-  
-  return { currencySymbol, startupBase, startupPerUser, standardPerUser, enterprise };
+    return type;
+  } catch {
+    return "US";
+  }
+}
+
+function getRegionPricesForType(regionType: RegionType): RegionPrices {
+  let currencySymbol = "$";
+  let startupBase = 107;
+  let startupPerUser = 38;
+  let standardPerUser = 60;
+  let enterprise = "$68";
+
+  if (regionType === "EU") {
+    currencySymbol = "€";
+    startupBase = 92;
+    startupPerUser = 32;
+    standardPerUser = 51;
+    enterprise = "€58";
+  } else if (regionType === "CA") {
+    currencySymbol = "C$";
+    startupBase = 149;
+    startupPerUser = 53;
+    standardPerUser = 83;
+    enterprise = "C$95";
+  } else if (regionType === "GB") {
+    currencySymbol = "£";
+    startupBase = 80;
+    startupPerUser = 28;
+    standardPerUser = 44;
+    enterprise = "£51";
+  }
+
+  return { regionType, currencySymbol, startupBase, startupPerUser, standardPerUser, enterprise };
 }
 
 export default function PricingPlan() {
-  const prices = useMemo(() => getRegionPrices(), []);
+  const detectedRegionType = useMemo(() => detectRegionType(), []);
+  const [regionSelection, setRegionSelection] = useState<RegionSelection>("AUTO");
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(REGION_STORAGE_KEY);
+      if (stored === "AUTO" || stored === "US" || stored === "CA" || stored === "GB" || stored === "EU") {
+        setRegionSelection(stored);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(REGION_STORAGE_KEY, regionSelection);
+    } catch {}
+  }, [regionSelection]);
+
+  const effectiveRegionType = regionSelection === "AUTO" ? detectedRegionType : regionSelection;
+  const prices = useMemo(() => getRegionPricesForType(effectiveRegionType), [effectiveRegionType]);
   const [startupUsers, setStartupUsers] = useState(1);
   const [standardUsers, setStandardUsers] = useState(20);
   
@@ -170,56 +202,96 @@ export default function PricingPlan() {
   ];
 
   return (
-    <div className="pricingContainer">
-      {plans.map((p) => (
-        <div key={p.id} className="planCard">
-          <h3 className="planTitle">{p.title}</h3>
-          <div className="planAmount">{p.amount}</div>
-          {p.type && <div className="planType">{p.type}</div>}
-          {p.userSelector && (
-            <div className="userSelector">
-              <label htmlFor={`users-${p.id}`} className="userSelectorLabel">
-                Number of users ({p.userSelector.min}-{p.userSelector.max}):
-              </label>
-              <input
-                id={`users-${p.id}`}
-                type="number"
-                min={p.userSelector.min}
-                max={p.userSelector.max}
-                value={p.userSelector.value}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  if (!isNaN(val) && val >= p.userSelector!.min && val <= p.userSelector!.max) {
-                    p.userSelector!.onChange(val);
-                  }
-                }}
-                className="userSelectorInput"
-              />
-              <input
-                type="range"
-                min={p.userSelector.min}
-                max={p.userSelector.max}
-                value={p.userSelector.value}
-                onChange={(e) => p.userSelector!.onChange(parseInt(e.target.value, 10))}
-                className="userSelectorRange"
-              />
-            </div>
-          )}
-          {p.id === 3 && (
-            <div className="userSelector">
-              <div className="userSelectorLabel">40+ users</div>
-            </div>
-          )}
-          <ul className="planFeatures">
-            {p.bullets.map((b, i) => (
-              <li key={i} className="planFeature">{b}</li>
-            ))}
-          </ul>
-          <a href={p.cta.href} target="_blank" rel="noreferrer" className="planCta">
-            {p.cta.label}
-          </a>
+    <div>
+      <div className="pricingRegionSelector" aria-label="Regional pricing selector">
+        <div className="pricingRegionSelectorLabel">
+          Pricing region:
+          <span className="pricingRegionSelectorDetected">
+            {regionSelection === "AUTO" ? `Auto (${detectedRegionType})` : `Manual (${effectiveRegionType})`}
+          </span>
         </div>
-      ))}
+        <div className="pricingRegionSelectorButtons" role="group" aria-label="Select pricing region">
+          {(
+            [
+              { value: "AUTO" as const, label: "Auto", code: null },
+              { value: "US" as const, label: "US", code: "US" },
+              { value: "CA" as const, label: "Canada", code: "CA" },
+              { value: "GB" as const, label: "UK", code: "GB" },
+              { value: "EU" as const, label: "EU", code: "EU" },
+            ]
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`pricingRegionButton ${regionSelection === opt.value ? "pricingRegionButtonActive" : ""}`}
+              onClick={() => setRegionSelection(opt.value)}
+              aria-pressed={regionSelection === opt.value}
+              aria-label={opt.label}
+              title={opt.label}
+            >
+              <span className="pricingRegionButtonIcon">
+                {opt.code ? (
+                  <Flag code={opt.code} style={{ width: 24, height: 24, borderRadius: 2 }} />
+                ) : (
+                  <FiGlobe size={20} />
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="pricingContainer">
+        {plans.map((p) => (
+          <div key={p.id} className="planCard">
+            <h3 className="planTitle">{p.title}</h3>
+            <div className="planAmount">{p.amount}</div>
+            {p.type && <div className="planType">{p.type}</div>}
+            {p.userSelector && (
+              <div className="userSelector">
+                <label htmlFor={`users-${p.id}`} className="userSelectorLabel">
+                  Number of users ({p.userSelector.min}-{p.userSelector.max}):
+                </label>
+                <input
+                  id={`users-${p.id}`}
+                  type="number"
+                  min={p.userSelector.min}
+                  max={p.userSelector.max}
+                  value={p.userSelector.value}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val) && val >= p.userSelector!.min && val <= p.userSelector!.max) {
+                      p.userSelector!.onChange(val);
+                    }
+                  }}
+                  className="userSelectorInput"
+                />
+                <input
+                  type="range"
+                  min={p.userSelector.min}
+                  max={p.userSelector.max}
+                  value={p.userSelector.value}
+                  onChange={(e) => p.userSelector!.onChange(parseInt(e.target.value, 10))}
+                  className="userSelectorRange"
+                />
+              </div>
+            )}
+            {p.id === 3 && (
+              <div className="userSelector">
+                <div className="userSelectorLabel">40+ users</div>
+              </div>
+            )}
+            <ul className="planFeatures">
+              {p.bullets.map((b, i) => (
+                <li key={i} className="planFeature">{b}</li>
+              ))}
+            </ul>
+            <a href={p.cta.href} target="_blank" rel="noreferrer" className="planCta">
+              {p.cta.label}
+            </a>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
