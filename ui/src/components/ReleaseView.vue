@@ -2822,10 +2822,49 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
         }
     },
     {
-        key: 'commit',
-        title: 'Commit Hash',
+        key: 'facts',
+        title: 'Facts',
         render: (row: any) => {
-            return row.commit ? row.commit.substring(0, 8) : ''
+            const factContent: any[] = []
+            factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
+            factContent.push(h('li', `Commit Hash: ${row.commit}`))
+            factContent.push(h('li', `Branch: ${updatedRelease.value.sourceCodeEntryDetails?.vcsBranch || ''}`))
+            if (updatedRelease.value.sourceCodeEntryDetails?.vcsRepository?.uri) factContent.push(h('li', `VCS Repo URI: ${updatedRelease.value.sourceCodeEntryDetails.vcsRepository.uri}`))
+            const els: any[] = [
+                h(NTooltip, {
+                    trigger: 'hover'
+                }, {trigger: () => h(NIcon,
+                    {
+                        class: 'icons',
+                        size: 25,
+                    }, () => h(Info20Regular)),
+                default: () =>  h('ul', factContent)
+                }
+                )
+            ]
+            return h('div', els)
+        }
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => {
+            let els: any[] = []
+            if (updatedRelease.value.sourceCodeEntryDetails?.vcsRepository?.uri) {
+                const link = linkifyCommit(updatedRelease.value.sourceCodeEntryDetails.vcsRepository.uri, row.commit)
+                if (link) {
+                    const openCommitIcon = h(NIcon,
+                        {
+                            title: 'Open Commit in New Window',
+                            class: 'icons clickable',
+                            size: 25
+                        }, () => h(Link))
+                    const ocEl = h('a', {target: '_blank', href: link}, openCommitIcon)
+                    els.push(ocEl)
+                }
+            }
+            if (!els.length) els.push(h('span', 'N/A'))
+            return h('div', els)
         }
     }
 ]
