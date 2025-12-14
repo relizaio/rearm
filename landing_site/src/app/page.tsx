@@ -43,7 +43,7 @@ export default function Home() {
           <h3 className="text-center C2_title">Supports</h3>
           <p className="C2_text">OWASP Transparency Exchange API</p>
           <div className="d-flex justify-content-center integrationsFlexWrap">
-            <img src="/home/tealogo.png" alt="OWASP Transparency Exchange API Logo" className="favAppIcons" />
+            <a href="https://github.com/cyclonedx/transparency-exchange-api" target="_blank" rel="noopener noreferrer"><img src="/home/tealogo.png" alt="OWASP Transparency Exchange API Logo" className="favAppIcons" /></a>
           </div>
         </div>
       </div>
