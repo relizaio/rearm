@@ -11,7 +11,7 @@ interface RegionPrices {
   enterprise: string;
 }
 
-type RegionType = "US" | "EU" | "CA" | "GB";
+type RegionType = "US" | "EU" | "CA" | "GB" | "AU" | "SG";
 
 const REGION_STORAGE_KEY = "rearm_pricing_region";
 
@@ -20,7 +20,11 @@ function detectRegionType(): RegionType {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
     let type: RegionType = "US";
     if (tz === "GB" || tz === "GB-Eire") type = "GB";
-    else if (tz.includes("Europe")) {
+    else if (tz.includes("Australia")) {
+      type = "AU";
+    } else if (tz.includes("Singapore")) {
+      type = "SG";
+    } else if (tz.includes("Europe")) {
       switch (tz) {
         case "Europe/Belfast":
         case "Europe/London":
@@ -79,6 +83,18 @@ function getRegionPricesForType(regionType: RegionType): RegionPrices {
     startupPerUser = 28;
     standardPerUser = 44;
     enterprise = "£51";
+  } else if (regionType === "AU") {
+    currencySymbol = "A$";
+    startupBase = 165;
+    startupPerUser = 57;
+    standardPerUser = 90;
+    enterprise = "A$103";
+  } else if (regionType === "SG") {
+    currencySymbol = "S$";
+    startupBase = 139;
+    startupPerUser = 50;
+    standardPerUser = 78;
+    enterprise = "S$89";
   }
 
   return { regionType, currencySymbol, startupBase, startupPerUser, standardPerUser, enterprise };
@@ -91,7 +107,7 @@ export default function PricingPlan() {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(REGION_STORAGE_KEY);
-      if (stored === "US" || stored === "CA" || stored === "GB" || stored === "EU") {
+      if (stored === "US" || stored === "CA" || stored === "GB" || stored === "EU" || stored === "AU" || stored === "SG") {
         setRegionSelection(stored);
       } else {
         // Default to detected region
@@ -219,6 +235,8 @@ export default function PricingPlan() {
               { value: "CA" as const, label: "Canada", code: "CA" },
               { value: "GB" as const, label: "UK", code: "GB" },
               { value: "EU" as const, label: "EU", code: "EU" },
+              { value: "AU" as const, label: "Australia", code: "AU" },
+              { value: "SG" as const, label: "Singapore", code: "SG" },
             ]
           ).map((opt) => (
             <button
