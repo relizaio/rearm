@@ -1189,13 +1189,17 @@ public class ReleaseDatafetcher {
 		List<ReleaseData> failedReleases = sharedReleaseService.findIntermediateFailedReleases(rd);
 		
 		return failedReleases.stream().map(fr -> {
-			List<SourceCodeEntryData> commits = new LinkedList<>();
-			if (fr.getCommits() != null && !fr.getCommits().isEmpty()) {
-				commits = fr.getCommits().stream()
-					.map(c -> getSourceCodeEntryService.getSourceCodeEntryData(c).orElse(null))
-					.filter(Objects::nonNull)
-					.collect(Collectors.toList());
+			Set<UUID> allCommitUuids = new LinkedHashSet<>();
+			if (fr.getSourceCodeEntry() != null) {
+				allCommitUuids.add(fr.getSourceCodeEntry());
 			}
+			if (fr.getCommits() != null && !fr.getCommits().isEmpty()) {
+				allCommitUuids.addAll(fr.getCommits());
+			}
+			List<SourceCodeEntryData> commits = allCommitUuids.stream()
+				.map(c -> getSourceCodeEntryService.getSourceCodeEntryData(c).orElse(null))
+				.filter(Objects::nonNull)
+				.collect(Collectors.toList());
 			return new IntermediateFailedReleaseDto(
 				fr.getUuid(),
 				fr.getVersion(),

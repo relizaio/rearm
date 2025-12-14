@@ -742,7 +742,7 @@ public class SharedReleaseService {
 	}
 
 	/**
-	 * Find all intermediate failed releases (PENDING or REJECTED) between the current release
+	 * Find all intermediate failed releases (PENDING, REJECTED, CANCELLED) between the current release
 	 * and the previous successful release (DRAFT or higher).
 	 * 
 	 * @param currentRelease The current release to find intermediate failed releases for
@@ -787,7 +787,7 @@ public class SharedReleaseService {
 			}
 			
 			// This is a failed release (PENDING, REJECTED, or CANCELLED)
-			if (lifecycle == ReleaseLifecycle.PENDING || lifecycle == ReleaseLifecycle.REJECTED) {
+			if (lifecycle == ReleaseLifecycle.PENDING || lifecycle == ReleaseLifecycle.REJECTED || lifecycle == ReleaseLifecycle.CANCELLED) {
 				failedReleases.add(release);
 			}
 		}
