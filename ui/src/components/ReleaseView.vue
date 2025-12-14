@@ -2406,7 +2406,10 @@ const artifactsTableFields: DataTableColumns<any> = [
                         class: 'icons clickable',
                         size: 25
                     }, () => h(Link))
-                const dtrackEl = h('a', {target: '_blank', href: row.metrics.dependencyTrackFullUri}, dtrackElIcon)
+                const dtrackUri = row.metrics.dependencyTrackFullUri
+                const dtrackUrl = new URL(dtrackUri)
+                const dtrackLoginUrl = `${dtrackUrl.origin}/login?redirect=${encodeURIComponent(dtrackUrl.pathname)}`
+                const dtrackEl = h('a', {target: '_blank', href: dtrackLoginUrl}, dtrackElIcon)
                 els.push(dtrackEl)
             }
 
