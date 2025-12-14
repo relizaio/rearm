@@ -55,26 +55,26 @@ export default function Home() {
           <p className="C2_text">with your favorite tools</p>
           <div className="d-flex justify-content-center integrationsFlexWrap">
             {[
-              "dtrack.png",
-              "cdx.png",
-              "spdx.png",
-              "ado.png",
-              "github.png",
-              "gitlab.png",
-              "jenkins.png",
-              "nvd.png",
-              "osv.png",
-              "sonatype_oss.png",
-              "snyk.png",
-              "slack.png",
-              "cosign.png",
-              "msteams.png",
-              "oci.png",
-              "sendgrid.png",
-              "semgrep.png",
-              "checkov.png",
-            ].map((file) => (
-              <img key={file} src={`/home/${file}`} alt="" className="favAppIcons" />
+              { file: "dtrack.png", url: "https://dependencytrack.org" },
+              { file: "cdx.png", url: "https://cyclonedx.org" },
+              { file: "spdx.png", url: "https://spdx.org" },
+              { file: "ado.png", url: "https://dev.azure.com" },
+              { file: "github.png", url: "https://github.com" },
+              { file: "gitlab.png", url: "https://gitlab.com" },
+              { file: "jenkins.png", url: "https://www.jenkins.io" },
+              { file: "nvd.png", url: "https://nvd.nist.gov" },
+              { file: "osv.png", url: "https://osv.dev" },
+              { file: "sonatype_oss.png", url: "https://ossindex.sonatype.org" },
+              { file: "snyk.png", url: "https://snyk.io" },
+              { file: "slack.png", url: "https://slack.com" },
+              { file: "cosign.png", url: "https://github.com/sigstore/cosign" },
+              { file: "msteams.png", url: "https://www.microsoft.com/en-us/microsoft-365/microsoft-teams/group-chat-software" },
+              { file: "oci.png", url: "https://www.opencontainers.org" },
+              { file: "sendgrid.png", url: "https://sendgrid.com" },
+              { file: "semgrep.png", url: "https://semgrep.dev" },
+              { file: "checkov.png", url: "https://www.checkov.io" },
+            ].map((item) => (
+              <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer"><img src={`/home/${item.file}`} alt="" className="favAppIcons" /></a>
             ))}
           </div>
         </div>
@@ -83,7 +83,7 @@ export default function Home() {
       {/* Trusted */}
       <div className="container-fluid container2">
         <div className="row">
-          <h3 className="text-center C2_title">Trusted By</h3>
+          <h3 className="text-center C2_title">Clients and Partners</h3>
           <div className="d-flex justify-content-center integrationsFlexWrap">
             {[
               "kdm.png",
