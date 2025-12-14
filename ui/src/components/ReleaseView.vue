@@ -1619,16 +1619,19 @@ const commits: ComputedRef<any> = computed((): any => {
 
 const failedReleaseCommitsFlattened: ComputedRef<any[]> = computed((): any[] => {
     const flattened: any[] = []
+    const mainCommitHashes = new Set(commits.value.map((c: any) => c.commit))
     if (updatedRelease.value && updatedRelease.value.intermediateFailedReleases) {
         for (const failedRelease of updatedRelease.value.intermediateFailedReleases) {
             if (failedRelease.commits && failedRelease.commits.length) {
                 for (const commit of failedRelease.commits) {
-                    flattened.push({
-                        ...commit,
-                        releaseVersion: failedRelease.releaseVersion,
-                        releaseLifecycle: failedRelease.releaseLifecycle,
-                        releaseUuid: failedRelease.releaseUuid
-                    })
+                    if (!mainCommitHashes.has(commit.commit)) {
+                        flattened.push({
+                            ...commit,
+                            releaseVersion: failedRelease.releaseVersion,
+                            releaseLifecycle: failedRelease.releaseLifecycle,
+                            releaseUuid: failedRelease.releaseUuid
+                        })
+                    }
                 }
             }
         }
