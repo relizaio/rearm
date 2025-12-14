@@ -73,6 +73,8 @@ export default function Home() {
               { file: "sendgrid.png", url: "https://sendgrid.com" },
               { file: "semgrep.png", url: "https://semgrep.dev" },
               { file: "checkov.png", url: "https://www.checkov.io" },
+              { file: "gmail.png", url: "https://gmail.com" },
+              { file: "shiftleftcyber.png", url: "https://shiftleftcyber.io" },
             ].map((item) => (
               <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer"><img src={`/home/${item.file}`} alt="" className="favAppIcons" /></a>
             ))}
@@ -86,9 +88,10 @@ export default function Home() {
           <h3 className="text-center C2_title">Clients and Partners</h3>
           <div className="d-flex justify-content-center integrationsFlexWrap">
             {[
+              { file: "investottawa.png", url: "https://www.investottawa.ca" },
               { file: "kdm.png", url: "https://kdmanalytics.com" },
-              { file: "iq.png", url: "" },
-              { file: "ascr.png", url: "" },
+              { file: "iq.png", url: "https://www.iqinnovationhub.com" },
+              { file: "wysdom.png", url: "https://wysdom.ai" },
             ].map((item) => (
               <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer"><img src={`/home/${item.file}`} alt="" className="favAppIcons" /></a>
             ))}
