@@ -35,6 +35,7 @@ import io.reliza.model.ArtifactData;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.AutoIntegrateState;
+import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ConditionGroup;
@@ -489,10 +490,58 @@ public class OssReleaseService {
 	
 	private void autoIntegrateFeatureSetProduct(BranchData bd, ReleaseData rd) {
 		List<ChildComponent> dependencies = bd.getDependencies();
-		final Map<UUID, ChildComponent> componentsWBranches = dependencies.stream().collect(Collectors.toMap(x -> x.getUuid(), Function.identity()));
+		
+		// Find matching ChildComponent for this release - match by both component AND branch
+		// This handles the case where the same component is added multiple times with different branches
+		Optional<ChildComponent> matchingChild = dependencies.stream()
+			.filter(cc -> cc.getUuid().equals(rd.getComponent()) && cc.getBranch() != null && cc.getBranch().equals(rd.getBranch()))
+			.findFirst();
+		
+		// If no exact branch match, check if this component has multiple branches as dependencies
+		if (matchingChild.isEmpty()) {
+			List<ChildComponent> sameComponentDeps = dependencies.stream()
+				.filter(cc -> cc.getUuid().equals(rd.getComponent()))
+				.collect(Collectors.toList());
+			
+			if (sameComponentDeps.size() == 1) {
+				// Only one entry for this component, use it
+				matchingChild = Optional.of(sameComponentDeps.get(0));
+			} else if (sameComponentDeps.size() > 1) {
+				// Multiple branches for same component - apply priority logic:
+				// 1. If one of the branches is BASE, that takes priority
+				// 2. Otherwise, use the branch that matches the release's branch, or skip if no match
+				for (ChildComponent cc : sameComponentDeps) {
+					if (cc.getBranch() != null) {
+						Optional<BranchData> childBranchOpt = branchService.getBranchData(cc.getBranch());
+						if (childBranchOpt.isPresent() && childBranchOpt.get().getType() == BranchType.BASE) {
+							// Check if the release is from the BASE branch
+							if (cc.getBranch().equals(rd.getBranch())) {
+								matchingChild = Optional.of(cc);
+								break;
+							}
+						}
+					}
+				}
+				// If still no match and release branch matches one of the dependencies, use that
+				if (matchingChild.isEmpty()) {
+					matchingChild = sameComponentDeps.stream()
+						.filter(cc -> cc.getBranch() != null && cc.getBranch().equals(rd.getBranch()))
+						.findFirst();
+				}
+			}
+		}
+		
+		// If no matching child component found, skip this release
+		if (matchingChild.isEmpty()) {
+			log.debug("PSDEBUG: No matching child component found for rd = " + rd.getUuid() + " in bd = " + bd.getUuid());
+			return;
+		}
+		
+		ChildComponent currentChildComponent = matchingChild.get();
+		
 		// check that status of this child project is not ignored, check that this release is not ignored and not pinned
-		if (StatusEnum.IGNORED != componentsWBranches.get(rd.getComponent()).getStatus() &&
-			null ==	componentsWBranches.get(rd.getComponent()).getRelease()) {
+		if (StatusEnum.IGNORED != currentChildComponent.getStatus() &&
+			null == currentChildComponent.getRelease()) {
 			log.debug("PSDEBUG: accessed auto-integrate for bd = " + bd.getUuid() + ", rd = " + rd.getUuid());
 			// See if any product of this branch already has this release 
 			// which can happen on status change - in which case do not proceed
@@ -510,15 +559,66 @@ public class OssReleaseService {
 			// Take every required child project of this branch, and take latest assembled release for each of them
 			Set<ParentRelease> parentReleases = new HashSet<>();
 			if (requirementsMet) {
-				parentReleases = sharedReleaseService.getCurrentProductParentRelease(bd.getUuid(), rd, ReleaseLifecycle.ASSEMBLED);
-				requirementsMet = parentReleases != null && parentReleases.size() > 0;
+				Set<ParentRelease> fetchedParentReleases = sharedReleaseService.getCurrentProductParentRelease(bd.getUuid(), rd, ReleaseLifecycle.ASSEMBLED);
+				if (fetchedParentReleases != null && !fetchedParentReleases.isEmpty()) {
+					parentReleases = fetchedParentReleases;
+				} else {
+					requirementsMet = false;
+				}
 			}
 			
 			// If one of required projects does not have latest release, then we fail the process and don't yield anything there
 			if (requirementsMet) {
-				// add current release to parent
-				ParentRelease dr = ParentRelease.minimalParentReleaseFactory(rd.getUuid(), null);
-				parentReleases.add(dr); // current release
+				// Determine which release to use for the triggering component
+				// If triggering release is NOT from BASE branch, but there's a BASE branch dependency for the same component,
+				// use the BASE branch's latest release instead
+				ReleaseData releaseToUse = rd;
+				Optional<BranchData> triggeringBranchOpt = branchService.getBranchData(rd.getBranch());
+				boolean isFromBaseBranch = triggeringBranchOpt.isPresent() && triggeringBranchOpt.get().getType() == BranchType.BASE;
+				
+				if (!isFromBaseBranch) {
+					// Check if there's a BASE branch dependency for the same component
+					List<ChildComponent> sameComponentDeps = dependencies.stream()
+						.filter(cc -> cc.getUuid().equals(rd.getComponent()))
+						.collect(Collectors.toList());
+					
+					for (ChildComponent cc : sameComponentDeps) {
+						if (cc.getBranch() != null && !cc.getBranch().equals(rd.getBranch())) {
+							Optional<BranchData> depBranchOpt = branchService.getBranchData(cc.getBranch());
+							if (depBranchOpt.isPresent() && depBranchOpt.get().getType() == BranchType.BASE) {
+								// Found a BASE branch dependency - get its latest release
+								Optional<ReleaseData> baseReleaseOpt = sharedReleaseService.getReleaseDataOfBranch(
+									rd.getOrg(), cc.getBranch(), ReleaseLifecycle.ASSEMBLED);
+								if (baseReleaseOpt.isPresent()) {
+									log.debug("PSDEBUG: Using BASE branch release " + baseReleaseOpt.get().getUuid() + 
+										" instead of triggering release " + rd.getUuid());
+									releaseToUse = baseReleaseOpt.get();
+								}
+								break;
+							}
+						}
+					}
+				}
+				
+				// Check if releaseToUse is already in the latest product release for this branch
+				// This can happen when a non-BASE branch release triggers auto-integrate but the BASE release is already included
+				var existingProductsForReleaseToUse = sharedReleaseService.greedylocateProductsOfRelease(releaseToUse);
+				boolean releaseAlreadyInProduct = existingProductsForReleaseToUse.stream()
+					.anyMatch(x -> x.getBranch().equals(bd.getUuid()));
+				if (releaseAlreadyInProduct) {
+					log.debug("PSDEBUG: releaseToUse " + releaseToUse.getUuid() + " is already in a product release for branch " + bd.getUuid() + ", skipping");
+					return;
+				}
+				
+				// add release to parent - first remove any existing release for the same component
+				// to avoid duplicates when the same component has releases from multiple branches
+				UUID componentUuid = releaseToUse.getComponent();
+				parentReleases.removeIf(pr -> {
+					Optional<ReleaseData> existingRd = sharedReleaseService.getReleaseData(pr.getRelease());
+					return existingRd.isPresent() && existingRd.get().getComponent().equals(componentUuid);
+				});
+				ParentRelease dr = ParentRelease.minimalParentReleaseFactory(releaseToUse.getUuid());
+				parentReleases.add(dr);
 				// create new product release
 				ActionEnum action = ActionEnum.BUMP;
 				try {
@@ -629,8 +729,8 @@ public class OssReleaseService {
 		List<ReleaseData> latestComponentRds = sharedReleaseService.getReleaseDataList(latestComponentReleaseUuids, fs.getOrg());
 		List<ReleaseData> currentComponentRds = sharedReleaseService.getReleaseDataList(currentComponentReleaseUuids, fs.getOrg());
 
-		Map<UUID, ReleaseData> latestComponentRdMap = latestComponentRds.stream().collect(Collectors.toMap(ReleaseData::getComponent, Function.identity()));
-		Map<UUID, ReleaseData> currentComponentRdMap = currentComponentRds.stream().collect(Collectors.toMap(ReleaseData::getComponent, Function.identity()));
+		Map<UUID, ReleaseData> latestComponentRdMap = latestComponentRds.stream().collect(Collectors.toMap(ReleaseData::getComponent, Function.identity(), this::selectBestReleaseForComponent));
+		Map<UUID, ReleaseData> currentComponentRdMap = currentComponentRds.stream().collect(Collectors.toMap(ReleaseData::getComponent, Function.identity(), this::selectBestReleaseForComponent));
 		
 		Set<UUID> latestComponentComponentIds = latestComponentRdMap.keySet();
 		Set<UUID> currentComponentComponentIds = currentComponentRdMap.keySet();
@@ -709,6 +809,50 @@ public class OssReleaseService {
 
 		log.info("return action: {}", action);
 		return action;
+	}
+	
+/**
+	 * Selects the best release when multiple releases exist for the same component.
+	 * Priority:
+	 * 1. Release from BASE branch always wins
+	 * 2. If neither is from BASE branch, use the one with later created date
+	 * 
+	 * @param existing The existing release in the map
+	 * @param replacement The new release being added
+	 * @return The release that should be kept
+	 */
+	private ReleaseData selectBestReleaseForComponent(ReleaseData existing, ReleaseData replacement) {
+		// Check if existing is from BASE branch
+		Optional<BranchData> existingBranchOpt = branchService.getBranchData(existing.getBranch());
+		boolean existingIsBase = existingBranchOpt.isPresent() && existingBranchOpt.get().getType() == BranchType.BASE;
+		
+		// Check if replacement is from BASE branch
+		Optional<BranchData> replacementBranchOpt = branchService.getBranchData(replacement.getBranch());
+		boolean replacementIsBase = replacementBranchOpt.isPresent() && replacementBranchOpt.get().getType() == BranchType.BASE;
+		
+		// If one is BASE and the other isn't, prefer BASE
+		if (existingIsBase && !replacementIsBase) {
+			return existing;
+		}
+		if (replacementIsBase && !existingIsBase) {
+			return replacement;
+		}
+		
+		// Neither or both are BASE - use the one with later created date
+		ZonedDateTime existingDate = existing.getCreatedDate();
+		ZonedDateTime replacementDate = replacement.getCreatedDate();
+		
+		if (existingDate == null && replacementDate == null) {
+			return replacement; // fallback
+		}
+		if (existingDate == null) {
+			return replacement;
+		}
+		if (replacementDate == null) {
+			return existing;
+		}
+		
+		return replacementDate.isAfter(existingDate) ? replacement : existing;
 	}
 	
 	public List<String> getCommitListBetweenComponentReleases(UUID uuid1, UUID uuid2, UUID org) throws RelizaException{

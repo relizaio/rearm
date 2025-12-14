@@ -31,6 +31,7 @@ import io.reliza.common.Utils;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
+import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.ComponentData;
 import io.reliza.model.GenericReleaseData;
 import io.reliza.model.ParentRelease;
@@ -448,33 +449,94 @@ public class SharedReleaseService {
 		Set<ParentRelease> parentReleases = new HashSet<>();
 		List<ChildComponent> dependencies = bd.getDependencies();
 		boolean requirementsMet = true;
-		var cpIter = dependencies.iterator();
-		while (requirementsMet && cpIter.hasNext()) {
-			var cp = cpIter.next();
-			if (!cp.getUuid().equals(bd.getComponent()) && (cp.getStatus() == StatusEnum.REQUIRED || cp.getStatus() == StatusEnum.TRANSIENT)) {
-				// if release present in cp, use that release
-				Optional<ReleaseData> ord = Optional.empty();
-				if (null != cp.getRelease()) {
-					ord = getReleaseData(cp.getRelease());
-				} else if (triggeringRelease != null && cp.getBranch().equals(triggeringRelease.getBranch())) {
-					ord = Optional.of(triggeringRelease);
-				} else {
-					// obtain latest release - TODO - consider more complicated configurable logic later here
-					ord = getReleaseDataOfBranch(bd.getOrg(), cp.getBranch(), lifecycle);
+		
+		// Group dependencies by component UUID to handle same component with multiple branches
+		Map<UUID, List<ChildComponent>> componentToDeps = dependencies.stream()
+			.filter(cp -> !cp.getUuid().equals(bd.getComponent()) && (cp.getStatus() == StatusEnum.REQUIRED || cp.getStatus() == StatusEnum.TRANSIENT))
+			.collect(Collectors.groupingBy(ChildComponent::getUuid));
+		
+		for (Map.Entry<UUID, List<ChildComponent>> entry : componentToDeps.entrySet()) {
+			List<ChildComponent> componentDeps = entry.getValue();
+			Optional<ReleaseData> selectedRelease = Optional.empty();
+			
+			if (componentDeps.size() == 1) {
+				// Single dependency for this component
+				ChildComponent cp = componentDeps.get(0);
+				selectedRelease = getReleaseForChildComponent(cp, triggeringRelease, bd.getOrg(), lifecycle);
+			} else {
+				// Multiple branches for same component - apply priority logic:
+				// 1. If triggering release matches one of the branches, use that
+				// 2. If one of the branches is BASE, that takes priority
+				// 3. Otherwise, use the latest release by timestamp from any branch
+				
+				// First check if triggering release matches any branch
+				if (triggeringRelease != null) {
+					for (ChildComponent cp : componentDeps) {
+						if (cp.getBranch() != null && cp.getBranch().equals(triggeringRelease.getBranch())) {
+							selectedRelease = Optional.of(triggeringRelease);
+							break;
+						}
+					}
 				}
-				if (ord.isPresent()) {
-					// TODO handle proper deliverable selection
-					ParentRelease dr = ParentRelease.minimalParentReleaseFactory(ord.get().getUuid(), null);
-					parentReleases.add(dr);
-				} else if (cp.getStatus() == StatusEnum.REQUIRED){
+				
+				// If no triggering release match, check for BASE branch priority
+				if (selectedRelease.isEmpty()) {
+					ChildComponent baseBranchDep = null;
+					for (ChildComponent cp : componentDeps) {
+						if (cp.getBranch() != null) {
+							Optional<BranchData> childBranchOpt = branchService.getBranchData(cp.getBranch());
+							if (childBranchOpt.isPresent() && childBranchOpt.get().getType() == BranchType.BASE) {
+								baseBranchDep = cp;
+								break;
+							}
+						}
+					}
+					
+					if (baseBranchDep != null) {
+						// Use BASE branch
+						selectedRelease = getReleaseForChildComponent(baseBranchDep, triggeringRelease, bd.getOrg(), lifecycle);
+					} else {
+						// No BASE branch - get latest release by timestamp from all branches
+						List<ReleaseData> candidateReleases = new ArrayList<>();
+						for (ChildComponent cp : componentDeps) {
+							Optional<ReleaseData> ord = getReleaseForChildComponent(cp, triggeringRelease, bd.getOrg(), lifecycle);
+							ord.ifPresent(candidateReleases::add);
+						}
+						if (!candidateReleases.isEmpty()) {
+							// Sort by created date descending and take the latest
+							candidateReleases.sort((r1, r2) -> r2.getCreatedDate().compareTo(r1.getCreatedDate()));
+							selectedRelease = Optional.of(candidateReleases.get(0));
+						}
+					}
+				}
+			}
+			
+			if (selectedRelease.isPresent()) {
+				ParentRelease dr = ParentRelease.minimalParentReleaseFactory(selectedRelease.get().getUuid());
+				parentReleases.add(dr);
+			} else {
+				// Check if any of the deps for this component is REQUIRED
+				boolean anyRequired = componentDeps.stream().anyMatch(cp -> cp.getStatus() == StatusEnum.REQUIRED);
+				if (anyRequired) {
 					requirementsMet = false;
 				}
 			}
 		}
+		
 		if(!requirementsMet){
 			return new HashSet<>();
 		}
 		return parentReleases;
+	}
+	
+	private Optional<ReleaseData> getReleaseForChildComponent(ChildComponent cp, ReleaseData triggeringRelease, UUID orgUuid, ReleaseLifecycle lifecycle) {
+		if (null != cp.getRelease()) {
+			return getReleaseData(cp.getRelease());
+		} else if (triggeringRelease != null && cp.getBranch() != null && cp.getBranch().equals(triggeringRelease.getBranch())) {
+			return Optional.of(triggeringRelease);
+		} else {
+			return getReleaseDataOfBranch(orgUuid, cp.getBranch(), lifecycle);
+		}
 	}
 	
 	public List<SourceCodeEntryData> getSceDataListFromReleases(List<ReleaseData> releases, UUID org){

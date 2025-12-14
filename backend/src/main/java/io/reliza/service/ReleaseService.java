@@ -412,7 +412,9 @@ public class ReleaseService {
 		// identify any ignored or transient projects
 		var fsData = branchService.getBranchData(featureSet).get();
 		List<ChildComponent> dependencies = fsData.getDependencies();
-		final Map<UUID, ChildComponent> childComponents = dependencies.stream().collect(Collectors.toMap(x -> x.getUuid(), Function.identity()));
+		// Group by component UUID - when same component has multiple branches, keep the first one for status checking
+		final Map<UUID, ChildComponent> childComponents = dependencies.stream()
+			.collect(Collectors.toMap(x -> x.getUuid(), Function.identity(), (existing, replacement) -> existing));
 		
 		var latestRd = sharedReleaseService.getReleaseDataOfBranch(fsData.getOrg(), featureSet, null);
 		// gather non-ignored project ids
