@@ -230,16 +230,9 @@
                         </h3>
                         <n-data-table :data="commits" :columns="commitTableFields" :row-key="artifactsRowKey" />
                     </div>
-                    <div class="container" v-if="updatedRelease.intermediateFailedReleases && updatedRelease.intermediateFailedReleases.length > 0">
-                        <h3>Commits from Failed/Pending Releases</h3>
-                        <div v-for="failedRelease in updatedRelease.intermediateFailedReleases" :key="failedRelease.releaseUuid" style="margin-bottom: 16px;">
-                            <h4 style="margin-bottom: 8px;">
-                                {{ failedRelease.releaseVersion }}
-                                <n-tag v-if="failedRelease.releaseLifecycle === 'REJECTED'" type="error" size="small" style="margin-left: 8px;">REJECTED</n-tag>
-                                <n-tag v-else-if="failedRelease.releaseLifecycle === 'PENDING'" type="warning" size="small" style="margin-left: 8px;">PENDING</n-tag>
-                            </h4>
-                            <n-data-table :data="failedRelease.commits" :columns="failedReleaseCommitTableFields" :row-key="(row) => row.uuid" />
-                        </div>
+                    <div class="container" v-if="failedReleaseCommitsFlattened.length > 0">
+                        <h3>Source Code Entries from Failed/Pending Releases</h3>
+                        <n-data-table :data="failedReleaseCommitsFlattened" :columns="failedReleaseCommitTableFields" :row-key="(row) => row.uuid" />
                     </div>
                     <div class="container">
                         <h3>Artifacts
@@ -1624,6 +1617,25 @@ const commits: ComputedRef<any> = computed((): any => {
     return commits
 })
 
+const failedReleaseCommitsFlattened: ComputedRef<any[]> = computed((): any[] => {
+    const flattened: any[] = []
+    if (updatedRelease.value && updatedRelease.value.intermediateFailedReleases) {
+        for (const failedRelease of updatedRelease.value.intermediateFailedReleases) {
+            if (failedRelease.commits && failedRelease.commits.length) {
+                for (const commit of failedRelease.commits) {
+                    flattened.push({
+                        ...commit,
+                        releaseVersion: failedRelease.releaseVersion,
+                        releaseLifecycle: failedRelease.releaseLifecycle,
+                        releaseUuid: failedRelease.releaseUuid
+                    })
+                }
+            }
+        }
+    }
+    return flattened
+})
+
 const showUploadArtifactModal: Ref<boolean> = ref(false)
 const artifactUploadData = ref({
     file: null,
@@ -2770,6 +2782,21 @@ const commitTableFields: DataTableColumns<any> = [
 ]
 
 const failedReleaseCommitTableFields: DataTableColumns<any> = [
+    {
+        key: 'release',
+        title: 'Release',
+        render: (row: any) => {
+            const els: any[] = [row.releaseVersion]
+            if (row.releaseLifecycle === 'REJECTED') {
+                els.push(h(NTag, { type: 'error', size: 'small', style: 'margin-left: 8px;' }, () => 'REJECTED'))
+            } else if (row.releaseLifecycle === 'PENDING') {
+                els.push(h(NTag, { type: 'warning', size: 'small', style: 'margin-left: 8px;' }, () => 'PENDING'))
+            } else if (row.releaseLifecycle === 'CANCELLED') {
+                els.push(h(NTag, { type: 'warning', size: 'small', style: 'margin-left: 8px;' }, () => 'CANCELLED'))
+            }
+            return h('span', els)
+        }
+    },
     {
         key: 'date',
         title: 'Date',
