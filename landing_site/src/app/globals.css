@@ -152,6 +152,10 @@ a {
   margin-bottom: 39px;
 }
 
+.integrationsFlexWrap a {
+  display: contents;
+}
+
 .favAppIcons {
   margin: 10px 2%;
   width: calc(166px);

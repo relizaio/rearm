@@ -86,11 +86,11 @@ export default function Home() {
           <h3 className="text-center C2_title">Clients and Partners</h3>
           <div className="d-flex justify-content-center integrationsFlexWrap">
             {[
-              "kdm.png",
-              "iq.png",
-              "ascr.png"
-            ].map((file) => (
-              <img key={file} src={`/home/${file}`} alt="" className="favAppIcons" />
+              { file: "kdm.png", url: "https://kdmanalytics.com" },
+              { file: "iq.png", url: "" },
+              { file: "ascr.png", url: "" },
+            ].map((item) => (
+              <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer"><img src={`/home/${item.file}`} alt="" className="favAppIcons" /></a>
             ))}
           </div>
         </div>
