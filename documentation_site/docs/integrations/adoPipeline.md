@@ -1,8 +1,11 @@
 # Build and push Container image on Azure DevOps
 
-## 1. Prepare your Azure DevOps project
+## 1. Azure DevOps Extension
+Azure DevOps extension is available [here](https://marketplace.visualstudio.com/items?itemName=Reliza.rearm-cli-tasks). Below we will describe a sample how to use it for a component that builds a container image.
 
-### 1.1.  Set container registry service connection
+## 2. Prepare your Azure DevOps project
+
+### 2.1.  Set container registry service connection
 In Azure Devops, click on `Project Settings`, click on "Service connections`.
 
 Click `Create service connection`. Choose `Docker Registry`
@@ -14,7 +17,7 @@ For *Service connection name* you can enter *rh_registry*.
 
 Once created, click on 3 dots, click `Security`. In `Pipeline permissions`, click `+` and choose desired pipelines (note, you may have to wait before your pipeline is created in step 2 below for this step).
 
-### 1.2 Set ReARM auth variables
+### 2.2 Set ReARM auth variables
 
 Click on `Library` menu from your Azure DevOps project screen.
 Click `+ Variable group`.
@@ -33,7 +36,7 @@ Click `Save`.
 
 Once Saved, click `Pipeline permissions`, click `+`, add desired pipelines.
 
-### 1.3 Create shared script repository
+### 2.3 Create shared script repository
 
 Under your Azure DevOps project, create a shared repository `rearm-scripts`, with the content:
 
@@ -45,7 +48,7 @@ rearm-scripts/
 
 Where you use a copy `azure-build-submit-template.yml` from ReARM repository [here](https://github.com/relizaio/rearm/blob/main/integrations/azureDevOps/azure-build-submit-template.yml).
 
-## 2. Create Pipeline YAML in your repository
+## 3. Create Pipeline YAML in your repository
 
 In your repository, create `azure-pipelines.yml` file like below:
 
@@ -80,7 +83,6 @@ stages:
       imageRepository: '2c96830f-0c34-4bcc-bd79-94cbf78cf6a5/myimage'
       componentID: 7a10a1f8-4fab-40a3-8a79-542bba2ada3e
       vmImageName: 'ubuntu-latest'
-      rearmCliVersion: '25.03.2'
       dockerRegistryServiceConnection: rh_registry
       rearmUrl: https://demo.rearmhq.com
       buildPath: .
