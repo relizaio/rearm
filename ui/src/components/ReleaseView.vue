@@ -2314,7 +2314,6 @@ const artifactsTableFields: DataTableColumns<any> = [
             if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
             if (row.artifactDetails && row.artifactDetails.length) {
                 row.artifactDetails.forEach((ad: any) => {
-                    console.log(ad)
                     const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
                     if (ad.tags && ad.tags.length) {
                         ad.tags.filter((t: any) => t.key && t.key.startsWith('io.reliza')).forEach((t: any) => {
@@ -2900,7 +2899,6 @@ const changelogTableFields: DataTableColumns<any> = [
                             purlText,
                             dtrackProjectUuids.value
                         )
-                        console.log('Dependency-Track component:', dtrackComponent)
                         if (dtrackComponent) {
                             // Get base URL from first artifact with dependencyTrackFullUri
                             const firstArtifactWithDtrack = artifacts.value.find((artifact: any) => 
