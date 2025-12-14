@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Flag from "react-world-flags";
-import { FiGlobe } from "react-icons/fi";
 
 interface RegionPrices {
   regionType: RegionType;
@@ -13,7 +12,6 @@ interface RegionPrices {
 }
 
 type RegionType = "US" | "EU" | "CA" | "GB";
-type RegionSelection = RegionType | "AUTO";
 
 const REGION_STORAGE_KEY = "rearm_pricing_region";
 
@@ -88,24 +86,31 @@ function getRegionPricesForType(regionType: RegionType): RegionPrices {
 
 export default function PricingPlan() {
   const detectedRegionType = useMemo(() => detectRegionType(), []);
-  const [regionSelection, setRegionSelection] = useState<RegionSelection>("AUTO");
+  const [regionSelection, setRegionSelection] = useState<RegionType | null>(null);
 
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(REGION_STORAGE_KEY);
-      if (stored === "AUTO" || stored === "US" || stored === "CA" || stored === "GB" || stored === "EU") {
+      if (stored === "US" || stored === "CA" || stored === "GB" || stored === "EU") {
         setRegionSelection(stored);
+      } else {
+        // Default to detected region
+        setRegionSelection(detectedRegionType);
       }
-    } catch {}
-  }, []);
+    } catch {
+      setRegionSelection(detectedRegionType);
+    }
+  }, [detectedRegionType]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(REGION_STORAGE_KEY, regionSelection);
-    } catch {}
+    if (regionSelection) {
+      try {
+        window.localStorage.setItem(REGION_STORAGE_KEY, regionSelection);
+      } catch {}
+    }
   }, [regionSelection]);
 
-  const effectiveRegionType = regionSelection === "AUTO" ? detectedRegionType : regionSelection;
+  const effectiveRegionType = regionSelection || detectedRegionType;
   const prices = useMemo(() => getRegionPricesForType(effectiveRegionType), [effectiveRegionType]);
   const [startupUsers, setStartupUsers] = useState(1);
   const [standardUsers, setStandardUsers] = useState(20);
@@ -206,14 +211,10 @@ export default function PricingPlan() {
       <div className="pricingRegionSelector" aria-label="Regional pricing selector">
         <div className="pricingRegionSelectorLabel">
           Pricing region:
-          <span className="pricingRegionSelectorDetected">
-            {regionSelection === "AUTO" ? `Auto (${detectedRegionType})` : `Manual (${effectiveRegionType})`}
-          </span>
         </div>
         <div className="pricingRegionSelectorButtons" role="group" aria-label="Select pricing region">
           {(
             [
-              { value: "AUTO" as const, label: "Auto", code: null },
               { value: "US" as const, label: "US", code: "US" },
               { value: "CA" as const, label: "Canada", code: "CA" },
               { value: "GB" as const, label: "UK", code: "GB" },
@@ -230,11 +231,7 @@ export default function PricingPlan() {
               title={opt.label}
             >
               <span className="pricingRegionButtonIcon">
-                {opt.code ? (
-                  <Flag code={opt.code} style={{ width: 24, height: 24, borderRadius: 2 }} />
-                ) : (
-                  <FiGlobe size={20} />
-                )}
+                <Flag code={opt.code} style={{ width: 24, height: 24, borderRadius: 2 }} />
               </span>
             </button>
           ))}
