@@ -43,7 +43,7 @@ export default function Home() {
           <h3 className="text-center C2_title">Supports</h3>
           <p className="C2_text">OWASP Transparency Exchange API</p>
           <div className="d-flex justify-content-center integrationsFlexWrap">
-            <a href="https://github.com/cyclonedx/transparency-exchange-api" target="_blank" rel="noopener noreferrer"><img src="/home/tealogo.png" alt="OWASP Transparency Exchange API Logo" className="favAppIcons" /></a>
+            <a href="https://github.com/cyclonedx/transparency-exchange-api" title="OWASP Transparency Exchange API" target="_blank" rel="noopener noreferrer"><img src="/home/tealogo.png" alt="OWASP Transparency Exchange API" className="favAppIcons" /></a>
           </div>
         </div>
       </div>
@@ -55,28 +55,28 @@ export default function Home() {
           <p className="C2_text">with your favorite tools</p>
           <div className="d-flex justify-content-center integrationsFlexWrap">
             {[
-              { file: "dtrack.png", url: "https://dependencytrack.org" },
-              { file: "cdx.png", url: "https://cyclonedx.org" },
-              { file: "spdx.png", url: "https://spdx.org" },
-              { file: "ado.png", url: "https://dev.azure.com" },
-              { file: "github.png", url: "https://github.com" },
-              { file: "gitlab.png", url: "https://gitlab.com" },
-              { file: "jenkins.png", url: "https://www.jenkins.io" },
-              { file: "nvd.png", url: "https://nvd.nist.gov" },
-              { file: "osv.png", url: "https://osv.dev" },
-              { file: "sonatype_oss.png", url: "https://ossindex.sonatype.org" },
-              { file: "snyk.png", url: "https://snyk.io" },
-              { file: "slack.png", url: "https://slack.com" },
-              { file: "cosign.png", url: "https://github.com/sigstore/cosign" },
-              { file: "msteams.png", url: "https://www.microsoft.com/en-us/microsoft-365/microsoft-teams/group-chat-software" },
-              { file: "oci.png", url: "https://www.opencontainers.org" },
-              { file: "sendgrid.png", url: "https://sendgrid.com" },
-              { file: "semgrep.png", url: "https://semgrep.dev" },
-              { file: "checkov.png", url: "https://www.checkov.io" },
-              { file: "gmail.png", url: "https://gmail.com" },
-              { file: "shiftleftcyber.png", url: "https://shiftleftcyber.io" },
+              { file: "dtrack.png", url: "https://dependencytrack.org", title: "Dependency-Track" },
+              { file: "cdx.png", url: "https://cyclonedx.org", title: "CycloneDX" },
+              { file: "spdx.png", url: "https://spdx.org", title: "SPDX" },
+              { file: "ado.png", url: "https://dev.azure.com", title: "Azure DevOps" },
+              { file: "github.png", url: "https://github.com", title: "GitHub" },
+              { file: "gitlab.png", url: "https://gitlab.com", title: "GitLab" },
+              { file: "jenkins.png", url: "https://www.jenkins.io", title: "Jenkins" },
+              { file: "nvd.png", url: "https://nvd.nist.gov", title: "NVD" },
+              { file: "osv.png", url: "https://osv.dev", title: "OSV" },
+              { file: "sonatype_oss.png", url: "https://ossindex.sonatype.org", title: "Sonatype OSS Index" },
+              { file: "snyk.png", url: "https://snyk.io", title: "Snyk" },
+              { file: "slack.png", url: "https://slack.com", title: "Slack" },
+              { file: "cosign.png", url: "https://github.com/sigstore/cosign", title: "Sigstore Cosign" },
+              { file: "msteams.png", url: "https://www.microsoft.com/en-us/microsoft-365/microsoft-teams/group-chat-software", title: "Microsoft Teams" },
+              { file: "oci.png", url: "https://www.opencontainers.org", title: "Open Container Initiative" },
+              { file: "sendgrid.png", url: "https://sendgrid.com", title: "SendGrid" },
+              { file: "semgrep.png", url: "https://semgrep.dev", title: "Semgrep" },
+              { file: "checkov.png", url: "https://www.checkov.io", title: "Checkov" },
+              { file: "gmail.png", url: "https://gmail.com", title: "Gmail" },
+              { file: "shiftleftcyber.png", url: "https://shiftleftcyber.io", title: "ShiftLeftCyber" },
             ].map((item) => (
-              <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer"><img src={`/home/${item.file}`} alt="" className="favAppIcons" /></a>
+              <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer" title={item.title}><img src={`/home/${item.file}`} alt={item.title} className="favAppIcons" /></a>
             ))}
           </div>
         </div>
@@ -88,12 +88,12 @@ export default function Home() {
           <h3 className="text-center C2_title">Clients and Partners</h3>
           <div className="d-flex justify-content-center integrationsFlexWrap">
             {[
-              { file: "investottawa.png", url: "https://www.investottawa.ca" },
-              { file: "kdm.png", url: "https://kdmanalytics.com" },
-              { file: "iq.png", url: "https://www.iqinnovationhub.com" },
-              { file: "wysdom.png", url: "https://wysdom.ai" },
+              { file: "investottawa.png", url: "https://www.investottawa.ca/", title: "Invest Ottawa" },
+              { file: "kdm.png", url: "https://kdmanalytics.com", title: "KDM Analytics" },
+              { file: "iq.png", url: "https://www.iqinnovationhub.com", title: "IQ Innovation Hub" },
+              { file: "wysdom.png", url: "https://wysdom.ai", title: "Wysdom.AI" },
             ].map((item) => (
-              <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer"><img src={`/home/${item.file}`} alt="" className="favAppIcons" /></a>
+              <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer" title={item.title}><img src={`/home/${item.file}`} alt={item.title} className="favAppIcons" /></a>
             ))}
           </div>
         </div>
