@@ -591,7 +591,7 @@ const saveModifiedBranch = async function () {
         modifiedBranch.value = commonFunctions.deepCopy(storeResp)
         selectNewVcsRepo.value = false
     } catch (err) {
-        alert('ERROR: ' + err)
+        notify('error', 'Error Saving Branch', String(err))
     }
 }
 
@@ -643,6 +643,11 @@ const fetchVcsRepos = async function () : Promise<any[]> {
 }
 
 const addedComponent = function (component: any) {
+    // validate that branch is selected
+    if (!component.branch) {
+        notify('error', 'Branch Required', 'Please select a branch for the dependency. Branch is required for auto-integrate functionality.')
+        return
+    }
     // check if component already exists
     let exists = false
     if (component.branch) {
