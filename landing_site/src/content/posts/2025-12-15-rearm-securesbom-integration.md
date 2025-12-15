@@ -1,6 +1,7 @@
 ---
 title: "Press Release: Reliza and ShiftLeftCyber Announce Integration of SecureSBOM Signing into ReARM Platform"
 date: "2025-12-15"
+ogImage: "2025-12-15-ReARM-ShiftLeftCyber.png"
 ---
 
 **Ottawa, Ontario, Canada, 2025-12-15** - Reliza, the Canadian creator of the ReARM Software and Hardware Supply Chain Evidence Store, and ShiftLeftCyber, a Canadian innovator in SBOM authenticity and integrity solutions, today announced a new integration that enables seamless use of SecureSBOM signing inside Reliza's ReARM platform.
