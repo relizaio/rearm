@@ -5,6 +5,7 @@ import matter from "gray-matter";
 export type PostFrontmatter = {
   title: string;
   date: string; // ISO date string
+  ogImage?: string; // optional OG image from /public/blog_images/
 };
 
 export type Post = PostFrontmatter & {
@@ -42,6 +43,7 @@ export function getPostBySlug(slug: string): Post | undefined {
     slug,
     title: (data?.title as string) || slug,
     date: (data?.date as string) || "",
+    ogImage: (data?.ogImage as string) || undefined,
     content,
   };
 }

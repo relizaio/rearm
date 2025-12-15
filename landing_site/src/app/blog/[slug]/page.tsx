@@ -15,6 +15,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
   const title = post ? `${post.title} - ReARM by Reliza` : "Post - ReARM by Reliza";
   const description = post ? getDescription(post.content) : "Blog post on ReARM by Reliza.";
   const url = `${process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com"}/blog/${slug}`;
+  const ogImageUrl = post?.ogImage ? `/blog_images/${post.ogImage}` : "/rearm.png";
   return {
     title,
     description,
@@ -27,10 +28,10 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
       siteName: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
       images: [
         {
-          url: "/rearm.png",
+          url: ogImageUrl,
           width: 1200,
           height: 630,
-          alt: "ReARM - Supply Chain Security",
+          alt: post?.title || "ReARM - Supply Chain Security",
         },
       ],
     },
@@ -38,7 +39,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
       card: "summary_large_image", 
       title, 
       description,
-      images: ["/rearm.png"], 
+      images: [ogImageUrl], 
     },
   };
 }
