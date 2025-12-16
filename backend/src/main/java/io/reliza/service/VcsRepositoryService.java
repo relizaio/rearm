@@ -15,13 +15,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
+import io.reliza.model.Component;
 import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
+import io.reliza.repositories.ComponentRepository;
 import io.reliza.repositories.VcsRepositoryRepository;
 
 @Service
@@ -32,8 +35,11 @@ public class VcsRepositoryService {
 	
 	private final VcsRepositoryRepository repository;
 	
-	VcsRepositoryService(VcsRepositoryRepository repository) {
+	private final ComponentRepository componentRepository;
+	
+	VcsRepositoryService(VcsRepositoryRepository repository, ComponentRepository componentRepository) {
 	    this.repository = repository;
+	    this.componentRepository = componentRepository;
 	}
 	
 	public Optional<VcsRepository> getVcsRepository (UUID uuid) {
@@ -173,6 +179,101 @@ public class VcsRepositoryService {
 
 	public void saveAll(List<VcsRepository> vcsRepositories){
 		repository.saveAll(vcsRepositories);
+	}
+	
+	/**
+	 * Archive a VCS repository (soft delete).
+	 * Only allowed if no active components are attached to this VCS repository.
+	 * 
+	 * @param vcsUuid UUID of the VCS repository to archive
+	 * @param wu WhoUpdated information
+	 * @return true if archived successfully
+	 * @throws RelizaException if components are still attached or repository not found
+	 */
+	public Boolean archiveVcsRepository(UUID vcsUuid, WhoUpdated wu) throws RelizaException {
+		Boolean archived = false;
+		Optional<VcsRepository> ovr = getVcsRepository(vcsUuid);
+		if (ovr.isPresent()) {
+			// Check if any active components are attached to this VCS repository
+			List<Component> attachedComponents = componentRepository.findComponentsByVcs(vcsUuid.toString());
+			if (!attachedComponents.isEmpty()) {
+				throw new RelizaException("Cannot archive VCS repository: " + attachedComponents.size() + 
+					" active component(s) are still attached. Please remove or reassign components first.");
+			}
+			
+			VcsRepositoryData vrd = VcsRepositoryData.dataFromRecord(ovr.get());
+			vrd.setStatus(StatusEnum.ARCHIVED);
+			Map<String, Object> recordData = Utils.dataToRecord(vrd);
+			saveVcsRepository(ovr.get(), recordData, wu);
+			archived = true;
+		}
+		return archived;
+	}
+	
+	/**
+	 * Find VCS repository by URI including archived ones (for restore logic).
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @param uri VCS repository URI
+	 * @return Optional of VcsRepository
+	 */
+	private Optional<VcsRepository> findVcsRepositoryByOrgAndUriIncludingArchived(UUID orgUuid, String uri) {
+		String normalizedUri = Utils.normalizeVcsUri(uri);
+		return repository.findByOrgAndUriIncludingArchived(orgUuid.toString(), normalizedUri);
+	}
+	
+	/**
+	 * Restore an archived VCS repository.
+	 * 
+	 * @param vcsUuid UUID of the VCS repository to restore
+	 * @param wu WhoUpdated information
+	 * @return restored VcsRepository
+	 * @throws RelizaException if repository not found
+	 */
+	public VcsRepository restoreVcsRepository(UUID vcsUuid, WhoUpdated wu) throws RelizaException {
+		Optional<VcsRepository> ovr = getVcsRepository(vcsUuid);
+		if (ovr.isEmpty()) {
+			throw new RelizaException("VCS repository not found");
+		}
+		VcsRepositoryData vrd = VcsRepositoryData.dataFromRecord(ovr.get());
+		vrd.setStatus(StatusEnum.ACTIVE);
+		Map<String, Object> recordData = Utils.dataToRecord(vrd);
+		return saveVcsRepository(ovr.get(), recordData, wu);
+	}
+	
+	/**
+	 * Check if a VCS repository with the given URI exists (including archived).
+	 * If it exists and is archived, restore it. Otherwise throw an error for duplicates.
+	 * 
+	 * @param name VCS repository name
+	 * @param organization Organization UUID
+	 * @param uri VCS repository URI
+	 * @param type VCS type
+	 * @param wu WhoUpdated information
+	 * @return VcsRepository (either restored or newly created)
+	 * @throws RelizaException if an active VCS repository with the same URI already exists
+	 */
+	public VcsRepository createOrRestoreVcsRepository(String name, UUID organization, 
+			String uri, VcsType type, WhoUpdated wu) throws RelizaException {
+		uri = Utils.cleanVcsUri(uri);
+		// Check if an archived VCS repo with this URI already exists
+		Optional<VcsRepository> existingArchived = findVcsRepositoryByOrgAndUriIncludingArchived(organization, uri);
+		if (existingArchived.isPresent()) {
+			VcsRepositoryData vrd = VcsRepositoryData.dataFromRecord(existingArchived.get());
+			if (vrd.getStatus() == StatusEnum.ARCHIVED) {
+				// Restore the archived repository
+				vrd.setStatus(StatusEnum.ACTIVE);
+				if (StringUtils.isNotEmpty(name)) vrd.setName(name);
+				if (null != type) vrd.setType(type);
+				Map<String, Object> recordData = Utils.dataToRecord(vrd);
+				return saveVcsRepository(existingArchived.get(), recordData, wu);
+			} else {
+				// Already exists and is active - throw error
+				throw new RelizaException("A VCS repository with this URI already exists in this organization.");
+			}
+		}
+		// Create new VCS repository
+		return createVcsRepository(name, organization, uri, type, wu);
 	}
 	
 }

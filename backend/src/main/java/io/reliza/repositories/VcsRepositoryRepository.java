@@ -33,4 +33,9 @@ public interface VcsRepositoryRepository extends CrudRepository<VcsRepository, U
 			value = VariableQueries.FIND_VCS_REPO_BY_ORG_AND_URI,
 			nativeQuery = true)
 	Optional<VcsRepository> findByOrgAndUri(String orgUuidAsString, String uri);
+	
+	@Query(
+			value = VariableQueries.FIND_VCS_REPO_BY_ORG_AND_URI_INCLUDING_ARCHIVED,
+			nativeQuery = true)
+	Optional<VcsRepository> findByOrgAndUriIncludingArchived(String orgUuidAsString, String uri);
 }

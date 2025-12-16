@@ -111,6 +111,7 @@ type Mutation {
 	
 	createVcsRepository(vcsRepository: VcsRepositoryInput!): VcsRepository
 	updateVcsRepository(vcsUuid: ID!, name: String, uri: String): VcsRepository
+	archiveVcsRepository(vcsUuid: ID!): Boolean
 	getNewVersionManual(branchUuid: ID!, action: ActionEnum): Version
 	createSourceCodeEntry(sourceCodeEntry: SourceCodeEntryInput!): SourceCodeEntry
 	addReleaseManual(release: ReleaseInput!): Release

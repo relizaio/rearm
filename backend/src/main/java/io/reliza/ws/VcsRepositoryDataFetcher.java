@@ -84,7 +84,7 @@ public class VcsRepositoryDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "createVcsRepository")
-	public VcsRepositoryData createVcsRepository(DgsDataFetchingEnvironment dfe) {
+	public VcsRepositoryData createVcsRepository(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> vcsRepositoryInput = dfe.getArgument("vcsRepository");
@@ -101,7 +101,8 @@ public class VcsRepositoryDataFetcher {
 		if (StringUtils.isNotEmpty(typeStr)) {
 			type = VcsType.resolveStringToType(typeStr);
 		}
-		VcsRepository vr = vcsRepositoryService.createVcsRepository(name, orgUuid, uri, type, wu);
+		// Use createOrRestoreVcsRepository to restore archived repos with same URI
+		VcsRepository vr = vcsRepositoryService.createOrRestoreVcsRepository(name, orgUuid, uri, type, wu);
 		return VcsRepositoryData.dataFromRecord(vr);
 	}
 	
@@ -124,5 +125,20 @@ public class VcsRepositoryDataFetcher {
 		} catch (RelizaException re) {
 			throw new RuntimeException(re.getMessage());
 		}
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "archiveVcsRepository")
+	public Boolean archiveVcsRepository(@InputArgument("vcsUuid") String vcsUuidStr) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		UUID vcsUuid = UUID.fromString(vcsUuidStr);
+		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsUuid);
+		RelizaObject ro = ovrd.isPresent() ? ovrd.get() : null;
+		// Use ADMIN authorization - only admins can archive VCS repositories
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.ADMIN);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		return vcsRepositoryService.archiveVcsRepository(vcsUuid, wu);
 	}
 }

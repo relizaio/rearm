@@ -12,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
 import lombok.AccessLevel;
@@ -33,6 +34,8 @@ public class VcsRepositoryData extends RelizaDataParent implements RelizaObject 
 	private String uri;
 	@JsonProperty(CommonVariables.TYPE_FIELD)
 	private VcsType type = null; // optional
+	@JsonProperty(CommonVariables.STATUS_FIELD)
+	private StatusEnum status = StatusEnum.ACTIVE;
 	
 	public static VcsRepositoryData vcsRepositoryFactory (String name, UUID organization, 
 																String uri, VcsType type) {
