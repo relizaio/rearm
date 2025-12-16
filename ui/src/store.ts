@@ -239,6 +239,9 @@ const storeObject : any = {
         SET_VCS_REPOS (state : any, vcsRepos : any[]) {
             state.vcsRepos = vcsRepos
         },
+        REMOVE_VCS_REPO (state: any, vcsUuid: string) {
+            state.vcsRepos = state.vcsRepos.filter((repo: any) => repo.uuid !== vcsUuid)
+        },
         SET_COMPONENTS (state: any, components: any[]) {
             state.components = components
         },
@@ -943,6 +946,21 @@ const storeObject : any = {
             })
             context.commit('ADD_VCS_REPO', data.data.updateVcsRepository)
             return data.data.updateVcsRepository
+        },
+        async archiveVcsRepo (context: any, vcsRepoProps: any) {
+            const data = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation archiveVcsRepository($vcsUuid: ID!){
+                        archiveVcsRepository(vcsUuid: $vcsUuid)
+                    }`,
+                variables: {
+                    vcsUuid: vcsRepoProps.uuid
+                }
+            })
+            if (data.data.archiveVcsRepository) {
+                context.commit('REMOVE_VCS_REPO', vcsRepoProps.uuid)
+            }
+            return data.data.archiveVcsRepository
         },
         async createInstance (context: any, instanceProps: any) {
             const data = await graphqlClient.mutate({

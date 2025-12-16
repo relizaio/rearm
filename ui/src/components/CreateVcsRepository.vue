@@ -74,6 +74,8 @@ import { useStore } from 'vuex'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { NInput, NForm, NButton, NFormItem, NSelect, FormInst, FormRules } from 'naive-ui'
+import Swal from 'sweetalert2'
+import commonFunctions from '@/utils/commonFunctions'
 
 const store = useStore()
 const emit = defineEmits(['createdVcsRepo'])
@@ -136,6 +138,12 @@ function onSubmit(){
             vcsrepo.value.name = response.name
             vcsrepo.value.type = response.type
             emit('createdVcsRepo', vcsuuid.value)
+        }).catch((error: any) => {
+            Swal.fire(
+                'Error!',
+                commonFunctions.parseGraphQLError(error.message),
+                'error'
+            )
         })
     })
 }

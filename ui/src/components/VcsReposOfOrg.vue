@@ -53,11 +53,12 @@ import { NInput, NModal, NCard, NDataTable, useNotification, NotificationType, N
 import { ComputedRef, h, ref, Ref, computed, Component } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X } from '@vicons/tabler'
+import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, Trash } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import CreateVcsRepository from '@/components/CreateVcsRepository.vue'
 import commonFunctions from '@/utils/commonFunctions'
 import { Info20Regular, Copy20Regular } from '@vicons/fluent'
+import Swal from 'sweetalert2'
 
 const route = useRoute()
 const store = useStore()
@@ -156,6 +157,40 @@ function resetSelectVcs (uuid: string, isName: boolean) {
 function createdVcsRepo () {
     modalVcsOfOrgAddVcsRepo.value=false
     store.dispatch('fetchVcsRepos', orguuid.value)
+}
+
+async function archiveVcsRepo (repo: VCS) {
+    const swalResult = await Swal.fire({
+        title: `Are you sure you want to archive VCS Repository "${repo.name}"?`,
+        text: 'If you proceed, the VCS Repository will be archived.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, archive!',
+        cancelButtonText: 'No, cancel'
+    })
+
+    if (swalResult.value) {
+        try {
+            await store.dispatch('archiveVcsRepo', { uuid: repo.uuid })
+            Swal.fire(
+                'Archived!',
+                `VCS Repository "${repo.name}" has been archived successfully.`,
+                'success'
+            )
+        } catch (error: any) {
+            Swal.fire(
+                'Error!',
+                commonFunctions.parseGraphQLError(error.message),
+                'error'
+            )
+        }
+    } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
+        Swal.fire(
+            'Cancelled',
+            'VCS Repository archiving cancelled.',
+            'info'
+        )
+    }
 }
 
 const vcsRepoFields: any[] = [
@@ -299,7 +334,20 @@ const vcsRepoFields: any[] = [
                             }, () => h(Info20Regular)),
                         default: () =>  uuidCopy
                         }
-                    )
+                    ),
+                    // Archive button - only show for admins
+                    ...(userPermission.value === 'ADMIN' ? [
+                        h(
+                            NIcon, 
+                            {
+                                title: 'Archive VCS Repository',
+                                class: 'icons clickable',
+                                size: 25,
+                                style: 'color: #d03050;',
+                                onClick: () => archiveVcsRepo(row)
+                            }, 
+                            () => h(Trash))
+                    ] : [])
                 ]
             )
         }
