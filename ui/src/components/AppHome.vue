@@ -2,7 +2,9 @@
     <div class="home">
         <!-- Findings Per Day Display -->
         <div v-if="showFindingsPerDay" class="findingsPerDayBlock">
-            <h2>Findings for {{ findingsPerDayDate }}</h2>
+            <h2>Findings for {{ findingsPerDayDate }}
+                <n-icon class="clickable" size="25" title="Recalculate Findings" @click="recalculateFindingsForDate" :component="Refresh" style="margin-left: 10px; vertical-align: middle;" />
+            </h2>
             <n-spin :show="findingsPerDayLoading">
                 <n-data-table
                     :columns="findingsPerDayColumns"
@@ -458,7 +460,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag } from 'naive-ui'
+import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag, useNotification, NotificationType } from 'naive-ui'
 import { useStore } from 'vuex'
 import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
@@ -468,7 +470,7 @@ import InstanceHistory from './InstanceHistory.vue'
 import { RouterLink } from 'vue-router'
 import axios from '../utils/axios'
 import { Commit } from '@vicons/carbon'
-import { AspectRatio, Box, Eye, QuestionMark } from '@vicons/tabler'
+import { AspectRatio, Box, Eye, QuestionMark, Refresh } from '@vicons/tabler'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import { useRouter, useRoute } from 'vue-router'
@@ -481,6 +483,16 @@ import { processMetricsData, buildVulnerabilityColumns } from '@/utils/metrics'
 const store = useStore()
 const router = useRouter()
 const route = useRoute()
+const notification = useNotification()
+
+const notify = (type: NotificationType, title: string, content: string) => {
+    notification[type]({
+        content: title,
+        meta: content,
+        duration: 3000,
+        keepAliveOnHover: true
+    })
+}
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const installationType: ComputedRef<any> = computed((): any => store.getters.myuser.installationType)
@@ -600,6 +612,111 @@ async function fetchFindingsPerDay() {
         }
     } catch (error) {
         console.error('Error fetching findings per day:', error)
+    } finally {
+        findingsPerDayLoading.value = false
+    }
+}
+
+async function recalculateFindingsForDate() {
+    if (!myorg.value?.uuid || !findingsPerDayDate.value) return
+    
+    findingsPerDayLoading.value = true
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation computeAnalyticsMetricsForDate($orgUuid: ID!, $date: String!) {
+                    computeAnalyticsMetricsForDate(orgUuid: $orgUuid, date: $date) {
+                        vulnerabilityDetails {
+                            purl
+                            vulnId
+                            severity
+                            analysisState
+                            analysisDate
+                            aliases {
+                                type
+                                aliasId
+                            }
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails {
+                                    version
+                                    componentDetails {
+                                        name
+                                    }
+                                }
+                                artifactDetails {
+                                    type
+                                }
+                            }
+                            severities {
+                                source
+                                severity
+                            }
+                        }
+                        violationDetails {
+                            purl
+                            type
+                            license
+                            violationDetails
+                            analysisState
+                            analysisDate
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails {
+                                    version
+                                    componentDetails {
+                                        name
+                                    }
+                                }
+                                artifactDetails {
+                                    type
+                                }
+                            }
+                        }
+                        weaknessDetails {
+                            cweId
+                            ruleId
+                            location
+                            fingerprint
+                            severity
+                            analysisState
+                            analysisDate
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails {
+                                    version
+                                    componentDetails {
+                                        name
+                                    }
+                                }
+                                artifactDetails {
+                                    type
+                                }
+                            }
+                        }
+                    }
+                }
+            `,
+            variables: {
+                orgUuid: myorg.value.uuid,
+                date: findingsPerDayDate.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        if (response.data.computeAnalyticsMetricsForDate) {
+            findingsPerDayData.value = processMetricsData(response.data.computeAnalyticsMetricsForDate)
+        }
+        notify('success', 'Recalculation Complete', `Finding recalculation for ${findingsPerDayDate.value} is completed.`)
+    } catch (error) {
+        console.error('Error recalculating findings:', error)
+        notify('error', 'Error', 'Failed to recalculate findings for the day.')
     } finally {
         findingsPerDayLoading.value = false
     }
