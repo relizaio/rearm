@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ForkJoinPool;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -76,7 +78,6 @@ public class AnalyticsMetricsService {
 		var todaysData = computeActualAnalyticsMetricsDataForOrg(org, ZonedDateTime.now());
 		chartData.addAll(todaysData.convertToChartDto());
 		return chartData;
-		
 	}
 	
 	protected void computeAndRecordAnalyticsMetricsForAllOrgs () {
@@ -101,12 +102,19 @@ public class AnalyticsMetricsService {
 	
 	private AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
 		var activeBranches = branchService.listBranchesOfOrg(org);
-		List<ReleaseData> latestReleasesOfBranches = new LinkedList<>();
-		activeBranches.forEach(ab -> {
-			var ord = sharedReleaseService.getReleaseDataOfBranch(
-					org, ab.getUuid(), ReleaseLifecycle.ASSEMBLED);
-			if (ord.isPresent()) latestReleasesOfBranches.add(ord.get());
-		});
+		List<ReleaseData> latestReleasesOfBranches;
+		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
+			latestReleasesOfBranches = customPool.submit(() -> 
+				activeBranches.parallelStream()
+					.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab.getUuid(), ReleaseLifecycle.ASSEMBLED))
+					.filter(Optional::isPresent)
+					.map(Optional::get)
+					.collect(Collectors.toList())
+			).get();
+		} catch (Exception e) {
+			log.error("Error in parallel release fetch", e);
+			latestReleasesOfBranches = new LinkedList<>();
+		}
 		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
 		latestReleasesOfBranches.forEach(rd -> rmd.mergeWithByContent(rd.getMetrics()));
 		return AnalyticsMetricsData.analyticsMetricsDataFactory(org, rmd, createdDate);
