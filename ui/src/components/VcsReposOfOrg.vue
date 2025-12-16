@@ -1,11 +1,29 @@
 <template>
     <div>
         <h4>VCS Repositories</h4>
-        <Icon @click="modalVcsOfOrgAddVcsRepo=true" v-if="userPermission === 'READ_WRITE' || userPermission === 'ADMIN'" size="30" class="clickable" title="Add New VCS Repository" ><CirclePlus/></Icon>  
+        <Icon @click="modalVcsOfOrgAddVcsRepo=true" v-if="userPermission === 'READ_WRITE' || userPermission === 'ADMIN'" size="30" class="clickable" title="Add New VCS Repository" ><CirclePlus/></Icon>
+        <Icon @click="showSearchInput = !showSearchInput" size="30" class="clickable" title="Search VCS Repositories"><Search/></Icon>
+        
+        <n-collapse-transition :show="showSearchInput">
+            <n-input 
+                round 
+                clearable 
+                @clear="searchQuery = ''; showSearchInput = false" 
+                autofocus 
+                v-model:value="searchQuery"
+                :style="{ 'max-width': '400px', 'margin': '10px 0' }" 
+                placeholder="Search VCS Repositories by name or URI">
+                <template #suffix>
+                    <Icon size="20"><Search/></Icon>
+                </template>
+            </n-input>
+        </n-collapse-transition>
 
         <n-data-table 
             :columns="vcsRepoFields"
             :data="repos"
+            :pagination="pagination"
+            @update:page="handlePageChange"
         />
 
         <n-modal
@@ -49,11 +67,11 @@
 </template>
   
 <script lang="ts" setup>
-import { NInput, NModal, NCard, NDataTable, useNotification, NotificationType, NIcon, NTooltip  } from 'naive-ui'
-import { ComputedRef, h, ref, Ref, computed, Component } from 'vue'
+import { NInput, NModal, NCard, NDataTable, useNotification, NotificationType, NIcon, NTooltip, NCollapseTransition } from 'naive-ui'
+import { ComputedRef, h, ref, Ref, computed, Component, reactive } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, Trash } from '@vicons/tabler'
+import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, Trash, Search } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import CreateVcsRepository from '@/components/CreateVcsRepository.vue'
 import commonFunctions from '@/utils/commonFunctions'
@@ -76,6 +94,14 @@ const notification = useNotification()
 const repos: ComputedRef<[VCS]> = computed((): [VCS] => {
     let storeRepos = store.getters.vcsReposOfOrg(orguuid.value)
     if (storeRepos && storeRepos.length) {
+        // Filter by search query
+        if (searchQuery.value) {
+            const query = searchQuery.value.toLowerCase()
+            storeRepos = storeRepos.filter((repo: VCS) => 
+                repo.name.toLowerCase().includes(query) || 
+                repo.uri.toLowerCase().includes(query)
+            )
+        }
         // sort - TODO make sort configurable
         storeRepos.sort((a: any, b: any) => {
             if (a.name.toLowerCase() < b.name.toLowerCase()) {
@@ -123,6 +149,19 @@ if (connectedComponents.value.length < 1) {
 const modalVcsOfOrgAddVcsRepo = ref(false)
 const userPermission = ref('')
 userPermission.value = commonFunctions.getUserPermission(orguuid.value, store.getters.myuser).org
+
+const pagination = reactive({
+    page: 1,
+    pageSize: 10
+})
+
+const handlePageChange = (page: number) => {
+    pagination.page = page
+}
+
+const showSearchInput: Ref<boolean> = ref(false)
+const searchQuery: Ref<string> = ref('')
+
 type VCS = {uuid: string, name: string, uri: string}
 type SelectedVcs = {name: boolean, uri: boolean}
 const selectedVcs = ref(new Map<string, SelectedVcs>())
