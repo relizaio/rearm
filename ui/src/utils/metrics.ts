@@ -366,9 +366,10 @@ export function buildVulnerabilityColumns(
           // Add release information with link if available
           if (elements.length > 0) elements.push(h('br'))
           if (source.release && source.releaseDetails && source.releaseDetails.componentDetails) {
-            const releaseText = `${source.releaseDetails.componentDetails.name || 'Unknown'} ${source.releaseDetails.version || ''}, `
+            const hasArtifactType = source.artifactDetails?.type
+            const releaseText = `${source.releaseDetails.componentDetails.name || 'Unknown'} ${source.releaseDetails.version || ''}${hasArtifactType ? ', ' : ''}`
             
-            if (RouterLink && options?.getOrgUuid) {
+            if (RouterLink) {
               const releaseLink = h(RouterLink, {
                 to: {
                   name: 'ReleaseView',
