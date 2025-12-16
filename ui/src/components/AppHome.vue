@@ -1,6 +1,18 @@
 <template>
     <div class="home">
-        <div class="dashboardBlock">
+        <!-- Findings Per Day Display -->
+        <div v-if="showFindingsPerDay" class="findingsPerDayBlock">
+            <h2>Findings for {{ findingsPerDayDate }}</h2>
+            <n-spin :show="findingsPerDayLoading">
+                <n-data-table
+                    :columns="findingsPerDayColumns"
+                    :data="findingsPerDayData"
+                    :row-key="(row: any) => row.type + '-' + row.id + '-' + row.purl"
+                    :pagination="{ pageSize: 20 }"
+                />
+            </n-spin>
+        </div>
+        <div v-else class="dashboardBlock">
             <n-grid x-gap="24" cols="2">
                 <n-gi>
                     <div class="charts">
@@ -446,7 +458,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress } from 'naive-ui'
+import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag } from 'naive-ui'
 import { useStore } from 'vuex'
 import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
@@ -459,14 +471,16 @@ import { Commit } from '@vicons/carbon'
 import { AspectRatio, Box, Eye, QuestionMark } from '@vicons/tabler'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import * as vegaEmbed from 'vega-embed'
 import Swal from 'sweetalert2'
 import commonFunctions from '@/utils/commonFunctions'
 import constants from '@/utils/constants'
+import { processMetricsData, buildVulnerabilityColumns } from '@/utils/metrics'
 
 const store = useStore()
 const router = useRouter()
+const route = useRoute()
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const installationType: ComputedRef<any> = computed((): any => store.getters.myuser.installationType)
@@ -481,13 +495,132 @@ const showSearchProgress = ref(false)
 const searchFailed = ref(false)
 const selectedPurl = ref('')
 
+// Findings per day display
+const showFindingsPerDay = computed(() => route.query.display === 'findingsPerDay' && route.query.date)
+const findingsPerDayDate = computed(() => route.query.date as string || '')
+const findingsPerDayData: Ref<any[]> = ref([])
+const findingsPerDayLoading: Ref<boolean> = ref(false)
+const findingsPerDayColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, RouterLink)
+
+async function fetchFindingsPerDay() {
+    if (!showFindingsPerDay.value || !myorg.value?.uuid) return
+    
+    findingsPerDayLoading.value = true
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query findingsPerDay($orgUuid: ID!, $date: String!) {
+                    findingsPerDay(orgUuid: $orgUuid, date: $date) {
+                        vulnerabilityDetails {
+                            purl
+                            vulnId
+                            severity
+                            analysisState
+                            analysisDate
+                            aliases {
+                                type
+                                aliasId
+                            }
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails {
+                                    version
+                                    componentDetails {
+                                        name
+                                    }
+                                }
+                                artifactDetails {
+                                    type
+                                }
+                            }
+                            severities {
+                                source
+                                severity
+                            }
+                        }
+                        violationDetails {
+                            purl
+                            type
+                            license
+                            violationDetails
+                            analysisState
+                            analysisDate
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails {
+                                    version
+                                    componentDetails {
+                                        name
+                                    }
+                                }
+                                artifactDetails {
+                                    type
+                                }
+                            }
+                        }
+                        weaknessDetails {
+                            cweId
+                            ruleId
+                            location
+                            fingerprint
+                            severity
+                            analysisState
+                            analysisDate
+                            sources {
+                                artifact
+                                release
+                                variant
+                                releaseDetails {
+                                    version
+                                    componentDetails {
+                                        name
+                                    }
+                                }
+                                artifactDetails {
+                                    type
+                                }
+                            }
+                        }
+                    }
+                }
+            `,
+            variables: {
+                orgUuid: myorg.value.uuid,
+                date: findingsPerDayDate.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        if (response.data.findingsPerDay) {
+            findingsPerDayData.value = processMetricsData(response.data.findingsPerDay)
+        }
+    } catch (error) {
+        console.error('Error fetching findings per day:', error)
+    } finally {
+        findingsPerDayLoading.value = false
+    }
+}
+
 onMounted(() => {
     if (myorg.value) 
         initLoad()
+    if (showFindingsPerDay.value)
+        fetchFindingsPerDay()
 })
 watch(myorg, (currentValue, oldValue) => {
     activeComponentsInput.value.organization = myorg.value.uuid
     initLoad()
+    if (showFindingsPerDay.value)
+        fetchFindingsPerDay()
+});
+
+watch(() => route.query, () => {
+    if (showFindingsPerDay.value)
+        fetchFindingsPerDay()
 });
 
 const releaseTagKeys: Ref<any[]> = ref([])
