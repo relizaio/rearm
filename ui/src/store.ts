@@ -193,6 +193,11 @@ const storeObject : any = {
                 state.components.push(p)
             })
         },
+        SET_COMPONENTS_OF_ORG (state: any, payload: { orgUuid: string, componentType: string, components: any[] }) {
+            // Remove all components of this org and type, then add the fresh list
+            state.components = state.components.filter((c: any) => !(c.org === payload.orgUuid && c.type === payload.componentType))
+            payload.components.forEach((c: any) => state.components.push(c))
+        },
         ADD_UPDATE_COMPONENT (state: any, component: any) {
             const compIndex = state.components.findIndex((c: any) => (c.uuid === component.uuid))
             if (compIndex > -1) {
@@ -567,7 +572,7 @@ const storeObject : any = {
                 },
                 fetchPolicy: 'no-cache'
             })
-            context.commit('ADD_COMPONENTS', response.data.components)
+            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'COMPONENT', components: response.data.components })
             return response.data.components
         },
         async fetchProducts (context : any, orgid : string) : Promise<any[]> {
@@ -584,7 +589,7 @@ const storeObject : any = {
                 },
                 fetchPolicy: 'no-cache'
             })
-            context.commit('ADD_COMPONENTS', response.data.components)
+            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'PRODUCT', components: response.data.components })
             return response.data.components
         },
         async fetchComponent (context: any, uuid: any) {
@@ -872,8 +877,9 @@ const storeObject : any = {
                 }
             })
             if (archived) {
-                // reload components
-                store.dispatch('fetchComponents', params.orgUuid)
+                // reload components and products
+                await store.dispatch('fetchComponents', params.orgUuid)
+                await store.dispatch('fetchProducts', params.orgUuid)
             }
             return archived
         },

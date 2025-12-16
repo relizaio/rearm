@@ -1309,16 +1309,26 @@ const archiveComponent = async function () {
     })
 
     if (swalResult.value) {
+        const orgUuid = componentData.value.org
+        const componentName = updatedComponent.value.name
+        const isComponent = words.value.componentFirstUpper === 'Component'
         let archiveComponentParams = {
             componentUuid: componentData.value.uuid,
-            orgUuid: componentData.value.org
+            orgUuid: orgUuid
         }
         try {
             let archived = await store.dispatch('archiveComponent', archiveComponentParams)
-            if (archived && words.value.componentFirstUpper === 'Component') {
-                router.push({ name: 'ComponentsOfOrg', params: { orguuid: componentData.value.org } })
-            } else if (archived) {
-                router.push({ name: 'ProductsOfOrg', params: { orguuid: componentData.value.org } })
+            if (archived) {
+                Swal.fire(
+                    'Archived!',
+                    `${words.value.componentFirstUpper} "${componentName}" has been archived successfully.`,
+                    'success'
+                )
+                if (isComponent) {
+                    router.push({ name: 'ComponentsOfOrg', params: { orguuid: orgUuid } })
+                } else {
+                    router.push({ name: 'ProductsOfOrg', params: { orguuid: orgUuid } })
+                }
             }
         } catch (err: any) {
             Swal.fire(

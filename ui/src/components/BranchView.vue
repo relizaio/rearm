@@ -390,13 +390,23 @@ const modifiedBranch: Ref<any> = ref({})
 const isWritable : boolean = commonFunctions.isWritable(orguuid, myUser, 'BRANCH')
 
 const archiveBranch = async function() {
+    const componentUuid = modifiedBranch.value.component
+    const isProduct = branchData.value.componentDetails?.type === 'PRODUCT'
     const onSwalConfirm = async function () {
         const archiveBranchParams = {
             branchUuid: branchData.value.uuid,
-            componentUuid: modifiedBranch.value.component
+            componentUuid: componentUuid
         }
         try {
             await store.dispatch('archiveBranch', archiveBranchParams)
+            // Navigate to the component/product page after successful archive
+            router.push({
+                name: isProduct ? 'ProductsOfOrg' : 'ComponentsOfOrg',
+                params: {
+                    orguuid: orguuid,
+                    compuuid: componentUuid
+                }
+            })
         } catch (err: any) {
             Swal.fire(
                 'Error!',
