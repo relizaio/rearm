@@ -35,6 +35,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findReleasesOfBranch(String branchUuidAsString, String limitAsStr, String offsetAsStr);
 
 	@Query(
+			value = VariableQueries.FIND_ALL_RELEASES_OF_BRANCH_UP_TO_DATE,
+			nativeQuery = true)
+	List<Release> findReleasesOfBranchUpToDate(String branchUuidAsString, ZonedDateTime upToDate, String limitAsStr, String offsetAsStr);
+
+	@Query(
 			value = VariableQueries.FIND_ALL_RELEASES_OF_BRANCH_WHERE_IN_SCE,
 			nativeQuery = true)
 	List<Release> findReleasesOfBranchWhereInSce(String branchUuidAsString, List<String> sces, String limitAsStr, String offsetAsStr);

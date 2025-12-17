@@ -25,6 +25,8 @@ import io.reliza.model.dto.AnalyticsDtos.ReleasesPerBranch;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerComponent;
 import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
 import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
+import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.WhoUpdated;
 import io.reliza.service.AnalyticsMetricsService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.ReleaseService;
@@ -91,5 +93,28 @@ public class AnalyticsDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		return analyticsMetricsService.getVulnViolationByOrgChartData(orgUuid, dateFrom, dateTo);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "findingsPerDay")
+	public ReleaseMetricsDto findingsPerDay(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("date") String date) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return analyticsMetricsService.getFindingsPerDay(orgUuid, date).orElse(null);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "computeAnalyticsMetricsForDate")
+	public ReleaseMetricsDto computeAnalyticsMetricsForDate(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("date") String date) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.WRITE);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		return analyticsMetricsService.computeAndRecordAnalyticsMetricsForOrgAndDate(orgUuid, date, wu);
 	}
 }

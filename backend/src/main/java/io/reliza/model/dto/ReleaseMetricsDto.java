@@ -360,7 +360,7 @@ public class ReleaseMetricsDto implements Cloneable {
 			List<VulnerabilityDto> enrichedVulnerabilities = new ArrayList<>();
 			for (VulnerabilityDto vuln : vulnerabilityDetails) {
 				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
-				if (vuln.sources() != null) {
+				if (vuln.sources() != null && !vuln.sources().isEmpty()) {
 					for (FindingSourceDto existingSource : vuln.sources()) {
 						// If source is missing release UUID, enrich it
 						if (existingSource.release() == null) {
@@ -376,6 +376,9 @@ public class ReleaseMetricsDto implements Cloneable {
 							updatedSources.add(existingSource);
 						}
 					}
+				} else {
+					// Sources is null or empty - add a new source with just the release UUID
+					updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
 				}
 				
 				VulnerabilityDto enrichedVuln = new VulnerabilityDto(
@@ -398,7 +401,7 @@ public class ReleaseMetricsDto implements Cloneable {
 			List<ViolationDto> enrichedViolations = new ArrayList<>();
 			for (ViolationDto violation : violationDetails) {
 				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
-				if (violation.sources() != null) {
+				if (violation.sources() != null && !violation.sources().isEmpty()) {
 					for (FindingSourceDto existingSource : violation.sources()) {
 						// If source is missing release UUID, enrich it
 						if (existingSource.release() == null) {
@@ -414,6 +417,9 @@ public class ReleaseMetricsDto implements Cloneable {
 							updatedSources.add(existingSource);
 						}
 					}
+				} else {
+					// Sources is null or empty - add a new source with just the release UUID
+					updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
 				}
 				
 				ViolationDto enrichedViolation = new ViolationDto(
@@ -435,7 +441,7 @@ public class ReleaseMetricsDto implements Cloneable {
 			List<WeaknessDto> enrichedWeaknesses = new ArrayList<>();
 			for (WeaknessDto weakness : weaknessDetails) {
 				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
-				if (weakness.sources() != null) {
+				if (weakness.sources() != null && !weakness.sources().isEmpty()) {
 					for (FindingSourceDto existingSource : weakness.sources()) {
 						// If source is missing release UUID, enrich it
 						if (existingSource.release() == null) {
@@ -451,6 +457,9 @@ public class ReleaseMetricsDto implements Cloneable {
 							updatedSources.add(existingSource);
 						}
 					}
+				} else {
+					// Sources is null or empty - add a new source with just the release UUID
+					updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
 				}
 				
 				WeaknessDto enrichedWeakness = new WeaknessDto(

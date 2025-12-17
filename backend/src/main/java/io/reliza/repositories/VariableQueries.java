@@ -337,6 +337,11 @@ class VariableQueries {
 			+ CommonVariables.BRANCH_FIELD + "' = :branchUuidAsString ORDER BY r.created_date desc LIMIT cast (:limitAsStr as bigint) "
 			+ "OFFSET cast (:offsetAsStr as bigint)";
 
+	protected static final String FIND_ALL_RELEASES_OF_BRANCH_UP_TO_DATE = "select * from rearm.releases r where r.record_data->>'"
+			+ CommonVariables.BRANCH_FIELD + "' = :branchUuidAsString AND r.created_date < :upToDate "
+			+ "ORDER BY r.created_date desc LIMIT cast (:limitAsStr as bigint) "
+			+ "OFFSET cast (:offsetAsStr as bigint)";
+
 	protected static final String FIND_ALL_RELEASES_OF_BRANCH_WHERE_IN_SCE = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.BRANCH_FIELD + "' = :branchUuidAsString "
 			+ "and r.record_data->>'" + CommonVariables.SOURCE_CODE_ENTRY_FIELD + "' in (:sces) "

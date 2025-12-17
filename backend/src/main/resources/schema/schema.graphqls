@@ -47,6 +47,7 @@ type Query {
 	mostActiveComponentsOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerComponent]
 	mostActiveBranchesOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerBranch]
 	vulnerabilitiesViolationsOverTime(orgUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	findingsPerDay(orgUuid: ID!, date: String!): DependencyTrackMetrics
 	
 	# Programmatic
 	getReleaseByHashProgrammatic(hash: String!, componentId: ID): Release
@@ -134,6 +135,9 @@ type Mutation {
 	archiveApprovalPolicy(approvalPolicyUuid: ID!): ApprovalPolicy
 	
 	approveReleaseManual(release: ID!, approvals: [ReleaseApprovalInput!]): Release
+	
+	# Analytics
+	computeAnalyticsMetricsForDate(orgUuid: ID!, date: String!): DependencyTrackMetrics
 	
 	addArtifactManual(artifactInput: CreateArtifactInput, artifactUuid: ID): Release
 

@@ -151,11 +151,15 @@ public class SharedReleaseService {
 	 * @return
 	 */
 	public Optional<ReleaseData> getReleaseDataOfBranch (UUID orgUuid, UUID branchUuid, ReleaseLifecycle lifecycle) {
+		return getReleaseDataOfBranch(orgUuid, branchUuid, lifecycle, null);
+	}
+	
+	public Optional<ReleaseData> getReleaseDataOfBranch (UUID orgUuid, UUID branchUuid, ReleaseLifecycle lifecycle, ZonedDateTime upToDate) {
 		BranchData bd = branchService.getBranchData(branchUuid).get();
 		if (null == orgUuid) orgUuid = bd.getOrg();
 		ComponentData pd = getComponentService.getComponentData(bd.getComponent()).get();
 		Optional<ReleaseData> ord = Optional.empty();
-		List<GenericReleaseData> brReleaseData = listReleaseDataOfBranch(branchUuid, orgUuid, lifecycle, DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE);
+		List<GenericReleaseData> brReleaseData = listReleaseDataOfBranch(branchUuid, orgUuid, lifecycle, DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE, upToDate);
 		if (!brReleaseData.isEmpty()) {
 			Collections.sort(brReleaseData, new ReleaseVersionComparator(pd.getVersionSchema(), bd.getVersionSchema()));
 			try {
@@ -204,7 +208,11 @@ public class SharedReleaseService {
 	}
 	
 	public List<GenericReleaseData> listReleaseDataOfBranch (UUID branchUuid, UUID orgUuid, ReleaseLifecycle lifecycle, Integer limit) {
-		List<Release> releases = listReleasesOfBranch(branchUuid, limit, 0);
+		return listReleaseDataOfBranch(branchUuid, orgUuid, lifecycle, limit, null);
+	}
+	
+	public List<GenericReleaseData> listReleaseDataOfBranch (UUID branchUuid, UUID orgUuid, ReleaseLifecycle lifecycle, Integer limit, ZonedDateTime upToDate) {
+		List<Release> releases = listReleasesOfBranch(branchUuid, limit, 0, upToDate);
 		List<GenericReleaseData> retList = releases
 						.stream()
 						.map(ReleaseData::dataFromRecord)
@@ -214,6 +222,10 @@ public class SharedReleaseService {
 	}
 
 	private List<Release> listReleasesOfBranch (UUID branchUuid,  Integer limit, Integer offset) {
+		return listReleasesOfBranch(branchUuid, limit, offset, null);
+	}
+
+	private List<Release> listReleasesOfBranch (UUID branchUuid,  Integer limit, Integer offset, ZonedDateTime upToDate) {
 		String limitAsStr = null;
 		if (null == limit || limit < 1) {
 			limitAsStr = "ALL";
@@ -225,6 +237,9 @@ public class SharedReleaseService {
 			offsetAsStr = "0";
 		} else {
 			offsetAsStr = offset.toString();
+		}
+		if (upToDate != null) {
+			return repository.findReleasesOfBranchUpToDate(branchUuid.toString(), upToDate, limitAsStr, offsetAsStr);
 		}
 		return repository.findReleasesOfBranch(branchUuid.toString(), limitAsStr, offsetAsStr);
 	}

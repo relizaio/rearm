@@ -68,6 +68,12 @@ public class AnalyticsMetricsService {
 		return repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey);
 	}
 	
+	public Optional<ReleaseMetricsDto> getFindingsPerDay(UUID org, String dateKey) {
+		return repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey)
+				.map(AnalyticsMetricsData::dataFromRecord)
+				.map(AnalyticsMetricsData::getMetrics);
+	}
+	
 	public List<VulnViolationsChartDto> getVulnViolationByOrgChartData(UUID org, ZonedDateTime dateFrom,
 			ZonedDateTime dateTo) {
 		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
@@ -100,13 +106,24 @@ public class AnalyticsMetricsService {
 		}
 	}
 	
+	@Transactional
+	public ReleaseMetricsDto computeAndRecordAnalyticsMetricsForOrgAndDate(UUID org, String dateKey, WhoUpdated wu) {
+		ZonedDateTime createdDate = java.time.LocalDate.parse(dateKey).atStartOfDay(java.time.ZoneOffset.UTC);
+		Optional<AnalyticsMetrics> existingAm = repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey);
+		AnalyticsMetrics am = existingAm.orElse(new AnalyticsMetrics());
+		AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, createdDate);
+		save(am, Utils.dataToRecord(amd), wu);
+		return amd.getMetrics();
+	}
+	
 	private AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
+		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
 		var activeBranches = branchService.listBranchesOfOrg(org);
 		List<ReleaseData> latestReleasesOfBranches;
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
 			latestReleasesOfBranches = customPool.submit(() -> 
 				activeBranches.parallelStream()
-					.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab.getUuid(), ReleaseLifecycle.ASSEMBLED))
+					.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab.getUuid(), ReleaseLifecycle.ASSEMBLED, upToDate))
 					.filter(Optional::isPresent)
 					.map(Optional::get)
 					.collect(Collectors.toList())
@@ -116,7 +133,11 @@ public class AnalyticsMetricsService {
 			latestReleasesOfBranches = new LinkedList<>();
 		}
 		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
-		latestReleasesOfBranches.forEach(rd -> rmd.mergeWithByContent(rd.getMetrics()));
+		latestReleasesOfBranches.forEach(rd -> {
+			ReleaseMetricsDto rmd2 = rd.getMetrics();
+			rmd2.enrichSourcesWithRelease(rd.getUuid());
+			rmd.mergeWithByContent(rmd2);
+		});
 		return AnalyticsMetricsData.analyticsMetricsDataFactory(org, rmd, createdDate);
 	}
 	

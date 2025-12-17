@@ -127,15 +127,10 @@ public class OssReleaseDatafetcher {
 		// TODO respect tags
 		
 		String branch = glri.branch();
-		UUID componentUuid = null;
 		UUID productUuid = glri.product();
 		UUID orgId = null;
 		ComponentData cd;
-		try {
-			componentUuid = componentService.resolveComponentIdFromInput(latestReleaseInput, ahp);
-		} catch (RelizaException re) {
-			throw new RelizaException("Component and or VCS Repository not found");
-		}
+		UUID componentUuid = componentService.resolveComponentIdFromInput(latestReleaseInput, ahp);
 		
 		if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
 			orgId = ahp.getObjUuid();
