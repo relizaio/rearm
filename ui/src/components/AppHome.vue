@@ -1,35 +1,15 @@
 <template>
     <div class="home">
         <!-- Findings Per Day Modal -->
-        <n-modal
+        <vulnerability-modal
             v-model:show="showFindingsPerDayModal"
-            :title="findingsPerDayModalTitle"
-            style="width: 95%;"
-            preset="dialog"
-            :show-icon="false"
-            @after-leave="closeFindingsPerDayModal"
-        >
-            <n-space vertical>
-                <n-space align="center">
-                    <n-button v-if="false" @click="recalculateFindingsForDate" :loading="findingsPerDayLoading">
-                        <template #icon>
-                            <n-icon :component="Refresh" />
-                        </template>
-                        Recalculate
-                    </n-button>
-                </n-space>
-                <n-spin :show="findingsPerDayLoading">
-                    <n-data-table
-                        :columns="findingsPerDayColumns"
-                        :data="findingsPerDayData"
-                        :row-key="(row: any) => row.type + '-' + row.id + '-' + row.purl"
-                        :pagination="{ pageSize: 8 }"
-                        :min-height="550"
-                        :max-height="850"
-                    />
-                </n-spin>
-            </n-space>
-        </n-modal>
+            :component-name="findingsPerDayModalTitle"
+            version=""
+            :data="findingsPerDayData"
+            :loading="findingsPerDayLoading"
+            :org-uuid="myorg?.uuid || ''"
+            @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
+        />
         <div class="dashboardBlock">
             <n-grid x-gap="24" cols="2">
                 <n-gi>
@@ -494,7 +474,8 @@ import * as vegaEmbed from 'vega-embed'
 import Swal from 'sweetalert2'
 import commonFunctions from '@/utils/commonFunctions'
 import constants from '@/utils/constants'
-import { processMetricsData, buildVulnerabilityColumns } from '@/utils/metrics'
+import { processMetricsData } from '@/utils/metrics'
+import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const store = useStore()
 const router = useRouter()
@@ -528,7 +509,6 @@ const showFindingsPerDay = computed(() => route.query.display === 'findingsPerDa
 const findingsPerDayDate = computed(() => route.query.date as string || '')
 const findingsPerDayData: Ref<any[]> = ref([])
 const findingsPerDayLoading: Ref<boolean> = ref(false)
-const findingsPerDayColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, RouterLink)
 const showFindingsPerDayModal: Ref<boolean> = ref(false)
 const findingsPerDayModalTitle = computed(() => `Findings for ${findingsPerDayDate.value}`)
 
