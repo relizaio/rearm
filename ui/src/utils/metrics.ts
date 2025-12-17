@@ -155,6 +155,8 @@ export function buildVulnerabilityColumns(
     getDtrackProjectUuids?: () => string[]
     onEditFinding?: (row: any) => void
     onViewAnalysis?: (row: any) => void
+    initialSeverityFilter?: string
+    initialTypeFilter?: string
   }
 ): DataTableColumns<any> {
   function makePurlRenderer() {
@@ -213,6 +215,7 @@ export function buildVulnerabilityColumns(
         { label: 'Violation', value: 'Violation' },
         { label: 'Weakness', value: 'Weakness' }
       ],
+      defaultFilterOptionValues: options?.initialTypeFilter ? [options.initialTypeFilter] : [],
       filter: (value: any, row: any) => row.type === value,
       render: (row: any) => {
         const typeColors: any = {
@@ -277,6 +280,7 @@ export function buildVulnerabilityColumns(
         { label: 'LOW', value: 'LOW' },
         { label: 'UNASSIGNED', value: 'UNASSIGNED' }
       ],
+      defaultFilterOptionValues: options?.initialSeverityFilter ? [options.initialSeverityFilter] : [],
       filter: (value: any, row: any) => row.severity === value,
       sorter: (rowA: any, rowB: any) => {
         const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
