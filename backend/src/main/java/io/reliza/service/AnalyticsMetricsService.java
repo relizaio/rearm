@@ -69,9 +69,25 @@ public class AnalyticsMetricsService {
 	}
 	
 	public Optional<ReleaseMetricsDto> getFindingsPerDay(UUID org, String dateKey) {
-		return repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey)
-				.map(AnalyticsMetricsData::dataFromRecord)
-				.map(AnalyticsMetricsData::getMetrics);
+		Optional<AnalyticsMetrics> existingAm = repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey);
+		
+		if (existingAm.isPresent()) {
+			return existingAm.map(AnalyticsMetricsData::dataFromRecord)
+					.map(AnalyticsMetricsData::getMetrics);
+		}
+		
+		// If not found in DB, check if dateKey matches today's date
+		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
+		java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
+		
+		if (requestedDate.equals(today)) {
+			// Compute metrics for today without saving
+			ZonedDateTime createdDate = requestedDate.atTime(23, 59, 59).atZone(java.time.ZoneOffset.UTC);
+			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, createdDate);
+			return Optional.of(amd.getMetrics());
+		}
+		
+		return Optional.empty();
 	}
 	
 	public List<VulnViolationsChartDto> getVulnViolationByOrgChartData(UUID org, ZonedDateTime dateFrom,
