@@ -262,7 +262,7 @@ export function buildVulnerabilityColumns(
     {
       title: 'Severity',
       key: 'severity',
-      width: 120,
+      width: 128,
       defaultSortOrder: 'ascend',
       sorter: (rowA: any, rowB: any) => {
         const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']

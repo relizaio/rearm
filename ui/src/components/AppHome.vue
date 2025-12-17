@@ -11,7 +11,7 @@
         >
             <n-space vertical>
                 <n-space align="center">
-                    <n-button @click="recalculateFindingsForDate" :loading="findingsPerDayLoading">
+                    <n-button v-if="false" @click="recalculateFindingsForDate" :loading="findingsPerDayLoading">
                         <template #icon>
                             <n-icon :component="Refresh" />
                         </template>
@@ -24,6 +24,8 @@
                         :data="findingsPerDayData"
                         :row-key="(row: any) => row.type + '-' + row.id + '-' + row.purl"
                         :pagination="{ pageSize: 8 }"
+                        :min-height="550"
+                        :max-height="850"
                     />
                 </n-spin>
             </n-space>
