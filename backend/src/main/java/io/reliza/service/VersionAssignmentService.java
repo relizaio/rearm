@@ -314,7 +314,7 @@ public class VersionAssignmentService {
 		return repository.save(va);
 	}
 	
-	public void checkAndUpdateVersionPinOnBranch(ComponentData pd, BranchData bd, String setVersionPin,WhoUpdated wu){
+	public void checkAndUpdateVersionPinOnBranch(ComponentData pd, BranchData bd, String setVersionPin,WhoUpdated wu) throws RelizaException {
 		// if version pin present and doesn't match the one currently on branch, update branch with new one
 		if (StringUtils.isNotEmpty(setVersionPin) && !setVersionPin.equalsIgnoreCase(bd.getVersionSchema())) {
 			// validate first
@@ -326,17 +326,17 @@ public class VersionAssignmentService {
 											.build();
 					bd = branchService.updateBranch(branchDto, wu);
 				} catch (RelizaException re) {
-					throw new AccessDeniedException(re.getMessage());
+					throw re;
 				}
 			} else {
 				// return our custom error code to user
-				throw new AccessDeniedException("Supplied pin does not match project schema");
+				throw new RelizaException("Supplied pin does not match project schema");
 			}
 		}
 		
 		if (StringUtils.isEmpty(bd.getVersionSchema()) ||
 			StringUtils.isEmpty(pd.getVersionSchema())) {
-			throw new AccessDeniedException("Versioning schema not set for project or branch or both");
+			throw new RelizaException("Versioning schema not set for project or branch or both");
 		}
 	}
 

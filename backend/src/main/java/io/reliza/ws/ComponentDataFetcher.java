@@ -308,7 +308,7 @@ public class ComponentDataFetcher {
 				// Will create component after authorization is established
 				log.info("Component not found, will create due to createComponentIfMissing flag");
 			} else {
-				throw new AccessDeniedException(e.getMessage());
+				throw new RelizaException("Component cannot be resolved: " + e.getMessage());
 			}
 		}
 		
@@ -392,7 +392,7 @@ public class ComponentDataFetcher {
 		cpd.setOrganization(orgUuid);
 
 		if (cpd.getType() != ComponentType.COMPONENT && cpd.getType() != ComponentType.PRODUCT) {
-			throw new AccessDeniedException("Component type not allowed");
+			throw new RelizaException("Component type not allowed, must be COMPONENT or PRODUCT");
 		}
 		
 		List<RelizaObject> ros = new LinkedList<>();

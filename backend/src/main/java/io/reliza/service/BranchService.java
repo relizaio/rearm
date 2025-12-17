@@ -513,7 +513,7 @@ public class BranchService {
 		repository.saveAll(branches);
 	}
 	
-	public BranchData getBranchDataFromBranchString(String branchStr, UUID projectId, WhoUpdated wu){
+	public BranchData getBranchDataFromBranchString(String branchStr, UUID projectId, WhoUpdated wu) throws RelizaException {
 		UUID branchUuid = null;
 		Optional<Branch> ob = Optional.empty();
 		// normalize branch string
@@ -535,7 +535,7 @@ public class BranchService {
 		}
 		BranchData bd = BranchData.branchDataFromDbRecord(ob.get());
 		if (!bd.getComponent().equals(projectId)) {
-			throw new AccessDeniedException("We do not know this branch in this project");
+			throw new RelizaException("Branch does not belong to this component");
 		}
 		return bd;
 	}

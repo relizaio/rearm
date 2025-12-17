@@ -375,7 +375,7 @@ public class ReleaseService {
 							.identifiers(releaseIdentifiers);
 			release = ossReleaseService.createRelease(releaseDtoBuilder.build(), wu);
 		} catch (RelizaException re) {
-			throw new AccessDeniedException(re.getMessage());
+			throw re;
 		}
 		
 		Optional<ReleaseData> latestRelease = ossReleaseService.getReleasePerProductComponent(bd.getOrg(), bd.getComponent(), null, bd.getName(), null);
@@ -998,7 +998,7 @@ public class ReleaseService {
 	public Optional<SourceCodeEntryData> parseSceFromReleaseCreate (SceDto sceDto, List<UUID> artIds, BranchData bd,
 			String branchStr,
 			String version,
-			WhoUpdated wu) throws IOException {
+			WhoUpdated wu) throws IOException, RelizaException {
 		UUID orgUuid = bd.getOrg();
 		List<SCEArtifact> sceArts= new LinkedList<>();
 		if (null != artIds) sceArts = artIds.stream().map(x -> new SCEArtifact(x, bd.getComponent())).toList();

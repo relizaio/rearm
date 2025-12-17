@@ -325,7 +325,7 @@ public class ReleaseDatafetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "addReleaseManual")
-	public ReleaseData addRelease(DgsDataFetchingEnvironment dfe) {
+	public ReleaseData addRelease(DgsDataFetchingEnvironment dfe)  throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> manualReleaseInput = dfe.getArgument("release");
@@ -341,7 +341,7 @@ public class ReleaseDatafetcher {
 		try {
 			return ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDto, wu));
 		} catch (RelizaException re) {
-			throw new AccessDeniedException(re.getMessage());
+			throw re;
 		}
 	}
 	
@@ -409,7 +409,7 @@ public class ReleaseDatafetcher {
 	
 	@DgsData(parentType = "Query", field = "getReleaseByHashProgrammatic")
 	public Optional<ReleaseData> getReleaseByHash(DgsDataFetchingEnvironment dfe,
-			@InputArgument("hash") String hash, @InputArgument("componentId") String componentIdStr) {
+			@InputArgument("hash") String hash, @InputArgument("componentId") String componentIdStr) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
@@ -427,7 +427,7 @@ public class ReleaseDatafetcher {
 				orgId = ahp.getObjUuid();
 				componentId = UUID.fromString(componentIdStr);
 			} catch (NullPointerException e) {
-				throw new IllegalArgumentException("Must provide component UUID as input if using organization wide API access.");
+				throw new RelizaException("Must provide component UUID as input if using organization wide API access");
 			}
 		}
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
@@ -449,7 +449,7 @@ public class ReleaseDatafetcher {
 			TagRecord tags, ReleaseLifecycle lifecycle, InputConditionGroup conditions,
 			String vcsUri, String repoPath, String upToVersion) {}
 
-	private BranchData resolveAddReleaseProgrammaticBranchData (final UUID componentId, final String suppliedBranchStr, WhoUpdated wu) {
+	private BranchData resolveAddReleaseProgrammaticBranchData (final UUID componentId, final String suppliedBranchStr, WhoUpdated wu) throws RelizaException {
 		UUID branchUuid = null;
 		
 		Optional<Branch> ob = Optional.empty();
@@ -464,7 +464,7 @@ public class ReleaseDatafetcher {
 				try {
 					ob = branchService.findBranchByName(componentId, branchStr, true, wu);
 				} catch (RelizaException re) {
-					throw new AccessDeniedException(re.getMessage());
+					throw new RelizaException("Branch resolution failed: " + re.getMessage());
 				}
 				branchUuid = ob.get().getUuid();
 				obd = Optional.of(BranchData.branchDataFromDbRecord(ob.get()));
@@ -472,7 +472,7 @@ public class ReleaseDatafetcher {
 		}
 		
 		if (ob.isEmpty() || !obd.get().getComponent().equals(componentId)) {
-			throw new AccessDeniedException("submitted branch or feature set is invalid");
+			throw new RelizaException("Submitted branch or feature set is invalid for this component");
 		}
 		
 		return BranchData.branchDataFromDbRecord(ob.get()); 
@@ -499,7 +499,7 @@ public class ReleaseDatafetcher {
 				// Will create component after authorization is established
 				log.info("Component not found, will create due to createComponentIfMissing flag");
 			} else {
-				throw new AccessDeniedException(e.getMessage());
+				throw new RelizaException("Component cannot be resolved: " + e.getMessage());
 			}
 		}
 		
@@ -882,7 +882,7 @@ public class ReleaseDatafetcher {
 	}
 
 	@DgsData(parentType = "Mutation", field = "releasecompletionfinalizerProgrammatic")
-	public Boolean releasecompletionfinalizerProgrammatic(@InputArgument("release") UUID releaseId, DgsDataFetchingEnvironment dfe) {
+	public Boolean releasecompletionfinalizerProgrammatic(@InputArgument("release") UUID releaseId, DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
@@ -890,7 +890,7 @@ public class ReleaseDatafetcher {
 
 		Optional<ReleaseData> ord = Optional.empty();
 		ord = sharedReleaseService.getReleaseData(releaseId);
-		if (ord.isEmpty()) throw new RuntimeException("Wrong release");
+		if (ord.isEmpty()) throw new RelizaException("Release not found: " + releaseId);
 
 		ReleaseData rd = ord.get();
 
@@ -1352,13 +1352,13 @@ public class ReleaseDatafetcher {
 	}
 
 	@DgsData(parentType = "ParentRelease", field = "releaseDetails")
-	public Optional<ReleaseData> releaseDetailsOfParentRelease (DgsDataFetchingEnvironment dfe) {
+	public Optional<ReleaseData> releaseDetailsOfParentRelease (DgsDataFetchingEnvironment dfe)  throws RelizaException{
 		ParentReleaseDto prd = dfe.getSource();
 		Optional<ReleaseData> ord = Optional.empty();
 		try {
 			ord = releaseService.getReleaseData(prd.release(), prd.org());
 		} catch (RelizaException re) {
-			throw new AccessDeniedException(re.getMessage());
+			throw re;
 		}
 		return ord;
 	}

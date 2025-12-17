@@ -75,7 +75,7 @@ public class SourceCodeEntryService {
 	public Optional<SourceCodeEntryData> populateSourceCodeEntryByVcsAndCommit(
 		SceDto sceDto,
 		boolean createIfMissing,
-		WhoUpdated wu) {
+		WhoUpdated wu) throws RelizaException {
 			Optional<SourceCodeEntryData> osced = Optional.empty();
 			VcsType vcsType = sceDto.getType();
 			Optional<BranchData> obd =  branchService.getBranchData(sceDto.getBranch());
@@ -88,7 +88,7 @@ public class SourceCodeEntryService {
 			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepositoryWriteLocked(vcsUuidFromBranch);
 			String vcsUri = sceDto.getUri();
 			if (StringUtils.isNotEmpty(vcsUri) && ovr.isPresent() && !Utils.uriEquals(vcsUri, VcsRepositoryData.dataFromRecord(ovr.get()).getUri())) {
-				throw new AccessDeniedException("Current vcs repository in branch does not match the supplied one, manual fix required");
+				throw new RelizaException("VCS repository mismatch: branch VCS does not match the supplied URI");
 			} else if (ovr.isEmpty() && StringUtils.isNotEmpty(vcsUri) && null != vcsType) {	// branch does not have vcs repo set
 				ovr = vcsRepositoryService.getVcsRepositoryByUri(sceDto.getOrganizationUuid(), vcsUri, vcsType, true, wu);
 				// update branch with correct vcs repo
@@ -104,7 +104,7 @@ public class SourceCodeEntryService {
 				} 
 			} else if (ovr.isEmpty() && null == bd.getVcs()) {
 				// fail if no vcs data is provided and branch does not have vcs linked already
-				throw new AccessDeniedException("Branch does not have linked VCS repository and no VCS data provided in the call");
+				throw new RelizaException("Branch does not have linked VCS repository and no VCS data provided");
 			}
 
 			// construct source code entry itself
@@ -258,7 +258,7 @@ public class SourceCodeEntryService {
 	 * @param commits {@code List<Map<String, Object>>} commits list object
 	 * @return {@code ActionEnum} the largest action parsed from commit message contents, or null if no valid commit message is present in SCE.
 	 */
-	public ActionEnum getBumpActionFromSourceCodeEntryInput(SceDto sceMap, List<SceDto> commits, Set<String> rejectedCommits) {
+	public ActionEnum getBumpActionFromSourceCodeEntryInput(SceDto sceMap, List<SceDto> commits, Set<String> rejectedCommits) throws RelizaException{
 		// make sure all commit messages use System line seperator for newlines
 		// this can be removed once versioning library updated to at least commit db5c3387a1a1b31d0f248cac82251ba3f4783638
 		if (sceMap != null && StringUtils.isNotEmpty(sceMap.getCommitMessage())) {

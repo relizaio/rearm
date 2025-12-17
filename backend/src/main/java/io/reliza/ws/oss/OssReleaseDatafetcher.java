@@ -151,7 +151,7 @@ public class OssReleaseDatafetcher {
 				if (null == ro) ro = obd.get();
 				if (null == orgId) orgId = obd.get().getOrg();
 				if (!obd.get().getOrg().equals(cd.getOrg())) {
-					throw new AccessDeniedException("org mismatch");
+					throw new RelizaException("Component and product belong to different organizations");
 				}
 			}
 		}
@@ -176,7 +176,7 @@ public class OssReleaseDatafetcher {
 				optRd = ossReleaseService.getReleasePerProductComponent(orgId, componentUuid, productUuid, branch, glri.lifecycle(), cg);
 			}
 		} catch (RelizaException re) {
-			throw new RuntimeException(re.getMessage());
+			throw new RelizaException(re.getMessage());
 		}
 		
 		return optRd;
