@@ -55,4 +55,9 @@ public interface BranchRepository extends CrudRepository<Branch, UUID> {
 			value = VariableQueries.FIND_FEATURE_SETS_BY_CHILD_COMPONENT,
 			nativeQuery = true)
 	List<Branch> findFeatureSetsByChildComponent(String orgUuidAsString, String compUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_BRANCHES_BY_VCS,
+			nativeQuery = true)
+	List<Branch> findBranchesByVcs(String vcsUuidAsString);
 }

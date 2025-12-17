@@ -20,10 +20,12 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
+import io.reliza.model.Branch;
 import io.reliza.model.Component;
 import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
+import io.reliza.repositories.BranchRepository;
 import io.reliza.repositories.ComponentRepository;
 import io.reliza.repositories.VcsRepositoryRepository;
 
@@ -37,9 +39,12 @@ public class VcsRepositoryService {
 	
 	private final ComponentRepository componentRepository;
 	
-	VcsRepositoryService(VcsRepositoryRepository repository, ComponentRepository componentRepository) {
+	private final BranchRepository branchRepository;
+	
+	VcsRepositoryService(VcsRepositoryRepository repository, ComponentRepository componentRepository, BranchRepository branchRepository) {
 	    this.repository = repository;
 	    this.componentRepository = componentRepository;
+	    this.branchRepository = branchRepository;
 	}
 	
 	public Optional<VcsRepository> getVcsRepository (UUID uuid) {
@@ -183,12 +188,12 @@ public class VcsRepositoryService {
 	
 	/**
 	 * Archive a VCS repository (soft delete).
-	 * Only allowed if no active components are attached to this VCS repository.
+	 * Only allowed if no active components or branches are attached to this VCS repository.
 	 * 
 	 * @param vcsUuid UUID of the VCS repository to archive
 	 * @param wu WhoUpdated information
 	 * @return true if archived successfully
-	 * @throws RelizaException if components are still attached or repository not found
+	 * @throws RelizaException if components or branches are still attached or repository not found
 	 */
 	public Boolean archiveVcsRepository(UUID vcsUuid, WhoUpdated wu) throws RelizaException {
 		Boolean archived = false;
@@ -199,6 +204,13 @@ public class VcsRepositoryService {
 			if (!attachedComponents.isEmpty()) {
 				throw new RelizaException("Cannot archive VCS repository: " + attachedComponents.size() + 
 					" active component(s) are still attached. Please remove or reassign components first.");
+			}
+			
+			// Check if any active branches are attached to this VCS repository
+			List<Branch> attachedBranches = branchRepository.findBranchesByVcs(vcsUuid.toString());
+			if (!attachedBranches.isEmpty()) {
+				throw new RelizaException("Cannot archive VCS repository: " + attachedBranches.size() + 
+					" active branch(es) are still attached. Please remove or reassign branches first.");
 			}
 			
 			VcsRepositoryData vrd = VcsRepositoryData.dataFromRecord(ovr.get());

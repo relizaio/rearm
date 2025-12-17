@@ -443,9 +443,13 @@ public class ComponentService {
 			Map<String,Object> recordData = Utils.dataToRecord(pd);
 			saveComponent(op.get(), recordData, wu);
 			
+			// Archive all branches of this component
+			branchService.archiveAllBranchesOfComponent(ComponentUuid, wu);
+			
 			for (ApiKeyData apiKey : apiKeyService.listApiKeyDataByObjUuidAndType(ComponentUuid, ApiTypeEnum.COMPONENT, pd.getOrg())) {
 				apiKeyService.deleteApiKey(apiKey.getUuid(), wu);
 			}
+			archived = true;
 		}
 		return archived;
 	}

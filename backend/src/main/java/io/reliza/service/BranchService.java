@@ -388,8 +388,26 @@ public class BranchService {
 			bd.setStatus(StatusEnum.ARCHIVED);
 			Map<String,Object> recordData = Utils.dataToRecord(bd);
 			saveBranch(obr.get(), recordData, wu);
+			archived = true;
 		}
 		return archived;
+	}
+	
+	/**
+	 * Archive all branches of a component (including base branch).
+	 * This is called when archiving a component.
+	 * 
+	 * @param componentUuid UUID of the component
+	 * @param wu WhoUpdated information
+	 */
+	public void archiveAllBranchesOfComponent(UUID componentUuid, WhoUpdated wu) throws RelizaException {
+		List<Branch> branches = listBranchesOfComponent(componentUuid, null);
+		for (Branch branch : branches) {
+			BranchData bd = BranchData.branchDataFromDbRecord(branch);
+			bd.setStatus(StatusEnum.ARCHIVED);
+			Map<String, Object> recordData = Utils.dataToRecord(bd);
+			saveBranch(branch, recordData, wu);
+		}
 	}
 
 	public Branch cloneBranch (BranchData originalBranch, String name, String versionSchema, 

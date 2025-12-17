@@ -753,6 +753,12 @@ class VariableQueries {
 			where c.record_data->>'vcs' = :vcsUuidAsString
 			and (c.record_data->>'status' != 'ARCHIVED' or c.record_data->>'status' is null)
 			""";
+	
+	protected static final String FIND_BRANCHES_BY_VCS = """
+			select * from rearm.branches b
+			where b.record_data->>'vcs' = :vcsUuidAsString
+			and (b.record_data->>'status' != 'ARCHIVED' or b.record_data->>'status' is null)
+			""";
 	/*
 	 * Version Assignments
 	 */
