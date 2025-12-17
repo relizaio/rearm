@@ -1389,7 +1389,7 @@ const releaseVisData: Ref<any> = ref({
 const analyticsMetrics: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
-    title: 'Vulnerabilities and Policy Violations Over Time',
+    title: 'Findings Over Time',
     height: 220,
     width: 'container',
     data: {
@@ -1403,6 +1403,24 @@ const analyticsMetrics: Ref<any> = ref({
         },
         tooltip: true
     },
+    transform: [
+        {
+            calculate: "utcFormat(datum.createdDate, '%Y-%m-%d')",
+            as: "dateStr"
+        },
+        {
+            calculate: "datum.type && indexof(datum.type, 'Vulnerabilities') >= 0 ? upper(split(datum.type, ' ')[0]) : ''",
+            as: "severityParam"
+        },
+        {
+            calculate: "datum.type && indexof(datum.type, 'Vulnerabilities') >= 0 ? 'Vulnerability' : (datum.type && indexof(datum.type, 'Violations') >= 0 ? 'Violation' : '')",
+            as: "typeParam"
+        },
+        {
+            calculate: "'?display=findingsPerDay&date=' + datum.dateStr + (datum.severityParam ? '&severity=' + datum.severityParam : '') + (datum.typeParam ? '&type=' + datum.typeParam : '')",
+            as: "url"
+        }
+    ],
     encoding: {
         y: {
             field: 'num',
@@ -1425,7 +1443,16 @@ const analyticsMetrics: Ref<any> = ref({
         color: {
             field: 'type',
             legend: null
-        }
+        },
+        href: {
+            field: 'url',
+            type: 'nominal'
+        },
+        tooltip: [
+            {field: "createdDate", type: "temporal", title: "Date"},
+            {field: "num", type: "quantitative", title: "Occurrences"},
+            {field: "type", type: "nominal", title: "Type"}
+        ]
     }
 })
 
