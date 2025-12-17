@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gabriel-vasile/mimetype"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -55,12 +56,12 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 	}
 	originalMediaType := mimeType.String()
 	mediaType := originalMediaType
-	
+
 	// Add compression suffix if compressed
 	if compressionMeta != nil && compressionMeta.Algorithm == CompressionZstd {
 		mediaType += "+zstd"
 	}
-	
+
 	fileNames := []string{uploadedFile.Name()}
 	fileDescriptors := make([]v1.Descriptor, 0, len(fileNames))
 	for _, name := range fileNames {
@@ -68,7 +69,7 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 		if err != nil {
 			return resp, err
 		}
-		
+
 		// Add compression annotations
 		if compressionMeta != nil {
 			if fileDescriptor.Annotations == nil {
@@ -80,7 +81,7 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 			fileDescriptor.Annotations["io.reliza.compressed.size"] = fmt.Sprintf("%d", compressionMeta.CompressedSize)
 			fileDescriptor.Annotations["io.reliza.original.sha256"] = compressionMeta.OriginalSHA256
 		}
-		
+
 		fileDescriptors = append(fileDescriptors, fileDescriptor)
 	}
 
@@ -88,10 +89,15 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 	if err != nil {
 		return resp, err
 	}
-	// 2. Pack the files and tag the packed manifest
+	// 2. Pack the files and tag the packed manifest using PackManifest (replaces deprecated Pack)
+	// Strip media type parameters (e.g., "text/plain; charset=utf-8" -> "text/plain")
+	// as artifactType must be a valid media type without parameters per RFC 6838
 	artifactType := mediaType
-	manifestDescriptor, err := oras.Pack(ctx, fs, artifactType, fileDescriptors, oras.PackOptions{
-		PackImageManifest: true,
+	if idx := strings.Index(artifactType, ";"); idx != -1 {
+		artifactType = strings.TrimSpace(artifactType[:idx])
+	}
+	manifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, artifactType, oras.PackManifestOptions{
+		Layers: fileDescriptors,
 	})
 	if err != nil {
 		log.Println("Error Packing", err)
