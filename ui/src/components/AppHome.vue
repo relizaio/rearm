@@ -8,8 +8,8 @@
             :data="findingsPerDayData"
             :loading="findingsPerDayLoading"
             :org-uuid="myorg?.uuid || ''"
-            :initial-severity-filter="directFindingsSeverity || findingsPerDaySeverity"
-            :initial-type-filter="directFindingsType || findingsPerDayType"
+            :initial-severity-filter="directFindingsDate ? directFindingsSeverity : findingsPerDaySeverity"
+            :initial-type-filter="directFindingsDate ? directFindingsType : findingsPerDayType"
             @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
         />
         <div class="dashboardBlock">
