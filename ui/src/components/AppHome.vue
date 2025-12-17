@@ -8,8 +8,8 @@
             :data="findingsPerDayData"
             :loading="findingsPerDayLoading"
             :org-uuid="myorg?.uuid || ''"
-            :initial-severity-filter="findingsPerDaySeverity"
-            :initial-type-filter="findingsPerDayType"
+            :initial-severity-filter="directFindingsSeverity || findingsPerDaySeverity"
+            :initial-type-filter="directFindingsType || findingsPerDayType"
             @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
         />
         <div class="dashboardBlock">
@@ -514,15 +514,37 @@ const findingsPerDayType = computed(() => route.query.type as string || '')
 const findingsPerDayData: Ref<any[]> = ref([])
 const findingsPerDayLoading: Ref<boolean> = ref(false)
 const showFindingsPerDayModal: Ref<boolean> = ref(false)
-const findingsPerDayModalTitle = computed(() => `Findings for ${findingsPerDayDate.value}`)
+const findingsPerDayModalTitle = computed(() => `Findings for ${directFindingsDate.value || findingsPerDayDate.value}`)
 
 function closeFindingsPerDayModal() {
-    // Clear query params when modal is closed
-    router.replace({ query: {} })
+    showFindingsPerDayModal.value = false
+    // Clear query params silently without triggering watchers
+    window.history.replaceState({}, '', window.location.pathname)
 }
 
-async function fetchFindingsPerDay() {
-    if (!showFindingsPerDay.value || !myorg.value?.uuid) return
+// Store for direct modal opening (bypasses route)
+const directFindingsDate: Ref<string> = ref('')
+const directFindingsSeverity: Ref<string> = ref('')
+const directFindingsType: Ref<string> = ref('')
+
+async function openFindingsModal(date: string, severity: string = '', typeParam: string = '') {
+    directFindingsDate.value = date
+    directFindingsSeverity.value = severity
+    directFindingsType.value = typeParam
+    showFindingsPerDayModal.value = true
+    // Update URL without triggering watchers so page reload works
+    const params = new URLSearchParams()
+    params.set('display', 'findingsPerDay')
+    params.set('date', date)
+    if (severity) params.set('severity', severity)
+    if (typeParam) params.set('type', typeParam)
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
+    await fetchFindingsPerDay(date)
+}
+
+async function fetchFindingsPerDay(dateOverride?: string) {
+    const dateToUse = dateOverride || findingsPerDayDate.value
+    if (!dateToUse || !myorg.value?.uuid) return
     
     findingsPerDayLoading.value = true
     try {
@@ -609,7 +631,7 @@ async function fetchFindingsPerDay() {
             `,
             variables: {
                 orgUuid: myorg.value.uuid,
-                date: findingsPerDayDate.value
+                date: dateToUse
             },
             fetchPolicy: 'no-cache'
         })
@@ -746,12 +768,6 @@ watch(myorg, (currentValue, oldValue) => {
     }
 });
 
-watch(() => route.query, () => {
-    if (showFindingsPerDay.value) {
-        showFindingsPerDayModal.value = true
-        fetchFindingsPerDay()
-    }
-});
 
 const releaseTagKeys: Ref<any[]> = ref([])
 const releaseKeySearchObj: Ref<any> = ref({
@@ -1445,8 +1461,7 @@ const analyticsMetrics: Ref<any> = ref({
             legend: null
         },
         href: {
-            field: 'url',
-            type: 'nominal'
+            value: '#'
         },
         tooltip: [
             {field: "createdDate", type: "temporal", title: "Date"},
@@ -1555,7 +1570,28 @@ async function fetchVulnerabilityViolationAnalytics() {
             },
             theme: 'powerbi'
         }
-    )
+    ).then((result: any) => {
+        result.view.addEventListener('click', (event: any, item: any) => {
+            if (item && item.datum) {
+                const datum = item.datum
+                // Parse the type field to extract severity and type params
+                let severity = ''
+                let typeParam = ''
+                if (datum.type && datum.type.indexOf('Vulnerabilities') >= 0) {
+                    severity = datum.type.split(' ')[0].toUpperCase()
+                    typeParam = 'Vulnerability'
+                } else if (datum.type && datum.type.indexOf('Violations') >= 0) {
+                    typeParam = 'Violation'
+                }
+                // Format date from createdDate
+                const dateObj = new Date(datum.createdDate)
+                const date = dateObj.toISOString().split('T')[0]
+                if (date) {
+                    openFindingsModal(date, severity, typeParam)
+                }
+            }
+        })
+    })
 }
 
 function displayActiveComponentType () {
