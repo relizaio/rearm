@@ -1,4 +1,4 @@
-FROM golang:1.24.10-alpine3.22@sha256:12c199a889439928e36df7b4c5031c18bfdad0d33cdeae5dd35b2de369b5fbf5 AS build-stage
+FROM golang:1.25.0-alpine3.22@sha256:f18a072054848d87a8077455f0ac8a25886f2397f88bfdd222d6fafbb5bba440 AS build-stage
 WORKDIR /build
 ENV CGO_ENABLED=0
 COPY go.mod go.sum ./
@@ -22,9 +22,9 @@ USER apprunner
 RUN echo "version=$VERSION" > /app/version && echo "commit=$GIT_COMMIT" >> /app/version && echo "branch=$GIT_BRANCH" >> /app/version
 RUN mkdir /app/localdata
 
-LABEL org.opencontainers.image.revision $GIT_COMMIT
-LABEL git_branch $GIT_BRANCH
-LABEL ci_environment $CI_ENV
-LABEL org.opencontainers.image.version $VERSION
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
+LABEL git_branch=$GIT_BRANCH
+LABEL ci_environment=$CI_ENV
+LABEL org.opencontainers.image.version=$VERSION
 EXPOSE 8083
 ENTRYPOINT ["/app/app"]
