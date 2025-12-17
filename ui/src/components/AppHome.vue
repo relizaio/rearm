@@ -1,20 +1,34 @@
 <template>
     <div class="home">
-        <!-- Findings Per Day Display -->
-        <div v-if="showFindingsPerDay" class="findingsPerDayBlock">
-            <h2>Findings for {{ findingsPerDayDate }}
-                <n-icon class="clickable" size="25" title="Recalculate Findings" @click="recalculateFindingsForDate" :component="Refresh" style="margin-left: 10px; vertical-align: middle;" />
-            </h2>
-            <n-spin :show="findingsPerDayLoading">
-                <n-data-table
-                    :columns="findingsPerDayColumns"
-                    :data="findingsPerDayData"
-                    :row-key="(row: any) => row.type + '-' + row.id + '-' + row.purl"
-                    :pagination="{ pageSize: 20 }"
-                />
-            </n-spin>
-        </div>
-        <div v-else class="dashboardBlock">
+        <!-- Findings Per Day Modal -->
+        <n-modal
+            v-model:show="showFindingsPerDayModal"
+            :title="findingsPerDayModalTitle"
+            style="width: 95%;"
+            preset="dialog"
+            :show-icon="false"
+            @after-leave="closeFindingsPerDayModal"
+        >
+            <n-space vertical>
+                <n-space align="center">
+                    <n-button @click="recalculateFindingsForDate" :loading="findingsPerDayLoading">
+                        <template #icon>
+                            <n-icon :component="Refresh" />
+                        </template>
+                        Recalculate
+                    </n-button>
+                </n-space>
+                <n-spin :show="findingsPerDayLoading">
+                    <n-data-table
+                        :columns="findingsPerDayColumns"
+                        :data="findingsPerDayData"
+                        :row-key="(row: any) => row.type + '-' + row.id + '-' + row.purl"
+                        :pagination="{ pageSize: 8 }"
+                    />
+                </n-spin>
+            </n-space>
+        </n-modal>
+        <div class="dashboardBlock">
             <n-grid x-gap="24" cols="2">
                 <n-gi>
                     <div class="charts">
@@ -460,7 +474,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag, useNotification, NotificationType } from 'naive-ui'
+import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag, NSpace, useNotification, NotificationType } from 'naive-ui'
 import { useStore } from 'vuex'
 import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
@@ -513,6 +527,13 @@ const findingsPerDayDate = computed(() => route.query.date as string || '')
 const findingsPerDayData: Ref<any[]> = ref([])
 const findingsPerDayLoading: Ref<boolean> = ref(false)
 const findingsPerDayColumns: DataTableColumns<any> = buildVulnerabilityColumns(h, NTag, NTooltip, NIcon, RouterLink)
+const showFindingsPerDayModal: Ref<boolean> = ref(false)
+const findingsPerDayModalTitle = computed(() => `Findings for ${findingsPerDayDate.value}`)
+
+function closeFindingsPerDayModal() {
+    // Clear query params when modal is closed
+    router.replace({ query: {} })
+}
 
 async function fetchFindingsPerDay() {
     if (!showFindingsPerDay.value || !myorg.value?.uuid) return
@@ -725,19 +746,25 @@ async function recalculateFindingsForDate() {
 onMounted(() => {
     if (myorg.value) 
         initLoad()
-    if (showFindingsPerDay.value)
+    if (showFindingsPerDay.value) {
+        showFindingsPerDayModal.value = true
         fetchFindingsPerDay()
+    }
 })
 watch(myorg, (currentValue, oldValue) => {
     activeComponentsInput.value.organization = myorg.value.uuid
     initLoad()
-    if (showFindingsPerDay.value)
+    if (showFindingsPerDay.value) {
+        showFindingsPerDayModal.value = true
         fetchFindingsPerDay()
+    }
 });
 
 watch(() => route.query, () => {
-    if (showFindingsPerDay.value)
+    if (showFindingsPerDay.value) {
+        showFindingsPerDayModal.value = true
         fetchFindingsPerDay()
+    }
 });
 
 const releaseTagKeys: Ref<any[]> = ref([])
