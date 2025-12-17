@@ -17,7 +17,8 @@ import (
 
 func main() {
 	fmt.Println("init")
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())
 	setGinConfigurations(r)
 
 	r.POST("/push", uploadFile)
@@ -28,7 +29,18 @@ func main() {
 }
 
 func setGinConfigurations(router *gin.Engine) {
-	router.Use(gin.Logger())
+	// LOG_HEALTH_CHECK env var controls whether health check requests are logged
+	// Default is false (health checks are not logged to reduce log noise)
+	logHealthCheck := os.Getenv("LOG_HEALTH_CHECK") == "true"
+
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: func() []string {
+			if logHealthCheck {
+				return nil
+			}
+			return []string{"/health"}
+		}(),
+	}))
 }
 
 type Form struct {
@@ -39,13 +51,13 @@ type Form struct {
 }
 
 type OASResponse struct {
-	OciResponse        ociSpecv1.Descriptor `json:"ociResponse"`
-	FileSHA256Digest   string               `json:"fileSHA256Digest"`   // Original file digest
-	Compressed         bool                 `json:"compressed"`         // Whether file was compressed
-	CompressionStats   string               `json:"compressionStats,omitempty"` // Compression statistics
-	OriginalMediaType  string               `json:"originalMediaType,omitempty"` // Original media type before compression
-	OriginalSize       int64                `json:"originalSize,omitempty"`      // Original uncompressed size
-	CompressedSize     int64                `json:"compressedSize,omitempty"`    // Compressed size
+	OciResponse       ociSpecv1.Descriptor `json:"ociResponse"`
+	FileSHA256Digest  string               `json:"fileSHA256Digest"`            // Original file digest
+	Compressed        bool                 `json:"compressed"`                  // Whether file was compressed
+	CompressionStats  string               `json:"compressionStats,omitempty"`  // Compression statistics
+	OriginalMediaType string               `json:"originalMediaType,omitempty"` // Original media type before compression
+	OriginalSize      int64                `json:"originalSize,omitempty"`      // Original uncompressed size
+	CompressedSize    int64                `json:"compressedSize,omitempty"`    // Compressed size
 }
 
 func uploadFile(c *gin.Context) {
