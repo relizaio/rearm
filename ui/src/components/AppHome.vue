@@ -518,8 +518,10 @@ const findingsPerDayModalTitle = computed(() => `Findings for ${directFindingsDa
 
 function closeFindingsPerDayModal() {
     showFindingsPerDayModal.value = false
-    // Clear query params silently without triggering watchers
-    window.history.replaceState({}, '', window.location.pathname)
+    // Clear query params silently without triggering watchers (only if there are params)
+    if (window.location.search) {
+        window.history.replaceState(window.history.state, '', window.location.pathname)
+    }
 }
 
 // Store for direct modal opening (bypasses route)
@@ -1415,9 +1417,11 @@ const analyticsMetrics: Ref<any> = ref({
         type: 'line',
         point: {
             "filled": false,
-            "fill": "white"
+            "fill": "white",
+            "cursor": "pointer"
         },
-        tooltip: true
+        tooltip: true,
+        cursor: 'pointer'
     },
     transform: [
         {
@@ -1459,9 +1463,6 @@ const analyticsMetrics: Ref<any> = ref({
         color: {
             field: 'type',
             legend: null
-        },
-        href: {
-            value: '#'
         },
         tooltip: [
             {field: "createdDate", type: "temporal", title: "Date"},
