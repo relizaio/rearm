@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gabriel-vasile/mimetype"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -119,6 +120,8 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 }
 
 func (o *OrasClient) PullArtifact(ctx context.Context, tagDigest string, dirName string) (v1.Descriptor, error) {
+	const maxRetries = 5
+	const baseDelay = 500 * time.Millisecond
 
 	fs, err := file.New("/tmp/" + dirName + "/")
 	if err != nil {
@@ -127,11 +130,30 @@ func (o *OrasClient) PullArtifact(ctx context.Context, tagDigest string, dirName
 	}
 	defer fs.Close()
 
-	descriptor, err := oras.Copy(ctx, o.Repository, tagDigest, fs, tagDigest, oras.DefaultCopyOptions)
-	if err != nil {
-		log.Println("Error pulling artifact ", err)
-		return v1.Descriptor{}, err
+	var descriptor v1.Descriptor
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		descriptor, lastErr = oras.Copy(ctx, o.Repository, tagDigest, fs, tagDigest, oras.DefaultCopyOptions)
+		if lastErr == nil {
+			return descriptor, nil
+		}
+
+		log.Printf("Pull attempt %d/%d failed: %v", attempt, maxRetries, lastErr)
+
+		if attempt < maxRetries {
+			// Exponential backoff: 500ms, 1s, 2s, 4s, 8s
+			delay := baseDelay * time.Duration(1<<(attempt-1))
+			log.Printf("Retrying in %v...", delay)
+
+			select {
+			case <-ctx.Done():
+				return v1.Descriptor{}, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
 	}
 
-	return descriptor, nil
+	log.Printf("Error pulling artifact after %d attempts: %v", maxRetries, lastErr)
+	return v1.Descriptor{}, lastErr
 }
