@@ -208,6 +208,12 @@ export function buildVulnerabilityColumns(
       key: 'type',
       width: 124,
       sorter: 'default',
+      filterOptions: [
+        { label: 'Vulnerability', value: 'Vulnerability' },
+        { label: 'Violation', value: 'Violation' },
+        { label: 'Weakness', value: 'Weakness' }
+      ],
+      filter: (value: any, row: any) => row.type === value,
       render: (row: any) => {
         const typeColors: any = {
           Vulnerability: 'error',
@@ -262,8 +268,16 @@ export function buildVulnerabilityColumns(
     {
       title: 'Severity',
       key: 'severity',
-      width: 128,
+      width: 130,
       defaultSortOrder: 'ascend',
+      filterOptions: [
+        { label: 'CRITICAL', value: 'CRITICAL' },
+        { label: 'HIGH', value: 'HIGH' },
+        { label: 'MEDIUM', value: 'MEDIUM' },
+        { label: 'LOW', value: 'LOW' },
+        { label: 'UNASSIGNED', value: 'UNASSIGNED' }
+      ],
+      filter: (value: any, row: any) => row.severity === value,
       sorter: (rowA: any, rowB: any) => {
         const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
         const idx = (v: string) => {
