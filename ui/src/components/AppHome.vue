@@ -8,6 +8,8 @@
             :data="findingsPerDayData"
             :loading="findingsPerDayLoading"
             :org-uuid="myorg?.uuid || ''"
+            :initial-severity-filter="findingsPerDaySeverity"
+            :initial-type-filter="findingsPerDayType"
             @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
         />
         <div class="dashboardBlock">
@@ -507,6 +509,8 @@ const selectedPurl = ref('')
 // Findings per day display
 const showFindingsPerDay = computed(() => route.query.display === 'findingsPerDay' && route.query.date)
 const findingsPerDayDate = computed(() => route.query.date as string || '')
+const findingsPerDaySeverity = computed(() => route.query.severity as string || '')
+const findingsPerDayType = computed(() => route.query.type as string || '')
 const findingsPerDayData: Ref<any[]> = ref([])
 const findingsPerDayLoading: Ref<boolean> = ref(false)
 const showFindingsPerDayModal: Ref<boolean> = ref(false)
