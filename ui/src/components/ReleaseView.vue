@@ -172,7 +172,7 @@
                             size="16px"
                             class="clickable icons versionIcon"
                             type="copy"
-                            title="Create Feature Set From Release"
+                            :title="'Create ' + words.branchFirstUpper + ' From Release'"
                             @click="cloneReleaseToFs(releaseUuid, release.version)"
                             style="margin-left:10px;"
                         />
@@ -457,14 +457,14 @@
         </n-modal>
         <n-modal
             v-model:show="cloneReleaseToFsObj.showModal"
-            :title="'Create Feature Set From Release - ' + cloneReleaseToFsObj.version"
+            :title="'Create ' + words.branchFirstUpper + ' From Release - ' + cloneReleaseToFsObj.version"
             preset="dialog"
             :show-icon="false" >
             <n-form>
                 <n-input
                     v-model:value="cloneReleaseToFsObj.fsName"
                     required
-                    placeholder="Enter New Feature Set Name" 
+                    :placeholder="'Enter New ' + words.branchFirstUpper + ' Name'" 
                 />
                 <n-button type="success" @click="createFsFromRelease">Create</n-button>
             </n-form>
@@ -582,6 +582,7 @@ const notify = async function (type: NotificationType, title: string, content: s
 }
 
 const myUser = store.getters.myuser
+const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
 const copyToClipboard = async function (text: string) {
     try {
@@ -679,13 +680,15 @@ async function fetchRelease () {
     }
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
+    const orgTerminology = myorg.value?.terminology
+    const resolvedWords = commonFunctions.resolveWords(isComponent.value, orgTerminology)
     words.value = {
-        branchFirstUpper: (isComponent.value) ? 'Branch' : 'Feature Set',
-        branchFirstUpperPlural: (isComponent.value) ? 'Branches' : 'Feature Sets',
-        branch: (isComponent.value) ? 'branch' : 'feature set',
-        componentFirstUpper: (isComponent.value) ? 'Component' : 'Product',
-        component: (isComponent.value) ? 'component' : 'product',
-        componentsFirstUpper: (isComponent.value) ? 'Components' : 'Products'
+        branchFirstUpper: resolvedWords.branchFirstUpper,
+        branchFirstUpperPlural: isComponent.value ? 'Branches' : (resolvedWords.branchFirstUpper + 's'),
+        branch: resolvedWords.branch,
+        componentFirstUpper: resolvedWords.componentFirstUpper,
+        component: resolvedWords.component,
+        componentsFirstUpper: resolvedWords.componentsFirstUpper
     }
 }
 
@@ -2159,7 +2162,7 @@ const createFsFromRelease = async function(){
     cloneReleaseToFsObj.value.releaseUuid = ''
     cloneReleaseToFsObj.value.fsName = ''
     cloneReleaseToFsObj.value.version = ''
-    notify('success', 'Success', 'Redirecting to new Feature Set')
+    notify('success', 'Success', 'Redirecting to new ' + words.value.branchFirstUpper)
     router.push({
         name: 'ProductsOfOrg',
         params: {
@@ -2563,7 +2566,7 @@ const inProductsTableFields: DataTableColumns<any> = [
     },
     {
         key: 'featureSetName',
-        title: 'Feature Set',
+        title: words.value.branchFirstUpper,
         render(row: any) {
             return h(RouterLink, 
                 {to: {name: 'ProductsOfOrg',
@@ -2619,7 +2622,7 @@ const parentReleaseTableFields: DataTableColumns<any> = [
     },
     {
         key: 'branch',
-        title: 'Branch / Feature Set',
+        title: 'Branch / ' + words.value.branchFirstUpper,
         render(row: any) {
             if (row.releaseDetails && row.releaseDetails.componentDetails) {
                 const routeName = row.releaseDetails.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'

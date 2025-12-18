@@ -213,14 +213,14 @@
         </n-modal>
         <n-modal
             v-model:show="cloneReleaseToFsObj.showModal"
-            :title="'Create Feature Set From Release - ' + cloneReleaseToFsObj.version"
+            :title="'Create ' + words.branchFirstUpper + ' From Release - ' + cloneReleaseToFsObj.version"
             preset="dialog"
             :show-icon="false" >
             <n-form>
                 <n-input
                     v-model:value="cloneReleaseToFsObj.fsName"
                     required
-                    placeholder="Enter New Feature Set Name" 
+                    :placeholder="'Enter New ' + words.branchFirstUpper + ' Name'" 
                 />
                 <n-button type="success" @click="createFsFromRelease">Create</n-button>
             </n-form>
@@ -360,6 +360,7 @@ const notify = async function (type: NotificationType, title: string, content: s
 
 const orguuid = route.params.orguuid.toString()
 const myUser = store.getters.myuser
+const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
 const branchUuid: Ref<string> = ref(props.branchUuidProp ? props.branchUuidProp.toString() : route.params.branchuuid ? route.params.branchuuid.toString() : '')
 const prNumber: Ref<string> = ref(props.prnumberprop ? props.prnumberprop.toString() : route.params.prnumber ? route.params.prnumber.toString() : '')
@@ -487,7 +488,7 @@ const createFsFromRelease = async function(){
     cloneReleaseToFsObj.value.releaseUuid = ''
     cloneReleaseToFsObj.value.fsName = ''
     cloneReleaseToFsObj.value.version = ''
-    notify('success', 'Success', 'Redirecting to new Feature Set')
+    notify('success', 'Success', 'Redirecting to new ' + words.value.branchFirstUpper)
     router.push({
         name: 'ProductsOfOrg',
         params: {
@@ -815,7 +816,7 @@ async function onCreated () {
     releaseTagKeys.value = Object.keys(tagKeyMap)
         .map((x: string) => {return {label: x, value: x}})
 
-    words.value = commonFunctions.resolveWords(branchData.value.componentDetails.type === 'COMPONENT')
+    words.value = commonFunctions.resolveWords(branchData.value.componentDetails.type === 'COMPONENT', myorg.value?.terminology)
     await getNextVersion(branchUuid.value)
 }
 
@@ -940,7 +941,7 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                         h(
                             NIcon,
                             {
-                                title: 'Create Feature Set From Release',
+                                title: 'Create ' + words.value.branchFirstUpper + ' From Release',
                                 class: 'icons clickable',
                                 size: 25,
                                 onClick: () => cloneReleaseToFs(row.uuid, row.version)

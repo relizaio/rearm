@@ -478,6 +478,27 @@
                 </div>
             </n-tab-pane>
 
+            <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
+                <div class="terminologyBlock mt-4">
+                    <h5>Custom Terminology</h5>
+                    <p class="text-muted">Customize the labels used throughout the application for your organization.</p>
+                    <n-form :model="terminologyForm" label-placement="left" label-width="200px" style="max-width: 500px;">
+                        <n-form-item label="Feature Set Label" path="featureSetLabel">
+                            <n-input 
+                                v-model:value="terminologyForm.featureSetLabel" 
+                                placeholder="Feature Set"
+                                maxlength="50"
+                                show-count
+                            />
+                        </n-form-item>
+                        <n-space>
+                            <n-button type="success" @click="saveTerminology" :loading="savingTerminology">Save</n-button>
+                            <n-button type="warning" @click="resetTerminology">Reset to Default</n-button>
+                        </n-space>
+                    </n-form>
+                </div>
+            </n-tab-pane>
+
             <n-tab-pane v-if="false && myUser && myUser.installationType !== 'OSS'" name="protected environments" tab="Protected Environments">
                 <div v-if="resourceGroups && resourceGroups.length" class="approvalMatrixBlock">
                     <h5>Protected Environments For Resource Group:
@@ -737,6 +758,53 @@ const newApprovalRole: Ref<any> = ref({
     id: '',
     displayView: ''
 })
+
+// Terminology settings
+const DEFAULT_FEATURE_SET_LABEL = 'Feature Set'
+const terminologyForm = ref({
+    featureSetLabel: myorg.value?.terminology?.featureSetLabel || DEFAULT_FEATURE_SET_LABEL
+})
+const savingTerminology = ref(false)
+
+async function saveTerminology() {
+    savingTerminology.value = true
+    try {
+        const response: any = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateOrganizationTerminology($orgUuid: ID!, $terminology: TerminologyInput!) {
+                    updateOrganizationTerminology(orgUuid: $orgUuid, terminology: $terminology) {
+                        uuid
+                        name
+                        terminology {
+                            featureSetLabel
+                        }
+                    }
+                }
+            `,
+            variables: {
+                orgUuid: orgResolved.value,
+                terminology: {
+                    featureSetLabel: terminologyForm.value.featureSetLabel || DEFAULT_FEATURE_SET_LABEL
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+        if (response.data?.updateOrganizationTerminology) {
+            store.commit('UPDATE_ORGANIZATION', response.data.updateOrganizationTerminology)
+            notify('success', 'Success', 'Terminology settings saved successfully')
+        }
+    } catch (err: any) {
+        console.error('Error saving terminology:', err)
+        notify('error', 'Error', 'Failed to save terminology settings')
+    } finally {
+        savingTerminology.value = false
+    }
+}
+
+function resetTerminology() {
+    terminologyForm.value.featureSetLabel = DEFAULT_FEATURE_SET_LABEL
+    saveTerminology()
+}
 
 const botToken: Ref<string> = ref('')
 const environmentTypes: Ref<string[]> = ref([])

@@ -113,6 +113,7 @@ const emit = defineEmits(['createdRelease'])
 
 
 const store = useStore()
+const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
 const componentProduct = ref(props.inputType)
 const isCreateNewRelease = ref(!props.attemptPickRelease)
@@ -233,7 +234,8 @@ const releaseBranch: ComputedRef<any> = computed((): any => {
 const branchName: ComputedRef<string> = computed((): any => {
     let branchName
     if (componentProduct.value === 'PRODUCT') {
-        branchName = 'feature set'
+        const featureSetLabel = myorg.value?.terminology?.featureSetLabel || 'Feature Set'
+        branchName = featureSetLabel.toLowerCase()
     } else {
         branchName = 'branch'
     }

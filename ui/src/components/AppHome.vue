@@ -26,7 +26,7 @@
                             :on-update:value="(value: number|null) => {activeComponentsInput.maxComponents = value ? value : 3; fetchActiveComponentsBranchesAnalytics();}" />
                         <span>Most Active </span>
                         <n-dropdown title="Select Type" trigger="hover"
-                            :options="[{label: 'Components', key: 'COMPONENT'}, {label: 'Products', key: 'PRODUCT'}, {label: 'Branches', key: 'BRANCH'}, {label: 'Feature Sets', key: 'FEATURE_SET'}]"
+                            :options="[{label: 'Components', key: 'COMPONENT'}, {label: 'Products', key: 'PRODUCT'}, {label: 'Branches', key: 'BRANCH'}, {label: featureSetLabelPlural, key: 'FEATURE_SET'}]"
                             @select="$key => {activeComponentsInput.componentType = $key ? $key: 'COMPONENT'; fetchActiveComponentsBranchesAnalytics();}">
                             <span>
                                 <span>{{ displayActiveComponentType() }}</span>
@@ -495,6 +495,9 @@ const notify = (type: NotificationType, title: string, content: string) => {
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const installationType: ComputedRef<any> = computed((): any => store.getters.myuser.installationType)
+
+const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
+const featureSetLabelPlural = computed(() => featureSetLabel.value + 's')
 
 const hashSearchQuery = ref('')
 const sbomSearchQuery = ref('')
@@ -1129,7 +1132,7 @@ const releaseSearchResultRows = [
     },
     {
         key: 'branch',
-        title: 'Branch / Feature Set',
+        title: 'Branch / ' + featureSetLabel.value,
         render(row: any) {
             const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
             return h(RouterLink, 
@@ -1209,7 +1212,7 @@ const dtrackSearchReleaseRows: DataTableColumns<any> = [
     },
     {
         key: 'branch',
-        title: 'Branch / Feature Set',
+        title: 'Branch / ' + featureSetLabel.value,
         render(row: any) {
             if (row.componentDetails) {
                 const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
@@ -1307,8 +1310,8 @@ function transformMostActiveDataBasedOnType () {
         mostActiveOverTime.value.transform = [{
             calculate: "'/productsOfOrg/" + myorg.value.uuid + "/' + datum.componentuuid + '/' + datum.branchuuid", "as": "url"
         }]
-        mostActiveOverTime.value.encoding.color.title = "Feature Set"
-        mostActiveOverTime.value.encoding.tooltip[0].title = "Feature Set"
+        mostActiveOverTime.value.encoding.color.title = featureSetLabel.value
+        mostActiveOverTime.value.encoding.tooltip[0].title = featureSetLabel.value
     }
 }
 
@@ -1608,7 +1611,7 @@ function displayActiveComponentType () {
             displayComp = 'Branches'
             break
         case 'FEATURE_SET':
-            displayComp = 'Feature Sets'
+            displayComp = featureSetLabelPlural.value
             break
         case 'PRODUCT':
             displayComp = 'Products'

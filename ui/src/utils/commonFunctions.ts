@@ -192,10 +192,18 @@ async function setInstanceApiKey (instanceUuid : string) {
     return response.data.setInstanceApiKey
 }
 
-function resolveWords (isComponent: boolean) {
+export interface OrgTerminology {
+    featureSetLabel?: string
+}
+
+const DEFAULT_FEATURE_SET_LABEL = 'Feature Set'
+
+function resolveWords (isComponent: boolean, orgTerminology?: OrgTerminology) {
+    const featureSetLabel = orgTerminology?.featureSetLabel || DEFAULT_FEATURE_SET_LABEL
+    const featureSetLabelLower = featureSetLabel.toLowerCase()
     return {
-        branchFirstUpper: isComponent ? 'Branch' : 'Feature Set',
-        branch: isComponent ? 'branch' : 'feature set',
+        branchFirstUpper: isComponent ? 'Branch' : featureSetLabel,
+        branch: isComponent ? 'branch' : featureSetLabelLower,
         componentFirstUpper: isComponent ? 'Component' : 'Product',
         component: isComponent ? 'component' : 'product',
         componentsFirstUpper: isComponent ? 'Components' : 'Products'

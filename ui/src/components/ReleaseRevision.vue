@@ -9,13 +9,13 @@
             <div v-if="release" class="mb-3 settingsBlock">
                 <h6>Parent Type: {{ release.componentDetails.type }}</h6>
                 <h6>Release Type: {{ release.type }}</h6>
-                <h6><span v-if="release.componentDetails.type === 'PRODUCT'">Feature Set: </span><span v-else>Branch: </span> {{ release.branchDetails.name }}</h6>
+                <h6><span v-if="release.componentDetails.type === 'PRODUCT'">{{ featureSetLabel }}: </span><span v-else>Branch: </span> {{ release.branchDetails.name }}</h6>
             </div>
             <div v-if="release" class="matchedProductBlock">
                 <h5 class="mt-2">Product For Comparison:</h5>
                 <div class="productHeader productList">
                     <div>Product</div>
-                    <div>Feature Set</div>
+                    <div>{{ featureSetLabel }}</div>
                 </div>
                 <div v-if="release.componentDetails.type !== 'PRODUCT'">Not a product release.</div>
                 <div v-for="prl in diffedProducts"
@@ -122,6 +122,8 @@ const props = defineProps<{
 
 const store = useStore()
 const notification = useNotification()
+const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 
 const release: any = ref({})
 

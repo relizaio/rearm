@@ -488,6 +488,9 @@ const storeObject : any = {
                                     id
                                     displayView
                                 }
+                                terminology {
+                                    featureSetLabel
+                                }
                             }
                         }`,
                     fetchPolicy: 'no-cache'

@@ -34,7 +34,7 @@
             />
             <div class="instanceBody">
                 <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER" class="listHeaderText">Product Releases:
-                    <vue-feather v-if="isWritable" class="clickable" type="plus-circle" @click="isUpdateLinkedFeatureSet = false; showLinkFeatureSetModal = true" title="Link Feature Set" />
+                    <vue-feather v-if="isWritable" class="clickable" type="plus-circle" @click="isUpdateLinkedFeatureSet = false; showLinkFeatureSetModal = true" :title="'Link ' + featureSetLabel" />
                     <vue-feather @click="genProductRelease" class="clickable" type="trending-up" title="Generate Integration Product Releases" />
                 </div>
                 <n-data-table v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER"
@@ -280,7 +280,7 @@
             preset="dialog"
             :show-icon="false"
             style="width: 90%;"
-            :title="isUpdateLinkedFeatureSet ? 'Update Integration Feature Set' : 'Add Integration Feature Set'"
+            :title="isUpdateLinkedFeatureSet ? 'Update Integration ' + featureSetLabel : 'Add Integration ' + featureSetLabel"
         >
             <add-component-branch
                                     v-if="updatedInstance"
@@ -399,6 +399,7 @@ const InstanceType = constants.InstanceType
 const isChildInstance: ComputedRef<string> = computed((): any => props.instanceType === InstanceType.CLUSTER_INSTANCE)
 const instanceUuid = isChildInstance.value && (route.params.subinstuuid !== undefined && route.params.subinstuuid !== '') ? route.params.subinstuuid.toString() : route.params.instuuid.toString()
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 const myUser = store.getters.myuser
 const orguuid : Ref<string> = ref('')
 if (route.params.orguuid) {
@@ -1103,7 +1104,7 @@ const matchedProductFields: any[] = [
     },
     {
         key: 'fs',
-        title: 'Feature Set',
+        title: featureSetLabel.value,
         render: (row: any) => {
             let els = []
             els.push(h(
@@ -1122,7 +1123,7 @@ const matchedProductFields: any[] = [
             ))
             if(row.type === 'TARGET' && isWritable){
                 els.push(h(NIcon, {
-                    title: 'Change Feature Set and Target Release',
+                    title: 'Change ' + featureSetLabel.value + ' and Target Release',
                     class: 'icons clickable',
                     size: 16,
                     onClick: () => {
@@ -1134,7 +1135,7 @@ const matchedProductFields: any[] = [
                 }))
             } else if(row.type !== 'TARGET' && isWritable){
                 els.push(h(NIcon, {
-                    title: 'Change Feature Set',
+                    title: 'Change ' + featureSetLabel.value,
                     class: 'icons clickable',
                     size: 16,
                     onClick: () => {
@@ -1348,7 +1349,7 @@ matchedProductFields.push({
     render: (row: any) => {
         if(isWritable){
             return h(NIcon, {
-                title: 'Remove Feature Set Link',
+                title: 'Remove ' + featureSetLabel.value + ' Link',
                 class: 'icons clickable',
                 size: 25,
                 onClick: () => {

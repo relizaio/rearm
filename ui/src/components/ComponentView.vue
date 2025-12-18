@@ -1852,13 +1852,15 @@ async function initLoad() {
     }
     updatedComponent.value = commonFunctions.deepCopy(storeComponent)
     isComponent.value = updatedComponent.value.type === 'COMPONENT'
+    const orgTerminology = myorg.value?.terminology
+    const resolvedWords = commonFunctions.resolveWords(!isComponent.value ? false : true, orgTerminology)
     words.value = {
-        branchFirstUpper: (isComponent.value) ? 'Branch' : 'Feature Set',
-        branchFirstUpperPlural: (isComponent.value) ? 'Branches' : 'Feature Sets',
-        branch: (isComponent.value) ? 'branch' : 'feature set',
-        componentFirstUpper: (isComponent.value) ? 'Component' : 'Product',
-        component: (isComponent.value) ? 'component' : 'product',
-        componentsFirstUpper: (isComponent.value) ? 'Components' : 'Products'
+        branchFirstUpper: resolvedWords.branchFirstUpper,
+        branchFirstUpperPlural: isComponent.value ? 'Branches' : (resolvedWords.branchFirstUpper + 's'),
+        branch: resolvedWords.branch,
+        componentFirstUpper: resolvedWords.componentFirstUpper,
+        component: resolvedWords.component,
+        componentsFirstUpper: resolvedWords.componentsFirstUpper
     }
     if (selectedBranchUuid.value === ''){
         if (mainBranch.value) selectBranch(mainBranch.value)

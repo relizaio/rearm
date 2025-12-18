@@ -60,6 +60,7 @@ import { useStore } from 'vuex'
 import {  ComputedRef, Ref, computed, ref } from 'vue'
 import { NButton, NForm, NFormItem, NSelect } from 'naive-ui'
 import constants from '../utils/constants'
+import commonFunctions from '../utils/commonFunctions'
 
 
 const props = defineProps<{
@@ -79,13 +80,15 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const initialOrg = props.orgProp ? props.orgProp : myorg.value
 const org = ref(initialOrg)
 const componentProduct = props.inputType ? props.inputType : 'COMPONENT'
+const orgTerminology = myorg.value?.terminology
+const resolvedWords = commonFunctions.resolveWords(componentProduct === 'COMPONENT', orgTerminology)
 const words: Ref<any> = ref({})
 words.value = {
-    branchFirstUpper: (componentProduct === 'COMPONENT') ? 'Branch' : 'Feature Set',
-    branch: (componentProduct === 'COMPONENT') ? 'branch' : 'feature set',
-    componentFirstUpper: (componentProduct === 'COMPONENT') ? 'Component' : 'Product',
-    component: (componentProduct === 'COMPONENT') ? 'component' : 'product',
-    componentsFirstUpper: (componentProduct === 'COMPONENT') ? 'Components' : 'Products'
+    branchFirstUpper: resolvedWords.branchFirstUpper,
+    branch: resolvedWords.branch,
+    componentFirstUpper: resolvedWords.componentFirstUpper,
+    component: resolvedWords.component,
+    componentsFirstUpper: resolvedWords.componentsFirstUpper
 }
 const orgs: ComputedRef<any> = computed((): any => {
     const storeOrgs = store.getters.allOrganizations

@@ -24,7 +24,7 @@
                 <h5 class="mt-2">Product Releases:</h5>
                 <div :class="[updatedInstance.deploymentType !== 'INDIVIDUAL' ? 'productHeader productList' : 'productHeader productListI']">
                     <div>Product</div>
-                    <div>Feature Set</div>
+                    <div>{{ featureSetLabel }}</div>
                     <div>Actual</div>
                     <div v-if="updatedInstance.deploymentType !== 'INDIVIDUAL'">Target</div>
                     <div>Namespace</div>
@@ -179,6 +179,9 @@ import ReleaseView from '@/components/ReleaseView.vue'
 
 import commonFunctions from '@/utils/commonFunctions'
 
+const store = useStore()
+const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 
 const props = defineProps<{
     instanceUuid: String,
@@ -188,7 +191,6 @@ const props = defineProps<{
     otherRevisionType: String,
     namespace: String
 }>()
-const store = useStore()
 const notification = useNotification()
 
 const updatedInstance: Ref<any> = ref({})

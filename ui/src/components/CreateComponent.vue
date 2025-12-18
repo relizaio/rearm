@@ -117,6 +117,7 @@ import { useStore } from 'vuex'
 import { FormInst, NForm, NFormItem, NInput, NButton, NSelect, NSwitch, NDynamicInput } from 'naive-ui'
 import CreateVcsRepository from '@/components/CreateVcsRepository.vue'
 import constants from '@/utils/constants'
+import commonFunctions from '@/utils/commonFunctions'
 
 const props = defineProps<{
     orgProp: string,
@@ -145,6 +146,7 @@ const isCreateNewRepo:ComputedRef<boolean> = computed((): any => {
 const isCreatedNewRepo = ref(false)
 
 const myUser = store.getters.myuser
+const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
 const featureBranchVersionTypes = [
     {
@@ -229,11 +231,13 @@ const component = ref({
     identifiers: []
 })
 
+const orgTerminology = myorg.value?.terminology
+const resolvedWords = commonFunctions.resolveWords(!props.isProduct, orgTerminology)
 const componentProductWords = {
-    componentFirstUpper: (!props.isProduct) ? 'Component' : 'Product',
-    component: (!props.isProduct) ? 'component' : 'product',
-    componentsFirstUpper: (!props.isProduct) ? 'Components' : 'Products',
-    branch: (!props.isProduct) ? 'Branch' : 'Feature Set'
+    componentFirstUpper: resolvedWords.componentFirstUpper,
+    component: resolvedWords.component,
+    componentsFirstUpper: resolvedWords.componentsFirstUpper,
+    branch: resolvedWords.branchFirstUpper
 }
 
 const resolveCreateRepoStatus = function (repoId: string) {

@@ -21,7 +21,7 @@
             </n-form-item>
             <n-form-item    path="featureSetObj.featureSet"
                             v-if="featureSetObj.product"
-                            label="Feature Set">
+                            :label="myorg?.terminology?.featureSetLabel || 'Feature Set'">
                 <n-select
                             v-model:value="featureSetObj.featureSet"
                             filterable
