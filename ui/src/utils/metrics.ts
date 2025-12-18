@@ -17,6 +17,7 @@ export type DetailedMetric = {
   sources?: any[]
   analysisState?: string
   analysisDate?: string
+  attributedAt?: string
 }
 
 // Helper function to create vulnerability links with confirmation dialog
@@ -99,7 +100,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         location: '-',
         fingerprint: '-',
         analysisState: vuln.analysisState,
-        analysisDate: vuln.analysisDate
+        analysisDate: vuln.analysisDate,
+        attributedAt: vuln.attributedAt
       })
     })
   }
@@ -116,7 +118,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         location: '-',
         fingerprint: '-',
         analysisState: violation.analysisState,
-        analysisDate: violation.analysisDate
+        analysisDate: violation.analysisDate,
+        attributedAt: violation.attributedAt
       })
     })
   }
@@ -133,7 +136,8 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         location: weakness.location,
         fingerprint: weakness.fingerprint,
         analysisState: weakness.analysisState,
-        analysisDate: weakness.analysisDate
+        analysisDate: weakness.analysisDate,
+        attributedAt: weakness.attributedAt
       })
     })
   }
@@ -357,7 +361,7 @@ export function buildVulnerabilityColumns(
             acc.push(link)
             return acc
           }, [])]))
-        } else if (details) {
+        } else if (details && details !== '-') {
           elements.push(h('span', {}, details))
         }
         
@@ -365,6 +369,13 @@ export function buildVulnerabilityColumns(
         if (row.fingerprint && row.fingerprint !== '-' && row.fingerprint.trim() !== '') {
           if (elements.length > 0) elements.push(h('span', {}, ', '))
           elements.push(h('span', {}, `Fingerprint: ${row.fingerprint}`))
+        }
+        
+        // Add attributedAt if it exists
+        if (row.attributedAt) {
+          if (elements.length > 0) elements.push(h('br'))
+          const formattedDate = new Date(row.attributedAt).toLocaleString('en-CA', {hour12: false})
+          elements.push(h('span', {}, `Attributed: ${formattedDate}`))
         }
         
         return elements.length > 0 ? h('span', {}, elements) : '-'

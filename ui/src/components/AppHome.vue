@@ -560,6 +560,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                             severity
                             analysisState
                             analysisDate
+                            attributedAt
                             aliases {
                                 type
                                 aliasId
@@ -590,6 +591,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                             violationDetails
                             analysisState
                             analysisDate
+                            attributedAt
                             sources {
                                 artifact
                                 release
@@ -613,6 +615,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                             severity
                             analysisState
                             analysisDate
+                            attributedAt
                             sources {
                                 artifact
                                 release
@@ -663,6 +666,7 @@ async function recalculateFindingsForDate() {
                             severity
                             analysisState
                             analysisDate
+                            attributedAt
                             aliases {
                                 type
                                 aliasId
@@ -693,6 +697,7 @@ async function recalculateFindingsForDate() {
                             violationDetails
                             analysisState
                             analysisDate
+                            attributedAt
                             sources {
                                 artifact
                                 release
@@ -716,6 +721,7 @@ async function recalculateFindingsForDate() {
                             severity
                             analysisState
                             analysisDate
+                            attributedAt
                             sources {
                                 artifact
                                 release

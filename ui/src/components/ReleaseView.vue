@@ -1396,6 +1396,7 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                 severity
                                 analysisState
                                 analysisDate
+                                attributedAt
                                 aliases {
                                     type
                                     aliasId
@@ -1426,6 +1427,7 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                 violationDetails
                                 analysisState
                                 analysisDate
+                                attributedAt
                                 sources {
                                     artifact
                                     release
@@ -1449,6 +1451,7 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
                                 severity
                                 analysisState
                                 analysisDate
+                                attributedAt
                                 sources {
                                     artifact
                                     release
