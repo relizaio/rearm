@@ -1079,7 +1079,10 @@ function computeRootDepIndex (bom: any) : number {
         let serialNumber: string;
         if (existingSerialNumber) {
             // SPDX update: reuse existing serialNumber for DTrack/artifact continuity
-            serialNumber = existingSerialNumber;
+            // Normalize to include urn:uuid: prefix for consistency
+            serialNumber = existingSerialNumber.startsWith('urn:uuid:') 
+                ? existingSerialNumber 
+                : `urn:uuid:${existingSerialNumber}`;
             mergedOptions.serialNumber = serialNumber;
             logger.info({ serialNumber, bomVersion }, "Using existing serial number for SPDX update continuity");
         } else if (conversionResult.convertedBom.serialNumber) {
