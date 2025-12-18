@@ -192,4 +192,20 @@ public class OrganizationDataFetcher {
 		}
 		return true;
 	}
+	
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "updateOrganizationTerminology")
+	public OrganizationData updateOrganizationTerminology(
+			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("terminology") Map<String, Object> terminology) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		
+		String featureSetLabel = terminology != null ? (String) terminology.get("featureSetLabel") : null;
+		return organizationService.updateTerminology(orgUuid, featureSetLabel, wu);
+	}
 }

@@ -354,4 +354,46 @@ public class OrganizationService {
 	public Boolean isBomDiffAlertEnabled(UUID org) {
 		return true;
 	}
+	
+	/**
+	 * Updates organization terminology settings
+	 * @param orgUuid organization UUID
+	 * @param featureSetLabel custom label for Feature Set (null to use default)
+	 * @param wu who updated
+	 * @return updated OrganizationData
+	 */
+	@Transactional
+	public OrganizationData updateTerminology(@NonNull UUID orgUuid, String featureSetLabel, @NonNull WhoUpdated wu) {
+		try {
+			OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
+					.orElseThrow(() -> new IllegalArgumentException("Organization not found: " + orgUuid));
+			
+			// Get or create terminology object
+			OrganizationData.Terminology terminology = od.getTerminology();
+			if (terminology == null) {
+				terminology = new OrganizationData.Terminology();
+			}
+			
+			// Sanitize and set feature set label
+			String sanitizedLabel = OrganizationData.sanitizeTerminologyInput(featureSetLabel);
+			if (sanitizedLabel != null) {
+				terminology.setFeatureSetLabel(sanitizedLabel);
+			} else {
+				// Reset to default if null/empty input
+				terminology.setFeatureSetLabel(OrganizationData.DEFAULT_FEATURE_SET_LABEL);
+			}
+			
+			od.setTerminology(terminology);
+			
+			Organization org = getOrganizationService.getOrganization(orgUuid)
+					.orElseThrow(() -> new IllegalStateException("Organization entity not found: " + orgUuid));
+			Organization savedOrg = saveOrganization(org, Utils.dataToRecord(od), wu);
+			return OrganizationData.orgDataFromDbRecord(savedOrg);
+		} catch (IllegalArgumentException e) {
+			throw e;
+		} catch (Exception e) {
+			log.error("Exception when updating organization terminology", e);
+			throw new RuntimeException("Could not update organization terminology");
+		}
+	}
 }

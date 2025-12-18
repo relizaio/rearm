@@ -33,6 +33,20 @@ import lombok.EqualsAndHashCode;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	
+	public static final String DEFAULT_FEATURE_SET_LABEL = "Feature Set";
+	public static final int MAX_TERMINOLOGY_LENGTH = 50;
+	
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class Terminology {
+		@JsonProperty
+		private String featureSetLabel = DEFAULT_FEATURE_SET_LABEL;
+		
+		public static Terminology getDefault() {
+			return new Terminology();
+		}
+	}
+	
 	public static class InvitedObject {
 		@JsonProperty(CommonVariables.SECRET_FIELD)
 		private String secret;
@@ -73,6 +87,8 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	private StatusEnum status;
 	@JsonProperty
 	private List<ApprovalRole> approvalRoles = new LinkedList<>();
+	@JsonProperty
+	private Terminology terminology;
 
 	public void removeInvitee(String email, UUID whoInvited){
 		boolean found = false;
@@ -156,6 +172,38 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	public UUID getResourceGroup() {
 		// TODO Auto-generated method stub
 		return null;
-	}	
+	}
+	
+	/**
+	 * Returns terminology with defaults if not set
+	 */
+	@JsonIgnore
+	public Terminology getTerminologyWithDefaults() {
+		return terminology != null ? terminology : Terminology.getDefault();
+	}
+	
+	/**
+	 * Pattern for allowed characters in terminology: ASCII letters, numbers, spaces, hyphens, underscores
+	 */
+	private static final java.util.regex.Pattern ALLOWED_CHARS = 
+		java.util.regex.Pattern.compile("[^a-zA-Z0-9\\s\\-_]");
+	
+	/**
+	 * Sanitizes and validates terminology input.
+	 * Only allows ASCII letters (a-z, A-Z), numbers, spaces, hyphens, and underscores.
+	 * @param input the raw input string
+	 * @return sanitized string or null if invalid/empty
+	 */
+	public static String sanitizeTerminologyInput(String input) {
+		if (input == null || input.isBlank()) {
+			return null;
+		}
+		String sanitized = ALLOWED_CHARS.matcher(input.trim()).replaceAll("")
+			.replaceAll("\\s+", " "); // normalize multiple spaces to single
+		if (sanitized.length() > MAX_TERMINOLOGY_LENGTH) {
+			sanitized = sanitized.substring(0, MAX_TERMINOLOGY_LENGTH).trim();
+		}
+		return sanitized.isBlank() ? null : sanitized;
+	}
 	
 }

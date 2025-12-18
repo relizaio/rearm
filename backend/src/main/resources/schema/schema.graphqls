@@ -129,6 +129,7 @@ type Mutation {
 	releaseMarketingRelease(marketingRelease: MarketingReleaseInput!, marketingVersion: String!): MarketingRelease
 	addApprovalRole(orgUuid: ID!, approvalRole: ApprovalRoleInput!): Organization
 	deleteApprovalRole(orgUuid: ID!, approvalRoleId: String!): Organization
+	updateOrganizationTerminology(orgUuid: ID!, terminology: TerminologyInput!): Organization
 	createApprovalEntry(approvalEntry: ApprovalEntryInput!): ApprovalEntry
 	archiveApprovalEntry(approvalEntryUuid: ID!): ApprovalEntry
 	createApprovalPolicy(approvalPolicy: ApprovalPolicyInput!): ApprovalPolicy
@@ -261,9 +262,14 @@ type Organization {
 	uuid: ID
 	name: String
 	approvalRoles: [ApprovalRole]
+	terminology: Terminology
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
+}
+
+type Terminology {
+	featureSetLabel: String
 }
 
 type AdminOrganization {
@@ -1044,6 +1050,10 @@ input ApprovalRequirementInput {
 input ApprovalRoleInput {
 	id: String
 	displayView: String
+}
+
+input TerminologyInput {
+	featureSetLabel: String
 }
 
 input PermissionInput {
