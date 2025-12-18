@@ -66,7 +66,12 @@ public class ReleaseVersionService {
 	public VersionResponse getNewVersionWrapper(GetNewVersionDto getNewVersionDto, WhoUpdated wu) throws Exception{
 		VersionResponse vr = null;
 		UUID projectId = getNewVersionDto.project();
-		ComponentData pd = getComponentService.getComponentData(projectId).get();
+		Optional<ComponentData> opd = getComponentService.getComponentData(projectId);
+		if (opd.isEmpty()) {
+			log.warn("Component not found: {}", projectId);
+			throw new RelizaException("Component " + projectId + " not found");
+		}
+		ComponentData pd = opd.get();
 		BranchData bd = branchService.getBranchDataFromBranchString(getNewVersionDto.branch(), projectId, wu);
 		UUID branchUuid = bd.getUuid();
 

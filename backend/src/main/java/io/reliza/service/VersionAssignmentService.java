@@ -319,15 +319,11 @@ public class VersionAssignmentService {
 		if (StringUtils.isNotEmpty(setVersionPin) && !setVersionPin.equalsIgnoreCase(bd.getVersionSchema())) {
 			// validate first
 			if (VersionUtils.isPinMatchingSchema(pd.getVersionSchema(), setVersionPin)) {
-				try {
-					BranchDto branchDto = BranchDto.builder()
-											.uuid(bd.getUuid())
-											.versionSchema(setVersionPin)
-											.build();
-					bd = branchService.updateBranch(branchDto, wu);
-				} catch (RelizaException re) {
-					throw re;
-				}
+				BranchDto branchDto = BranchDto.builder()
+										.uuid(bd.getUuid())
+										.versionSchema(setVersionPin)
+										.build();
+				bd = branchService.updateBranch(branchDto, wu);
 			} else {
 				// return our custom error code to user
 				throw new RelizaException("Supplied pin does not match project schema");

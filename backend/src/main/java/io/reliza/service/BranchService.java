@@ -165,7 +165,11 @@ public class BranchService {
 		if (ob.isEmpty() && create) {
 			// create new branch and return it
 			// TODO: sort out handling of vcs repository (consider removing it altogether and tying to branch to branch)
-			ComponentData cd = getComponentService.getComponentData(component).get();
+			Optional<ComponentData> ocd = getComponentService.getComponentData(component);
+			if (ocd.isEmpty()) {
+				throw new RelizaException("Component " + component + " not found");
+			}
+			ComponentData cd = ocd.get();
 			BranchType bt = BranchData.resolveBranchTypeByName(cleanedName);
 			ob = Optional.of(
 					createBranch(cleanedName, component, bt, cd.getVcs(), cleanedName, cd.getFeatureBranchVersioning(), cd.getMarketingVersionSchema(), wu)

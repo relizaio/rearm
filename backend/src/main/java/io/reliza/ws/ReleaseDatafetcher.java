@@ -338,11 +338,7 @@ public class ReleaseDatafetcher {
 		RelizaObject roorg = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), List.of(robranch, roorg), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		try {
-			return ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDto, wu));
-		} catch (RelizaException re) {
-			throw re;
-		}
+		return ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDto, wu));
 	}
 	
 
@@ -664,7 +660,7 @@ public class ReleaseDatafetcher {
 		} catch (RelizaException re) {
 			log.warn("addReleaseProgrammatic failed for component={}, branch={}, version={}: {}",
 				componentId, bd.getUuid(), version, re.getMessage());
-			throw new RelizaException(re.getMessage());
+			throw re;
 		}
 	}
 	
@@ -1354,12 +1350,6 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "ParentRelease", field = "releaseDetails")
 	public Optional<ReleaseData> releaseDetailsOfParentRelease (DgsDataFetchingEnvironment dfe)  throws RelizaException{
 		ParentReleaseDto prd = dfe.getSource();
-		Optional<ReleaseData> ord = Optional.empty();
-		try {
-			ord = releaseService.getReleaseData(prd.release(), prd.org());
-		} catch (RelizaException re) {
-			throw re;
-		}
-		return ord;
+		return releaseService.getReleaseData(prd.release(), prd.org());
 	}
 }

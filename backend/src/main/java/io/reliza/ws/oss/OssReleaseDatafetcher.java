@@ -136,7 +136,12 @@ public class OssReleaseDatafetcher {
 			orgId = ahp.getObjUuid();
 		}
 
-		cd = getComponentService.getComponentData(componentUuid).get();
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
+		if (ocd.isEmpty()) {
+			log.warn("Component not found: componentId={}", componentUuid);
+			throw new RelizaException("Component " + componentUuid + " not found");
+		}
+		cd = ocd.get();
 		RelizaObject ro = cd;
 		if (null == orgId) orgId = cd.getOrg();
 		
