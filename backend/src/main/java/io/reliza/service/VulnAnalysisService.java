@@ -303,7 +303,8 @@ public class VulnAnalysisService {
 					violation.violationDetails(),
 					violation.sources(),
 					analysis.getAnalysisState(),
-					getLatestAnalysisDate(analysis));
+					getLatestAnalysisDate(analysis),
+					violation.attributedAt());
 		}
 		
 		return violation; // No analysis found
@@ -341,7 +342,8 @@ public class VulnAnalysisService {
 					vulnerability.sources(),
 					vulnerability.severities(),
 					analysis.getAnalysisState(),
-					getLatestAnalysisDate(analysis));
+					getLatestAnalysisDate(analysis),
+					vulnerability.attributedAt());
 		}
 		
 		return vulnerability; // No analysis found
@@ -367,7 +369,8 @@ public class VulnAnalysisService {
 					weakness.severity(),
 					weakness.sources(),
 					analysis.getAnalysisState(),
-					getLatestAnalysisDate(analysis));
+					getLatestAnalysisDate(analysis),
+					weakness.attributedAt());
 		}
 		
 		return weakness; // No analysis found

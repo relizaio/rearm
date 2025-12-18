@@ -57,6 +57,7 @@ import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
+import io.reliza.model.ArtifactData;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.ChildComponent;
@@ -1575,7 +1576,15 @@ public class ReleaseService {
 			var allReleaseArts = artifactGatherService.gatherReleaseArtifacts(rd);
 			allReleaseArts.forEach(aid -> {
 				var ad = artifactService.getArtifactData(aid);
-				rmd.mergeWithByContent(ad.get().getMetrics());
+				if (ad.isPresent()) {
+					ArtifactData artifactData = ad.get();
+					ReleaseMetricsDto artifactMetrics = artifactData.getMetrics();
+					if (artifactMetrics != null) {
+						// Set attributedAt to artifact creation date for findings that don't have it
+						artifactMetrics.setAttributedAtFallback(artifactData.getCreatedDate());
+						rmd.mergeWithByContent(artifactMetrics);
+					}
+				}
 			});
 			rmd.mergeWithByContent(rollUpProductReleaseMetrics(rd));
 			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, rmd);

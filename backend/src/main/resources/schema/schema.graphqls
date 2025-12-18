@@ -963,6 +963,7 @@ type Vulnerability {
 	severities: [SeveritySourceDto]
 	analysisState: AnalysisState
 	analysisDate: DateTime
+	attributedAt: DateTime
 }
 
 type Violation {
@@ -973,6 +974,7 @@ type Violation {
 	sources: [FindingSourceDto]
 	analysisState: AnalysisState
 	analysisDate: DateTime
+	attributedAt: DateTime
 }
 
 type Weakness {
@@ -984,6 +986,7 @@ type Weakness {
 	sources: [FindingSourceDto]
 	analysisState: AnalysisState
 	analysisDate: DateTime
+	attributedAt: DateTime
 }
 
 type SearchDigestVersionResponse {

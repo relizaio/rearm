@@ -174,7 +174,24 @@ public class SharedArtifactService {
 	@Transactional
 	protected Artifact updateArtifactDti(Artifact a, DependencyTrackIntegration dti, WhoUpdated wu) {
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
-		ad.setMetrics(dti);
+		DependencyTrackIntegration existingDti = ad.getMetrics();
+		
+		if (existingDti != null) {
+			// Merge findings: keep only those in new dti, but preserve earlier attributedAt dates
+			existingDti.setAttributedAtFallback(a.getCreatedDate());
+			existingDti.updateFromAuthoritativeSource(dti);
+			// Copy DependencyTrack-specific fields from new dti
+			existingDti.setDependencyTrackProject(dti.getDependencyTrackProject());
+			existingDti.setUploadToken(dti.getUploadToken());
+			existingDti.setProjectName(dti.getProjectName());
+			existingDti.setProjectVersion(dti.getProjectVersion());
+			existingDti.setDependencyTrackFullUri(dti.getDependencyTrackFullUri());
+			existingDti.setLastScanned(dti.getLastScanned());
+		} else {
+			// No existing metrics - use new dti as-is
+			ad.setMetrics(dti);
+		}
+		
 		Map<String,Object> recordData = Utils.dataToRecord(ad);
 		return saveArtifact(a, recordData, wu);
 	}

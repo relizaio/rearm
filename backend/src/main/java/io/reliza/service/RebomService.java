@@ -408,6 +408,7 @@ public class RebomService {
                 mapSeverity((String) w.get("severity")),
                 Set.of(source),
                 null,
+                null,
                 null
             ))
             .toList();
@@ -451,6 +452,7 @@ public class RebomService {
                     new LinkedHashSet<>(),
                     Set.of(source),
                     Set.of(severitySource),
+                    null,
                     null,
                     null
                 );

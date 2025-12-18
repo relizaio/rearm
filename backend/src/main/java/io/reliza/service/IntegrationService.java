@@ -652,8 +652,9 @@ public class IntegrationService {
 			// Create severity source based on the main vulnerability ID
 			SeveritySourceDto severitySource = Utils.createSeveritySourceDto(dvr.vulnId(), dvr.severity());
 			
+			final ZonedDateTime attributedAt = ZonedDateTime.now();
 			dvr.components().forEach(c -> {
-				VulnerabilityDto vdto = new VulnerabilityDto(c.purl(), dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null);
+				VulnerabilityDto vdto = new VulnerabilityDto(c.purl(), dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt);
 				vulnerabilityDetails.add(vdto);
 			});
 		});
@@ -679,7 +680,7 @@ public class IntegrationService {
 			DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
 			String licenseId = (null != dvr.component().resolvedLicense()) ? dvr.component().resolvedLicense().licenseId() : "undetected";
 			ViolationDto vdto = new ViolationDto(dvr.component().purl(), dvr.type(),
-					licenseId, null, sources, null, null);
+					licenseId, null, sources, null, null, ZonedDateTime.now());
 			violationDetails.add(vdto);
 		});
 		return violationDetails;

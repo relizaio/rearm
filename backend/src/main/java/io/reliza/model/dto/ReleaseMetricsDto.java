@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -82,7 +83,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	
 	public static record ViolationDto (String purl, ViolationType type, 
 		@JsonProperty("license") @JsonAlias("License") String license,
-		String violationDetails, Set<FindingSourceDto> sources, AnalysisState analysisState, ZonedDateTime analysisDate) {}
+		String violationDetails, Set<FindingSourceDto> sources, AnalysisState analysisState, ZonedDateTime analysisDate, ZonedDateTime attributedAt) {}
 	
 	public static record VulnerabilityAliasDto (VulnerabilityAliasType type, String aliasId) {}
 
@@ -150,13 +151,13 @@ public class ReleaseMetricsDto implements Cloneable {
 	public static record SeveritySourceDto (SeveritySource source, VulnerabilitySeverity severity) {}
 
 	public static record VulnerabilityDto (String purl, String vulnId, VulnerabilitySeverity severity,
-		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities, AnalysisState analysisState, ZonedDateTime analysisDate) {}
+		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities, AnalysisState analysisState, ZonedDateTime analysisDate, ZonedDateTime attributedAt) {}
 
 	/**
 	 * We use weaknessDto to store findngs from SARIF parsing
 	 */
 	public static record WeaknessDto (String cweId, String ruleId, String location,
-		String fingerprint, VulnerabilitySeverity severity, Set<FindingSourceDto> sources, AnalysisState analysisState, ZonedDateTime analysisDate) {}
+		String fingerprint, VulnerabilitySeverity severity, Set<FindingSourceDto> sources, AnalysisState analysisState, ZonedDateTime analysisDate, ZonedDateTime attributedAt) {}
 	
 	@Override
     public ReleaseMetricsDto clone() {
@@ -350,6 +351,179 @@ public class ReleaseMetricsDto implements Cloneable {
 	    }
 	}
 	
+	/**
+	 * Updates findings from a new source (e.g., Dependency Track) while preserving attributedAt dates.
+	 * The new source is authoritative - findings not in the new source are removed.
+	 * For findings that exist in both, the earlier attributedAt date is preserved.
+	 * @param newMetrics The new metrics from the authoritative source
+	 */
+	public void updateFromAuthoritativeSource(ReleaseMetricsDto newMetrics) {
+		if (newMetrics == null) {
+			return;
+		}
+		
+		// Update vulnerabilities - only keep those in newMetrics, preserve earlier attributedAt
+		if (newMetrics.getVulnerabilityDetails() != null) {
+			Map<String, VulnerabilityDto> existingVulnMap = new HashMap<>();
+			if (this.vulnerabilityDetails != null) {
+				for (VulnerabilityDto vuln : this.vulnerabilityDetails) {
+					String key = getVulnerabilityKey(vuln);
+					existingVulnMap.put(key, vuln);
+				}
+			}
+			
+			List<VulnerabilityDto> updatedVulnerabilities = new ArrayList<>();
+			for (VulnerabilityDto newVuln : newMetrics.getVulnerabilityDetails()) {
+				String key = getVulnerabilityKey(newVuln);
+				VulnerabilityDto existing = existingVulnMap.get(key);
+				
+				if (existing != null) {
+					// Preserve earlier attributedAt date
+					ZonedDateTime earlierDate = selectEarlierDate(existing.attributedAt(), newVuln.attributedAt());
+					updatedVulnerabilities.add(new VulnerabilityDto(
+						newVuln.purl(), newVuln.vulnId(), newVuln.severity(), newVuln.aliases(),
+						newVuln.sources(), newVuln.severities(), newVuln.analysisState(), newVuln.analysisDate(), earlierDate
+					));
+				} else {
+					// New vulnerability - use as-is
+					updatedVulnerabilities.add(newVuln);
+				}
+			}
+			this.vulnerabilityDetails = updatedVulnerabilities;
+		} else {
+			this.vulnerabilityDetails = null;
+		}
+		
+		// Update violations - only keep those in newMetrics, preserve earlier attributedAt
+		if (newMetrics.getViolationDetails() != null) {
+			Map<String, ViolationDto> existingViolationMap = new HashMap<>();
+			if (this.violationDetails != null) {
+				for (ViolationDto violation : this.violationDetails) {
+					String key = getViolationKey(violation);
+					existingViolationMap.put(key, violation);
+				}
+			}
+			
+			List<ViolationDto> updatedViolations = new ArrayList<>();
+			for (ViolationDto newViolation : newMetrics.getViolationDetails()) {
+				String key = getViolationKey(newViolation);
+				ViolationDto existing = existingViolationMap.get(key);
+				
+				if (existing != null) {
+					// Preserve earlier attributedAt date
+					ZonedDateTime earlierDate = selectEarlierDate(existing.attributedAt(), newViolation.attributedAt());
+					updatedViolations.add(new ViolationDto(
+						newViolation.purl(), newViolation.type(), newViolation.license(), newViolation.violationDetails(),
+						newViolation.sources(), newViolation.analysisState(), newViolation.analysisDate(), earlierDate
+					));
+				} else {
+					// New violation - use as-is
+					updatedViolations.add(newViolation);
+				}
+			}
+			this.violationDetails = updatedViolations;
+		} else {
+			this.violationDetails = null;
+		}
+		
+		// Update weaknesses - only keep those in newMetrics, preserve earlier attributedAt
+		if (newMetrics.getWeaknessDetails() != null) {
+			Map<String, WeaknessDto> existingWeaknessMap = new HashMap<>();
+			if (this.weaknessDetails != null) {
+				for (WeaknessDto weakness : this.weaknessDetails) {
+					String key = weakness.fingerprint();
+					if (key != null) {
+						existingWeaknessMap.put(key, weakness);
+					}
+				}
+			}
+			
+			List<WeaknessDto> updatedWeaknesses = new ArrayList<>();
+			for (WeaknessDto newWeakness : newMetrics.getWeaknessDetails()) {
+				String key = newWeakness.fingerprint();
+				WeaknessDto existing = (key != null) ? existingWeaknessMap.get(key) : null;
+				
+				if (existing != null) {
+					// Preserve earlier attributedAt date
+					ZonedDateTime earlierDate = selectEarlierDate(existing.attributedAt(), newWeakness.attributedAt());
+					updatedWeaknesses.add(new WeaknessDto(
+						newWeakness.cweId(), newWeakness.ruleId(), newWeakness.location(), newWeakness.fingerprint(),
+						newWeakness.severity(), newWeakness.sources(), newWeakness.analysisState(), newWeakness.analysisDate(), earlierDate
+					));
+				} else {
+					// New weakness - use as-is
+					updatedWeaknesses.add(newWeakness);
+				}
+			}
+			this.weaknessDetails = updatedWeaknesses;
+		} else {
+			this.weaknessDetails = null;
+		}
+		
+		// Recompute metrics from the updated facts
+		this.computeMetricsFromFacts();
+	}
+	
+	/**
+	 * Sets attributedAt to the given fallback date for all findings that don't have it set.
+	 * This is used for artifact-level rollup where existing artifacts without attributedAt
+	 * should use the artifact creation date as the fallback.
+	 * @param fallbackDate The date to use for findings without attributedAt (typically artifact creation date)
+	 */
+	public void setAttributedAtFallback(ZonedDateTime fallbackDate) {
+		if (fallbackDate == null) {
+			return;
+		}
+		
+		// Set attributedAt for vulnerabilities that don't have it
+		if (vulnerabilityDetails != null) {
+			List<VulnerabilityDto> updatedVulnerabilities = new ArrayList<>();
+			for (VulnerabilityDto vuln : vulnerabilityDetails) {
+				if (vuln.attributedAt() == null) {
+					updatedVulnerabilities.add(new VulnerabilityDto(
+						vuln.purl(), vuln.vulnId(), vuln.severity(), vuln.aliases(),
+						vuln.sources(), vuln.severities(), vuln.analysisState(), vuln.analysisDate(), fallbackDate
+					));
+				} else {
+					updatedVulnerabilities.add(vuln);
+				}
+			}
+			this.vulnerabilityDetails = updatedVulnerabilities;
+		}
+		
+		// Set attributedAt for violations that don't have it
+		if (violationDetails != null) {
+			List<ViolationDto> updatedViolations = new ArrayList<>();
+			for (ViolationDto violation : violationDetails) {
+				if (violation.attributedAt() == null) {
+					updatedViolations.add(new ViolationDto(
+						violation.purl(), violation.type(), violation.license(), violation.violationDetails(),
+						violation.sources(), violation.analysisState(), violation.analysisDate(), fallbackDate
+					));
+				} else {
+					updatedViolations.add(violation);
+				}
+			}
+			this.violationDetails = updatedViolations;
+		}
+		
+		// Set attributedAt for weaknesses that don't have it
+		if (weaknessDetails != null) {
+			List<WeaknessDto> updatedWeaknesses = new ArrayList<>();
+			for (WeaknessDto weakness : weaknessDetails) {
+				if (weakness.attributedAt() == null) {
+					updatedWeaknesses.add(new WeaknessDto(
+						weakness.cweId(), weakness.ruleId(), weakness.location(), weakness.fingerprint(),
+						weakness.severity(), weakness.sources(), weakness.analysisState(), weakness.analysisDate(), fallbackDate
+					));
+				} else {
+					updatedWeaknesses.add(weakness);
+				}
+			}
+			this.weaknessDetails = updatedWeaknesses;
+		}
+	}
+	
 	public void enrichSourcesWithRelease(UUID releaseUuid) {
 		if (releaseUuid == null) {
 			return;
@@ -389,7 +563,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					updatedSources,
 					vuln.severities(),
 					vuln.analysisState(),
-					vuln.analysisDate()
+					vuln.analysisDate(),
+					vuln.attributedAt()
 				);
 				enrichedVulnerabilities.add(enrichedVuln);
 			}
@@ -429,7 +604,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					violation.violationDetails(), 
 					updatedSources,
 					violation.analysisState(),
-					violation.analysisDate()
+					violation.analysisDate(),
+					violation.attributedAt()
 				);
 				enrichedViolations.add(enrichedViolation);
 			}
@@ -470,7 +646,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					weakness.severity(), 
 					updatedSources,
 					weakness.analysisState(),
-					weakness.analysisDate()
+					weakness.analysisDate(),
+					weakness.attributedAt()
 				);
 				enrichedWeaknesses.add(enrichedWeakness);
 			}
@@ -526,7 +703,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					combinedSources,
 					combinedSeverities,
 					existing.analysisState(),
-					existing.analysisDate()
+					existing.analysisDate(),
+					selectEarlierDate(existing.attributedAt(), x.attributedAt())
 				);
 				vulnMap.put(xKey, merged);
 			} else {
@@ -537,7 +715,11 @@ public class ReleaseMetricsDto implements Cloneable {
 	}
 	
 	private String getViolationKey (ViolationDto violationDto) {
-		return violationDto.purl + violationDto.type.name();
+		return violationDto.purl() + (violationDto.type() != null ? violationDto.type().name() : "");
+	}
+	
+	private String getVulnerabilityKey(VulnerabilityDto vuln) {
+		return vuln.purl() + "|" + vuln.vulnId();
 	}
 	
 	private List<ViolationDto> mergeViolationDtos(List<ViolationDto> list1, List<ViolationDto> list2) {
@@ -565,7 +747,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.violationDetails(), 
 					combinedSources,
 					existing.analysisState(),
-					existing.analysisDate()
+					existing.analysisDate(),
+					selectEarlierDate(existing.attributedAt(), x.attributedAt())
 				);
 				violationMap.put(xKey, merged);
 			} else {
@@ -601,7 +784,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.severity(), 
 					combinedSources,
 					existing.analysisState(),
-					existing.analysisDate()
+					existing.analysisDate(),
+					selectEarlierDate(existing.attributedAt(), x.attributedAt())
 				);
 				vulnMap.put(xKey, merged);
 			} else {
@@ -724,7 +908,7 @@ public class ReleaseMetricsDto implements Cloneable {
 				
 				// Return with cleaned aliases if needed, otherwise return as-is
 				if (singleVuln.aliases() == null || cleanedAliases.size() != singleVuln.aliases().size()) {
-					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), cleanedAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate());
+					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), cleanedAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt());
 				} else {
 					return singleVuln;
 				}
@@ -738,7 +922,7 @@ public class ReleaseMetricsDto implements Cloneable {
 				}
 			}
 			
-			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), finalAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate());
+			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), finalAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt());
 		}
 		
 		// Collect all unique identifiers and find the best primary ID (CVE preferred)
@@ -793,7 +977,13 @@ public class ReleaseMetricsDto implements Cloneable {
 		VulnerabilitySeverity bestSeverity = selectBestSeverity(allSeverities);
 		
 		// Use analysis state and date from the selected base vulnerability
-		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate());
+		// Select earliest attributedAt from all merged vulnerabilities
+		ZonedDateTime earliestAttributedAt = null;
+		for (VulnerabilityDto vuln : vulnerabilities) {
+			earliestAttributedAt = selectEarlierDate(earliestAttributedAt, vuln.attributedAt());
+		}
+		
+		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate(), earliestAttributedAt);
 	}
 	
 	/**
@@ -895,6 +1085,20 @@ public class ReleaseMetricsDto implements Cloneable {
 		// Fallback to first available severity
 		return severities.iterator().next().severity();
 	}
+	
+	/**
+	 * Selects the earlier of two dates. If both are present, returns the earlier one.
+	 * If only one is present, returns that one. If both are null, returns null.
+	 */
+	private ZonedDateTime selectEarlierDate(ZonedDateTime date1, ZonedDateTime date2) {
+		if (date1 == null) {
+			return date2;
+		}
+		if (date2 == null) {
+			return date1;
+		}
+		return date1.isBefore(date2) ? date1 : date2;
+	}
   
 	public void mergeWithByMetrics(ReleaseMetricsDto otherRmd) {
 	    if (otherRmd != null) {
@@ -955,7 +1159,7 @@ public class ReleaseMetricsDto implements Cloneable {
 					combinedSources.addAll(violation.sources());
 				}
 				
-				// Keep existing violation but with merged sources
+				// Keep existing violation but with merged sources and earlier attributedAt
 				ViolationDto merged = new ViolationDto(
 					existing.purl(),
 					existing.type(),
@@ -963,7 +1167,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.violationDetails(),
 					combinedSources,
 					existing.analysisState(),
-					existing.analysisDate()
+					existing.analysisDate(),
+					selectEarlierDate(existing.attributedAt(), violation.attributedAt())
 				);
 				violationMap.put(key, merged);
 			} else {
@@ -1000,7 +1205,7 @@ public class ReleaseMetricsDto implements Cloneable {
 					combinedSources.addAll(weakness.sources());
 				}
 				
-				// Keep existing weakness but with merged sources
+				// Keep existing weakness but with merged sources and earlier attributedAt
 				WeaknessDto merged = new WeaknessDto(
 					existing.cweId(),
 					existing.ruleId(),
@@ -1009,7 +1214,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.severity(),
 					combinedSources,
 					existing.analysisState(),
-					existing.analysisDate()
+					existing.analysisDate(),
+					selectEarlierDate(existing.attributedAt(), weakness.attributedAt())
 				);
 				weaknessMap.put(key, merged);
 			} else {
