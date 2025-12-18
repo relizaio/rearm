@@ -1,6 +1,6 @@
 <template>
     <div class="addComponentBranchGlobal">
-        <n-form :model="addComponentObject">
+        <n-form ref="formRef" :model="addComponentObject" :rules="formRules">
 
             <n-form-item
                         v-if="!org || props.addExtOrg"
@@ -10,18 +10,17 @@
                         v-on:update:value="onOrgChange"
                         :options="props.addExtOrg ? orgWithExt : orgs" />
             </n-form-item>
-            <n-form-item    path="addComponentObject.uuid"
+            <n-form-item    path="uuid"
                             :label="'Parent ' + words.componentFirstUpper">
                 <n-select
                             v-on:update:value="value => {onComponentChange(value)}"
                             v-model:value="addComponentObject.uuid"
                             filterable
-                            required
                             :options="components" />
             </n-form-item>
-            <n-form-item    path="addComponentObject.branch"
+            <n-form-item    path="branch"
                             v-if="addComponentObject.uuid"
-                            :label="'Parent ' + words.componentFirstUpper + ' ' + words.branchFirstUpper  + ' (Optional, used for Auto-Integrate)'">
+                            :label="'Parent ' + words.componentFirstUpper + ' ' + words.branchFirstUpper  + (props.requireBranch ? ' (Required for Auto-Integrate)' : ' (Optional, used for Auto-Integrate)')">
                 <n-select
                             v-on:update:value="value => {onBranchChange(value)}"
                             v-model:value="addComponentObject.branch"
@@ -58,7 +57,7 @@ export default {
 <script lang="ts" setup>
 import { useStore } from 'vuex'
 import {  ComputedRef, Ref, computed, ref } from 'vue'
-import { NButton, NForm, NFormItem, NSelect } from 'naive-ui'
+import { NButton, NForm, NFormItem, NSelect, FormInst, FormRules } from 'naive-ui'
 import constants from '../utils/constants'
 import commonFunctions from '../utils/commonFunctions'
 
@@ -70,7 +69,8 @@ const props = defineProps<{
     inputProj?: string,
     inputBranch?: string,
     inputStatus?: string,
-    inputRelease?: string
+    inputRelease?: string,
+    requireBranch?: boolean
 }>()
 
 const emit = defineEmits(['addedComponent'])
@@ -256,6 +256,21 @@ const permissionOptions = [
     { label: 'Ignored', value: 'IGNORED'}
 ]
 
+const formRef = ref<FormInst | null>(null)
+
+const formRules: FormRules = {
+    uuid: {
+        required: true,
+        message: 'Please select a component',
+        trigger: ['change']
+    },
+    branch: {
+        required: props.requireBranch,
+        message: 'Please select a branch. Branch is required for auto-integrate functionality.',
+        trigger: ['change']
+    }
+}
+
 const onReset = function () {
     addComponentObject.value = {
         uuid: '',
@@ -266,8 +281,12 @@ const onReset = function () {
 }
 
 const onSubmit = function () {
-    emit('addedComponent', addComponentObject.value)
-    onReset()
+    formRef.value?.validate((errors) => {
+        if (!errors) {
+            emit('addedComponent', addComponentObject.value)
+            onReset()
+        }
+    })
 }
 
 store.dispatch('fetchComponents', constants.ExternalPublicComponentsOrg)
