@@ -29,13 +29,16 @@ import { processMetricsData } from '@/utils/metrics'
 import * as vegaEmbed from 'vega-embed'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     type: 'ORGANIZATION' | 'BRANCH'
     orgUuid?: string
     branchUuid?: string
     dateFrom?: Date
     dateTo?: Date
-}>()
+    daysBack?: number
+}>(), {
+    daysBack: 60
+})
 
 const store = useStore()
 const myorg = computed(() => store.getters.myorg)
@@ -339,7 +342,7 @@ async function fetchVulnerabilityViolationAnalytics() {
         let resp
         if (props.type === 'ORGANIZATION') {
             if (!orgUuid.value) return
-            const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - 30))
+            const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - props.daysBack))
             const dateToValue = props.dateTo || new Date()
             
             resp = await graphqlClient.query({
@@ -367,7 +370,7 @@ async function fetchVulnerabilityViolationAnalytics() {
             }
         } else if (props.type === 'BRANCH') {
             if (!props.branchUuid) return
-            const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - 30))
+            const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - props.daysBack))
             const dateToValue = props.dateTo || new Date()
             
             resp = await graphqlClient.query({

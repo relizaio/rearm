@@ -6,6 +6,7 @@
                     type="BRANCH"
                     :branch-uuid="selectedBranchUuid"
                     :org-uuid="myorg?.uuid"
+                    :days-back="120"
                 />
             </n-gi>
             <div class="componentTop">
