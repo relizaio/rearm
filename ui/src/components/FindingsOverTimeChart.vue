@@ -32,9 +32,10 @@ import * as vegaEmbed from 'vega-embed'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const props = withDefaults(defineProps<{
-    type: 'ORGANIZATION' | 'BRANCH'
+    type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT'
     orgUuid?: string
     branchUuid?: string
+    componentUuid?: string
     dateFrom?: Date
     dateTo?: Date
     daysBack?: number
@@ -62,6 +63,87 @@ const findingsPerDaySeverity = computed(() => route.query.severity as string || 
 const findingsPerDayType = computed(() => route.query.type as string || '')
 
 const findingsPerDayModalTitle = computed(() => `Findings for ${directFindingsDate.value || findingsPerDayDate.value}`)
+
+// Common GraphQL fields for findings queries
+const FINDINGS_FIELDS = `
+    vulnerabilityDetails {
+        purl
+        vulnId
+        severity
+        analysisState
+        analysisDate
+        attributedAt
+        aliases {
+            type
+            aliasId
+        }
+        sources {
+            artifact
+            release
+            variant
+            releaseDetails {
+                version
+                componentDetails {
+                    name
+                }
+            }
+            artifactDetails {
+                type
+            }
+        }
+        severities {
+            source
+            severity
+        }
+    }
+    violationDetails {
+        purl
+        type
+        license
+        violationDetails
+        analysisState
+        analysisDate
+        attributedAt
+        sources {
+            artifact
+            release
+            variant
+            releaseDetails {
+                version
+                componentDetails {
+                    name
+                }
+            }
+            artifactDetails {
+                type
+            }
+        }
+    }
+    weaknessDetails {
+        cweId
+        ruleId
+        location
+        fingerprint
+        severity
+        analysisState
+        analysisDate
+        attributedAt
+        sources {
+            artifact
+            release
+            variant
+            releaseDetails {
+                version
+                componentDetails {
+                    name
+                }
+            }
+            artifactDetails {
+                type
+            }
+        }
+    }
+`
 
 const analyticsMetrics: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
@@ -169,83 +251,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                 query: gql`
                     query findingsPerDay($orgUuid: ID!, $date: String!) {
                         findingsPerDay(orgUuid: $orgUuid, date: $date) {
-                            vulnerabilityDetails {
-                                purl
-                                vulnId
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                aliases {
-                                    type
-                                    aliasId
-                                }
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                                severities {
-                                    source
-                                    severity
-                                }
-                            }
-                            violationDetails {
-                                purl
-                                type
-                                license
-                                violationDetails
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                            }
-                            weaknessDetails {
-                                cweId
-                                ruleId
-                                location
-                                fingerprint
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                            }
+                            ${FINDINGS_FIELDS}
                         }
                     }
                 `,
@@ -263,85 +269,9 @@ async function fetchFindingsPerDay(dateOverride?: string) {
             if (!props.branchUuid) return
             response = await graphqlClient.query({
                 query: gql`
-                    query findingsPerDayByBranch($branchUuid: ID!, $date: String!) {
-                        findingsPerDayByBranch(branchUuid: $branchUuid, date: $date) {
-                            vulnerabilityDetails {
-                                purl
-                                vulnId
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                aliases {
-                                    type
-                                    aliasId
-                                }
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                                severities {
-                                    source
-                                    severity
-                                }
-                            }
-                            violationDetails {
-                                purl
-                                type
-                                license
-                                violationDetails
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                            }
-                            weaknessDetails {
-                                cweId
-                                ruleId
-                                location
-                                fingerprint
-                                severity
-                                analysisState
-                                analysisDate
-                                attributedAt
-                                sources {
-                                    artifact
-                                    release
-                                    variant
-                                    releaseDetails {
-                                        version
-                                        componentDetails {
-                                            name
-                                        }
-                                    }
-                                    artifactDetails {
-                                        type
-                                    }
-                                }
-                            }
+                    query findingsPerDayForBranch($branchUuid: ID!, $date: String!) {
+                        findingsPerDayForBranch(branchUuid: $branchUuid, date: $date) {
+                            ${FINDINGS_FIELDS}
                         }
                     }
                 `,
@@ -352,8 +282,28 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                 fetchPolicy: 'no-cache'
             })
             
-            if (response.data.findingsPerDayByBranch) {
-                findingsPerDayData.value = processMetricsData(response.data.findingsPerDayByBranch)
+            if (response.data.findingsPerDayForBranch) {
+                findingsPerDayData.value = processMetricsData(response.data.findingsPerDayForBranch)
+            }
+        } else if (props.type === 'COMPONENT') {
+            if (!props.componentUuid) return
+            response = await graphqlClient.query({
+                query: gql`
+                    query findingsPerDayForComponent($componentUuid: ID!, $date: String!) {
+                        findingsPerDayForComponent(componentUuid: $componentUuid, date: $date) {
+                            ${FINDINGS_FIELDS}
+                        }
+                    }
+                `,
+                variables: {
+                    componentUuid: props.componentUuid,
+                    date: dateToUse
+                },
+                fetchPolicy: 'no-cache'
+            })
+            
+            if (response.data.findingsPerDayForComponent) {
+                findingsPerDayData.value = processMetricsData(response.data.findingsPerDayForComponent)
             }
         }
     } catch (error) {
