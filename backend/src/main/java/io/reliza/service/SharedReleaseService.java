@@ -626,6 +626,13 @@ public class SharedReleaseService {
 				Utils.stringifyZonedDateTimeForSql(toDateTime));
 	}
 	
+	public List<ReleaseData> listReleaseDataOfBranchBetweenDates(UUID branchUuid, ZonedDateTime fromDateTime, ZonedDateTime toDateTime) {
+		return listReleasesOfBranchBetweenDates(branchUuid, fromDateTime, toDateTime)
+				.stream()
+				.map(ReleaseData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+	
 
 	public UUID findPreviousReleasesOfBranchForRelease (UUID branchUuid,  UUID release) {
 		return repository.findPreviousReleasesOfBranchForRelease(branchUuid.toString(), release);

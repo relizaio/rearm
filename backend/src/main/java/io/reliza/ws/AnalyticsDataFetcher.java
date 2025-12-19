@@ -27,8 +27,10 @@ import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
 import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.WhoUpdated;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.service.AnalyticsMetricsService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.BranchService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -38,16 +40,19 @@ import lombok.extern.slf4j.Slf4j;
 public class AnalyticsDataFetcher {
 	
 	@Autowired
-	AnalyticsMetricsService analyticsMetricsService;
+	private AnalyticsMetricsService analyticsMetricsService;
 	
 	@Autowired
-	ReleaseService releaseService;
+	private ReleaseService releaseService;
 	
 	@Autowired
-	UserService userService;
+	private UserService userService;
 	
 	@Autowired
-	AuthorizationService authorizationService;
+	private AuthorizationService authorizationService;
+	
+	@Autowired
+	private BranchService branchService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "mostActiveComponentsOverTime")
@@ -93,6 +98,21 @@ public class AnalyticsDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		return analyticsMetricsService.getVulnViolationByOrgChartData(orgUuid, dateFrom, dateTo);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "vulnerabilitiesViolationsOverTimeByBranch")
+	public List<VulnViolationsChartDto> vulnerabilitiesViolationsOverTimeByBranch (
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = branchService.getBranchData(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found"))
+				.getOrg();
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return analyticsMetricsService.getVulnViolationByBranchChartData(branchUuid, dateFrom, dateTo);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

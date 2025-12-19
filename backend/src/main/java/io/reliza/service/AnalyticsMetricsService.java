@@ -4,9 +4,11 @@
 
 package io.reliza.service;
 
+import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +101,47 @@ public class AnalyticsMetricsService {
 				.stream().map(amd -> amd.convertToChartDto()).flatMap(List::stream).toList());
 		var todaysData = computeActualAnalyticsMetricsDataForOrg(org, ZonedDateTime.now());
 		chartData.addAll(todaysData.convertToChartDto());
+		return chartData;
+	}
+	
+	public List<VulnViolationsChartDto> getVulnViolationByBranchChartData(UUID branchUuid, 
+			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
+		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
+		if (dateTo.isAfter(today)) dateTo = today;
+		
+		// Get all releases of the branch within the date range
+		List<ReleaseData> releasesInRange = sharedReleaseService.listReleaseDataOfBranchBetweenDates(
+				branchUuid, dateFrom, dateTo);
+
+		if (releasesInRange.isEmpty()) {
+			return new LinkedList<>();
+		}
+
+		UUID org = releasesInRange.get(0).getOrg();
+		
+		// Group releases by date (LocalDate) and pick the latest release for each day
+		Map<LocalDate, ReleaseData> latestReleasePerDay = new HashMap<>();
+		for (ReleaseData rd : releasesInRange) {
+			LocalDate releaseDate = rd.getCreatedDate().toLocalDate();
+			ReleaseData existing = latestReleasePerDay.get(releaseDate);
+			if (existing == null || rd.getCreatedDate().isAfter(existing.getCreatedDate())) {
+				latestReleasePerDay.put(releaseDate, rd);
+			}
+		}
+		
+		// Convert each day's latest release to chart data
+		List<VulnViolationsChartDto> chartData = new LinkedList<>();
+		for (Map.Entry<LocalDate, ReleaseData> entry : latestReleasePerDay.entrySet()) {
+			ReleaseData rd = entry.getValue();
+			ReleaseMetricsDto rmd = rd.getMetrics();
+			if (rmd != null) {
+				rmd.enrichSourcesWithRelease(rd.getUuid());
+				ZonedDateTime dateForChart = entry.getKey().atStartOfDay(rd.getCreatedDate().getZone());
+				AnalyticsMetricsData amd = AnalyticsMetricsData.analyticsMetricsDataFactory(org, rmd, dateForChart);
+				chartData.addAll(amd.convertToChartDto());
+			}
+		}
+		
 		return chartData;
 	}
 	
