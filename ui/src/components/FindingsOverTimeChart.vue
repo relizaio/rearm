@@ -8,8 +8,9 @@
             :data="findingsPerDayData"
             :loading="findingsPerDayLoading"
             :org-uuid="orgUuid"
-            :initial-severity-filter="directFindingsSeverity"
-            :initial-type-filter="directFindingsType"
+            :initial-severity-filter="directFindingsDate ? directFindingsSeverity : findingsPerDaySeverity"
+            :initial-type-filter="directFindingsDate ? directFindingsType : findingsPerDayType"
+            @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
         />
     </div>
 </template>
@@ -23,6 +24,7 @@ export default {
 <script lang="ts" setup>
 import { ref, Ref, computed, onMounted, watch, toRaw } from 'vue'
 import { useStore } from 'vuex'
+import { useRoute } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { processMetricsData } from '@/utils/metrics'
@@ -41,6 +43,7 @@ const props = withDefaults(defineProps<{
 })
 
 const store = useStore()
+const route = useRoute()
 const myorg = computed(() => store.getters.myorg)
 
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
@@ -52,7 +55,13 @@ const directFindingsDate: Ref<string> = ref('')
 const directFindingsSeverity: Ref<string> = ref('')
 const directFindingsType: Ref<string> = ref('')
 
-const findingsPerDayModalTitle = computed(() => `Findings for ${directFindingsDate.value}`)
+// Route-based query params for findings per day display
+const showFindingsPerDay = computed(() => route.query.display === 'findingsPerDay' && route.query.date)
+const findingsPerDayDate = computed(() => route.query.date as string || '')
+const findingsPerDaySeverity = computed(() => route.query.severity as string || '')
+const findingsPerDayType = computed(() => route.query.type as string || '')
+
+const findingsPerDayModalTitle = computed(() => `Findings for ${directFindingsDate.value || findingsPerDayDate.value}`)
 
 const analyticsMetrics: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
@@ -122,11 +131,28 @@ const analyticsMetrics: Ref<any> = ref({
     }
 })
 
+function closeFindingsPerDayModal() {
+    showFindingsPerDayModal.value = false
+    // Clear query params silently without triggering watchers (only if there are params)
+    if (window.location.search) {
+        window.history.replaceState(window.history.state, '', window.location.pathname)
+    }
+}
+
 async function openFindingsModal(date: string, severity: string = '', typeParam: string = '') {
     directFindingsDate.value = date
     directFindingsSeverity.value = severity
     directFindingsType.value = typeParam
     showFindingsPerDayModal.value = true
+    
+    // Update URL without triggering watchers so page reload works
+    const params = new URLSearchParams()
+    params.set('display', 'findingsPerDay')
+    params.set('date', date)
+    if (severity) params.set('severity', severity)
+    if (typeParam) params.set('type', typeParam)
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
+    
     await fetchFindingsPerDay(date)
 }
 
@@ -436,10 +462,23 @@ function renderChart() {
 
 onMounted(() => {
     fetchVulnerabilityViolationAnalytics()
+    // Check if we should open findings modal based on route query params
+    if (showFindingsPerDay.value && findingsPerDayDate.value) {
+        showFindingsPerDayModal.value = true
+        fetchFindingsPerDay(findingsPerDayDate.value)
+    }
 })
 
 watch(() => [props.orgUuid, props.branchUuid, props.dateFrom, props.dateTo], () => {
     fetchVulnerabilityViolationAnalytics()
+})
+
+// Watch for route changes to handle findings modal opening via URL
+watch(showFindingsPerDay, (newVal) => {
+    if (newVal && findingsPerDayDate.value) {
+        showFindingsPerDayModal.value = true
+        fetchFindingsPerDay(findingsPerDayDate.value)
+    }
 })
 </script>
 
