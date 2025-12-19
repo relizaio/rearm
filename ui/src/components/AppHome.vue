@@ -59,6 +59,7 @@
                             animated
                             style="margin: 0 -4px"
                             pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
+                            @update:value="(value: string) => { if (value === 'searchreleasesbytags') fetchReleaseKeys(myorg.uuid) }"
                             >
                                 <n-tab-pane name="searchreleasesbytext" tab="Search by Version, Digest, Commit">
                                     <h5>Search For Releases By Digest, Version, Commit, Git Tag</h5>
@@ -803,7 +804,6 @@ const initLoad = async function () {
     activeComponentsInputDate.value = new Date()
     activeComponentsInputDate.value.setDate(activeComponentsInputDate.value.getDate() - 30)
     activeComponentsInput.value.cutOffDate = activeComponentsInputDate.value.getTime()
-    fetchReleaseKeys(myorg.value.uuid)
     fetchActiveComponentsBranchesAnalytics()
     fetchReleaseAnalytics()
     fetchVulnerabilityViolationAnalytics()
