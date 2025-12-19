@@ -384,7 +384,7 @@ export function buildVulnerabilityColumns(
     {
       title: 'Sources',
       key: 'sources',
-      width: 280,
+      minWidth: 280,
       ellipsis: { tooltip: true },
       render: (row: any) => {
         if (!row.sources || row.sources.length === 0) return '-'
