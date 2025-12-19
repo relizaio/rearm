@@ -26,6 +26,7 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.model.AnalyticsMetrics;
 import io.reliza.model.AnalyticsMetricsData;
+import io.reliza.model.BranchData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ComponentData.ComponentType;
@@ -92,6 +93,67 @@ public class AnalyticsMetricsService {
 		return Optional.empty();
 	}
 	
+	public Optional<ReleaseMetricsDto> getFindingsPerDayForComponent(UUID componentUuid, String dateKey) {
+		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
+		ZonedDateTime upToDate = requestedDate.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC);
+		
+		// Get all active branches of the component
+		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE);
+		if (branches.isEmpty()) {
+			return Optional.empty();
+		}
+		
+		UUID org = branches.get(0).getOrg();
+		
+		// Get latest release of each branch up to the specified date
+		List<ReleaseData> latestReleasesOfBranches = branches.stream()
+				.map(b -> sharedReleaseService.getReleaseDataOfBranch(org, b.getUuid(), ReleaseLifecycle.ASSEMBLED, upToDate))
+				.filter(Optional::isPresent)
+				.map(Optional::get)
+				.collect(Collectors.toList());
+		
+		if (latestReleasesOfBranches.isEmpty()) {
+			return Optional.empty();
+		}
+		
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		latestReleasesOfBranches.forEach(rd -> {
+			ReleaseMetricsDto rmd2 = rd.getMetrics();
+			if (rmd2 != null) {
+				rmd2.enrichSourcesWithRelease(rd.getUuid());
+				rmd.mergeWithByContent(rmd2);
+			}
+		});
+		return Optional.of(rmd);
+	}
+	
+	public Optional<ReleaseMetricsDto> getFindingsPerDayForBranch(UUID branchUuid, String dateKey) {
+		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
+		ZonedDateTime upToDate = requestedDate.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC);
+		
+		// Get branch to find org
+		var branchOpt = branchService.getBranchData(branchUuid);
+		if (branchOpt.isEmpty()) {
+			return Optional.empty();
+		}
+		
+		UUID org = branchOpt.get().getOrg();
+		
+		// Get latest release of the branch up to the specified date
+		Optional<ReleaseData> releaseOpt = sharedReleaseService.getReleaseDataOfBranch(org, branchUuid, ReleaseLifecycle.ASSEMBLED, upToDate);
+		
+		if (releaseOpt.isEmpty()) {
+			return Optional.empty();
+		}
+		
+		ReleaseData rd = releaseOpt.get();
+		ReleaseMetricsDto rmd = rd.getMetrics();
+		if (rmd != null) {
+			rmd.enrichSourcesWithRelease(rd.getUuid());
+		}
+		return Optional.ofNullable(rmd);
+	}
+	
 	public List<VulnViolationsChartDto> getVulnViolationByOrgChartData(UUID org, ZonedDateTime dateFrom,
 			ZonedDateTime dateTo) {
 		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
@@ -109,9 +171,9 @@ public class AnalyticsMetricsService {
 		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
 		if (dateTo.isAfter(today)) dateTo = today;
 		
-		// Get all releases of the branch within the date range
+		// Get all releases of the branch within the date range (ASSEMBLED or higher)
 		List<ReleaseData> releasesInRange = sharedReleaseService.listReleaseDataOfBranchBetweenDates(
-				branchUuid, dateFrom, dateTo);
+				branchUuid, dateFrom, dateTo, ReleaseLifecycle.ASSEMBLED);
 
 		if (releasesInRange.isEmpty()) {
 			return new LinkedList<>();

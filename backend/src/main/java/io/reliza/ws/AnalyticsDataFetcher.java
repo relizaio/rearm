@@ -31,6 +31,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.service.AnalyticsMetricsService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.service.GetComponentService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +54,9 @@ public class AnalyticsDataFetcher {
 	
 	@Autowired
 	private BranchService branchService;
+	
+	@Autowired
+	private GetComponentService getComponentService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "mostActiveComponentsOverTime")
@@ -124,6 +128,34 @@ public class AnalyticsDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		return analyticsMetricsService.getFindingsPerDay(orgUuid, date).orElse(null);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "findingsPerDayForComponent")
+	public ReleaseMetricsDto findingsPerDayForComponent(
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("date") String date) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = getComponentService.getComponentData(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found"))
+				.getOrg();
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return analyticsMetricsService.getFindingsPerDayForComponent(componentUuid, date).orElse(null);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "findingsPerDayForBranch")
+	public ReleaseMetricsDto findingsPerDayForBranch(
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("date") String date) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = branchService.getBranchData(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found"))
+				.getOrg();
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return analyticsMetricsService.getFindingsPerDayForBranch(branchUuid, date).orElse(null);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

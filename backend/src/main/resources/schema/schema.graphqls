@@ -49,6 +49,8 @@ type Query {
 	vulnerabilitiesViolationsOverTime(orgUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	vulnerabilitiesViolationsOverTimeByBranch(branchUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	findingsPerDay(orgUuid: ID!, date: String!): DependencyTrackMetrics
+	findingsPerDayForComponent(componentUuid: ID!, date: String!): DependencyTrackMetrics
+	findingsPerDayForBranch(branchUuid: ID!, date: String!): DependencyTrackMetrics
 	
 	# Programmatic
 	getReleaseByHashProgrammatic(hash: String!, componentId: ID): Release

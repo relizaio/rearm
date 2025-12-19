@@ -626,10 +626,13 @@ public class SharedReleaseService {
 				Utils.stringifyZonedDateTimeForSql(toDateTime));
 	}
 	
-	public List<ReleaseData> listReleaseDataOfBranchBetweenDates(UUID branchUuid, ZonedDateTime fromDateTime, ZonedDateTime toDateTime) {
+	public List<ReleaseData> listReleaseDataOfBranchBetweenDates(UUID branchUuid, ZonedDateTime fromDateTime, 
+			ZonedDateTime toDateTime, ReleaseLifecycle minLifecycle) {
 		return listReleasesOfBranchBetweenDates(branchUuid, fromDateTime, toDateTime)
 				.stream()
 				.map(ReleaseData::dataFromRecord)
+				.filter(rd -> rd.getLifecycle() != null && 
+						rd.getLifecycle().ordinal() >= minLifecycle.ordinal())
 				.collect(Collectors.toList());
 	}
 	
