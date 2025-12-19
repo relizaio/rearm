@@ -1,8 +1,22 @@
 <template>
     <div class="componentOuterWrapper">
         <n-grid x-gap="8" cols="10">
-            <n-gi span="10" v-if="selectedBranchUuid">
+            <n-gi span="10">
+                <div style="margin-bottom: 10px;">
+                    <n-radio-group v-model:value="chartViewType" v-if="selectedBranchUuid">
+                        <n-radio value="COMPONENT">Component</n-radio>
+                        <n-radio value="BRANCH">Branch</n-radio>
+                    </n-radio-group>
+                </div>
                 <findings-over-time-chart
+                    v-if="chartViewType === 'COMPONENT'"
+                    type="COMPONENT"
+                    :component-uuid="componentData?.uuid"
+                    :org-uuid="myorg?.uuid"
+                    :days-back="120"
+                />
+                <findings-over-time-chart
+                    v-if="chartViewType === 'BRANCH' && selectedBranchUuid"
                     type="BRANCH"
                     :branch-uuid="selectedBranchUuid"
                     :org-uuid="myorg?.uuid"
@@ -675,6 +689,7 @@ const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
+const chartViewType: Ref<'COMPONENT' | 'BRANCH'> = ref('COMPONENT')
 const branchCollapseState: Ref<any> = ref({})
 const selectedPullRequest: Ref<string> = routePrnumber !== '' ? ref(branchRouteId + '-pr-' + routePrnumber) : ref('')
 branchCollapseState.value['branchCollapse' + branchRouteId] = true
@@ -1870,9 +1885,6 @@ async function initLoad() {
         componentFirstUpper: resolvedWords.componentFirstUpper,
         component: resolvedWords.component,
         componentsFirstUpper: resolvedWords.componentsFirstUpper
-    }
-    if (selectedBranchUuid.value === ''){
-        if (mainBranch.value) selectBranch(mainBranch.value)
     }
 }
 

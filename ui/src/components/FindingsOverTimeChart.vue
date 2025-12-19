@@ -372,6 +372,34 @@ async function fetchVulnerabilityViolationAnalytics() {
                     createdDate: item.createdDate.split('[')[0]
                 }))
             }
+        } else if (props.type === 'COMPONENT') {
+            if (!props.componentUuid) return
+            const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - props.daysBack))
+            const dateToValue = props.dateTo || new Date()
+            
+            resp = await graphqlClient.query({
+                query: gql`
+                    query vulnerabilitiesViolationsOverTimeByComponent($componentUuid: ID!, $dateFrom: DateTime!, $dateTo: DateTime!) {
+                        vulnerabilitiesViolationsOverTimeByComponent(componentUuid: $componentUuid, dateFrom: $dateFrom, dateTo: $dateTo) {
+                            createdDate
+                            num
+                            type
+                        }
+                    }
+                `,
+                variables: {
+                    componentUuid: props.componentUuid,
+                    dateFrom: dateFromValue,
+                    dateTo: dateToValue
+                }
+            })
+            
+            if (resp.data.vulnerabilitiesViolationsOverTimeByComponent) {
+                analyticsMetrics.value.data.values = resp.data.vulnerabilitiesViolationsOverTimeByComponent.map((item: any) => ({
+                    ...item,
+                    createdDate: item.createdDate.split('[')[0]
+                }))
+            }
         }
         
         renderChart()
@@ -419,7 +447,7 @@ onMounted(() => {
     }
 })
 
-watch(() => [props.orgUuid, props.branchUuid, props.dateFrom, props.dateTo], () => {
+watch(() => [props.orgUuid, props.branchUuid, props.componentUuid, props.dateFrom, props.dateTo], () => {
     fetchVulnerabilityViolationAnalytics()
 })
 
