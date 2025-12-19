@@ -1,8 +1,5 @@
 <template>
     <div class="branchView" v-if="modifiedBranch && branchData && modifiedBranch.name && branchData.name && branchData.componentDetails">
-        <div class="charts">
-            <div id="branchFindingsOverTimeVis"></div>
-        </div>
         <h5>{{ words.branchFirstUpper }}: {{ branchData.name }}</h5>
         <div class="branchControls">
             <div class="mainControls">
@@ -263,16 +260,6 @@
             :initial-type-filter="currentTypeFilter"
             @refresh-data="handleRefreshVulnerabilityData"
         />
-        <vulnerability-modal
-            v-model:show="showFindingsPerDayModal"
-            :component-name="findingsPerDayModalTitle"
-            version=""
-            :data="findingsPerDayData"
-            :loading="findingsPerDayLoading"
-            :org-uuid="myorg?.uuid || ''"
-            :initial-severity-filter="directFindingsSeverity"
-            :initial-type-filter="directFindingsType"
-        />
     </div>
 </template>
 
@@ -282,7 +269,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ComputedRef, computed, Ref, ref, h, toRaw } from 'vue'
+import { ComputedRef, computed, Ref, ref, h } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns} from 'naive-ui'
@@ -291,19 +278,16 @@ import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
 import SideBySide from './SideBySide.vue'
 import LinkVcs from './LinkVcs.vue'
-import VulnerabilityModal from './VulnerabilityModal.vue'
 import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
-import Swal from 'sweetalert2'
-import { SwalData } from '@/utils/commonFunctions'
-import graphqlQueries  from '@/utils/graphqlQueries'
-import { Copy, LayoutColumns, Filter, Trash } from '@vicons/tabler'
+import GqlQueries from '../utils/graphqlQueries'
 import { Edit24Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
-import { processMetricsData } from '@/utils/metrics'
-import * as vegaEmbed from 'vega-embed'
+import Swal from 'sweetalert2'
+import { SwalData } from '@/utils/commonFunctions'
+import { LayoutColumns, Filter, Copy, Trash } from '@vicons/tabler'
 
 async function loadApprovalMatrix (org: string, resourceGroup: string) {
     let amxResponse = await graphqlClient.query({
@@ -393,13 +377,6 @@ const showAddOssArtifactModal: Ref<boolean> = ref(false)
 const showCreateReleaseModal: Ref<boolean> = ref(false)
 const selectNewVcsRepo = ref(false)
 
-const findingsPerDayData: Ref<any[]> = ref([])
-const findingsPerDayLoading: Ref<boolean> = ref(false)
-const showFindingsPerDayModal: Ref<boolean> = ref(false)
-const findingsPerDayModalTitle = computed(() => `Findings for ${directFindingsDate.value}`)
-const directFindingsDate: Ref<string> = ref('')
-const directFindingsSeverity: Ref<string> = ref('')
-const directFindingsType: Ref<string> = ref('')
 
 const compareMode = ref(false)
 const comparisonCheckboxes: Ref<any> = ref({})
@@ -838,7 +815,6 @@ async function onCreated () {
 
     words.value = commonFunctions.resolveWords(branchData.value.componentDetails.type === 'COMPONENT', myorg.value?.terminology)
     await getNextVersion(branchUuid.value)
-    fetchVulnerabilityViolationAnalytics()
 }
 
 
@@ -1162,247 +1138,6 @@ const depTableFields = [
         }
     }
 ]
-
-const branchFindingsOverTime: Ref<any> = ref({
-    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
-    background: 'white',
-    title: 'Findings Over Time',
-    height: 220,
-    width: 'container',
-    data: {
-        values: []
-    },
-    mark: {
-        type: 'line',
-        point: {
-            "filled": false,
-            "fill": "white",
-            "cursor": "pointer"
-        },
-        tooltip: true,
-        cursor: 'pointer'
-    },
-    transform: [
-        {
-            calculate: "utcFormat(datum.createdDate, '%Y-%m-%d')",
-            as: "dateStr"
-        },
-        {
-            calculate: "datum.type && indexof(datum.type, 'Vulnerabilities') >= 0 ? upper(split(datum.type, ' ')[0]) : ''",
-            as: "severityParam"
-        },
-        {
-            calculate: "datum.type && indexof(datum.type, 'Vulnerabilities') >= 0 ? 'Vulnerability' : (datum.type && indexof(datum.type, 'Violations') >= 0 ? 'Violation' : '')",
-            as: "typeParam"
-        },
-        {
-            calculate: "'?display=findingsPerDay&date=' + datum.dateStr + (datum.severityParam ? '&severity=' + datum.severityParam : '') + (datum.typeParam ? '&type=' + datum.typeParam : '')",
-            as: "url"
-        }
-    ],
-    encoding: {
-        y: {
-            field: 'num',
-            type: 'quantitative',
-            aggregate: 'max',
-            axis: {
-                title: null
-            },
-            title: 'Occurrences'
-        },
-        x: {
-            field: 'createdDate',
-            type: 'temporal',
-            timeUnit: 'utcyearmonthdate',
-            axis: {
-                title: null
-            },
-            title: 'Date'
-        },
-        color: {
-            field: 'type',
-            legend: null
-        },
-        tooltip: [
-            {field: "createdDate", type: "temporal", title: "Date"},
-            {field: "num", type: "quantitative", title: "Occurrences"},
-            {field: "type", type: "nominal", title: "Type"}
-        ]
-    }
-})
-
-async function openFindingsModal(date: string, severity: string = '', typeParam: string = '') {
-    directFindingsDate.value = date
-    directFindingsSeverity.value = severity
-    directFindingsType.value = typeParam
-    showFindingsPerDayModal.value = true
-    await fetchFindingsPerDay(date)
-}
-
-async function fetchFindingsPerDay(dateOverride?: string) {
-    const dateToUse = dateOverride
-    if (!dateToUse || !branchUuid.value) return
-    
-    findingsPerDayLoading.value = true
-    try {
-        const response = await graphqlClient.query({
-            query: gql`
-                query findingsPerDayByBranch($branchUuid: ID!, $date: String!) {
-                    findingsPerDayByBranch(branchUuid: $branchUuid, date: $date) {
-                        vulnerabilityDetails {
-                            purl
-                            vulnId
-                            severity
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            aliases {
-                                type
-                                aliasId
-                            }
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                            severities {
-                                source
-                                severity
-                            }
-                        }
-                        violationDetails {
-                            purl
-                            type
-                            license
-                            violationDetails
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                        }
-                        weaknessDetails {
-                            cweId
-                            ruleId
-                            location
-                            fingerprint
-                            severity
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                        }
-                    }
-                }
-            `,
-            variables: {
-                branchUuid: branchUuid.value,
-                date: dateToUse
-            },
-            fetchPolicy: 'no-cache'
-        })
-        
-        if (response.data.findingsPerDayByBranch) {
-            findingsPerDayData.value = processMetricsData(response.data.findingsPerDayByBranch)
-        }
-    } catch (error) {
-        console.error('Error fetching findings per day:', error)
-    } finally {
-        findingsPerDayLoading.value = false
-    }
-}
-
-async function fetchVulnerabilityViolationAnalytics() {
-    const dateFrom = new Date()
-    dateFrom.setDate(dateFrom.getDate() - 180)
-    const dateTo = new Date()
-    const resp = await graphqlClient.query({
-        query: gql`
-            query vulnerabilitiesViolationsOverTimeByBranch($branchUuid: ID!, $dateFrom: DateTime!, $dateTo: DateTime!) {
-                vulnerabilitiesViolationsOverTimeByBranch(branchUuid: $branchUuid, dateFrom: $dateFrom, dateTo: $dateTo) {
-                    createdDate
-                    num
-                    type
-                }
-            }
-            `,
-        variables: { 
-            branchUuid: branchUuid.value,
-            dateFrom,
-            dateTo
-        },
-        fetchPolicy: 'no-cache'
-    })
-    resp.data.vulnerabilitiesViolationsOverTimeByBranch.map((item: any) => {
-        item.createdDate = item.createdDate.split('[')[0]
-    })
-    branchFindingsOverTime.value.data.values = resp.data.vulnerabilitiesViolationsOverTimeByBranch
-    vegaEmbed.default('#branchFindingsOverTimeVis', toRaw(branchFindingsOverTime.value),
-        {
-            actions: {
-                editor: false
-            },
-            theme: 'powerbi'
-        }
-    ).then((result: any) => {
-        result.view.addEventListener('click', (event: any, item: any) => {
-            if (item && item.datum) {
-                const datum = item.datum
-                // Parse the type field to extract severity and type params
-                let severity = ''
-                let typeParam = ''
-                if (datum.type && datum.type.indexOf('Vulnerabilities') >= 0) {
-                    severity = datum.type.split(' ')[0].toUpperCase()
-                    typeParam = 'Vulnerability'
-                } else if (datum.type && datum.type.indexOf('Violations') >= 0) {
-                    typeParam = 'Violation'
-                }
-                // Format date from createdDate
-                const dateObj = new Date(datum.createdDate)
-                const date = dateObj.toISOString().split('T')[0]
-                if (date) {
-                    openFindingsModal(date, severity, typeParam)
-                }
-            }
-        })
-    }).catch((error: any) => {
-        console.error('Error rendering Vega chart:', error)
-    })
-}
 
 const releaseRowkey = (row: any) => row.uuid
 

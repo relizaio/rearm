@@ -1,17 +1,5 @@
 <template>
     <div class="home">
-        <!-- Findings Per Day Modal -->
-        <vulnerability-modal
-            v-model:show="showFindingsPerDayModal"
-            :component-name="findingsPerDayModalTitle"
-            version=""
-            :data="findingsPerDayData"
-            :loading="findingsPerDayLoading"
-            :org-uuid="myorg?.uuid || ''"
-            :initial-severity-filter="directFindingsDate ? directFindingsSeverity : findingsPerDaySeverity"
-            :initial-type-filter="directFindingsDate ? directFindingsType : findingsPerDayType"
-            @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
-        />
         <div class="dashboardBlock">
             <n-grid x-gap="24" cols="2">
                 <n-gi>
@@ -44,9 +32,10 @@
                 </n-gi>
                 <n-gi span="2"><n-divider /></n-gi>
                 <n-gi>
-                    <div class="charts">
-                        <div id="analyticsMetricsVisHome"></div>
-                    </div>
+                    <findings-over-time-chart
+                        type="ORGANIZATION"
+                        :org-uuid="myorg?.uuid"
+                    />
                 </n-gi>
                 <n-gi>
                     <div class="searchBlock">
@@ -477,8 +466,7 @@ import * as vegaEmbed from 'vega-embed'
 import Swal from 'sweetalert2'
 import commonFunctions from '@/utils/commonFunctions'
 import constants from '@/utils/constants'
-import { processMetricsData } from '@/utils/metrics'
-import VulnerabilityModal from './VulnerabilityModal.vue'
+import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 
 const store = useStore()
 const router = useRouter()
@@ -510,274 +498,13 @@ const showSearchProgress = ref(false)
 const searchFailed = ref(false)
 const selectedPurl = ref('')
 
-// Findings per day display
-const showFindingsPerDay = computed(() => route.query.display === 'findingsPerDay' && route.query.date)
-const findingsPerDayDate = computed(() => route.query.date as string || '')
-const findingsPerDaySeverity = computed(() => route.query.severity as string || '')
-const findingsPerDayType = computed(() => route.query.type as string || '')
-const findingsPerDayData: Ref<any[]> = ref([])
-const findingsPerDayLoading: Ref<boolean> = ref(false)
-const showFindingsPerDayModal: Ref<boolean> = ref(false)
-const findingsPerDayModalTitle = computed(() => `Findings for ${directFindingsDate.value || findingsPerDayDate.value}`)
-
-function closeFindingsPerDayModal() {
-    showFindingsPerDayModal.value = false
-    // Clear query params silently without triggering watchers (only if there are params)
-    if (window.location.search) {
-        window.history.replaceState(window.history.state, '', window.location.pathname)
-    }
-}
-
-// Store for direct modal opening (bypasses route)
-const directFindingsDate: Ref<string> = ref('')
-const directFindingsSeverity: Ref<string> = ref('')
-const directFindingsType: Ref<string> = ref('')
-
-async function openFindingsModal(date: string, severity: string = '', typeParam: string = '') {
-    directFindingsDate.value = date
-    directFindingsSeverity.value = severity
-    directFindingsType.value = typeParam
-    showFindingsPerDayModal.value = true
-    // Update URL without triggering watchers so page reload works
-    const params = new URLSearchParams()
-    params.set('display', 'findingsPerDay')
-    params.set('date', date)
-    if (severity) params.set('severity', severity)
-    if (typeParam) params.set('type', typeParam)
-    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
-    await fetchFindingsPerDay(date)
-}
-
-async function fetchFindingsPerDay(dateOverride?: string) {
-    const dateToUse = dateOverride || findingsPerDayDate.value
-    if (!dateToUse || !myorg.value?.uuid) return
-    
-    findingsPerDayLoading.value = true
-    try {
-        const response = await graphqlClient.query({
-            query: gql`
-                query findingsPerDay($orgUuid: ID!, $date: String!) {
-                    findingsPerDay(orgUuid: $orgUuid, date: $date) {
-                        vulnerabilityDetails {
-                            purl
-                            vulnId
-                            severity
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            aliases {
-                                type
-                                aliasId
-                            }
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                            severities {
-                                source
-                                severity
-                            }
-                        }
-                        violationDetails {
-                            purl
-                            type
-                            license
-                            violationDetails
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                        }
-                        weaknessDetails {
-                            cweId
-                            ruleId
-                            location
-                            fingerprint
-                            severity
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                        }
-                    }
-                }
-            `,
-            variables: {
-                orgUuid: myorg.value.uuid,
-                date: dateToUse
-            },
-            fetchPolicy: 'no-cache'
-        })
-        
-        if (response.data.findingsPerDay) {
-            findingsPerDayData.value = processMetricsData(response.data.findingsPerDay)
-        }
-    } catch (error) {
-        console.error('Error fetching findings per day:', error)
-    } finally {
-        findingsPerDayLoading.value = false
-    }
-}
-
-async function recalculateFindingsForDate() {
-    if (!myorg.value?.uuid || !findingsPerDayDate.value) return
-    
-    findingsPerDayLoading.value = true
-    try {
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation computeAnalyticsMetricsForDate($orgUuid: ID!, $date: String!) {
-                    computeAnalyticsMetricsForDate(orgUuid: $orgUuid, date: $date) {
-                        vulnerabilityDetails {
-                            purl
-                            vulnId
-                            severity
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            aliases {
-                                type
-                                aliasId
-                            }
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                            severities {
-                                source
-                                severity
-                            }
-                        }
-                        violationDetails {
-                            purl
-                            type
-                            license
-                            violationDetails
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                        }
-                        weaknessDetails {
-                            cweId
-                            ruleId
-                            location
-                            fingerprint
-                            severity
-                            analysisState
-                            analysisDate
-                            attributedAt
-                            sources {
-                                artifact
-                                release
-                                variant
-                                releaseDetails {
-                                    version
-                                    componentDetails {
-                                        name
-                                    }
-                                }
-                                artifactDetails {
-                                    type
-                                }
-                            }
-                        }
-                    }
-                }
-            `,
-            variables: {
-                orgUuid: myorg.value.uuid,
-                date: findingsPerDayDate.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        
-        if (response.data.computeAnalyticsMetricsForDate) {
-            findingsPerDayData.value = processMetricsData(response.data.computeAnalyticsMetricsForDate)
-        }
-        notify('success', 'Recalculation Complete', `Finding recalculation for ${findingsPerDayDate.value} is completed.`)
-    } catch (error) {
-        console.error('Error recalculating findings:', error)
-        notify('error', 'Error', 'Failed to recalculate findings for the day.')
-    } finally {
-        findingsPerDayLoading.value = false
-    }
-}
-
 onMounted(() => {
     if (myorg.value) 
         initLoad()
-    if (showFindingsPerDay.value) {
-        showFindingsPerDayModal.value = true
-        fetchFindingsPerDay()
-    }
 })
 watch(myorg, (currentValue, oldValue) => {
     activeComponentsInput.value.organization = myorg.value.uuid
     initLoad()
-    if (showFindingsPerDay.value) {
-        showFindingsPerDayModal.value = true
-        fetchFindingsPerDay()
-    }
 });
 
 
@@ -806,7 +533,6 @@ const initLoad = async function () {
     activeComponentsInput.value.cutOffDate = activeComponentsInputDate.value.getTime()
     fetchActiveComponentsBranchesAnalytics()
     fetchReleaseAnalytics()
-    fetchVulnerabilityViolationAnalytics()
 }
 
 const hashSearchResults : Ref<any> = ref({})
@@ -1413,74 +1139,6 @@ const releaseVisData: Ref<any> = ref({
     }
 })
 
-const analyticsMetrics: Ref<any> = ref({
-    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
-    background: 'white',
-    title: 'Findings Over Time',
-    height: 220,
-    width: 'container',
-    data: {
-        values: []
-    },
-    mark: {
-        type: 'line',
-        point: {
-            "filled": false,
-            "fill": "white",
-            "cursor": "pointer"
-        },
-        tooltip: true,
-        cursor: 'pointer'
-    },
-    transform: [
-        {
-            calculate: "utcFormat(datum.createdDate, '%Y-%m-%d')",
-            as: "dateStr"
-        },
-        {
-            calculate: "datum.type && indexof(datum.type, 'Vulnerabilities') >= 0 ? upper(split(datum.type, ' ')[0]) : ''",
-            as: "severityParam"
-        },
-        {
-            calculate: "datum.type && indexof(datum.type, 'Vulnerabilities') >= 0 ? 'Vulnerability' : (datum.type && indexof(datum.type, 'Violations') >= 0 ? 'Violation' : '')",
-            as: "typeParam"
-        },
-        {
-            calculate: "'?display=findingsPerDay&date=' + datum.dateStr + (datum.severityParam ? '&severity=' + datum.severityParam : '') + (datum.typeParam ? '&type=' + datum.typeParam : '')",
-            as: "url"
-        }
-    ],
-    encoding: {
-        y: {
-            field: 'num',
-            type: 'quantitative',
-            aggregate: 'max',
-            axis: {
-                title: null
-            },
-            title: 'Occurrences'
-        },
-        x: {
-            field: 'createdDate',
-            type: 'temporal',
-            timeUnit: 'utcyearmonthdate',
-            axis: {
-                title: null
-            },
-            title: 'Date'
-        },
-        color: {
-            field: 'type',
-            legend: null
-        },
-        tooltip: [
-            {field: "createdDate", type: "temporal", title: "Date"},
-            {field: "num", type: "quantitative", title: "Occurrences"},
-            {field: "type", type: "nominal", title: "Type"}
-        ]
-    }
-})
-
 const mostActiveOverTime: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
@@ -1546,62 +1204,6 @@ async function fetchReleaseAnalytics() {
             theme: 'powerbi'
         }
     )
-}
-
-async function fetchVulnerabilityViolationAnalytics() {
-    const dateFrom = new Date()
-    dateFrom.setDate(dateFrom.getDate() - 60)
-    const dateTo = new Date()
-    const resp = await graphqlClient.query({
-        query: gql`
-            query vulnerabilitiesViolationsOverTime($orgUuid: ID!, $dateFrom: DateTime!, $dateTo: DateTime!) {
-                vulnerabilitiesViolationsOverTime(orgUuid: $orgUuid, dateFrom: $dateFrom, dateTo: $dateTo) {
-                    createdDate
-                    num
-                    type
-                }
-            }
-            `,
-        variables: { 
-            orgUuid: myorg.value.uuid,
-            dateFrom,
-            dateTo
-        },
-        fetchPolicy: 'no-cache'
-    })
-    resp.data.vulnerabilitiesViolationsOverTime.map((item: any) => {
-        item.createdDate = item.createdDate.split('[')[0]
-    })
-    analyticsMetrics.value.data.values = resp.data.vulnerabilitiesViolationsOverTime
-    vegaEmbed.default('#analyticsMetricsVisHome', toRaw(analyticsMetrics.value),
-        {
-            actions: {
-                editor: false
-            },
-            theme: 'powerbi'
-        }
-    ).then((result: any) => {
-        result.view.addEventListener('click', (event: any, item: any) => {
-            if (item && item.datum) {
-                const datum = item.datum
-                // Parse the type field to extract severity and type params
-                let severity = ''
-                let typeParam = ''
-                if (datum.type && datum.type.indexOf('Vulnerabilities') >= 0) {
-                    severity = datum.type.split(' ')[0].toUpperCase()
-                    typeParam = 'Vulnerability'
-                } else if (datum.type && datum.type.indexOf('Violations') >= 0) {
-                    typeParam = 'Violation'
-                }
-                // Format date from createdDate
-                const dateObj = new Date(datum.createdDate)
-                const date = dateObj.toISOString().split('T')[0]
-                if (date) {
-                    openFindingsModal(date, severity, typeParam)
-                }
-            }
-        })
-    })
 }
 
 function displayActiveComponentType () {

@@ -1,6 +1,13 @@
 <template>
     <div class="componentOuterWrapper">
         <n-grid x-gap="8" cols="10">
+            <n-gi span="10" v-if="selectedBranchUuid">
+                <findings-over-time-chart
+                    type="BRANCH"
+                    :branch-uuid="selectedBranchUuid"
+                    :org-uuid="myorg?.uuid"
+                />
+            </n-gi>
             <div class="componentTop">
                 <div class="componentSummary">
                     <h5 v-if="componentData">{{ words.componentFirstUpper }}: {{componentData.name}}</h5>
@@ -494,6 +501,7 @@ import ChangelogView from './ChangelogView.vue'
 import ReleaseView from './ReleaseView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
+import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 import axios from '../utils/axios'
