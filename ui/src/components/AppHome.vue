@@ -1377,7 +1377,7 @@ async function fetchActiveComponentsAnalytics() {
 const releaseVisData: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
-    title: 'Number of Releases Created Per Day',
+    title: 'Releases Per Day',
     height: 220,
     width: 'container',
     data: {
