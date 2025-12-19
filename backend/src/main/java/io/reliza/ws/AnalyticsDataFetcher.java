@@ -105,6 +105,21 @@ public class AnalyticsDataFetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "vulnerabilitiesViolationsOverTimeByComponent")
+	public List<VulnViolationsChartDto> vulnerabilitiesViolationsOverTimeByComponent (
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = getComponentService.getComponentData(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found"))
+				.getOrg();
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return analyticsMetricsService.getVulnViolationByComponentChartData(componentUuid, dateFrom, dateTo);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "vulnerabilitiesViolationsOverTimeByBranch")
 	public List<VulnViolationsChartDto> vulnerabilitiesViolationsOverTimeByBranch (
 			@InputArgument("branchUuid") UUID branchUuid,

@@ -47,6 +47,7 @@ type Query {
 	mostActiveComponentsOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerComponent]
 	mostActiveBranchesOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerBranch]
 	vulnerabilitiesViolationsOverTime(orgUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	vulnerabilitiesViolationsOverTimeByComponent(componentUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	vulnerabilitiesViolationsOverTimeByBranch(branchUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	findingsPerDay(orgUuid: ID!, date: String!): DependencyTrackMetrics
 	findingsPerDayForComponent(componentUuid: ID!, date: String!): DependencyTrackMetrics

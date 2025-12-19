@@ -166,6 +166,69 @@ public class AnalyticsMetricsService {
 		return chartData;
 	}
 	
+	public List<VulnViolationsChartDto> getVulnViolationByComponentChartData(UUID componentUuid, 
+			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
+		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
+		if (dateTo.isAfter(today)) dateTo = today;
+		
+		// Get all active branches of the component
+		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE);
+		if (branches.isEmpty()) {
+			return new LinkedList<>();
+		}
+		
+		UUID org = branches.get(0).getOrg();
+		
+		// Collect all releases from all branches within the date range
+		List<ReleaseData> allReleasesInRange = new LinkedList<>();
+		for (BranchData branch : branches) {
+			List<ReleaseData> branchReleases = sharedReleaseService.listReleaseDataOfBranchBetweenDates(
+					branch.getUuid(), dateFrom, dateTo, ReleaseLifecycle.ASSEMBLED);
+			allReleasesInRange.addAll(branchReleases);
+		}
+		
+		if (allReleasesInRange.isEmpty()) {
+			return new LinkedList<>();
+		}
+		
+		// Group releases by date and branch, pick the latest release per branch per day
+		// Then merge all branch metrics for each day
+		Map<LocalDate, Map<UUID, ReleaseData>> latestReleasePerBranchPerDay = new HashMap<>();
+		for (ReleaseData rd : allReleasesInRange) {
+			LocalDate releaseDate = rd.getCreatedDate().toLocalDate();
+			UUID branchUuid = rd.getBranch();
+			latestReleasePerBranchPerDay.computeIfAbsent(releaseDate, k -> new HashMap<>());
+			Map<UUID, ReleaseData> branchMap = latestReleasePerBranchPerDay.get(releaseDate);
+			ReleaseData existing = branchMap.get(branchUuid);
+			if (existing == null || rd.getCreatedDate().isAfter(existing.getCreatedDate())) {
+				branchMap.put(branchUuid, rd);
+			}
+		}
+		
+		// Convert each day's merged metrics to chart data
+		List<VulnViolationsChartDto> chartData = new LinkedList<>();
+		for (Map.Entry<LocalDate, Map<UUID, ReleaseData>> dayEntry : latestReleasePerBranchPerDay.entrySet()) {
+			ReleaseMetricsDto mergedRmd = new ReleaseMetricsDto();
+			ZonedDateTime dateForChart = null;
+			for (ReleaseData rd : dayEntry.getValue().values()) {
+				ReleaseMetricsDto rmd = rd.getMetrics();
+				if (rmd != null) {
+					rmd.enrichSourcesWithRelease(rd.getUuid());
+					mergedRmd.mergeWithByContent(rmd);
+				}
+				if (dateForChart == null) {
+					dateForChart = dayEntry.getKey().atStartOfDay(rd.getCreatedDate().getZone());
+				}
+			}
+			if (dateForChart != null) {
+				AnalyticsMetricsData amd = AnalyticsMetricsData.analyticsMetricsDataFactory(org, mergedRmd, dateForChart);
+				chartData.addAll(amd.convertToChartDto());
+			}
+		}
+		
+		return chartData;
+	}
+	
 	public List<VulnViolationsChartDto> getVulnViolationByBranchChartData(UUID branchUuid, 
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
 		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
