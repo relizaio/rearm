@@ -3,9 +3,9 @@
         <div class="dashboardBlock">
             <n-grid x-gap="24" cols="2">
                 <n-gi>
-                    <div class="charts">
-                        <div id="releaseCreationVisHome"></div>
-                    </div>
+                    <releases-per-day-chart
+                        :org-uuid="myorg?.uuid"
+                    />
                 </n-gi>
                 <n-gi>
                     <div>
@@ -467,6 +467,7 @@ import Swal from 'sweetalert2'
 import commonFunctions from '@/utils/commonFunctions'
 import constants from '@/utils/constants'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
+import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 
 const store = useStore()
 const router = useRouter()
@@ -532,7 +533,6 @@ const initLoad = async function () {
     activeComponentsInputDate.value.setDate(activeComponentsInputDate.value.getDate() - 30)
     activeComponentsInput.value.cutOffDate = activeComponentsInputDate.value.getTime()
     fetchActiveComponentsBranchesAnalytics()
-    fetchReleaseAnalytics()
 }
 
 const hashSearchResults : Ref<any> = ref({})
@@ -1100,44 +1100,6 @@ async function fetchActiveComponentsAnalytics() {
     }
 }
 
-const releaseVisData: Ref<any> = ref({
-    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
-    background: 'white',
-    title: 'Releases Per Day',
-    height: 220,
-    width: 'container',
-    data: {
-        values: []
-    },
-    mark: {
-        type: 'line',
-        point: {
-            "filled": false,
-            "fill": "white"
-        },
-        tooltip: true
-    },
-    encoding: {
-        y: {
-            field: 'num',
-            type: 'quantitative',
-            aggregate: 'sum',
-            axis: {
-                title: null
-            },
-            title: 'Releases'
-        },
-        x: {
-            field: 'date',
-            type: 'temporal',
-            timeUnit: 'utcyearmonthdate',
-            axis: {
-                title: null
-            },
-            title: 'Date'
-        }
-    }
-})
 
 const mostActiveOverTime: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
@@ -1173,38 +1135,6 @@ const mostActiveOverTime: Ref<any> = ref({
     }
 })
 
-async function fetchReleaseAnalytics() {
-    const cutOffDate = new Date()
-    cutOffDate.setDate(cutOffDate.getDate() - 60)
-    const resp = await graphqlClient.query({
-        query: gql`
-            query releaseAnalytics($orgUuid: ID!, $cutOffDate: DateTime!) {
-                releaseAnalytics(orgUuid: $orgUuid, cutOffDate: $cutOffDate) {
-                    date
-                    num
-                }
-            }
-            `,
-        variables: { 
-            orgUuid: myorg.value.uuid,
-            cutOffDate
-        },
-        fetchPolicy: 'no-cache'
-    })
-    resp.data.releaseAnalytics.map((item: any) => {
-        item.date = item.date.split('[')[0]
-    })
-    releaseVisData.value.data.values = resp.data.releaseAnalytics
-    vegaEmbed.default('#releaseCreationVisHome', 
-        toRaw(releaseVisData.value),
-        {
-            actions: {
-                editor: false
-            },
-            theme: 'powerbi'
-        }
-    )
-}
 
 function displayActiveComponentType () {
     let displayComp
