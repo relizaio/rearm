@@ -131,7 +131,7 @@
                                 :show-icon="false"
                                 style="width: 90%"
                             >
-                                <h3>Component Settings</h3>
+                                <h3>{{ words.componentFirstUpper }} Settings for {{ componentData?.name }}</h3>
                                 <n-tabs
                                     class="card-tabs"
                                     size="large"
@@ -141,22 +141,6 @@
                                     @update:value="handleTabSwitch"
                                 >
                                     <n-tab-pane name="Core Settings">
-                                        <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable">
-                                            <n-space>
-                                                <n-button type="success" @click="save">
-                                                    <template #icon>
-                                                        <vue-feather type="check" />
-                                                    </template>
-                                                    Save Changes
-                                                </n-button>
-                                                <n-button type="warning" @click="resetCoreSettings">
-                                                    <template #icon>
-                                                        <vue-feather type="x" />
-                                                    </template>
-                                                    Reset Changes
-                                                </n-button>
-                                            </n-space>
-                                        </div>
                                         <div class="componentNameBlock" v-if="updatedComponent && componentData">
                                             <label id="componentNameLabel" for="componentName">{{ words.componentFirstUpper }} Name</label>
                                             <n-input v-if="isWritable" v-model:value="updatedComponent.name" />
@@ -2004,25 +1988,22 @@ async function handleTabSwitch(tabName: string) {
     padding-top: 15px;
     padding-bottom: 15px;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     
     label {
-        display: block;
         font-weight: bold;
-        width: 100%;
-        margin-bottom: 4px;
+        min-width: 250px;
+        flex-shrink: 0;
     }
     input {
         flex: 1;
         min-width: 0;
-        max-width: calc(100% - 80px);
     }
     .n-input {
         flex: 1;
         min-width: 200px;
-        max-width: calc(100% - 80px);
         
         :deep(.n-input-wrapper) {
             padding-left: 12px;
@@ -2034,13 +2015,14 @@ async function handleTabSwitch(tabName: string) {
     }
     .n-select {
         flex: 1;
-        min-width: 0;
-        max-width: calc(100% - 80px);
+        min-width: 200px;
     }
     select {
         flex: 1;
-        min-width: 0;
-        max-width: calc(100% - 80px);
+        min-width: 200px;
+    }
+    span {
+        flex: 1;
     }
     .versionIcon {
         flex-shrink: 0;
