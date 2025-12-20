@@ -43,8 +43,9 @@
                     </n-gi>
                 </n-grid>
             </n-gi>
-            <div class="componentTop">
-                <div class="componentSummary">
+            <n-gi span="10">
+                <div class="componentTop">
+                    <div class="componentSummary">
                     <h5 v-if="componentData">{{ words.componentFirstUpper }}: {{componentData.name}}</h5>
                     <div class="componentIconsAndSettings">
                         <n-space v-cloak>
@@ -479,7 +480,8 @@
                             </n-form>
                         </n-modal>
                     </div>
-                    <div class="componentSummaryDetails">
+                </div>
+                <div class="componentSummaryDetails">
                         <div v-if="false" class="mt-3">
                             <h6>
                                 <strong>Deployed to:</strong>
@@ -500,7 +502,7 @@
                 <div v-if="marketingVersionEnabled" class="marketingReleases">
                     <mrkt-releases-of-component :component="updatedComponent.uuid" />
                 </div>
-            </div>
+            </n-gi>
             <n-gi span="3">
                 <div class="componentDetails">
                     <h5>{{ words.componentFirstUpper }} {{ words.branchFirstUpperPlural }}:</h5>
