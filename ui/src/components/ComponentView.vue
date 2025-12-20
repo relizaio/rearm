@@ -8,20 +8,40 @@
                         <n-radio value="BRANCH">Branch</n-radio>
                     </n-radio-group>
                 </div>
-                <findings-over-time-chart
-                    v-if="chartViewType === 'COMPONENT'"
-                    type="COMPONENT"
-                    :component-uuid="componentData?.uuid"
-                    :org-uuid="myorg?.uuid"
-                    :days-back="120"
-                />
-                <findings-over-time-chart
-                    v-if="chartViewType === 'BRANCH' && selectedBranchUuid"
-                    type="BRANCH"
-                    :branch-uuid="selectedBranchUuid"
-                    :org-uuid="myorg?.uuid"
-                    :days-back="120"
-                />
+                <n-grid x-gap="12" cols="2">
+                    <n-gi>
+                        <releases-per-day-chart
+                            v-if="chartViewType === 'COMPONENT'"
+                            type="COMPONENT"
+                            :component-uuid="componentData?.uuid"
+                            :org-uuid="myorg?.uuid"
+                            :days-back="120"
+                        />
+                        <releases-per-day-chart
+                            v-if="chartViewType === 'BRANCH' && selectedBranchUuid"
+                            type="BRANCH"
+                            :branch-uuid="selectedBranchUuid"
+                            :org-uuid="myorg?.uuid"
+                            :days-back="120"
+                        />
+                    </n-gi>
+                    <n-gi>
+                        <findings-over-time-chart
+                            v-if="chartViewType === 'COMPONENT'"
+                            type="COMPONENT"
+                            :component-uuid="componentData?.uuid"
+                            :org-uuid="myorg?.uuid"
+                            :days-back="120"
+                        />
+                        <findings-over-time-chart
+                            v-if="chartViewType === 'BRANCH' && selectedBranchUuid"
+                            type="BRANCH"
+                            :branch-uuid="selectedBranchUuid"
+                            :org-uuid="myorg?.uuid"
+                            :days-back="120"
+                        />
+                    </n-gi>
+                </n-grid>
             </n-gi>
             <div class="componentTop">
                 <div class="componentSummary">
@@ -517,6 +537,7 @@ import ReleaseView from './ReleaseView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
+import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 import axios from '../utils/axios'

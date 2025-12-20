@@ -20,7 +20,10 @@ import graphqlClient from '@/utils/graphql'
 import * as vegaEmbed from 'vega-embed'
 
 const props = withDefaults(defineProps<{
+    type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT'
     orgUuid?: string
+    branchUuid?: string
+    componentUuid?: string
     daysBack?: number
 }>(), {
     daysBack: 60
@@ -71,33 +74,82 @@ const releaseVisData: Ref<any> = ref({
 })
 
 async function fetchReleaseAnalytics() {
-    if (!orgUuid.value) return
-    
     const cutOffDate = new Date()
     cutOffDate.setDate(cutOffDate.getDate() - props.daysBack)
     
     try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                query releaseAnalytics($orgUuid: ID!, $cutOffDate: DateTime!) {
-                    releaseAnalytics(orgUuid: $orgUuid, cutOffDate: $cutOffDate) {
-                        date
-                        num
+        let resp: any
+        if (props.type === 'ORGANIZATION') {
+            if (!orgUuid.value) return
+            resp = await graphqlClient.query({
+                query: gql`
+                    query releaseAnalytics($orgUuid: ID!, $cutOffDate: DateTime!) {
+                        releaseAnalytics(orgUuid: $orgUuid, cutOffDate: $cutOffDate) {
+                            date
+                            num
+                        }
                     }
-                }
-            `,
-            variables: { 
-                orgUuid: orgUuid.value,
-                cutOffDate
-            },
-            fetchPolicy: 'no-cache'
-        })
+                `,
+                variables: { 
+                    orgUuid: orgUuid.value,
+                    cutOffDate
+                },
+                fetchPolicy: 'no-cache'
+            })
+            
+            resp.data.releaseAnalytics.map((item: any) => {
+                item.date = item.date.split('[')[0]
+            })
+            
+            releaseVisData.value.data.values = resp.data.releaseAnalytics
+        } else if (props.type === 'COMPONENT') {
+            if (!props.componentUuid) return
+            resp = await graphqlClient.query({
+                query: gql`
+                    query releaseAnalyticsByComponent($componentUuid: ID!, $cutOffDate: DateTime!) {
+                        releaseAnalyticsByComponent(componentUuid: $componentUuid, cutOffDate: $cutOffDate) {
+                            date
+                            num
+                        }
+                    }
+                `,
+                variables: { 
+                    componentUuid: props.componentUuid,
+                    cutOffDate
+                },
+                fetchPolicy: 'no-cache'
+            })
+            
+            resp.data.releaseAnalyticsByComponent.map((item: any) => {
+                item.date = item.date.split('[')[0]
+            })
+            
+            releaseVisData.value.data.values = resp.data.releaseAnalyticsByComponent
+        } else if (props.type === 'BRANCH') {
+            if (!props.branchUuid) return
+            resp = await graphqlClient.query({
+                query: gql`
+                    query releaseAnalyticsByBranch($branchUuid: ID!, $cutOffDate: DateTime!) {
+                        releaseAnalyticsByBranch(branchUuid: $branchUuid, cutOffDate: $cutOffDate) {
+                            date
+                            num
+                        }
+                    }
+                `,
+                variables: { 
+                    branchUuid: props.branchUuid,
+                    cutOffDate
+                },
+                fetchPolicy: 'no-cache'
+            })
+            
+            resp.data.releaseAnalyticsByBranch.map((item: any) => {
+                item.date = item.date.split('[')[0]
+            })
+            
+            releaseVisData.value.data.values = resp.data.releaseAnalyticsByBranch
+        }
         
-        resp.data.releaseAnalytics.map((item: any) => {
-            item.date = item.date.split('[')[0]
-        })
-        
-        releaseVisData.value.data.values = resp.data.releaseAnalytics
         renderChart()
     } catch (error) {
         console.error('Error fetching release analytics:', error)
@@ -120,7 +172,7 @@ onMounted(() => {
     fetchReleaseAnalytics()
 })
 
-watch(() => [props.orgUuid, props.daysBack], () => {
+watch(() => [props.orgUuid, props.componentUuid, props.branchUuid, props.daysBack], () => {
     fetchReleaseAnalytics()
 })
 </script>

@@ -4,6 +4,7 @@
             <n-grid x-gap="24" cols="2">
                 <n-gi>
                     <releases-per-day-chart
+                        type="ORGANIZATION"
                         :org-uuid="myorg?.uuid"
                     />
                 </n-gi>
