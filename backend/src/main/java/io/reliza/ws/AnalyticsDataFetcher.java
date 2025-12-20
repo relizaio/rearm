@@ -93,6 +93,32 @@ public class AnalyticsDataFetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "releaseAnalyticsByComponent")
+	public List<VegaDateValue> getReleaseAnalyticsByComponent(@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("cutOffDate") ZonedDateTime cutOffDate) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = getComponentService.getComponentData(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found"))
+				.getOrg();
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return releaseService.getReleaseCreateOverTimeAnalyticsByComponent(componentUuid, cutOffDate);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "releaseAnalyticsByBranch")
+	public List<VegaDateValue> getReleaseAnalyticsByBranch(@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("cutOffDate") ZonedDateTime cutOffDate) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = branchService.getBranchData(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found"))
+				.getOrg();
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return releaseService.getReleaseCreateOverTimeAnalyticsByBranch(branchUuid, cutOffDate);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "vulnerabilitiesViolationsOverTime")
 	public List<VulnViolationsChartDto> vulnerabilitiesViolationsOverTime (
 			@InputArgument("orgUuid") UUID orgUuid,

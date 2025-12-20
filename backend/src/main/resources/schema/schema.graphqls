@@ -26,6 +26,8 @@ type Query {
 	users(orgUuid: ID!): [OrgUserData]
 	resourceGroups(orgUuid: ID!): [ResourceGroup]
 	releaseAnalytics(orgUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
+	releaseAnalyticsByComponent(componentUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
+	releaseAnalyticsByBranch(branchUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
 	totalsAnalytics(orgUuid: ID!): Object
 	apiKeys(orgUuid: ID!): [ApiKey]
 	marketingRelease(marketingReleaseUuid: ID!): MarketingRelease

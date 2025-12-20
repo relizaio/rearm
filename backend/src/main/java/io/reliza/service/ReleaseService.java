@@ -229,6 +229,14 @@ public class ReleaseService {
 	private List<Release> listReleasesOfOrgAfterDate (UUID orgUuid, ZonedDateTime cutOffDate) {
 		return repository.findReleasesOfOrgAfterDate(orgUuid.toString(), cutOffDate);
 	}
+	
+	private List<Release> listReleasesOfComponentAfterDate (UUID componentUuid, ZonedDateTime cutOffDate) {
+		return repository.findReleasesOfComponentAfterDate(componentUuid.toString(), cutOffDate);
+	}
+	
+	private List<Release> listReleasesOfBranchAfterDate (UUID branchUuid, ZonedDateTime cutOffDate) {
+		return repository.findReleasesOfBranchAfterDate(branchUuid.toString(), cutOffDate);
+	}
 
 	private List<Release> listPendingReleasesAfterCutoff (Long cutOffHours) {
 		LocalDateTime cutOffDate = LocalDateTime.now();
@@ -544,6 +552,30 @@ public class ReleaseService {
 	 */
 	public List<VegaDateValue> getReleaseCreateOverTimeAnalytics(UUID orgUuid, ZonedDateTime cutOffDate) {
 		List<Release> releases = listReleasesOfOrgAfterDate(orgUuid, cutOffDate);
+		return releases.stream()
+				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
+	}
+	
+	/**
+	 * Aggregates number of releases per time unit per defined time frame for a component
+	 * @param componentUuid
+	 * @param cutOffDate
+	 * @return
+	 */
+	public List<VegaDateValue> getReleaseCreateOverTimeAnalyticsByComponent(UUID componentUuid, ZonedDateTime cutOffDate) {
+		List<Release> releases = listReleasesOfComponentAfterDate(componentUuid, cutOffDate);
+		return releases.stream()
+				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
+	}
+	
+	/**
+	 * Aggregates number of releases per time unit per defined time frame for a branch
+	 * @param branchUuid
+	 * @param cutOffDate
+	 * @return
+	 */
+	public List<VegaDateValue> getReleaseCreateOverTimeAnalyticsByBranch(UUID branchUuid, ZonedDateTime cutOffDate) {
+		List<Release> releases = listReleasesOfBranchAfterDate(branchUuid, cutOffDate);
 		return releases.stream()
 				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
 	}
