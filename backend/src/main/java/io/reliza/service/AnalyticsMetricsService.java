@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalyticsMetrics;
 import io.reliza.model.AnalyticsMetricsData;
 import io.reliza.model.BranchData;
@@ -44,13 +45,16 @@ import lombok.extern.slf4j.Slf4j;
 public class AnalyticsMetricsService {
 
 	@Autowired
-	OrganizationService organizationService;
+	private OrganizationService organizationService;
 	
 	@Autowired
-	BranchService branchService;
+	private BranchService branchService;
 
 	@Autowired
-	SharedReleaseService sharedReleaseService;
+	private SharedReleaseService sharedReleaseService;
+
+	@Autowired
+	private VulnAnalysisService vulnAnalysisService;
 	
 	private final AnalyticsMetricsRepository repository;
 
@@ -87,7 +91,9 @@ public class AnalyticsMetricsService {
 			// Compute metrics for today without saving
 			ZonedDateTime createdDate = requestedDate.atTime(23, 59, 59).atZone(java.time.ZoneOffset.UTC);
 			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, createdDate);
-			return Optional.of(amd.getMetrics());
+			var metrics = amd.getMetrics().clone();
+			vulnAnalysisService.processReleaseMetricsDto(org, org, AnalysisScope.ORG, metrics);
+			return Optional.of(metrics);
 		}
 		
 		return Optional.empty();
@@ -124,6 +130,7 @@ public class AnalyticsMetricsService {
 				rmd.mergeWithByContent(rmd2);
 			}
 		});
+		vulnAnalysisService.processReleaseMetricsDto(org, componentUuid, AnalysisScope.COMPONENT, rmd);
 		return Optional.of(rmd);
 	}
 	
@@ -150,6 +157,7 @@ public class AnalyticsMetricsService {
 		ReleaseMetricsDto rmd = rd.getMetrics();
 		if (rmd != null) {
 			rmd.enrichSourcesWithRelease(rd.getUuid());
+			vulnAnalysisService.processReleaseMetricsDto(org, branchUuid, AnalysisScope.BRANCH, rmd);
 		}
 		return Optional.ofNullable(rmd);
 	}
@@ -221,8 +229,7 @@ public class AnalyticsMetricsService {
 				}
 			}
 			if (dateForChart != null) {
-				AnalyticsMetricsData amd = AnalyticsMetricsData.analyticsMetricsDataFactory(org, mergedRmd, dateForChart);
-				chartData.addAll(amd.convertToChartDto());
+				chartData.addAll(mergedRmd.convertToChartDto(dateForChart));
 			}
 		}
 		
@@ -262,8 +269,7 @@ public class AnalyticsMetricsService {
 			if (rmd != null) {
 				rmd.enrichSourcesWithRelease(rd.getUuid());
 				ZonedDateTime dateForChart = entry.getKey().atStartOfDay(rd.getCreatedDate().getZone());
-				AnalyticsMetricsData amd = AnalyticsMetricsData.analyticsMetricsDataFactory(org, rmd, dateForChart);
-				chartData.addAll(amd.convertToChartDto());
+				chartData.addAll(rmd.convertToChartDto(dateForChart));
 			}
 		}
 		

@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAlias;
 
 import io.reliza.model.AnalysisState;
+import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -1224,5 +1225,18 @@ public class ReleaseMetricsDto implements Cloneable {
 		}
 		
 		weaknessDetails = new LinkedList<>(weaknessMap.values());
+	}
+
+	public List<VulnViolationsChartDto> convertToChartDto (ZonedDateTime createdDate) {
+		List<VulnViolationsChartDto> vulnViolDtos = new LinkedList<>();
+		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getCritical(), "Critical Vulnerabilities"));
+		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getHigh(), "High Vulnerabilities"));
+		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getMedium(), "Medium Vulnerabilities"));
+		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getLow(), "Low Vulnerabilities"));
+		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getUnassigned(), "Unassigned Vulnerabilities"));
+		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getPolicyViolationsLicenseTotal(), "License Violations"));
+		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getPolicyViolationsOperationalTotal(), "Operational Violations"));
+		vulnViolDtos.add(new VulnViolationsChartDto(createdDate, this.getPolicyViolationsSecurityTotal(), "Security Violations"));
+		return vulnViolDtos;
 	}
 }

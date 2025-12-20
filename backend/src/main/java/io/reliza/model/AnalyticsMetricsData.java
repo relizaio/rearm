@@ -60,16 +60,7 @@ public class AnalyticsMetricsData extends RelizaDataParent implements RelizaObje
 	}
 	
 	public List<VulnViolationsChartDto> convertToChartDto () {
-		List<VulnViolationsChartDto> vulnViolDtos = new LinkedList<>();
-		vulnViolDtos.add(new VulnViolationsChartDto(this.createdDate, this.metrics.getCritical(), "Critical Vulnerabilities"));
-		vulnViolDtos.add(new VulnViolationsChartDto(this.createdDate, this.metrics.getHigh(), "High Vulnerabilities"));
-		vulnViolDtos.add(new VulnViolationsChartDto(this.createdDate, this.metrics.getMedium(), "Medium Vulnerabilities"));
-		vulnViolDtos.add(new VulnViolationsChartDto(this.createdDate, this.metrics.getLow(), "Low Vulnerabilities"));
-		vulnViolDtos.add(new VulnViolationsChartDto(this.createdDate, this.metrics.getUnassigned(), "Unassigned Vulnerabilities"));
-		vulnViolDtos.add(new VulnViolationsChartDto(this.createdDate, this.metrics.getPolicyViolationsLicenseTotal(), "License Violations"));
-		vulnViolDtos.add(new VulnViolationsChartDto(this.createdDate, this.metrics.getPolicyViolationsOperationalTotal(), "Operational Violations"));
-		vulnViolDtos.add(new VulnViolationsChartDto(this.createdDate, this.metrics.getPolicyViolationsSecurityTotal(), "Security Violations"));
-		return vulnViolDtos;
+		return this.metrics.convertToChartDto(this.createdDate);
 	}
 
 	@Override
