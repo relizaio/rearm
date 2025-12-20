@@ -43,476 +43,453 @@
                     </n-gi>
                 </n-grid>
             </n-gi>
-            <n-gi span="10">
+            <n-gi span="3">
                 <div class="componentTop">
                     <div class="componentSummary">
-                    <h5 v-if="componentData">{{ words.componentFirstUpper }}: {{componentData.name}}</h5>
-                    <div class="componentIconsAndSettings">
-                        <n-space v-cloak>
-                            <vue-feather v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
-                            <vue-feather v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
-                            <!-- vue-feather v-if="componentData"
-                                @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" / -->
-                            <vue-feather v-if="words.componentFirstUpper" type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
-                            <n-tooltip trigger="hover" v-if="componentData && componentData.uuid">
-                                <template #trigger>
-                                    <vue-feather class="icons" type="info" />
-                                </template>
-                                <strong>{{ words.componentFirstUpper }} UUID:</strong> {{ componentData.uuid }}
-                                <vue-feather class="clickable icons" @click="copyToClipboard(componentData.uuid)" type="clipboard"/>
-                            </n-tooltip>
-                            <n-tooltip trigger="hover" v-if="updatedComponent && updatedComponent.vcsRepositoryDetails && updatedComponent.vcsRepositoryDetails.uri">
-                                <template #trigger>
-                                    <vue-feather class="icons" type="git-merge" />
-                                </template>
-                                <strong>VCS Repository:</strong>
-                                {{ updatedComponent.vcsRepositoryDetails.uri }}
-                                <a :href="'https://' + updatedComponent.vcsRepositoryDetails.uri" rel="noopener noreferrer"
-                                target="_blank"><vue-feather type="external-link" class="clickable icons" title="Open VCS Repository URI in New Window" /></a>
-                            </n-tooltip>
+                        <h5 v-if="componentData">{{ words.componentFirstUpper }}: {{componentData.name}}</h5>
+                        <div class="componentIconsAndSettings">
+                            <n-space v-cloak>
+                                <vue-feather v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
+                                <vue-feather v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
+                                <!-- vue-feather v-if="componentData"
+                                    @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" / -->
+                                <vue-feather v-if="words.componentFirstUpper" type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
+                                <n-tooltip trigger="hover" v-if="componentData && componentData.uuid">
+                                    <template #trigger>
+                                        <vue-feather class="icons" type="info" />
+                                    </template>
+                                    <strong>{{ words.componentFirstUpper }} UUID:</strong> {{ componentData.uuid }}
+                                    <vue-feather class="clickable icons" @click="copyToClipboard(componentData.uuid)" type="clipboard"/>
+                                </n-tooltip>
+                                <n-tooltip trigger="hover" v-if="updatedComponent && updatedComponent.vcsRepositoryDetails && updatedComponent.vcsRepositoryDetails.uri">
+                                    <template #trigger>
+                                        <vue-feather class="icons" type="git-merge" />
+                                    </template>
+                                    <strong>VCS Repository:</strong>
+                                    {{ updatedComponent.vcsRepositoryDetails.uri }}
+                                    <a :href="'https://' + updatedComponent.vcsRepositoryDetails.uri" rel="noopener noreferrer"
+                                    target="_blank"><vue-feather type="external-link" class="clickable icons" title="Open VCS Repository URI in New Window" /></a>
+                                </n-tooltip>
 
-                            <vue-feather v-if="isWritable" @click="archiveComponent" class="clickable" type="trash-2" :title="'Archive ' + words.componentFirstUpper" />
-                        </n-space>
-                        <n-modal
-                            v-model:show="showComponentAnalyticsModal"
-                            preset="dialog"
-                            :show-icon="false"
-                            style="width: 90%"
-                        >
-                            <component-analytics
-                                :componentUuidProp="componentData.uuid"
-                                :componentTypeProp="componentData.type"
-                            />
-                        </n-modal>
-                        <n-modal
-                            v-model:show="showComponentChangelogModal"
-                            preset="dialog"
-                            :show-icon="false"
-                            style="width: 90%"
-                        >
-                            <changelog-view
-                                        :componentprop="componentData.uuid"
-                                        :branchprop="selectedBranchUuid"
-                                        :orgprop="componentData.org"
-                                        :componenttypeprop="componentData.type"
-                                        :iscomponentchangelog="true"
-                            />
-                        </n-modal>
-                        <n-modal
-                            v-model:show="showAddBranchModal"
-                            preset="dialog"
-                            :show-icon="false"
-                            style="width: 90%"
-                        >
-                            <h2>Create {{ words.branchFirstUpper }}</h2>
-                            <n-form :model="createBranchObject">
-                                <n-form-item label="Name" path="name">
-                                    <n-input v-model:value="createBranchObject.name" required :placeholder="'Enter ' + words.branchFirstUpper + ' name'" />
-                                </n-form-item>
-                                <n-form-item 
-                                    v-if="updatedComponent && updatedComponent.versionSchema && componentData && componentData.versionSchema"
-                                    label="Version Pin">
-                                    <n-input
-                                        v-model:value="createBranchObject.versionSchema" />
-                                </n-form-item>
-                                <n-form-item>
-                                    <n-button @click="onCreateBranchSubmit" type="success">
-                                        Create
-                                    </n-button>
-                                    <n-button @click="onCreateBranchReset" type="warning">
-                                        Reset
-                                    </n-button>
-                                </n-form-item>
-                            </n-form>
-                        </n-modal>
-                        <n-modal
-                            v-model:show="showComponentSettingsModal"
-                            preset="dialog"
-                            :show-icon="false"
-                            style="width: 90%"
-                        >
-                            <h3>Component Settings</h3>
-                            <n-tabs
-                                class="card-tabs"
-                                size="large"
-                                animated
-                                style="margin: 0 -4px"
-                                pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
-                                @update:value="handleTabSwitch"
+                                <vue-feather v-if="isWritable" @click="archiveComponent" class="clickable" type="trash-2" :title="'Archive ' + words.componentFirstUpper" />
+                            </n-space>
+                            <n-modal
+                                v-model:show="showComponentAnalyticsModal"
+                                preset="dialog"
+                                :show-icon="false"
+                                style="width: 90%"
                             >
-                                <n-tab-pane name="Core Settings">
-                                    <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable">
-                                        <n-space>
-                                            <n-button type="success" @click="save">
-                                                <template #icon>
-                                                    <vue-feather type="check" />
-                                                </template>
-                                                Save Changes
-                                            </n-button>
-                                            <n-button type="warning" @click="resetCoreSettings">
-                                                <template #icon>
-                                                    <vue-feather type="x" />
-                                                </template>
-                                                Reset Changes
-                                            </n-button>
-                                        </n-space>
-                                    </div>
-                                    <div class="componentNameBlock" v-if="updatedComponent && componentData">
-                                        <label id="componentNameLabel" for="componentName">{{ words.componentFirstUpper }} Name</label>
-                                        <n-input v-if="isWritable" v-model:value="updatedComponent.name" />
-                                        <n-input v-if="!isWritable" type="text" :value="updatedComponent.name" readonly/>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
-                                        <label id="componentVersionSchemaLabel" for="componentVersionSchema">Version Schema</label>
-                                        <n-select
-                                            v-model:value="updatedComponent.versionSchema"
-                                            placeholder="Choose or enter version schema"
-                                            filterable
-                                            tag
-                                            :options="constants.VersionTypes" />
-                                        <n-input v-if="!isWritable" type="text" :value="updatedComponent.versionSchema" readonly/>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
-                                        <label id="componentVersionSchemaLabel" for="componentVersionSchema">Marketing Version</label>
-                                        Enabled:  <n-switch v-model:value="marketingVersionEnabled"  @update:value="toggleMarketingVersion"/>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="marketingVersionEnabled && myUser.installationType !== 'OSS'">
-                                        <label>Marketing Version Schema</label>
-                                        <n-select
-                                            v-model:value="updatedComponent.marketingVersionSchema"
-                                            placeholder="Choose or enter marketing version schema"
-                                            filterable
-                                            tag
-                                            :options="constants.VersionTypes" />
-                                        <n-input v-if="!isWritable" type="text" :value="updatedComponent.marketingVersionSchema" readonly/>
-                                    </div>
-                                    <div class="versionSchemaBlock featureBranchVersioning" v-if="updatedComponent && componentData && updatedComponent.type === 'COMPONENT'">
-                                        <label id="componentFeatureBranchVersionSchemaLabel" for="componentFeatureBranchVersionSchema">Feature Branch Versioning Schema</label>
-                                        <n-input v-if="isWritable" v-model:value="updatedComponent.featureBranchVersioning" />
-                                        <n-input v-if="!isWritable" type="text" :value="updatedComponent.featureBranchVersioning" readonly/>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="false && updatedComponent && componentData && (componentData.type === 'COMPONENT')">
-                                        <label  id="componentKindLabel" for="componentKind">Component Kind</label>
-                                        <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" />
-                                        <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication)">
-                                        <label id="componentAuthTypeLabel" for="componentAuthType">Component Authentication Type</label>
-                                        <n-select v-if="isWritable" :options="componentAuthTypes" v-model:value="updatedComponent.authentication.type" />
-                                        <n-input v-if="!isWritable" type="text" :value="updatedComponent.authentication.type" readonly/>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication && updatedComponent.authentication.type !== 'NOCREDS' && isWritable)">
-                                        <label id="componentAuthLoginLabel" for="componentAuthLogin">Component Authentication Login Secret</label>
-                                        <n-select :options="secrets" v-model:value="updatedComponent.authentication.login" />
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication && updatedComponent.authentication.type !== 'NOCREDS' && isWritable)">
-                                        <label id="componentAuthPasswordLabel" for="componentAuthPassword">Component Authentication Password Secret</label>
-                                        <n-select :options="secrets" v-model:value="updatedComponent.authentication.password" />
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && isWritable)">
-                                        <label>Helm Values File for Ephemerals</label>
-                                        <n-input v-if="isWritable" v-model:value="updatedComponent.defaultConfig" />
-                                        <n-input v-if="!isWritable" type="text" :value="updatedComponent.defaultConfig" readonly/>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="updatedComponent && componentData && componentData.type === 'COMPONENT'">
-                                        <label>VCS Repository</label>
-                                        <n-select v-if="isWritable" :options="vcsRepos" v-model:value="updatedComponent.vcs" @focus="fetchVcsRepos" />
-                                        <span v-if="!isWritable && updatedComponent.vcsRepositoryDetails">{{ updatedComponent.vcsRepositoryDetails.uri }}</span>
-                                        <span v-if="!isWritable && !updatedComponent.vcsRepositoryDetails">Not Set</span>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="updatedComponent && componentData && componentData.type === 'COMPONENT' && updatedComponent.vcsRepositoryDetails">
-                                        <label>Repository Path</label>
-                                        <n-input 
-                                            v-if="isWritable" 
-                                            v-model:value="updatedComponent.repoPath" 
-                                            placeholder="e.g., services/auth, frontend/web" />
-                                        <n-input 
-                                            v-if="!isWritable" 
-                                            type="text" 
-                                            :value="updatedComponent.repoPath || 'Not Set'" 
-                                            readonly />
-                                    </div>
-                                    <div class="identifierBlock" v-if="updatedComponent && componentData">
-                                        <label>Identifiers</label>
-                                        <n-dynamic-input v-if="isWritable" v-model:value="updatedComponent.identifiers" :on-create="onCreateIdentifier">
-                                            <template #create-button-default>
-                                                Add Identifier
-                                            </template>
-                                            <template #default="{ value }">
-                                                <n-select style="width: 200px;" v-model:value="value.idType"
-                                                    :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
-                                                <n-input type="text" minlength="100" v-model:value="value.idValue" />
-                                            </template>
-                                        </n-dynamic-input>
-                                        <!-- div v-else>{{ resolvedVisibilityLabel }}</div -->
-                                        <n-button type="warning" style="margin-top:10px;" v-if="isWritable && updatedComponent.identifiers" @click="populateMissingComponentReleaseIdentifiers">Propagate To Releases With Missing Identifiers</n-button>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
-                                        <label>Approval Policy</label>
-                                        <n-select
-                                            v-if="isWritable"
-                                            :options="approvalPolicies" v-model:value="updatedComponent.approvalPolicy" />
-                                        <div v-else>{{ resolvedVisibilityLabel }}</div>
-                                    </div>
-                                    <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable" style="margin-top: 20px;">
-                                        <n-space>
-                                            <n-button type="success" @click="save">
-                                                <template #icon>
-                                                    <vue-feather type="check" />
-                                                </template>
-                                                Save Changes
-                                            </n-button>
-                                            <n-button type="warning" @click="resetCoreSettings">
-                                                <template #icon>
-                                                    <vue-feather type="x" />
-                                                </template>
-                                                Reset Changes
-                                            </n-button>
-                                        </n-space>
-                                    </div>
-                                </n-tab-pane>
-                                <n-tab-pane name="outputTriggers" tab="Output Triggers" v-if="myUser.installationType !== 'OSS'">
-                                    <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                    <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Trigger" @click="showCreateOutputTriggerModal = true">
-                                        <CirclePlus />
-                                    </Icon>
-                                    <n-modal
-                                        v-model:show="showCreateOutputTriggerModal"
-                                        preset="dialog"
-                                        :show-icon="false"
-                                        style="width: 90%"
-                                    >
-                                        <n-form :model="outputTrigger">
-                                            <h2>Add or Update Output Trigger</h2>
-                                            <n-space vertical size="large">
-                                                <n-form-item label="Name" path="name">
-                                                    <n-input v-model:value="outputTrigger.name" required placeholder="Enter name" />
-                                                </n-form-item>
-                                                <n-form-item label="Type" path="type">
-                                                    <n-select v-model:value="outputTrigger.type" required 
-                                                        v-on:update:value="value => {if (value === 'EMAIL_NOTIFICATION') loadUsers()}"
-                                                        :options="outputTriggerTypeOptions" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
-                                                    <n-select v-model:value="outputTrigger.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
-                                                    <n-select
-                                                        v-model:value="outputTrigger.integration"
-                                                        placeholder="Select Integration"
-                                                        :options="ciIntegrationsForSelect" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
-                                                    <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Name of GitHub Actions Event" path="eventType">
-                                                    <n-input v-model:value="outputTrigger.eventType" placeholder="Enter Name of GitHub Actions Event" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
-                                                    <n-input v-model:value="outputTrigger.clientPayload" required placeholder="Enter Additional Optional Client Payload JSON" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
-                                                    <n-input type="number" v-model:value="outputTrigger.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && (selectedCiIntegration.type === 'GITHUB' || selectedCiIntegration.type === 'GITLAB')" label="CI Repository" path="vcs">
-                                                    <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>
-                                                    <span v-if="!selectNewIntegrationRepo && !outputTrigger.vcs">Not Set</span>
-                                                    <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
-                                                    <vue-feather v-if="!selectNewIntegrationRepo" type="edit" class="clickable" @click="async () => {await fetchVcsRepos(); selectNewIntegrationRepo = true;}" title="Select New Integration Repository" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
-                                                    <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="eventType">
-                                                    <n-input v-model:value="outputTrigger.eventType" required placeholder="Enter Azure DevOps project name" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Pipeline Definition ID" path="schedule">
-                                                    <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter Pipeline Definition ID" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
-                                                    <n-input v-model:value="outputTrigger.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
-                                                    <n-select v-model:value="outputTrigger.users" tag multiple required :options="users" />
-                                                </n-form-item>
-                                                <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
-                                                    <n-input v-model:value="outputTrigger.notificationMessage" placeholder="Email Message Contents (i.e. 'Release ready to ship.')" />
-                                                </n-form-item>
-                                                <n-button @click="addOutputTrigger" type="success">
-                                                    Save
+                                <component-analytics
+                                    :componentUuidProp="componentData.uuid"
+                                    :componentTypeProp="componentData.type"
+                                />
+                            </n-modal>
+                            <n-modal
+                                v-model:show="showComponentChangelogModal"
+                                preset="dialog"
+                                :show-icon="false"
+                                style="width: 90%"
+                            >
+                                <changelog-view
+                                            :componentprop="componentData.uuid"
+                                            :branchprop="selectedBranchUuid"
+                                            :orgprop="componentData.org"
+                                            :componenttypeprop="componentData.type"
+                                            :iscomponentchangelog="true"
+                                />
+                            </n-modal>
+                            <n-modal
+                                v-model:show="showAddBranchModal"
+                                preset="dialog"
+                                :show-icon="false"
+                                style="width: 90%"
+                            >
+                                <h2>Create {{ words.branchFirstUpper }}</h2>
+                                <n-form :model="createBranchObject">
+                                    <n-form-item label="Name" path="name">
+                                        <n-input v-model:value="createBranchObject.name" required :placeholder="'Enter ' + words.branchFirstUpper + ' name'" />
+                                    </n-form-item>
+                                    <n-form-item 
+                                        v-if="updatedComponent && updatedComponent.versionSchema && componentData && componentData.versionSchema"
+                                        label="Version Pin">
+                                        <n-input
+                                            v-model:value="createBranchObject.versionSchema" />
+                                    </n-form-item>
+                                    <n-form-item>
+                                        <n-button @click="onCreateBranchSubmit" type="success">
+                                            Create
+                                        </n-button>
+                                        <n-button @click="onCreateBranchReset" type="warning">
+                                            Reset
+                                        </n-button>
+                                    </n-form-item>
+                                </n-form>
+                            </n-modal>
+                            <n-modal
+                                v-model:show="showComponentSettingsModal"
+                                preset="dialog"
+                                :show-icon="false"
+                                style="width: 90%"
+                            >
+                                <h3>Component Settings</h3>
+                                <n-tabs
+                                    class="card-tabs"
+                                    size="large"
+                                    animated
+                                    style="margin: 0 -4px"
+                                    pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
+                                    @update:value="handleTabSwitch"
+                                >
+                                    <n-tab-pane name="Core Settings">
+                                        <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable">
+                                            <n-space>
+                                                <n-button type="success" @click="save">
+                                                    <template #icon>
+                                                        <vue-feather type="check" />
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetCoreSettings">
+                                                    <template #icon>
+                                                        <vue-feather type="x" />
+                                                    </template>
+                                                    Reset Changes
                                                 </n-button>
                                             </n-space>
-                                        </n-form>
-                                    </n-modal>
-                                </n-tab-pane>
-                                <n-tab-pane name="Trigger Events" v-if="myUser.installationType !== 'OSS'">
-                                    <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                    <Icon v-if="isWritable" class="clickable" size="25" title="Add Trigger Event" @click="showCreateInputTriggerModal = true">
-                                        <CirclePlus />
-                                    </Icon>
-                                    <n-modal
-                                        v-model:show="showCreateInputTriggerModal"
-                                        preset="dialog"
-                                        :show-icon="false"
-                                        style="width: 90%"
-                                    >
-                                        <n-form :model="inputTrigger">
-                                            <h2>Add or Update Trigger Event</h2>
-                                            <n-space vertical size="large">
-                                                <n-form-item label="Name" path="name">
-                                                    <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
-                                                </n-form-item>
-                                                <n-form-item label="Condition Matching Between Groups">
-                                                    <n-select v-model:value="inputTrigger.conditionGroup.matchOperator" :options="[{label: 'Require All Groups To Match', value: 'AND'}, {label: 'Require Any Group To Match', value: 'OR'}]" />
-                                                </n-form-item>
-                                                <n-form-item path="inputTrigger.conditionGroup">
-                                                    <n-dynamic-input v-model:value="inputTrigger.conditionGroup.conditionGroups" :on-create="onCreateInputTriggerConditionGroup">
-                                                        <template #create-button-default>
-                                                            Add Condition Group
-                                                        </template>
-                                                        <template #default="{ value: value1, index }">
-                                                            <div style="width: 100%;">
-                                                                <h5>Trigger Group #{{ index + 1 }}</h5>
-                                                                <n-form-item label="Condition Matching Within The Group">
-                                                                    <n-select v-model:value="value1.matchOperator" :options="[{label: 'Require All Conditions', value: 'AND'}, {label: 'Require Any Condition', value: 'OR'}]" />
-                                                                </n-form-item>
-                                                                <n-dynamic-input v-model:value="value1.conditions" :on-create="onCreateInputTriggerCondition">
-                                                                    <template #create-button-default>
-                                                                        Add Trigger Condition
-                                                                    </template>
-                                                                    <template #default="{ value, index }">
-                                                                        <n-select style="width: 400px;" v-model:value="value.type"
-                                                                            v-on:update:value="onConditionTypeUpdate(value1, index)"
-                                                                            :options="[{label: 'Approval Entry', value: 'APPROVAL_ENTRY'}, {label: 'Possible Lifecycles', value: 'LIFECYCLE'}, {label: 'Possible Branch Types', value: 'BRANCH_TYPE'}, {label: 'Metrics', value: 'METRICS'}]" />
-                                                                        <n-select v-if="value.type === 'APPROVAL_ENTRY'"
-                                                                            v-model:value="value.approvalEntry"
-                                                                            :options="approvalEntryOptionsForTriggers"
-                                                                        />
-                                                                        <n-select v-if="value.type === 'APPROVAL_ENTRY'" style="width:300px;" v-model:value="value.approvalState"
-                                                                            :options="[{label: 'Approved', value: 'APPROVED'}, {label: 'Disapproved', value: 'DISAPPROVED'}]" />
-                                                                        <n-select v-if="value.type === 'LIFECYCLE'" v-model:value="value.possibleLifecycles" 
-                                                                            :options="lifecycleOptions" tag multiple />
-                                                                        <n-select v-if="value.type === 'BRANCH_TYPE'" v-model:value="value.possibleBranchTypes" tag multiple
-                                                                            :options="[{label: 'Main', value: 'BASE'}, {label: 'Feature', value: 'FEATURE'}, {label: 'Regular', value: 'REGULAR'}, {label: 'Release', value: 'RELEASE'}, {label: 'Develop', value: 'DEVELOP'}, {label: 'Hotfix', value: 'HOTFIX'}]" />
-                                                                        <n-select v-if="value.type === 'METRICS'" style="width:70%;" v-model:value="value.metricsType" 
-                                                                            :options="[{label: 'Critical Vulnerabilities', value: 'CRITICAL_VULNS'}, {label: 'High Vulnerabilities', value: 'HIGH_VULNS'}, {label: 'Medium Vulnerabilities', value: 'MEDIUM_VULNS'}, {label: 'Low Vulnerabilities', value: 'LOW_VULNS'}, {label: 'Unassigned Vulnerabilities', value: 'UNASSIGNED_VULNS'}, {label: 'Security Violations', value: 'SECURITY_VIOLATIONS'}, {label: 'Operational Violations', value: 'OPERATIONAL_VIOLATIONS'}, {label: 'License Violations', value: 'LICENSE_VIOLATIONS'}]" />
-                                                                        <n-select v-if="value.type === 'METRICS'" style="width:300px;" v-model:value="value.comparisonSign" 
-                                                                            :options="[{label: '=', value: 'EQUALS'}, {label: '>', value: 'GREATER'}, {label: '<', value: 'LOWER'}, {label: '>=', value: 'GREATER_OR_EQUALS'}, {label: '<=', value: 'LOWER_OR_EQUALS'}]" />
-                                                                        <n-input-number v-if="value.type === 'METRICS'" v-model:value="value.metricsValue" />
-                                                                    </template>
-                                                                </n-dynamic-input>
-                                                            </div>
-                                                        </template>
-                                                    </n-dynamic-input>
-                                                </n-form-item>
-                                                <n-form-item label="Output Triggers" path="inputTrigger.outputEvents">
-                                                    <n-select v-model:value="inputTrigger.outputEvents" 
-                                                    :options="outputTriggersForInputForm" multiple />
-                                                </n-form-item>
-                                                <n-button @click="addInputTrigger" type="success">
-                                                    Save
+                                        </div>
+                                        <div class="componentNameBlock" v-if="updatedComponent && componentData">
+                                            <label id="componentNameLabel" for="componentName">{{ words.componentFirstUpper }} Name</label>
+                                            <n-input v-if="isWritable" v-model:value="updatedComponent.name" />
+                                            <n-input v-if="!isWritable" type="text" :value="updatedComponent.name" readonly/>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label id="componentVersionSchemaLabel" for="componentVersionSchema">Version Schema</label>
+                                            <n-select
+                                                v-model:value="updatedComponent.versionSchema"
+                                                placeholder="Choose or enter version schema"
+                                                filterable
+                                                tag
+                                                :options="constants.VersionTypes" />
+                                            <n-input v-if="!isWritable" type="text" :value="updatedComponent.versionSchema" readonly/>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
+                                            <label id="componentVersionSchemaLabel" for="componentVersionSchema">Marketing Version</label>
+                                            Enabled:  <n-switch v-model:value="marketingVersionEnabled"  @update:value="toggleMarketingVersion"/>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="marketingVersionEnabled && myUser.installationType !== 'OSS'">
+                                            <label>Marketing Version Schema</label>
+                                            <n-select
+                                                v-model:value="updatedComponent.marketingVersionSchema"
+                                                placeholder="Choose or enter marketing version schema"
+                                                filterable
+                                                tag
+                                                :options="constants.VersionTypes" />
+                                            <n-input v-if="!isWritable" type="text" :value="updatedComponent.marketingVersionSchema" readonly/>
+                                        </div>
+                                        <div class="versionSchemaBlock featureBranchVersioning" v-if="updatedComponent && componentData && updatedComponent.type === 'COMPONENT'">
+                                            <label id="componentFeatureBranchVersionSchemaLabel" for="componentFeatureBranchVersionSchema">Feature Branch Versioning Schema</label>
+                                            <n-input v-if="isWritable" v-model:value="updatedComponent.featureBranchVersioning" />
+                                            <n-input v-if="!isWritable" type="text" :value="updatedComponent.featureBranchVersioning" readonly/>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="false && updatedComponent && componentData && (componentData.type === 'COMPONENT')">
+                                            <label  id="componentKindLabel" for="componentKind">Component Kind</label>
+                                            <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" />
+                                            <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication)">
+                                            <label id="componentAuthTypeLabel" for="componentAuthType">Component Authentication Type</label>
+                                            <n-select v-if="isWritable" :options="componentAuthTypes" v-model:value="updatedComponent.authentication.type" />
+                                            <n-input v-if="!isWritable" type="text" :value="updatedComponent.authentication.type" readonly/>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication && updatedComponent.authentication.type !== 'NOCREDS' && isWritable)">
+                                            <label id="componentAuthLoginLabel" for="componentAuthLogin">Component Authentication Login Secret</label>
+                                            <n-select :options="secrets" v-model:value="updatedComponent.authentication.login" />
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication && updatedComponent.authentication.type !== 'NOCREDS' && isWritable)">
+                                            <label id="componentAuthPasswordLabel" for="componentAuthPassword">Component Authentication Password Secret</label>
+                                            <n-select :options="secrets" v-model:value="updatedComponent.authentication.password" />
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && isWritable)">
+                                            <label>Helm Values File for Ephemerals</label>
+                                            <n-input v-if="isWritable" v-model:value="updatedComponent.defaultConfig" />
+                                            <n-input v-if="!isWritable" type="text" :value="updatedComponent.defaultConfig" readonly/>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && componentData.type === 'COMPONENT'">
+                                            <label>VCS Repository</label>
+                                            <n-select v-if="isWritable" :options="vcsRepos" v-model:value="updatedComponent.vcs" @focus="fetchVcsRepos" />
+                                            <span v-if="!isWritable && updatedComponent.vcsRepositoryDetails">{{ updatedComponent.vcsRepositoryDetails.uri }}</span>
+                                            <span v-if="!isWritable && !updatedComponent.vcsRepositoryDetails">Not Set</span>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && componentData.type === 'COMPONENT' && updatedComponent.vcsRepositoryDetails">
+                                            <label>Repository Path</label>
+                                            <n-input 
+                                                v-if="isWritable" 
+                                                v-model:value="updatedComponent.repoPath" 
+                                                placeholder="e.g., services/auth, frontend/web" />
+                                            <n-input 
+                                                v-if="!isWritable" 
+                                                type="text" 
+                                                :value="updatedComponent.repoPath || 'Not Set'" 
+                                                readonly />
+                                        </div>
+                                        <div class="identifierBlock" v-if="updatedComponent && componentData">
+                                            <label>Identifiers</label>
+                                            <n-dynamic-input v-if="isWritable" v-model:value="updatedComponent.identifiers" :on-create="onCreateIdentifier">
+                                                <template #create-button-default>
+                                                    Add Identifier
+                                                </template>
+                                                <template #default="{ value }">
+                                                    <n-select style="width: 200px;" v-model:value="value.idType"
+                                                        :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
+                                                    <n-input type="text" minlength="100" v-model:value="value.idValue" />
+                                                </template>
+                                            </n-dynamic-input>
+                                            <!-- div v-else>{{ resolvedVisibilityLabel }}</div -->
+                                            <n-button type="warning" style="margin-top:10px;" v-if="isWritable && updatedComponent.identifiers" @click="populateMissingComponentReleaseIdentifiers">Propagate To Releases With Missing Identifiers</n-button>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
+                                            <label>Approval Policy</label>
+                                            <n-select
+                                                v-if="isWritable"
+                                                :options="approvalPolicies" v-model:value="updatedComponent.approvalPolicy" />
+                                            <div v-else>{{ resolvedVisibilityLabel }}</div>
+                                        </div>
+                                        <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable" style="margin-top: 20px;">
+                                            <n-space>
+                                                <n-button type="success" @click="save">
+                                                    <template #icon>
+                                                        <vue-feather type="check" />
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetCoreSettings">
+                                                    <template #icon>
+                                                        <vue-feather type="x" />
+                                                    </template>
+                                                    Reset Changes
                                                 </n-button>
                                             </n-space>
-                                        </n-form>
-                                    </n-modal>
-                                </n-tab-pane>
-                                <n-tab-pane v-if="false" name="Environment Mapping">
-                                    <div v-if="isWritable" class="envBranchMapBlock">
-                                        <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
-                                        <div>
-                                            <div v-for="et in environmentTypes" :key="et">
-                                                <div class="etName">{{ et }}</div>
-                                                <n-select v-on:update:value="value => {updatedComponent.envBranchMap[et] = value; save()}" :options="branchesForEnvMapping" v-model:value="updatedComponent.envBranchMap[et]" />
+                                        </div>
+                                    </n-tab-pane>
+                                    <n-tab-pane name="outputTriggers" tab="Output Triggers" v-if="myUser.installationType !== 'OSS'">
+                                        <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Trigger" @click="showCreateOutputTriggerModal = true">
+                                            <CirclePlus />
+                                        </Icon>
+                                        <n-modal
+                                            v-model:show="showCreateOutputTriggerModal"
+                                            preset="dialog"
+                                            :show-icon="false"
+                                            style="width: 90%"
+                                        >
+                                            <n-form :model="outputTrigger">
+                                                <h2>Add or Update Output Trigger</h2>
+                                                <n-space vertical size="large">
+                                                    <n-form-item label="Name" path="name">
+                                                        <n-input v-model:value="outputTrigger.name" required placeholder="Enter name" />
+                                                    </n-form-item>
+                                                    <n-form-item label="Type" path="type">
+                                                        <n-select v-model:value="outputTrigger.type" required 
+                                                            v-on:update:value="value => {if (value === 'EMAIL_NOTIFICATION') loadUsers()}"
+                                                            :options="outputTriggerTypeOptions" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
+                                                        <n-select v-model:value="outputTrigger.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
+                                                        <n-select
+                                                            v-model:value="outputTrigger.integration"
+                                                            placeholder="Select Integration"
+                                                            :options="ciIntegrationsForSelect" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Name of GitHub Actions Event" path="eventType">
+                                                        <n-input v-model:value="outputTrigger.eventType" placeholder="Enter Name of GitHub Actions Event" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
+                                                        <n-input v-model:value="outputTrigger.clientPayload" required placeholder="Enter Additional Optional Client Payload JSON" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
+                                                        <n-input type="number" v-model:value="outputTrigger.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && (selectedCiIntegration.type === 'GITHUB' || selectedCiIntegration.type === 'GITLAB')" label="CI Repository" path="vcs">
+                                                        <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>
+                                                        <span v-if="!selectNewIntegrationRepo && !outputTrigger.vcs">Not Set</span>
+                                                        <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
+                                                        <vue-feather v-if="!selectNewIntegrationRepo" type="edit" class="clickable" @click="async () => {await fetchVcsRepos(); selectNewIntegrationRepo = true;}" title="Select New Integration Repository" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="eventType">
+                                                        <n-input v-model:value="outputTrigger.eventType" required placeholder="Enter Azure DevOps project name" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Pipeline Definition ID" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter Pipeline Definition ID" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
+                                                        <n-input v-model:value="outputTrigger.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
+                                                        <n-select v-model:value="outputTrigger.users" tag multiple required :options="users" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
+                                                        <n-input v-model:value="outputTrigger.notificationMessage" placeholder="Email Message Contents (i.e. 'Release ready to ship.')" />
+                                                    </n-form-item>
+                                                    <n-button @click="addOutputTrigger" type="success">
+                                                        Save
+                                                    </n-button>
+                                                </n-space>
+                                            </n-form>
+                                        </n-modal>
+                                    </n-tab-pane>
+                                    <n-tab-pane name="Trigger Events" v-if="myUser.installationType !== 'OSS'">
+                                        <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Trigger Event" @click="showCreateInputTriggerModal = true">
+                                            <CirclePlus />
+                                        </Icon>
+                                        <n-modal
+                                            v-model:show="showCreateInputTriggerModal"
+                                            preset="dialog"
+                                            :show-icon="false"
+                                            style="width: 90%"
+                                        >
+                                            <n-form :model="inputTrigger">
+                                                <h2>Add or Update Trigger Event</h2>
+                                                <n-space vertical size="large">
+                                                    <n-form-item label="Name" path="name">
+                                                        <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
+                                                    </n-form-item>
+                                                    <n-form-item label="Condition Matching Between Groups">
+                                                        <n-select v-model:value="inputTrigger.conditionGroup.matchOperator" :options="[{label: 'Require All Groups To Match', value: 'AND'}, {label: 'Require Any Group To Match', value: 'OR'}]" />
+                                                    </n-form-item>
+                                                    <n-form-item path="inputTrigger.conditionGroup">
+                                                        <n-dynamic-input v-model:value="inputTrigger.conditionGroup.conditionGroups" :on-create="onCreateInputTriggerConditionGroup">
+                                                            <template #create-button-default>
+                                                                Add Condition Group
+                                                            </template>
+                                                            <template #default="{ value: value1, index }">
+                                                                <div style="width: 100%;">
+                                                                    <h5>Trigger Group #{{ index + 1 }}</h5>
+                                                                    <n-form-item label="Condition Matching Within The Group">
+                                                                        <n-select v-model:value="value1.matchOperator" :options="[{label: 'Require All Conditions', value: 'AND'}, {label: 'Require Any Condition', value: 'OR'}]" />
+                                                                    </n-form-item>
+                                                                    <n-dynamic-input v-model:value="value1.conditions" :on-create="onCreateInputTriggerCondition">
+                                                                        <template #create-button-default>
+                                                                            Add Trigger Condition
+                                                                        </template>
+                                                                        <template #default="{ value, index }">
+                                                                            <n-select style="width: 400px;" v-model:value="value.type"
+                                                                                v-on:update:value="onConditionTypeUpdate(value1, index)"
+                                                                                :options="[{label: 'Approval Entry', value: 'APPROVAL_ENTRY'}, {label: 'Possible Lifecycles', value: 'LIFECYCLE'}, {label: 'Possible Branch Types', value: 'BRANCH_TYPE'}, {label: 'Metrics', value: 'METRICS'}]" />
+                                                                            <n-select v-if="value.type === 'APPROVAL_ENTRY'"
+                                                                                v-model:value="value.approvalEntry"
+                                                                                :options="approvalEntryOptionsForTriggers"
+                                                                            />
+                                                                            <n-select v-if="value.type === 'APPROVAL_ENTRY'" style="width:300px;" v-model:value="value.approvalState"
+                                                                                :options="[{label: 'Approved', value: 'APPROVED'}, {label: 'Disapproved', value: 'DISAPPROVED'}]" />
+                                                                            <n-select v-if="value.type === 'LIFECYCLE'" v-model:value="value.possibleLifecycles" 
+                                                                                :options="lifecycleOptions" tag multiple />
+                                                                            <n-select v-if="value.type === 'BRANCH_TYPE'" v-model:value="value.possibleBranchTypes" tag multiple
+                                                                                :options="[{label: 'Main', value: 'BASE'}, {label: 'Feature', value: 'FEATURE'}, {label: 'Regular', value: 'REGULAR'}, {label: 'Release', value: 'RELEASE'}, {label: 'Develop', value: 'DEVELOP'}, {label: 'Hotfix', value: 'HOTFIX'}]" />
+                                                                            <n-select v-if="value.type === 'METRICS'" style="width:70%;" v-model:value="value.metricsType" 
+                                                                                :options="[{label: 'Critical Vulnerabilities', value: 'CRITICAL_VULNS'}, {label: 'High Vulnerabilities', value: 'HIGH_VULNS'}, {label: 'Medium Vulnerabilities', value: 'MEDIUM_VULNS'}, {label: 'Low Vulnerabilities', value: 'LOW_VULNS'}, {label: 'Unassigned Vulnerabilities', value: 'UNASSIGNED_VULNS'}, {label: 'Security Violations', value: 'SECURITY_VIOLATIONS'}, {label: 'Operational Violations', value: 'OPERATIONAL_VIOLATIONS'}, {label: 'License Violations', value: 'LICENSE_VIOLATIONS'}]" />
+                                                                            <n-select v-if="value.type === 'METRICS'" style="width:300px;" v-model:value="value.comparisonSign" 
+                                                                                :options="[{label: '=', value: 'EQUALS'}, {label: '>', value: 'GREATER'}, {label: '<', value: 'LOWER'}, {label: '>=', value: 'GREATER_OR_EQUALS'}, {label: '<=', value: 'LOWER_OR_EQUALS'}]" />
+                                                                            <n-input-number v-if="value.type === 'METRICS'" v-model:value="value.metricsValue" />
+                                                                        </template>
+                                                                    </n-dynamic-input>
+                                                                </div>
+                                                            </template>
+                                                        </n-dynamic-input>
+                                                    </n-form-item>
+                                                    <n-form-item label="Output Triggers" path="inputTrigger.outputEvents">
+                                                        <n-select v-model:value="inputTrigger.outputEvents" 
+                                                        :options="outputTriggersForInputForm" multiple />
+                                                    </n-form-item>
+                                                    <n-button @click="addInputTrigger" type="success">
+                                                        Save
+                                                    </n-button>
+                                                </n-space>
+                                            </n-form>
+                                        </n-modal>
+                                    </n-tab-pane>
+                                    <n-tab-pane v-if="false" name="Environment Mapping">
+                                        <div v-if="isWritable" class="envBranchMapBlock">
+                                            <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
+                                            <div>
+                                                <div v-for="et in environmentTypes" :key="et">
+                                                    <div class="etName">{{ et }}</div>
+                                                    <n-select v-on:update:value="value => {updatedComponent.envBranchMap[et] = value; save()}" :options="branchesForEnvMapping" v-model:value="updatedComponent.envBranchMap[et]" />
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </n-tab-pane>
-                                <n-tab-pane v-if="false" name="Admin Zone">
-                                    <div class="versionSchemaBlock" v-if="false && resourceGroups && updatedComponent && componentData && updatedComponent.resourceGroup">
-                                        <label id="resourceGroupLabel">Resource Group</label>
-                                        <n-select
-                                            v-if="isAdmin"
-                                            v-on:update:value="value => {updatedComponent.resourceGroup = value; updateComponentResourceGroup()}" :options="resourceGroups" v-model:value="updatedComponent.resourceGroup" />
-                                        <div v-else>{{ resourceGroupMap[updatedComponent.resourceGroup] }} </div>
-                                    </div>
-                                    <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
-                                        <label id="visibilityLabel">Visibility</label>
-                                        <n-select
-                                            v-if="isAdmin"
-                                            @update:value="value => setComponentVisibility(value)" :options="visibilities" :value="updatedComponent.visibilitySetting" />
-                                        <div v-else>{{ resolvedVisibilityLabel }}</div>
-                                    </div>
-                                </n-tab-pane>
-                            </n-tabs>
-                        </n-modal>
-                        <n-modal
-                            v-model:show="showCloneBranchModal"
-                            preset="dialog"
-                            :show-icon="false"
-                            style="width: 90%"
-                            :title="'Clone ' + words.branchFirstUpper + ' from ' + cloneBrProps.originalBranch.name"
-                            :hide-footer="true"
-                            >
-                            <n-form
-                                :model="cloneBrProps">
-                                <n-space vertical size="large">
-                                    <label>Name of new {{ words.branchFirstUpper }}</label>
-                                    <n-input
-                                        v-model:value="cloneBrProps.name"
-                                        required
-                                        :placeholder="'Enter cloned ' + words.branchFirstUpper + ' name'" />
-                                        <label>Version Pin of new {{ words.branchFirstUpper }} (Defaults to Version Schema: {{ componentData.featureBranchVersioniong }} )"</label>
-                                    <n-input
-                                        v-model:value="cloneBrProps.schema"
-                                        required
-                                        placeholder="Enter Version Pin" />
-                                    <label>Type of new {{ words.branchFirstUpper }}</label>
-                                    <n-select
-                                        placeholder="Please choose type"
-                                        v-model:value="cloneBrProps.type"
-                                        :options="branchTypes"
-                                        required />
-                                    <div class="buttonBlock">
-                                        <n-button type="success" @click="cloneBranchSubmit">Submit</n-button>
-                                        <n-button type="warning" @click="cloneBranchReset">Reset</n-button>
-                                    </div>
-                                </n-space>
-                            </n-form>
-                        </n-modal>
-                    </div>
-                </div>
-                <div class="componentSummaryDetails">
-                        <div v-if="false" class="mt-3">
-                            <h6>
-                                <strong>Deployed to:</strong>
-                                <span v-if="!updatedComponent.deployedTo || !updatedComponent.deployedTo.length"> None</span>
-                            </h6>
-                            <n-data-table v-if="updatedComponent.deployedTo && updatedComponent.deployedTo.length" :columns="deployedToFields" :data="updatedComponent.deployedTo"></n-data-table>
-                            <n-modal 
-                                v-model:show="showEditReleaseModal"
-                                style="width: 90%; min-height: 95vh; background-color: white; margin-top: 5px;"
+                                    </n-tab-pane>
+                                    <n-tab-pane v-if="false" name="Admin Zone">
+                                        <div class="versionSchemaBlock" v-if="false && resourceGroups && updatedComponent && componentData && updatedComponent.resourceGroup">
+                                            <label id="resourceGroupLabel">Resource Group</label>
+                                            <n-select
+                                                v-if="isAdmin"
+                                                v-on:update:value="value => {updatedComponent.resourceGroup = value; updateComponentResourceGroup()}" :options="resourceGroups" v-model:value="updatedComponent.resourceGroup" />
+                                            <div v-else>{{ resourceGroupMap[updatedComponent.resourceGroup] }} </div>
+                                        </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label id="visibilityLabel">Visibility</label>
+                                            <n-select
+                                                v-if="isAdmin"
+                                                @update:value="value => setComponentVisibility(value)" :options="visibilities" :value="updatedComponent.visibilitySetting" />
+                                            <div v-else>{{ resolvedVisibilityLabel }}</div>
+                                        </div>
+                                    </n-tab-pane>
+                                </n-tabs>
+                            </n-modal>
+                            <n-modal
+                                v-model:show="showCloneBranchModal"
                                 preset="dialog"
-                                :show-icon="false">
-                                <release-view
-                                    :uuidprop="selectedReleaseUuid" @closeRelease="showEditReleaseModal=false"/>
+                                :show-icon="false"
+                                style="width: 90%"
+                                :title="'Clone ' + words.branchFirstUpper + ' from ' + cloneBrProps.originalBranch.name"
+                                :hide-footer="true"
+                                >
+                                <n-form
+                                    :model="cloneBrProps">
+                                    <n-space vertical size="large">
+                                        <label>Name of new {{ words.branchFirstUpper }}</label>
+                                        <n-input
+                                            v-model:value="cloneBrProps.name"
+                                            required
+                                            :placeholder="'Enter cloned ' + words.branchFirstUpper + ' name'" />
+                                            <label>Version Pin of new {{ words.branchFirstUpper }} (Defaults to Version Schema: {{ componentData.featureBranchVersioniong }} )"</label>
+                                        <n-input
+                                            v-model:value="cloneBrProps.schema"
+                                            required
+                                            placeholder="Enter Version Pin" />
+                                        <label>Type of new {{ words.branchFirstUpper }}</label>
+                                        <n-select
+                                            placeholder="Please choose type"
+                                            v-model:value="cloneBrProps.type"
+                                            :options="branchTypes"
+                                            required />
+                                        <div class="buttonBlock">
+                                            <n-button type="success" @click="cloneBranchSubmit">Submit</n-button>
+                                            <n-button type="warning" @click="cloneBranchReset">Reset</n-button>
+                                        </div>
+                                    </n-space>
+                                </n-form>
                             </n-modal>
                         </div>
                     </div>
                 </div>
-                <div v-if="marketingVersionEnabled" class="marketingReleases">
-                    <mrkt-releases-of-component :component="updatedComponent.uuid" />
-                </div>
-            </n-gi>
-            <n-gi span="3">
                 <div class="componentDetails">
-                    <h5>{{ words.componentFirstUpper }} {{ words.branchFirstUpperPlural }}:</h5>
-                    <div>
-                        <vue-feather v-cloak v-if="isWritable" class="clickable" type="plus-circle" :title="'Create ' + words.branchFirstUpper" @click="showAddBranchModal = true"/>
-                    </div>
                     <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" :default-expanded-row-keys="[selectedBranchUuid]" />
                 </div>
             </n-gi>
             <n-gi span="7">
+                <div v-if="marketingVersionEnabled" class="marketingReleases">
+                    <mrkt-releases-of-component :component="updatedComponent.uuid" />
+                </div>
                 <div class="branchDetails">
                     <branch-view :branchUuidProp="selectedBranchUuid" :prnumberprop="routePrnumber" v-if="selectedBranchUuid" />
                 </div>
@@ -686,7 +663,7 @@ const isComponent : Ref<boolean> = ref(true)
 const myUser = store.getters.myuser
 
 const isAdmin : boolean = commonFunctions.isAdmin(orguuid.value, myUser)
-const isWritable : boolean = commonFunctions.isWritable(orguuid.value, myUser, 'COMPONENT')
+const isWritable : ComputedRef<boolean> = computed(() => commonFunctions.isWritable(orguuid.value, myUser, 'COMPONENT'))
 
 const words: Ref<any> = ref({})
 
@@ -1562,7 +1539,21 @@ const branchFields: any[] = [
         }
     },
     {
-        title: 'Name',
+        title: () => {
+            return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+                h('span', words.value.branchFirstUpper),
+                isWritable.value ? h(
+                    Icon,
+                    {
+                        class: 'clickable',
+                        size: 20,
+                        title: 'Create ' + words.value.branchFirstUpper,
+                        onClick: () => { showAddBranchModal.value = true }
+                    },
+                    () => h(CirclePlus)
+                ) : null
+            ])
+        },
         key: 'name'
     },
     {
@@ -1929,7 +1920,7 @@ async function handleTabSwitch(tabName: string) {
     padding-top: 10px;
     padding-bottom: 10px;
 }
-.componentWrapper, .componentTop {
+.componentWrapper {
     display: grid;
     grid-template-columns: 0.9fr 1fr;
     grid-gap: 10px;
@@ -2112,6 +2103,10 @@ async function handleTabSwitch(tabName: string) {
 }
 projSettingsCollapse {
     margin-bottom: 105px;
+}
+
+.componentIconsAndSettings {
+    margin-bottom: 5px;
 }
 
 </style>
