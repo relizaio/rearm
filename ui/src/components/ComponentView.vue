@@ -427,6 +427,32 @@
                                             <div v-else>{{ resolvedVisibilityLabel }}</div>
                                         </div>
                                     </n-tab-pane>
+                                    <n-tab-pane v-if="isAdmin && myUser.installationType !== 'OSS'" name="Admin Settings">
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label>Perspectives</label>
+                                            <n-select
+                                                v-model:value="selectedPerspectives"
+                                                :options="perspectiveOptions"
+                                                multiple
+                                                placeholder="Select perspectives" />
+                                        </div>
+                                        <div class="coreSettingsActions" v-if="hasPerspectiveChanges" style="margin-top: 20px;">
+                                            <n-space>
+                                                <n-button type="success" @click="savePerspectives">
+                                                    <template #icon>
+                                                        <vue-feather type="check" />
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetPerspectives">
+                                                    <template #icon>
+                                                        <vue-feather type="x" />
+                                                    </template>
+                                                    Reset Changes
+                                                </n-button>
+                                            </n-space>
+                                        </div>
+                                    </n-tab-pane>
                                 </n-tabs>
                             </n-modal>
                             <n-modal
@@ -711,6 +737,94 @@ async function fetchApprovalPolicies () {
             }
         })
     }
+}
+
+// Perspectives management
+const orgPerspectives: Ref<any[]> = ref([])
+const selectedPerspectives: Ref<string[]> = ref([])
+const originalPerspectives: Ref<string[]> = ref([])
+
+const perspectiveOptions: ComputedRef<any[]> = computed(() => {
+    return orgPerspectives.value.map((p: any) => {
+        return {
+            label: p.name,
+            value: p.uuid
+        }
+    })
+})
+
+const hasPerspectiveChanges: ComputedRef<boolean> = computed(() => {
+    if (selectedPerspectives.value.length !== originalPerspectives.value.length) return true
+    const sorted1 = [...selectedPerspectives.value].sort()
+    const sorted2 = [...originalPerspectives.value].sort()
+    return !sorted1.every((val, index) => val === sorted2[index])
+})
+
+async function fetchPerspectives() {
+    if (isAdmin && myUser.installationType !== 'OSS') {
+        try {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query perspectives($org: ID!) {
+                        perspectives(org: $org) {
+                            uuid
+                            name
+                            org
+                            createdDate
+                        }
+                    }`,
+                variables: {
+                    org: orguuid.value
+                },
+                fetchPolicy: 'no-cache'
+            })
+            orgPerspectives.value = response.data.perspectives || []
+            
+            // Set selected perspectives from component data
+            if (updatedComponent.value && updatedComponent.value.perspectiveDetails) {
+                selectedPerspectives.value = updatedComponent.value.perspectiveDetails.map((p: any) => p.uuid)
+                originalPerspectives.value = [...selectedPerspectives.value]
+            }
+        } catch (err) {
+            console.error('Error fetching perspectives:', err)
+        }
+    }
+}
+
+async function savePerspectives() {
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
+                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
+                        uuid
+                        perspectiveDetails {
+                            uuid
+                            name
+                            org
+                            createdDate
+                        }
+                    }
+                }`,
+            variables: {
+                componentUuid: componentUuid,
+                perspectiveUuids: selectedPerspectives.value
+            }
+        })
+        
+        if (response.data && response.data.setPerspectivesOnComponent) {
+            updatedComponent.value.perspectiveDetails = response.data.setPerspectivesOnComponent.perspectiveDetails
+            originalPerspectives.value = [...selectedPerspectives.value]
+            notify('success', 'Success', 'Perspectives updated successfully')
+        }
+    } catch (err: any) {
+        console.error('Error saving perspectives:', err)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.toString()))
+    }
+}
+
+function resetPerspectives() {
+    selectedPerspectives.value = [...originalPerspectives.value]
 }
 
 
@@ -1889,6 +2003,8 @@ async function initLoad() {
 async function handleTabSwitch(tabName: string) {
     if (tabName === "outputTriggers") {
         await fetchCiIntegrations()
+    } else if (tabName === "Admin Settings") {
+        await fetchPerspectives()
     }
 }
 

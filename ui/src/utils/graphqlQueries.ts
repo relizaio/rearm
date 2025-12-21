@@ -670,6 +670,10 @@ const COMPONENT_FULL_DATA = `
         idType
         idValue
     }
+    perspectiveDetails {
+        uuid
+        name
+    }
 `
 
 const COMPONENT_TITLE_GQL_DATA = `
