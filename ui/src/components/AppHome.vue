@@ -4,8 +4,9 @@
             <n-grid x-gap="24" cols="2">
                 <n-gi>
                     <releases-per-day-chart
-                        type="ORGANIZATION"
-                        :org-uuid="myorg?.uuid"
+                        :type="releaseChartType"
+                        :org-uuid="releaseChartProps.orgUuid"
+                        :perspective-uuid="releaseChartProps.perspectiveUuid"
                     />
                 </n-gi>
                 <n-gi>
@@ -486,6 +487,25 @@ const notify = (type: NotificationType, title: string, content: string) => {
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const installationType: ComputedRef<any> = computed((): any => store.getters.myuser.installationType)
+const myperspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
+
+const releaseChartType: ComputedRef<'ORGANIZATION' | 'PERSPECTIVE'> = computed(() => {
+    return myperspective.value && myperspective.value !== 'default' ? 'PERSPECTIVE' : 'ORGANIZATION'
+})
+
+const releaseChartProps: ComputedRef<any> = computed(() => {
+    if (releaseChartType.value === 'PERSPECTIVE') {
+        return {
+            type: 'PERSPECTIVE',
+            perspectiveUuid: myperspective.value
+        }
+    } else {
+        return {
+            type: 'ORGANIZATION',
+            orgUuid: myorg.value?.uuid
+        }
+    }
+})
 
 const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 const featureSetLabelPlural = computed(() => featureSetLabel.value + 's')

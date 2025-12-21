@@ -20,10 +20,11 @@ import graphqlClient from '@/utils/graphql'
 import * as vegaEmbed from 'vega-embed'
 
 const props = withDefaults(defineProps<{
-    type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT'
+    type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT' | 'PERSPECTIVE'
     orgUuid?: string
     branchUuid?: string
     componentUuid?: string
+    perspectiveUuid?: string
     daysBack?: number
 }>(), {
     daysBack: 60
@@ -148,6 +149,29 @@ async function fetchReleaseAnalytics() {
             })
             
             releaseVisData.value.data.values = resp.data.releaseAnalyticsByBranch
+        } else if (props.type === 'PERSPECTIVE') {
+            if (!props.perspectiveUuid) return
+            resp = await graphqlClient.query({
+                query: gql`
+                    query releaseAnalyticsByPerspective($perspectiveUuid: ID!, $cutOffDate: DateTime!) {
+                        releaseAnalyticsByPerspective(perspectiveUuid: $perspectiveUuid, cutOffDate: $cutOffDate) {
+                            date
+                            num
+                        }
+                    }
+                `,
+                variables: { 
+                    perspectiveUuid: props.perspectiveUuid,
+                    cutOffDate
+                },
+                fetchPolicy: 'no-cache'
+            })
+            
+            resp.data.releaseAnalyticsByPerspective.map((item: any) => {
+                item.date = item.date.split('[')[0]
+            })
+            
+            releaseVisData.value.data.values = resp.data.releaseAnalyticsByPerspective
         }
         
         renderChart()
@@ -172,7 +196,7 @@ onMounted(() => {
     fetchReleaseAnalytics()
 })
 
-watch(() => [props.orgUuid, props.componentUuid, props.branchUuid, props.daysBack], () => {
+watch(() => [props.orgUuid, props.componentUuid, props.branchUuid, props.perspectiveUuid, props.daysBack], () => {
     fetchReleaseAnalytics()
 })
 </script>
