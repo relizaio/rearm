@@ -404,7 +404,8 @@ public class CommonVariables {
 		VARIANTS("variants"),
 		VCS_REPOSITORIES("vcs_repositories"),
 		VERSION_ASSIGNMENTS("version_assignments"),
-		VULN_ANALYSIS("vuln_analysis")
+		VULN_ANALYSIS("vuln_analysis"),
+		PERSPECTIVE("perspectives")
 		;
 		
 		private String name;

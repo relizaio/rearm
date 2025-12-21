@@ -13,6 +13,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
@@ -27,6 +28,7 @@ import io.reliza.common.Utils;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalyticsMetrics;
 import io.reliza.model.AnalyticsMetricsData;
+import io.reliza.model.AnalyticsMetricsData.PerspectiveWithHash;
 import io.reliza.model.BranchData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
@@ -44,9 +46,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class AnalyticsMetricsService {
 
-	@Autowired
-	private OrganizationService organizationService;
-	
 	@Autowired
 	private BranchService branchService;
 
@@ -66,13 +65,30 @@ public class AnalyticsMetricsService {
 	
 	public List<AnalyticsMetricsData> listAnalyticsMetricsByOrgDates(UUID org, ZonedDateTime dateFrom,
 			ZonedDateTime dateTo) {
-		var ams = repository.findAnalyticsMetricsByOrgDates(org.toString(), dateFrom, dateTo);
+		String dateKeyFrom = AnalyticsMetricsData.obtainAnalyticsDateKey(dateFrom);
+		String dateKeyTo = AnalyticsMetricsData.obtainAnalyticsDateKey(dateTo);
+		var ams = repository.findAnalyticsMetricsByOrgDates(org.toString(), dateKeyFrom, dateKeyTo);
+		return ams.stream().map(AnalyticsMetricsData::dataFromRecord).toList();
+	}
+	
+	public List<AnalyticsMetricsData> listAnalyticsMetricsByOrgPerspectiveDates(UUID org, UUID perspectiveUuid,
+			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
+		String dateKeyFrom = AnalyticsMetricsData.obtainAnalyticsDateKey(dateFrom);
+		String dateKeyTo = AnalyticsMetricsData.obtainAnalyticsDateKey(dateTo);
+		var ams = repository.findAnalyticsMetricsByOrgPerspectiveDates(
+				org.toString(), perspectiveUuid.toString(), dateKeyFrom, dateKeyTo);
 		return ams.stream().map(AnalyticsMetricsData::dataFromRecord).toList();
 	}
 	
 	private Optional<AnalyticsMetrics> findAnalyticsMetricsByOrgDate(UUID org, ZonedDateTime date) {
 		String dateKey = AnalyticsMetricsData.obtainAnalyticsDateKey(date);
 		return repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey);
+	}
+	
+	public Optional<AnalyticsMetricsData> findAnalyticsMetricsByOrgPerspectiveDateKey(UUID org, UUID perspective, String dateKey) {
+		Optional<AnalyticsMetrics> am = repository.findAnalyticsMetricsByOrgPerspectiveDateKey(
+				org.toString(), perspective.toString(), dateKey);
+		return am.map(AnalyticsMetricsData::dataFromRecord);
 	}
 	
 	public Optional<ReleaseMetricsDto> getFindingsPerDay(UUID org, String dateKey) {
@@ -91,6 +107,29 @@ public class AnalyticsMetricsService {
 			// Compute metrics for today without saving
 			ZonedDateTime createdDate = requestedDate.atTime(23, 59, 59).atZone(java.time.ZoneOffset.UTC);
 			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, createdDate);
+			var metrics = amd.getMetrics().clone();
+			vulnAnalysisService.processReleaseMetricsDto(org, org, AnalysisScope.ORG, metrics);
+			return Optional.of(metrics);
+		}
+		
+		return Optional.empty();
+	}
+	
+	public Optional<ReleaseMetricsDto> getFindingsPerDayByPerspective(UUID org, UUID perspectiveUuid, String dateKey) {
+		Optional<AnalyticsMetricsData> existingAmd = findAnalyticsMetricsByOrgPerspectiveDateKey(org, perspectiveUuid, dateKey);
+		
+		if (existingAmd.isPresent()) {
+			return Optional.of(existingAmd.get().getMetrics());
+		}
+		
+		// If not found in DB, check if dateKey matches today's date
+		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
+		java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
+		
+		if (requestedDate.equals(today)) {
+			// Compute metrics for today without saving
+			ZonedDateTime createdDate = requestedDate.atTime(23, 59, 59).atZone(java.time.ZoneOffset.UTC);
+			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, perspectiveUuid, createdDate);
 			var metrics = amd.getMetrics().clone();
 			vulnAnalysisService.processReleaseMetricsDto(org, org, AnalysisScope.ORG, metrics);
 			return Optional.of(metrics);
@@ -174,6 +213,25 @@ public class AnalyticsMetricsService {
 		return chartData;
 	}
 	
+	public List<VulnViolationsChartDto> getVulnViolationByPerspectiveChartData(UUID org, UUID perspectiveUuid,
+			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
+		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
+		if (dateTo.isAfter(today)) dateTo = today;
+		
+		// Get stored analytics metrics for the perspective within date range using SQL filtering
+		var amds = listAnalyticsMetricsByOrgPerspectiveDates(org, perspectiveUuid, dateFrom, dateTo);
+		var chartData = new LinkedList<>(amds
+				.stream()
+				.map(amd -> amd.convertToChartDto())
+				.flatMap(List::stream)
+				.toList());
+		
+		// Compute today's data for the perspective
+		var todaysData = computeActualAnalyticsMetricsDataForOrg(org, perspectiveUuid, ZonedDateTime.now());
+		chartData.addAll(todaysData.convertToChartDto());
+		return chartData;
+	}
+	
 	public List<VulnViolationsChartDto> getVulnViolationByComponentChartData(UUID componentUuid, 
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
 		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
@@ -249,8 +307,6 @@ public class AnalyticsMetricsService {
 			return new LinkedList<>();
 		}
 
-		UUID org = releasesInRange.get(0).getOrg();
-		
 		// Group releases by date (LocalDate) and pick the latest release for each day
 		Map<LocalDate, ReleaseData> latestReleasePerDay = new HashMap<>();
 		for (ReleaseData rd : releasesInRange) {
@@ -276,23 +332,36 @@ public class AnalyticsMetricsService {
 		return chartData;
 	}
 	
-	protected void computeAndRecordAnalyticsMetricsForAllOrgs () {
-		var orgs = organizationService.listAllOrganizationData();
-		orgs.forEach(org -> {
-			if (org.getStatus() != StatusEnum.ARCHIVED && 
-					!CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(org.getUuid())) {
-				computeAndRecordAnalyticsMetricsPerOrg(org.getUuid());
-			}
-		});
+	public void computeAndRecordAnalyticsMetricsPerOrg(UUID org, Set<PerspectiveWithHash> perspectivesWithHash, 
+			ZonedDateTime targetDate) {
+		// Compute for org-wide analytics
+		Optional<AnalyticsMetrics> existingAm = findAnalyticsMetricsByOrgDate(org, targetDate);
+		if (existingAm.isEmpty()) {
+			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, targetDate);
+			save(new AnalyticsMetrics(), Utils.dataToRecord(amd), WhoUpdated.getAutoWhoUpdated());
+		}
 		
+		// Compute for each perspective
+		if (perspectivesWithHash != null && !perspectivesWithHash.isEmpty()) {
+			for (PerspectiveWithHash pwh : perspectivesWithHash) {
+				AnalyticsMetricsData amdPerspective = computeActualAnalyticsMetricsDataForOrg(org, pwh.perspectiveUuid(), targetDate);
+				amdPerspective.setPerspectiveHash(pwh.perspectiveHash());
+				save(new AnalyticsMetrics(), Utils.dataToRecord(amdPerspective), WhoUpdated.getAutoWhoUpdated());
+			}
+		}
 	}
 	
-	private void computeAndRecordAnalyticsMetricsPerOrg(UUID org) {
-		AnalyticsMetrics am = new AnalyticsMetrics();
-		Optional<AnalyticsMetrics> existingAm = findAnalyticsMetricsByOrgDate(org, am.getCreatedDate());
-		if (existingAm.isEmpty()) {
-			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, am.getCreatedDate());
-			save(am, Utils.dataToRecord(amd), WhoUpdated.getAutoWhoUpdated());
+	public void computeAndRecordAnalyticsMetricsForPerspectiveDateRange(UUID org, UUID perspectiveUuid, 
+			String perspectiveHash, ZonedDateTime dateFrom, ZonedDateTime dateTo) {
+		LocalDate startDate = dateFrom.toLocalDate();
+		LocalDate endDate = dateTo.toLocalDate();
+		
+		// Iterate through each day in the range
+		for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+			ZonedDateTime createdDate = date.atStartOfDay(dateFrom.getZone());
+			AnalyticsMetricsData amdPerspective = computeActualAnalyticsMetricsDataForOrg(org, perspectiveUuid, createdDate);
+			amdPerspective.setPerspectiveHash(perspectiveHash);
+			save(new AnalyticsMetrics(), Utils.dataToRecord(amdPerspective), WhoUpdated.getAutoWhoUpdated());
 		}
 	}
 	
@@ -307,8 +376,14 @@ public class AnalyticsMetricsService {
 	}
 	
 	private AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
+		return computeActualAnalyticsMetricsDataForOrg(org, null, createdDate);
+	}
+	
+	private AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, UUID perspective, ZonedDateTime createdDate) {
 		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
-		var activeBranches = branchService.listBranchesOfOrg(org);
+		var activeBranches = (perspective != null) 
+				? branchService.listBranchesOfOrg(org, perspective)
+				: branchService.listBranchesOfOrg(org);
 		List<ReleaseData> latestReleasesOfBranches;
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
 			latestReleasesOfBranches = customPool.submit(() -> 
@@ -328,7 +403,7 @@ public class AnalyticsMetricsService {
 			rmd2.enrichSourcesWithRelease(rd.getUuid());
 			rmd.mergeWithByContent(rmd2);
 		});
-		return AnalyticsMetricsData.analyticsMetricsDataFactory(org, rmd, createdDate);
+		return AnalyticsMetricsData.analyticsMetricsDataFactory(org, perspective, rmd, createdDate);
 	}
 	
 	@Transactional
@@ -359,6 +434,28 @@ public class AnalyticsMetricsService {
 		List<ReleasesPerBranch> res = new ArrayList<>();
 		var objList = repository.analyticsBranchesWithMostReleases(cutOffDate, compType.name(),
 				maxComponents, organization.toString());
+		if (null != objList && !objList.isEmpty()) {
+			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerBranch).toList();
+		}
+		return res;
+	}
+	
+	public List<ReleasesPerComponent> analyticsComponentsWithMostRecentReleasesByPerspective (ZonedDateTime cutOffDate,
+			ComponentType compType, Integer maxComponents, UUID organization, UUID perspectiveUuid) {
+		List<ReleasesPerComponent> res = new ArrayList<>();
+		var objList = repository.analyticsComponentsWithMostReleasesByPerspective(cutOffDate, compType.name(),
+				maxComponents, organization.toString(), perspectiveUuid.toString());
+		if (null != objList && !objList.isEmpty()) {
+			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerComponent).toList();
+		}
+		return res;
+	}
+	
+	public List<ReleasesPerBranch> analyticsBranchesWithMostRecentReleasesByPerspective (ZonedDateTime cutOffDate,
+			ComponentType compType, Integer maxComponents, UUID organization, UUID perspectiveUuid) {
+		List<ReleasesPerBranch> res = new ArrayList<>();
+		var objList = repository.analyticsBranchesWithMostReleasesByPerspective(cutOffDate, compType.name(),
+				maxComponents, organization.toString(), perspectiveUuid.toString());
 		if (null != objList && !objList.isEmpty()) {
 			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerBranch).toList();
 		}

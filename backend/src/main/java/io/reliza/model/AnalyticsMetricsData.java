@@ -24,10 +24,16 @@ import lombok.EqualsAndHashCode;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AnalyticsMetricsData extends RelizaDataParent implements RelizaObject {
 
+	public static record PerspectiveWithHash(UUID perspectiveUuid, String perspectiveHash) {}
+
 	@JsonProperty
 	private UUID uuid;
 	@JsonProperty
 	private UUID org;
+	@JsonProperty
+	private UUID perspective;
+	@JsonProperty
+	private String perspectiveHash;
 	@JsonProperty
 	private String dateKey;
 	@JsonProperty
@@ -35,8 +41,18 @@ public class AnalyticsMetricsData extends RelizaDataParent implements RelizaObje
 	
 
 	public static AnalyticsMetricsData analyticsMetricsDataFactory(UUID org, ReleaseMetricsDto metrics, ZonedDateTime createdDate) {
+		return analyticsMetricsDataFactory(org, null, null, metrics, createdDate);
+	}
+	
+	public static AnalyticsMetricsData analyticsMetricsDataFactory(UUID org, UUID perspective, ReleaseMetricsDto metrics, ZonedDateTime createdDate) {
+		return analyticsMetricsDataFactory(org, perspective, null, metrics, createdDate);
+	}
+	
+	public static AnalyticsMetricsData analyticsMetricsDataFactory(UUID org, UUID perspective, String perspectiveHash, ReleaseMetricsDto metrics, ZonedDateTime createdDate) {
 		AnalyticsMetricsData amd = new AnalyticsMetricsData();
 		amd.setOrg(org);
+		amd.setPerspective(perspective);
+		amd.setPerspectiveHash(perspectiveHash);
 		amd.setMetrics(metrics);
 		amd.setCreatedDate(createdDate);
 		amd.setDateKey(obtainAnalyticsDateKey(createdDate));
@@ -60,7 +76,10 @@ public class AnalyticsMetricsData extends RelizaDataParent implements RelizaObje
 	}
 	
 	public List<VulnViolationsChartDto> convertToChartDto () {
-		return this.metrics.convertToChartDto(this.createdDate);
+		// Parse dateKey (format: YYYY-MM-DD) and convert to ZonedDateTime
+		java.time.LocalDate localDate = java.time.LocalDate.parse(this.dateKey, DateTimeFormatter.ISO_DATE);
+		ZonedDateTime dateFromKey = localDate.atStartOfDay(this.createdDate.getZone());
+		return this.metrics.convertToChartDto(dateFromKey);
 	}
 
 	@Override

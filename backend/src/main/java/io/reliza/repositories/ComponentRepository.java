@@ -71,4 +71,9 @@ public interface ComponentRepository extends CrudRepository<Component, UUID> {
 			value = VariableQueries.FIND_COMPONENTS_BY_VCS,
 			nativeQuery = true)
 	List<Component> findComponentsByVcs(String vcsUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_COMPONENTS_BY_PERSPECTIVE,
+			nativeQuery = true)
+	List<Component> findComponentsByPerspective(String perspectiveUuidAsString);
 }

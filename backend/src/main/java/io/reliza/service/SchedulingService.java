@@ -3,13 +3,12 @@
 */
 package io.reliza.service;
 
-import java.time.ZonedDateTime;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import io.reliza.common.AdvisoryLockKey;
+import io.reliza.service.oss.OssAnalyticsMetricsService;
 import jakarta.persistence.EntityManager;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,6 +29,9 @@ public class SchedulingService {
     
     @Autowired
     AnalyticsMetricsService analyticsMetricsService;
+    
+    @Autowired
+    OssAnalyticsMetricsService ossAnalyticsMetricsService;
     
     @Autowired
     OrganizationService organizationService;
@@ -83,14 +85,14 @@ public class SchedulingService {
 		}
     }
     
-    @Scheduled(cron="0 50 23 * * *") // once daily at the end of day
+    @Scheduled(cron="1 0 0 * * *") // once daily at 00:00:01 (1 second past midnight)
     public void computeAnalyticsMetrics () {
         try {
             Boolean lock = getLock(AdvisoryLockKey.COMPUTE_ANALYTICS_METRICS);
             log.debug("compute analytics metrics lock acquired {}", lock);
 			if (lock) {
 				try {
-					analyticsMetricsService.computeAndRecordAnalyticsMetricsForAllOrgs();
+					ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForAllOrgs();
 				} catch (Exception e) {
 					log.error("Exception in computing analytics metrics", e);
 				} finally {

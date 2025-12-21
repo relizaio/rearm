@@ -10,7 +10,7 @@ type Query {
 	
 	releaseTagKeys(orgUuid: ID!): [String]
 	component(componentUuid:ID!): Component
-	components(orgUuid:ID!, componentType:ComponentType!): [Component]	
+	components(orgUuid:ID!, componentType:ComponentType!, perspective:ID): [Component]
 	branch(branchUuid:ID!): Branch
 	branchesOfComponent(componentUuid:ID!): [Branch]
 	releases(branchFilter:ID, orgFilter:ID, releaseFilter:[ID], numRecords:Int, pullRequestFilter:Int): [Release]
@@ -28,6 +28,7 @@ type Query {
 	releaseAnalytics(orgUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
 	releaseAnalyticsByComponent(componentUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
 	releaseAnalyticsByBranch(branchUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
+	releaseAnalyticsByPerspective(perspectiveUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
 	totalsAnalytics(orgUuid: ID!): Object
 	apiKeys(orgUuid: ID!): [ApiKey]
 	marketingRelease(marketingReleaseUuid: ID!): MarketingRelease
@@ -48,12 +49,16 @@ type Query {
 	# Analytics
 	mostActiveComponentsOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerComponent]
 	mostActiveBranchesOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerBranch]
+	mostActiveComponentsOverTimeByPerspective(activeComponentsInput: ActiveComponentsInput!, perspectiveUuid: ID!): [ReleasesPerComponent]
+	mostActiveBranchesOverTimeByPerspective(activeComponentsInput: ActiveComponentsInput!, perspectiveUuid: ID!): [ReleasesPerBranch]
 	vulnerabilitiesViolationsOverTime(orgUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	vulnerabilitiesViolationsOverTimeByComponent(componentUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	vulnerabilitiesViolationsOverTimeByBranch(branchUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	vulnerabilitiesViolationsOverTimeByPerspective(orgUuid: ID!, perspectiveUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	findingsPerDay(orgUuid: ID!, date: String!): DependencyTrackMetrics
 	findingsPerDayForComponent(componentUuid: ID!, date: String!): DependencyTrackMetrics
 	findingsPerDayForBranch(branchUuid: ID!, date: String!): DependencyTrackMetrics
+	findingsPerDayByPerspective(orgUuid: ID!, perspectiveUuid: ID!, date: String!): DependencyTrackMetrics
 	
 	# Programmatic
 	getReleaseByHashProgrammatic(hash: String!, componentId: ID): Release
@@ -80,6 +85,10 @@ type Query {
 	# Vulnerability Analysis
 	getVulnAnalysis(org: ID!, componentUuid: ID, branchUuid: ID, releaseUuid: ID): [VulnAnalysisWebDto]
 	getVulnAnalysisByLocationAndFinding(org: ID!, location: String!, findingId: String!, findingType: FindingType!): [VulnAnalysisWebDto]
+	
+	# Perspectives
+	perspectives(org: ID!): [Perspective]
+	componentsOfPerspective(perspectiveUuid: ID!): [Component]
 }
 
 type Mutation {
@@ -184,6 +193,12 @@ type Mutation {
 	# Vulnerability Analysis
 	createVulnAnalysis(analysis: CreateVulnAnalysisInput!): VulnAnalysisWebDto
 	updateVulnAnalysis(analysis: UpdateVulnAnalysisInput!): VulnAnalysisWebDto
+	
+	# Perspectives
+	createPerspective(org: ID!, name: String!): Perspective
+	updatePerspective(uuid: ID!, name: String!): Perspective
+	deletePerspective(uuid: ID!): Perspective
+	setPerspectivesOnComponent(componentUuid: ID!, perspectiveUuids: [ID!]!): Component
 }
 
 enum BomMediaType {
@@ -251,6 +266,7 @@ type Component {
 	outputTriggers: [ReleaseOutputEvent]
 	identifiers: [Identifier]
 	repoPath: String
+	perspectiveDetails: [Perspective]
 }
 
 type Identifier {
@@ -803,6 +819,13 @@ type ApprovalEntry {
 	approvalRequirements: [ApprovalRequirement]
 	approvalName: String
 	status: Status
+}
+
+type Perspective {
+	uuid: ID
+	org: ID
+	name: String
+	createdDate: DateTime
 }
 
 type ApprovalRequirement {

@@ -251,6 +251,14 @@ class VariableQueries {
 	protected static final String FIND_BRANCHES_OF_ORG = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED'";
 	
+	protected static final String FIND_BRANCHES_OF_ORG_BY_PERSPECTIVE = """
+			SELECT b.* FROM rearm.branches b
+			INNER JOIN rearm.components c ON c.uuid::text = b.record_data->>'component'
+			WHERE b.record_data->>'org' = :orgUuidAsString
+			AND b.record_data->>'status' != 'ARCHIVED'
+			AND jsonb_exists(c.record_data->'perspectives', :perspectiveUuidAsString)
+			""";
+	
 	protected static final String FIND_BRANCHES_BY_CHILD_COMPONENT_AND_BRANCH = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED' AND "
 			+ "jsonb_contains(record_data, jsonb_build_object('dependencies', jsonb_build_array(json_build_object('uuid', :compUuidAsString, 'branch', :branchUuidAsString)))) ";
@@ -765,6 +773,12 @@ class VariableQueries {
 			and (c.record_data->>'status' != 'ARCHIVED' or c.record_data->>'status' is null)
 			""";
 	
+	protected static final String FIND_COMPONENTS_BY_PERSPECTIVE = """
+			select * from rearm.components c
+			where jsonb_exists(c.record_data->'perspectives', :perspectiveUuidAsString)
+			and (c.record_data->>'status' != 'ARCHIVED' or c.record_data->>'status' is null)
+			""";
+
 	protected static final String FIND_BRANCHES_BY_VCS = """
 			select * from rearm.branches b
 			where b.record_data->>'vcs' = :vcsUuidAsString
@@ -864,19 +878,63 @@ class VariableQueries {
 				AND comp.record_data->>'type' = :compType ORDER by rlzcount desc limit :maxBranches
 			""";
 	
+	protected static final String ANALYTICS_COMPONENTS_WITH_MOST_RELEASES_BY_PERSPECTIVE = """
+			WITH release_stats (uuid, rlzcount) AS (
+				select record_data->>'component', count(rlz) AS rlzcount FROM rearm.releases rlz
+					WHERE rlz.record_data->>'org' = :organization 
+					AND rlz.created_date > :cutOffDate group by record_data->>'component')
+			SELECT comp.uuid AS componentuuid, comp.record_data->>'name' AS componentname,
+				comp.record_data->>'type' AS componenttype, rs.rlzcount AS rlzcount 
+				FROM rearm.components comp, release_stats rs WHERE comp.uuid::text = rs.uuid
+				AND (comp.record_data->>'status' IS NULL OR comp.record_data->>'status' = 'ACTIVE')
+				AND comp.record_data->>'type' = :compType
+				AND jsonb_exists(comp.record_data->'perspectives', :perspectiveUuidAsString)
+				ORDER by rlzcount desc limit :maxComponents
+			""";
+	
+	protected static final String ANALYTICS_BRANCHES_WITH_MOST_RELEASES_BY_PERSPECTIVE = """
+			WITH release_stats (uuid, rlzcount) AS (
+				SELECT record_data->>'branch', count(rlz) AS rlzcount FROM rearm.releases rlz
+					WHERE rlz.record_data->>'org' = :organization 
+					AND rlz.created_date > :cutOffDate group by record_data->>'branch')
+			SELECT comp.uuid AS componentuuid, comp.record_data->>'name' AS componentname,
+			    branch.uuid AS branchuuid, branch.record_data->>'name' AS branchname,
+				comp.record_data->>'type' AS componenttype, rs.rlzcount AS rlzcount 
+				FROM rearm.components comp, rearm.branches branch, release_stats rs WHERE branch.uuid::text = rs.uuid
+			    AND comp.uuid::text = branch.record_data->>'component'
+				AND (comp.record_data->>'status' IS NULL OR comp.record_data->>'status' = 'ACTIVE')
+				AND comp.record_data->>'type' = :compType
+				AND jsonb_exists(comp.record_data->'perspectives', :perspectiveUuidAsString)
+				ORDER by rlzcount desc limit :maxBranches
+			""";
+	
 	/*
 	 * Analytics Metrics
 	 */
 	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_DATES = """
 			SELECT * from rearm.analytics_metrics am 
 				WHERE am.record_data->>'org' = :orgUuidAsString
-				AND am.created_date >= :dateFrom AND am.created_date <= :dateTo
+				AND am.record_data->>'dateKey' >= :dateKeyFrom AND am.record_data->>'dateKey' <= :dateKeyTo
 			""";
 	
 	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_DATE_KEY = """
 			SELECT * from rearm.analytics_metrics am 
 				WHERE am.record_data->>'org' = :orgUuidAsString
 				AND am.record_data->>'dateKey' = :dateKey
+			""";
+	
+	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_PERSPECTIVE_DATE_KEY = """
+			SELECT * from rearm.analytics_metrics am 
+				WHERE am.record_data->>'org' = :orgUuidAsString
+				AND am.record_data->>'perspective' = :perspectiveUuidAsString
+				AND am.record_data->>'dateKey' = :dateKey
+			""";
+	
+	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_PERSPECTIVE_DATES = """
+			SELECT * from rearm.analytics_metrics am 
+				WHERE am.record_data->>'org' = :orgUuidAsString
+				AND am.record_data->>'perspective' = :perspectiveUuidAsString
+				AND am.record_data->>'dateKey' >= :dateKeyFrom AND am.record_data->>'dateKey' <= :dateKeyTo
 			""";
 
 	/*

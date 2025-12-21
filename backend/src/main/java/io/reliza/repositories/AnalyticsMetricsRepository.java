@@ -19,7 +19,7 @@ public interface AnalyticsMetricsRepository extends CrudRepository<AnalyticsMetr
 			value = VariableQueries.FIND_ANALYTICS_METRICS_BY_ORG_DATES,
 			nativeQuery = true)
 	List<AnalyticsMetrics> findAnalyticsMetricsByOrgDates(String orgUuidAsString,
-			ZonedDateTime dateFrom, ZonedDateTime dateTo);
+			String dateKeyFrom, String dateKeyTo);
 	
 	@Query(
 			value = VariableQueries.FIND_ANALYTICS_METRICS_BY_ORG_DATE_KEY,
@@ -38,5 +38,29 @@ public interface AnalyticsMetricsRepository extends CrudRepository<AnalyticsMetr
 			nativeQuery = true)
 	List<Object[]> analyticsBranchesWithMostReleases(ZonedDateTime cutOffDate, String compType,
 			Integer maxBranches, String organization);
+	
+	@Query(
+			value = VariableQueries.ANALYTICS_COMPONENTS_WITH_MOST_RELEASES_BY_PERSPECTIVE,
+			nativeQuery = true)
+	List<Object[]> analyticsComponentsWithMostReleasesByPerspective(ZonedDateTime cutOffDate, String compType,
+			Integer maxComponents, String organization, String perspectiveUuidAsString);
+	
+	@Query(
+			value = VariableQueries.ANALYTICS_BRANCHES_WITH_MOST_RELEASES_BY_PERSPECTIVE,
+			nativeQuery = true)
+	List<Object[]> analyticsBranchesWithMostReleasesByPerspective(ZonedDateTime cutOffDate, String compType,
+			Integer maxBranches, String organization, String perspectiveUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_ANALYTICS_METRICS_BY_ORG_PERSPECTIVE_DATE_KEY,
+			nativeQuery = true)
+	Optional<AnalyticsMetrics> findAnalyticsMetricsByOrgPerspectiveDateKey(String orgUuidAsString,
+			String perspectiveUuidAsString, String dateKey);
+	
+	@Query(
+			value = VariableQueries.FIND_ANALYTICS_METRICS_BY_ORG_PERSPECTIVE_DATES,
+			nativeQuery = true)
+	List<AnalyticsMetrics> findAnalyticsMetricsByOrgPerspectiveDates(String orgUuidAsString,
+			String perspectiveUuidAsString, String dateKeyFrom, String dateKeyTo);
 	
 }

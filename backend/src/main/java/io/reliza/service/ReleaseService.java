@@ -579,6 +579,25 @@ public class ReleaseService {
 		return releases.stream()
 				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
 	}
+	
+	/**
+	 * Aggregates number of releases per time unit per defined time frame for a perspective
+	 * @param perspectiveUuid
+	 * @param cutOffDate
+	 * @return
+	 */
+	public List<VegaDateValue> getReleaseCreateOverTimeAnalyticsByPerspective(UUID perspectiveUuid, ZonedDateTime cutOffDate) {
+		List<UUID> componentUuids = getComponentService.listComponentsByPerspective(perspectiveUuid).stream()
+				.map(ComponentData::getUuid).toList();
+		
+		List<Release> releases = new java.util.ArrayList<>();
+		for (UUID componentUuid : componentUuids) {
+			releases.addAll(listReleasesOfComponentAfterDate(componentUuid, cutOffDate));
+		}
+		
+		return releases.stream()
+				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
+	}
 
 	/**
 	 * Looks for all releases with this specific version within specified organization uuid

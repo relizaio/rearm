@@ -188,6 +188,9 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private String repoPath;
 	
+	@JsonProperty
+	private Set<UUID> perspectives;
+	
 	public List<TeaIdentifier> getIdentifiers () {
 		return new LinkedList<>(this.identifiers);
 	}

@@ -146,6 +146,14 @@ public class ComponentService {
 		return globalListOfComponentData;
 	}
 	
+	public List<ComponentData> listComponentDataByOrganizationAndPerspective(UUID orgUuid, UUID perspectiveUuid, ComponentType... pts) {
+		List<ComponentData> allComponents = listComponentDataByOrganization(orgUuid, pts);
+		// Filter components that belong to the specified perspective
+		return allComponents.stream()
+				.filter(cd -> cd.getPerspectives() != null && cd.getPerspectives().contains(perspectiveUuid))
+				.toList();
+	}
+	
 	public List<Component> listComponentsByApprovalPolicy(UUID approvalPolicyUuid) {
 		return repository.findComponentsByApprovalPolicy(approvalPolicyUuid.toString());
 	}
@@ -482,6 +490,14 @@ public class ComponentService {
 		ComponentData pd = ComponentData.dataFromRecord(p);
 		pd.setVisibilitySetting(visibility);
 		return saveComponent(p, Utils.dataToRecord(pd), wu);
+	}
+	
+	@Transactional
+	public Component setPerspectives (UUID componentUuid, Collection<UUID> perspectiveUuids, WhoUpdated wu) throws RelizaException {
+		Component c = getComponentService.getComponent(componentUuid).get();
+		ComponentData cd = ComponentData.dataFromRecord(c);
+		cd.setPerspectives(new LinkedHashSet<>(perspectiveUuids));
+		return saveComponent(c, Utils.dataToRecord(cd), wu);
 	}
 	
 	/**

@@ -135,11 +135,19 @@ public class ComponentDataFetcher {
 	@DgsData(parentType = "Query", field = "components")
 	public Collection<ComponentData> getComponentsOfType(
 			@InputArgument("orgUuid") String orgUuidStr,
-			@InputArgument("componentType") ComponentType componentType) {
+			@InputArgument("componentType") ComponentType componentType,
+			@InputArgument("perspective") String perspectiveUuidStr) {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		
+		// If perspective is provided, filter by perspective
+		if (perspectiveUuidStr != null && !perspectiveUuidStr.isEmpty()) {
+			UUID perspectiveUuid = UUID.fromString(perspectiveUuidStr);
+			return componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType);
+		}
+		
 		return componentService.listComponentDataByOrganization(orgUuid, componentType);
 	}
 	

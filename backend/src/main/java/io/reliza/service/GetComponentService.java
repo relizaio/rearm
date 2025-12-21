@@ -80,4 +80,9 @@ public class GetComponentService {
 						.collect(Collectors.toList());
 	}
 	
+	public List<ComponentData> listComponentsByPerspective (UUID perspectiveUuid) {
+		return repository.findComponentsByPerspective(perspectiveUuid.toString()).stream()
+				.map(ComponentData::dataFromRecord).toList();
+	}
+	
 }

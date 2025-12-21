@@ -34,6 +34,11 @@ public interface BranchRepository extends CrudRepository<Branch, UUID> {
 			nativeQuery = true)
 	List<Branch> findBranchesOfOrg(String orgUuidAsString);
 	
+	@Query(
+			value = VariableQueries.FIND_BRANCHES_OF_ORG_BY_PERSPECTIVE,
+			nativeQuery = true)
+	List<Branch> findBranchesOfOrgByPerspective(String orgUuidAsString, String perspectiveUuidAsString);
+	
 	
 	/**
 	 * This one is to locate products for auto-integration
