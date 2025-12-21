@@ -38,8 +38,9 @@
                 <n-gi span="2"><n-divider /></n-gi>
                 <n-gi>
                     <findings-over-time-chart
-                        type="ORGANIZATION"
+                        :type="releaseChartType"
                         :org-uuid="myorg?.uuid"
+                        :perspective-uuid="releaseChartProps.perspectiveUuid"
                     />
                 </n-gi>
                 <n-gi>

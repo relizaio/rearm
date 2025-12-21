@@ -32,10 +32,11 @@ import * as vegaEmbed from 'vega-embed'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const props = withDefaults(defineProps<{
-    type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT'
+    type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT' | 'PERSPECTIVE'
     orgUuid?: string
     branchUuid?: string
     componentUuid?: string
+    perspectiveUuid?: string
     dateFrom?: Date
     dateTo?: Date
     daysBack?: number
@@ -305,6 +306,27 @@ async function fetchFindingsPerDay(dateOverride?: string) {
             if (response.data.findingsPerDayForComponent) {
                 findingsPerDayData.value = processMetricsData(response.data.findingsPerDayForComponent)
             }
+        } else if (props.type === 'PERSPECTIVE') {
+            if (!orgUuid.value || !props.perspectiveUuid) return
+            response = await graphqlClient.query({
+                query: gql`
+                    query findingsPerDayByPerspective($orgUuid: ID!, $perspectiveUuid: ID!, $date: String!) {
+                        findingsPerDayByPerspective(orgUuid: $orgUuid, perspectiveUuid: $perspectiveUuid, date: $date) {
+                            ${FINDINGS_FIELDS}
+                        }
+                    }
+                `,
+                variables: {
+                    orgUuid: orgUuid.value,
+                    perspectiveUuid: props.perspectiveUuid,
+                    date: dateToUse
+                },
+                fetchPolicy: 'no-cache'
+            })
+            
+            if (response.data.findingsPerDayByPerspective) {
+                findingsPerDayData.value = processMetricsData(response.data.findingsPerDayByPerspective)
+            }
         }
     } catch (error) {
         console.error('Error fetching findings per day:', error)
@@ -400,6 +422,35 @@ async function fetchVulnerabilityViolationAnalytics() {
                     createdDate: item.createdDate.split('[')[0]
                 }))
             }
+        } else if (props.type === 'PERSPECTIVE') {
+            if (!orgUuid.value || !props.perspectiveUuid) return
+            const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - props.daysBack))
+            const dateToValue = props.dateTo || new Date()
+            
+            resp = await graphqlClient.query({
+                query: gql`
+                    query vulnerabilitiesViolationsOverTimeByPerspective($orgUuid: ID!, $perspectiveUuid: ID!, $dateFrom: DateTime!, $dateTo: DateTime!) {
+                        vulnerabilitiesViolationsOverTimeByPerspective(orgUuid: $orgUuid, perspectiveUuid: $perspectiveUuid, dateFrom: $dateFrom, dateTo: $dateTo) {
+                            createdDate
+                            num
+                            type
+                        }
+                    }
+                `,
+                variables: {
+                    orgUuid: orgUuid.value,
+                    perspectiveUuid: props.perspectiveUuid,
+                    dateFrom: dateFromValue,
+                    dateTo: dateToValue
+                }
+            })
+            
+            if (resp.data.vulnerabilitiesViolationsOverTimeByPerspective) {
+                analyticsMetrics.value.data.values = resp.data.vulnerabilitiesViolationsOverTimeByPerspective.map((item: any) => ({
+                    ...item,
+                    createdDate: item.createdDate.split('[')[0]
+                }))
+            }
         }
         
         renderChart()
@@ -447,7 +498,7 @@ onMounted(() => {
     }
 })
 
-watch(() => [props.orgUuid, props.branchUuid, props.componentUuid, props.dateFrom, props.dateTo], () => {
+watch(() => [props.orgUuid, props.branchUuid, props.componentUuid, props.perspectiveUuid, props.dateFrom, props.dateTo], () => {
     fetchVulnerabilityViolationAnalytics()
 })
 
