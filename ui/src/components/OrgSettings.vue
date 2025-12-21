@@ -548,6 +548,23 @@
                             </n-form>
                         </n-card>
                     </n-modal>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        v-model:show="showPerspectiveComponentsModal"
+                        style="width: 900px;">
+                        <n-card size="huge" :title="'Components and Products of Perspective: ' + selectedPerspectiveName" :bordered="false"
+                            role="dialog" aria-modal="true">
+                            <n-data-table
+                                v-if="perspectiveComponents && perspectiveComponents.length > 0"
+                                :columns="perspectiveComponentColumns"
+                                :data="perspectiveComponents"
+                                class="table-hover" />
+                            <div v-else>
+                                No Components or Products Connected with this perspective
+                            </div>
+                        </n-card>
+                    </n-modal>
                 </div>
             </n-tab-pane>
             <n-tab-pane name="registry" tab="Registry" v-if="globalRegistryEnabled">
@@ -635,7 +652,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, LockOpen, CirclePlus } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye } from '@vicons/tabler'
 import { Info20Regular, Edit24Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1132,6 +1149,33 @@ const perspectives: Ref<any[]> = ref([])
 const newPerspective: Ref<any> = ref({
     name: ''
 })
+const showPerspectiveComponentsModal = ref(false)
+const selectedPerspectiveUuid: Ref<string> = ref('')
+const selectedPerspectiveName: Ref<string> = ref('')
+const perspectiveComponents: Ref<any[]> = ref([])
+
+const perspectiveComponentColumns = [
+    {
+        key: 'name',
+        title: 'Name',
+        render(row: any) {
+            return h(
+                RouterLink,
+                {
+                    to: { name: 'ComponentsOfOrg', params: { orguuid: row.org, compuuid: row.uuid } }
+                },
+                () => row.name
+            )
+        }
+    },
+    {
+        key: 'type',
+        title: 'Type',
+        render(row: any) {
+            return h('div', row.type === 'COMPONENT' ? 'Component' : 'Product')
+        }
+    }
+]
 
 const perspectiveFields = [
     {
@@ -1143,6 +1187,27 @@ const perspectiveFields = [
         title: 'Created Date',
         render(row: any) {
             return h('div', row.createdDate ? new Date(row.createdDate).toLocaleString() : '')
+        }
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render(row: any) {
+            return h(
+                'div',
+                [
+                    h(
+                        NIcon,
+                        {
+                            title: 'View Connected Components',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => showPerspectiveComponentsModalFn(row.uuid, row.name)
+                        },
+                        () => h(Eye)
+                    )
+                ]
+            )
         }
     }
 ]
@@ -1213,6 +1278,35 @@ function resetCreatePerspective() {
         name: ''
     }
     showCreatePerspectiveModal.value = false
+}
+
+async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspectiveName: string) {
+    selectedPerspectiveUuid.value = perspectiveUuid
+    selectedPerspectiveName.value = perspectiveName
+    showPerspectiveComponentsModal.value = true
+    
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query componentsOfPerspective($perspectiveUuid: ID!) {
+                    componentsOfPerspective(perspectiveUuid: $perspectiveUuid) {
+                        uuid
+                        name
+                        org
+                        type
+                    }
+                }`,
+            variables: {
+                perspectiveUuid: perspectiveUuid
+            },
+            fetchPolicy: 'no-cache'
+        })
+        perspectiveComponents.value = response.data.componentsOfPerspective || []
+    } catch (error: any) {
+        console.error('Error loading perspective components:', error)
+        notify('error', 'Error', 'Failed to load components for this perspective')
+        perspectiveComponents.value = []
+    }
 }
 
 
