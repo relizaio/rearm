@@ -12,12 +12,11 @@
                 <n-gi>
                     <div>
                         <n-input-number style="display:inline-block; width:80px;" 
-                            v-model:value="activeComponentsInput.maxComponents"
-                            :on-update:value="(value: number|null) => {activeComponentsInput.maxComponents = value ? value : 3; fetchActiveComponentsBranchesAnalytics();}" />
+                            v-model:value="activeComponentsInput.maxComponents" />
                         <span>Most Active </span>
                         <n-dropdown title="Select Type" trigger="hover"
                             :options="[{label: 'Components', key: 'COMPONENT'}, {label: 'Products', key: 'PRODUCT'}, {label: 'Branches', key: 'BRANCH'}, {label: featureSetLabelPlural, key: 'FEATURE_SET'}]"
-                            @select="$key => {activeComponentsInput.componentType = $key ? $key: 'COMPONENT'; fetchActiveComponentsBranchesAnalytics();}">
+                            @select="$key => {activeComponentsInput.componentType = $key ? $key: 'COMPONENT';}">
                             <span>
                                 <span>{{ displayActiveComponentType() }}</span>
                                 <Icon><CaretDownFilled/></Icon>
@@ -25,12 +24,16 @@
                         </n-dropdown>
                         <span>since </span>
                         <n-date-picker style="display:inline-block; width:130px;"
-                            v-model:value="activeComponentsInput.cutOffDate"
-                            :on-update:show="fetchActiveComponentsBranchesAnalytics"/>
+                            v-model:value="activeComponentsInput.cutOffDate" />
                     </div>
-                    <div class="charts">
-                        <div id="mostActiveVisHome"></div>
-                    </div>
+                    <most-active-chart
+                        :component-type="activeComponentsInput.componentType"
+                        :max-components="activeComponentsInput.maxComponents"
+                        :cut-off-date="activeComponentsInput.cutOffDate"
+                        :org-uuid="myorg?.uuid"
+                        :perspective-uuid="myperspective"
+                        :feature-set-label="featureSetLabel"
+                    />
                 </n-gi>
                 <n-gi span="2"><n-divider /></n-gi>
                 <n-gi>
@@ -470,6 +473,7 @@ import commonFunctions from '@/utils/commonFunctions'
 import constants from '@/utils/constants'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
+import MostActiveChart from './MostActiveChart.vue'
 
 const store = useStore()
 const router = useRouter()
@@ -553,7 +557,6 @@ const initLoad = async function () {
     activeComponentsInputDate.value = new Date()
     activeComponentsInputDate.value.setDate(activeComponentsInputDate.value.getDate() - 30)
     activeComponentsInput.value.cutOffDate = activeComponentsInputDate.value.getTime()
-    fetchActiveComponentsBranchesAnalytics()
 }
 
 const hashSearchResults : Ref<any> = ref({})
@@ -1000,162 +1003,6 @@ const activeComponentsInput = ref({
     componentType: 'COMPONENT',
     maxComponents: 3
 })
-
-function parseActiveComponentsInput () {
-    const parsedActiveComponentsInput = {
-        organization: activeComponentsInput.value.organization,
-        cutOffDate: new Date(activeComponentsInput.value.cutOffDate),
-        componentType: activeComponentsInput.value.componentType,
-        maxComponents: activeComponentsInput.value.maxComponents
-    }
-    if (activeComponentsInput.value.componentType === 'COMPONENT' || activeComponentsInput.value.componentType === 'BRANCH') {
-        parsedActiveComponentsInput.componentType = 'COMPONENT'
-    } else parsedActiveComponentsInput.componentType = 'PRODUCT'
-    return parsedActiveComponentsInput
-}
-
-function embedActiveComponentsVega () {
-    const mostActiveToEmbed = toRaw(mostActiveOverTime.value)
-    vegaEmbed.default('#mostActiveVisHome', mostActiveToEmbed,
-        {
-            actions: {
-                editor: false
-            },
-            theme: 'powerbi'
-        }
-    )
-}
-
-async function fetchActiveComponentsBranchesAnalytics() {
-    if (activeComponentsInput.value.componentType === 'COMPONENT' || activeComponentsInput.value.componentType === 'PRODUCT') {
-        await fetchActiveComponentsAnalytics()
-    } else {
-        await fetchActiveBranchesAnalytics()
-    }
-}
-
-function transformMostActiveDataBasedOnType () {
-    if (activeComponentsInput.value.componentType === 'COMPONENT') {
-        mostActiveOverTime.value.transform = [{
-            calculate: "'/componentsOfOrg/" + myorg.value.uuid + "/' + datum.componentuuid", "as": "url"
-        }]
-        mostActiveOverTime.value.encoding.color.title = "Component"
-        mostActiveOverTime.value.encoding.tooltip[0].title = "Component"
-    } else if (activeComponentsInput.value.componentType === 'PRODUCT') {
-        mostActiveOverTime.value.transform = [{
-            calculate: "'/productsOfOrg/" + myorg.value.uuid + "/' + datum.componentuuid", "as": "url"
-        }]
-        mostActiveOverTime.value.encoding.color.title = "Product"
-        mostActiveOverTime.value.encoding.tooltip[0].title = "Product"
-    } else if (activeComponentsInput.value.componentType === 'BRANCH') {
-        mostActiveOverTime.value.transform = [{
-            calculate: "'/componentsOfOrg/" + myorg.value.uuid + "/' + datum.componentuuid + '/' + datum.branchuuid", "as": "url"
-        }]
-        mostActiveOverTime.value.encoding.color.title = "Branch"
-        mostActiveOverTime.value.encoding.tooltip[0].title = "Branch"
-    } else if (activeComponentsInput.value.componentType === 'FEATURE_SET') {
-        mostActiveOverTime.value.transform = [{
-            calculate: "'/productsOfOrg/" + myorg.value.uuid + "/' + datum.componentuuid + '/' + datum.branchuuid", "as": "url"
-        }]
-        mostActiveOverTime.value.encoding.color.title = featureSetLabel.value
-        mostActiveOverTime.value.encoding.tooltip[0].title = featureSetLabel.value
-    }
-}
-
-async function fetchActiveBranchesAnalytics() {
-    const parsedActiveComponentsInput = parseActiveComponentsInput()
-
-    const response = await graphqlClient.query({
-        query: gql`
-            query mostActiveBranchesOverTime($activeComponentsInput: ActiveComponentsInput!) {
-                mostActiveBranchesOverTime(activeComponentsInput: $activeComponentsInput) {
-                    componentuuid
-                    componentname
-                    branchuuid
-                    branchname
-                    rlzcount
-                }
-            }`,
-        variables: { 
-            activeComponentsInput: parsedActiveComponentsInput
-        }
-    })
-    if (response && response.data) {
-        mostActiveOverTime.value.data.values = []
-        response.data.mostActiveBranchesOverTime.forEach((e: any) => {
-            const analyticsEl = {
-                componentname: e.componentname + " - " + e.branchname,
-                componentuuid: e.componentuuid,
-                branchuuid: e.branchuuid,
-                rlzcount: e.rlzcount,
-                componenttype: e.componenttype
-            }
-            mostActiveOverTime.value.data.values.push(analyticsEl)
-        })
-        transformMostActiveDataBasedOnType ()
-        embedActiveComponentsVega()
-    }
-}
-
-async function fetchActiveComponentsAnalytics() {
-    const parsedActiveComponentsInput = parseActiveComponentsInput()
-
-    const response = await graphqlClient.query({
-        query: gql`
-            query mostActiveComponentsOverTime($activeComponentsInput: ActiveComponentsInput!) {
-                mostActiveComponentsOverTime(activeComponentsInput: $activeComponentsInput) {
-                    componentuuid
-                    componentname
-                    rlzcount
-                }
-            }`,
-        variables: { 
-            activeComponentsInput: parsedActiveComponentsInput
-        }
-    })
-    if (response && response.data) {
-        mostActiveOverTime.value.data.values = []
-        response.data.mostActiveComponentsOverTime.forEach((e: any) => mostActiveOverTime.value.data.values.push(Object.assign({}, e)))
-        transformMostActiveDataBasedOnType ()
-        embedActiveComponentsVega()
-    }
-}
-
-
-const mostActiveOverTime: Ref<any> = ref({
-    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
-    background: 'white',
-    width: 'container',
-    height: 220,
-    data: {
-        values: []
-    },
-    mark: {
-        type: "arc",
-        innerRadius: 50
-    },
-    transform: [{
-        calculate: "'/componentsOfOrg/" + myorg.value.uuid + "/' + datum.componentuuid", "as": "url"
-    }],
-    encoding: {
-        theta: {field: "rlzcount", type: "quantitative"},
-        color: {
-            field: "componentname",
-            type: "nominal", 
-            title: "Name",
-            legend: {
-                direction: 'horizontal',
-                orient: 'bottom'
-            }
-        },
-        href: {field: "url", type: "nominal"},
-        tooltip: [
-            {field: "componentname", type: "nominal", title: "Name"},
-            {field: "rlzcount", type: "quantitative", title: "Releases"}
-        ]
-    }
-})
-
 
 function displayActiveComponentType () {
     let displayComp
