@@ -565,6 +565,27 @@
                             </div>
                         </n-card>
                     </n-modal>
+                    <n-modal
+                        v-model:show="showEditPerspectiveModal"
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 600px;">
+                        <n-card size="huge" title="Edit Perspective" :bordered="false"
+                            role="dialog" aria-modal="true">
+                            <n-form @submit.prevent="updatePerspectiveName">
+                                <n-form-item label="Perspective Name" label-placement="top">
+                                    <n-input
+                                        v-model:value="editingPerspective.name"
+                                        placeholder="Enter perspective name"
+                                        required />
+                                </n-form-item>
+                                <n-space>
+                                    <n-button :loading="processingMode" @click="updatePerspectiveName" type="success">Save</n-button>
+                                    <n-button type="error" @click="cancelEditPerspective">Cancel</n-button>
+                                </n-space>
+                            </n-form>
+                        </n-card>
+                    </n-modal>
                 </div>
             </n-tab-pane>
             <n-tab-pane name="registry" tab="Registry" v-if="globalRegistryEnabled">
@@ -743,6 +764,7 @@ const showCreateApprovalRole = ref(false)
 const showCIIntegrationModal = ref(false)
 
 const showCreatePerspectiveModal = ref(false)
+const showEditPerspectiveModal = ref(false)
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
 
@@ -1153,6 +1175,10 @@ const showPerspectiveComponentsModal = ref(false)
 const selectedPerspectiveUuid: Ref<string> = ref('')
 const selectedPerspectiveName: Ref<string> = ref('')
 const perspectiveComponents: Ref<any[]> = ref([])
+const editingPerspective: Ref<any> = ref({
+    uuid: '',
+    name: ''
+})
 
 const perspectiveComponentColumns = [
     {
@@ -1193,21 +1219,36 @@ const perspectiveFields = [
         key: 'actions',
         title: 'Actions',
         render(row: any) {
-            return h(
-                'div',
-                [
+            const actions = [
+                h(
+                    NIcon,
+                    {
+                        title: 'View Connected Components',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => showPerspectiveComponentsModalFn(row.uuid, row.name)
+                    },
+                    () => h(Eye)
+                )
+            ]
+            
+            // Add edit icon only for admin users
+            if (isOrgAdmin.value) {
+                actions.push(
                     h(
                         NIcon,
                         {
-                            title: 'View Connected Components',
+                            title: 'Edit Perspective',
                             class: 'icons clickable',
                             size: 25,
-                            onClick: () => showPerspectiveComponentsModalFn(row.uuid, row.name)
+                            onClick: () => editPerspective(row)
                         },
-                        () => h(Eye)
+                        () => h(EditIcon)
                     )
-                ]
-            )
+                )
+            }
+            
+            return h('div', actions)
         }
     }
 ]
@@ -1307,6 +1348,63 @@ async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspec
         notify('error', 'Error', 'Failed to load components for this perspective')
         perspectiveComponents.value = []
     }
+}
+
+function editPerspective(perspective: any) {
+    editingPerspective.value = {
+        uuid: perspective.uuid,
+        name: perspective.name
+    }
+    showEditPerspectiveModal.value = true
+}
+
+async function updatePerspectiveName() {
+    if (!editingPerspective.value.name || !editingPerspective.value.name.trim()) {
+        notify('error', 'Error', 'Perspective name is required')
+        return
+    }
+    
+    processingMode.value = true
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updatePerspective($uuid: ID!, $name: String!) {
+                    updatePerspective(uuid: $uuid, name: $name) {
+                        uuid
+                        name
+                        org
+                        createdDate
+                    }
+                }`,
+            variables: {
+                uuid: editingPerspective.value.uuid,
+                name: editingPerspective.value.name.trim()
+            }
+        })
+        
+        if (response.data && response.data.updatePerspective) {
+            // Update the perspective in the list
+            const index = perspectives.value.findIndex(p => p.uuid === editingPerspective.value.uuid)
+            if (index !== -1) {
+                perspectives.value[index] = response.data.updatePerspective
+            }
+            notify('success', 'Success', 'Perspective updated successfully')
+            cancelEditPerspective()
+        }
+    } catch (error: any) {
+        console.error('Error updating perspective:', error)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.toString()))
+    } finally {
+        processingMode.value = false
+    }
+}
+
+function cancelEditPerspective() {
+    editingPerspective.value = {
+        uuid: '',
+        name: ''
+    }
+    showEditPerspectiveModal.value = false
 }
 
 
