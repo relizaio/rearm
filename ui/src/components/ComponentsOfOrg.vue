@@ -79,12 +79,19 @@ const router = useRouter()
 const store = useStore()
 
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+const myperspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
+
 onMounted(() => {
     if (myorg.value) 
         initLoad(false)
 })
 watch(myorg, (currentValue, oldValue) => {
     initLoad(true)
+});
+watch(myperspective, (currentValue, oldValue) => {
+    if (currentValue !== oldValue) {
+        initLoad(true)
+    }
 });
 const orguuid : Ref<string> = ref('')
 if (route.params.orguuid) {

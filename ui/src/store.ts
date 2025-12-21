@@ -593,34 +593,50 @@ const storeObject : any = {
             return branches
         },
         async fetchComponents (context : any, orgid : string) : Promise<any[]> {
+            const perspectiveUuid = context.state.iam.perspectiveUuid
+            const variables: any = { 
+                orgUuid: orgid,
+                componentType: 'COMPONENT'
+            }
+            
+            // Add perspective parameter if non-default perspective is selected
+            if (perspectiveUuid && perspectiveUuid !== 'default') {
+                variables.perspective = perspectiveUuid
+            }
+            
             const response = await graphqlClient.query({
                 query: gql`
-                    query FetchComponents($orgUuid: ID!, $componentType: ComponentType!) {
-                        components(orgUuid: $orgUuid, componentType: $componentType) {
+                    query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID) {
+                        components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective) {
                             ${graphqlQueries.ComponentShortData}
                         }
                     }`,
-                variables: { 
-                    orgUuid: orgid,
-                    componentType: 'COMPONENT'
-                },
+                variables,
                 fetchPolicy: 'no-cache'
             })
             context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'COMPONENT', components: response.data.components })
             return response.data.components
         },
         async fetchProducts (context : any, orgid : string) : Promise<any[]> {
+            const perspectiveUuid = context.state.iam.perspectiveUuid
+            const variables: any = { 
+                orgUuid: orgid,
+                componentType: 'PRODUCT'
+            }
+            
+            // Add perspective parameter if non-default perspective is selected
+            if (perspectiveUuid && perspectiveUuid !== 'default') {
+                variables.perspective = perspectiveUuid
+            }
+            
             const response = await graphqlClient.query({
                 query: gql`
-                    query FetchComponents($orgUuid: ID!, $componentType: ComponentType!) {
-                        components(orgUuid: $orgUuid, componentType: $componentType) {
+                    query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID) {
+                        components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective) {
                             ${graphqlQueries.ComponentShortData}
                         }
                     }`,
-                variables: { 
-                    orgUuid: orgid,
-                    componentType: 'PRODUCT'
-                },
+                variables,
                 fetchPolicy: 'no-cache'
             })
             context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'PRODUCT', components: response.data.components })
