@@ -518,6 +518,38 @@
                     </div>
                 </div>
             </n-tab-pane>
+            <n-tab-pane name="perspectives" tab="Perspectives" v-if="myUser.installationType !== 'OSS'">
+                <div class="perspectivesBlock mt-4">
+                    <h5>Perspectives ({{ perspectives.length }})
+                        <Icon v-if="isOrgAdmin" class="clickable addIcon" size="25" title="Create Perspective" @click="showCreatePerspectiveModal = true">
+                            <CirclePlus />
+                        </Icon>
+                    </h5>
+                    <n-data-table :columns="perspectiveFields" :data="perspectives" class="table-hover">
+                    </n-data-table>
+                    <n-modal
+                        v-model:show="showCreatePerspectiveModal"
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 600px;">
+                        <n-card size="huge" title="Create Perspective" :bordered="false"
+                            role="dialog" aria-modal="true">
+                            <n-form @submit.prevent="createPerspective">
+                                <n-form-item label="Perspective Name" label-placement="top">
+                                    <n-input
+                                        v-model:value="newPerspective.name"
+                                        placeholder="Enter perspective name"
+                                        required />
+                                </n-form-item>
+                                <n-space>
+                                    <n-button :loading="processingMode" @click="createPerspective" type="success">Create</n-button>
+                                    <n-button type="error" @click="resetCreatePerspective">Cancel</n-button>
+                                </n-space>
+                            </n-form>
+                        </n-card>
+                    </n-modal>
+                </div>
+            </n-tab-pane>
             <n-tab-pane name="registry" tab="Registry" v-if="globalRegistryEnabled">
                 <div class="mt-4">
                     <h5>Organization Registry</h5>
@@ -658,6 +690,8 @@ async function loadTabSpecificData (tabName: string) {
     } else if (tabName === "approvalPolicies") {
         fetchApprovalEntries()
         fetchApprovalPolicies()
+    } else if (tabName === "perspectives") {
+        loadPerspectives()
     }
 }
 
@@ -690,6 +724,8 @@ const showCreateApprovalEntry = ref(false)
 const showCreateApprovalRole = ref(false)
 
 const showCIIntegrationModal = ref(false)
+
+const showCreatePerspectiveModal = ref(false)
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
 
@@ -1089,6 +1125,94 @@ async function loadUserGroups() {
         console.error('Error loading user groups:', error)
         notify('error', 'Error', 'Failed to load user groups')
     }
+}
+
+// Perspectives
+const perspectives: Ref<any[]> = ref([])
+const newPerspective: Ref<any> = ref({
+    name: ''
+})
+
+const perspectiveFields = [
+    {
+        key: 'name',
+        title: 'Perspective Name'
+    },
+    {
+        key: 'createdDate',
+        title: 'Created Date',
+        render(row: any) {
+            return h('div', row.createdDate ? new Date(row.createdDate).toLocaleString() : '')
+        }
+    }
+]
+
+async function loadPerspectives() {
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query perspectives($org: ID!) {
+                    perspectives(org: $org) {
+                        uuid
+                        name
+                        org
+                        createdDate
+                    }
+                }`,
+            variables: {
+                org: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        perspectives.value = response.data.perspectives || []
+    } catch (error: any) {
+        console.error('Error loading perspectives:', error)
+        notify('error', 'Error', 'Failed to load perspectives')
+    }
+}
+
+async function createPerspective() {
+    if (!newPerspective.value.name || !newPerspective.value.name.trim()) {
+        notify('error', 'Error', 'Perspective name is required')
+        return
+    }
+    
+    processingMode.value = true
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation createPerspective($org: ID!, $name: String!) {
+                    createPerspective(org: $org, name: $name) {
+                        uuid
+                        name
+                        org
+                        createdDate
+                    }
+                }`,
+            variables: {
+                org: orgResolved.value,
+                name: newPerspective.value.name.trim()
+            }
+        })
+        
+        if (response.data && response.data.createPerspective) {
+            perspectives.value.push(response.data.createPerspective)
+            notify('success', 'Success', 'Perspective created successfully')
+            resetCreatePerspective()
+        }
+    } catch (error: any) {
+        console.error('Error creating perspective:', error)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.toString()))
+    } finally {
+        processingMode.value = false
+    }
+}
+
+function resetCreatePerspective() {
+    newPerspective.value = {
+        name: ''
+    }
+    showCreatePerspectiveModal.value = false
 }
 
 
