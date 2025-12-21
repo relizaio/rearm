@@ -553,8 +553,17 @@
                         :show-icon="false"
                         v-model:show="showPerspectiveComponentsModal"
                         style="width: 900px;">
-                        <n-card size="huge" :title="'Components and Products of Perspective: ' + selectedPerspectiveName" :bordered="false"
+                        <n-card size="huge" :bordered="false"
                             role="dialog" aria-modal="true">
+                            <template #header>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span>Components and Products of Perspective: {{ selectedPerspectiveName }}</span>
+                                    <vue-feather v-if="isOrgAdmin" class="clickable" type="plus-circle"
+                                        @click="showAddComponentToPerspectiveModal = true" title="Add Component" />
+                                    <vue-feather v-if="isOrgAdmin" class="clickable" type="folder-plus"
+                                        @click="showAddProductToPerspectiveModal = true" title="Add Product" />
+                                </div>
+                            </template>
                             <n-data-table
                                 v-if="perspectiveComponents && perspectiveComponents.length > 0"
                                 :columns="perspectiveComponentColumns"
@@ -563,6 +572,50 @@
                             <div v-else>
                                 No Components or Products Connected with this perspective
                             </div>
+                        </n-card>
+                    </n-modal>
+                    <n-modal
+                        v-model:show="showAddComponentToPerspectiveModal"
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 600px;">
+                        <n-card size="huge" title="Add Component to Perspective" :bordered="false"
+                            role="dialog" aria-modal="true">
+                            <n-form>
+                                <n-form-item label="Select Component" label-placement="top">
+                                    <n-select
+                                        v-model:value="selectedComponentToAdd"
+                                        :options="availableComponentsOptions"
+                                        placeholder="Select a component"
+                                        filterable />
+                                </n-form-item>
+                                <n-space>
+                                    <n-button :loading="processingMode" @click="addComponentToPerspective" type="success">Add</n-button>
+                                    <n-button type="error" @click="showAddComponentToPerspectiveModal = false">Cancel</n-button>
+                                </n-space>
+                            </n-form>
+                        </n-card>
+                    </n-modal>
+                    <n-modal
+                        v-model:show="showAddProductToPerspectiveModal"
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 600px;">
+                        <n-card size="huge" title="Add Product to Perspective" :bordered="false"
+                            role="dialog" aria-modal="true">
+                            <n-form>
+                                <n-form-item label="Select Product" label-placement="top">
+                                    <n-select
+                                        v-model:value="selectedProductToAdd"
+                                        :options="availableProductsOptions"
+                                        placeholder="Select a product"
+                                        filterable />
+                                </n-form-item>
+                                <n-space>
+                                    <n-button :loading="processingMode" @click="addProductToPerspective" type="success">Add</n-button>
+                                    <n-button type="error" @click="showAddProductToPerspectiveModal = false">Cancel</n-button>
+                                </n-space>
+                            </n-form>
                         </n-card>
                     </n-modal>
                     <n-modal
@@ -765,6 +818,10 @@ const showCIIntegrationModal = ref(false)
 
 const showCreatePerspectiveModal = ref(false)
 const showEditPerspectiveModal = ref(false)
+const showAddComponentToPerspectiveModal = ref(false)
+const showAddProductToPerspectiveModal = ref(false)
+const selectedComponentToAdd: Ref<string> = ref('')
+const selectedProductToAdd: Ref<string> = ref('')
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
 
@@ -1339,6 +1396,10 @@ async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspec
     selectedPerspectiveName.value = perspectiveName
     showPerspectiveComponentsModal.value = true
     
+    // Load components and products for the org
+    await store.dispatch('fetchComponents', orgResolved.value)
+    await store.dispatch('fetchProducts', orgResolved.value)
+    
     try {
         const response = await graphqlClient.query({
             query: gql`
@@ -1360,6 +1421,112 @@ async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspec
         console.error('Error loading perspective components:', error)
         notify('error', 'Error', 'Failed to load components for this perspective')
         perspectiveComponents.value = []
+    }
+}
+
+const availableComponentsOptions: ComputedRef<SelectOption[]> = computed(() => {
+    const allComponents = store.getters.componentsOfOrg(orgResolved.value)
+    const perspectiveComponentUuids = perspectiveComponents.value.map(c => c.uuid)
+    return allComponents
+        .filter((c: any) => !perspectiveComponentUuids.includes(c.uuid))
+        .map((c: any) => ({
+            label: c.name,
+            value: c.uuid
+        }))
+})
+
+const availableProductsOptions: ComputedRef<SelectOption[]> = computed(() => {
+    const allProducts = store.getters.productsOfOrg(orgResolved.value)
+    const perspectiveComponentUuids = perspectiveComponents.value.map(c => c.uuid)
+    return allProducts
+        .filter((p: any) => !perspectiveComponentUuids.includes(p.uuid))
+        .map((p: any) => ({
+            label: p.name,
+            value: p.uuid
+        }))
+})
+
+async function addComponentToPerspective() {
+    if (!selectedComponentToAdd.value) {
+        notify('error', 'Error', 'Please select a component')
+        return
+    }
+    
+    processingMode.value = true
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
+                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
+                        uuid
+                        perspectiveDetails {
+                            uuid
+                            name
+                            org
+                            createdDate
+                        }
+                    }
+                }`,
+            variables: {
+                componentUuid: selectedComponentToAdd.value,
+                perspectiveUuids: [selectedPerspectiveUuid.value]
+            }
+        })
+        
+        if (response.data && response.data.setPerspectivesOnComponent) {
+            notify('success', 'Success', 'Component added to perspective successfully')
+            showAddComponentToPerspectiveModal.value = false
+            selectedComponentToAdd.value = ''
+            // Reload perspective components
+            await showPerspectiveComponentsModalFn(selectedPerspectiveUuid.value, selectedPerspectiveName.value)
+        }
+    } catch (error: any) {
+        console.error('Error adding component to perspective:', error)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.toString()))
+    } finally {
+        processingMode.value = false
+    }
+}
+
+async function addProductToPerspective() {
+    if (!selectedProductToAdd.value) {
+        notify('error', 'Error', 'Please select a product')
+        return
+    }
+    
+    processingMode.value = true
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
+                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
+                        uuid
+                        perspectiveDetails {
+                            uuid
+                            name
+                            org
+                            createdDate
+                        }
+                    }
+                }`,
+            variables: {
+                componentUuid: selectedProductToAdd.value,
+                perspectiveUuids: [selectedPerspectiveUuid.value]
+            }
+        })
+        
+        if (response.data && response.data.setPerspectivesOnComponent) {
+            notify('success', 'Success', 'Product added to perspective successfully')
+            showAddProductToPerspectiveModal.value = false
+            selectedProductToAdd.value = ''
+            // Reload perspective components
+            await showPerspectiveComponentsModalFn(selectedPerspectiveUuid.value, selectedPerspectiveName.value)
+        }
+    } catch (error: any) {
+        console.error('Error adding product to perspective:', error)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.toString()))
+    } finally {
+        processingMode.value = false
     }
 }
 
