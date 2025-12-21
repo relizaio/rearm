@@ -21,6 +21,18 @@
                 <span v-if="organizations && organizations.length === 1 && myUser.installationType !== 'OSS'"><b>{{ myorg.name }}</b></span>
                 <span v-if="organizations && organizations.length === 1 && myUser.installationType === 'OSS'"><b>ReARM</b></span>
             </div>
+            <div class="horizontalNavElement horizontalNavElementPerspective" v-if="myUser.installationType !== 'OSS'">
+                <span v-if="perspectiveOptions.length > 1">
+                    <span><strong>Perspective: </strong></span>
+                    <n-dropdown id="app-perspective-dropdown" trigger="hover" :options="perspectiveOptions" @select="setMyPerspective">
+                        <span>
+                            <span style="font-size: 16px;">{{ currentPerspectiveName }}</span>
+                            <Icon><CaretDownFilled/></Icon>
+                        </span>
+                    </n-dropdown>
+                </span>
+                <span v-else><strong>Perspective: </strong><span style="font-size: 16px;">Default</span></span>
+            </div>
             <div class="horizontalNavIcons" v-if="myorg && !isPlayground" >
                 <span>
                     <router-link :to="{ name: 'profile'}"><vue-feather class="clickable" type="user" title="Profile" /></router-link>
@@ -57,6 +69,40 @@ let version : string = ""
 const store = useStore()
 const router = useRouter()
 const myUser = store.getters.myuser
+
+// Perspectives
+const perspectives: ComputedRef<any[]> = computed((): any => store.getters.perspectivesOfOrg(myorg.value?.uuid || ''))
+const myperspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
+
+const perspectiveOptions: ComputedRef<any[]> = computed((): any => {
+    const options = [{
+        label: 'Default',
+        key: 'default'
+    }]
+    
+    if (perspectives.value && perspectives.value.length > 0) {
+        perspectives.value.forEach((p: any) => {
+            options.push({
+                label: p.name,
+                key: p.uuid
+            })
+        })
+    }
+    
+    return options
+})
+
+const currentPerspectiveName: ComputedRef<string> = computed((): string => {
+    if (myperspective.value === 'default') {
+        return 'Default'
+    }
+    const perspective = perspectives.value.find((p: any) => p.uuid === myperspective.value)
+    return perspective ? perspective.name : 'Default'
+})
+
+const setMyPerspective = function (perspectiveUuid: string) {
+    store.dispatch('updateMyPerspective', perspectiveUuid)
+}
 
 const getVersion : any = async function () {
     let versionUri
@@ -118,7 +164,7 @@ body {
     border-bottom-width: thin;
     border-bottom-color: #dfe4e5;
     display: grid;
-    grid-template-columns: 0.1fr 0.7fr 0.5fr 110px;
+    grid-template-columns: 0.1fr 0.5fr 0.35fr 0.35fr 110px;
     a {
         font-weight: bold;
         color: rgb(25, 25, 25);

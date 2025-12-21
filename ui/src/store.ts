@@ -27,8 +27,10 @@ const storeObject : any = {
                 user: {},
                 orgUuid: '',
                 appUuid: '00000000-0000-0000-0000-000000000000',
-                name: ''
+                name: '',
+                perspectiveUuid: 'default'
             },
+            perspectives: [],
             instancePagination: () => {
                 const instancePagination = reactive({
                     page: 1,
@@ -71,6 +73,15 @@ const storeObject : any = {
         },
         myuser (state : any) {
             return Object.assign({}, state.iam.user)
+        },
+        myperspective (state : any) {
+            return state.iam.perspectiveUuid
+        },
+        allPerspectives (state: any) {
+            return state.perspectives.slice()
+        },
+        perspectivesOfOrg (state: any) {
+            return (orguuid: string) => state.perspectives.filter((p: any) => p.org === orguuid)
         },
         releaseById (state : any) {
             return (uuid : string) => state.releases.find((rl : any) => rl.uuid === uuid)
@@ -247,6 +258,12 @@ const storeObject : any = {
         },
         UPDATE_MY_ORG (state : any, uuid : string) {
             state.iam.orgUuid = uuid
+        },
+        UPDATE_MY_PERSPECTIVE (state : any, uuid : string) {
+            state.iam.perspectiveUuid = uuid
+        },
+        SET_PERSPECTIVES (state: any, perspectives: any[]) {
+            state.perspectives = perspectives
         },
         ADD_VCS_REPO (state: any, vcsRepo: any) {
             if (vcsRepo) {
@@ -510,6 +527,17 @@ const storeObject : any = {
                         myOrg = orgs[0].uuid
                         context.commit('UPDATE_MY_ORG', myOrg)
                     }
+                    
+                    // Load perspectives for the organization
+                    await context.dispatch('fetchPerspectives', myOrg)
+                    
+                    // Load stored perspective
+                    const storedPerspective = window.localStorage.getItem('relizaPerspectiveUuid')
+                    if (storedPerspective) {
+                        context.commit('UPDATE_MY_PERSPECTIVE', storedPerspective)
+                    } else {
+                        context.commit('UPDATE_MY_PERSPECTIVE', 'default')
+                    }
                 } else {
                     console.error('Error fetching user organizations')
                 }
@@ -644,6 +672,35 @@ const storeObject : any = {
             // set local browser storage
             window.localStorage.setItem('relizaOrgUuid', orgUuid)
             context.commit('UPDATE_MY_ORG', orgUuid)
+            // Reset perspective to default when changing org
+            context.dispatch('updateMyPerspective', 'default')
+        },
+        updateMyPerspective (context : any, perspectiveUuid : string) {
+            // set local browser storage
+            window.localStorage.setItem('relizaPerspectiveUuid', perspectiveUuid)
+            context.commit('UPDATE_MY_PERSPECTIVE', perspectiveUuid)
+        },
+        async fetchPerspectives (context : any, orgUuid : string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: gql`
+                        query perspectives($org: ID!) {
+                            perspectives(org: $org) {
+                                uuid
+                                name
+                                org
+                            }
+                        }`,
+                    variables: {
+                        org: orgUuid
+                    },
+                    fetchPolicy: 'no-cache'
+                })
+                context.commit('SET_PERSPECTIVES', response.data.perspectives || [])
+            } catch (error) {
+                console.error('Error fetching perspectives:', error)
+                context.commit('SET_PERSPECTIVES', [])
+            }
         },   
         async fetchReleaseById (context : any, params : any) {
             const gqlQ = (!params.light) ? graphqlQueries.SingleReleaseGql : graphqlQueries.SingleReleaseGqlLight
