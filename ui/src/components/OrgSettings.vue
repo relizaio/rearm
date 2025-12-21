@@ -1232,7 +1232,7 @@ const perspectiveFields = [
                 )
             ]
             
-            // Add edit icon only for admin users
+            // Add edit and delete icons only for admin users
             if (isOrgAdmin.value) {
                 actions.push(
                     h(
@@ -1244,6 +1244,19 @@ const perspectiveFields = [
                             onClick: () => editPerspective(row)
                         },
                         () => h(EditIcon)
+                    )
+                )
+                actions.push(
+                    h(
+                        NIcon,
+                        {
+                            title: 'Delete Perspective',
+                            class: 'icons clickable',
+                            size: 25,
+                            style: 'color: #d03050;',
+                            onClick: () => deletePerspective(row)
+                        },
+                        () => h(Trash)
                     )
                 )
             }
@@ -1405,6 +1418,51 @@ function cancelEditPerspective() {
         name: ''
     }
     showEditPerspectiveModal.value = false
+}
+
+async function deletePerspective(perspective: any) {
+    const swalResult = await Swal.fire({
+        title: `Are you sure you want to archive perspective "${perspective.name}"?`,
+        text: 'If you proceed, the perspective will be archived.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, archive!',
+        cancelButtonText: 'No, cancel'
+    })
+
+    if (swalResult.value) {
+        try {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation deletePerspective($uuid: ID!) {
+                        deletePerspective(uuid: $uuid) {
+                            uuid
+                            name
+                        }
+                    }`,
+                variables: {
+                    uuid: perspective.uuid
+                }
+            })
+            
+            if (response.data && response.data.deletePerspective) {
+                // Remove the perspective from the list
+                const index = perspectives.value.findIndex(p => p.uuid === perspective.uuid)
+                if (index !== -1) {
+                    perspectives.value.splice(index, 1)
+                }
+                notify('success', 'Archived!', `Perspective "${perspective.name}" has been archived successfully.`)
+            }
+        } catch (error: any) {
+            Swal.fire(
+                'Error!',
+                commonFunctions.parseGraphQLError(error.message),
+                'error'
+            )
+        }
+    } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
+        notify('info', 'Cancelled', 'Archiving perspective cancelled.')
+    }
 }
 
 
