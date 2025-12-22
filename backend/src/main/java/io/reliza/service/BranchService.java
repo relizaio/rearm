@@ -183,12 +183,12 @@ public class BranchService {
 		return ob;
 	}
 	
-	public List<Branch> findBranchesByChildComponentBranch (UUID orgUuid, UUID component, UUID branchUuid) {
-		return repository.findBranchesByChildComponentBranch(orgUuid.toString(), component.toString(), branchUuid.toString());
+	public List<Branch> findFeatureSetsByChildComponentBranch (UUID orgUuid, UUID component, UUID branchUuid) {
+		return repository.findFeatureSetsByChildComponentBranch(orgUuid.toString(), component.toString(), branchUuid.toString());
 	}
 	
-	public List<BranchData> findBranchDataByChildComponentBranch (UUID orgUuid, UUID component, UUID branchUuid) {
-		return transformBranchToBranchData(findBranchesByChildComponentBranch(orgUuid, component, branchUuid));
+	public List<BranchData> findFeatureSetDataByChildComponentBranch (UUID orgUuid, UUID component, UUID branchUuid) {
+		return transformBranchToBranchData(findFeatureSetsByChildComponentBranch(orgUuid, component, branchUuid));
 	}
 
 	public List<Branch> findFeatureSetsByChildComponent (UUID orgUuid, UUID component) {
@@ -474,9 +474,9 @@ public class BranchService {
 			.uuid(branchData.getComponent())
 			.status(StatusEnum.REQUIRED)
 			.build();
-			List<BranchData> existingFSs = findBranchDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), branchData.getUuid());
+			List<BranchData> existingFSs = findFeatureSetDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), branchData.getUuid());
 			final Map<String, BranchData> existingFSsNameMap = existingFSs.stream().collect(Collectors.toMap(BranchData::getName, Function.identity()));
-			List<BranchData> targetFSs = findBranchDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), pullRequestData.getTargetBranch())
+			List<BranchData> targetFSs = findFeatureSetDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), pullRequestData.getTargetBranch())
 			.stream()
 			.filter(fs -> fs.getAutoIntegrate().equals(AutoIntegrateState.ENABLED) && !fs.getType().equals(BranchType.PULL_REQUEST))
 			.collect(Collectors.toList());
@@ -497,7 +497,7 @@ public class BranchService {
 					
 		}else if(pullRequestData.getState().equals(PullRequestState.CLOSED)){
 			//disable autointegrate
-			List<BranchData> existingFSs = findBranchDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), branchData.getUuid());
+			List<BranchData> existingFSs = findFeatureSetDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), branchData.getUuid());
 			existingFSs.stream().forEach(
 				handlingConsumerWrapper(
 				fs -> {

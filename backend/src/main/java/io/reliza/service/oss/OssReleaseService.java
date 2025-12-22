@@ -478,29 +478,241 @@ public class OssReleaseService {
 	public void autoIntegrateProducts(ReleaseData rd) {
 		// locate all product feature sets for this release
 		if (null != rd.getBranch()) { // placeholder releases do not have branches and we do not want to auto-integrate on those
-			List<BranchData> branchDatas = branchService.findBranchDataByChildComponentBranch(rd.getOrg(), rd.getComponent(), rd.getBranch());
-			if (!branchDatas.isEmpty()) {
-				for (BranchData bd : branchDatas) {
-					if (bd.getAutoIntegrate() == AutoIntegrateState.ENABLED) autoIntegrateFeatureSetProduct(bd, rd);
+			List<BranchData> fsDatas = branchService.findFeatureSetDataByChildComponentBranch(rd.getOrg(), rd.getComponent(), rd.getBranch());
+			if (!fsDatas.isEmpty()) {
+				for (BranchData fs : fsDatas) {
+					if (fs.getAutoIntegrate() == AutoIntegrateState.ENABLED) autoIntegrateFeatureSetProduct(fs, rd);
 				}
 			}
 		}
 	}
 	
 	
-	private void autoIntegrateFeatureSetProduct(BranchData bd, ReleaseData rd) {
-		List<ChildComponent> dependencies = bd.getDependencies();
+	private void autoIntegrateFeatureSetProduct(BranchData featureSet, ReleaseData triggeringRelease) {
+		// 1. Find matching dependency for this release
+		Optional<ChildComponent> matchingDependency = findMatchingDependency(featureSet, triggeringRelease);
+		if (matchingDependency.isEmpty()) {
+			log.debug("PSDEBUG: No matching child component found for rd = " + triggeringRelease.getUuid() + " in fs = " + featureSet.getUuid());
+			return;
+		}
 		
-		// Find matching ChildComponent for this release - match by both component AND branch
-		// This handles the case where the same component is added multiple times with different branches
+		// 2. Validate if we should proceed with auto-integrate
+		if (!shouldProceedWithAutoIntegrate(featureSet, triggeringRelease, matchingDependency.get())) {
+			return;
+		}
+		
+		// 3. Gather releases from all dependencies
+		Optional<Set<ParentRelease>> dependencyReleasesOpt = gatherReleasesFromDependencies(featureSet, triggeringRelease);
+		if (dependencyReleasesOpt.isEmpty()) {
+			return;
+		}
+		
+		// 4. Determine which release to use (BASE branch logic)
+		ReleaseData releaseToUse = determineReleaseToUse(featureSet, triggeringRelease);
+		
+		// 5. Check if release is already in a product
+		if (isReleaseAlreadyInProduct(featureSet, releaseToUse)) {
+			log.debug("PSDEBUG: releaseToUse " + releaseToUse.getUuid() + " is already in a product release for feature set " + featureSet.getUuid() + ", skipping");
+			return;
+		}
+		
+		// 6. Update parent releases with new release
+		Set<ParentRelease> updatedReleases = replaceComponentRelease(dependencyReleasesOpt.get(), releaseToUse);
+		
+		// 7. Create the product release
+		createProductRelease(featureSet, triggeringRelease, updatedReleases);
+	}
+	
+	/**
+	 * Validates if auto-integrate should proceed based on dependency status and duplicate checks.
+	 * 
+	 * @return true if should proceed, false otherwise
+	 */
+	private boolean shouldProceedWithAutoIntegrate(BranchData featureSet, ReleaseData triggeringRelease, ChildComponent matchingDependency) {
+		// Check if dependency is IGNORED or pinned to a specific release
+		if (StatusEnum.IGNORED == matchingDependency.getStatus() || matchingDependency.getRelease() != null) {
+			return false;
+		}
+		
+		log.debug("PSDEBUG: accessed auto-integrate for fs = " + featureSet.getUuid() + ", rd = " + triggeringRelease.getUuid());
+		
+		// Check if this release is already in a product for this feature set
+		var existingProducts = sharedReleaseService.greedylocateProductsOfRelease(triggeringRelease);
+		if (!existingProducts.isEmpty()) {
+			boolean alreadyInProduct = existingProducts.stream()
+				.anyMatch(x -> x.getBranch().equals(featureSet.getUuid()));
+			if (alreadyInProduct) {
+				log.debug("PSDEBUG: requirements not met - release already in product");
+				return false;
+			}
+		}
+		
+		log.debug("PSDEBUG: requirements met - proceeding with auto-integrate");
+		return true;
+	}
+	
+	/**
+	 * Gathers releases from all dependencies to use as parent releases in the product.
+	 * 
+	 * @return Optional containing dependency releases, or empty if requirements not met
+	 */
+	private Optional<Set<ParentRelease>> gatherReleasesFromDependencies(BranchData featureSet, ReleaseData triggeringRelease) {
+		Set<ParentRelease> dependencyReleases = sharedReleaseService.getCurrentProductParentRelease(
+			featureSet.getUuid(), 
+			triggeringRelease, 
+			ReleaseLifecycle.ASSEMBLED
+		);
+		
+		if (dependencyReleases == null || dependencyReleases.isEmpty()) {
+			log.debug("PSDEBUG: Failed to gather dependency releases - missing required dependencies");
+			return Optional.empty();
+		}
+		
+		return Optional.of(dependencyReleases);
+	}
+	
+	/**
+	 * Determines which release to use in the product.
+	 * If triggering release is from a non-BASE branch, but there's a BASE branch dependency
+	 * for the same component, uses the BASE branch's latest release instead.
+	 * 
+	 * @return The release to use (either triggering release or BASE branch release)
+	 */
+	private ReleaseData determineReleaseToUse(BranchData featureSet, ReleaseData triggeringRelease) {
+		Optional<BranchData> triggeringBranchOpt = branchService.getBranchData(triggeringRelease.getBranch());
+		boolean isFromBaseBranch = triggeringBranchOpt.isPresent() && 
+								   triggeringBranchOpt.get().getType() == BranchType.BASE;
+		
+		if (isFromBaseBranch) {
+			// Triggering release is from BASE branch - use it
+			return triggeringRelease;
+		}
+		
+		// Check if there's a BASE branch dependency for the same component
+		List<ChildComponent> sameComponentDeps = featureSet.getDependencies().stream()
+			.filter(cc -> cc.getUuid().equals(triggeringRelease.getComponent()))
+			.collect(Collectors.toList());
+		
+		for (ChildComponent cc : sameComponentDeps) {
+			if (cc.getBranch() != null && !cc.getBranch().equals(triggeringRelease.getBranch())) {
+				Optional<BranchData> depBranchOpt = branchService.getBranchData(cc.getBranch());
+				if (depBranchOpt.isPresent() && depBranchOpt.get().getType() == BranchType.BASE) {
+					// Found BASE branch dependency - use its latest release
+					Optional<ReleaseData> baseReleaseOpt = sharedReleaseService.getReleaseDataOfBranch(
+						triggeringRelease.getOrg(), 
+						cc.getBranch(), 
+						ReleaseLifecycle.ASSEMBLED
+					);
+					if (baseReleaseOpt.isPresent()) {
+						log.debug("PSDEBUG: Using BASE branch release " + baseReleaseOpt.get().getUuid() + 
+							" instead of triggering release " + triggeringRelease.getUuid());
+						return baseReleaseOpt.get();
+					}
+				}
+			}
+		}
+		
+		// No BASE branch found - use triggering release
+		return triggeringRelease;
+	}
+	
+	/**
+	 * Checks if the release is already included in a product for this feature set.
+	 * 
+	 * @return true if release is already in product, false otherwise
+	 */
+	private boolean isReleaseAlreadyInProduct(BranchData featureSet, ReleaseData release) {
+		var existingProducts = sharedReleaseService.greedylocateProductsOfRelease(release);
+		return existingProducts.stream()
+			.anyMatch(x -> x.getBranch().equals(featureSet.getUuid()));
+	}
+	
+	/**
+	 * Replaces the old component release with the new one in the parent releases set.
+	 * 
+	 * @return Updated set of parent releases
+	 */
+	private Set<ParentRelease> replaceComponentRelease(Set<ParentRelease> parentReleases, ReleaseData newRelease) {
+		UUID componentUuid = newRelease.getComponent();
+		
+		// Remove any existing release for this component
+		parentReleases.removeIf(pr -> {
+			Optional<ReleaseData> existingRd = sharedReleaseService.getReleaseData(pr.getRelease());
+			return existingRd.isPresent() && existingRd.get().getComponent().equals(componentUuid);
+		});
+		
+		// Add the new release
+		ParentRelease newParentRelease = ParentRelease.minimalParentReleaseFactory(newRelease.getUuid());
+		parentReleases.add(newParentRelease);
+		
+		return parentReleases;
+	}
+	
+	/**
+	 * Creates the product release with version calculation and all parent releases.
+	 */
+	private void createProductRelease(BranchData featureSet, ReleaseData triggeringRelease, Set<ParentRelease> parentReleases) {
+		// Determine version bump action
+		ActionEnum action = ActionEnum.BUMP;
+		try {
+			action = getLargestActionFromComponents(
+				featureSet.getComponent(), 
+				featureSet.getUuid(), 
+				new LinkedList<ParentRelease>(parentReleases)
+			);
+		} catch (RelizaException e1) {
+			log.error(e1.getMessage());
+		}
+		
+		// Get new version
+		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(
+			featureSet.getUuid(), 
+			action, 
+			null, 
+			null
+		);
+		
+		// Build and create release
+		ReleaseDto releaseDto = ReleaseDto.builder()
+			.component(featureSet.getComponent())
+			.branch(featureSet.getUuid())
+			.org(triggeringRelease.getOrg())
+			.status(ReleaseStatus.ACTIVE)
+			.lifecycle(ReleaseLifecycle.ASSEMBLED)
+			.version(ova.get().getVersion())
+			.parentReleases(new LinkedList<ParentRelease>(parentReleases))
+			.build();
+		
+		try {
+			createRelease(releaseDto, WhoUpdated.getAutoWhoUpdated());
+		} catch (Exception e) {
+			log.error("Exception on creating programmatic release, feature set = " + 
+				featureSet.getUuid() + ", trigger release = " + triggeringRelease.getUuid());
+		}
+	}
+	
+	/**
+	 * Finds the dependency in the feature set that matches the triggering release.
+	 * Handles cases where the same component appears multiple times with different branches.
+	 * 
+	 * @param featureSet The feature set to search in
+	 * @param triggeringRelease The release that triggered auto-integrate
+	 * @return Optional containing the matching dependency, or empty if no match found
+	 */
+	private Optional<ChildComponent> findMatchingDependency(BranchData featureSet, ReleaseData triggeringRelease) {
+		List<ChildComponent> dependencies = featureSet.getDependencies();
+		
+		// Try exact match: component UUID + branch UUID
 		Optional<ChildComponent> matchingChild = dependencies.stream()
-			.filter(cc -> cc.getUuid().equals(rd.getComponent()) && cc.getBranch() != null && cc.getBranch().equals(rd.getBranch()))
+			.filter(cc -> cc.getUuid().equals(triggeringRelease.getComponent()) && 
+						  cc.getBranch() != null && 
+						  cc.getBranch().equals(triggeringRelease.getBranch()))
 			.findFirst();
 		
-		// If no exact branch match, check if this component has multiple branches as dependencies
+		// If no exact match, apply fallback logic
 		if (matchingChild.isEmpty()) {
 			List<ChildComponent> sameComponentDeps = dependencies.stream()
-				.filter(cc -> cc.getUuid().equals(rd.getComponent()))
+				.filter(cc -> cc.getUuid().equals(triggeringRelease.getComponent()))
 				.collect(Collectors.toList());
 			
 			if (sameComponentDeps.size() == 1) {
@@ -509,13 +721,13 @@ public class OssReleaseService {
 			} else if (sameComponentDeps.size() > 1) {
 				// Multiple branches for same component - apply priority logic:
 				// 1. If one of the branches is BASE, that takes priority
-				// 2. Otherwise, use the branch that matches the release's branch, or skip if no match
+				// 2. Otherwise, use the branch that matches the release's branch
 				for (ChildComponent cc : sameComponentDeps) {
 					if (cc.getBranch() != null) {
 						Optional<BranchData> childBranchOpt = branchService.getBranchData(cc.getBranch());
 						if (childBranchOpt.isPresent() && childBranchOpt.get().getType() == BranchType.BASE) {
 							// Check if the release is from the BASE branch
-							if (cc.getBranch().equals(rd.getBranch())) {
+							if (cc.getBranch().equals(triggeringRelease.getBranch())) {
 								matchingChild = Optional.of(cc);
 								break;
 							}
@@ -525,126 +737,14 @@ public class OssReleaseService {
 				// If still no match and release branch matches one of the dependencies, use that
 				if (matchingChild.isEmpty()) {
 					matchingChild = sameComponentDeps.stream()
-						.filter(cc -> cc.getBranch() != null && cc.getBranch().equals(rd.getBranch()))
+						.filter(cc -> cc.getBranch() != null && cc.getBranch().equals(triggeringRelease.getBranch()))
 						.findFirst();
 				}
 			}
 		}
 		
-		// If no matching child component found, skip this release
-		if (matchingChild.isEmpty()) {
-			log.debug("PSDEBUG: No matching child component found for rd = " + rd.getUuid() + " in bd = " + bd.getUuid());
-			return;
-		}
-		
-		ChildComponent currentChildComponent = matchingChild.get();
-		
-		// check that status of this child project is not ignored, check that this release is not ignored and not pinned
-		if (StatusEnum.IGNORED != currentChildComponent.getStatus() &&
-			null == currentChildComponent.getRelease()) {
-			log.debug("PSDEBUG: accessed auto-integrate for bd = " + bd.getUuid() + ", rd = " + rd.getUuid());
-			// See if any product of this branch already has this release 
-			// which can happen on status change - in which case do not proceed
-			var existingProducts = sharedReleaseService.greedylocateProductsOfRelease(rd);
-			boolean requirementsMet = true; 
-			if (!existingProducts.isEmpty()) {
-				// check if existing products contain this branch
-				// if yes, do not proceed
-				requirementsMet = !existingProducts
-									.stream()
-									.anyMatch(x -> x.getBranch().equals(bd.getUuid()));
-			}
-			log.debug("PSDEBUG: requirements met status after product check = " + requirementsMet);
-			
-			// Take every required child project of this branch, and take latest assembled release for each of them
-			Set<ParentRelease> parentReleases = new HashSet<>();
-			if (requirementsMet) {
-				Set<ParentRelease> fetchedParentReleases = sharedReleaseService.getCurrentProductParentRelease(bd.getUuid(), rd, ReleaseLifecycle.ASSEMBLED);
-				if (fetchedParentReleases != null && !fetchedParentReleases.isEmpty()) {
-					parentReleases = fetchedParentReleases;
-				} else {
-					requirementsMet = false;
-				}
-			}
-			
-			// If one of required projects does not have latest release, then we fail the process and don't yield anything there
-			if (requirementsMet) {
-				// Determine which release to use for the triggering component
-				// If triggering release is NOT from BASE branch, but there's a BASE branch dependency for the same component,
-				// use the BASE branch's latest release instead
-				ReleaseData releaseToUse = rd;
-				Optional<BranchData> triggeringBranchOpt = branchService.getBranchData(rd.getBranch());
-				boolean isFromBaseBranch = triggeringBranchOpt.isPresent() && triggeringBranchOpt.get().getType() == BranchType.BASE;
-				
-				if (!isFromBaseBranch) {
-					// Check if there's a BASE branch dependency for the same component
-					List<ChildComponent> sameComponentDeps = dependencies.stream()
-						.filter(cc -> cc.getUuid().equals(rd.getComponent()))
-						.collect(Collectors.toList());
-					
-					for (ChildComponent cc : sameComponentDeps) {
-						if (cc.getBranch() != null && !cc.getBranch().equals(rd.getBranch())) {
-							Optional<BranchData> depBranchOpt = branchService.getBranchData(cc.getBranch());
-							if (depBranchOpt.isPresent() && depBranchOpt.get().getType() == BranchType.BASE) {
-								// Found a BASE branch dependency - get its latest release
-								Optional<ReleaseData> baseReleaseOpt = sharedReleaseService.getReleaseDataOfBranch(
-									rd.getOrg(), cc.getBranch(), ReleaseLifecycle.ASSEMBLED);
-								if (baseReleaseOpt.isPresent()) {
-									log.debug("PSDEBUG: Using BASE branch release " + baseReleaseOpt.get().getUuid() + 
-										" instead of triggering release " + rd.getUuid());
-									releaseToUse = baseReleaseOpt.get();
-								}
-								break;
-							}
-						}
-					}
-				}
-				
-				// Check if releaseToUse is already in the latest product release for this branch
-				// This can happen when a non-BASE branch release triggers auto-integrate but the BASE release is already included
-				var existingProductsForReleaseToUse = sharedReleaseService.greedylocateProductsOfRelease(releaseToUse);
-				boolean releaseAlreadyInProduct = existingProductsForReleaseToUse.stream()
-					.anyMatch(x -> x.getBranch().equals(bd.getUuid()));
-				if (releaseAlreadyInProduct) {
-					log.debug("PSDEBUG: releaseToUse " + releaseToUse.getUuid() + " is already in a product release for branch " + bd.getUuid() + ", skipping");
-					return;
-				}
-				
-				// add release to parent - first remove any existing release for the same component
-				// to avoid duplicates when the same component has releases from multiple branches
-				UUID componentUuid = releaseToUse.getComponent();
-				parentReleases.removeIf(pr -> {
-					Optional<ReleaseData> existingRd = sharedReleaseService.getReleaseData(pr.getRelease());
-					return existingRd.isPresent() && existingRd.get().getComponent().equals(componentUuid);
-				});
-				ParentRelease dr = ParentRelease.minimalParentReleaseFactory(releaseToUse.getUuid());
-				parentReleases.add(dr);
-				// create new product release
-				ActionEnum action = ActionEnum.BUMP;
-				try {
-					action = getLargestActionFromComponents(bd.getComponent(), bd.getUuid(), new LinkedList<ParentRelease>(parentReleases));
-				} catch (RelizaException e1) {
-					log.error(e1.getMessage());
-				}
-				Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(bd.getUuid(), action, null, null);
-				ReleaseDto releaseDto = ReleaseDto.builder()
-												.component(bd.getComponent())
-												.branch(bd.getUuid())
-												.org(rd.getOrg())
-												.status(ReleaseStatus.ACTIVE)
-												.lifecycle(ReleaseLifecycle.ASSEMBLED)
-												.version(ova.get().getVersion())
-												.parentReleases(new LinkedList<ParentRelease>(parentReleases))
-												.build();
-				try {
-					createRelease(releaseDto, WhoUpdated.getAutoWhoUpdated());
-				} catch (Exception e) {
-					log.error("Exception on creating programmatic release, feature set = " + bd.getUuid() + ", trigger release = " + rd.getUuid());
-				}
-			}
-		}
+		return matchingChild;
 	}
-	
 
 	/**
 	 * Similar to getLargestActionFromComponents(UUID, UUID), however this method only requires feature set UUID

@@ -48,7 +48,7 @@ public interface BranchRepository extends CrudRepository<Branch, UUID> {
 	@Query(
 			value = VariableQueries.FIND_BRANCHES_BY_CHILD_COMPONENT_AND_BRANCH,
 			nativeQuery = true)
-	List<Branch> findBranchesByChildComponentBranch(String orgUuidAsString, String compUuidAsString, String branchUuidAsString);
+	List<Branch> findFeatureSetsByChildComponentBranch(String orgUuidAsString, String compUuidAsString, String branchUuidAsString);
 	
 	/**
 	 * This one is to locate feature sets of a project
