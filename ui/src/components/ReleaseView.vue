@@ -272,7 +272,7 @@
                             />
                         </div>
                     </div>
-                    <div class="container">
+                    <div class="container" v-if="false">
                         <h3>
                             Produced Deliverables
                             <Icon v-if="isWritable && isUpdatable" class="clickable addIcon" size="25" title="Add Deliverable" @click="showReleaseAddDeliverableModal=true">
