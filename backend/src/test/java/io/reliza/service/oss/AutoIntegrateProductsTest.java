@@ -633,4 +633,516 @@ public class AutoIntegrateProductsTest {
 		assertEquals(initialCount, productReleasesAfter.size(), 
 			"Auto-integrate should NOT create a product release when DISABLED");
 	}
+	
+	/**
+	 * Test 4: Pinned release - should skip auto-integrate
+	 * When a dependency is pinned to a specific release, auto-integrate should not trigger
+	 */
+	@Test
+	public void testAutoIntegrateProducts_PinnedRelease_ShouldSkip() throws RelizaException {
+		// Arrange
+		Organization org = testInitializer.obtainOrganization();
+		
+		// Create component
+		Component component = componentService.createComponent(
+			"testComponent_" + UUID.randomUUID(), 
+			org.getUuid(), 
+			ComponentType.COMPONENT, 
+			"semver", 
+			"Branch.Micro", 
+			null, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Branch componentBranch = branchService.createBranch(
+			"main", 
+			component.getUuid(), 
+			BranchType.BASE, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		// Create first release (this will be the pinned release)
+		ReleaseDto release1Dto = ReleaseDto.builder()
+			.component(component.getUuid())
+			.branch(componentBranch.getUuid())
+			.org(org.getUuid())
+			.status(ReleaseStatus.ACTIVE)
+			.lifecycle(ReleaseLifecycle.ASSEMBLED)
+			.version("1.0.0")
+			.build();
+		Release release1 = ossReleaseService.createRelease(release1Dto, WhoUpdated.getTestWhoUpdated());
+		
+		// Create product with feature set that PINS the first release
+		Component product = componentService.createComponent(
+			"testProduct_" + UUID.randomUUID(), 
+			org.getUuid(), 
+			ComponentType.PRODUCT, 
+			"semver", 
+			"Branch.Micro", 
+			null, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Branch featureSetBranch = branchService.createBranch(
+			"testFeatureSet", 
+			product.getUuid(), 
+			BranchType.FEATURE, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		// Add dependency with PINNED release
+		BranchData featureSetData = branchService.getBranchData(featureSetBranch.getUuid()).get();
+		ChildComponent pinnedDep = ChildComponent.builder()
+			.uuid(component.getUuid())
+			.branch(componentBranch.getUuid())
+			.status(StatusEnum.REQUIRED)
+			.release(release1.getUuid()) // PINNED to v1.0.0
+			.build();
+		
+		BranchDto branchDto = BranchDto.builder()
+			.uuid(featureSetData.getUuid())
+			.name(featureSetData.getName())
+			.versionSchema(featureSetData.getVersionSchema())
+			.type(featureSetData.getType())
+			.dependencies(List.of(pinnedDep))
+			.autoIntegrate(AutoIntegrateState.ENABLED)
+			.build();
+		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
+		
+		// Create second release (this should NOT trigger auto-integrate because dependency is pinned)
+		ReleaseDto release2Dto = ReleaseDto.builder()
+			.component(component.getUuid())
+			.branch(componentBranch.getUuid())
+			.org(org.getUuid())
+			.status(ReleaseStatus.ACTIVE)
+			.lifecycle(ReleaseLifecycle.ASSEMBLED)
+			.version("2.0.0")
+			.build();
+		Release release2 = ossReleaseService.createRelease(release2Dto, WhoUpdated.getTestWhoUpdated());
+		
+		// Get initial product release count
+		List<ReleaseData> productReleasesBefore = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+		int initialCount = productReleasesBefore.size();
+		
+		// Act - trigger auto-integrate with v2.0.0
+		ReleaseData release2Data = sharedReleaseService.getReleaseData(release2.getUuid()).get();
+		ossReleaseService.autoIntegrateProducts(release2Data);
+		
+		// Assert - verify NO new product release was created (pinned dependency should skip)
+		List<ReleaseData> productReleasesAfter = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+		
+		assertEquals(initialCount, productReleasesAfter.size(), 
+			"Auto-integrate should NOT create a product release when dependency is pinned to a specific release");
+	}
+	
+	/**
+	 * Test 5: Duplicate prevention - should skip when release already in product
+	 * When a release is already in a product for the feature set, auto-integrate should not create duplicate
+	 */
+	@Test
+	public void testAutoIntegrateProducts_DuplicatePrevention() throws RelizaException {
+		// Arrange
+		Organization org = testInitializer.obtainOrganization();
+		
+		// Create two components
+		Component component1 = componentService.createComponent(
+			"testComponent1_" + UUID.randomUUID(), 
+			org.getUuid(), 
+			ComponentType.COMPONENT, 
+			"semver", 
+			"Branch.Micro", 
+			null, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Branch component1Branch = branchService.createBranch(
+			"main", 
+			component1.getUuid(), 
+			BranchType.BASE, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Component component2 = componentService.createComponent(
+			"testComponent2_" + UUID.randomUUID(), 
+			org.getUuid(), 
+			ComponentType.COMPONENT, 
+			"semver", 
+			"Branch.Micro", 
+			null, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Branch component2Branch = branchService.createBranch(
+			"main", 
+			component2.getUuid(), 
+			BranchType.BASE, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		// Create releases for both components
+		ReleaseDto release1Dto = ReleaseDto.builder()
+			.component(component1.getUuid())
+			.branch(component1Branch.getUuid())
+			.org(org.getUuid())
+			.status(ReleaseStatus.ACTIVE)
+			.lifecycle(ReleaseLifecycle.ASSEMBLED)
+			.version("1.0.0")
+			.build();
+		Release release1 = ossReleaseService.createRelease(release1Dto, WhoUpdated.getTestWhoUpdated());
+		
+		ReleaseDto release2Dto = ReleaseDto.builder()
+			.component(component2.getUuid())
+			.branch(component2Branch.getUuid())
+			.org(org.getUuid())
+			.status(ReleaseStatus.ACTIVE)
+			.lifecycle(ReleaseLifecycle.ASSEMBLED)
+			.version("1.0.0")
+			.build();
+		Release release2 = ossReleaseService.createRelease(release2Dto, WhoUpdated.getTestWhoUpdated());
+		
+		// Create product with feature set
+		Component product = componentService.createComponent(
+			"testProduct_" + UUID.randomUUID(), 
+			org.getUuid(), 
+			ComponentType.PRODUCT, 
+			"semver", 
+			"Branch.Micro", 
+			null, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Branch featureSetBranch = branchService.createBranch(
+			"testFeatureSet", 
+			product.getUuid(), 
+			BranchType.FEATURE, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		// Add dependencies
+		BranchData featureSetData = branchService.getBranchData(featureSetBranch.getUuid()).get();
+		ChildComponent dep1 = ChildComponent.builder()
+			.uuid(component1.getUuid())
+			.branch(component1Branch.getUuid())
+			.status(StatusEnum.REQUIRED)
+			.build();
+		
+		ChildComponent dep2 = ChildComponent.builder()
+			.uuid(component2.getUuid())
+			.branch(component2Branch.getUuid())
+			.status(StatusEnum.REQUIRED)
+			.build();
+		
+		BranchDto branchDto = BranchDto.builder()
+			.uuid(featureSetData.getUuid())
+			.name(featureSetData.getName())
+			.versionSchema(featureSetData.getVersionSchema())
+			.type(featureSetData.getType())
+			.dependencies(List.of(dep1, dep2))
+			.autoIntegrate(AutoIntegrateState.ENABLED)
+			.build();
+		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
+		
+		// Act 1 - trigger auto-integrate for component1 (should create product release)
+		ReleaseData release1Data = sharedReleaseService.getReleaseData(release1.getUuid()).get();
+		ossReleaseService.autoIntegrateProducts(release1Data);
+		
+		List<ReleaseData> productReleasesAfterFirst = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+		int countAfterFirst = productReleasesAfterFirst.size();
+		
+		// Act 2 - trigger auto-integrate AGAIN for the SAME release (should NOT create duplicate)
+		ossReleaseService.autoIntegrateProducts(release1Data);
+		
+		// Assert - verify NO duplicate was created
+		List<ReleaseData> productReleasesAfterSecond = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+		int countAfterSecond = productReleasesAfterSecond.size();
+		
+		assertEquals(countAfterFirst, countAfterSecond, 
+			"Auto-integrate should NOT create duplicate product release when called twice with same release");
+		assertEquals(1, countAfterSecond, 
+			"Should have exactly 1 product release (no duplicates)");
+	}
+	
+	/**
+	 * Test 6: Multiple feature sets - should create product for each
+	 * When multiple feature sets depend on a component, auto-integrate should create product for each
+	 */
+	@Test
+	public void testAutoIntegrateProducts_MultipleFeatureSets() throws RelizaException {
+		// Arrange
+		Organization org = testInitializer.obtainOrganization();
+		
+		// Create component
+		Component component = componentService.createComponent(
+			"testComponent_" + UUID.randomUUID(), 
+			org.getUuid(), 
+			ComponentType.COMPONENT, 
+			"semver", 
+			"Branch.Micro", 
+			null, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Branch componentBranch = branchService.createBranch(
+			"main", 
+			component.getUuid(), 
+			BranchType.BASE, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		// Create release
+		ReleaseDto releaseDto = ReleaseDto.builder()
+			.component(component.getUuid())
+			.branch(componentBranch.getUuid())
+			.org(org.getUuid())
+			.status(ReleaseStatus.ACTIVE)
+			.lifecycle(ReleaseLifecycle.ASSEMBLED)
+			.version("1.0.0")
+			.build();
+		Release release = ossReleaseService.createRelease(releaseDto, WhoUpdated.getTestWhoUpdated());
+		
+		// Create TWO products with feature sets that both depend on the component
+		Component product1 = componentService.createComponent(
+			"testProduct1_" + UUID.randomUUID(), 
+			org.getUuid(), 
+			ComponentType.PRODUCT, 
+			"semver", 
+			"Branch.Micro", 
+			null, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Branch featureSet1 = branchService.createBranch(
+			"featureSet1", 
+			product1.getUuid(), 
+			BranchType.FEATURE, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Component product2 = componentService.createComponent(
+			"testProduct2_" + UUID.randomUUID(), 
+			org.getUuid(), 
+			ComponentType.PRODUCT, 
+			"semver", 
+			"Branch.Micro", 
+			null, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		Branch featureSet2 = branchService.createBranch(
+			"featureSet2", 
+			product2.getUuid(), 
+			BranchType.FEATURE, 
+			WhoUpdated.getTestWhoUpdated()
+		);
+		
+		// Add dependency to both feature sets
+		BranchData featureSetData1 = branchService.getBranchData(featureSet1.getUuid()).get();
+		BranchData featureSetData2 = branchService.getBranchData(featureSet2.getUuid()).get();
+		
+		ChildComponent dep = ChildComponent.builder()
+			.uuid(component.getUuid())
+			.branch(componentBranch.getUuid())
+			.status(StatusEnum.REQUIRED)
+			.build();
+		
+		BranchDto branchDto1 = BranchDto.builder()
+			.uuid(featureSetData1.getUuid())
+			.name(featureSetData1.getName())
+			.versionSchema(featureSetData1.getVersionSchema())
+			.type(featureSetData1.getType())
+			.dependencies(List.of(dep))
+			.autoIntegrate(AutoIntegrateState.ENABLED)
+			.build();
+		branchService.updateBranch(branchDto1, WhoUpdated.getTestWhoUpdated());
+		
+		BranchDto branchDto2 = BranchDto.builder()
+			.uuid(featureSetData2.getUuid())
+			.name(featureSetData2.getName())
+			.versionSchema(featureSetData2.getVersionSchema())
+			.type(featureSetData2.getType())
+			.dependencies(List.of(dep))
+			.autoIntegrate(AutoIntegrateState.ENABLED)
+			.build();
+		branchService.updateBranch(branchDto2, WhoUpdated.getTestWhoUpdated());
+		
+		// Get initial counts
+		int count1Before = sharedReleaseService.listReleaseDataOfBranch(featureSet1.getUuid()).size();
+		int count2Before = sharedReleaseService.listReleaseDataOfBranch(featureSet2.getUuid()).size();
+		
+		// Act - trigger auto-integrate
+		ReleaseData releaseData = sharedReleaseService.getReleaseData(release.getUuid()).get();
+		ossReleaseService.autoIntegrateProducts(releaseData);
+		
+		// Assert - verify product releases created for BOTH feature sets
+		int count1After = sharedReleaseService.listReleaseDataOfBranch(featureSet1.getUuid()).size();
+		int count2After = sharedReleaseService.listReleaseDataOfBranch(featureSet2.getUuid()).size();
+		
+		assertTrue(count1After > count1Before, 
+			"Auto-integrate should create product release for feature set 1");
+		assertTrue(count2After > count2Before, 
+			"Auto-integrate should create product release for feature set 2");
+	}
+	
+	/**
+	 * Test 7: BASE branch priority - feature branch release should use BASE branch release instead
+ * 
+ * Scenario:
+ * - Component has TWO branches: main (BASE) and feature (FEATURE)
+ * - Feature set depends on BOTH branches of the same component
+ * - Release v1.0.0 created on main (BASE)
+ * - Release v2.0.0 created on feature branch
+ * - When feature branch release triggers auto-integrate, it should use BASE branch release instead
+ * 
+ * This tests the determineReleaseToUse logic that prioritizes BASE branch over feature branches.
+ */
+@Test
+public void testAutoIntegrateProducts_BaseBranchPriority() throws RelizaException {
+    // Arrange
+    Organization org = testInitializer.obtainOrganization();
+    
+    // Create component with TWO branches
+    Component component = componentService.createComponent(
+        "testComponent_" + UUID.randomUUID(), 
+        org.getUuid(), 
+        ComponentType.COMPONENT, 
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Create BASE branch (main)
+    Branch baseBranch = branchService.createBranch(
+        "main", 
+        component.getUuid(), 
+        BranchType.BASE, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Create FEATURE branch
+    Branch featureBranch = branchService.createBranch(
+        "feature", 
+        component.getUuid(), 
+        BranchType.FEATURE, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Create release v1.0.0 on BASE branch
+    ReleaseDto baseReleaseDto = ReleaseDto.builder()
+        .component(component.getUuid())
+        .branch(baseBranch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("1.0.0")
+        .build();
+    Release baseRelease = ossReleaseService.createRelease(baseReleaseDto, WhoUpdated.getTestWhoUpdated());
+    
+    // Create release v2.0.0 on FEATURE branch
+    ReleaseDto featureReleaseDto = ReleaseDto.builder()
+        .component(component.getUuid())
+        .branch(featureBranch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("2.0.0")
+        .build();
+    Release featureRelease = ossReleaseService.createRelease(featureReleaseDto, WhoUpdated.getTestWhoUpdated());
+    
+    // Create product with feature set that depends on BOTH branches
+    Component product = componentService.createComponent(
+        "testProduct_" + UUID.randomUUID(), 
+        org.getUuid(), 
+        ComponentType.PRODUCT, 
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    Branch featureSetBranch = branchService.createBranch(
+        "testFeatureSet", 
+        product.getUuid(), 
+        BranchType.FEATURE, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Add BOTH branches as dependencies (BASE + FEATURE)
+    BranchData featureSetData = branchService.getBranchData(featureSetBranch.getUuid()).get();
+    ChildComponent baseDep = ChildComponent.builder()
+        .uuid(component.getUuid())
+        .branch(baseBranch.getUuid())
+        .status(StatusEnum.REQUIRED)
+        .build();
+    
+    ChildComponent featureDep = ChildComponent.builder()
+        .uuid(component.getUuid())
+        .branch(featureBranch.getUuid())
+        .status(StatusEnum.REQUIRED)
+        .build();
+    
+    BranchDto branchDto = BranchDto.builder()
+        .uuid(featureSetData.getUuid())
+        .name(featureSetData.getName())
+        .versionSchema(featureSetData.getVersionSchema())
+        .type(featureSetData.getType())
+        .dependencies(List.of(baseDep, featureDep))
+        .autoIntegrate(AutoIntegrateState.ENABLED)
+        .build();
+    branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
+    
+    // Get initial product release count
+    List<ReleaseData> productReleasesBefore = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+    int countBefore = productReleasesBefore.size();
+    System.out.println("DEBUG: Product releases before: " + countBefore);
+    
+    // Act - trigger auto-integrate with FEATURE branch release v2.0.0
+    // This should use BASE branch release v1.0.0 instead due to priority logic
+    ReleaseData featureReleaseData = sharedReleaseService.getReleaseData(featureRelease.getUuid()).get();
+    ossReleaseService.autoIntegrateProducts(featureReleaseData);
+    
+    // Assert - verify product release was created with BASE branch release (v1.0.0), NOT feature release (v2.0.0)
+    List<ReleaseData> productReleasesAfter = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+    int countAfter = productReleasesAfter.size();
+    System.out.println("DEBUG: Product releases after: " + countAfter);
+    
+    assertTrue(countAfter > countBefore, 
+        "Auto-integrate should create a product release");
+    
+    // Find the newest product release
+    productReleasesAfter.sort((r1, r2) -> r2.getCreatedDate().compareTo(r1.getCreatedDate()));
+    ReleaseData newestProductRelease = productReleasesAfter.get(0);
+    
+    System.out.println("DEBUG: Newest product release version: " + newestProductRelease.getVersion());
+    System.out.println("DEBUG: Newest product release has " + newestProductRelease.getParentReleases().size() + " parent releases");
+    
+    // Verify the product contains BASE branch release (v1.0.0), NOT feature branch release (v2.0.0)
+    boolean hasBaseBranchRelease = newestProductRelease.getParentReleases().stream()
+        .anyMatch(pr -> {
+            Optional<ReleaseData> parentRd = sharedReleaseService.getReleaseData(pr.getRelease());
+            if (parentRd.isPresent()) {
+                ReleaseData prd = parentRd.get();
+                System.out.println("  - Parent release: component=" + prd.getComponent() + 
+                    ", branch=" + prd.getBranch() + ", version=" + prd.getVersion());
+                return prd.getComponent().equals(component.getUuid()) && 
+                       prd.getBranch().equals(baseBranch.getUuid()) &&
+                       "1.0.0".equals(prd.getVersion());
+            }
+            return false;
+        });
+    
+    boolean hasFeatureBranchRelease = newestProductRelease.getParentReleases().stream()
+        .anyMatch(pr -> {
+            Optional<ReleaseData> parentRd = sharedReleaseService.getReleaseData(pr.getRelease());
+            return parentRd.isPresent() && 
+                   parentRd.get().getComponent().equals(component.getUuid()) &&
+                   parentRd.get().getBranch().equals(featureBranch.getUuid()) &&
+                   "2.0.0".equals(parentRd.get().getVersion());
+        });
+    
+    assertTrue(hasBaseBranchRelease, 
+        "Product release should contain BASE branch release v1.0.0 (determineReleaseToUse should prioritize BASE)");
+    assertFalse(hasFeatureBranchRelease, 
+        "Product release should NOT contain feature branch release v2.0.0 (BASE branch takes priority)");
+}
 }

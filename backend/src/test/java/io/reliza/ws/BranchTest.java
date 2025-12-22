@@ -144,7 +144,7 @@ public class BranchTest
 	@Test
 	@Disabled //WIP - using hard-coded values currently, but need to re-do with pre-creating all components
 	public void findBranchByChildProjectBranch() {
-		List<BranchData> bdList = branchService.findBranchDataByChildComponentBranch(UUID.fromString("4cba762e-c08d-4d7a-9c01-6bdbefcf6282"), UUID.fromString("ce77c5be-7641-446c-bc40-0bc51e53e866"),
+		List<BranchData> bdList = branchService.findFeatureSetDataByChildComponentBranch(UUID.fromString("4cba762e-c08d-4d7a-9c01-6bdbefcf6282"), UUID.fromString("ce77c5be-7641-446c-bc40-0bc51e53e866"),
 				UUID.fromString("d18c04f2-f0b6-4dc0-b419-d2ed4deeee58"));
 		Assertions.assertEquals(UUID.fromString("28c6b0d0-5396-4f17-b3bb-072f52cc3500"), bdList.get(0).getUuid());
 	}
