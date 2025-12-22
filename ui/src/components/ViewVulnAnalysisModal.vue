@@ -48,12 +48,13 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NDataTable, NTag, NSpace, NButton, NIcon, useNotification, DataTableColumns } from 'naive-ui'
+import { NModal, NSpin, NDataTable, NTag, NSpace, NButton, NIcon, NTooltip, useNotification, DataTableColumns } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import CreateVulnAnalysisModal from './CreateVulnAnalysisModal.vue'
 import UpdateVulnAnalysisModal from './UpdateVulnAnalysisModal.vue'
 import { Edit } from '@vicons/tabler'
+import { Info20Regular } from '@vicons/fluent'
 
 interface Props {
     show: boolean
@@ -62,6 +63,7 @@ interface Props {
     findingId: string
     findingType: string
     findingAliases?: any[]
+    severity?: string
     releaseUuid?: string
     branchUuid?: string
     componentUuid?: string
@@ -70,6 +72,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
     findingAliases: () => [],
+    severity: '',
     releaseUuid: '',
     branchUuid: '',
     componentUuid: '',
@@ -142,7 +145,8 @@ const findingRowData = computed(() => {
         type: props.findingType,
         purl: props.location,
         location: props.location,
-        aliases: props.findingAliases
+        aliases: props.findingAliases,
+        severity: props.severity
     }
 })
 
@@ -219,7 +223,7 @@ const columns: DataTableColumns<any> = [
     {
         title: 'History',
         key: 'analysisHistory',
-        minWidth: 300,
+        minWidth: 250,
         render: (row: any) => {
             if (!row.analysisHistory || row.analysisHistory.length === 0) {
                 return '-'
@@ -238,17 +242,41 @@ const columns: DataTableColumns<any> = [
                         ? new Date(history.createdDate).toLocaleString('en-CA', { hour12: false })
                         : 'Unknown'
                     
-                    const justification = history.justification ? ` - ${history.justification}` : ''
-                    const details = history.details ? ` (${history.details})` : ''
+                    // Build tooltip content
+                    const tooltipLines: string[] = []
+                    if (history.justification) {
+                        tooltipLines.push(`Justification: ${history.justification}`)
+                    }
+                    if (history.severity) {
+                        tooltipLines.push(`Severity: ${history.severity}`)
+                    }
+                    if (history.details) {
+                        tooltipLines.push(`Details: ${history.details}`)
+                    }
+                    const tooltipContent = tooltipLines.length > 0 ? tooltipLines.join('\n') : 'No additional information'
                     
-                    return h('div', { key: index, style: 'font-size: 12px;' }, [
-                        h(NTag, { 
-                            type: stateColors[history.state] || 'default', 
-                            size: 'tiny',
-                            style: 'margin-right: 4px;'
-                        }, { default: () => history.state }),
-                        h('span', {}, `${dateStr}${justification}${details}`)
-                    ])
+                    const tag = h(NTag, { 
+                        type: stateColors[history.state] || 'default', 
+                        size: 'tiny',
+                        style: 'margin-right: 4px;'
+                    }, { default: () => history.state })
+                    
+                    const dateSpan = h('span', { style: 'font-size: 12px;' }, dateStr)
+                    
+                    const infoIcon = h(NTooltip, {
+                        trigger: 'hover'
+                    }, {
+                        trigger: () => h(NIcon, {
+                            style: 'margin-left: 6px; cursor: pointer;',
+                            size: 14
+                        }, () => h(Info20Regular)),
+                        default: () => tooltipContent
+                    })
+                    
+                    return h('div', { 
+                        key: index, 
+                        style: 'display: flex; align-items: center; font-size: 12px;' 
+                    }, [tag, dateSpan, infoIcon])
                 })
             })
         }
@@ -308,6 +336,7 @@ const fetchAnalysisRecords = async () => {
                         analysisHistory {
                             state
                             justification
+                            severity
                             details
                             createdDate
                         }

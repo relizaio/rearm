@@ -72,6 +72,15 @@
                 />
             </n-form-item>
 
+            <n-form-item label="Severity" path="severity">
+                <n-select
+                    v-model:value="formData.severity"
+                    :options="severityOptions"
+                    placeholder="Select severity (optional)"
+                    clearable
+                />
+            </n-form-item>
+
             <n-form-item label="Details" path="details">
                 <n-input
                     v-model:value="formData.details"
@@ -152,6 +161,7 @@ const formData = ref({
     scopeUuid: '',
     state: 'IN_TRIAGE',
     justification: null as string | null,
+    severity: null as string | null,
     details: ''
 })
 
@@ -188,6 +198,13 @@ const scopeOptions = computed(() => {
 
 const stateOptions = ANALYSIS_STATE_OPTIONS
 const justificationOptions = ANALYSIS_JUSTIFICATION_OPTIONS
+const severityOptions = [
+    { label: 'Critical', value: 'CRITICAL' },
+    { label: 'High', value: 'HIGH' },
+    { label: 'Medium', value: 'MEDIUM' },
+    { label: 'Low', value: 'LOW' },
+    { label: 'Info', value: 'INFO' }
+]
 
 const rules: FormRules = {
     findingId: [{ required: true, message: 'Finding ID is required', trigger: 'blur' }],
@@ -236,6 +253,9 @@ watch(() => props.findingRow, (newRow) => {
         formData.value.location = location
         // Check if location is actually a PURL (starts with 'pkg:')
         formData.value.locationType = location.startsWith('pkg:') ? 'PURL' : 'CODE_POINT'
+        
+        // Set severity from vulnerability data if available
+        formData.value.severity = newRow.severity || null
         
         setDefaultScope()
     }
@@ -293,6 +313,10 @@ const handleSubmit = async () => {
             input.justification = formData.value.justification
         }
         
+        if (formData.value.severity) {
+            input.severity = formData.value.severity
+        }
+        
         const response = await graphqlClient.mutate({
             mutation: gql`
                 mutation createVulnAnalysis($analysis: CreateVulnAnalysisInput!) {
@@ -308,6 +332,7 @@ const handleSubmit = async () => {
                         scopeUuid
                         analysisState
                         analysisJustification
+                        severity
                     }
                 }
             `,

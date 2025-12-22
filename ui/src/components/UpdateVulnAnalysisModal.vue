@@ -39,6 +39,15 @@
                 />
             </n-form-item>
 
+            <n-form-item label="Severity" path="severity">
+                <n-select
+                    v-model:value="formData.severity"
+                    :options="severityOptions"
+                    placeholder="Select severity (optional)"
+                    clearable
+                />
+            </n-form-item>
+
             <n-form-item label="Details" path="details">
                 <n-input
                     v-model:value="formData.details"
@@ -98,11 +107,19 @@ const formData = ref({
     findingAliases: [] as string[],
     state: 'IN_TRIAGE',
     justification: null as string | null,
+    severity: null as string | null,
     details: ''
 })
 
 const stateOptions = ANALYSIS_STATE_OPTIONS
 const justificationOptions = ANALYSIS_JUSTIFICATION_OPTIONS
+const severityOptions = [
+    { label: 'Critical', value: 'CRITICAL' },
+    { label: 'High', value: 'HIGH' },
+    { label: 'Medium', value: 'MEDIUM' },
+    { label: 'Low', value: 'LOW' },
+    { label: 'Info', value: 'INFO' }
+]
 
 const rules: FormRules = {
     state: [{ required: true, message: 'Analysis state is required', trigger: 'change' }]
@@ -114,6 +131,7 @@ watch(() => props.analysisRecord, (newRecord) => {
         formData.value.findingAliases = newRecord.findingAliases || []
         formData.value.state = newRecord.analysisState || 'IN_TRIAGE'
         formData.value.justification = newRecord.analysisJustification || null
+        formData.value.severity = newRecord.severity || null
         formData.value.details = ''
     }
 }, { immediate: true })
@@ -140,6 +158,10 @@ const handleSubmit = async () => {
             input.justification = formData.value.justification
         }
         
+        if (formData.value.severity) {
+            input.severity = formData.value.severity
+        }
+        
         const response = await graphqlClient.mutate({
             mutation: gql`
                 mutation updateVulnAnalysis($analysis: UpdateVulnAnalysisInput!) {
@@ -155,6 +177,7 @@ const handleSubmit = async () => {
                         scopeUuid
                         analysisState
                         analysisJustification
+                        severity
                         analysisHistory {
                             state
                             justification
