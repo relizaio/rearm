@@ -915,12 +915,14 @@ class VariableQueries {
 			SELECT * from rearm.analytics_metrics am 
 				WHERE am.record_data->>'org' = :orgUuidAsString
 				AND am.record_data->>'dateKey' >= :dateKeyFrom AND am.record_data->>'dateKey' <= :dateKeyTo
+				AND (am.record_data->>'perspective' is null OR am.record_data->>'perspective' = '' OR am.record_data->>'perspective' = '00000000-0000-0000-0000-000000000000')
 			""";
 	
 	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_DATE_KEY = """
 			SELECT * from rearm.analytics_metrics am 
 				WHERE am.record_data->>'org' = :orgUuidAsString
 				AND am.record_data->>'dateKey' = :dateKey
+				AND (am.record_data->>'perspective' is null OR am.record_data->>'perspective' = '' OR am.record_data->>'perspective' = '00000000-0000-0000-0000-000000000000')  
 			""";
 	
 	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_PERSPECTIVE_DATE_KEY = """
