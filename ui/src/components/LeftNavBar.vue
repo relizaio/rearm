@@ -40,10 +40,10 @@ export default {
 <script lang="ts" setup>
 import { NSpace, NLayout, NLayoutSider, NMenu, NIcon } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
-import { ref, h, Component, ComputedRef, computed } from 'vue'
+import { ref, h, Component, ComputedRef, computed, Ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useStore } from 'vuex'
-import { HomeOutlined as HomeIcon, CloudServerOutlined } from '@vicons/antd'
+import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
 import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar } from '@vicons/tabler'
 
 
@@ -165,6 +165,21 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                 ),
             key: 'analytics',
             icon: renderIcon(ChartBar)
+        },
+        {
+            label: () =>
+                h(
+                    RouterLink,
+                    {
+                        to: {
+                            name: 'VulnerabilityAnalysis',
+                            params: {orguuid: org}
+                        }
+                    },
+                    { default: () => 'Vulnerability Analysis' }
+                ),
+            key: 'vulnerabilityAnalysis',
+            icon: renderIcon(BugOutlined)
         },
         {
             label: () =>

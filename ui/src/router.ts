@@ -44,6 +44,11 @@ const routes : any[] = [
         component: () => import('@/components/AnalyticsOfOrg.vue')
     },
     {
+        path: '/vulnerabilityAnalysis/:orguuid',
+        name: 'VulnerabilityAnalysis',
+        component: () => import('@/components/VulnerabilityAnalysis.vue')
+    },
+    {
         path: '/orgSettings/:orguuid',
         name: 'OrgSettings',
         component: () => import('@/components/OrgSettings.vue')
