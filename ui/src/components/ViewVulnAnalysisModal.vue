@@ -333,6 +333,7 @@ const fetchAnalysisRecords = async () => {
                         scopeUuid
                         analysisState
                         analysisJustification
+                        severity
                         analysisHistory {
                             state
                             justification
