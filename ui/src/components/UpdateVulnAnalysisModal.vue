@@ -118,7 +118,7 @@ const severityOptions = [
     { label: 'High', value: 'HIGH' },
     { label: 'Medium', value: 'MEDIUM' },
     { label: 'Low', value: 'LOW' },
-    { label: 'Info', value: 'INFO' }
+    { label: 'Unassigned', value: 'UNASSIGNED' }
 ]
 
 const rules: FormRules = {
