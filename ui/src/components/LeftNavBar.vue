@@ -40,8 +40,8 @@ export default {
 <script lang="ts" setup>
 import { NSpace, NLayout, NLayoutSider, NMenu, NIcon } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
-import { ref, h, Component, ComputedRef, computed, Ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { ref, h, Component, ComputedRef, computed, Ref, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
 import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar } from '@vicons/tabler'
@@ -215,6 +215,31 @@ const routerViewEventHandle = function (event : any) {
 const computedMenuOptions : ComputedRef<MenuOption[]> = computed((): MenuOption[] => menuOptions(myorg.value.uuid, myUser))
 const activeKey: Ref<string> =  ref<string>('home')
 const collapsed: Ref<boolean> =  ref(true)
+
+// Map route names to menu keys
+const routeToMenuKey: Record<string, string> = {
+    'home': 'home',
+    'ComponentsOfOrg': 'components',
+    'ProductsOfOrg': 'products',
+    'VcsReposOfOrg': 'vcsRepos',
+    'InstancesOfOrg': 'instances',
+    'Instance': 'instances',
+    'SecretsOfOrg': 'secrets',
+    'AnalyticsOfOrg': 'analytics',
+    'VulnerabilityAnalysis': 'vulnerabilityAnalysis',
+    'OrgSettings': 'orgsettings'
+}
+
+// Watch route changes to update active menu key
+const route = useRoute()
+watch(() => route.name, (newRouteName) => {
+    if (newRouteName && typeof newRouteName === 'string') {
+        const menuKey = routeToMenuKey[newRouteName]
+        if (menuKey) {
+            activeKey.value = menuKey
+        }
+    }
+}, { immediate: true })
 
 
 </script>
