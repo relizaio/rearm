@@ -115,8 +115,14 @@ public class VulnAnalysisDataFetcher {
 			}
 		}
 		
-		// If no filters provided, return empty list
-		List<VulnAnalysisData> analyses = resultSets != null ? List.copyOf(resultSets) : List.of();
+		// If no filters provided, return all analyses for the org
+		List<VulnAnalysisData> analyses;
+		if (resultSets != null) {
+			analyses = List.copyOf(resultSets);
+		} else {
+			// No scope filters provided, return all analyses for the org
+			analyses = vulnAnalysisService.findByOrg(org);
+		}
 		
 		return analyses.stream()
 				.map(VulnAnalysisWebDto::fromVulnAnalysisData)
@@ -223,6 +229,7 @@ public class VulnAnalysisDataFetcher {
 				updateDto.getJustification(),
 				updateDto.getDetails(),
 				updateDto.getFindingAliases(),
+				updateDto.getSeverity(),
 				wu);
 		
 		return VulnAnalysisWebDto.fromVulnAnalysisData(vad);

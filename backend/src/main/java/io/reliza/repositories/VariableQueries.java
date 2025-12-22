@@ -1029,4 +1029,30 @@ class VariableQueries {
 				))
 				AND record_data->>'findingType' = :findingType
 			""";
+	
+	protected static final String FIND_VULN_ANALYSIS_BY_ORG = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+			""";
+	
+	/*
+	 * Release Metrics CVE Search
+	 */
+	protected static final String FIND_RELEASES_BY_CVE_ID = """
+			SELECT * FROM rearm.releases r
+			WHERE r.record_data->>'org' = :orgUuidAsString
+			AND r.record_data->'metrics' IS NOT NULL
+			AND (
+				EXISTS (
+					SELECT 1 FROM jsonb_array_elements(r.record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					WHERE vuln->>'vulnId' = :cveId
+				)
+				OR EXISTS (
+					SELECT 1 FROM jsonb_array_elements(r.record_data->'metrics'->'vulnerabilityDetails') AS vuln,
+					jsonb_array_elements(vuln->'aliases') AS alias
+					WHERE alias->>'aliasId' = :cveId
+				)
+			)
+			ORDER BY r.created_date DESC
+			""";
 }

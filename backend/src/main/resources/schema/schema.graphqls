@@ -89,6 +89,9 @@ type Query {
 	# Perspectives
 	perspectives(org: ID!): [Perspective]
 	componentsOfPerspective(perspectiveUuid: ID!): [Component]
+	
+	# CVE Search
+	searchReleasesByCveId(org: ID!, cveId: String!): [Release]
 }
 
 type Mutation {
@@ -968,6 +971,7 @@ enum VulnerabilityAliasType {
 enum SeveritySource {
 	NVD
 	GHSA
+	ANALYSIS
 	OTHER
 }
 
@@ -1951,6 +1955,7 @@ type VulnAnalysisWebDto {
 	analysisState: AnalysisState!
 	analysisJustification: AnalysisJustification
 	analysisHistory: [AnalysisHistoryWebDto]
+	severity: VulnerabilitySeverity
 }
 
 type AnalysisHistoryWebDto {
@@ -1958,6 +1963,7 @@ type AnalysisHistoryWebDto {
 	justification: AnalysisJustification
 	details: String
 	createdDate: DateTime!
+	severity: VulnerabilitySeverity
 }
 
 input CreateVulnAnalysisInput {
@@ -1972,6 +1978,7 @@ input CreateVulnAnalysisInput {
 	state: AnalysisState!
 	justification: AnalysisJustification
 	details: String
+	severity: VulnerabilitySeverity
 }
 
 input UpdateVulnAnalysisInput {
@@ -1980,6 +1987,7 @@ input UpdateVulnAnalysisInput {
 	justification: AnalysisJustification
 	details: String
 	findingAliases: [String]
+	severity: VulnerabilitySeverity
 }
 
 enum LocationType {

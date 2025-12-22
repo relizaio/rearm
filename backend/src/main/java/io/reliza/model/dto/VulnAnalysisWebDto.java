@@ -16,6 +16,7 @@ import io.reliza.model.AnalysisState;
 import io.reliza.model.FindingType;
 import io.reliza.model.LocationType;
 import io.reliza.model.VulnAnalysisData;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import lombok.Data;
 
 @Data
@@ -35,12 +36,16 @@ public class VulnAnalysisWebDto {
 		@JsonProperty("createdDate")
 		private ZonedDateTime createdDate;
 		
+		@JsonProperty("severity")
+		private VulnerabilitySeverity severity;
+		
 		public static AnalysisHistoryWebDto fromAnalysisHistory(VulnAnalysisData.AnalysisHistory history) {
 			AnalysisHistoryWebDto dto = new AnalysisHistoryWebDto();
 			dto.setState(history.getState());
 			dto.setJustification(history.getJustification());
 			dto.setDetails(history.getDetails());
 			dto.setCreatedDate(history.getCreatedDate());
+			dto.setSeverity(history.getSeverity());
 			return dto;
 		}
 	}
@@ -81,6 +86,9 @@ public class VulnAnalysisWebDto {
 	@JsonProperty("analysisHistory")
 	private List<AnalysisHistoryWebDto> analysisHistory;
 	
+	@JsonProperty("severity")
+	private VulnerabilitySeverity severity;
+	
 	public static VulnAnalysisWebDto fromVulnAnalysisData(VulnAnalysisData vad) {
 		VulnAnalysisWebDto dto = new VulnAnalysisWebDto();
 		dto.setUuid(vad.getUuid());
@@ -94,6 +102,7 @@ public class VulnAnalysisWebDto {
 		dto.setScopeUuid(vad.getScopeUuid());
 		dto.setAnalysisState(vad.getAnalysisState());
 		dto.setAnalysisJustification(vad.getAnalysisJustification());
+		dto.setSeverity(vad.getSeverity());
 		dto.setAnalysisHistory(vad.getAnalysisHistory().stream()
 				.map(AnalysisHistoryWebDto::fromAnalysisHistory)
 				.toList());

@@ -74,4 +74,9 @@ public interface VulnAnalysisRepository extends JpaRepository<VulnAnalysis, UUID
 			@Param("location") String location,
 			@Param("findingId") String findingId,
 			@Param("findingType") String findingType);
+	
+	@Query(
+			value = VariableQueries.FIND_VULN_ANALYSIS_BY_ORG,
+			nativeQuery = true)
+	List<VulnAnalysis> findByOrg(@Param("orgUuidAsString") String orgUuidAsString);
 }

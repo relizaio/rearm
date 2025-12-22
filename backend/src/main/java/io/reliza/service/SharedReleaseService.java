@@ -881,4 +881,17 @@ public class SharedReleaseService {
 		
 		return failedReleases;
 	}
+	
+	/**
+	 * Search for releases by CVE ID in their metrics
+	 * @param orgUuid Organization UUID
+	 * @param cveId CVE ID to search for (searches both vulnId and alias aliasId)
+	 * @return List of ReleaseData matching the CVE ID
+	 */
+	public List<ReleaseData> findReleasesByCveId(UUID orgUuid, String cveId) {
+		List<Release> releases = repository.findReleasesByCveId(orgUuid.toString(), cveId);
+		return releases.stream()
+				.map(ReleaseData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
 }

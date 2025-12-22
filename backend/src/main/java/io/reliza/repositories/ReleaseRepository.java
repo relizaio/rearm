@@ -262,4 +262,9 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<Release> findReleasesWithWeaknessInComponent(String orgUuidAsString, String componentUuidAsString, String location, String findingId);
 	
+	@Query(
+			value = VariableQueries.FIND_RELEASES_BY_CVE_ID,
+			nativeQuery = true)
+	List<Release> findReleasesByCveId(String orgUuidAsString, String cveId);
+	
 }

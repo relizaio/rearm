@@ -146,6 +146,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	public static enum SeveritySource {
 		NVD,
 		GHSA,
+		ANALYSIS,
 		OTHER
 	}
 
@@ -1061,8 +1062,15 @@ public class ReleaseMetricsDto implements Cloneable {
 			return VulnerabilitySeverity.UNASSIGNED;
 		}
 		
-		// Priority order: NVD > GHSA > OTHER
-		// First, look for NVD severity
+		// Priority order: ANALYSIS > NVD > GHSA > OTHER
+		// First, look for ANALYSIS severity (from VulnAnalysis)
+		for (SeveritySourceDto severityDto : severities) {
+			if (severityDto.source() == SeveritySource.ANALYSIS) {
+				return severityDto.severity();
+			}
+		}
+		
+		// If no ANALYSIS found, look for NVD severity
 		for (SeveritySourceDto severityDto : severities) {
 			if (severityDto.source() == SeveritySource.NVD) {
 				return severityDto.severity();
@@ -1076,7 +1084,7 @@ public class ReleaseMetricsDto implements Cloneable {
 			}
 		}
 		
-		// If no NVD or GHSA found, use OTHER or any available
+		// If no ANALYSIS, NVD or GHSA found, use OTHER or any available
 		for (SeveritySourceDto severityDto : severities) {
 			if (severityDto.source() == SeveritySource.OTHER) {
 				return severityDto.severity();

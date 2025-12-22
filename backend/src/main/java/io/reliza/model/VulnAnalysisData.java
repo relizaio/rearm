@@ -15,6 +15,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.type.TypeReference;
 
 import io.reliza.common.Utils;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
@@ -38,12 +39,16 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		@JsonProperty("whoUpdated")
 		private WhoUpdated whoUpdated;
 		
+		@JsonProperty("severity")
+		private VulnerabilitySeverity severity;
+		
 		public AnalysisHistory() {}
 		
-		public AnalysisHistory(AnalysisState state, AnalysisJustification justification, String details, WhoUpdated wu) {
+		public AnalysisHistory(AnalysisState state, AnalysisJustification justification, String details, VulnerabilitySeverity severity, WhoUpdated wu) {
 			this.state = state;
 			this.justification = justification;
 			this.details = details;
+			this.severity = severity;
 			this.createdDate = ZonedDateTime.now();
 			this.whoUpdated = wu;
 		}
@@ -87,6 +92,14 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		public void setWhoUpdated(WhoUpdated whoUpdated) {
 			this.whoUpdated = whoUpdated;
 		}
+		
+		public VulnerabilitySeverity getSeverity() {
+			return severity;
+		}
+		
+		public void setSeverity(VulnerabilitySeverity severity) {
+			this.severity = severity;
+		}
 	}
 	
 	private UUID uuid;
@@ -126,6 +139,9 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 	
 	@JsonProperty("analysisHistory")
 	private List<AnalysisHistory> analysisHistory = new LinkedList<>();
+	
+	@JsonProperty("severity")
+	private VulnerabilitySeverity severity;
 	
 	private VulnAnalysisData() {}
 	
@@ -239,14 +255,23 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		this.analysisHistory = new LinkedList<>(analysisHistory);
 	}
 	
+	public VulnerabilitySeverity getSeverity() {
+		return severity;
+	}
+	
+	public void setSeverity(VulnerabilitySeverity severity) {
+		this.severity = severity;
+	}
+	
 	/**
 	 * Adds a new entry to the analysis history and updates current state
 	 */
-	public void addAnalysisHistoryEntry(AnalysisState state, AnalysisJustification justification, String details, WhoUpdated wu) {
-		AnalysisHistory entry = new AnalysisHistory(state, justification, details, wu);
+	public void addAnalysisHistoryEntry(AnalysisState state, AnalysisJustification justification, String details, VulnerabilitySeverity severity, WhoUpdated wu) {
+		AnalysisHistory entry = new AnalysisHistory(state, justification, details, severity, wu);
 		this.analysisHistory.add(entry);
 		this.analysisState = state;
 		this.analysisJustification = justification;
+		this.severity = severity;
 	}
 	
 	/**
@@ -278,7 +303,7 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		vad.setFindingType(findingType);
 		vad.setScope(scope);
 		vad.setScopeUuid(scopeUuid);
-		vad.addAnalysisHistoryEntry(initialState, initialJustification, initialDetails, wu);
+		vad.addAnalysisHistoryEntry(initialState, initialJustification, initialDetails, null, wu);
 		
 		return vad;
 	}

@@ -1352,4 +1352,15 @@ public class ReleaseDatafetcher {
 		ParentReleaseDto prd = dfe.getSource();
 		return releaseService.getReleaseData(prd.release(), prd.org());
 	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "searchReleasesByCveId")
+	public List<ReleaseData> searchReleasesByCveId(
+			@InputArgument("org") UUID orgUuid,
+			@InputArgument("cveId") String cveId) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return sharedReleaseService.findReleasesByCveId(orgUuid, cveId);
+	}
 }

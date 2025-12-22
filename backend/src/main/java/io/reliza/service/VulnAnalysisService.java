@@ -28,6 +28,7 @@ import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.FindingType;
 import io.reliza.model.LocationType;
 import io.reliza.model.ReleaseData;
@@ -140,6 +141,16 @@ public class VulnAnalysisService {
 	}
 	
 	/**
+	 * Find all analyses for a specific org
+	 */
+	public List<VulnAnalysisData> findByOrg(UUID org) {
+		List<VulnAnalysis> analyses = vulnAnalysisRepository.findByOrg(org.toString());
+		return analyses.stream()
+				.map(VulnAnalysisData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+	
+	/**
 	 * Internal save method with audit logging and revision increment
 	 */
 	@Transactional
@@ -195,6 +206,11 @@ public class VulnAnalysisService {
 				createDto.getScope(), createDto.getScopeUuid(),
 				createDto.getState(), createDto.getJustification(), createDto.getDetails(), wu);
 		
+		// Set severity if provided
+		if (createDto.getSeverity() != null) {
+			vad.setSeverity(createDto.getSeverity());
+		}
+		
 		VulnAnalysis va = new VulnAnalysis();
 		va.setUuid(vad.getUuid());
 		Map<String, Object> recordData = Utils.OM.convertValue(vad, new TypeReference<Map<String, Object>>() {});
@@ -211,6 +227,7 @@ public class VulnAnalysisService {
 			AnalysisJustification newJustification,
 			String details,
 			List<String> findingAliases,
+			VulnerabilitySeverity severity,
 			WhoUpdated wu) {
 		
 		Optional<VulnAnalysis> existingAnalysis = vulnAnalysisRepository.findById(analysisUuid);
@@ -226,8 +243,13 @@ public class VulnAnalysisService {
 			vad.setFindingAliases(findingAliases);
 		}
 		
+		// Update severity if provided
+		if (severity != null) {
+			vad.setSeverity(severity);
+		}
+		
 		// Add new history entry and update current state
-		vad.addAnalysisHistoryEntry(newState, newJustification, details, wu);
+		vad.addAnalysisHistoryEntry(newState, newJustification, details, severity, wu);
 		
 		Map<String, Object> recordData = Utils.OM.convertValue(vad, new TypeReference<Map<String, Object>>() {});
 		VulnAnalysis savedVA = saveVulnAnalysis(va, recordData, wu);
@@ -334,13 +356,27 @@ public class VulnAnalysisService {
 				}
 			}
 			
+			// Handle severity from VulnAnalysis
+			VulnerabilitySeverity finalSeverity = vulnerability.severity();
+			Set<ReleaseMetricsDto.SeveritySourceDto> combinedSeverities = new LinkedHashSet<>();
+			if (vulnerability.severities() != null) {
+				combinedSeverities.addAll(vulnerability.severities());
+			}
+			
+			// If VulnAnalysis has a severity, add it as ANALYSIS source and use it as primary severity
+			if (analysis.getSeverity() != null) {
+				combinedSeverities.add(new ReleaseMetricsDto.SeveritySourceDto(
+						ReleaseMetricsDto.SeveritySource.ANALYSIS, analysis.getSeverity()));
+				finalSeverity = analysis.getSeverity();
+			}
+			
 			return new ReleaseMetricsDto.VulnerabilityDto(
 					vulnerability.purl(),
 					vulnerability.vulnId(),
-					vulnerability.severity(),
+					finalSeverity,
 					combinedAliases,
 					vulnerability.sources(),
-					vulnerability.severities(),
+					combinedSeverities,
 					analysis.getAnalysisState(),
 					getLatestAnalysisDate(analysis),
 					vulnerability.attributedAt());
@@ -361,12 +397,18 @@ public class VulnAnalysisService {
 		
 		if (analysisOpt.isPresent()) {
 			VulnAnalysisData analysis = analysisOpt.get();
+			
+			// If VulnAnalysis has a severity, use it; otherwise use the weakness's severity
+			VulnerabilitySeverity finalSeverity = analysis.getSeverity() != null 
+					? analysis.getSeverity() 
+					: weakness.severity();
+			
 			return new ReleaseMetricsDto.WeaknessDto(
 					weakness.cweId(),
 					weakness.ruleId(),
 					weakness.location(),
 					weakness.fingerprint(),
-					weakness.severity(),
+					finalSeverity,
 					weakness.sources(),
 					analysis.getAnalysisState(),
 					getLatestAnalysisDate(analysis),

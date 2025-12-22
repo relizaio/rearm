@@ -11,6 +11,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.model.AnalysisJustification;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import lombok.Data;
 
 @Data
@@ -30,4 +31,7 @@ public class UpdateVulnAnalysisDto {
 	
 	@JsonProperty("findingAliases")
 	private List<String> findingAliases;
+	
+	@JsonProperty("severity")
+	private VulnerabilitySeverity severity;
 }

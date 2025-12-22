@@ -14,6 +14,7 @@ import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.FindingType;
 import io.reliza.model.LocationType;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import lombok.Data;
 
 @Data
@@ -51,4 +52,7 @@ public class CreateVulnAnalysisDto {
 	
 	@JsonProperty("details")
 	private String details;
+	
+	@JsonProperty("severity")
+	private VulnerabilitySeverity severity;
 }
