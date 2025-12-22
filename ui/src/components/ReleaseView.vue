@@ -120,7 +120,17 @@
                                 style="text-decoration: none; color: rgb(39 179 223);"
                                 :to="{name: isComponent ? 'ComponentsOfOrg' : 'ProductsOfOrg', params: { orguuid: release.orgDetails.uuid, compuuid: release.componentDetails.uuid } }">{{
                                 release.componentDetails.name }} </router-link>
-                            <span style="margin-left: 6px;">{{words.componentFirstUpper}} Release {{ updatedRelease ? updatedRelease.version : '' }}</span>
+                            <span style="margin-left: 6px;">-</span>
+                            <router-link
+                                v-if="release.branchDetails"
+                                style="text-decoration: none; color: rgb(39 179 223); margin-left: 6px;"
+                                :to="{ name: isComponent ? 'ComponentsOfOrg' : 'ProductsOfOrg', params: { orguuid: release.orgDetails.uuid, compuuid: release.componentDetails.uuid, branchuuid: release.branchDetails.uuid } }">
+                                {{ release.branchDetails.name }}
+                            </router-link>
+                            <span style="margin-left: 6px;">-</span>
+                            <span style="margin-left: 6px;">{{words.componentFirstUpper}} Release
+                            <span>-</span>
+                            {{ updatedRelease ? updatedRelease.version : '' }}</span>
                         </h3>
                         <n-tooltip trigger="hover">
                             <template #trigger>
