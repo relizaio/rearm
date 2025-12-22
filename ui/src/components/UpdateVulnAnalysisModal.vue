@@ -6,7 +6,7 @@
         :show-icon="false"
         style="width: 60%;"
     >
-        <n-form ref="formRef" :model="formData" :rules="rules">
+        <n-form ref="formRef" :model="formData" :rules="rules" label-placement="left" label-width="140px">
             <n-form-item label="Finding Aliases">
                 <n-dynamic-input
                     v-model:value="formData.findingAliases"
