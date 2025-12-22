@@ -359,9 +359,16 @@ public class AnalyticsMetricsService {
 		// Iterate through each day in the range
 		for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
 			ZonedDateTime createdDate = date.atStartOfDay(dateFrom.getZone());
+			String dateKey = AnalyticsMetricsData.obtainAnalyticsDateKey(createdDate);
+			
+			// Check if record already exists for this org/perspective/date
+			Optional<AnalyticsMetrics> existingAm = repository.findAnalyticsMetricsByOrgPerspectiveDateKey(
+					org.toString(), perspectiveUuid.toString(), dateKey);
+			AnalyticsMetrics am = existingAm.orElse(new AnalyticsMetrics());
+			
 			AnalyticsMetricsData amdPerspective = computeActualAnalyticsMetricsDataForOrg(org, perspectiveUuid, createdDate);
 			amdPerspective.setPerspectiveHash(perspectiveHash);
-			save(new AnalyticsMetrics(), Utils.dataToRecord(amdPerspective), WhoUpdated.getAutoWhoUpdated());
+			save(am, Utils.dataToRecord(amdPerspective), WhoUpdated.getAutoWhoUpdated());
 		}
 	}
 	
