@@ -99,7 +99,13 @@ const rules: FormRules = {
     name: {
         required: true,
         message: 'Name is required',
-        trigger: ['blur', 'input']
+        trigger: ['blur', 'input'],
+        validator: (rule: any, value: string) => {
+            if (!value || value.trim() === '') {
+                return new Error('VCS repository name cannot be empty')
+            }
+            return true
+        }
     },
     org: {
         required: true,

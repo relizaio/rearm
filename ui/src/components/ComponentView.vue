@@ -105,7 +105,7 @@
                                 style="width: 90%"
                             >
                                 <h2>Create {{ words.branchFirstUpper }}</h2>
-                                <n-form :model="createBranchObject">
+                                <n-form ref="createBranchForm" :model="createBranchObject" :rules="createBranchRules">
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="createBranchObject.name" required :placeholder="'Enter ' + words.branchFirstUpper + ' name'" />
                                     </n-form-item>
@@ -518,7 +518,7 @@ export default {
 import { ComputedRef, ref, Ref, computed, h, Component, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi } from 'naive-ui'
+import { NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
 import commonFunctions from '../utils/commonFunctions'
 import ComponentAnalytics from './ComponentAnalytics.vue'
 import ChangelogView from './ChangelogView.vue'
@@ -992,6 +992,22 @@ function selectBranch (uuid: string) {
     })
 }
 
+const createBranchForm = ref<FormInst | null>(null)
+
+const createBranchRules: FormRules = {
+    name: {
+        required: true,
+        message: 'Branch name is required',
+        trigger: ['blur', 'input'],
+        validator: (rule: any, value: string) => {
+            if (!value || value.trim() === '') {
+                return new Error('Branch name cannot be empty')
+            }
+            return true
+        }
+    }
+}
+
 const createBranchObject: Ref<any> = ref({
     name: '',
     versionSchema: updatedComponent.value.featureBranchVersioning ? updatedComponent.value.featureBranchVersioning : 'Branch.Micro',
@@ -1211,15 +1227,20 @@ const cloneBranchSubmit = async function () {
 }
 
 const onCreateBranchSubmit = async function() {
-    try {
-        const createBranchResp = await store.dispatch('createBranch', createBranchObject.value)
-        await store.dispatch('fetchBranches', componentUuid)
-        onCreateBranchReset()
-        showAddBranchModal.value = false
-        selectBranch(createBranchResp.uuid)
-    } catch (error: any) {
-        alert('ERROR: ' + error.response.data.messag)
-    }
+    createBranchForm.value?.validate(async (errors) => {
+        if (errors) {
+            return
+        }
+        try {
+            const createBranchResp = await store.dispatch('createBranch', createBranchObject.value)
+            await store.dispatch('fetchBranches', componentUuid)
+            onCreateBranchReset()
+            showAddBranchModal.value = false
+            selectBranch(createBranchResp.uuid)
+        } catch (error: any) {
+            alert('ERROR: ' + error.response.data.messag)
+        }
+    })
 }
 
 const onCreateBranchReset = async function() {

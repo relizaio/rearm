@@ -247,7 +247,14 @@ const resolveCreateRepoStatus = function (repoId: string) {
 const rules = {
     name: {
         required: true,
-        message: 'Name is required'
+        message: 'Name is required',
+        trigger: ['blur', 'input'],
+        validator: (rule: any, value: string) => {
+            if (!value || value.trim() === '') {
+                return new Error('Component name cannot be empty')
+            }
+            return true
+        }
     },
     org: {
         required: true,
