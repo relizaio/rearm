@@ -49,7 +49,7 @@ public class ComponentTest
 	
 	@Test
 	public void testcreateComponentWithoutNameThrowsIllegalState() throws RelizaException {
-		Assertions.assertThrows(IllegalStateException.class,
+		Assertions.assertThrows(RelizaException.class,
 				() -> componentService.createComponent(null, null, ComponentType.COMPONENT, "semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated()));
 	}
 	
