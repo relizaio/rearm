@@ -100,8 +100,10 @@
                     </template>
                     </n-dynamic-input>
             </n-form-item>
-            <n-button type="success" @click="onSubmit">Add Artifact</n-button>
-            <n-button type="warning" @click="onReset">Reset Artifact Input</n-button>
+            <n-button type="success" @click="onSubmit" :disabled="isUploading" :loading="isUploading">
+                {{ isUploading ? 'Uploading...' : 'Add Artifact' }}
+            </n-button>
+            <n-button type="warning" @click="onReset" :disabled="isUploading">Reset Artifact Input</n-button>
         </n-form>
 
     </div>
@@ -121,6 +123,8 @@ import { Tag, DownloadLink } from '@/utils/commonTypes'
 import Swal from 'sweetalert2'
 import commonFunctions from '../utils/commonFunctions'
 import constants from '@/utils/constants'
+
+const isUploading = ref(false)
 
 
 const props = defineProps<{
@@ -249,6 +253,7 @@ const onSubmit = async () => {
         createArtifactInput.sce = props.inputSce
     }
 
+    isUploading.value = true
     try{
         if(props.isUpdateExistingBom){
             const response = await graphqlClient.mutate({
@@ -287,6 +292,8 @@ const onSubmit = async () => {
             commonFunctions.parseGraphQLError(err.message),
             'error'
         )
+    } finally {
+        isUploading.value = false
     }
 };
 const onCreateDownloadLinks = () => {
