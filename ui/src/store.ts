@@ -741,6 +741,17 @@ const storeObject : any = {
                     }
                 })
             }
+            let dependencyPatterns = []
+            if (brProps.dependencyPatterns && brProps.dependencyPatterns.length) {
+                dependencyPatterns = brProps.dependencyPatterns.map((p: any) => {
+                    return {
+                        uuid: p.uuid,
+                        pattern: p.pattern,
+                        targetBranchName: p.targetBranchName,
+                        defaultStatus: p.defaultStatus
+                    }
+                })
+            }
             const branchUpdObject = {
                 uuid: brProps.uuid,
                 name: brProps.name,
@@ -749,6 +760,7 @@ const storeObject : any = {
                 versionSchema: brProps.versionSchema,
                 metadata: brProps.metadata,
                 dependencies: dependencies,
+                dependencyPatterns: dependencyPatterns,
                 autoIntegrate: brProps.autoIntegrate,
                 type: brProps.type,
                 marketingVersionSchema: brProps.marketingVersionSchema

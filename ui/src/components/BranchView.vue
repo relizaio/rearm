@@ -93,6 +93,53 @@
                 <n-select v-if="isWritable" :options="[{label: 'ENABLED', value: 'ENABLED'}, {label: 'DISABLED', value: 'DISABLED'}]" v-model:value="modifiedBranch.autoIntegrate" />
                 <n-input v-else type="text" :value="modifiedBranch.autoIntegrate" readonly/>
             </div>
+            <div class="dependencyPatternsBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT'">
+                <p>
+                    <strong>Dependency Patterns </strong>
+                    <n-tooltip trigger="hover">
+                        <template #trigger>
+                            <vue-feather type="help-circle" size="14" style="cursor: help;" />
+                        </template>
+                        Java regex patterns to automatically match components as dependencies. E.g., ^myapp-.* matches all components starting with "myapp-"
+                    </n-tooltip>
+                    <vue-feather v-if="isWritable" class="clickable" type="plus-circle"
+                        @click="addDependencyPattern" title="Add Dependency Pattern" />
+                </p>
+                <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-bottom: 10px;">
+                    <n-space>
+                        <n-button type="success" @click="saveModifiedBranch">
+                            <template #icon>
+                                <vue-feather type="check" />
+                            </template>
+                            Save Changes
+                        </n-button>
+                        <n-button type="warning" @click="resetBranchSettings">
+                            <template #icon>
+                                <vue-feather type="x" />
+                            </template>
+                            Reset Changes
+                        </n-button>
+                    </n-space>
+                </div>
+                <div v-if="modifiedBranch.dependencyPatterns && modifiedBranch.dependencyPatterns.length">
+                    <n-data-table :data="modifiedBranch.dependencyPatterns" :columns="patternTableFields" :row-key="(row: any) => row.uuid" />
+                </div>
+                <div v-else class="text-muted" style="font-size: 0.9em; color: #666;">
+                    No dependency patterns configured. Add patterns to automatically include matching components.
+                </div>
+            </div>
+            <div class="effectiveDependenciesBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT' && modifiedBranch.effectiveDependencies && modifiedBranch.effectiveDependencies.length">
+                <p>
+                    <strong>Effective Dependencies (Preview) </strong>
+                    <n-tooltip trigger="hover">
+                        <template #trigger>
+                            <vue-feather type="info" size="14" style="cursor: help;" />
+                        </template>
+                        Shows all dependencies including pattern-matched ones. Source indicates if dependency is manual or from a pattern.
+                    </n-tooltip>
+                </p>
+                <n-data-table :data="modifiedBranch.effectiveDependencies" :columns="effectiveDepTableFields" :row-key="(row: any) => row.component?.uuid" />
+            </div>
             <div class="componentComponentsBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT'">
                 <div>
                     <p>
@@ -243,6 +290,24 @@
                 <n-button type="success" @click="setNextVersion">Create</n-button>
             </n-form>
         </n-modal>
+        
+        <!-- Pattern Preview Modal -->
+        <n-modal
+            v-model:show="showPatternPreviewModal"
+            title="Pattern Preview"
+            preset="dialog"
+            style="width: 70%"
+        >
+            <div class="pattern-preview">
+                <p>Components matching the pattern:</p>
+                <n-data-table 
+                    :data="patternPreviewData" 
+                    :columns="previewTableFields" 
+                    :row-key="(row: any) => row.component?.uuid" 
+                />
+            </div>
+        </n-modal>
+        
         <vulnerability-modal
             v-model:show="showDetailedVulnerabilitiesModal"
             :component-name="selectedReleaseForModal?.componentDetails?.name || branchData.componentDetails?.name || ''"
@@ -272,7 +337,7 @@ export default {
 import { ComputedRef, computed, Ref, ref, h } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns} from 'naive-ui'
+import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
 import AddComponent from './AddComponent.vue'
 import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
@@ -283,6 +348,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import GqlQueries from '../utils/graphqlQueries'
 import { Edit24Regular } from '@vicons/fluent'
+import { EditOutlined, EyeOutlined } from '@vicons/antd'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
@@ -376,6 +442,8 @@ const showAddComponentProductModal: Ref<boolean> = ref(false)
 const showEditComponentModal: Ref<boolean> = ref(false)
 const showAddOssArtifactModal: Ref<boolean> = ref(false)
 const showCreateReleaseModal: Ref<boolean> = ref(false)
+const showPatternPreviewModal: Ref<boolean> = ref(false)
+const patternPreviewData: Ref<any[]> = ref([])
 const selectNewVcsRepo = ref(false)
 
 
@@ -603,6 +671,23 @@ async function setDependencyAsFollowVersion (uuid: string) {
 
 const saveModifiedBranch = async function () {
     try {
+        // Validate dependency patterns before saving
+        if (modifiedBranch.value.dependencyPatterns) {
+            for (const pattern of modifiedBranch.value.dependencyPatterns) {
+                // Check if pattern is empty or whitespace-only
+                if (!pattern.pattern || pattern.pattern.trim() === '') {
+                    notify('error', 'Invalid Pattern', 'Pattern cannot be empty')
+                    return
+                }
+                try {
+                    new RegExp(pattern.pattern)
+                } catch (e: any) {
+                    notify('error', 'Invalid Pattern', `Invalid regex pattern: ${pattern.pattern} - ${e.message}`)
+                    return
+                }
+            }
+        }
+        
         const storeResp = await store.dispatch('updateBranch', modifiedBranch.value)
         modifiedBranch.value = commonFunctions.deepCopy(storeResp)
         selectNewVcsRepo.value = false
@@ -614,6 +699,10 @@ const saveModifiedBranch = async function () {
 const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
     if (!modifiedBranch.value || !branchData.value) return false
     
+    // Check dependency patterns changes
+    const patternsChanged = JSON.stringify(modifiedBranch.value.dependencyPatterns || []) !== 
+        JSON.stringify(branchData.value.dependencyPatterns || [])
+    
     return modifiedBranch.value.name !== branchData.value.name ||
         modifiedBranch.value.versionSchema !== branchData.value.versionSchema ||
         modifiedBranch.value.marketingVersionSchema !== branchData.value.marketingVersionSchema ||
@@ -621,7 +710,8 @@ const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         modifiedBranch.value.type !== branchData.value.type ||
         modifiedBranch.value.vcs !== branchData.value.vcs ||
         modifiedBranch.value.vcsBranch !== branchData.value.vcsBranch ||
-        modifiedBranch.value.autoIntegrate !== branchData.value.autoIntegrate
+        modifiedBranch.value.autoIntegrate !== branchData.value.autoIntegrate ||
+        patternsChanged
 })
 
 function resetBranchSettings() {
@@ -634,6 +724,7 @@ function resetBranchSettings() {
     modifiedBranch.value.vcs = branchData.value.vcs
     modifiedBranch.value.vcsBranch = branchData.value.vcsBranch
     modifiedBranch.value.autoIntegrate = branchData.value.autoIntegrate
+    modifiedBranch.value.dependencyPatterns = commonFunctions.deepCopy(branchData.value.dependencyPatterns || [])
     selectNewVcsRepo.value = false
 }
 
@@ -641,6 +732,9 @@ const vcsRepos: Ref<any[]> = ref([])
 const approvalTypes: Ref<any[]> = ref([])
 const environmentTypes: Ref<any[]> = ref([])
 const releaseTagKeys: Ref<any[]> = ref([])
+const editingRow: Ref<string | null> = ref(null)
+const editingStatus: Ref<string> = ref('')
+const editingBranch: Ref<string> = ref('')
 
 const fetchVcsRepos = async function () : Promise<any[]> {
     let fetchedRepos = store.getters.vcsReposOfOrg(branchData.value.org)
@@ -700,6 +794,317 @@ const deleteDependency = function (component: string, branch: string) {
     } else if (component) {
         modifiedBranch.value.dependencies = modifiedBranch.value.dependencies.filter((p: any) => (p.uuid !== component))
         saveModifiedBranch()
+    }
+}
+
+// Dependency Pattern functions
+const addDependencyPattern = function () {
+    if (!modifiedBranch.value.dependencyPatterns) {
+        modifiedBranch.value.dependencyPatterns = []
+    }
+    modifiedBranch.value.dependencyPatterns.push({
+        uuid: crypto.randomUUID(),
+        pattern: '',
+        targetBranchName: null,
+        defaultStatus: 'REQUIRED'
+    })
+}
+
+const deleteDependencyPattern = function (uuid: string) {
+    modifiedBranch.value.dependencyPatterns = modifiedBranch.value.dependencyPatterns.filter((p: any) => p.uuid !== uuid)
+    saveModifiedBranch()
+}
+
+const patternTableFields: DataTableColumns<any> = [
+    {
+        title: 'Pattern',
+        key: 'pattern',
+        width: 200,
+        render: (row: any) => {
+            return h(NInput, {
+                value: row.pattern,
+                placeholder: 'e.g., ^myapp-.*',
+                onUpdateValue: (val: string) => {
+                    row.pattern = val
+                }
+            })
+        }
+    },
+    {
+        title: 'Target Branch',
+        key: 'targetBranchName',
+        width: 200,
+        render: (row: any) => {
+            return h(NInput, {
+                value: row.targetBranchName || '',
+                placeholder: 'Leave empty for BASE branch',
+                onUpdateValue: (val: string) => {
+                    row.targetBranchName = val || null
+                }
+            })
+        }
+    },
+    {
+        title: 'Status',
+        key: 'defaultStatus',
+        width: 130,
+        render: (row: any) => {
+            return h(NSelect, {
+                value: row.defaultStatus,
+                options: [
+                    { label: 'REQUIRED', value: 'REQUIRED' },
+                    { label: 'IGNORED', value: 'IGNORED' },
+                    { label: 'TRANSIENT', value: 'TRANSIENT' }
+                ],
+                onUpdateValue: (val: string) => {
+                    row.defaultStatus = val
+                }
+            })
+        }
+    },
+    {
+        title: 'Actions',
+        key: 'actions',
+        width: 100,
+        render: (row: any) => {
+            return h('div', { class: 'flex gap-1' }, [
+                h(NButton, {
+                    size: 'small',
+                    type: 'info',
+                    onClick: () => previewPattern(row),
+                    title: 'Preview pattern matches'
+                }, { default: () => h(NIcon, null, { default: () => h(EyeOutlined) }) }),
+                h(NButton, {
+                    size: 'small',
+                    type: 'error',
+                    onClick: () => deleteDependencyPattern(row.uuid),
+                    title: 'Delete pattern'
+                }, { default: () => h(NIcon, null, { default: () => h(Trash) }) })
+            ])
+        }
+    }
+]
+
+const previewTableFields: DataTableColumns<any> = [
+    {
+        title: 'Component',
+        key: 'component',
+        render: (row: any) => row.component?.name || 'Unknown'
+    },
+    {
+        title: 'Branch',
+        key: 'branch',
+        render: (row: any) => row.branch?.name || 'Unknown'
+    },
+    {
+        title: 'Type',
+        key: 'branchType',
+        render: (row: any) => h(NTag, { type: 'info', size: 'small' }, { default: () => row.branch?.type || 'Unknown' })
+    },
+    {
+        title: 'Status',
+        key: 'status',
+        render: (row: any) => h(NTag, { type: 'success', size: 'small' }, { default: () => row.status || 'REQUIRED' })
+    }
+]
+
+const effectiveDepTableFields: DataTableColumns<any> = [
+    {
+        title: 'Component',
+        key: 'component',
+        render: (row: any) => row.component?.name || 'Unknown'
+    },
+    {
+        title: 'Branch',
+        key: 'branch',
+        render: (row: any) => {
+            const isEditing = editingRow.value === row.component?.uuid
+            
+            if (isEditing) {
+                // For now, just show the current branch name as text
+                // TODO: Add branch selection dropdown
+                return h('div', { class: 'flex items-center gap-1' }, [
+                    h('span', { style: 'opacity: 0.7' }, 'Branch selection coming soon...')
+                ])
+            }
+            
+            if (!row.branch) return 'Unknown'
+            
+            const isExcluded = row.status === 'IGNORED'
+            
+            return h('span', { 
+                style: isExcluded ? 'opacity: 0.5' : ''
+            }, row.branch.name)
+        }
+    },
+    {
+        title: 'Status',
+        key: 'status',
+        render: (row: any) => {
+            const isEditing = editingRow.value === row.component?.uuid
+            const isExcluded = row.status === 'IGNORED'
+            
+            if (isEditing) {
+                return h(NSelectComponent, {
+                    value: editingStatus.value,
+                    'onUpdate:value': (value: string) => { editingStatus.value = value },
+                    options: [
+                        { label: 'Required', value: 'REQUIRED' },
+                        { label: 'Ignored', value: 'IGNORED' },
+                        { label: 'Transient', value: 'TRANSIENT' }
+                    ],
+                    size: 'small'
+                })
+            }
+            
+            let color = 'default'
+            let label = row.status || 'UNKNOWN'
+            
+            switch(row.status) {
+                case 'REQUIRED':
+                    color = 'error'
+                    break
+                case 'OPTIONAL':
+                    color = 'warning'
+                    break
+                case 'TRANSIENT':
+                    color = 'info'
+                    break
+                case 'IGNORED':
+                    color = 'default'
+                    break
+            }
+            
+            return h(NTag, { 
+                type: color, 
+                size: 'small',
+                style: isExcluded ? 'opacity: 0.5' : ''
+            }, { default: () => label })
+        }
+    },
+    {
+        title: 'Source',
+        key: 'source',
+        render: (row: any) => {
+            const color = row.source === 'MANUAL' ? 'info' : 'success'
+            return h(NTag, { type: color, size: 'small' }, { default: () => row.source })
+        }
+    },
+    {
+        title: 'Actions',
+        key: 'actions',
+        width: 120,
+        render: (row: any) => {
+            // Only show actions for pattern-sourced dependencies
+            if (row.source !== 'PATTERN') {
+                return null
+            }
+            
+            // Check if this row is being edited
+            const isEditing = editingRow.value === row.component?.uuid
+            const isExcluded = row.status === 'IGNORED'
+            
+            if (isEditing) {
+                return h('div', { class: 'flex gap-1' }, [
+                    h(NButton, {
+                        size: 'small',
+                        type: 'primary',
+                        onClick: () => saveOverride(row)
+                    }, { default: () => 'Save' }),
+                    h(NButton, {
+                        size: 'small',
+                        onClick: () => cancelEdit()
+                    }, { default: () => 'Cancel' })
+                ])
+            }
+            
+            return h('div', { class: 'flex gap-1 items-center' }, [
+                // Edit button
+                h(NButton, {
+                    size: 'small',
+                    quaternary: true,
+                    onClick: () => startEdit(row)
+                }, { default: () => h(NIcon, { component: EditOutlined }) })
+            ])
+        }
+    }
+]
+
+const startEdit = function(row: any) {
+    editingRow.value = row.component?.uuid
+    editingStatus.value = row.status
+    editingBranch.value = row.branch?.uuid || ''
+}
+
+const cancelEdit = function() {
+    editingRow.value = null
+    editingStatus.value = ''
+    editingBranch.value = ''
+}
+
+const saveOverride = function(row: any) {
+    // When editing a pattern-matched dependency, convert it to a manual dependency
+    // Check if this dependency already exists in manual dependencies
+    const existingIndex = modifiedBranch.value.dependencies.findIndex(
+        (d: any) => d.uuid === row.component.uuid
+    )
+    
+    const manualDep: any = {
+        uuid: row.component.uuid,
+        branch: editingBranch.value || row.branch?.uuid,
+        status: editingStatus.value
+    }
+    
+    if (existingIndex >= 0) {
+        // Update existing manual dependency
+        modifiedBranch.value.dependencies[existingIndex] = manualDep
+    } else {
+        // Add as new manual dependency (will override pattern match)
+        modifiedBranch.value.dependencies.push(manualDep)
+    }
+    
+    saveModifiedBranch()
+    cancelEdit()
+}
+
+const previewPattern = async function(pattern: any) {
+    try {
+        // Validate pattern first
+        if (!pattern.pattern) {
+            notify('error', 'Error', 'Pattern is required')
+            return
+        }
+        
+        // Call GraphQL to preview pattern matches
+        const response = await graphqlClient.query({
+            query: gql`
+                query previewPattern($orgUuid: ID!, $pattern: String!, $targetBranchName: String, $defaultStatus: Status) {
+                    previewPattern(orgUuid: $orgUuid, pattern: $pattern, targetBranchName: $targetBranchName, defaultStatus: $defaultStatus) {
+                        component {
+                            uuid
+                            name
+                        }
+                        branch {
+                            uuid
+                            name
+                            type
+                        }
+                        status
+                    }
+                }
+            `,
+            variables: {
+                orgUuid: orguuid,
+                pattern: pattern.pattern,
+                targetBranchName: pattern.targetBranchName,
+                defaultStatus: pattern.defaultStatus
+            }
+        })
+        
+        patternPreviewData.value = response.data.previewPattern
+        showPatternPreviewModal.value = true
+    } catch (error: any) {
+        notify('error', 'Error', error.message || 'Failed to preview pattern')
     }
 }
 

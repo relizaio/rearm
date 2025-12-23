@@ -820,6 +820,24 @@ const BRANCH_GQL_DATA = `
         }
         isFollowVersion
     }
+    dependencyPatterns {
+        uuid
+        pattern
+        targetBranchName
+        defaultStatus
+    }
+    effectiveDependencies {
+        component {
+            uuid
+            name
+        }
+        branch {
+            uuid
+            name
+        }
+        status
+        source
+    }
     vcsRepositoryDetails {
         uuid
         name
