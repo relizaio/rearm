@@ -246,7 +246,7 @@ class VariableQueries {
 
 	protected static final String FIND_BASE_BRANCH_OF_COMPONENT = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.COMPONENT_FIELD + "' = :compUuidAsString" + " and b.record_data->>'" + CommonVariables.TYPE_FIELD + "' = '"
-			+ CommonVariables.BASE_TYPE + "'";
+			+ CommonVariables.BASE_TYPE + "' and b.record_data->>'" + CommonVariables.STATUS_FIELD + "' != 'ARCHIVED'";
 
 	protected static final String FIND_BRANCHES_OF_ORG = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED'";
@@ -266,6 +266,11 @@ class VariableQueries {
 	protected static final String FIND_FEATURE_SETS_BY_CHILD_COMPONENT = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED' AND "
 			+ "jsonb_contains(record_data, jsonb_build_object('dependencies', jsonb_build_array(json_build_object('uuid', :compUuidAsString)))) ";
+	
+	protected static final String FIND_FEATURE_SETS_WITH_DEPENDENCY_PATTERNS = "select * from rearm.branches b where b.record_data->>'"
+			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED' AND "
+			+ "b.record_data->>'autoIntegrate' = 'ENABLED' AND "
+			+ "jsonb_array_length(COALESCE(b.record_data->'dependencyPatterns', '[]'::jsonb)) > 0";
 	
 	/*
 	 * Components

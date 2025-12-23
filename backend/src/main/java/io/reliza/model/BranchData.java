@@ -53,6 +53,26 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 		private Boolean isFollowVersion;
 	}
 	
+	/**
+	 * Pattern-based dependency matching for auto-integrate.
+	 * Allows regex patterns to automatically include matching components.
+	 */
+	@Builder
+	@Data
+	public static class DependencyPattern {
+		@JsonProperty(CommonVariables.UUID_FIELD)
+		private UUID uuid;
+		
+		@JsonProperty
+		private String pattern;  // include regex pattern, e.g., "^reliza-.*"
+		
+		@JsonProperty
+		private String targetBranchName;  // specific branch name like "main"
+		
+		@JsonProperty
+		private StatusEnum defaultStatus;  //
+	}
+	
 	public enum BranchType {
 		BASE, // main branch
 		FEATURE,
@@ -86,6 +106,8 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 	private String vcsBranch;
 	
 	private List<ChildComponent> dependencies = new LinkedList<>();
+	
+	private List<DependencyPattern> dependencyPatterns = new LinkedList<>();
 	
 	private UUID org;
 	

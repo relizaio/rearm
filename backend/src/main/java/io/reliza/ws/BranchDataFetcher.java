@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,10 +28,12 @@ import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.VersionResponse;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.ComponentData;
@@ -47,6 +50,7 @@ import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
+import io.reliza.service.DependencyPatternService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedReleaseService;
@@ -86,6 +90,9 @@ public class BranchDataFetcher {
 	
 	@Autowired
 	VcsRepositoryService vcsRepositoryService;
+	
+	@Autowired
+	DependencyPatternService dependencyPatternService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "branch")
@@ -164,6 +171,21 @@ public class BranchDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> updateBranchInputMap = dfe.getArgument("branch");
 		BranchDto updateBranchInput = Utils.OM.convertValue(updateBranchInputMap, BranchDto.class);
+		
+		// Validate dependency patterns
+		if (updateBranchInput.getDependencyPatterns() != null) {
+			for (BranchData.DependencyPattern pattern : updateBranchInput.getDependencyPatterns()) {
+				if (pattern.getPattern() == null || pattern.getPattern().trim().isEmpty()) {
+					throw new IllegalArgumentException("Pattern cannot be empty");
+				}
+				// Validate regex pattern
+				try {
+					Pattern.compile(pattern.getPattern());
+				} catch (Exception e) {
+					throw new IllegalArgumentException("Invalid regex pattern: " + pattern.getPattern() + " - " + e.getMessage());
+				}
+			}
+		}
 		Optional<BranchData> obd = branchService.getBranchData(updateBranchInput.getUuid());
 		List<RelizaObject> roList = new LinkedList<>();
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
@@ -330,4 +352,94 @@ public class BranchDataFetcher {
 		BranchData bd = dfe.getSource();
 		return getComponentService.getComponentData(bd.getComponent()).get();
 	}
+	
+	@DgsData(parentType = "Branch", field = "effectiveDependencies")
+	public List<Map<String, Object>> effectiveDependenciesOfBranch(DgsDataFetchingEnvironment dfe) {
+		BranchData bd = dfe.getSource();
+		List<ChildComponent> effectiveDeps = dependencyPatternService.resolveEffectiveDependencies(bd);
+		List<Map<String, Object>> result = new LinkedList<>();
+		
+		for (ChildComponent cc : effectiveDeps) {
+			Map<String, Object> dep = new java.util.HashMap<>();
+			dep.put("component", getComponentService.getComponentData(cc.getUuid()).orElse(null));
+			dep.put("branch", branchService.getBranchData(cc.getBranch()).orElse(null));
+			dep.put("status", cc.getStatus());
+			
+			// Determine source - check if this is from manual dependencies or pattern
+			boolean isManual = bd.getDependencies() != null && 
+				bd.getDependencies().stream().anyMatch(d -> d.getUuid().equals(cc.getUuid()));
+			dep.put("source", isManual ? "MANUAL" : "PATTERN");
+			dep.put("sourcePattern", null); // TODO: track which pattern matched
+			
+			result.add(dep);
+		}
+		return result;
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "previewPattern")
+	public List<Map<String, Object>> previewPattern(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("pattern") String pattern,
+			@InputArgument("targetBranchName") String targetBranchName,
+			@InputArgument("defaultStatus") StatusEnum defaultStatus,
+			DgsDataFetchingEnvironment dfe) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		
+		// Create a temporary pattern
+		BranchData.DependencyPattern tempPattern = BranchData.DependencyPattern.builder()
+			.uuid(UUID.randomUUID())
+			.pattern(pattern)
+			.targetBranchName(targetBranchName)
+			.defaultStatus(defaultStatus != null ? defaultStatus : StatusEnum.REQUIRED)
+			.build();
+		
+		// Get components matching the pattern
+		List<ComponentData> matchedComponents = dependencyPatternService.findComponentsByPattern(orgUuid, pattern);
+		
+		List<Map<String, Object>> result = new LinkedList<>();
+		for (ComponentData comp : matchedComponents) {
+			// Find target branch for this component
+			UUID branchUuid = null;
+			
+			// By branch name
+			if (tempPattern.getTargetBranchName() != null) {
+				Optional<BranchData> branch = branchService.findBranchByComponentAndName(
+					comp.getUuid(), tempPattern.getTargetBranchName());
+				if (branch.isPresent()) {
+					branchUuid = branch.get().getUuid();
+				}
+			}
+			
+			// Default: BASE branch
+			if (branchUuid == null) {
+				Optional<Branch> baseBranch = branchService.getBaseBranchOfComponent(comp.getUuid());
+				if (baseBranch.isPresent()) {
+					branchUuid = baseBranch.get().getUuid();
+				}
+			}
+			
+			if (branchUuid == null) {
+				continue;
+			}
+			
+			// Get branch data
+			Optional<BranchData> branchData = branchService.getBranchData(branchUuid);
+			if (branchData.isEmpty() || branchData.get().getStatus() == CommonVariables.StatusEnum.ARCHIVED) {
+				continue;
+			}
+			
+			Map<String, Object> dep = new java.util.HashMap<>();
+			dep.put("component", comp);
+			dep.put("branch", branchData.get());
+			dep.put("status", tempPattern.getDefaultStatus());
+			log.info("Preview pattern: {} - status: {}", tempPattern.getPattern(), tempPattern.getDefaultStatus());
+			result.add(dep);
+		}
+		
+		return result;
+	}
+	
 }

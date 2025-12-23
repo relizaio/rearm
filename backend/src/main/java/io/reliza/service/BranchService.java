@@ -199,10 +199,42 @@ public class BranchService {
 		return transformBranchToBranchData(findFeatureSetsByChildComponent(orgUuid, component));
 	}
 	
+	/**
+	 * Find all feature sets in an organization that have dependency patterns configured
+	 * and auto-integrate enabled. Used for pattern-based auto-integrate triggering.
+	 * 
+	 * @param orgUuid organization UUID
+	 * @return list of feature sets with dependency patterns
+	 */
+	public List<Branch> findFeatureSetsWithDependencyPatterns(UUID orgUuid) {
+		return repository.findFeatureSetsWithDependencyPatterns(orgUuid.toString());
+	}
+	
+	public List<BranchData> findFeatureSetDataWithDependencyPatterns(UUID orgUuid) {
+		return transformBranchToBranchData(findFeatureSetsWithDependencyPatterns(orgUuid));
+	}
+	
 	private List<BranchData> transformBranchToBranchData (Collection<Branch> branches) {
 		return branches.stream()
 				.map(BranchData::branchDataFromDbRecord)
 				.collect(Collectors.toList());
+	}
+	
+	/**
+	 * Find a branch by component UUID and branch name.
+	 * Used for pattern-based dependency matching.
+	 * 
+	 * @param componentUuid the component UUID
+	 * @param branchName the branch name to find
+	 * @return Optional of BranchData if found
+	 */
+	public Optional<BranchData> findBranchByComponentAndName(UUID componentUuid, String branchName) {
+		List<Branch> branches = listBranchesOfComponent(componentUuid, StatusEnum.ACTIVE);
+		return branches.stream()
+			.map(BranchData::branchDataFromDbRecord)
+			.filter(bd -> branchName.equalsIgnoreCase(bd.getName()) || 
+				branchName.equalsIgnoreCase(bd.getVcsBranch()))
+			.findFirst();
 	}
 
 	public Branch createBranch (String name, ComponentData cd,
@@ -299,6 +331,20 @@ public class BranchService {
 			}
 			if (null != branchDto.getDependencies()) {
 				bd.setDependencies(branchDto.getDependencies());
+			}
+			if (null != branchDto.getDependencyPatterns()) {
+				// Validate regex patterns
+				for (BranchData.DependencyPattern pattern : branchDto.getDependencyPatterns()) {
+					if (StringUtils.isNotEmpty(pattern.getPattern())) {
+						try {
+							java.util.regex.Pattern.compile(pattern.getPattern());
+						} catch (Exception e) {
+							throw new RelizaException("Invalid regex pattern: " + pattern.getPattern() + " - " + e.getMessage());
+						}
+					}
+		
+				}
+				bd.setDependencyPatterns(branchDto.getDependencyPatterns());
 			}
 			if(null !=  branchDto.getPullRequestData()){
 				bd.setPullRequestData(branchDto.getPullRequestData());

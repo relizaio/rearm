@@ -160,6 +160,9 @@ public class ReleaseService {
 
 	@Autowired
 	private VulnAnalysisService vulnAnalysisService;
+	
+	@Autowired
+	private DependencyPatternService dependencyPatternService;
 
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
@@ -1522,7 +1525,9 @@ public class ReleaseService {
 	public void autoIntegrateFeatureSetOnDemand (BranchData bd) {
 		// check that status of this child project is not ignored
 		log.info("PSDEBUG: autointegrate feature set on demand for bd = " + bd.getUuid());
-		List<ChildComponent> dependencies = bd.getDependencies();
+		// Use effective dependencies which includes pattern-resolved dependencies
+		List<ChildComponent> dependencies = dependencyPatternService.resolveEffectiveDependencies(bd);
+		// log.info("autointegrate on-demand, dependencies found: {}", dependencies);
 		
 		// Take every required child project of this branch, and take latest completed release for each of them
 		// including transients, but exclude ignored 

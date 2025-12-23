@@ -15,6 +15,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
+import io.reliza.model.BranchData.DependencyPattern;
 import io.reliza.model.BranchData.PullRequestData;
 import lombok.Builder;
 import lombok.Data;
@@ -35,6 +36,7 @@ public class BranchDto {
 	private String vcsBranch;
 	private String metadata;
 	private List<ChildComponent> dependencies;
+	private List<DependencyPattern> dependencyPatterns;
 	private AutoIntegrateState autoIntegrate;
 	private BranchType type;
 	private Map<Integer, PullRequestData> pullRequestData;

@@ -65,4 +65,15 @@ public interface BranchRepository extends CrudRepository<Branch, UUID> {
 			value = VariableQueries.FIND_BRANCHES_BY_VCS,
 			nativeQuery = true)
 	List<Branch> findBranchesByVcs(String vcsUuidAsString);
+	
+	/**
+	 * Find feature sets that have dependency patterns configured and auto-integrate enabled.
+	 * Used for pattern-based auto-integrate triggering.
+	 * @param orgUuidAsString
+	 * @return
+	 */
+	@Query(
+			value = VariableQueries.FIND_FEATURE_SETS_WITH_DEPENDENCY_PATTERNS,
+			nativeQuery = true)
+	List<Branch> findFeatureSetsWithDependencyPatterns(String orgUuidAsString);
 }

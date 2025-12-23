@@ -1145,4 +1145,402 @@ public void testAutoIntegrateProducts_BaseBranchPriority() throws RelizaExceptio
     assertFalse(hasFeatureBranchRelease, 
         "Product release should NOT contain feature branch release v2.0.0 (BASE branch takes priority)");
 }
+
+/**
+ * Test 8: Pattern-based auto-integrate - component matches pattern
+ * 
+ * Scenario:
+ * - Create components: "myapp-api", "myapp-ui"
+ * - Create feature set with pattern "^myapp-.*" (no explicit dependencies)
+ * - Create release on "myapp-api"
+ * - Auto-integrate should trigger via pattern matching
+ * 
+ * This tests the pattern-based discovery path in autoIntegrateProducts.
+ */
+@Test
+public void testAutoIntegrateProducts_PatternMatching() throws RelizaException {
+    // Arrange
+    Organization org = testInitializer.obtainOrganization();
+    
+    // Create components matching pattern with unique names
+    // Note: createComponent automatically creates a BASE branch named "main"
+    Component comp1 = componentService.createComponent(
+        "myapp-api-" + UUID.randomUUID().toString().substring(0, 8), 
+        org.getUuid(), 
+        ComponentType.COMPONENT, 
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    Component comp2 = componentService.createComponent(
+        "myapp-ui-" + UUID.randomUUID().toString().substring(0, 8), 
+        org.getUuid(), 
+        ComponentType.COMPONENT,
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Get the auto-created BASE branches
+    Branch comp1Branch = branchService.getBaseBranchOfComponent(comp1.getUuid()).get();
+    Branch comp2Branch = branchService.getBaseBranchOfComponent(comp2.getUuid()).get();
+    
+    // Create product with feature set using PATTERN (not explicit dependency)
+    Component product = componentService.createComponent(
+        "myapp-product", 
+        org.getUuid(), 
+        ComponentType.PRODUCT,
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    Branch featureSet = branchService.createBranch(
+        "main", 
+        product.getUuid(), 
+        BranchType.FEATURE, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Add dependency PATTERN (not explicit dependency)
+    // Note: Not specifying targetBranchName so it defaults to BASE branch type
+    BranchData featureSetData = branchService.getBranchData(featureSet.getUuid()).get();
+    BranchData.DependencyPattern pattern = BranchData.DependencyPattern.builder()
+        .uuid(UUID.randomUUID())
+        .pattern("^myapp-.*")
+        .defaultStatus(StatusEnum.REQUIRED)
+        .build();
+    
+    BranchDto branchDto = BranchDto.builder()
+        .uuid(featureSetData.getUuid())
+        .name(featureSetData.getName())
+        .versionSchema(featureSetData.getVersionSchema())
+        .type(featureSetData.getType())
+        .dependencyPatterns(List.of(pattern))
+        .dependencies(new LinkedList<>())  // Empty explicit dependencies
+        .autoIntegrate(AutoIntegrateState.ENABLED)
+        .build();
+    branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
+    
+    // Create releases for both components (pattern matched both, so both need releases)
+    ReleaseDto release2Dto = ReleaseDto.builder()
+        .component(comp2.getUuid())
+        .branch(comp2Branch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("1.0.0")
+        .build();
+    Release release2 = ossReleaseService.createRelease(release2Dto, WhoUpdated.getTestWhoUpdated());
+    
+    // Get initial product release count
+    int countBefore = sharedReleaseService.listReleaseDataOfBranch(featureSet.getUuid()).size();
+    System.out.println("DEBUG: Product releases before: " + countBefore);
+    
+    // Act - create release on comp1, which should trigger auto-integrate via pattern matching
+    // Note: createRelease with ASSEMBLED lifecycle automatically triggers autoIntegrateProducts
+    ReleaseDto release1Dto = ReleaseDto.builder()
+        .component(comp1.getUuid())
+        .branch(comp1Branch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("2.0.0")
+        .build();
+    Release release1 = ossReleaseService.createRelease(release1Dto, WhoUpdated.getTestWhoUpdated());
+    
+    // Give async operation time to complete (auto-integrate is triggered automatically)
+    try {
+        Thread.sleep(3000);
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+    }
+    
+    // Assert - verify product release created via pattern matching
+    List<ReleaseData> productReleasesAfter = sharedReleaseService.listReleaseDataOfBranch(featureSet.getUuid());
+    int countAfter = productReleasesAfter.size();
+    System.out.println("DEBUG: Product releases after: " + countAfter);
+    
+    assertTrue(countAfter > countBefore, 
+        "Pattern-based auto-integrate should create product release");
+    
+    // Verify the product contains the triggering release
+    productReleasesAfter.sort((r1, r2) -> r2.getCreatedDate().compareTo(r1.getCreatedDate()));
+    ReleaseData newestProduct = productReleasesAfter.get(0);
+    
+    boolean hasComp1 = newestProduct.getParentReleases().stream()
+        .anyMatch(pr -> {
+            Optional<ReleaseData> prd = sharedReleaseService.getReleaseData(pr.getRelease());
+            return prd.isPresent() && prd.get().getComponent().equals(comp1.getUuid());
+        });
+    
+    assertTrue(hasComp1, "Product should contain comp1 release (matched by pattern)");
+}
+
+/**
+ * Test 9: Pattern with override IGNORED - should skip component
+ * 
+ * Scenario:
+ * - Create components: "myapp-api", "myapp-test"
+ * - Create feature set with pattern "^myapp-.*"
+ * - Add override: myapp-test → IGNORED
+ * - Create release on "myapp-test"
+ * - Auto-integrate should NOT trigger (excluded by override)
+ */
+@Test
+public void testAutoIntegrateProducts_PatternWithOverrideIgnored() throws RelizaException {
+    // Arrange
+    Organization org = testInitializer.obtainOrganization();
+    
+    Component comp1 = componentService.createComponent(
+        "myapp-api-" + UUID.randomUUID().toString().substring(0, 8), 
+        org.getUuid(), 
+        ComponentType.COMPONENT, 
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    Component comp2 = componentService.createComponent(
+        "myapp-test-" + UUID.randomUUID().toString().substring(0, 8), 
+        org.getUuid(), 
+        ComponentType.COMPONENT,
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Get the auto-created BASE branches
+    Branch comp1Branch = branchService.getBaseBranchOfComponent(comp1.getUuid()).get();
+    Branch comp2Branch = branchService.getBaseBranchOfComponent(comp2.getUuid()).get();
+    
+    Component product = componentService.createComponent(
+        "myapp-product", 
+        org.getUuid(), 
+        ComponentType.PRODUCT,
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    Branch featureSet = branchService.createBranch(
+        "main", 
+        product.getUuid(), 
+        BranchType.FEATURE, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Add pattern to match myapp-.* components
+    // Add manual dependency to IGNORE myapp-test (overrides pattern match)
+    BranchData featureSetData = branchService.getBranchData(featureSet.getUuid()).get();
+    BranchData.DependencyPattern pattern = BranchData.DependencyPattern.builder()
+        .uuid(UUID.randomUUID())
+        .pattern("^myapp-.*")
+        .defaultStatus(StatusEnum.REQUIRED)
+        .build();
+    
+    // Manual dependency with IGNORED status overrides the pattern-matched entry
+    BranchData.ChildComponent manualIgnored = BranchData.ChildComponent.builder()
+        .uuid(comp2.getUuid())
+        .branch(comp2Branch.getUuid())
+        .status(StatusEnum.IGNORED)
+        .build();
+    
+    BranchDto branchDto = BranchDto.builder()
+        .uuid(featureSetData.getUuid())
+        .name(featureSetData.getName())
+        .versionSchema(featureSetData.getVersionSchema())
+        .type(featureSetData.getType())
+        .dependencyPatterns(List.of(pattern))
+        .dependencies(List.of(manualIgnored))
+        .autoIntegrate(AutoIntegrateState.ENABLED)
+        .build();
+    branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
+    
+    int countBefore = sharedReleaseService.listReleaseDataOfBranch(featureSet.getUuid()).size();
+    
+    // Act - create release on myapp-test (which is IGNORED)
+    ReleaseDto release2Dto = ReleaseDto.builder()
+        .component(comp2.getUuid())
+        .branch(comp2Branch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("1.0.0")
+        .build();
+    Release release2 = ossReleaseService.createRelease(release2Dto, WhoUpdated.getTestWhoUpdated());
+    
+    ReleaseData release2Data = sharedReleaseService.getReleaseData(release2.getUuid()).get();
+    ossReleaseService.autoIntegrateProducts(release2Data);
+    
+    // Give async operation time to complete
+    try {
+        Thread.sleep(2000);
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+    }
+    
+    // Assert - NO product release should be created (component is IGNORED)
+    int countAfter = sharedReleaseService.listReleaseDataOfBranch(featureSet.getUuid()).size();
+    
+    assertEquals(countBefore, countAfter, 
+        "Auto-integrate should NOT create product release for IGNORED component");
+}
+
+/**
+ * Test 10: Pattern + manual dependencies work together
+ * 
+ * Scenario:
+ * - Create components: "myapp-api" (matches pattern), "custom-lib" (manual)
+ * - Create feature set with pattern "^myapp-.*" + manual dependency on "custom-lib"
+ * - Create release on "myapp-api"
+ * - Product should include both myapp-api (pattern) and custom-lib (manual)
+ */
+@Test
+public void testAutoIntegrateProducts_PatternAndManualDependencies() throws RelizaException {
+    // Arrange
+    Organization org = testInitializer.obtainOrganization();
+    
+    Component comp1 = componentService.createComponent(
+        "myapp-api-" + UUID.randomUUID().toString().substring(0, 8), 
+        org.getUuid(), 
+        ComponentType.COMPONENT, 
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    Component comp2 = componentService.createComponent(
+        "custom-lib-" + UUID.randomUUID().toString().substring(0, 8), 
+        org.getUuid(), 
+        ComponentType.COMPONENT,
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Get the auto-created BASE branches
+    Branch comp1Branch = branchService.getBaseBranchOfComponent(comp1.getUuid()).get();
+    Branch comp2Branch = branchService.getBaseBranchOfComponent(comp2.getUuid()).get();
+    
+    // Create releases for both components
+    ReleaseDto release1Dto = ReleaseDto.builder()
+        .component(comp1.getUuid())
+        .branch(comp1Branch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("1.0.0")
+        .build();
+    Release release1 = ossReleaseService.createRelease(release1Dto, WhoUpdated.getTestWhoUpdated());
+    
+    ReleaseDto release2Dto = ReleaseDto.builder()
+        .component(comp2.getUuid())
+        .branch(comp2Branch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("2.0.0")
+        .build();
+    Release release2 = ossReleaseService.createRelease(release2Dto, WhoUpdated.getTestWhoUpdated());
+    
+    Component product = componentService.createComponent(
+        "myapp-product", 
+        org.getUuid(), 
+        ComponentType.PRODUCT,
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    Branch featureSet = branchService.createBranch(
+        "main", 
+        product.getUuid(), 
+        BranchType.FEATURE, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Add pattern + manual dependency
+    BranchData featureSetData = branchService.getBranchData(featureSet.getUuid()).get();
+    BranchData.DependencyPattern pattern = BranchData.DependencyPattern.builder()
+        .uuid(UUID.randomUUID())
+        .pattern("^myapp-.*")
+        .defaultStatus(StatusEnum.REQUIRED)
+        .build();
+    
+    ChildComponent manualDep = ChildComponent.builder()
+        .uuid(comp2.getUuid())
+        .branch(comp2Branch.getUuid())
+        .status(StatusEnum.REQUIRED)
+        .build();
+    
+    BranchDto branchDto = BranchDto.builder()
+        .uuid(featureSetData.getUuid())
+        .name(featureSetData.getName())
+        .versionSchema(featureSetData.getVersionSchema())
+        .type(featureSetData.getType())
+        .dependencyPatterns(List.of(pattern))
+        .dependencies(List.of(manualDep))
+        .autoIntegrate(AutoIntegrateState.ENABLED)
+        .build();
+    branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
+    
+    int countBefore = sharedReleaseService.listReleaseDataOfBranch(featureSet.getUuid()).size();
+    
+    // Act - create new release on myapp-api
+    ReleaseDto release3Dto = ReleaseDto.builder()
+        .component(comp1.getUuid())
+        .branch(comp1Branch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("1.1.0")
+        .build();
+    Release release3 = ossReleaseService.createRelease(release3Dto, WhoUpdated.getTestWhoUpdated());
+    
+    ReleaseData release3Data = sharedReleaseService.getReleaseData(release3.getUuid()).get();
+    ossReleaseService.autoIntegrateProducts(release3Data);
+    
+    // Give async operation time to complete
+    try {
+        Thread.sleep(2000);
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+    }
+    
+    // Assert - product should contain BOTH pattern-matched and manual dependencies
+    List<ReleaseData> productReleasesAfter = sharedReleaseService.listReleaseDataOfBranch(featureSet.getUuid());
+    int countAfter = productReleasesAfter.size();
+    
+    assertTrue(countAfter > countBefore, 
+        "Auto-integrate should create product release");
+    
+    productReleasesAfter.sort((r1, r2) -> r2.getCreatedDate().compareTo(r1.getCreatedDate()));
+    ReleaseData newestProduct = productReleasesAfter.get(0);
+    
+    boolean hasComp1 = newestProduct.getParentReleases().stream()
+        .anyMatch(pr -> {
+            Optional<ReleaseData> prd = sharedReleaseService.getReleaseData(pr.getRelease());
+            return prd.isPresent() && prd.get().getComponent().equals(comp1.getUuid());
+        });
+    
+    boolean hasComp2 = newestProduct.getParentReleases().stream()
+        .anyMatch(pr -> {
+            Optional<ReleaseData> prd = sharedReleaseService.getReleaseData(pr.getRelease());
+            return prd.isPresent() && prd.get().getComponent().equals(comp2.getUuid());
+        });
+    
+    assertTrue(hasComp1, "Product should contain myapp-api (pattern-matched)");
+    assertTrue(hasComp2, "Product should contain custom-lib (manual dependency)");
+}
 }

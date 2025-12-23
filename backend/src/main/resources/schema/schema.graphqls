@@ -92,6 +92,8 @@ type Query {
 	
 	# CVE Search
 	searchReleasesByCveId(org: ID!, cveId: String!): [Release]
+	# Pattern Preview
+	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status): [EffectiveDependency]
 }
 
 type Mutation {
@@ -479,6 +481,8 @@ type Branch {
 	vcs: ID
 	vcsBranch: String
 	dependencies: [ChildComponent]
+	dependencyPatterns: [DependencyPattern]
+	effectiveDependencies: [EffectiveDependency]
 	org: ID
 	versionSchema: String
 	marketingVersionSchema: String
@@ -502,6 +506,26 @@ type ChildComponent {
 	branchDetails: Branch
 	releaseDetails: Release
 	isFollowVersion: Boolean
+}
+
+type DependencyPattern {
+	uuid: ID!
+	pattern: String!
+	targetBranchName: String
+	defaultStatus: Status!
+}
+
+type EffectiveDependency {
+	component: Component!
+	branch: Branch!
+	status: Status!
+	source: DependencySource!
+	sourcePattern: DependencyPattern
+}
+
+enum DependencySource {
+	MANUAL
+	PATTERN
 }
 
 type ReleaseCollection {
@@ -1143,9 +1167,17 @@ input BranchInput {
 	versionSchema: String
 	metadata: String
 	dependencies: [ChildComponentInput]
+	dependencyPatterns: [DependencyPatternInput]
 	autoIntegrate: AutoIntegrateState
 	type: BranchType
 	marketingVersionSchema: String
+}
+
+input DependencyPatternInput {
+	uuid: ID
+	pattern: String!
+	targetBranchName: String
+	defaultStatus: Status
 }
 
 input ChildComponentInput {

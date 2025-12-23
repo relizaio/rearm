@@ -461,8 +461,12 @@ public class SharedReleaseService {
 
 	public Set<ParentRelease> getCurrentProductParentRelease(UUID branchUuid, ReleaseData triggeringRelease, ReleaseLifecycle lifecycle){
 		BranchData bd = branchService.getBranchData(branchUuid).get();
+		return getCurrentProductParentRelease(branchUuid, triggeringRelease, bd.getDependencies(), lifecycle);
+	}
+	
+	public Set<ParentRelease> getCurrentProductParentRelease(UUID branchUuid, ReleaseData triggeringRelease, List<ChildComponent> dependencies, ReleaseLifecycle lifecycle){
+		BranchData bd = branchService.getBranchData(branchUuid).get();
 		Set<ParentRelease> parentReleases = new HashSet<>();
-		List<ChildComponent> dependencies = bd.getDependencies();
 		boolean requirementsMet = true;
 		
 		// Group dependencies by component UUID to handle same component with multiple branches

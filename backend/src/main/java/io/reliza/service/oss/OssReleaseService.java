@@ -61,6 +61,7 @@ import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuditService;
 import io.reliza.service.BranchService;
+import io.reliza.service.DependencyPatternService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.NotificationService;
@@ -88,6 +89,9 @@ public class OssReleaseService {
 	
 	@Autowired
 	private BranchService branchService;
+	
+	@Autowired
+	private DependencyPatternService dependencyPatternService;
 	
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
@@ -476,12 +480,44 @@ public class OssReleaseService {
 	
 	@Async
 	public void autoIntegrateProducts(ReleaseData rd) {
-		// locate all product feature sets for this release
-		if (null != rd.getBranch()) { // placeholder releases do not have branches and we do not want to auto-integrate on those
-			List<BranchData> fsDatas = branchService.findFeatureSetDataByChildComponentBranch(rd.getOrg(), rd.getComponent(), rd.getBranch());
-			if (!fsDatas.isEmpty()) {
-				for (BranchData fs : fsDatas) {
-					if (fs.getAutoIntegrate() == AutoIntegrateState.ENABLED) autoIntegrateFeatureSetProduct(fs, rd);
+		if (null == rd.getBranch()) {
+			return;
+		}
+		
+		Set<UUID> processedFeatureSets = new HashSet<>();
+		
+		// PATH 1: Find feature sets with EXPLICIT dependency on this component+branch
+		List<BranchData> explicitFs = branchService.findFeatureSetDataByChildComponentBranch(
+			rd.getOrg(), rd.getComponent(), rd.getBranch());
+		
+		for (BranchData fs : explicitFs) {
+			if (fs.getAutoIntegrate() == AutoIntegrateState.ENABLED) {
+				autoIntegrateFeatureSetProduct(fs, rd);
+				processedFeatureSets.add(fs.getUuid());
+			}
+		}
+		
+		// PATH 2: Find feature sets with PATTERN-BASED dependencies
+		Optional<ComponentData> componentOpt = getComponentService.getComponentData(rd.getComponent());
+		if (componentOpt.isPresent()) {
+			String componentName = componentOpt.get().getName();
+			
+			// Get all feature sets with patterns in this org
+			List<BranchData> patternFs = branchService.findFeatureSetDataWithDependencyPatterns(rd.getOrg());
+			
+			for (BranchData fs : patternFs) {
+				// Skip if already processed via explicit dependency
+				if (processedFeatureSets.contains(fs.getUuid())) {
+					continue;
+				}
+				
+				// Check if component name matches any pattern in this feature set
+				if (dependencyPatternService.componentMatchesAnyPattern(
+						componentName, fs.getDependencyPatterns())) {
+					// Pattern matched - trigger auto-integrate
+					// The effective dependencies will be resolved inside autoIntegrateFeatureSetProduct
+					// which will handle branch matching and other validation
+					autoIntegrateFeatureSetProduct(fs, rd);
 				}
 			}
 		}
@@ -489,8 +525,12 @@ public class OssReleaseService {
 	
 	
 	private void autoIntegrateFeatureSetProduct(BranchData featureSet, ReleaseData triggeringRelease) {
+		// Resolve effective dependencies (patterns + overrides + manual)
+		List<ChildComponent> effectiveDependencies = 
+			dependencyPatternService.resolveEffectiveDependencies(featureSet);
+		
 		// 1. Find matching dependency for this release
-		Optional<ChildComponent> matchingDependency = findMatchingDependency(featureSet, triggeringRelease);
+		Optional<ChildComponent> matchingDependency = findMatchingDependency(effectiveDependencies, triggeringRelease);
 		if (matchingDependency.isEmpty()) {
 			log.debug("PSDEBUG: No matching child component found for rd = " + triggeringRelease.getUuid() + " in fs = " + featureSet.getUuid());
 			return;
@@ -502,7 +542,7 @@ public class OssReleaseService {
 		}
 		
 		// 3. Gather releases from all dependencies
-		Optional<Set<ParentRelease>> dependencyReleasesOpt = gatherReleasesFromDependencies(featureSet, triggeringRelease);
+		Optional<Set<ParentRelease>> dependencyReleasesOpt = gatherReleasesFromDependencies(featureSet, triggeringRelease, effectiveDependencies);
 		if (dependencyReleasesOpt.isEmpty()) {
 			return;
 		}
@@ -554,12 +594,21 @@ public class OssReleaseService {
 	/**
 	 * Gathers releases from all dependencies to use as parent releases in the product.
 	 * 
+	 * @param featureSet The feature set branch data
+	 * @param triggeringRelease The release that triggered auto-integrate
+	 * @param effectiveDependencies The resolved effective dependencies (patterns + overrides + manual)
 	 * @return Optional containing dependency releases, or empty if requirements not met
 	 */
-	private Optional<Set<ParentRelease>> gatherReleasesFromDependencies(BranchData featureSet, ReleaseData triggeringRelease) {
+	private Optional<Set<ParentRelease>> gatherReleasesFromDependencies(
+			BranchData featureSet, 
+			ReleaseData triggeringRelease,
+			List<ChildComponent> effectiveDependencies) {
+		
+		// Use the method that accepts dependencies directly
 		Set<ParentRelease> dependencyReleases = sharedReleaseService.getCurrentProductParentRelease(
 			featureSet.getUuid(), 
-			triggeringRelease, 
+			triggeringRelease,
+			effectiveDependencies,
 			ReleaseLifecycle.ASSEMBLED
 		);
 		
@@ -692,15 +741,13 @@ public class OssReleaseService {
 	}
 	
 	/**
-	 * Finds the dependency in the feature set that matches the triggering release.
-	 * Handles cases where the same component appears multiple times with different branches.
+	 * Finds the matching dependency in the dependencies list for the triggering release.
 	 * 
-	 * @param featureSet The feature set to search in
+	 * @param dependencies The list of dependencies to search in
 	 * @param triggeringRelease The release that triggered auto-integrate
 	 * @return Optional containing the matching dependency, or empty if no match found
 	 */
-	private Optional<ChildComponent> findMatchingDependency(BranchData featureSet, ReleaseData triggeringRelease) {
-		List<ChildComponent> dependencies = featureSet.getDependencies();
+	private Optional<ChildComponent> findMatchingDependency(List<ChildComponent> dependencies, ReleaseData triggeringRelease) {
 		
 		// Try exact match: component UUID + branch UUID
 		Optional<ChildComponent> matchingChild = dependencies.stream()
