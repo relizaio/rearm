@@ -180,6 +180,11 @@ public class ComponentService {
 	public Component createComponent (CreateComponentDto cpd, WhoUpdated wu) throws RelizaException {
 		Component p = new Component();
 		
+		// Validate component name
+		if (StringUtils.isBlank(cpd.getName())) {
+			throw new RelizaException("Component name cannot be empty");
+		}
+		
 		// Validate version schema configuration
 		if (StringUtils.isEmpty(cpd.getVersionSchema())) {
 			log.error("Component creation failed: Version schema is required for component '{}'", cpd.getName());

@@ -134,6 +134,11 @@ public class VcsRepositoryService {
 
 	public VcsRepository createVcsRepository (String name, UUID organization, 
 													String uri, VcsType type, WhoUpdated wu) {
+		// Validate VCS repository name
+		if (StringUtils.isBlank(name)) {
+			throw new IllegalArgumentException("VCS repository name cannot be empty");
+		}
+		
 		VcsRepository vr = new VcsRepository();
 		uri = Utils.cleanVcsUri(uri);
 		VcsRepositoryData vrd = VcsRepositoryData.vcsRepositoryFactory(name, organization, uri, type);

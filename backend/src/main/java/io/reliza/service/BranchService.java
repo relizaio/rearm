@@ -245,6 +245,11 @@ public class BranchService {
 	
 	public Branch createBranch (String name, ComponentData cd, BranchType type, 
 			UUID vcsRepoUuid, String vcsBranch, String versionPin, String marketingVersionPin, WhoUpdated wu) throws RelizaException {
+		// Validate branch name
+		if (StringUtils.isBlank(name)) {
+			throw new RelizaException("Branch name cannot be empty");
+		}
+		
 		// if no vcs data or version data provided, use parent project settings
 		if (null == vcsRepoUuid || StringUtils.isEmpty(vcsBranch) || StringUtils.isEmpty(versionPin)) {
 			if (StringUtils.isEmpty(versionPin)) {
