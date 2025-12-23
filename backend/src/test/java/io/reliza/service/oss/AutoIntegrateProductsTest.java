@@ -1164,8 +1164,11 @@ public void testAutoIntegrateProducts_PatternMatching() throws RelizaException {
     
     // Create components matching pattern with unique names
     // Note: createComponent automatically creates a BASE branch named "main"
+	// Use a unique test ID to avoid pattern collisions with other tests
+    String testId = UUID.randomUUID().toString().substring(0, 8);
+    
     Component comp1 = componentService.createComponent(
-        "myapp-api-" + UUID.randomUUID().toString().substring(0, 8), 
+        "test8-api-" + testId, 
         org.getUuid(), 
         ComponentType.COMPONENT, 
         "semver", 
@@ -1175,7 +1178,7 @@ public void testAutoIntegrateProducts_PatternMatching() throws RelizaException {
     );
     
     Component comp2 = componentService.createComponent(
-        "myapp-ui-" + UUID.randomUUID().toString().substring(0, 8), 
+        "test8-ui-" + testId, 
         org.getUuid(), 
         ComponentType.COMPONENT,
         "semver", 
@@ -1190,7 +1193,7 @@ public void testAutoIntegrateProducts_PatternMatching() throws RelizaException {
     
     // Create product with feature set using PATTERN (not explicit dependency)
     Component product = componentService.createComponent(
-        "myapp-product", 
+        "test8-product-" + testId, 
         org.getUuid(), 
         ComponentType.PRODUCT,
         "semver", 
@@ -1211,7 +1214,7 @@ public void testAutoIntegrateProducts_PatternMatching() throws RelizaException {
     BranchData featureSetData = branchService.getBranchData(featureSet.getUuid()).get();
     BranchData.DependencyPattern pattern = BranchData.DependencyPattern.builder()
         .uuid(UUID.randomUUID())
-        .pattern("^myapp-.*")
+        .pattern("^test8-.*")
         .defaultStatus(StatusEnum.REQUIRED)
         .build();
     
