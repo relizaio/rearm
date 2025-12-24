@@ -182,7 +182,8 @@ public class BranchDataFetcher {
 				try {
 					Pattern.compile(pattern.getPattern());
 				} catch (Exception e) {
-					throw new IllegalArgumentException("Invalid regex pattern: " + pattern.getPattern() + " - " + e.getMessage());
+					log.error("Invalid regex pattern: {} - {}", pattern.getPattern(), e.getMessage());
+					throw new IllegalArgumentException("Invalid regex pattern: " + pattern.getPattern());
 				}
 			}
 		}

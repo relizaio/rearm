@@ -43,7 +43,9 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.repositories.BranchRepository;
 import io.reliza.versioning.VersionType;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 public class BranchService {
 	
@@ -338,20 +340,21 @@ public class BranchService {
 				bd.setDependencies(branchDto.getDependencies());
 			}
 			if (null != branchDto.getDependencyPatterns()) {
-				// Validate regex patterns
-				for (BranchData.DependencyPattern pattern : branchDto.getDependencyPatterns()) {
-					if (StringUtils.isNotEmpty(pattern.getPattern())) {
-						try {
-							java.util.regex.Pattern.compile(pattern.getPattern());
-						} catch (Exception e) {
-							throw new RelizaException("Invalid regex pattern: " + pattern.getPattern() + " - " + e.getMessage());
-						}
+			// Validate regex patterns
+			for (BranchData.DependencyPattern pattern : branchDto.getDependencyPatterns()) {
+				if (StringUtils.isNotEmpty(pattern.getPattern())) {
+					try {
+						java.util.regex.Pattern.compile(pattern.getPattern());
+					} catch (Exception e) {
+						log.error("Invalid regex pattern: {} - {}", pattern.getPattern(), e.getMessage());
+						throw new RelizaException("Invalid regex pattern: " + pattern.getPattern());
 					}
-		
 				}
-				bd.setDependencyPatterns(branchDto.getDependencyPatterns());
+	
 			}
-			if(null !=  branchDto.getPullRequestData()){
+			bd.setDependencyPatterns(branchDto.getDependencyPatterns());
+		}
+		if(null !=  branchDto.getPullRequestData()){
 				bd.setPullRequestData(branchDto.getPullRequestData());
 			}
 			// don't convert from base to regular, only allow make base functionality
