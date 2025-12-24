@@ -246,7 +246,12 @@ const vcsRepoFields: any[] = [
                 els.push(h(NInput,{
                     type: 'text',
                     defaultValue: updatedName.value,
-                    'on-update:value': (value: string) => updatedName.value = value
+                    'on-update:value': (value: string) => updatedName.value = value,
+                    onKeydown: (e: KeyboardEvent) => {
+                        if (e.key === 'Enter') {
+                            updateVcsRepository(row.uuid, true)
+                        }
+                    }
                 }))
             }
 
@@ -290,7 +295,12 @@ const vcsRepoFields: any[] = [
                 els.push(h(NInput,{
                     type: 'text',
                     defaultValue: updatedUri.value,
-                    'on-update:value': (value: string) => updatedUri.value = value
+                    'on-update:value': (value: string) => updatedUri.value = value,
+                    onKeydown: (e: KeyboardEvent) => {
+                        if (e.key === 'Enter') {
+                            updateVcsRepository(row.uuid, false)
+                        }
+                    }
                 }))
             }
 
