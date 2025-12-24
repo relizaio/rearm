@@ -348,7 +348,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import GqlQueries from '../utils/graphqlQueries'
 import { Edit24Regular } from '@vicons/fluent'
-import { EditOutlined, EyeOutlined } from '@vicons/antd'
+import { Edit, Eye, X } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
@@ -831,13 +831,26 @@ const addDependencyPattern = function () {
         uuid: crypto.randomUUID(),
         pattern: '',
         targetBranchName: null,
-        defaultStatus: 'REQUIRED'
+        defaultStatus: 'REQUIRED',
+        isNew: true  // Mark as new (not saved to backend yet)
     })
 }
 
+const removeDependencyPattern = function (uuid: string) {
+    // Remove pattern from UI without saving (for new patterns)
+    modifiedBranch.value.dependencyPatterns = modifiedBranch.value.dependencyPatterns.filter((p: any) => p.uuid !== uuid)
+}
+
 const deleteDependencyPattern = function (uuid: string) {
+    // Delete pattern and save to backend (for existing patterns)
     modifiedBranch.value.dependencyPatterns = modifiedBranch.value.dependencyPatterns.filter((p: any) => p.uuid !== uuid)
     saveModifiedBranch()
+}
+
+const isPatternNew = function (row: any): boolean {
+    // Check if pattern exists in the original branchData (saved to backend)
+    if (!branchData.value.dependencyPatterns) return true
+    return !branchData.value.dependencyPatterns.some((p: any) => p.uuid === row.uuid)
 }
 
 const patternTableFields: DataTableColumns<any> = [
@@ -892,20 +905,35 @@ const patternTableFields: DataTableColumns<any> = [
         key: 'actions',
         width: 100,
         render: (row: any) => {
-            return h('div', { class: 'flex gap-1' }, [
+            const isNew = isPatternNew(row)
+            const buttons = [
                 h(NButton, {
                     size: 'small',
                     type: 'info',
                     onClick: () => previewPattern(row),
                     title: 'Preview pattern matches'
-                }, { default: () => h(NIcon, null, { default: () => h(EyeOutlined) }) }),
-                h(NButton, {
+                }, { default: () => h(NIcon, null, { default: () => h(Eye) }) })
+            ]
+            
+            if (isNew) {
+                // Show X button for new (unsaved) patterns - just removes from UI
+                buttons.push(h(NButton, {
+                    size: 'small',
+                    quaternary: true,
+                    onClick: () => removeDependencyPattern(row.uuid),
+                    title: 'Remove pattern (not saved)'
+                }, { default: () => h(NIcon, null, { default: () => h(X) }) }))
+            } else {
+                // Show delete button for existing (saved) patterns - deletes from backend
+                buttons.push(h(NButton, {
                     size: 'small',
                     type: 'error',
                     onClick: () => deleteDependencyPattern(row.uuid),
                     title: 'Delete pattern'
-                }, { default: () => h(NIcon, null, { default: () => h(Trash) }) })
-            ])
+                }, { default: () => h(NIcon, null, { default: () => h(Trash) }) }))
+            }
+            
+            return h('div', { class: 'flex gap-1' }, buttons)
         }
     }
 ]
@@ -1057,7 +1085,7 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                     size: 'small',
                     quaternary: true,
                     onClick: () => startEdit(row)
-                }, { default: () => h(NIcon, { component: EditOutlined }) })
+                }, { default: () => h(NIcon, { component: Edit }) })
             ])
         }
     }
