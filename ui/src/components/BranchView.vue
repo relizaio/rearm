@@ -39,8 +39,18 @@
             </div>
             <div class="versionSchemaBlock">
                 <label id="branchVersionSchemaLabel" for="branchVersionSchema">{{ words.branchFirstUpper }} Version Schema</label>
-                <n-input v-if="isWritable" v-model:value="modifiedBranch.versionSchema" />
-                <n-input v-else type="text" name="versionSchema" :value="modifiedBranch.versionSchema" readonly/>
+                <n-select
+                    v-if="isWritable"
+                    v-model:value="modifiedBranch.versionSchema"
+                    tag
+                    filterable
+                    :placeholder="'Select version schema for ' + words.branchFirstUpper"
+                    :options="constants.VersionTypes" />
+                <n-input
+                    v-if="isWritable && modifiedBranch.versionSchema === 'custom_version'"
+                    v-model:value="customBranchVersionSchema"
+                    placeholder="Custom Version Schema" />
+                <n-input v-if="!isWritable" type="text" name="versionSchema" :value="modifiedBranch.versionSchema" readonly/>
             </div>
             <div class="versionSchemaBlock" v-if="marketingVersionEnabled">
                 <label id="branchVersionSchemaLabel" for="branchVersionSchema">{{ words.branchFirstUpper }} Marketing Version Schema</label>
@@ -461,6 +471,7 @@ const marketingVersionEnabled: ComputedRef<boolean> = computed((): any => {
     return branchData.value.componentDetails.versionType === 'MARKETING'
 })
 const modifiedBranch: Ref<any> = ref({})
+const customBranchVersionSchema = ref('')
 
 const isWritable : boolean = commonFunctions.isWritable(orguuid, myUser, 'BRANCH')
 
@@ -689,8 +700,14 @@ const saveModifiedBranch = async function () {
             }
         }
         
+        // Handle custom version schema
+        if (modifiedBranch.value.versionSchema === 'custom_version') {
+            modifiedBranch.value.versionSchema = customBranchVersionSchema.value
+        }
+        
         const storeResp = await store.dispatch('updateBranch', modifiedBranch.value)
         modifiedBranch.value = commonFunctions.deepCopy(storeResp)
+        customBranchVersionSchema.value = ''
         selectNewVcsRepo.value = false
     } catch (err) {
         notify('error', 'Error Saving Branch', String(err))

@@ -109,11 +109,17 @@
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="createBranchObject.name" required :placeholder="'Enter ' + words.branchFirstUpper + ' name'" />
                                     </n-form-item>
-                                    <n-form-item 
-                                        v-if="updatedComponent && updatedComponent.versionSchema && componentData && componentData.versionSchema"
-                                        label="Version Pin">
+                                    <n-form-item label="Version Schema">
+                                        <n-select
+                                            v-model:value="createBranchObject.versionSchema"
+                                            tag
+                                            filterable
+                                            :placeholder="'Select version schema for ' + words.branchFirstUpper"
+                                            :options="constants.VersionTypes" />
                                         <n-input
-                                            v-model:value="createBranchObject.versionSchema" />
+                                            v-if="createBranchObject.versionSchema === 'custom_version'"
+                                            v-model:value="customBranchVersionSchema"
+                                            placeholder="Custom Version Schema" />
                                     </n-form-item>
                                     <n-form-item>
                                         <n-button @click="onCreateBranchSubmit" type="success">
@@ -1014,6 +1020,8 @@ const createBranchObject: Ref<any> = ref({
     component: componentUuid
 })
 
+const customBranchVersionSchema = ref('')
+
 const outputTrigger = ref({
     uuid: '',
     name: '',
@@ -1232,6 +1240,9 @@ const onCreateBranchSubmit = async function() {
             return
         }
         try {
+            if (createBranchObject.value.versionSchema === 'custom_version') {
+                createBranchObject.value.versionSchema = customBranchVersionSchema.value
+            }
             const createBranchResp = await store.dispatch('createBranch', createBranchObject.value)
             await store.dispatch('fetchBranches', componentUuid)
             onCreateBranchReset()
@@ -1249,6 +1260,7 @@ const onCreateBranchReset = async function() {
         versionSchema: updatedComponent.value.featureBranchVersioning ? updatedComponent.value.featureBranchVersioning : 'Branch.Micro',
         component: componentUuid
     }
+    customBranchVersionSchema.value = ''
 }
 
 async function notify (type: NotificationType, title: string, content: string) {
@@ -1679,7 +1691,6 @@ const branchFields: any[] = [
         title: 'Version Schema',
         key: 'versionSchema',
         render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
-        
     },]
 
 if (!isComponent.value && isWritable){
