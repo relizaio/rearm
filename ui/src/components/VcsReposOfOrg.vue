@@ -252,6 +252,8 @@ const vcsRepoFields: any[] = [
                     onKeydown: (e: KeyboardEvent) => {
                         if (e.key === 'Enter') {
                             updateVcsRepository(row.uuid, true)
+                        } else if (e.key === 'Escape') {
+                            resetSelectVcs(row.uuid, true)
                         }
                     }
                 }))
@@ -301,6 +303,8 @@ const vcsRepoFields: any[] = [
                     onKeydown: (e: KeyboardEvent) => {
                         if (e.key === 'Enter') {
                             updateVcsRepository(row.uuid, false)
+                        } else if (e.key === 'Escape') {
+                            resetSelectVcs(row.uuid, false)
                         }
                     }
                 }))
