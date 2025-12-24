@@ -93,6 +93,22 @@
                 <n-select v-if="isWritable" :options="[{label: 'ENABLED', value: 'ENABLED'}, {label: 'DISABLED', value: 'DISABLED'}]" v-model:value="modifiedBranch.autoIntegrate" />
                 <n-input v-else type="text" :value="modifiedBranch.autoIntegrate" readonly/>
             </div>
+            <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-bottom: 10px; margin-top: 10px;">
+                <n-space>
+                    <n-button type="success" @click="saveModifiedBranch">
+                        <template #icon>
+                            <vue-feather type="check" />
+                        </template>
+                        Save Changes
+                    </n-button>
+                    <n-button type="warning" @click="resetBranchSettings">
+                        <template #icon>
+                            <vue-feather type="x" />
+                        </template>
+                        Reset Changes
+                    </n-button>
+                </n-space>
+            </div>
             <div class="dependencyPatternsBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT'">
                 <p>
                     <strong>Dependency Patterns </strong>
@@ -105,22 +121,7 @@
                     <vue-feather v-if="isWritable" class="clickable" type="plus-circle"
                         @click="addDependencyPattern" title="Add Dependency Pattern" />
                 </p>
-                <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-bottom: 10px;">
-                    <n-space>
-                        <n-button type="success" @click="saveModifiedBranch">
-                            <template #icon>
-                                <vue-feather type="check" />
-                            </template>
-                            Save Changes
-                        </n-button>
-                        <n-button type="warning" @click="resetBranchSettings">
-                            <template #icon>
-                                <vue-feather type="x" />
-                            </template>
-                            Reset Changes
-                        </n-button>
-                    </n-space>
-                </div>
+
                 <div v-if="modifiedBranch.dependencyPatterns && modifiedBranch.dependencyPatterns.length">
                     <n-data-table :data="modifiedBranch.dependencyPatterns" :columns="patternTableFields" :row-key="(row: any) => row.uuid" />
                 </div>
