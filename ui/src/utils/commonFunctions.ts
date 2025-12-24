@@ -151,7 +151,7 @@ export type SwalData = {
     dismissText: string
 }
 
-async function swalWrapper (wrappedFunction: Function, swalData: SwalData) {
+async function swalWrapper (wrappedFunction: Function, swalData: SwalData, notifyFunction: Function) {
     const swalResp = await Swal.fire({
         title: 'Are you sure?',
         text: swalData.questionText,
@@ -163,19 +163,11 @@ async function swalWrapper (wrappedFunction: Function, swalData: SwalData) {
     
     if (swalResp.value) {
         await wrappedFunction()
-        Swal.fire(
-            swalData.successTitle,
-            swalData.successText,
-            'success'
-        )
+        notifyFunction('success', swalData.successTitle, swalData.successText)
     // For more information about handling dismissals please visit
     // https://sweetalert2.github.io/#handling-dismissals
     } else if (swalResp.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            swalData.dismissText,
-            'error'
-        )
+        notifyFunction('error', 'Cancelled', swalData.dismissText)
     }
 }
 

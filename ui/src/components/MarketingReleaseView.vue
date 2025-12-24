@@ -370,7 +370,7 @@ async function advanceReleaseLifecycle() {
         successText: `The Marketing Release version ${marketingRelease.value.version} lifecycle has been updated.`,
         dismissText: 'Lifecycle update has been cancelled.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 async function releaseMarketingRelease() {
@@ -404,7 +404,7 @@ async function releaseMarketingRelease() {
         successText: `The release ${releasedVersion.value} has been released!`,
         dismissText: 'The release has been cancelled!'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 async function archiveMarketingRelease() {
@@ -426,7 +426,7 @@ async function archiveMarketingRelease() {
         successText: `The Marketing Release version ${marketingRelease.value.version} has been archived.`,
         dismissText: 'Archiving has been cancelled.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 async function save() {

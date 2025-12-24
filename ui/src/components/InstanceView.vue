@@ -611,11 +611,12 @@ const genApiKey = async function () {
             icon: 'success'
         })
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            'Your existing API Key (if present) is safe',
-            'error'
-        )
+        notification.error({
+            content: 'Your existing API Key (if present) is safe',
+            meta: 'Cancelled',
+            duration: 3500,
+            keepAliveOnHover: true
+        })
     }
 }
 
@@ -647,11 +648,12 @@ const archiveInstance = async function () {
             )
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            `Instance archiving cancelled. Your instance is still active.`,
-            'info'
-        )
+        notification.info({
+            content: `Instance archiving cancelled. Your instance is still active.`,
+            meta: 'Cancelled',
+            duration: 3500,
+            keepAliveOnHover: true
+        })
     }
 }
 

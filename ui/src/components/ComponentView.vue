@@ -598,11 +598,7 @@ async function genApiKeyRoutine (type : string, compUuid : string) {
             icon: 'success'
         })
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            'Your existing API Key (if present) is safe',
-            'error'
-        )
+        notify('error', 'Cancelled', 'Your existing API Key (if present) is safe')
     }
 }
 
@@ -1360,7 +1356,7 @@ const setComponentVisibility = async function (newVisValue: string) {
         successText: `The visibility of the ${updatedComponent.value.name} ${words.value.component} has been modified to "${newVisValue}".`,
         dismissText: `Visibility Modification has been cancelled. The visibility remains as "${componentData.value.visibilitySetting}".`
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 
     
 }
@@ -1493,11 +1489,7 @@ const archiveComponent = async function () {
             )
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            `${words.value.componentFirstUpper} archiving cancelled. Your ${words.value.component} is still active.`,
-            'info'
-        )
+        notify('info', 'Cancelled', `${words.value.componentFirstUpper} archiving cancelled. Your ${words.value.component} is still active.`)
     }
 }
 

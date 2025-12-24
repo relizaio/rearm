@@ -507,7 +507,7 @@ const archiveBranch = async function() {
         successText: `The ${words.value.branch} ${modifiedBranch.value.name} has been archived.`,
         dismissText: 'Archiving has been cancelled.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const showReleaseModal: Ref<boolean> = ref(false)

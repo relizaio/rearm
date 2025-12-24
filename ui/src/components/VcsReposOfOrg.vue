@@ -212,11 +212,12 @@ async function archiveVcsRepo (repo: VCS) {
     if (swalResult.value) {
         try {
             await store.dispatch('archiveVcsRepo', { uuid: repo.uuid })
-            Swal.fire(
-                'Archived!',
-                `VCS Repository "${repo.name}" has been archived successfully.`,
-                'success'
-            )
+            notification.success({
+                content: `VCS Repository "${repo.name}" has been archived successfully.`,
+                meta: 'Archived!',
+                duration: 3500,
+                keepAliveOnHover: true
+            })
         } catch (error: any) {
             Swal.fire(
                 'Error!',
@@ -225,11 +226,12 @@ async function archiveVcsRepo (repo: VCS) {
             )
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            'VCS Repository archiving cancelled.',
-            'info'
-        )
+        notification.info({
+            content: 'VCS Repository archiving cancelled.',
+            meta: 'Cancelled',
+            duration: 3500,
+            keepAliveOnHover: true
+        })
     }
 }
 

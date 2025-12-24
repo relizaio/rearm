@@ -250,11 +250,7 @@ async function genUserApiKey(orgUUID: string) {
             icon: 'success'
         })
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            'Your existing API Key is safe',
-            'error'
-        )
+        notify('error', 'Cancelled', 'Your existing API Key is safe')
     }
 
 }
@@ -316,11 +312,7 @@ async function archiveOrganization(orgUUID: string) {
                 )
             }
         } else if (result.dismiss === Swal.DismissReason.cancel) {
-            Swal.fire(
-                'Cancelled',
-                `Organization archiving cancelled. Your organization is still active.`,
-                'info'
-            )
+            notify('info', 'Cancelled', `Organization archiving cancelled. Your organization is still active.`)
         }
     })
 }

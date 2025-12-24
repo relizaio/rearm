@@ -1771,6 +1771,8 @@ async function deleteArtifactFromRelease(artifactUuid: string) {
             console.error('Error deleting artifact from release:', error)
             notify('error', 'Error', 'Failed to remove artifact from release')
         }
+    } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
+        notify('info', 'Cancelled', 'Artifact removal cancelled.')
     }
 }
 

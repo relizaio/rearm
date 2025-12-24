@@ -325,11 +325,7 @@ async function deleteSecret(secretId: string) {
             })
             loadSecrets()
         } else if (result.dismiss === Swal.DismissReason.cancel) {
-            Swal.fire(
-                'Cancelled',
-                `Delete cancelled. Your secret is still active.`,
-                'info'
-            )
+            notify('info', 'Cancelled', `Delete cancelled. Your secret is still active.`)
         }
     })
 }

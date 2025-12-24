@@ -2093,7 +2093,7 @@ async function deleteKey(uuid: string) {
         successText: `The API Key with Internal ID ${uuid} has been deleted.`,
         dismissText: 'The API Key remains active.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 function editKey(uuid: string) {
     const key = programmaticAccessKeys.value.filter((k: any) => (k.uuid === uuid))
@@ -2262,11 +2262,7 @@ async function genUserApiKey() {
             icon: 'success'
         })
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            'Your existing API Key is safe',
-            'error'
-        )
+        notify('error', 'Cancelled', 'Your existing API Key is safe')
     }
 }
 
@@ -2518,7 +2514,7 @@ async function deleteUserGroup(groupUuid: string) {
         successText: `The user group "${group.name}" has been deactivated.`,
         dismissText: 'The user group remains active.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 function initializeResourceGroup() {
@@ -2746,11 +2742,7 @@ async function removeUser(userUuid: string) {
             notify('error', 'Error', `Error when removing the user ${userDisplay} from the organization!`)
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            'User removal cancelled.',
-            'error'
-        )
+        notify('error', 'Cancelled', 'User removal cancelled.')
     }
 }
 
