@@ -516,6 +516,7 @@ public class ReleaseDatafetcher {
 		if (componentId == null) {
 			String vcsUri = (String) progReleaseInput.get("vcsUri");
 			String repoPath = (String) progReleaseInput.get("repoPath");
+			String vcsDisplayName = (String) progReleaseInput.get("vcsDisplayName");
 			String versionSchema = (String) progReleaseInput.get("createComponentVersionSchema");
 			String featureBranchVersionSchema = (String) progReleaseInput.get("createComponentFeatureBranchVersionSchema");
 			// Extract vcsType from sourceCodeEntry if provided
@@ -528,7 +529,7 @@ public class ReleaseDatafetcher {
 					vcsType = VcsType.resolveStringToType(vcsTypeStr);
 				}
 			}
-			ComponentData newComponent = componentService.createComponentFromVcsUri(ahp.getOrgUuid(), vcsUri, repoPath, vcsType, versionSchema, featureBranchVersionSchema, ar.getWhoUpdated());
+			ComponentData newComponent = componentService.createComponentFromVcsUri(ahp.getOrgUuid(), vcsUri, repoPath, vcsDisplayName, vcsType, versionSchema, featureBranchVersionSchema, ar.getWhoUpdated());
 			componentId = newComponent.getUuid();
 			ocd = Optional.of(newComponent);
 		}

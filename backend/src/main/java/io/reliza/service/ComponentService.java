@@ -585,28 +585,29 @@ public class ComponentService {
 	}
 	
 	/**
-	 * Create a new component from VCS URI and repository path.
-	 * If VCS repository doesn't exist, it will be created as well.
+	 * Create a component from VCS URI and optional repository path.
+	 * This method will auto-create the VCS repository if it doesn't exist.
 	 * 
 	 * @param orgUuid Organization UUID
 	 * @param vcsUri VCS repository URI
 	 * @param repoPath Repository path (can be null for root)
-	 * @param vcsType VCS type (defaults to GIT if null)
-	 * @param versionSchema Version schema for the component (can be null)
-	 * @param featureBranchVersionSchema Feature branch version schema (can be null)
-	 * @param wu WhoUpdated for audit
-	 * @return newly created ComponentData
+	 * @param vcsDisplayName Display name for VCS repository (optional, used when creating new VCS)
+	 * @param vcsType VCS type (optional, defaults to GIT)
+	 * @param versionSchema Version schema for the component
+	 * @param featureBranchVersionSchema Feature branch version schema
+	 * @param wu WhoUpdated tracking
+	 * @return ComponentData for the newly created component
 	 * @throws RelizaException if creation fails
 	 */
 	@Transactional
-	public ComponentData createComponentFromVcsUri(UUID orgUuid, String vcsUri, String repoPath, VcsType vcsType,
+	public ComponentData createComponentFromVcsUri(UUID orgUuid, String vcsUri, String repoPath, String vcsDisplayName, VcsType vcsType,
 			String versionSchema, String featureBranchVersionSchema, WhoUpdated wu) throws RelizaException {
 		// Strip username from URI if present (e.g., https://relizaio@dev.azure.com/ -> https://dev.azure.com/)
 		String cleanVcsUri = Utils.normalizeVcsUri(vcsUri);
 		
 		// Find or create VCS repository
 		VcsType effectiveVcsType = (vcsType != null) ? vcsType : VcsType.GIT;
-		Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, cleanVcsUri, effectiveVcsType, true, wu);
+		Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, cleanVcsUri, vcsDisplayName, effectiveVcsType, true, wu);
 		UUID vcsUuid = vcsRepo.get().getUuid();
 		
 		// Create component (use clean URI for name resolution)

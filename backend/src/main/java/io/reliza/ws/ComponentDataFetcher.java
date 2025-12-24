@@ -336,6 +336,7 @@ public class ComponentDataFetcher {
 		if (componentId == null) {
 			String vcsUri = (String) getNewVersionInput.get("vcsUri");
 			String repoPath = (String) getNewVersionInput.get("repoPath");
+			String vcsDisplayName = (String) getNewVersionInput.get("vcsDisplayName");
 			String versionSchema = (String) getNewVersionInput.get("createComponentVersionSchema");
 			String featureBranchVersionSchema = (String) getNewVersionInput.get("createComponentFeatureBranchVersionSchema");
 			// Extract vcsType from sourceCodeEntry if provided
@@ -348,7 +349,7 @@ public class ComponentDataFetcher {
 					vcsType = VcsType.resolveStringToType(vcsTypeStr);
 				}
 			}
-			ComponentData newComponent = componentService.createComponentFromVcsUri(ahp.getOrgUuid(), vcsUri, repoPath, vcsType, versionSchema, featureBranchVersionSchema, ar.getWhoUpdated());
+			ComponentData newComponent = componentService.createComponentFromVcsUri(ahp.getOrgUuid(), vcsUri, repoPath, vcsDisplayName, vcsType, versionSchema, featureBranchVersionSchema, ar.getWhoUpdated());
 			componentId = newComponent.getUuid();
 			ocd = Optional.of(newComponent);
 		}
@@ -427,7 +428,7 @@ public class ComponentDataFetcher {
 			} else if (null != cpd.getVcsRepository()) {
 				String vcsUri = cpd.getVcsRepository().getUri();
 				if (vcsRepo.isEmpty() && vcsUri != null) {
-					vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, vcsUri, null, false, ar.getWhoUpdated());
+					vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, vcsUri, null, null, false, ar.getWhoUpdated());
 				}
 			
 				if (vcsRepo.isEmpty() && vcsUri != null) {

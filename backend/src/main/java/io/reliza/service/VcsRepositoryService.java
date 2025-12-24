@@ -101,10 +101,10 @@ public class VcsRepositoryService {
 		return vcsData;
 	}
 	
-	public Optional<VcsRepository> getVcsRepositoryByUri (UUID orgUuid, String uri, VcsType type, boolean createIfMissing, WhoUpdated wu) {
+	public Optional<VcsRepository> getVcsRepositoryByUri (UUID orgUuid, String uri, String displayName, VcsType type, boolean createIfMissing, WhoUpdated wu) {
 		Optional<VcsRepository> ovr = findVcsRepositoryByOrgAndUri(orgUuid, uri);
 		if (ovr.isEmpty() && createIfMissing) {
-			String vcsName = Utils.deriveVcsNameFromUri(uri);
+			String vcsName = (displayName != null && !displayName.isEmpty()) ? displayName : Utils.deriveVcsNameFromUri(uri);
 			ovr = Optional.of(createVcsRepository(vcsName, orgUuid, uri, type, wu));
 		}
 		return ovr;

@@ -1322,6 +1322,7 @@ input GetNewVersionInput {
 	commits: [SourceCodeEntryInput]
 	vcsUri: String
 	repoPath: String
+	vcsDisplayName: String
 	createComponentIfMissing: Boolean
 	createComponentVersionSchema: String
 	createComponentFeatureBranchVersionSchema: String
@@ -1342,6 +1343,7 @@ input ReleaseInputProg {
 	identifiers: [IdentifierInput]
 	vcsUri: String
 	repoPath: String
+	vcsDisplayName: String
 	createComponentIfMissing: Boolean
 	createComponentVersionSchema: String
 	createComponentFeatureBranchVersionSchema: String

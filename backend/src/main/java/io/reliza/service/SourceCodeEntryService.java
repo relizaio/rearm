@@ -90,7 +90,7 @@ public class SourceCodeEntryService {
 			if (StringUtils.isNotEmpty(vcsUri) && ovr.isPresent() && !Utils.uriEquals(vcsUri, VcsRepositoryData.dataFromRecord(ovr.get()).getUri())) {
 				throw new RelizaException("VCS repository mismatch: branch VCS does not match the supplied URI");
 			} else if (ovr.isEmpty() && StringUtils.isNotEmpty(vcsUri) && null != vcsType) {	// branch does not have vcs repo set
-				ovr = vcsRepositoryService.getVcsRepositoryByUri(sceDto.getOrganizationUuid(), vcsUri, vcsType, true, wu);
+				ovr = vcsRepositoryService.getVcsRepositoryByUri(sceDto.getOrganizationUuid(), vcsUri, null, vcsType, true, wu);
 				// update branch with correct vcs repo
 				try {
 					BranchDto branchDto = BranchDto.builder()
