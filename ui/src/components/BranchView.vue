@@ -45,7 +45,7 @@
                     tag
                     filterable
                     :placeholder="'Select version schema for ' + words.branchFirstUpper"
-                    :options="constants.VersionTypes" />
+                    :options="branchData.type === 'BASE' ? constants.VersionTypes : constants.BranchVersionTypes" />
                 <n-input
                     v-if="isWritable && modifiedBranch.versionSchema === 'custom_version'"
                     v-model:value="customBranchVersionSchema"

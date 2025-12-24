@@ -148,20 +148,7 @@ const isCreatedNewRepo = ref(false)
 const myUser = store.getters.myuser
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
-const featureBranchVersionTypes = [
-    {
-        label: 'Feature Branch Default (Branch.Micro)',
-        value: 'Branch.Micro'
-    },
-    {
-        label: 'Feature Branch Calver (YYYY.0M.Branch.Micro)',
-        value: 'YYYY.0M.Branch.Micro'
-    },
-    {
-        label: 'Custom',
-        value: 'custom_version'
-    }
-]
+const featureBranchVersionTypes = constants.BranchVersionTypes
 
 const marketingVersionEnabled = ref(false)
 

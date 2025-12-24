@@ -115,7 +115,7 @@
                                             tag
                                             filterable
                                             :placeholder="'Select version schema for ' + words.branchFirstUpper"
-                                            :options="constants.VersionTypes" />
+                                            :options="constants.BranchVersionTypes" />
                                         <n-input
                                             v-if="createBranchObject.versionSchema === 'custom_version'"
                                             v-model:value="customBranchVersionSchema"

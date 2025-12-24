@@ -37,6 +37,33 @@ const VERSION_TYPES = [
     }
 ]
 
+const BRANCH_VERSION_TYPES = [
+    {
+        label: 'Feature Branch Default (Branch.Micro)',
+        value: 'Branch.Micro'
+    },
+    {
+        label: 'Feature Branch Calver (YYYY.0M.Branch.Micro)',
+        value: 'YYYY.0M.Branch.Micro'
+    },
+    {
+        label: 'SemVer (Major.Minor.Patch-Modifier+Metadata)',
+        value: 'semver'
+    },
+    {
+        label: 'Ubuntu CalVer (YY.0M.Micro)',
+        value: 'YY.0M.Micro'
+    },
+    {
+        label: 'Single Component (Major)',
+        value: 'Major'
+    },    
+    {
+        label: 'Custom',
+        value: 'custom_version'
+    }
+]
+
 const LIFECYCLE_OPTIONS = [
     {label: 'Pending', key: 'PENDING'}, {label: 'Draft', key: 'DRAFT'}, {label: 'Assembled', key: 'ASSEMBLED'},
     {label: 'Shipped', key: 'GENERAL_AVAILABILITY'}, {label: 'Cancelled', key: 'CANCELLED'}, {label: 'Rejected', key: 'REJECTED'},
@@ -89,6 +116,7 @@ const BATCH_MODE_HELP = {
 
 export default {
     VersionTypes: VERSION_TYPES,
+    BranchVersionTypes: BRANCH_VERSION_TYPES,
     ExternalPublicComponentsOrg: EXTERNAL_PUBLIC_COMPONENTS_ORG,
     SpawnInstancePermissionId: '00000000-0000-0000-0000-000000000002',
     RelizaRedirectLocalStorage: 'relizaRedirect',
