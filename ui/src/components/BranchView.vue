@@ -735,6 +735,7 @@ const releaseTagKeys: Ref<any[]> = ref([])
 const editingRow: Ref<string | null> = ref(null)
 const editingStatus: Ref<string> = ref('')
 const editingBranch: Ref<string> = ref('')
+const componentBranches: Ref<any[]> = ref([])
 
 const fetchVcsRepos = async function () : Promise<any[]> {
     let fetchedRepos = store.getters.vcsReposOfOrg(branchData.value.org)
@@ -750,6 +751,30 @@ const fetchVcsRepos = async function () : Promise<any[]> {
         return repoObj
     })
     return vcsRepos.value
+}
+
+const fetchComponentBranches = async function (componentUuid: string) {
+    try {
+        // Check if branches are already in store
+        let branches = store.getters.branchesOfComponent(componentUuid)
+        if (!branches || !branches.length) {
+            // Fetch branches from server
+            await store.dispatch('fetchBranches', componentUuid)
+            branches = store.getters.branchesOfComponent(componentUuid)
+        }
+        // Filter out archived branches and sort
+        componentBranches.value = branches
+            .filter((b: any) => b.status !== 'ARCHIVED')
+            .sort((a: any, b: any) => {
+                if (a.name === 'master' || a.name === 'main') return -1
+                if (b.name === 'master' || b.name === 'main') return 1
+                return a.name.localeCompare(b.name)
+            })
+    } catch (error) {
+        console.error('Error fetching component branches:', error)
+        notify('error', 'Error', 'Failed to fetch component branches')
+        componentBranches.value = []
+    }
 }
 
 const addedComponent = function (component: any) {
@@ -921,11 +946,19 @@ const effectiveDepTableFields: DataTableColumns<any> = [
             const isEditing = editingRow.value === row.component?.uuid
             
             if (isEditing) {
-                // For now, just show the current branch name as text
-                // TODO: Add branch selection dropdown
-                return h('div', { class: 'flex items-center gap-1' }, [
-                    h('span', { style: 'opacity: 0.7' }, 'Branch selection coming soon...')
-                ])
+                // Show branch selection dropdown
+                const branchOptions = componentBranches.value.map((b: any) => ({
+                    label: b.name,
+                    value: b.uuid
+                }))
+                
+                return h(NSelectComponent, {
+                    value: editingBranch.value,
+                    'onUpdate:value': (value: string) => { editingBranch.value = value },
+                    options: branchOptions,
+                    size: 'small',
+                    placeholder: 'Select branch'
+                })
             }
             
             if (!row.branch) return 'Unknown'
@@ -1030,16 +1063,22 @@ const effectiveDepTableFields: DataTableColumns<any> = [
     }
 ]
 
-const startEdit = function(row: any) {
+const startEdit = async function(row: any) {
     editingRow.value = row.component?.uuid
     editingStatus.value = row.status
     editingBranch.value = row.branch?.uuid || ''
+    
+    // Fetch branches for this component
+    if (row.component?.uuid) {
+        await fetchComponentBranches(row.component.uuid)
+    }
 }
 
 const cancelEdit = function() {
     editingRow.value = null
     editingStatus.value = ''
     editingBranch.value = ''
+    componentBranches.value = []
 }
 
 const saveOverride = function(row: any) {
