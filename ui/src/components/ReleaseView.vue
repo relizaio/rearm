@@ -2562,7 +2562,7 @@ const deliverableTableFields: DataTableColumns<any> = [
     }
 ]
 
-const inProductsTableFields: DataTableColumns<any> = [
+const inProductsTableFields: ComputedRef<DataTableColumns<any>> = computed((): DataTableColumns<any> => [
     {
         key: 'productName',
         title: 'Product',
@@ -2576,7 +2576,7 @@ const inProductsTableFields: DataTableColumns<any> = [
     },
     {
         key: 'featureSetName',
-        title: words.value.branchFirstUpper,
+        title: words.value.branchFirstUpper || 'Feature Set',
         render(row: any) {
             return h(RouterLink, 
                 {to: {name: 'ProductsOfOrg',
@@ -2601,9 +2601,9 @@ const inProductsTableFields: DataTableColumns<any> = [
         key: 'lifecycle',
         title: 'Lifecycle'
     }
-]
+])
 
-const parentReleaseTableFields: DataTableColumns<any> = [
+const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed((): DataTableColumns<any> => [
     {
         type: 'expand',
         expandable: (row: any) => row.releaseDetails && row.releaseDetails.componentDetails ? row.releaseDetails.componentDetails.type === 'PRODUCT' && row.releaseDetails.parentReleases : false,
@@ -2611,7 +2611,7 @@ const parentReleaseTableFields: DataTableColumns<any> = [
             if (row.releaseDetails && row.releaseDetails.componentDetails) {
                 return h(NDataTable, {
                     data: row.releaseDetails.parentReleases,
-                    columns: parentReleaseTableFields
+                    columns: parentReleaseTableFields.value
                 })
             }
         }
@@ -2632,7 +2632,7 @@ const parentReleaseTableFields: DataTableColumns<any> = [
     },
     {
         key: 'branch',
-        title: 'Branch / ' + words.value.branchFirstUpper,
+        title: 'Branch / ' + (words.value.branchFirstUpper || 'Feature Set'),
         render(row: any) {
             if (row.releaseDetails && row.releaseDetails.componentDetails) {
                 const routeName = row.releaseDetails.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
@@ -2723,7 +2723,7 @@ const parentReleaseTableFields: DataTableColumns<any> = [
             return els
         }
     }
-]
+])
 
 const commitTableFields: DataTableColumns<any> = [
     {
