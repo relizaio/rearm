@@ -729,6 +729,9 @@ const saveModifiedBranch = async function () {
 const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
     if (!modifiedBranch.value || !branchData.value) return false
     
+    // Check if there's an active editing session with unsaved changes
+    const hasActiveEdit = editingRow.value !== null
+    
     // Check dependency patterns changes
     const patternsChanged = JSON.stringify(modifiedBranch.value.dependencyPatterns || []) !== 
         JSON.stringify(branchData.value.dependencyPatterns || [])
@@ -750,7 +753,8 @@ const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         modifiedBranch.value.autoIntegrate !== branchData.value.autoIntegrate ||
         patternsChanged ||
         dependenciesChanged ||
-        hasDeletionMarks
+        hasDeletionMarks ||
+        hasActiveEdit
 })
 
 function resetBranchSettings() {
@@ -1159,8 +1163,6 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                         }
                         // Reset release selection when branch changes
                         editingRelease.value = ''
-                        // Apply changes immediately to trigger save button
-                        applyEditSilent(row)
                     },
                     options: branchOptions,
                     size: 'small',
@@ -1198,8 +1200,6 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                     value: editingRelease.value,
                     'onUpdate:value': (value: string) => { 
                         editingRelease.value = value
-                        // Apply changes immediately to trigger save button
-                        applyEditSilent(row)
                     },
                     options: releaseOptions,
                     size: 'small',
@@ -1228,8 +1228,6 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                     checked: editingFollowVersion.value,
                     'onUpdate:checked': (value: boolean) => { 
                         editingFollowVersion.value = value
-                        // Apply changes immediately to trigger save button
-                        applyEditSilent(row)
                     },
                     title: 'Following Dependency Version If Checked',
                     size: 'large'
@@ -1257,8 +1255,6 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                     value: editingStatus.value,
                     'onUpdate:value': (value: string) => { 
                         editingStatus.value = value
-                        // Apply changes immediately to trigger save button
-                        applyEditSilent(row)
                     },
                     options: [
                         { label: 'Required', value: 'REQUIRED' },
