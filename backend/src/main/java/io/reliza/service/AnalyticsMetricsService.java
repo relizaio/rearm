@@ -469,4 +469,26 @@ public class AnalyticsMetricsService {
 		return res;
 	}
 	
+	public List<ReleasesPerComponent> analyticsComponentsWithMostRecentReleasesByProduct (ZonedDateTime cutOffDate,
+			ComponentType compType, Integer maxComponents, UUID organization, UUID productUuid) {
+		List<ReleasesPerComponent> res = new ArrayList<>();
+		var objList = repository.analyticsComponentsWithMostReleasesByProduct(cutOffDate, compType.name(),
+				maxComponents, organization.toString(), productUuid.toString());
+		if (null != objList && !objList.isEmpty()) {
+			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerComponent).toList();
+		}
+		return res;
+	}
+	
+	public List<ReleasesPerBranch> analyticsBranchesWithMostRecentReleasesByProduct (ZonedDateTime cutOffDate,
+			ComponentType compType, Integer maxBranches, UUID organization, UUID productUuid) {
+		List<ReleasesPerBranch> res = new ArrayList<>();
+		var objList = repository.analyticsBranchesWithMostReleasesByProduct(cutOffDate, compType.name(),
+				maxBranches, organization.toString(), productUuid.toString());
+		if (null != objList && !objList.isEmpty()) {
+			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerBranch).toList();
+		}
+		return res;
+	}
+	
 }

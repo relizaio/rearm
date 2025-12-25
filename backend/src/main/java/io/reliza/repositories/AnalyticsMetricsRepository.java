@@ -63,4 +63,16 @@ public interface AnalyticsMetricsRepository extends CrudRepository<AnalyticsMetr
 	List<AnalyticsMetrics> findAnalyticsMetricsByOrgPerspectiveDates(String orgUuidAsString,
 			String perspectiveUuidAsString, String dateKeyFrom, String dateKeyTo);
 	
+	@Query(
+			value = VariableQueries.ANALYTICS_COMPONENTS_WITH_MOST_RELEASES_BY_PRODUCT,
+			nativeQuery = true)
+	List<Object[]> analyticsComponentsWithMostReleasesByProduct(ZonedDateTime cutOffDate, String compType,
+			Integer maxComponents, String organization, String productUuidAsString);
+	
+	@Query(
+			value = VariableQueries.ANALYTICS_BRANCHES_WITH_MOST_RELEASES_BY_PRODUCT,
+			nativeQuery = true)
+	List<Object[]> analyticsBranchesWithMostReleasesByProduct(ZonedDateTime cutOffDate, String compType,
+			Integer maxBranches, String organization, String productUuidAsString);
+	
 }
