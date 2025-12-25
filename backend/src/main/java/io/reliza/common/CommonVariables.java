@@ -582,4 +582,9 @@ public class CommonVariables {
 		MANAGED_SERVICE;
 	}
 	
+	public enum PerspectiveType {
+		PERSPECTIVE,
+		PRODUCT;
+	}
+	
 }

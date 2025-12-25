@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.reliza.common.Utils;
 import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
-import io.reliza.model.saas.PerspectiveData.PerspectiveType;
+import io.reliza.common.CommonVariables.PerspectiveType;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
