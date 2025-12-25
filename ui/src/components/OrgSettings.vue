@@ -558,9 +558,9 @@
                             <template #header>
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <span>Components and Products of Perspective: {{ selectedPerspectiveName }}</span>
-                                    <vue-feather v-if="isOrgAdmin" class="clickable" type="plus-circle"
+                                    <vue-feather v-if="isOrgAdmin && selectedPerspectiveType !== 'PRODUCT'" class="clickable" type="plus-circle"
                                         @click="showAddComponentToPerspectiveModal = true" title="Add Component" />
-                                    <vue-feather v-if="isOrgAdmin" class="clickable" type="folder-plus"
+                                    <vue-feather v-if="isOrgAdmin && selectedPerspectiveType !== 'PRODUCT'" class="clickable" type="folder-plus"
                                         @click="showAddProductToPerspectiveModal = true" title="Add Product" />
                                 </div>
                             </template>
@@ -726,7 +726,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark } from '@vicons/tabler'
 import { Info20Regular, Edit24Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1231,6 +1231,7 @@ const newPerspective: Ref<any> = ref({
 const showPerspectiveComponentsModal = ref(false)
 const selectedPerspectiveUuid: Ref<string> = ref('')
 const selectedPerspectiveName: Ref<string> = ref('')
+const selectedPerspectiveType: Ref<string> = ref('')
 const perspectiveComponents: Ref<any[]> = ref([])
 const editingPerspective: Ref<any> = ref({
     uuid: '',
@@ -1257,6 +1258,33 @@ const perspectiveComponentColumns = [
         render(row: any) {
             return h('div', row.type === 'COMPONENT' ? 'Component' : 'Product')
         }
+    },
+    {
+        key: 'source',
+        title: () => {
+            return h('div', { style: 'display: flex; align-items: center; gap: 4px;' }, [
+                h('span', 'Source'),
+                h(
+                    NTooltip,
+                    {},
+                    {
+                        trigger: () => h(
+                            NIcon,
+                            {
+                                size: 16,
+                                style: 'cursor: help;'
+                            },
+                            () => h(QuestionMark)
+                        ),
+                        default: () => 'Manual: Component was added manually to this perspective. Transitive: Component was added as a transitive dependency of a product.'
+                    }
+                )
+            ])
+        },
+        render(row: any) {
+            const isManual = row.perspectiveDetails?.some((pd: any) => pd.uuid === selectedPerspectiveUuid.value)
+            return h('div', isManual ? 'Manual' : 'Transitive')
+        }
     }
 ]
 
@@ -1273,6 +1301,32 @@ const perspectiveFields = [
         }
     },
     {
+        key: 'source',
+        title: () => {
+            return h('div', { style: 'display: flex; align-items: center; gap: 4px;' }, [
+                h('span', 'Source'),
+                h(
+                    NTooltip,
+                    {},
+                    {
+                        trigger: () => h(
+                            NIcon,
+                            {
+                                size: 16,
+                                style: 'cursor: help;'
+                            },
+                            () => h(QuestionMark)
+                        ),
+                        default: () => 'Auto perspectives are created automatically per each Product. They cannot be edited.'
+                    }
+                )
+            ])
+        },
+        render(row: any) {
+             return h('div', row.type === 'PERSPECTIVE' ? 'Manual' : 'Auto')
+        }
+    },
+    {
         key: 'actions',
         title: 'Actions',
         render(row: any) {
@@ -1283,14 +1337,14 @@ const perspectiveFields = [
                         title: 'View Connected Components',
                         class: 'icons clickable',
                         size: 25,
-                        onClick: () => showPerspectiveComponentsModalFn(row.uuid, row.name)
+                        onClick: () => showPerspectiveComponentsModalFn(row.uuid, row.name, row.type)
                     },
                     () => h(Eye)
                 )
             ]
             
-            // Add edit and delete icons only for admin users
-            if (isOrgAdmin.value) {
+            // Add edit and delete icons only for admin users AND if not PRODUCT type
+            if (isOrgAdmin.value && row.type !== 'PRODUCT') {
                 actions.push(
                     h(
                         NIcon,
@@ -1333,6 +1387,7 @@ async function loadPerspectives() {
                         name
                         org
                         createdDate
+                        type
                     }
                 }`,
             variables: {
@@ -1391,9 +1446,10 @@ function resetCreatePerspective() {
     showCreatePerspectiveModal.value = false
 }
 
-async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspectiveName: string) {
+async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspectiveName: string, perspectiveType: string = 'PERSPECTIVE') {
     selectedPerspectiveUuid.value = perspectiveUuid
     selectedPerspectiveName.value = perspectiveName
+    selectedPerspectiveType.value = perspectiveType
     showPerspectiveComponentsModal.value = true
     
     // Load components and products for the org
@@ -1409,6 +1465,9 @@ async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspec
                         name
                         org
                         type
+                        perspectiveDetails {
+                            uuid
+                        }
                     }
                 }`,
             variables: {
@@ -1416,7 +1475,26 @@ async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspec
             },
             fetchPolicy: 'no-cache'
         })
-        perspectiveComponents.value = response.data.componentsOfPerspective || []
+        const components = response.data.componentsOfPerspective || []
+        perspectiveComponents.value = components.sort((a: any, b: any) => {
+            // 1. Sort by Type (Product before Component)
+            if (a.type !== b.type) {
+                // If a is PRODUCT, it comes first (-1). If a is COMPONENT (and b is PRODUCT), a comes second (1).
+                return a.type === 'PRODUCT' ? -1 : 1
+            }
+            
+            // 2. Sort by Source (Manual before Transitive)
+            const aManual = a.perspectiveDetails?.some((pd: any) => pd.uuid === perspectiveUuid)
+            const bManual = b.perspectiveDetails?.some((pd: any) => pd.uuid === perspectiveUuid)
+            
+            if (aManual !== bManual) {
+                // If a is Manual (true), it comes first (-1). If a is Transitive (false), it comes second (1).
+                return aManual ? -1 : 1
+            }
+            
+            // 3. Optional: Sort by Name alphabetically as a tie-breaker
+            return (a.name || '').localeCompare(b.name || '')
+        })
     } catch (error: any) {
         console.error('Error loading perspective components:', error)
         notify('error', 'Error', 'Failed to load components for this perspective')
@@ -1478,7 +1556,7 @@ async function addComponentToPerspective() {
             showAddComponentToPerspectiveModal.value = false
             selectedComponentToAdd.value = ''
             // Reload perspective components
-            await showPerspectiveComponentsModalFn(selectedPerspectiveUuid.value, selectedPerspectiveName.value)
+            await showPerspectiveComponentsModalFn(selectedPerspectiveUuid.value, selectedPerspectiveName.value, selectedPerspectiveType.value)
         }
     } catch (error: any) {
         console.error('Error adding component to perspective:', error)
@@ -1520,7 +1598,7 @@ async function addProductToPerspective() {
             showAddProductToPerspectiveModal.value = false
             selectedProductToAdd.value = ''
             // Reload perspective components
-            await showPerspectiveComponentsModalFn(selectedPerspectiveUuid.value, selectedPerspectiveName.value)
+            await showPerspectiveComponentsModalFn(selectedPerspectiveUuid.value, selectedPerspectiveName.value, selectedPerspectiveType.value)
         }
     } catch (error: any) {
         console.error('Error adding product to perspective:', error)

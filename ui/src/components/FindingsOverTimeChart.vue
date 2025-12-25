@@ -310,14 +310,13 @@ async function fetchFindingsPerDay(dateOverride?: string) {
             if (!orgUuid.value || !props.perspectiveUuid) return
             response = await graphqlClient.query({
                 query: gql`
-                    query findingsPerDayByPerspective($orgUuid: ID!, $perspectiveUuid: ID!, $date: String!) {
-                        findingsPerDayByPerspective(orgUuid: $orgUuid, perspectiveUuid: $perspectiveUuid, date: $date) {
+                    query findingsPerDayByPerspective($perspectiveUuid: ID!, $date: String!) {
+                        findingsPerDayByPerspective(perspectiveUuid: $perspectiveUuid, date: $date) {
                             ${FINDINGS_FIELDS}
                         }
                     }
                 `,
                 variables: {
-                    orgUuid: orgUuid.value,
                     perspectiveUuid: props.perspectiveUuid,
                     date: dateToUse
                 },
@@ -429,8 +428,8 @@ async function fetchVulnerabilityViolationAnalytics() {
             
             resp = await graphqlClient.query({
                 query: gql`
-                    query vulnerabilitiesViolationsOverTimeByPerspective($orgUuid: ID!, $perspectiveUuid: ID!, $dateFrom: DateTime!, $dateTo: DateTime!) {
-                        vulnerabilitiesViolationsOverTimeByPerspective(orgUuid: $orgUuid, perspectiveUuid: $perspectiveUuid, dateFrom: $dateFrom, dateTo: $dateTo) {
+                    query vulnerabilitiesViolationsOverTimeByPerspective($perspectiveUuid: ID!, $dateFrom: DateTime!, $dateTo: DateTime!) {
+                        vulnerabilitiesViolationsOverTimeByPerspective(perspectiveUuid: $perspectiveUuid, dateFrom: $dateFrom, dateTo: $dateTo) {
                             createdDate
                             num
                             type
@@ -438,7 +437,6 @@ async function fetchVulnerabilityViolationAnalytics() {
                     }
                 `,
                 variables: {
-                    orgUuid: orgUuid.value,
                     perspectiveUuid: props.perspectiveUuid,
                     dateFrom: dateFromValue,
                     dateTo: dateToValue
