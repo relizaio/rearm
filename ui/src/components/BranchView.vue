@@ -1118,7 +1118,7 @@ const getRowClassName = (row: any) => {
 
 const effectiveDepTableFields: DataTableColumns<any> = [
     {
-        title: 'Component',
+        title: 'Component / Product',
         key: 'component',
         render: (row: any) => {
             const isNewlyAdded = newlyAddedDependencies.value.has(row.component?.uuid)
@@ -1139,7 +1139,7 @@ const effectiveDepTableFields: DataTableColumns<any> = [
         }
     },
     {
-        title: 'Branch',
+        title: 'Branch / ' + (myorg.value?.terminology?.featureSetLabel ? myorg.value?.terminology?.featureSetLabel : 'Feature Set'),
         key: 'branch',
         render: (row: any) => {
             const isEditing = editingRow.value === row.component?.uuid
@@ -1214,6 +1214,35 @@ const effectiveDepTableFields: DataTableColumns<any> = [
             return h('span', { 
                 style: isExcluded ? 'opacity: 0.5' : ''
             }, version)
+        }
+    },
+    {
+        title: 'Type',
+        key: 'type',
+        render: (row: any) => {
+            const isExcluded = row.status === 'IGNORED'
+            
+            // Try to get type from row data first
+            let type = row.component?.type
+            
+            // If not available, look up from store
+            if (!type && row.component?.uuid) {
+                const componentFromStore = store.state.components.find((c: any) => c.uuid === row.component.uuid)
+                type = componentFromStore?.type
+            }
+            
+            // Final fallback
+            if (!type) {
+                type = 'COMPONENT'
+            }
+            
+            const color = type === 'PRODUCT' ? 'success' : 'info'
+            
+            return h(NTag, { 
+                type: color, 
+                size: 'small',
+                style: isExcluded ? 'opacity: 0.5' : ''
+            }, () => type)
         }
     },
     {
