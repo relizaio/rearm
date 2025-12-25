@@ -705,6 +705,7 @@ const storeObject : any = {
                                 uuid
                                 name
                                 org
+                                type
                             }
                         }`,
                     variables: {

@@ -57,7 +57,7 @@ export default {
 import axios from '../utils/axios'
 import { NDropdown } from 'naive-ui'
 import { useStore } from 'vuex'
-import { ComputedRef, computed } from 'vue'
+import { ComputedRef, computed, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
@@ -75,15 +75,43 @@ const perspectives: ComputedRef<any[]> = computed((): any => store.getters.persp
 const myperspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
 
 const perspectiveOptions: ComputedRef<any[]> = computed((): any => {
-    const options = [{
-        label: 'Default',
+    const options: any[] = [{
+        label: () => h('b', 'Default'),
         key: 'default'
     }]
     
     if (perspectives.value && perspectives.value.length > 0) {
-        perspectives.value.forEach((p: any) => {
+        options.push({
+            type: 'divider',
+            key: 'd1'
+        })
+        // Sort perspectives: PERSPECTIVE type first, then by name
+        const sortedPerspectives = [...perspectives.value].sort((a: any, b: any) => {
+            const typeA = a.type || ''
+            const typeB = b.type || ''
+            
+            // If types are different, prioritize PERSPECTIVE
+            if (typeA === 'PERSPECTIVE' && typeB !== 'PERSPECTIVE') return -1
+            if (typeA !== 'PERSPECTIVE' && typeB === 'PERSPECTIVE') return 1
+            
+            // Otherwise sort by name
+            return (a.name || '').localeCompare(b.name || '')
+        })
+
+        let addedDivider = false
+        const hasPerspectives = sortedPerspectives.some((p: any) => p.type === 'PERSPECTIVE')
+
+        sortedPerspectives.forEach((p: any) => {
+            if (hasPerspectives && !addedDivider && p.type !== 'PERSPECTIVE') {
+                options.push({
+                    type: 'divider',
+                    key: 'd2'
+                })
+                addedDivider = true
+            }
+
             options.push({
-                label: p.name,
+                label: p.type === 'PERSPECTIVE' ? () => h('b', p.name) : p.name,
                 key: p.uuid
             })
         })
