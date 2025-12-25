@@ -124,7 +124,9 @@
                     <strong>Dependency Patterns </strong>
                     <n-tooltip trigger="hover">
                         <template #trigger>
-                            <vue-feather type="help-circle" size="14" style="cursor: help;" />
+                            <n-icon size="16" style="cursor: help;">
+                                <QuestionMark />
+                            </n-icon>
                         </template>
                         Java regex patterns to automatically match components as dependencies. E.g., ^myapp-.* matches all components starting with "myapp-"
                     </n-tooltip>
@@ -144,7 +146,9 @@
                     <strong>Dependencies </strong>
                     <n-tooltip trigger="hover">
                         <template #trigger>
-                            <vue-feather type="info" size="14" style="cursor: help;" />
+                            <n-icon size="16" style="cursor: help;">
+                                <QuestionMark />
+                            </n-icon>
                         </template>
                         Shows all dependencies including pattern-matched and manual ones. Use the buttons below to add dependencies or configure patterns above.
                     </n-tooltip>
@@ -362,7 +366,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import GqlQueries from '../utils/graphqlQueries'
 import { Edit24Regular } from '@vicons/fluent'
-import { Edit, Eye, X } from '@vicons/tabler'
+import { Edit, Eye, X, QuestionMark } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
