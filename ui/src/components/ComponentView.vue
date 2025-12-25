@@ -1010,14 +1010,18 @@ if (branches.value.length < 1) {
 function selectBranch (uuid: string) {
     selectedBranchUuid.value = uuid
     branchCollapseState.value['branchCollapse' + uuid] = true
-    router.push({
-        name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
-        params: {
-            orguuid: route.params.orguuid,
-            compuuid: componentUuid,
-            branchuuid: selectedBranchUuid.value
-        }
-    })
+    
+    // Only navigate if not already on this branch to avoid hijacking double-click
+    if (route.params.branchuuid !== uuid) {
+        router.push({
+            name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
+            params: {
+                orguuid: route.params.orguuid,
+                compuuid: componentUuid,
+                branchuuid: selectedBranchUuid.value
+            }
+        })
+    }
 }
 
 const createBranchForm = ref<FormInst | null>(null)
@@ -1612,10 +1616,22 @@ const toggleMarketingVersion = async function(value: boolean){
 const rowProps = (row: any) => {
     return {
         style: 'cursor: pointer;',
+        onDblclick: () => {
+            router.push({
+                name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
+                params: {
+                    orguuid: route.params.orguuid,
+                    compuuid: componentUuid,
+                    branchuuid: row.uuid
+                },
+                query: {
+                    branchSettingsView: 'true'
+                }
+            })
+        },
         onClick: () => {
             selectBranch(row.uuid)
-        },
-        
+        }
     }
 }
 const branchRowClassName = (row: any) => {

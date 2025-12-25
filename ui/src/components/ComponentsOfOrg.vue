@@ -173,6 +173,18 @@ const rowProps = (row: any) => {
         style: 'cursor: pointer;',
         onClick: () => {
             selectComponent(row.uuid)
+        },
+        onDblclick: () => {
+            router.push({
+                name: (!isProduct) ? 'ComponentsOfOrg' : 'ProductsOfOrg',
+                params: {
+                    orguuid: orguuid.value,
+                    compuuid: row.uuid
+                },
+                query: {
+                    componentSettingsView: 'true'
+                }
+            })
         }
     }
 }
