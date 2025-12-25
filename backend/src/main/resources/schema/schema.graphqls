@@ -54,11 +54,11 @@ type Query {
 	vulnerabilitiesViolationsOverTime(orgUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	vulnerabilitiesViolationsOverTimeByComponent(componentUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	vulnerabilitiesViolationsOverTimeByBranch(branchUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
-	vulnerabilitiesViolationsOverTimeByPerspective(orgUuid: ID!, perspectiveUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	vulnerabilitiesViolationsOverTimeByPerspective(perspectiveUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	findingsPerDay(orgUuid: ID!, date: String!): DependencyTrackMetrics
 	findingsPerDayForComponent(componentUuid: ID!, date: String!): DependencyTrackMetrics
 	findingsPerDayForBranch(branchUuid: ID!, date: String!): DependencyTrackMetrics
-	findingsPerDayByPerspective(orgUuid: ID!, perspectiveUuid: ID!, date: String!): DependencyTrackMetrics
+	findingsPerDayByPerspective(perspectiveUuid: ID!, date: String!): DependencyTrackMetrics
 	
 	# Programmatic
 	getReleaseByHashProgrammatic(hash: String!, componentId: ID): Release
@@ -856,6 +856,12 @@ type Perspective {
 	org: ID
 	name: String
 	createdDate: DateTime
+	type: PerspectiveType
+}
+
+enum PerspectiveType {
+	PERSPECTIVE
+	PRODUCT
 }
 
 type ApprovalRequirement {

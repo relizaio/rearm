@@ -136,15 +136,14 @@ public class ComponentDataFetcher {
 	public Collection<ComponentData> getComponentsOfType(
 			@InputArgument("orgUuid") String orgUuidStr,
 			@InputArgument("componentType") ComponentType componentType,
-			@InputArgument("perspective") String perspectiveUuidStr) {
+			@InputArgument("perspective") UUID perspectiveUuid) {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		
 		// If perspective is provided, filter by perspective
-		if (perspectiveUuidStr != null && !perspectiveUuidStr.isEmpty()) {
-			UUID perspectiveUuid = UUID.fromString(perspectiveUuidStr);
+		if (null != perspectiveUuid) {
 			return componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType);
 		}
 		

@@ -5,11 +5,15 @@
 package io.reliza.service;
 
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import io.reliza.model.Component;
@@ -21,6 +25,10 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class GetComponentService {
 	private final ComponentRepository repository;
+	
+	@Autowired
+	@Lazy
+	private SharedReleaseService sharedReleaseService;
 
 	GetComponentService(
 		ComponentRepository repository
@@ -81,8 +89,32 @@ public class GetComponentService {
 	}
 	
 	public List<ComponentData> listComponentsByPerspective (UUID perspectiveUuid) {
-		return repository.findComponentsByPerspective(perspectiveUuid.toString()).stream()
+		Optional<ComponentData> opd = getComponentData(perspectiveUuid);
+		if (opd.isPresent() && opd.get().getType() == ComponentData.ComponentType.PRODUCT) {
+			return listComponentsByProduct(perspectiveUuid);
+		}
+		List<ComponentData> directComponents = repository.findComponentsByPerspective(perspectiveUuid.toString()).stream()
 				.map(ComponentData::dataFromRecord).toList();
+		
+		Set<UUID> allComponentUuids = new LinkedHashSet<>();
+		for (ComponentData cd : directComponents) {
+			allComponentUuids.add(cd.getUuid());
+			if (cd.getType() == ComponentData.ComponentType.PRODUCT) {
+				Set<UUID> productComponents = sharedReleaseService.obtainComponentsOfProductOrComponent(cd.getUuid(), allComponentUuids);
+				allComponentUuids.addAll(productComponents);
+			}
+		}
+		
+		return getListOfComponentData(allComponentUuids);
+	}
+	
+	public List<ComponentData> listComponentsByProduct (UUID productUuid) {
+		Set<UUID> allComponentUuids = new LinkedHashSet<>();
+		allComponentUuids.add(productUuid);
+		Set<UUID> productComponents = sharedReleaseService.obtainComponentsOfProductOrComponent(productUuid, allComponentUuids);
+		allComponentUuids.addAll(productComponents);
+		
+		return getListOfComponentData(allComponentUuids);
 	}
 	
 }

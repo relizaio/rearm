@@ -147,11 +147,31 @@ public class ComponentService {
 	}
 	
 	public List<ComponentData> listComponentDataByOrganizationAndPerspective(UUID orgUuid, UUID perspectiveUuid, ComponentType... pts) {
-		List<ComponentData> allComponents = listComponentDataByOrganization(orgUuid, pts);
-		// Filter components that belong to the specified perspective
-		return allComponents.stream()
-				.filter(cd -> cd.getPerspectives() != null && cd.getPerspectives().contains(perspectiveUuid))
-				.toList();
+		List<ComponentData> components = getComponentService.listComponentsByPerspective(perspectiveUuid);
+		
+		// Check for organization mismatch
+		for (ComponentData cd : components) {
+			if (!cd.getOrg().equals(orgUuid)) {
+				log.error("Access denied: Component {} (UUID: {}) belongs to organization {} but requested for organization {}", 
+						cd.getName(), cd.getUuid(), cd.getOrg(), orgUuid);
+				throw new org.springframework.security.access.AccessDeniedException("Access denied");
+			}
+		}
+		
+		// Filter by type if needed
+		if (pts != null && pts.length > 0) {
+			java.util.Set<ComponentType> typeSet = new java.util.HashSet<>(java.util.Arrays.asList(pts));
+			if (!typeSet.contains(ComponentType.ANY)) {
+				components = components.stream()
+						.filter(cd -> typeSet.contains(cd.getType()))
+						.collect(Collectors.toList());
+			}
+		} else {
+			// Maintain original behavior: if no types specified, return empty list
+			components = new LinkedList<>();
+		}
+		
+		return components;
 	}
 	
 	public List<Component> listComponentsByApprovalPolicy(UUID approvalPolicyUuid) {

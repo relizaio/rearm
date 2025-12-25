@@ -16,6 +16,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.reliza.common.Utils;
 import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.saas.PerspectiveData.PerspectiveType;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -24,7 +25,7 @@ import lombok.EqualsAndHashCode;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AnalyticsMetricsData extends RelizaDataParent implements RelizaObject {
 
-	public static record PerspectiveWithHash(UUID perspectiveUuid, String perspectiveHash) {}
+	public static record PerspectiveWithHash(UUID perspectiveUuid, String perspectiveHash, PerspectiveType perspectiveType) {}
 
 	@JsonProperty
 	private UUID uuid;
@@ -35,24 +36,27 @@ public class AnalyticsMetricsData extends RelizaDataParent implements RelizaObje
 	@JsonProperty
 	private String perspectiveHash;
 	@JsonProperty
+	private PerspectiveType perspectiveType;
+	@JsonProperty
 	private String dateKey;
 	@JsonProperty
 	private ReleaseMetricsDto metrics;
 	
 
 	public static AnalyticsMetricsData analyticsMetricsDataFactory(UUID org, ReleaseMetricsDto metrics, ZonedDateTime createdDate) {
-		return analyticsMetricsDataFactory(org, null, null, metrics, createdDate);
+		return analyticsMetricsDataFactory(org, null, null, null, metrics, createdDate);
 	}
 	
 	public static AnalyticsMetricsData analyticsMetricsDataFactory(UUID org, UUID perspective, ReleaseMetricsDto metrics, ZonedDateTime createdDate) {
-		return analyticsMetricsDataFactory(org, perspective, null, metrics, createdDate);
+		return analyticsMetricsDataFactory(org, perspective, null, null, metrics, createdDate);
 	}
 	
-	public static AnalyticsMetricsData analyticsMetricsDataFactory(UUID org, UUID perspective, String perspectiveHash, ReleaseMetricsDto metrics, ZonedDateTime createdDate) {
+	public static AnalyticsMetricsData analyticsMetricsDataFactory(UUID org, UUID perspective, String perspectiveHash, PerspectiveType perspectiveType, ReleaseMetricsDto metrics, ZonedDateTime createdDate) {
 		AnalyticsMetricsData amd = new AnalyticsMetricsData();
 		amd.setOrg(org);
 		amd.setPerspective(perspective);
 		amd.setPerspectiveHash(perspectiveHash);
+		amd.setPerspectiveType(perspectiveType);
 		amd.setMetrics(metrics);
 		amd.setCreatedDate(createdDate);
 		amd.setDateKey(obtainAnalyticsDateKey(createdDate));
