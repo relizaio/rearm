@@ -673,6 +673,18 @@ async function setDependencyAsFollowVersion (uuid: string) {
 
 const saveModifiedBranch = async function () {
     try {
+        // If there's an active editing session, apply those changes first
+        if (editingRow.value) {
+            const editedRow = modifiedBranch.value.effectiveDependencies?.find(
+                (dep: any) => dep.component?.uuid === editingRow.value
+            )
+            if (editedRow) {
+                applyEditSilent(editedRow)
+            }
+            // Clear editing state after applying
+            cancelEdit()
+        }
+        
         // Validate dependency patterns before saving
         if (modifiedBranch.value.dependencyPatterns) {
             for (const pattern of modifiedBranch.value.dependencyPatterns) {
@@ -709,8 +721,6 @@ const saveModifiedBranch = async function () {
         // Clear deletion marks and newly added marks after successful save
         dependenciesMarkedForDeletion.value.clear()
         newlyAddedDependencies.value.clear()
-        // Exit edit mode after saving
-        cancelEdit()
     } catch (err) {
         notify('error', 'Error Saving Branch', String(err))
     }
@@ -1302,12 +1312,20 @@ const effectiveDepTableFields: DataTableColumns<any> = [
             const isExcluded = row.status === 'IGNORED'
             
             if (isEditing) {
-                return h(NButton, {
-                    size: 'small',
-                    quaternary: true,
-                    onClick: () => cancelEdit(),
-                    title: 'Cancel editing and reset changes',
-                }, { default: () => h(NIcon, { component: X }) })
+                return h('div', { class: 'flex gap-1 items-center' }, [
+                    h(NButton, {
+                        size: 'small',
+                        quaternary: true,
+                        onClick: () => applyEdit(row),
+                        title: 'Confirm Dependency Changes and Close its editing',
+                    }, { default: () => h(NIcon, { component: Check }) }),
+                    h(NButton, {
+                        size: 'small',
+                        quaternary: true,
+                        onClick: () => cancelEdit(),
+                        title: 'Cancel editing',
+                    }, { default: () => h(NIcon, { component: X }) })
+                ])
             }
             
             const buttons = [
@@ -1426,6 +1444,17 @@ const applyEditSilent = function(row: any) {
         modifiedBranch.value.dependencies.forEach((d: any) => {
             d.isFollowVersion = false
         })
+        
+        // Also clear from effectiveDependencies for visual consistency
+        if (modifiedBranch.value.effectiveDependencies) {
+            modifiedBranch.value.effectiveDependencies.forEach((d: any) => {
+                if (d.component?.uuid !== row.component.uuid) {
+                    d.isFollowVersion = false
+                }
+            })
+            // Force reactivity update
+            modifiedBranch.value.effectiveDependencies = [...modifiedBranch.value.effectiveDependencies]
+        }
     }
     
     const manualDep: any = {
