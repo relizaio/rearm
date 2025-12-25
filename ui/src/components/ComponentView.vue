@@ -1613,10 +1613,20 @@ const toggleMarketingVersion = async function(value: boolean){
         
     save()
 }
+let clickTimer: ReturnType<typeof setTimeout> | null = null
+let preventSingleClick = false
+
 const rowProps = (row: any) => {
     return {
         style: 'cursor: pointer;',
         onDblclick: () => {
+            // Clear the single-click timer and prevent single-click action
+            if (clickTimer) {
+                clearTimeout(clickTimer)
+                clickTimer = null
+            }
+            preventSingleClick = true
+            
             router.push({
                 name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
                 params: {
@@ -1630,7 +1640,18 @@ const rowProps = (row: any) => {
             })
         },
         onClick: () => {
-            selectBranch(row.uuid)
+            // Delay single-click action to detect if it's part of a double-click
+            if (clickTimer) {
+                clearTimeout(clickTimer)
+            }
+            
+            clickTimer = setTimeout(() => {
+                if (!preventSingleClick) {
+                    selectBranch(row.uuid)
+                }
+                preventSingleClick = false
+                clickTimer = null
+            }, 250) // 250ms delay to detect double-click
         }
     }
 }
