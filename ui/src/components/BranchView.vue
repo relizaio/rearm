@@ -1228,6 +1228,23 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                     checked: editingFollowVersion.value,
                     'onUpdate:checked': (value: boolean) => { 
                         editingFollowVersion.value = value
+                        
+                        // If setting Follow Version to true, uncheck it on all other rows
+                        if (value && modifiedBranch.value.effectiveDependencies) {
+                            modifiedBranch.value.effectiveDependencies.forEach((d: any) => {
+                                if (d.component?.uuid !== row.component?.uuid) {
+                                    d.isFollowVersion = false
+                                }
+                            })
+                            // Also clear from dependencies array
+                            modifiedBranch.value.dependencies.forEach((d: any) => {
+                                if (d.uuid !== row.component.uuid) {
+                                    d.isFollowVersion = false
+                                }
+                            })
+                            // Force reactivity update
+                            modifiedBranch.value.effectiveDependencies = [...modifiedBranch.value.effectiveDependencies]
+                        }
                     },
                     title: 'Following Dependency Version If Checked',
                     size: 'large'
