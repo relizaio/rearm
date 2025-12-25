@@ -32,22 +32,7 @@
             :show-icon="false"
             style="width: 90%"
         >
-            <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-bottom: 10px; margin-top: 10px;">
-                <n-space>
-                    <n-button type="success" @click="saveModifiedBranch">
-                        <template #icon>
-                            <vue-feather type="check" />
-                        </template>
-                        Save Changes
-                    </n-button>
-                    <n-button type="warning" @click="resetBranchSettings">
-                        <template #icon>
-                            <vue-feather type="x" />
-                        </template>
-                        Reset Changes
-                    </n-button>
-                </n-space>
-            </div>
+            <h3>{{ words.branchFirstUpper }} Settings for {{ branchData.name }}</h3>
             <div class="branchNameBlock">
                 <label id="branchNameLabel" for="branchName">{{ words.branchFirstUpper }} Name</label>
                 <n-input  v-if="isWritable" v-model:value="modifiedBranch.name" />
@@ -89,17 +74,15 @@
                 <n-input v-else class="w-25" type="text" :value="branchData.type" readonly/>
             </div>
             <div class="linkedVcsRepoBlock" v-if="branchData.componentDetails.type === 'COMPONENT'">
-                <h6><strong>Linked VCS Repository:</strong></h6>
-                <div>
-                    <n-select v-if="isWritable" :options="vcsRepos" v-model:value="modifiedBranch.vcs" @focus="fetchVcsRepos" />
-                    <span v-if="!isWritable && modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">{{ (modifiedBranch.vcsRepositoryDetails.name === modifiedBranch.vcsRepositoryDetails.uri) ? modifiedBranch.vcsRepositoryDetails.name : modifiedBranch.vcsRepositoryDetails.name + ' - ' + modifiedBranch.vcsRepositoryDetails.uri }}</span>
-                    <span v-if="!isWritable && !modifiedBranch.vcsRepositoryDetails">Not Set</span>
-                </div>
-                <div class="vcsBranchBlock" v-if="modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">
-                    <label for="vcsBranch">VCS Branch</label>
-                    <n-input v-if="isWritable" id="vcsBranch" v-model:value="modifiedBranch.vcsBranch" />
-                    <n-input v-else type="text" id="vcsBranch" name="vcsBranch" :value="modifiedBranch.vcsBranch" readonly/>
-                </div>
+                <label>Linked VCS Repository</label>
+                <n-select v-if="isWritable" :options="vcsRepos" v-model:value="modifiedBranch.vcs" @focus="fetchVcsRepos" />
+                <span v-if="!isWritable && modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">{{ (modifiedBranch.vcsRepositoryDetails.name === modifiedBranch.vcsRepositoryDetails.uri) ? modifiedBranch.vcsRepositoryDetails.name : modifiedBranch.vcsRepositoryDetails.name + ' - ' + modifiedBranch.vcsRepositoryDetails.uri }}</span>
+                <span v-if="!isWritable && !modifiedBranch.vcsRepositoryDetails">Not Set</span>
+            </div>
+            <div class="vcsBranchBlock" v-if="branchData.componentDetails.type === 'COMPONENT' && modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">
+                <label for="vcsBranch">VCS Branch</label>
+                <n-input v-if="isWritable" id="vcsBranch" v-model:value="modifiedBranch.vcsBranch" />
+                <n-input v-else type="text" id="vcsBranch" name="vcsBranch" :value="modifiedBranch.vcsBranch" readonly/>
             </div>
             <n-button
                 v-if="isWritable && modifiedBranch && !modifiedBranch.vcs && !isLinkVcsRepo && branchData.componentDetails === 'COMPONENT'"
@@ -115,7 +98,7 @@
 
                 />
             <div v-if="branchData.componentDetails.type === 'PRODUCT'" class="autoIntegrateBlock">
-                <label id="autoIntegrateLabel" style="margin-right:10px;">Auto Integrate </label>
+                <label id="autoIntegrateLabel">Auto Integrate </label>
                 <n-select v-if="isWritable" :options="[{label: 'ENABLED', value: 'ENABLED'}, {label: 'DISABLED', value: 'DISABLED'}]" v-model:value="modifiedBranch.autoIntegrate" />
                 <n-input v-else type="text" :value="modifiedBranch.autoIntegrate" readonly/>
             </div>
@@ -1246,7 +1229,7 @@ const effectiveDepTableFields: DataTableColumns<any> = [
             return h(NCheckbox, {
                 checked: row.isFollowVersion || false,
                 disabled: true,
-                title: 'Following Dependency Version If Checked',
+                title: 'Following Dependency Version If Checked. Click Edit in the Actions column to Change.',
                 size: 'large',
                 style: isExcluded ? 'opacity: 0.5' : ''
             })
@@ -1322,7 +1305,8 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                 return h(NButton, {
                     size: 'small',
                     quaternary: true,
-                    onClick: () => cancelEdit()
+                    onClick: () => cancelEdit(),
+                    title: 'Cancel editing and reset changes',
                 }, { default: () => h(NIcon, { component: X }) })
             }
             
@@ -1331,7 +1315,8 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                 h(NButton, {
                     size: 'small',
                     quaternary: true,
-                    onClick: () => startEdit(row)
+                    onClick: () => startEdit(row),
+                    title: 'Edit dependency',
                 }, { default: () => h(NIcon, { component: Edit }) })
             ]
             
@@ -1378,7 +1363,7 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                             size: 'small',
                             quaternary: true,
                             onClick: () => deleteDependency(row.component?.uuid, row.branch?.uuid),
-                            title: 'Mark for deletion'
+                            title: 'Mark dependency for deletion. Then click on Save Changes to confirm.'
                         }, { default: () => h(NIcon, { component: Trash }) })
                     )
                 }
@@ -1899,92 +1884,6 @@ async function handleRefreshVulnerabilityData() {
     }
 }
 
-const depTableFields = [
-    {
-        key: "componentDetails.name",
-        title: "Name"
-    },
-    {
-        key: "branchDetails.name",
-        title: "Branch"
-    },
-    {
-        key: "releaseDetails.version",
-        title: "Release"
-    },
-    {
-        key: "status",
-        title: "Requirement Status",
-        render: (row: any) => {
-            let els: any[] = []
-            if (isWritable) {
-                const selectEl = h(NSelect, {
-                    options: permissionOptions,
-                    defaultValue: row.status,
-                    style: "width: 160px;",
-                    'on-update:value': (value: string) => updateBranchDependecyStatus(row.uuid, value)
-                })
-                els.push(selectEl)
-            }
-            if (!els.length) els = [h('div'), row.status]
-            return els
-        }
-    },
-    {
-        key: "isFollowVersion",
-        title: "Follow Version?",
-        render: (row: any) => {
-            return h(NCheckbox, {
-                checked: row.isFollowVersion,
-                disabled: !isWritable,
-                title: 'Following Dependency Version If Checked',
-                size: 'large',
-                onClick: (e: any, i: any) => {
-                    e.preventDefault()
-                    setDependencyAsFollowVersion(row.uuid)
-                }
-            })
-        }
-    },
-    {
-        key: 'actions',
-        title: 'Actions',
-        render: (row: any) => {
-            let els: any[] = []
-            if (isWritable) {
-                const editEl = h(NIcon, {
-                    title: 'Edit Dependency',
-                    class: 'icons clickable',
-                    size: 20,
-                    onClick: () => {
-                        editDependency(row.uuid, row.branch, row.status, row.release)
-                    }
-                }, 
-                { 
-                    default: () => h(Edit24Regular) 
-                }
-                )
-                els.push(editEl)
-                const deleteEl = h(NIcon, {
-                    title: 'Delete Dependency',
-                    class: 'icons clickable',
-                    size: 20,
-                    onClick: () => {
-                        deleteDependency(row.uuid, row.branch)
-                    }
-                }, 
-                { 
-                    default: () => h(Trash) 
-                }
-                )
-                els.push(deleteEl)
-            }
-            if (!els.length) els = [h('div'), row.status]
-            return els
-        }
-    }
-]
-
 const releaseRowkey = (row: any) => row.uuid
 
 onCreated()
@@ -2011,18 +1910,48 @@ onCreated()
     border-left: 4px solid #4caf50 !important;
     box-shadow: inset 0 0 0 1px #c8e6c9 !important;
 }
-.versionSchemaBlock, .versionMetadataBlock, .branchNameBlock, .branchTypeBlock {
-    padding-bottom: 25px;
+.versionSchemaBlock, .versionMetadataBlock, .branchNameBlock, .branchTypeBlock, .linkedVcsRepoBlock, .vcsBranchBlock, .autoIntegrateBlock {
+    padding-top: 15px;
+    padding-bottom: 15px;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 12px;
+    
     label {
-        display: block;
         font-weight: bold;
+        min-width: 250px;
+        flex-shrink: 0;
     }
     input {
-        display: inline-block;
-        width: 85%;
+        flex: 1;
+        min-width: 0;
+    }
+    .n-input {
+        flex: 1;
+        min-width: 200px;
+        
+        :deep(.n-input-wrapper) {
+            padding-left: 12px;
+            padding-right: 12px;
+        }
+        :deep(.n-input__input-el) {
+            padding: 0;
+        }
+    }
+    .n-select {
+        flex: 1;
+        min-width: 200px;
+    }
+    select {
+        flex: 1;
+        min-width: 200px;
+    }
+    span {
+        flex: 1;
     }
     .versionIcon {
-        float: right;
+        flex-shrink: 0;
     }
     .accept {
         color: green;
@@ -2035,14 +1964,6 @@ onCreated()
     }
     .reject:hover {
         color: darkred;
-    }
-    .n-input {
-        display: inline-block;
-        width: 60%;
-    }
-    .n-select {
-        display: inline-block;
-        width: 60%;
     }
 }
 .linkedVcsRepoBlock {
