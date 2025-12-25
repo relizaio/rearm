@@ -366,6 +366,18 @@ public class BranchDataFetcher {
 			dep.put("branch", branchService.getBranchData(cc.getBranch()).orElse(null));
 			dep.put("status", cc.getStatus());
 			
+			// Add release information if present
+			if (cc.getRelease() != null) {
+				dep.put("release", cc.getRelease());
+				dep.put("releaseDetails", sharedReleaseService.getReleaseData(cc.getRelease()).orElse(null));
+			} else {
+				dep.put("release", null);
+				dep.put("releaseDetails", null);
+			}
+			
+			// Add isFollowVersion flag
+			dep.put("isFollowVersion", cc.getIsFollowVersion() != null ? cc.getIsFollowVersion() : false);
+			
 			// Determine source - check if this is from manual dependencies or pattern
 			boolean isManual = bd.getDependencies() != null && 
 				bd.getDependencies().stream().anyMatch(d -> d.getUuid().equals(cc.getUuid()));

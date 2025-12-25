@@ -521,6 +521,9 @@ type EffectiveDependency {
 	status: Status!
 	source: DependencySource!
 	sourcePattern: DependencyPattern
+	release: ID
+	releaseDetails: Release
+	isFollowVersion: Boolean
 }
 
 enum DependencySource {
