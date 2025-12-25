@@ -83,14 +83,14 @@ const myperspective: ComputedRef<string> = computed((): string => store.getters.
 
 onMounted(() => {
     if (myorg.value) 
-        initLoad(false)
+        initLoad()
 })
 watch(myorg, (currentValue, oldValue) => {
-    initLoad(true)
+    initLoad()
 });
 watch(myperspective, (currentValue, oldValue) => {
     if (currentValue !== oldValue) {
-        initLoad(true)
+        initLoad()
     }
 });
 const orguuid : Ref<string> = ref('')
@@ -129,19 +129,17 @@ const componentProductWords : any = {
 
 const components: ComputedRef<any[]> = computed((): any => (isProduct ? store.getters.productsOfOrg(orguuid.value) : store.getters.componentsOfOrg(orguuid.value)))
 
-async function initLoad (force: boolean) {
-    if (force || !components.value || !components.value.length || components.value.length < 2) {
-        if (isProduct) {
-            await store.dispatch('fetchProducts', orguuid.value)
-        } else {
-            await store.dispatch('fetchComponents', orguuid.value)
-        }
+async function initLoad () {
+    if (isProduct) {
+        await store.dispatch('fetchProducts', orguuid.value)
+    } else {
+        await store.dispatch('fetchComponents', orguuid.value)
     }
 }
 
 async function componentCreated (uuid: string) {
     showAddComponentModal.value = false
-    await initLoad(true)
+    await initLoad()
     selectComponent(uuid)
 }
 
