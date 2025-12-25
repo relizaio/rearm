@@ -166,7 +166,7 @@ public class BranchDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateBranch")
-	public BranchData updateBranch(DgsDataFetchingEnvironment dfe) {
+	public BranchData updateBranch(DgsDataFetchingEnvironment dfe) throws RelizaException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> updateBranchInputMap = dfe.getArgument("branch");
@@ -176,14 +176,14 @@ public class BranchDataFetcher {
 		if (updateBranchInput.getDependencyPatterns() != null) {
 			for (BranchData.DependencyPattern pattern : updateBranchInput.getDependencyPatterns()) {
 				if (pattern.getPattern() == null || pattern.getPattern().trim().isEmpty()) {
-					throw new IllegalArgumentException("Pattern cannot be empty");
+					throw new RelizaException("Pattern cannot be empty");
 				}
 				// Validate regex pattern
 				try {
 					Pattern.compile(pattern.getPattern());
 				} catch (Exception e) {
 					log.error("Invalid regex pattern: {} - {}", pattern.getPattern(), e.getMessage());
-					throw new IllegalArgumentException("Invalid regex pattern: " + pattern.getPattern());
+					throw new RelizaException("Invalid regex pattern: " + pattern.getPattern());
 				}
 			}
 		}
@@ -213,11 +213,9 @@ public class BranchDataFetcher {
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), roList, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
-		try {
-			return branchService.updateBranch(updateBranchInput, wu);
-		} catch (RelizaException re) {
-			throw new RuntimeException(re.getMessage());
-		}
+		
+		return branchService.updateBranch(updateBranchInput, wu);
+		
 	}
 
 	@PreAuthorize("isAuthenticated()")
