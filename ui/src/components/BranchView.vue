@@ -32,6 +32,22 @@
             :show-icon="false"
             style="width: 90%"
         >
+            <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-bottom: 10px; margin-top: 10px;">
+                <n-space>
+                    <n-button type="success" @click="saveModifiedBranch">
+                        <template #icon>
+                            <vue-feather type="check" />
+                        </template>
+                        Save Changes
+                    </n-button>
+                    <n-button type="warning" @click="resetBranchSettings">
+                        <template #icon>
+                            <vue-feather type="x" />
+                        </template>
+                        Reset Changes
+                    </n-button>
+                </n-space>
+            </div>
             <div class="branchNameBlock">
                 <label id="branchNameLabel" for="branchName">{{ words.branchFirstUpper }} Name</label>
                 <n-input  v-if="isWritable" v-model:value="modifiedBranch.name" />
@@ -103,22 +119,6 @@
                 <n-select v-if="isWritable" :options="[{label: 'ENABLED', value: 'ENABLED'}, {label: 'DISABLED', value: 'DISABLED'}]" v-model:value="modifiedBranch.autoIntegrate" />
                 <n-input v-else type="text" :value="modifiedBranch.autoIntegrate" readonly/>
             </div>
-            <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-bottom: 10px; margin-top: 10px;">
-                <n-space>
-                    <n-button type="success" @click="saveModifiedBranch">
-                        <template #icon>
-                            <vue-feather type="check" />
-                        </template>
-                        Save Changes
-                    </n-button>
-                    <n-button type="warning" @click="resetBranchSettings">
-                        <template #icon>
-                            <vue-feather type="x" />
-                        </template>
-                        Reset Changes
-                    </n-button>
-                </n-space>
-            </div>
             <div class="dependencyPatternsBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT'">
                 <p>
                     <strong>Dependency Patterns </strong>
@@ -139,89 +139,92 @@
                     No dependency patterns configured. Add patterns to automatically include matching components.
                 </div>
             </div>
-            <div class="effectiveDependenciesBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT' && modifiedBranch.effectiveDependencies && modifiedBranch.effectiveDependencies.length">
+            <div class="effectiveDependenciesBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT'">
                 <p>
-                    <strong>Effective Dependencies (Preview) </strong>
+                    <strong>Dependencies </strong>
                     <n-tooltip trigger="hover">
                         <template #trigger>
                             <vue-feather type="info" size="14" style="cursor: help;" />
                         </template>
-                        Shows all dependencies including pattern-matched ones. Source indicates if dependency is manual or from a pattern.
+                        Shows all dependencies including pattern-matched and manual ones. Use the buttons below to add dependencies or configure patterns above.
                     </n-tooltip>
+                    <vue-feather v-if="isWritable" class="clickable" type="plus-circle"
+                        @click="showAddComponentModal = true" title="Add Component Dependency" />
+                    <vue-feather v-if="isWritable" class="clickable" type="folder-plus"
+                        @click="showAddComponentProductModal = true" title="Add Product Dependency" />
+                    <vue-feather v-if="isWritable && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable" type="trending-up"
+                        @click="triggerAutoIntegrate" title="Trigger Auto Integrate" />
                 </p>
-                <n-data-table :data="modifiedBranch.effectiveDependencies" :columns="effectiveDepTableFields" :row-key="(row: any) => row.component?.uuid" />
-            </div>
-            <div class="componentComponentsBlock mt-3" v-if="branchData.componentDetails.type === 'PRODUCT'">
-                <div>
-                    <p>
-                        <strong>Dependency Requirements </strong>
-                        <vue-feather v-if="isWritable" class="clickable" type="plus-circle"
-                            @click="showAddComponentModal = true" title="Add Component Dependency Requirement" />
-                        <vue-feather v-if="isWritable" class="clickable" type="folder-plus"
-                            @click="showAddComponentProductModal = true" title="Add Product Dependency Requirement" />
-                        <vue-feather v-if="false && isWritable" class="clickable" type="file-plus"
-                            @click="showAddOssArtifactModal = true" title="Register open source artifact" />
-                        <vue-feather v-if="isWritable && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable" type="trending-up"
-                            @click="triggerAutoIntegrate" title="Trigger Auto Integrate" />
-                    </p>
-                    <n-data-table :data="modifiedBranch.dependencies" :columns="depTableFields" :row-key="releaseRowkey" />
+                <div v-if="modifiedBranch.effectiveDependencies && modifiedBranch.effectiveDependencies.length">
+                    <n-data-table :data="modifiedBranch.effectiveDependencies" :columns="effectiveDepTableFields" :row-key="(row: any) => row.component?.uuid" :row-class-name="getRowClassName" />
                 </div>
-                <n-modal
-                    v-model:show="showAddComponentModal"
-                    preset="dialog"
-                    :show-icon="false"
-                    style="width: 70%"
-                >
-                    <add-component
-                                    :orgProp="branchData.org"
-                                    :addExtOrg=true
-                                    :requireBranch=true
-                                    @addedComponent="addedComponent" />
-                </n-modal>
-                <n-modal
-                    v-model:show="showAddComponentProductModal"
-                    preset="dialog"
-                    :show-icon="false"
-                    style="width: 70%"
-                >
-                    <add-component
-                                    :orgProp="branchData.org"
-                                    :addExtOrg=true
-                                    :requireBranch=true
-                                    inputType='PRODUCT'
-                                    @addedComponent="addedComponent" />
-                </n-modal>
-                <n-modal
-                    v-model:show="showEditComponentModal"
-                    preset="dialog"
-                    :show-icon="false"
-                    style="width: 90%"
-                >
-                    <add-component
-                                    :orgProp="branchData.org"
-                                    :addExtOrg=true
-                                    :inputBranch=editableDependency.editCompBranch
-                                    :inputProj=editableDependency.editCompProj
-                                    :inputStatus=editableDependency.editCompStatus
-                                    :inputRelease=editableDependency.editCompRelease
-                                    @addedComponent="editedComponent" />
-                </n-modal>
-                <n-modal
-                    v-model:show="showAddOssArtifactModal"
-                    preset="dialog"
-                    :show-icon="false"
-                    style="width: 90%"
-                >
-                    <n-form>
-                        <n-form-item
-                                    label="Artifact">
-                            <n-input v-model:value="ossArtifact"/>
-                        </n-form-item>
-                        <n-button @click="registerOssArtifact" type="success" variant="primary">Submit</n-button>
-                        <n-button @click="ossArtifact = ''" type="warning" variant="danger">Reset</n-button>
-                    </n-form>
-                </n-modal>
+                <div v-else class="empty-state">
+                    <p style="text-align: center; padding: 40px; color: #999;">
+                        <vue-feather type="package" size="48" style="opacity: 0.3; margin-bottom: 10px;" />
+                        <br />
+                        <strong>No dependencies configured</strong>
+                        <br />
+                        <span style="font-size: 0.9em;">
+                            Add dependencies using the buttons above, or configure dependency patterns to automatically match components.
+                        </span>
+                    </p>
+                </div>
             </div>
+            <n-modal
+                v-model:show="showAddComponentModal"
+                preset="dialog"
+                :show-icon="false"
+                style="width: 70%"
+            >
+                <add-component
+                                :orgProp="branchData.org"
+                                :addExtOrg=true
+                                :requireBranch=true
+                                @addedComponent="addedComponent" />
+            </n-modal>
+            <n-modal
+                v-model:show="showAddComponentProductModal"
+                preset="dialog"
+                :show-icon="false"
+                style="width: 70%"
+            >
+                <add-component
+                                :orgProp="branchData.org"
+                                :addExtOrg=true
+                                :requireBranch=true
+                                inputType='PRODUCT'
+                                @addedComponent="addedComponent" />
+            </n-modal>
+            <n-modal
+                v-model:show="showEditComponentModal"
+                preset="dialog"
+                :show-icon="false"
+                style="width: 90%"
+            >
+                <add-component
+                                :orgProp="branchData.org"
+                                :addExtOrg=true
+                                :inputBranch=editableDependency.editCompBranch
+                                :inputProj=editableDependency.editCompProj
+                                :inputStatus=editableDependency.editCompStatus
+                                :inputRelease=editableDependency.editCompRelease
+                                @addedComponent="editedComponent" />
+            </n-modal>
+            <n-modal
+                v-model:show="showAddOssArtifactModal"
+                preset="dialog"
+                :show-icon="false"
+                style="width: 90%"
+            >
+                <n-form>
+                    <n-form-item
+                                label="Artifact">
+                        <n-input v-model:value="ossArtifact"/>
+                    </n-form-item>
+                    <n-button @click="registerOssArtifact" type="success" variant="primary">Submit</n-button>
+                    <n-button @click="ossArtifact = ''" type="warning" variant="danger">Reset</n-button>
+                </n-form>
+            </n-modal>
             <div class="branchSettingsActions" v-if="hasBranchSettingsChanges && isWritable" style="margin-top: 20px;">
                 <n-space>
                     <n-button type="success" @click="saveModifiedBranch">
@@ -365,7 +368,7 @@ import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import { LayoutColumns, Filter, Copy, Trash } from '@vicons/tabler'
+import { LayoutColumns, Filter, Copy, Trash, Check } from '@vicons/tabler'
 
 async function loadApprovalMatrix (org: string, resourceGroup: string) {
     let amxResponse = await graphqlClient.query({
@@ -705,10 +708,22 @@ const saveModifiedBranch = async function () {
             modifiedBranch.value.versionSchema = customBranchVersionSchema.value
         }
         
+        // Remove dependencies marked for deletion before saving
+        if (dependenciesMarkedForDeletion.value.size > 0) {
+            modifiedBranch.value.dependencies = modifiedBranch.value.dependencies.filter(
+                (d: any) => !dependenciesMarkedForDeletion.value.has(d.uuid)
+            )
+        }
+        
         const storeResp = await store.dispatch('updateBranch', modifiedBranch.value)
         modifiedBranch.value = commonFunctions.deepCopy(storeResp)
         customBranchVersionSchema.value = ''
         selectNewVcsRepo.value = false
+        // Clear deletion marks and newly added marks after successful save
+        dependenciesMarkedForDeletion.value.clear()
+        newlyAddedDependencies.value.clear()
+        // Exit edit mode after saving
+        cancelEdit()
     } catch (err) {
         notify('error', 'Error Saving Branch', String(err))
     }
@@ -721,6 +736,13 @@ const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
     const patternsChanged = JSON.stringify(modifiedBranch.value.dependencyPatterns || []) !== 
         JSON.stringify(branchData.value.dependencyPatterns || [])
     
+    // Check dependencies changes
+    const dependenciesChanged = JSON.stringify(modifiedBranch.value.dependencies || []) !== 
+        JSON.stringify(branchData.value.dependencies || [])
+    
+    // Check if any dependencies are marked for deletion
+    const hasDeletionMarks = dependenciesMarkedForDeletion.value.size > 0
+    
     return modifiedBranch.value.name !== branchData.value.name ||
         modifiedBranch.value.versionSchema !== branchData.value.versionSchema ||
         modifiedBranch.value.marketingVersionSchema !== branchData.value.marketingVersionSchema ||
@@ -729,7 +751,9 @@ const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         modifiedBranch.value.vcs !== branchData.value.vcs ||
         modifiedBranch.value.vcsBranch !== branchData.value.vcsBranch ||
         modifiedBranch.value.autoIntegrate !== branchData.value.autoIntegrate ||
-        patternsChanged
+        patternsChanged ||
+        dependenciesChanged ||
+        hasDeletionMarks
 })
 
 function resetBranchSettings() {
@@ -743,7 +767,14 @@ function resetBranchSettings() {
     modifiedBranch.value.vcsBranch = branchData.value.vcsBranch
     modifiedBranch.value.autoIntegrate = branchData.value.autoIntegrate
     modifiedBranch.value.dependencyPatterns = commonFunctions.deepCopy(branchData.value.dependencyPatterns || [])
+    modifiedBranch.value.dependencies = commonFunctions.deepCopy(branchData.value.dependencies || [])
+    modifiedBranch.value.effectiveDependencies = commonFunctions.deepCopy(branchData.value.effectiveDependencies || [])
     selectNewVcsRepo.value = false
+    // Clear deletion marks and newly added marks
+    dependenciesMarkedForDeletion.value.clear()
+    newlyAddedDependencies.value.clear()
+    // Exit edit mode after resetting
+    cancelEdit()
 }
 
 const vcsRepos: Ref<any[]> = ref([])
@@ -753,7 +784,12 @@ const releaseTagKeys: Ref<any[]> = ref([])
 const editingRow: Ref<string | null> = ref(null)
 const editingStatus: Ref<string> = ref('')
 const editingBranch: Ref<string> = ref('')
+const editingRelease: Ref<string> = ref('')
+const editingFollowVersion: Ref<boolean> = ref(false)
 const componentBranches: Ref<any[]> = ref([])
+const branchReleases: Ref<any[]> = ref([])
+const dependenciesMarkedForDeletion: Ref<Set<string>> = ref(new Set())
+const newlyAddedDependencies: Ref<Set<string>> = ref(new Set())
 
 const fetchVcsRepos = async function () : Promise<any[]> {
     let fetchedRepos = store.getters.vcsReposOfOrg(branchData.value.org)
@@ -795,21 +831,115 @@ const fetchComponentBranches = async function (componentUuid: string) {
     }
 }
 
-const addedComponent = function (component: any) {
-    // check if component already exists
-    let exists = false
-    if (component.branch) {
-        const exdep = modifiedBranch.value.dependencies.filter((d: any) => (d.branch === component.branch))
-        exists = exdep.length
-    } else {
-        const exdep = modifiedBranch.value.dependencies.filter((d: any) => (d.uuid === component.uuid))
-        exists = exdep.length
+const fetchBranchReleases = async function (branchUuid: string) {
+    // Guard against null or empty branchUuid
+    if (!branchUuid) {
+        branchReleases.value = []
+        return
     }
-    if (exists) {
-        notify('warning', 'Cannot Add Component', 'Component Already Exists')
-    } else {
+    
+    try {
+        // Check if releases are already in store
+        let releases = store.getters.releasesOfBranch(branchUuid)
+        if (!releases || !releases.length) {
+            // Fetch releases from server - pass as object with branch property
+            await store.dispatch('fetchReleases', { branch: branchUuid })
+            releases = store.getters.releasesOfBranch(branchUuid)
+        }
+        // Sort releases by creation date (newest first)
+        branchReleases.value = releases
+            .filter((r: any) => r.status !== 'ARCHIVED')
+            .sort((a: any, b: any) => {
+                return new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime()
+            })
+    } catch (error) {
+        console.error('Error fetching branch releases:', error)
+        notify('error', 'Error', 'Failed to fetch branch releases')
+        branchReleases.value = []
+    }
+}
+
+const addedComponent = function (component: any) {
+    console.log('addedComponent called with:', component)
+    
+    try {
+        // check if component already exists
+        let exists = false
+        if (component.branch) {
+            const exdep = modifiedBranch.value.dependencies.filter((d: any) => (d.branch === component.branch))
+            exists = exdep.length
+        } else {
+            const exdep = modifiedBranch.value.dependencies.filter((d: any) => (d.uuid === component.uuid))
+            exists = exdep.length
+        }
+        if (exists) {
+            notify('warning', 'Cannot Add Component', 'Component Already Exists')
+            showAddComponentModal.value = false
+            showAddComponentProductModal.value = false
+            return
+        }
+        
+        // Stage the new dependency instead of immediately saving
         modifiedBranch.value.dependencies.push(component)
-        saveModifiedBranch()
+        
+        // Mark as newly added for visual indication
+        newlyAddedDependencies.value.add(component.uuid)
+        
+        // Also add to effectiveDependencies for immediate display
+        if (!modifiedBranch.value.effectiveDependencies) {
+            modifiedBranch.value.effectiveDependencies = []
+        }
+        
+        // Get component and branch details from store
+        // The AddComponent modal dispatches fetchBranches and fetchReleases, so data should be in store
+        // Access components directly from state since there's no componentByUuid getter
+        let componentDetails = store.state.components.find((c: any) => c.uuid === component.uuid)
+        let branchDetails = component.branch ? store.getters.branchById(component.branch) : null
+        let releaseDetails = component.release ? store.state.releases.find((r: any) => r.uuid === component.release) : null
+        
+        console.log('Component details from store:', componentDetails)
+        console.log('Branch details from store:', branchDetails)
+        console.log('Release details from store:', releaseDetails)
+        
+        // If component not in store, we'll need to fetch it or use minimal info
+        if (!componentDetails) {
+            console.warn('Component not found in store, will fetch after save:', component.uuid)
+            // Create minimal component object - will be properly populated after save/refresh
+            componentDetails = {
+                uuid: component.uuid,
+                name: 'Loading...',
+                type: 'COMPONENT'
+            }
+        }
+        
+        // If branch not in store, create minimal object
+        if (component.branch && !branchDetails) {
+            console.warn('Branch not found in store:', component.branch)
+            branchDetails = {
+                uuid: component.branch,
+                name: 'Loading...',
+                type: 'BRANCH'
+            }
+        }
+        
+        modifiedBranch.value.effectiveDependencies.push({
+            component: componentDetails,
+            branch: branchDetails,
+            status: component.status || 'REQUIRED',
+            release: component.release || null,
+            releaseDetails: releaseDetails,
+            isFollowVersion: component.isFollowVersion || false,
+            source: 'MANUAL'
+        })
+        
+        console.log('Added to effectiveDependencies:', modifiedBranch.value.effectiveDependencies[modifiedBranch.value.effectiveDependencies.length - 1])
+        
+        notify('success', 'Dependency Added', 'Click Save Changes to persist this dependency')
+    } catch (error) {
+        console.error('Error in addedComponent:', error)
+        notify('error', 'Error', 'Failed to add dependency: ' + String(error))
+    } finally {
+        // Always close modals
         showAddComponentModal.value = false
         showAddComponentProductModal.value = false
     }
@@ -831,12 +961,9 @@ const editDependency = function (component: string, branch: string, status: stri
 }
 
 const deleteDependency = function (component: string, branch: string) {
-    if (branch) {
-        modifiedBranch.value.dependencies = modifiedBranch.value.dependencies.filter((p: any) => (p.branch !== branch))
-        saveModifiedBranch()
-    } else if (component) {
-        modifiedBranch.value.dependencies = modifiedBranch.value.dependencies.filter((p: any) => (p.uuid !== component))
-        saveModifiedBranch()
+    // Mark dependency for deletion instead of immediately deleting
+    if (component) {
+        dependenciesMarkedForDeletion.value.add(component)
     }
 }
 
@@ -979,11 +1106,36 @@ const previewTableFields: DataTableColumns<any> = [
     }
 ]
 
+const getRowClassName = (row: any) => {
+    const isMarkedForDeletion = dependenciesMarkedForDeletion.value.has(row.component?.uuid)
+    const isNewlyAdded = newlyAddedDependencies.value.has(row.component?.uuid)
+    
+    if (isMarkedForDeletion) return 'marked-for-deletion'
+    if (isNewlyAdded) return 'newly-added'
+    return ''
+}
+
 const effectiveDepTableFields: DataTableColumns<any> = [
     {
         title: 'Component',
         key: 'component',
-        render: (row: any) => row.component?.name || 'Unknown'
+        render: (row: any) => {
+            const isNewlyAdded = newlyAddedDependencies.value.has(row.component?.uuid)
+            const name = row.component?.name || 'Unknown'
+            
+            if (isNewlyAdded) {
+                return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+                    h('span', name),
+                    h(NTag, { 
+                        type: 'success', 
+                        size: 'small',
+                        style: 'font-weight: bold;'
+                    }, { default: () => 'NEW' })
+                ])
+            }
+            
+            return name
+        }
     },
     {
         title: 'Branch',
@@ -1000,7 +1152,19 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                 
                 return h(NSelectComponent, {
                     value: editingBranch.value,
-                    'onUpdate:value': (value: string) => { editingBranch.value = value },
+                    'onUpdate:value': async (value: string) => { 
+                        editingBranch.value = value
+                        // Fetch releases for the newly selected branch
+                        if (value) {
+                            await fetchBranchReleases(value)
+                        } else {
+                            branchReleases.value = []
+                        }
+                        // Reset release selection when branch changes
+                        editingRelease.value = ''
+                        // Apply changes immediately to trigger save button
+                        applyEditSilent(row)
+                    },
                     options: branchOptions,
                     size: 'small',
                     placeholder: 'Select branch'
@@ -1017,6 +1181,74 @@ const effectiveDepTableFields: DataTableColumns<any> = [
         }
     },
     {
+        title: 'Release',
+        key: 'release',
+        render: (row: any) => {
+            const isEditing = editingRow.value === row.component?.uuid
+            const isExcluded = row.status === 'IGNORED'
+            
+            if (isEditing) {
+                // Show release selection dropdown with "None" option
+                const releaseOptions = [
+                    { label: 'None', value: '' },
+                    ...branchReleases.value.map((r: any) => ({
+                        label: r.version,
+                        value: r.uuid
+                    }))
+                ]
+                
+                return h(NSelectComponent, {
+                    value: editingRelease.value,
+                    'onUpdate:value': (value: string) => { 
+                        editingRelease.value = value
+                        // Apply changes immediately to trigger save button
+                        applyEditSilent(row)
+                    },
+                    options: releaseOptions,
+                    size: 'small',
+                    placeholder: 'Select release',
+                    clearable: true
+                })
+            }
+            
+            // Get version directly from the row data
+            const version = row.releaseDetails?.version || 'Not Set'
+            
+            return h('span', { 
+                style: isExcluded ? 'opacity: 0.5' : ''
+            }, version)
+        }
+    },
+    {
+        title: 'Follow Version',
+        key: 'isFollowVersion',
+        render: (row: any) => {
+            const isEditing = editingRow.value === row.component?.uuid
+            const isExcluded = row.status === 'IGNORED'
+            
+            if (isEditing) {
+                return h(NCheckbox, {
+                    checked: editingFollowVersion.value,
+                    'onUpdate:checked': (value: boolean) => { 
+                        editingFollowVersion.value = value
+                        // Apply changes immediately to trigger save button
+                        applyEditSilent(row)
+                    },
+                    title: 'Following Dependency Version If Checked',
+                    size: 'large'
+                })
+            }
+            
+            return h(NCheckbox, {
+                checked: row.isFollowVersion || false,
+                disabled: true,
+                title: 'Following Dependency Version If Checked',
+                size: 'large',
+                style: isExcluded ? 'opacity: 0.5' : ''
+            })
+        }
+    },
+    {
         title: 'Status',
         key: 'status',
         render: (row: any) => {
@@ -1026,7 +1258,11 @@ const effectiveDepTableFields: DataTableColumns<any> = [
             if (isEditing) {
                 return h(NSelectComponent, {
                     value: editingStatus.value,
-                    'onUpdate:value': (value: string) => { editingStatus.value = value },
+                    'onUpdate:value': (value: string) => { 
+                        editingStatus.value = value
+                        // Apply changes immediately to trigger save button
+                        applyEditSilent(row)
+                    },
                     options: [
                         { label: 'Required', value: 'REQUIRED' },
                         { label: 'Ignored', value: 'IGNORED' },
@@ -1058,7 +1294,7 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                 type: color, 
                 size: 'small',
                 style: isExcluded ? 'opacity: 0.5' : ''
-            }, { default: () => label })
+            }, () => label)
         }
     },
     {
@@ -1066,7 +1302,7 @@ const effectiveDepTableFields: DataTableColumns<any> = [
         key: 'source',
         render: (row: any) => {
             const color = row.source === 'MANUAL' ? 'info' : 'success'
-            return h(NTag, { type: color, size: 'small' }, { default: () => row.source })
+            return h(NTag, { type: color, size: 'small' }, () => row.source)
         }
     },
     {
@@ -1074,49 +1310,107 @@ const effectiveDepTableFields: DataTableColumns<any> = [
         key: 'actions',
         width: 120,
         render: (row: any) => {
-            // Only show actions for pattern-sourced dependencies
-            if (row.source !== 'PATTERN') {
-                return null
-            }
-            
             // Check if this row is being edited
             const isEditing = editingRow.value === row.component?.uuid
             const isExcluded = row.status === 'IGNORED'
             
             if (isEditing) {
-                return h('div', { class: 'flex gap-1' }, [
-                    h(NButton, {
-                        size: 'small',
-                        type: 'primary',
-                        onClick: () => saveOverride(row)
-                    }, { default: () => 'Save' }),
-                    h(NButton, {
-                        size: 'small',
-                        onClick: () => cancelEdit()
-                    }, { default: () => 'Cancel' })
-                ])
+                return h(NButton, {
+                    size: 'small',
+                    quaternary: true,
+                    onClick: () => cancelEdit()
+                }, { default: () => h(NIcon, { component: X }) })
             }
             
-            return h('div', { class: 'flex gap-1 items-center' }, [
+            const buttons = [
                 // Edit button
                 h(NButton, {
                     size: 'small',
                     quaternary: true,
                     onClick: () => startEdit(row)
                 }, { default: () => h(NIcon, { component: Edit }) })
-            ])
+            ]
+            
+            // Remove/Delete button - only for manual dependencies
+            if (row.source === 'MANUAL') {
+                const isNewlyAdded = newlyAddedDependencies.value.has(row.component?.uuid)
+                const isMarkedForDeletion = dependenciesMarkedForDeletion.value.has(row.component?.uuid)
+                
+                if (isNewlyAdded) {
+                    // Show X icon for newly added (not yet persisted) - removes immediately
+                    buttons.push(
+                        h(NButton, {
+                            size: 'small',
+                            quaternary: true,
+                            onClick: () => {
+                                // Remove from dependencies
+                                modifiedBranch.value.dependencies = modifiedBranch.value.dependencies.filter(
+                                    (d: any) => d.uuid !== row.component?.uuid
+                                )
+                                // Remove from effectiveDependencies
+                                modifiedBranch.value.effectiveDependencies = modifiedBranch.value.effectiveDependencies.filter(
+                                    (d: any) => d.component?.uuid !== row.component?.uuid
+                                )
+                                // Remove from newly added set
+                                newlyAddedDependencies.value.delete(row.component?.uuid)
+                            },
+                            title: 'Remove unsaved dependency'
+                        }, { default: () => h(NIcon, { component: X }) })
+                    )
+                } else if (isMarkedForDeletion) {
+                    // Show undo button if marked for deletion
+                    buttons.push(
+                        h(NButton, {
+                            size: 'small',
+                            quaternary: true,
+                            onClick: () => dependenciesMarkedForDeletion.value.delete(row.component?.uuid),
+                            title: 'Undo deletion'
+                        }, { default: () => 'Undo' })
+                    )
+                } else {
+                    // Show delete button for persisted dependencies
+                    buttons.push(
+                        h(NButton, {
+                            size: 'small',
+                            quaternary: true,
+                            onClick: () => deleteDependency(row.component?.uuid, row.branch?.uuid),
+                            title: 'Mark for deletion'
+                        }, { default: () => h(NIcon, { component: Trash }) })
+                    )
+                }
+            }
+            
+            return h('div', { class: 'flex gap-1 items-center' }, buttons)
         }
     }
 ]
 
 const startEdit = async function(row: any) {
+    // If already editing another row, apply those changes first
+    if (editingRow.value && editingRow.value !== row.component?.uuid) {
+        // Find the row being edited and apply changes
+        const editedRow = modifiedBranch.value.effectiveDependencies?.find(
+            (dep: any) => dep.component?.uuid === editingRow.value
+        )
+        if (editedRow) {
+            applyEdit(editedRow)
+        }
+    }
+    
     editingRow.value = row.component?.uuid
     editingStatus.value = row.status
     editingBranch.value = row.branch?.uuid || ''
+    editingRelease.value = row.releaseDetails?.uuid || row.release?.uuid || ''
+    editingFollowVersion.value = row.isFollowVersion || false
     
     // Fetch branches for this component
     if (row.component?.uuid) {
         await fetchComponentBranches(row.component.uuid)
+    }
+    
+    // Fetch releases for the selected branch only if branch is set
+    if (editingBranch.value) {
+        await fetchBranchReleases(editingBranch.value)
     }
 }
 
@@ -1124,20 +1418,33 @@ const cancelEdit = function() {
     editingRow.value = null
     editingStatus.value = ''
     editingBranch.value = ''
+    editingRelease.value = ''
+    editingFollowVersion.value = false
     componentBranches.value = []
+    branchReleases.value = []
 }
 
-const saveOverride = function(row: any) {
-    // When editing a pattern-matched dependency, convert it to a manual dependency
+const applyEditSilent = function(row: any) {
+    // Apply changes without exiting edit mode
     // Check if this dependency already exists in manual dependencies
     const existingIndex = modifiedBranch.value.dependencies.findIndex(
         (d: any) => d.uuid === row.component.uuid
     )
     
+    // Enforce rule: only one dependency can have isFollowVersion=true
+    if (editingFollowVersion.value) {
+        // Clear isFollowVersion from all other dependencies
+        modifiedBranch.value.dependencies.forEach((d: any) => {
+            d.isFollowVersion = false
+        })
+    }
+    
     const manualDep: any = {
         uuid: row.component.uuid,
         branch: editingBranch.value || row.branch?.uuid,
-        status: editingStatus.value
+        status: editingStatus.value,
+        release: editingRelease.value || null,
+        isFollowVersion: editingFollowVersion.value
     }
     
     if (existingIndex >= 0) {
@@ -1148,8 +1455,52 @@ const saveOverride = function(row: any) {
         modifiedBranch.value.dependencies.push(manualDep)
     }
     
-    saveModifiedBranch()
-    cancelEdit()
+    // Also update the effectiveDependencies row so the table reflects changes immediately
+    const effectiveDepIndex = modifiedBranch.value.effectiveDependencies?.findIndex(
+        (d: any) => d.component?.uuid === row.component.uuid
+    )
+    if (effectiveDepIndex >= 0 && modifiedBranch.value.effectiveDependencies) {
+        // Update the effective dependency with the new values
+        modifiedBranch.value.effectiveDependencies[effectiveDepIndex].status = editingStatus.value
+        modifiedBranch.value.effectiveDependencies[effectiveDepIndex].isFollowVersion = editingFollowVersion.value
+        
+        // Update branch reference if changed
+        if (editingBranch.value && editingBranch.value !== row.branch?.uuid) {
+            const newBranch = componentBranches.value.find((b: any) => b.uuid === editingBranch.value)
+            if (newBranch) {
+                modifiedBranch.value.effectiveDependencies[effectiveDepIndex].branch = newBranch
+            }
+        }
+        
+        // Update release reference if changed
+        if (editingRelease.value) {
+            const newRelease = branchReleases.value.find((r: any) => r.uuid === editingRelease.value)
+            if (newRelease) {
+                modifiedBranch.value.effectiveDependencies[effectiveDepIndex].releaseDetails = newRelease
+            }
+        } else {
+            modifiedBranch.value.effectiveDependencies[effectiveDepIndex].releaseDetails = null
+        }
+        
+        // Update source to MANUAL since it's now a manual override
+        modifiedBranch.value.effectiveDependencies[effectiveDepIndex].source = 'MANUAL'
+    }
+    
+    // Don't clear editing state - stay in edit mode
+}
+
+const applyEdit = function(row: any) {
+    // Apply changes and exit edit mode
+    applyEditSilent(row)
+    
+    // Clear editing state
+    editingRow.value = null
+    editingStatus.value = ''
+    editingBranch.value = ''
+    editingRelease.value = ''
+    editingFollowVersion.value = false
+    componentBranches.value = []
+    branchReleases.value = []
 }
 
 const previewPattern = async function(pattern: any) {
@@ -1642,6 +1993,19 @@ onCreated()
     padding: 15px;
     background-color: #f5f5f5;
     border-radius: 8px;
+}
+
+:deep(.marked-for-deletion) {
+    text-decoration: line-through;
+    opacity: 0.5;
+    color: #d03050 !important;
+}
+
+:deep(.newly-added) {
+    background-color: #e8f5e9 !important;
+    font-style: italic;
+    border-left: 4px solid #4caf50 !important;
+    box-shadow: inset 0 0 0 1px #c8e6c9 !important;
 }
 .versionSchemaBlock, .versionMetadataBlock, .branchNameBlock, .branchTypeBlock {
     padding-bottom: 25px;

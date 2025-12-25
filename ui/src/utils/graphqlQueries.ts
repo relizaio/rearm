@@ -837,6 +837,11 @@ const BRANCH_GQL_DATA = `
         }
         status
         source
+        releaseDetails {
+            uuid
+            version
+        }
+        isFollowVersion
     }
     vcsRepositoryDetails {
         uuid
