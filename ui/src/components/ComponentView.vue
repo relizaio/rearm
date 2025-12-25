@@ -50,7 +50,7 @@
                         <div class="componentIconsAndSettings">
                             <n-space v-cloak>
                                 <vue-feather v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
-                                <vue-feather v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="fetchApprovalPolicies(); showComponentSettingsModal = true" type="tool" />
+                                <vue-feather v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="openComponentSettings" type="tool" />
                                 <!-- vue-feather v-if="componentData"
                                     @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" / -->
                                 <vue-feather v-if="words.componentFirstUpper" type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
@@ -136,6 +136,7 @@
                                 preset="dialog"
                                 :show-icon="false"
                                 style="width: 90%"
+                                :on-after-leave="closeComponentSettings"
                             >
                                 <h3>{{ words.componentFirstUpper }} Settings for {{ componentData?.name }}</h3>
                                 <n-tabs
@@ -696,6 +697,11 @@ const showComponentAnalyticsModal : Ref<boolean> = ref(false)
 const showComponentChangelogModal : Ref<boolean> = ref(false)
 const showAddBranchModal : Ref<boolean> = ref(false)
 const showComponentSettingsModal: Ref<boolean> = ref(false)
+
+// Initialize component settings modal from URL query parameter
+if (route.query.componentSettingsView === 'true') {
+    showComponentSettingsModal.value = true
+}
 const showCreateOutputTriggerModal: Ref<boolean> = ref(false)
 const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
@@ -739,6 +745,26 @@ async function fetchApprovalPolicies () {
             }
         })
     }
+}
+
+const openComponentSettings = async function() {
+    await fetchApprovalPolicies()
+    showComponentSettingsModal.value = true
+    
+    // Update router query parameter
+    await router.push({
+        query: { ...route.query, componentSettingsView: 'true' }
+    })
+}
+
+const closeComponentSettings = async function() {
+    showComponentSettingsModal.value = false
+    
+    // Remove componentSettingsView query parameter from URL
+    const { componentSettingsView, ...queryWithoutSettings } = route.query
+    await router.push({
+        query: queryWithoutSettings
+    })
 }
 
 // Perspectives management

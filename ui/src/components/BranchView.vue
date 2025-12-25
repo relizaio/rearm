@@ -4,7 +4,7 @@
         <div class="branchControls">
             <div class="mainControls">
                 <vue-feather v-if="isWritable" @click="showCreateReleaseModal = true" class="clickable" type="plus-circle" title="Add Release" />
-                <vue-feather type="tool" @click="showBranchSettingsModal = true" class="icons clickable" :title="words.branchFirstUpper + ' Settings'" />
+                <vue-feather type="tool" @click="openBranchSettings" class="icons clickable" :title="words.branchFirstUpper + ' Settings'" />
                 <vue-feather type="arrow-right-circle" @click="openNextVersionModal" class="icons clickable" title='Set Next Version' />
             </div>
             <div class="dangerControls">
@@ -31,8 +31,9 @@
             preset="dialog"
             :show-icon="false"
             style="width: 90%"
+            :on-after-leave="closeBranchSettings"
         >
-            <h3>{{ words.branchFirstUpper }} Settings for {{ branchData.name }}</h3>
+            <h3>{{ words.branchFirstUpper }} Settings for {{ branchData.name }} of {{ branchData.componentDetails.name }}</h3>
             <div class="branchNameBlock">
                 <label id="branchNameLabel" for="branchName">{{ words.branchFirstUpper }} Name</label>
                 <n-input  v-if="isWritable" v-model:value="modifiedBranch.name" />
@@ -437,6 +438,11 @@ const prNumber: Ref<string> = ref(props.prnumberprop ? props.prnumberprop.toStri
 const isLinkVcsRepo = ref(false)
 
 const showBranchSettingsModal: Ref<boolean> = ref(false)
+
+// Initialize branch settings modal from URL query parameter
+if (route.query.branchSettingsView === 'true') {
+    showBranchSettingsModal.value = true
+}
 const showSetNextVersionModal: Ref<boolean> = ref(false)
 const showAddComponentModal: Ref<boolean> = ref(false)
 const showAddComponentProductModal: Ref<boolean> = ref(false)
@@ -586,6 +592,25 @@ async function triggerAutoIntegrate () {
     notify('success', 'Success', 'Auto Integrate Triggered')
     await onCreated()
     showBranchSettingsModal.value = false
+}
+
+const openBranchSettings = async function() {
+    showBranchSettingsModal.value = true
+    
+    // Update router query parameter
+    await router.push({
+        query: { ...route.query, branchSettingsView: 'true' }
+    })
+}
+
+const closeBranchSettings = async function() {
+    showBranchSettingsModal.value = false
+    
+    // Remove branchSettingsView query parameter from URL
+    const { branchSettingsView, ...queryWithoutSettings } = route.query
+    await router.push({
+        query: queryWithoutSettings
+    })
 }
 
 const approvalMatrix = ref({})
