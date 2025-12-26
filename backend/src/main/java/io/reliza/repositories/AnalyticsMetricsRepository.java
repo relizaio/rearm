@@ -67,12 +67,12 @@ public interface AnalyticsMetricsRepository extends CrudRepository<AnalyticsMetr
 			value = VariableQueries.ANALYTICS_COMPONENTS_WITH_MOST_RELEASES_BY_PRODUCT,
 			nativeQuery = true)
 	List<Object[]> analyticsComponentsWithMostReleasesByProduct(ZonedDateTime cutOffDate, String compType,
-			Integer maxComponents, String organization, String productUuidAsString);
+			Integer maxComponents, String organization, List<UUID> componentUuids);
 	
 	@Query(
 			value = VariableQueries.ANALYTICS_BRANCHES_WITH_MOST_RELEASES_BY_PRODUCT,
 			nativeQuery = true)
 	List<Object[]> analyticsBranchesWithMostReleasesByProduct(ZonedDateTime cutOffDate, String compType,
-			Integer maxBranches, String organization, String productUuidAsString);
+			Integer maxBranches, String organization, List<UUID> componentUuids);
 	
 }

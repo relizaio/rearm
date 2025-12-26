@@ -923,7 +923,7 @@ class VariableQueries {
 				FROM rearm.components comp, release_stats rs WHERE comp.uuid::text = rs.uuid
 				AND (comp.record_data->>'status' IS NULL OR comp.record_data->>'status' = 'ACTIVE')
 				AND comp.record_data->>'type' = :compType
-				AND comp.record_data->>'parent' = :productUuidAsString
+				AND comp.uuid IN (:componentUuids)
 				ORDER by rlzcount desc limit :maxComponents
 			""";
 	
@@ -939,7 +939,7 @@ class VariableQueries {
 			    AND comp.uuid::text = branch.record_data->>'component'
 				AND (comp.record_data->>'status' IS NULL OR comp.record_data->>'status' = 'ACTIVE')
 				AND comp.record_data->>'type' = :compType
-				AND comp.record_data->>'parent' = :productUuidAsString
+				AND comp.uuid IN (:componentUuids)
 				ORDER by rlzcount desc limit :maxBranches
 			""";
 	

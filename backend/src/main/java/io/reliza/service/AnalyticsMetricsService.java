@@ -472,8 +472,15 @@ public class AnalyticsMetricsService {
 	public List<ReleasesPerComponent> analyticsComponentsWithMostRecentReleasesByProduct (ZonedDateTime cutOffDate,
 			ComponentType compType, Integer maxComponents, UUID organization, UUID productUuid) {
 		List<ReleasesPerComponent> res = new ArrayList<>();
+		
+		// Get all component UUIDs that belong to this product (including nested components)
+		Set<UUID> allComponentUuids = new java.util.LinkedHashSet<>();
+		allComponentUuids.add(productUuid);
+		Set<UUID> productComponents = sharedReleaseService.obtainComponentsOfProductOrComponent(productUuid, allComponentUuids);
+		allComponentUuids.addAll(productComponents);
+		
 		var objList = repository.analyticsComponentsWithMostReleasesByProduct(cutOffDate, compType.name(),
-				maxComponents, organization.toString(), productUuid.toString());
+				maxComponents, organization.toString(), new ArrayList<>(allComponentUuids));
 		if (null != objList && !objList.isEmpty()) {
 			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerComponent).toList();
 		}
@@ -483,8 +490,15 @@ public class AnalyticsMetricsService {
 	public List<ReleasesPerBranch> analyticsBranchesWithMostRecentReleasesByProduct (ZonedDateTime cutOffDate,
 			ComponentType compType, Integer maxBranches, UUID organization, UUID productUuid) {
 		List<ReleasesPerBranch> res = new ArrayList<>();
+		
+		// Get all component UUIDs that belong to this product (including nested components)
+		Set<UUID> allComponentUuids = new java.util.LinkedHashSet<>();
+		allComponentUuids.add(productUuid);
+		Set<UUID> productComponents = sharedReleaseService.obtainComponentsOfProductOrComponent(productUuid, allComponentUuids);
+		allComponentUuids.addAll(productComponents);
+		
 		var objList = repository.analyticsBranchesWithMostReleasesByProduct(cutOffDate, compType.name(),
-				maxBranches, organization.toString(), productUuid.toString());
+				maxBranches, organization.toString(), new ArrayList<>(allComponentUuids));
 		if (null != objList && !objList.isEmpty()) {
 			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerBranch).toList();
 		}
