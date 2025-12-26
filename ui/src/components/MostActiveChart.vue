@@ -143,7 +143,8 @@ async function fetchActiveBranchesAnalytics() {
             }`,
         variables: { 
             activeComponentsInput: parsedActiveComponentsInput
-        }
+        },
+        fetchPolicy: 'no-cache'
     })
     if (response && response.data) {
         mostActiveOverTime.value.data.values = []
@@ -179,7 +180,8 @@ async function fetchActiveBranchesAnalyticsByPerspective() {
         variables: { 
             activeComponentsInput: parsedActiveComponentsInput,
             perspectiveUuid: props.perspectiveUuid
-        }
+        },
+        fetchPolicy: 'no-cache'
     })
     if (response && response.data) {
         mostActiveOverTime.value.data.values = []
@@ -212,7 +214,8 @@ async function fetchActiveComponentsAnalytics() {
             }`,
         variables: { 
             activeComponentsInput: parsedActiveComponentsInput
-        }
+        },
+        fetchPolicy: 'no-cache'
     })
     if (response && response.data) {
         mostActiveOverTime.value.data.values = []
@@ -237,7 +240,8 @@ async function fetchActiveComponentsAnalyticsByPerspective() {
         variables: { 
             activeComponentsInput: parsedActiveComponentsInput,
             perspectiveUuid: props.perspectiveUuid
-        }
+        },
+        fetchPolicy: 'no-cache'
     })
     if (response && response.data) {
         mostActiveOverTime.value.data.values = []
