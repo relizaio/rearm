@@ -5,6 +5,7 @@
         :show-icon="false"
         :title="`Releases Affected by ${cveId}`"
         style="width: 95%; max-width: 1400px;"
+        :auto-focus="false"
     >
         <n-spin :show="loading">
             <n-data-table
