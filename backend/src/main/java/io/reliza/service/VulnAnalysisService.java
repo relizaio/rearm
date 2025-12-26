@@ -151,6 +151,71 @@ public class VulnAnalysisService {
 	}
 	
 	/**
+	 * Find all vulnerability analyses affecting a component
+	 * Includes: component-scoped analyses and org-wide analyses
+	 */
+	public List<VulnAnalysisData> findAllVulnAnalysisAffectingComponent(UUID componentUuid) throws RelizaException {
+		Optional<ComponentData> componentData = getComponentService.getComponentData(componentUuid);
+		if (componentData.isEmpty()) {
+			throw new RelizaException("Component not found: " + componentUuid);
+		}
+		
+		UUID org = componentData.get().getOrg();
+		List<VulnAnalysis> analyses = vulnAnalysisRepository.findAffectingComponent(
+				org.toString(), componentUuid.toString());
+		return analyses.stream()
+				.map(VulnAnalysisData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+	
+	/**
+	 * Find all vulnerability analyses affecting a branch
+	 * Includes: branch-scoped, component-scoped (parent), and org-wide analyses
+	 */
+	public List<VulnAnalysisData> findAllVulnAnalysisAffectingBranch(UUID branchUuid) throws RelizaException {
+		Optional<BranchData> branchData = branchService.getBranchData(branchUuid);
+		if (branchData.isEmpty()) {
+			throw new RelizaException("Branch not found: " + branchUuid);
+		}
+		
+		UUID org = branchData.get().getOrg();
+		UUID componentUuid = branchData.get().getComponent();
+		
+		List<VulnAnalysis> analyses = vulnAnalysisRepository.findAffectingBranch(
+				org.toString(), branchUuid.toString(), componentUuid.toString());
+		return analyses.stream()
+				.map(VulnAnalysisData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+	
+	/**
+	 * Find all vulnerability analyses affecting a release
+	 * Includes: release-scoped, branch-scoped (parent), component-scoped (parent), and org-wide analyses
+	 */
+	public List<VulnAnalysisData> findAllVulnAnalysisAffectingRelease(UUID releaseUuid) throws RelizaException {
+		Optional<ReleaseData> releaseData = sharedReleaseService.getReleaseData(releaseUuid, null);
+		if (releaseData.isEmpty()) {
+			throw new RelizaException("Release not found: " + releaseUuid);
+		}
+		
+		UUID org = releaseData.get().getOrg();
+		UUID branchUuid = releaseData.get().getBranch();
+		
+		// Get component from branch
+		Optional<BranchData> branchData = branchService.getBranchData(branchUuid);
+		if (branchData.isEmpty()) {
+			throw new RelizaException("Branch not found for release: " + branchUuid);
+		}
+		UUID componentUuid = branchData.get().getComponent();
+		
+		List<VulnAnalysis> analyses = vulnAnalysisRepository.findAffectingRelease(
+				org.toString(), releaseUuid.toString(), branchUuid.toString(), componentUuid.toString());
+		return analyses.stream()
+				.map(VulnAnalysisData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+	
+	/**
 	 * Internal save method with audit logging and revision increment
 	 */
 	@Transactional
@@ -178,6 +243,56 @@ public class VulnAnalysisService {
 	}
 	
 	/**
+	 * Record to hold the scope hierarchy (release, branch, component)
+	 */
+	private record ScopeHierarchy(UUID release, UUID branch, UUID component) {}
+	
+	/**
+	 * Helper method to populate release, branch, and component UUIDs based on scope
+	 */
+	private ScopeHierarchy populateScopeHierarchy(UUID scopeUuid, AnalysisScope scope) throws RelizaException {
+		UUID release = null;
+		UUID branch = null;
+		UUID component = null;
+		
+		switch (scope) {
+			case RELEASE:
+				// For RELEASE scope: populate all three fields
+				Optional<ReleaseData> releaseData = sharedReleaseService.getReleaseData(scopeUuid);
+				if (releaseData.isPresent()) {
+					release = releaseData.get().getUuid();
+					branch = releaseData.get().getBranch();
+					// Get component from branch
+					Optional<BranchData> branchData = branchService.getBranchData(branch);
+					if (branchData.isPresent()) {
+						component = branchData.get().getComponent();
+					}
+				}
+				break;
+				
+			case BRANCH:
+				// For BRANCH scope: populate branch and component
+				Optional<BranchData> branchData = branchService.getBranchData(scopeUuid);
+				if (branchData.isPresent()) {
+					branch = branchData.get().getUuid();
+					component = branchData.get().getComponent();
+				}
+				break;
+				
+			case COMPONENT:
+				// For COMPONENT scope: populate only component
+				component = scopeUuid;
+				break;
+				
+			default:
+				// For other scopes, leave all null
+				break;
+		}
+		
+		return new ScopeHierarchy(release, branch, component);
+	}
+	
+	/**
 	 * Create a new vulnerability analysis
 	 */
 	@Transactional
@@ -200,10 +315,14 @@ public class VulnAnalysisService {
 			throw new RelizaException("Analysis record with the same scope already exists!");
 		}
 		
+		// Populate release, branch, and component based on scope
+		ScopeHierarchy hierarchy = populateScopeHierarchy(createDto.getScopeUuid(), createDto.getScope());
+		
 		VulnAnalysisData vad = VulnAnalysisData.createVulnAnalysisData(
 				createDto.getOrg(), normalizedLocation, rawLocation, createDto.getLocationType(), 
 				createDto.getFindingId(), createDto.getFindingAliases(), createDto.getFindingType(), 
 				createDto.getScope(), createDto.getScopeUuid(),
+				hierarchy.release(), hierarchy.branch(), hierarchy.component(),
 				createDto.getState(), createDto.getJustification(), createDto.getDetails(), wu);
 		
 		// Set severity if provided
@@ -480,4 +599,5 @@ public class VulnAnalysisService {
 		
 		return Optional.empty();
 	}
+
 }

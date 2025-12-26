@@ -1062,6 +1062,30 @@ class VariableQueries {
 				WHERE record_data->>'org' = :orgUuidAsString
 			""";
 	
+	protected static final String FIND_VULN_ANALYSIS_AFFECTING_COMPONENT = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND (record_data->>'component' = :componentUuidAsString
+					OR record_data->>'scope' = 'ORG')
+			""";
+	
+	protected static final String FIND_VULN_ANALYSIS_AFFECTING_BRANCH = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND (record_data->>'branch' = :branchUuidAsString
+					OR record_data->>'component' = :componentUuidAsString
+					OR record_data->>'scope' = 'ORG')
+			""";
+	
+	protected static final String FIND_VULN_ANALYSIS_AFFECTING_RELEASE = """
+			SELECT * FROM rearm.vuln_analysis
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND (record_data->>'release' = :releaseUuidAsString
+					OR record_data->>'branch' = :branchUuidAsString
+					OR record_data->>'component' = :componentUuidAsString
+					OR record_data->>'scope' = 'ORG')
+			""";
+	
 	/*
 	 * Release Metrics CVE Search
 	 */

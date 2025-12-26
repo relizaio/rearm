@@ -79,4 +79,28 @@ public interface VulnAnalysisRepository extends JpaRepository<VulnAnalysis, UUID
 			value = VariableQueries.FIND_VULN_ANALYSIS_BY_ORG,
 			nativeQuery = true)
 	List<VulnAnalysis> findByOrg(@Param("orgUuidAsString") String orgUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_VULN_ANALYSIS_AFFECTING_COMPONENT,
+			nativeQuery = true)
+	List<VulnAnalysis> findAffectingComponent(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("componentUuidAsString") String componentUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_VULN_ANALYSIS_AFFECTING_BRANCH,
+			nativeQuery = true)
+	List<VulnAnalysis> findAffectingBranch(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("branchUuidAsString") String branchUuidAsString,
+			@Param("componentUuidAsString") String componentUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_VULN_ANALYSIS_AFFECTING_RELEASE,
+			nativeQuery = true)
+	List<VulnAnalysis> findAffectingRelease(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("releaseUuidAsString") String releaseUuidAsString,
+			@Param("branchUuidAsString") String branchUuidAsString,
+			@Param("componentUuidAsString") String componentUuidAsString);
 }

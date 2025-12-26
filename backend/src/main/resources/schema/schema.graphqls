@@ -85,6 +85,7 @@ type Query {
 	# Vulnerability Analysis
 	getVulnAnalysis(org: ID!, componentUuid: ID, branchUuid: ID, releaseUuid: ID): [VulnAnalysisWebDto]
 	getVulnAnalysisByLocationAndFinding(org: ID!, location: String!, findingId: String!, findingType: FindingType!): [VulnAnalysisWebDto]
+	getVulnAnalysisByPerspective(perspectiveUuid: ID!): [VulnAnalysisWebDto]
 	
 	# Perspectives
 	perspectives(org: ID!): [Perspective]
@@ -1995,6 +1996,9 @@ type VulnAnalysisWebDto {
 	findingType: FindingType!
 	scope: AnalysisScope!
 	scopeUuid: ID!
+	release: ID
+	branch: ID
+	component: ID
 	analysisState: AnalysisState!
 	analysisJustification: AnalysisJustification
 	analysisHistory: [AnalysisHistoryWebDto]

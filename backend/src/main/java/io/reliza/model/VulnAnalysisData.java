@@ -131,6 +131,15 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty("scopeUuid")
 	private UUID scopeUuid;
 	
+	@JsonProperty("release")
+	private UUID release;
+	
+	@JsonProperty("branch")
+	private UUID branch;
+	
+	@JsonProperty("component")
+	private UUID component;
+	
 	@JsonProperty("analysisState")
 	private AnalysisState analysisState;
 	
@@ -231,6 +240,30 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		this.scopeUuid = scopeUuid;
 	}
 	
+	public UUID getRelease() {
+		return release;
+	}
+	
+	public void setRelease(UUID release) {
+		this.release = release;
+	}
+	
+	public UUID getBranch() {
+		return branch;
+	}
+	
+	public void setBranch(UUID branch) {
+		this.branch = branch;
+	}
+	
+	public UUID getComponent() {
+		return component;
+	}
+	
+	public void setComponent(UUID component) {
+		this.component = component;
+	}
+	
 	public AnalysisState getAnalysisState() {
 		return analysisState;
 	}
@@ -287,6 +320,9 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 			FindingType findingType,
 			AnalysisScope scope,
 			UUID scopeUuid,
+			UUID release,
+			UUID branch,
+			UUID component,
 			AnalysisState initialState,
 			AnalysisJustification initialJustification,
 			String initialDetails,
@@ -303,6 +339,9 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		vad.setFindingType(findingType);
 		vad.setScope(scope);
 		vad.setScopeUuid(scopeUuid);
+		vad.setRelease(release);
+		vad.setBranch(branch);
+		vad.setComponent(component);
 		vad.addAnalysisHistoryEntry(initialState, initialJustification, initialDetails, null, wu);
 		
 		return vad;
@@ -328,5 +367,36 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 	public UUID getResourceGroup() {
 		// TODO Auto-generated method stub
 		return null;
+	}
+	
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (o == null || getClass() != o.getClass()) return false;
+		if (!super.equals(o)) return false;
+		VulnAnalysisData that = (VulnAnalysisData) o;
+		return java.util.Objects.equals(uuid, that.uuid) &&
+				java.util.Objects.equals(org, that.org) &&
+				java.util.Objects.equals(location, that.location) &&
+				java.util.Objects.equals(rawLocation, that.rawLocation) &&
+				locationType == that.locationType &&
+				java.util.Objects.equals(findingId, that.findingId) &&
+				java.util.Objects.equals(findingAliases, that.findingAliases) &&
+				findingType == that.findingType &&
+				scope == that.scope &&
+				java.util.Objects.equals(scopeUuid, that.scopeUuid) &&
+				java.util.Objects.equals(release, that.release) &&
+				java.util.Objects.equals(branch, that.branch) &&
+				java.util.Objects.equals(component, that.component) &&
+				analysisState == that.analysisState &&
+				analysisJustification == that.analysisJustification &&
+				java.util.Objects.equals(severity, that.severity);
+	}
+	
+	@Override
+	public int hashCode() {
+		return java.util.Objects.hash(super.hashCode(), uuid, org, location, rawLocation, 
+				locationType, findingId, findingAliases, findingType, scope, scopeUuid,
+				release, branch, component, analysisState, analysisJustification, severity);
 	}
 }

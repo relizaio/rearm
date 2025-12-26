@@ -77,6 +77,15 @@ public class VulnAnalysisWebDto {
 	@JsonProperty("scopeUuid")
 	private UUID scopeUuid;
 	
+	@JsonProperty("release")
+	private UUID release;
+	
+	@JsonProperty("branch")
+	private UUID branch;
+	
+	@JsonProperty("component")
+	private UUID component;
+	
 	@JsonProperty("analysisState")
 	private AnalysisState analysisState;
 	
@@ -100,6 +109,9 @@ public class VulnAnalysisWebDto {
 		dto.setFindingType(vad.getFindingType());
 		dto.setScope(vad.getScope());
 		dto.setScopeUuid(vad.getScopeUuid());
+		dto.setRelease(vad.getRelease());
+		dto.setBranch(vad.getBranch());
+		dto.setComponent(vad.getComponent());
 		dto.setAnalysisState(vad.getAnalysisState());
 		dto.setAnalysisJustification(vad.getAnalysisJustification());
 		dto.setSeverity(vad.getSeverity());
