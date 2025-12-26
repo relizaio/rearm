@@ -1,6 +1,7 @@
 <template>
     <div class="findingsOverTimeChart">
-        <div id="findingsOverTimeVis"></div>
+        <n-skeleton v-if="isLoading" height="260px" :sharp="false" />
+        <div v-else id="findingsOverTimeVis"></div>
         <vulnerability-modal
             v-model:show="showFindingsPerDayModal"
             :component-name="findingsPerDayModalTitle"
@@ -22,9 +23,10 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { ref, Ref, computed, onMounted, watch, toRaw } from 'vue'
+import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
+import { NSkeleton } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { processMetricsData } from '@/utils/metrics'
@@ -49,6 +51,8 @@ const route = useRoute()
 const myorg = computed(() => store.getters.myorg)
 
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
+const isLoading = ref(true)
+const isMounted = ref(true)
 
 const findingsPerDayData: Ref<any[]> = ref([])
 const findingsPerDayLoading: Ref<boolean> = ref(false)
@@ -335,6 +339,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
 }
 
 async function fetchVulnerabilityViolationAnalytics() {
+    isLoading.value = true
     try {
         let resp
         if (props.type === 'ORGANIZATION') {
@@ -451,13 +456,24 @@ async function fetchVulnerabilityViolationAnalytics() {
             }
         }
         
+        isLoading.value = false
+        await nextTick()
         renderChart()
     } catch (error) {
         console.error('Error fetching vulnerability/violation analytics:', error)
+        isLoading.value = false
     }
 }
 
 function renderChart() {
+    if (!isMounted.value) {
+        return
+    }
+    const element = document.querySelector('#findingsOverTimeVis')
+    if (!element) {
+        console.warn('Chart element #findingsOverTimeVis not found in DOM')
+        return
+    }
     vegaEmbed.default('#findingsOverTimeVis', toRaw(analyticsMetrics.value), {
         actions: {
             editor: false
@@ -488,6 +504,7 @@ function renderChart() {
 }
 
 onMounted(() => {
+    isMounted.value = true
     fetchVulnerabilityViolationAnalytics()
     // Check if we should open findings modal based on route query params
     if (showFindingsPerDay.value && findingsPerDayDate.value) {
@@ -496,9 +513,16 @@ onMounted(() => {
     }
 })
 
-watch(() => [props.orgUuid, props.branchUuid, props.componentUuid, props.perspectiveUuid, props.dateFrom, props.dateTo], () => {
-    fetchVulnerabilityViolationAnalytics()
+onBeforeUnmount(() => {
+    isMounted.value = false
 })
+
+watch(() => [props.orgUuid, props.branchUuid, props.componentUuid, props.perspectiveUuid, props.dateFrom, props.dateTo], () => {
+    if (props.type === 'BRANCH') return
+    if (isMounted.value) {
+        fetchVulnerabilityViolationAnalytics()
+    }
+}, { flush: 'post' })
 
 // Watch for route changes to handle findings modal opening via URL
 watch(showFindingsPerDay, (newVal) => {

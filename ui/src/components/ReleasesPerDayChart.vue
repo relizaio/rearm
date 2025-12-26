@@ -1,7 +1,8 @@
 <template>
     <div class="releasesPerDayChart">
         <div class="charts">
-            <div id="releaseCreationVisHome"></div>
+            <n-skeleton v-if="isLoading" height="260px" :sharp="false" />
+            <div v-else id="releaseCreationVisHome"></div>
         </div>
     </div>
 </template>
@@ -13,8 +14,9 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { ref, Ref, computed, onMounted, watch, toRaw } from 'vue'
+import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
+import { NSkeleton } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import * as vegaEmbed from 'vega-embed'
@@ -34,6 +36,8 @@ const store = useStore()
 const myorg = computed(() => store.getters.myorg)
 
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
+const isLoading = ref(true)
+const isMounted = ref(true)
 
 const releaseVisData: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
@@ -75,6 +79,7 @@ const releaseVisData: Ref<any> = ref({
 })
 
 async function fetchReleaseAnalytics() {
+    isLoading.value = true
     const cutOffDate = new Date()
     cutOffDate.setDate(cutOffDate.getDate() - props.daysBack)
     
@@ -174,13 +179,24 @@ async function fetchReleaseAnalytics() {
             releaseVisData.value.data.values = resp.data.releaseAnalyticsByPerspective
         }
         
+        isLoading.value = false
+        await nextTick()
         renderChart()
     } catch (error) {
         console.error('Error fetching release analytics:', error)
+        isLoading.value = false
     }
 }
 
 function renderChart() {
+    if (!isMounted.value) {
+        return
+    }
+    const element = document.querySelector('#releaseCreationVisHome')
+    if (!element) {
+        console.warn('Chart element #releaseCreationVisHome not found in DOM')
+        return
+    }
     vegaEmbed.default('#releaseCreationVisHome', 
         toRaw(releaseVisData.value),
         {
@@ -193,12 +209,20 @@ function renderChart() {
 }
 
 onMounted(() => {
+    isMounted.value = true
     fetchReleaseAnalytics()
 })
 
-watch(() => [props.orgUuid, props.componentUuid, props.branchUuid, props.perspectiveUuid, props.daysBack], () => {
-    fetchReleaseAnalytics()
+onBeforeUnmount(() => {
+    isMounted.value = false
 })
+
+watch(() => [props.orgUuid, props.componentUuid, props.branchUuid, props.perspectiveUuid, props.daysBack], () => {
+    if (props.type === 'BRANCH') return
+    if (isMounted.value) {
+        fetchReleaseAnalytics()
+    }
+}, { flush: 'post' })
 </script>
 
 <style scoped lang="scss">

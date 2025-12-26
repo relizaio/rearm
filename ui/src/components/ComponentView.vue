@@ -2,41 +2,21 @@
     <div class="componentOuterWrapper">
         <n-grid x-gap="8" cols="10">
             <n-gi span="10">
-                <div style="margin-bottom: 10px;">
-                    <n-radio-group v-model:value="chartViewType" v-if="selectedBranchUuid">
-                        <n-radio value="COMPONENT">Component</n-radio>
-                        <n-radio value="BRANCH">Branch</n-radio>
-                    </n-radio-group>
-                </div>
                 <n-grid x-gap="12" cols="2">
                     <n-gi>
                         <releases-per-day-chart
-                            v-if="chartViewType === 'COMPONENT'"
-                            type="COMPONENT"
-                            :component-uuid="componentData?.uuid"
-                            :org-uuid="myorg?.uuid"
-                            :days-back="120"
-                        />
-                        <releases-per-day-chart
-                            v-if="chartViewType === 'BRANCH' && selectedBranchUuid"
-                            type="BRANCH"
-                            :branch-uuid="selectedBranchUuid"
+                            :type="selectedBranchUuid ? 'BRANCH' : 'COMPONENT'"
+                            :component-uuid="selectedBranchUuid ? undefined : componentData?.uuid"
+                            :branch-uuid="selectedBranchUuid || undefined"
                             :org-uuid="myorg?.uuid"
                             :days-back="120"
                         />
                     </n-gi>
                     <n-gi>
                         <findings-over-time-chart
-                            v-if="chartViewType === 'COMPONENT'"
-                            type="COMPONENT"
-                            :component-uuid="componentData?.uuid"
-                            :org-uuid="myorg?.uuid"
-                            :days-back="120"
-                        />
-                        <findings-over-time-chart
-                            v-if="chartViewType === 'BRANCH' && selectedBranchUuid"
-                            type="BRANCH"
-                            :branch-uuid="selectedBranchUuid"
+                            :type="selectedBranchUuid ? 'BRANCH' : 'COMPONENT'"
+                            :component-uuid="selectedBranchUuid ? undefined : componentData?.uuid"
+                            :branch-uuid="selectedBranchUuid || undefined"
                             :org-uuid="myorg?.uuid"
                             :days-back="120"
                         />
