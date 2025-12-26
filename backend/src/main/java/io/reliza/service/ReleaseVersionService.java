@@ -127,14 +127,14 @@ public class ReleaseVersionService {
 		String nextVersion = va.getVersion();
 		String dockerTagSafeVersion = Utils.dockerTagSafeVersion(nextVersion);
 			
-		if(getNewVersionDto.onlyVersion())
+		if(getNewVersionDto.onlyVersion()) {
 			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, "");
-		
-	
-		ComponentJsonDto changelog = releaseService.createReleaseAndGetChangeLog(getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), nextVersion, getNewVersionDto.lifecycle(), bd, wu);
+		} else {
+			ComponentJsonDto changelog = releaseService.createReleaseAndGetChangeLog(getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), nextVersion, getNewVersionDto.lifecycle(), bd, wu);
 
-		if (null != changelog) {
-			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, changelog.toString());
+			if (null != changelog) {
+				vr = new VersionResponse(nextVersion, dockerTagSafeVersion, changelog.toString());
+			}
 		}
 
 		return vr;
