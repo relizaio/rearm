@@ -251,6 +251,10 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
+                        <div v-if="updatedRelease.componentDetails.type === 'PRODUCT' && underlyingReleaseArtifacts.length > 0">
+                            <h3>Artifacts from Underlying Releases</h3>
+                            <n-data-table :data="underlyingReleaseArtifacts" :columns="underlyingArtifactsTableFields" :row-key="artifactsRowKey" />
+                        </div>
                         <div v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
                             <h3>Changes in SBOM Components
                                 <Icon v-if="isWritable" 
@@ -1589,6 +1593,58 @@ const artifacts: ComputedRef<any> = computed((): any => {
     return artifacts
 })
 
+const underlyingReleaseArtifacts: ComputedRef<any> = computed((): any => {
+    let underlyingArtifacts: any[] = []
+    
+    if (updatedRelease.value && updatedRelease.value.componentDetails && updatedRelease.value.componentDetails.type === 'PRODUCT' && updatedRelease.value.parentReleases && updatedRelease.value.parentReleases.length) {
+        const collectArtifactsFromRelease = (release: any, componentName: string, releaseVersion: string) => {
+            const artifacts: any[] = []
+            
+            if (release.artifactDetails && release.artifactDetails.length) {
+                artifacts.push.apply(artifacts, release.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, `Component: ${componentName}`, releaseVersion, release.uuid)))
+            }
+            
+            if (release.sourceCodeEntryDetails && release.sourceCodeEntryDetails.artifactDetails && release.sourceCodeEntryDetails.artifactDetails.length) {
+                artifacts.push.apply(artifacts, release.sourceCodeEntryDetails.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, `Component: ${componentName} (SCE)`, releaseVersion, release.sourceCodeEntry)))
+            }
+            
+            if (release.variantDetails && release.variantDetails.length) {
+                release.variantDetails.forEach((vd: any) => {
+                    if (vd.outboundDeliverableDetails && vd.outboundDeliverableDetails.length) {
+                        vd.outboundDeliverableDetails.forEach((odd: any) => {
+                            if (odd.artifactDetails && odd.artifactDetails.length) {
+                                artifacts.push.apply(artifacts, odd.artifactDetails.map((ad: any) => setArtifactBelongsTo(ad, `Component: ${componentName} (Deliverable)`, `${releaseVersion} - ${odd.displayIdentifier}`, odd.uuid)))
+                            }
+                        })
+                    }
+                })
+            }
+            
+            return artifacts
+        }
+        
+        updatedRelease.value.parentReleases.forEach((pr: any) => {
+            if (pr.releaseDetails) {
+                const componentName = pr.releaseDetails.componentDetails ? pr.releaseDetails.componentDetails.name : 'Unknown'
+                const releaseVersion = pr.releaseDetails.version || 'Unknown Version'
+                underlyingArtifacts.push.apply(underlyingArtifacts, collectArtifactsFromRelease(pr.releaseDetails, componentName, releaseVersion))
+                
+                if (pr.releaseDetails.parentReleases && pr.releaseDetails.parentReleases.length) {
+                    pr.releaseDetails.parentReleases.forEach((nestedPr: any) => {
+                        if (nestedPr.releaseDetails) {
+                            const nestedComponentName = nestedPr.releaseDetails.componentDetails ? nestedPr.releaseDetails.componentDetails.name : 'Unknown'
+                            const nestedReleaseVersion = nestedPr.releaseDetails.version || 'Unknown Version'
+                            underlyingArtifacts.push.apply(underlyingArtifacts, collectArtifactsFromRelease(nestedPr.releaseDetails, nestedComponentName, nestedReleaseVersion))
+                        }
+                    })
+                }
+            }
+        })
+    }
+    
+    return underlyingArtifacts
+})
+
 const hasKnownDependencyTrackIntegration: ComputedRef<boolean> = computed((): boolean => {
     return artifacts.value.some((artifact: any) => artifact.metrics && artifact.metrics.dependencyTrackFullUri)
 })
@@ -2471,6 +2527,178 @@ const artifactsTableFields: DataTableColumns<any> = [
                         onClick: () => deleteArtifactFromRelease(row.uuid)
                     }, () => h(Trash))
                 els.push(deleteEl)
+            }
+            
+            if (!els.length) els.push(h('span', 'N/A'))
+            return h('div', els)
+        }
+    }
+]
+
+const underlyingArtifactsTableFields: DataTableColumns<any> = [
+    {
+        key: 'type',
+        title: 'Type',
+        render: (row: any) => {
+            let content = row.type
+            if (row.specVersion && row.serializationFormat) {
+                content += ` - ${commonFunctions.formatSpecVersion(row.specVersion)} (${row.serializationFormat})`
+            } else if (row.type === 'BOM') {
+                content += ` - ${row.bomFormat}`
+            }
+            return h('div', {}, content)
+        }
+    },
+    {
+        key: 'artBelongsTo',
+        title: 'Belongs To',
+        render: (row: any) => {
+            const els: any[] = [
+                h('span', row.belongsTo)
+            ]
+            if (row.belongsToId) {
+                els.push(
+                    h(NTooltip, {
+                        trigger: 'hover'
+                    }, {trigger: () => h(NIcon,
+                        {
+                            class: 'icons',
+                            size: 25,
+                        }, () => h(Info20Regular)),
+                    default: () =>  h('div', row.belongsToId)
+                    }
+                    )
+                )
+            }
+            return h('div', els)
+        }
+    },
+    {
+        key: 'facts',
+        title: 'Facts',
+        render: (row: any) => {
+            const factContent: any[] = []
+            factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
+            row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
+            if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
+            if (row.version) factContent.push(h('li', `Version: ${row.version}`))
+            if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
+            if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`)))) 
+
+            if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
+            if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
+            if (row.artifactDetails && row.artifactDetails.length) {
+                row.artifactDetails.forEach((ad: any) => {
+                    const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
+                    if (ad.tags && ad.tags.length) {
+                        ad.tags.filter((t: any) => t.key && t.key.startsWith('io.reliza')).forEach((t: any) => {
+                            adChildren.push(h('span', ` | ${t.key}: ${t.value}`))
+                        })
+                    }
+                    factContent.push(h('li', {}, adChildren))
+                })
+            }
+            const els: any[] = [
+                h(NTooltip, {
+                    trigger: 'hover'
+                }, {trigger: () => h(NIcon,
+                    {
+                        class: 'icons',
+                        size: 25,
+                    }, () => h(Info20Regular)),
+                default: () =>  h('ul', factContent)
+                }
+                )
+            ]
+            return h('div', els)
+        }
+    },
+    {
+        key: 'vulnerabilities',
+        title: 'Vulnerabilities & Weaknesses',
+        render: (row: any) => {
+            let els: any[] = []
+            if (row.metrics && row.metrics.lastScanned) {
+                const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', 'Vulnerability')}, row.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'LOW', 'Vulnerability')}, row.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
+                els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
+            }
+            if (!els.length) els = [h('div'), 'N/A']
+            return els
+        }
+    },
+    {
+        key: 'violations',
+        title: 'Policy Violations',
+        render: (row: any) => {
+            let els: any[] = []
+            if (row.metrics && row.metrics.lastScanned) {
+                const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
+                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
+            }
+            if (!els.length) els = [h('div'), 'N/A']
+            return els
+        }
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => {
+            let els: any[] = []
+            
+            const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
+            if (isDownloadable) {
+                const downloadEl = h(NIcon,
+                    {
+                        title: 'Download Artifact',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => openDownloadArtifactModal(row)
+                    }, () => h(Download))
+                els.push(downloadEl)
+            }
+
+            if (row.metrics && row.metrics.dependencyTrackFullUri) {
+                const dtrackElIcon = h(NIcon,
+                    {
+                        title: 'Open Dependency-Track Project in New Window',
+                        class: 'icons clickable',
+                        size: 25
+                    }, () => h(Link))
+                const dtrackUri = row.metrics.dependencyTrackFullUri
+                const dtrackUrl = new URL(dtrackUri)
+                const dtrackLoginUrl = `${dtrackUrl.origin}/login?redirect=${encodeURIComponent(dtrackUrl.pathname)}`
+                const dtrackEl = h('a', {target: '_blank', href: dtrackLoginUrl}, dtrackElIcon)
+                els.push(dtrackEl)
+            }
+
+            if (row.type === 'BOM') {
+                const dtrackRescanEl = h(NIcon,
+                    {
+                        title: 'Request Refresh of Dependency-Track Metrics',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
+                    }, () => h(SecurityScanOutlined))
+                els.push(dtrackRescanEl)
+            }
+
+            if (row.metrics && row.metrics.dependencyTrackFullUri) {
+                const dtrackRefetchEl = h(NIcon,
+                {
+                    title: 'Refetch Dependency-Track Metrics',
+                    class: 'icons clickable',
+                    size: 25,
+                    onClick: () => refetchDependencyTrackMetrics(row.uuid)
+                }, () => h(Refresh))
+                els.push(dtrackRefetchEl)
             }
             
             if (!els.length) els.push(h('span', 'N/A'))
