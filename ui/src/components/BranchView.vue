@@ -1741,7 +1741,6 @@ async function onCreated () {
         .map((x: string) => {return {label: x, value: x}})
 
     words.value = commonFunctions.resolveWords(branchData.value.componentDetails.type === 'COMPONENT', myorg.value?.terminology)
-    await getNextVersion(branchUuid.value)
 }
 
 

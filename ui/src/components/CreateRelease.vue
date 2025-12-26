@@ -81,17 +81,16 @@ import graphqlClient from '@/utils/graphql'
 
 
 async function getGeneratedVersion (branchUuid: string): Promise<string> {
-    const response = await graphqlClient.mutate({
-        mutation: gql`
-                mutation getNewVersionManual($branchUuid: ID!) {
-                    getNewVersionManual(branchUuid: $branchUuid) {
-                        version
-                    }
-                }`,
+    const response = await graphqlClient.query({
+            query: gql`
+                query getNextVersion($branchUuid: ID!) {
+                    getNextVersion(branchUuid: $branchUuid)
+                }
+                `,
         variables: {branchUuid},
         fetchPolicy: 'no-cache'
     })
-    return response.data.getNewVersionManual.version
+    return response.data.getNextVersion
 }
 
 const props = defineProps<{
