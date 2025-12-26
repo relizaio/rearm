@@ -203,7 +203,7 @@ public class AnalyticsMetricsService {
 	
 	public List<VulnViolationsChartDto> getVulnViolationByOrgChartData(UUID org, ZonedDateTime dateFrom,
 			ZonedDateTime dateTo) {
-		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
+		ZonedDateTime today = ZonedDateTime.now();
 		if (dateTo.isAfter(today)) dateTo = today;
 		var amds = listAnalyticsMetricsByOrgDates(org, dateFrom, dateTo);
 		var chartData = new LinkedList<>(amds
@@ -215,7 +215,7 @@ public class AnalyticsMetricsService {
 	
 	public List<VulnViolationsChartDto> getVulnViolationByPerspectiveChartData(UUID org, UUID perspectiveUuid,
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
-		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
+		ZonedDateTime today = ZonedDateTime.now();
 		if (dateTo.isAfter(today)) dateTo = today;
 		
 		// Get stored analytics metrics for the perspective within date range using SQL filtering
@@ -234,7 +234,7 @@ public class AnalyticsMetricsService {
 	
 	public List<VulnViolationsChartDto> getVulnViolationByComponentChartData(UUID componentUuid, 
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
-		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
+		ZonedDateTime today = ZonedDateTime.now();
 		if (dateTo.isAfter(today)) dateTo = today;
 		
 		// Get all active branches of the component
@@ -242,9 +242,7 @@ public class AnalyticsMetricsService {
 		if (branches.isEmpty()) {
 			return new LinkedList<>();
 		}
-		
-		UUID org = branches.get(0).getOrg();
-		
+
 		// Collect all releases from all branches within the date range
 		List<ReleaseData> allReleasesInRange = new LinkedList<>();
 		for (BranchData branch : branches) {
@@ -296,7 +294,7 @@ public class AnalyticsMetricsService {
 	
 	public List<VulnViolationsChartDto> getVulnViolationByBranchChartData(UUID branchUuid, 
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
-		ZonedDateTime today = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS);
+		ZonedDateTime today = ZonedDateTime.now();
 		if (dateTo.isAfter(today)) dateTo = today;
 		
 		// Get all releases of the branch within the date range (ASSEMBLED or higher)
