@@ -336,7 +336,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ComputedRef, computed, Ref, ref, h } from 'vue'
+import { ComputedRef, computed, Ref, ref, h, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
@@ -636,8 +636,9 @@ const releases: ComputedRef<any> = computed((): any => {
     return releases
 })
 
-const currentPage: Ref<number> = ref(1)
-const perPage: Ref<number> = ref(25)
+// Initialize pagination from route query parameters
+const currentPage: Ref<number> = ref(parseInt(route.query.branchReleasePage as string) || 1)
+const perPage: Ref<number> = ref(parseInt(route.query.branchReleasePerPage as string) || 25)
 
 const filteredReleases: ComputedRef<any> = computed((): any => {
     let filteredReleases = releases.value && releases.value.length ? releases.value.slice(0) : []
@@ -1980,6 +1981,20 @@ async function handleRefreshVulnerabilityData() {
 }
 
 const releaseRowkey = (row: any) => row.uuid
+
+// Watch pagination changes and sync to route query parameters
+watch(currentPage, (newPage) => {
+    router.push({
+        query: { ...route.query, branchReleasePage: newPage.toString() }
+    })
+})
+
+watch(perPage, (newPerPage) => {
+    router.push({
+        query: { ...route.query, branchReleasePerPage: newPerPage.toString(), branchReleasePage: '1' }
+    })
+    currentPage.value = 1
+})
 
 onCreated()
 
