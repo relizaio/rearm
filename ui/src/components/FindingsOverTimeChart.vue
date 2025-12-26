@@ -1,6 +1,8 @@
 <template>
     <div class="findingsOverTimeChart">
-        <n-skeleton v-if="isLoading" height="260px" :sharp="false" />
+        <h3 class="chart-title">Findings Over Time</h3>
+        <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
+        <n-empty v-else-if="hasNoData" description="Not enough analytics data" size="large" />
         <div v-else id="findingsOverTimeVis"></div>
         <vulnerability-modal
             v-model:show="showFindingsPerDayModal"
@@ -26,7 +28,7 @@ export default {
 import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { NSkeleton } from 'naive-ui'
+import { NSkeleton, NEmpty } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { processMetricsData } from '@/utils/metrics'
@@ -53,6 +55,7 @@ const myorg = computed(() => store.getters.myorg)
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
 const isLoading = ref(true)
 const isMounted = ref(true)
+const hasNoData = ref(false)
 
 const findingsPerDayData: Ref<any[]> = ref([])
 const findingsPerDayLoading: Ref<boolean> = ref(false)
@@ -457,8 +460,11 @@ async function fetchVulnerabilityViolationAnalytics() {
         }
         
         isLoading.value = false
+        hasNoData.value = !analyticsMetrics.value.data.values || analyticsMetrics.value.data.values.length === 0
         await nextTick()
-        renderChart()
+        if (!hasNoData.value) {
+            renderChart()
+        }
     } catch (error) {
         console.error('Error fetching vulnerability/violation analytics:', error)
         isLoading.value = false
@@ -474,6 +480,7 @@ function renderChart() {
         console.warn('Chart element #findingsOverTimeVis not found in DOM')
         return
     }
+    
     vegaEmbed.default('#findingsOverTimeVis', toRaw(analyticsMetrics.value), {
         actions: {
             editor: false

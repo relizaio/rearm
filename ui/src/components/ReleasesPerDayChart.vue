@@ -1,7 +1,9 @@
 <template>
     <div class="releasesPerDayChart">
+        <h3 class="chart-title">Releases Per Day</h3>
         <div class="charts">
-            <n-skeleton v-if="isLoading" height="260px" :sharp="false" />
+            <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
+            <n-empty v-else-if="hasNoData" description="Not enough analytics data" size="large" />
             <div v-else id="releaseCreationVisHome"></div>
         </div>
     </div>
@@ -16,7 +18,7 @@ export default {
 <script lang="ts" setup>
 import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
-import { NSkeleton } from 'naive-ui'
+import { NSkeleton, NEmpty } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import * as vegaEmbed from 'vega-embed'
@@ -38,6 +40,7 @@ const myorg = computed(() => store.getters.myorg)
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
 const isLoading = ref(true)
 const isMounted = ref(true)
+const hasNoData = ref(false)
 
 const releaseVisData: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
@@ -180,8 +183,11 @@ async function fetchReleaseAnalytics() {
         }
         
         isLoading.value = false
+        hasNoData.value = !releaseVisData.value.data.values || releaseVisData.value.data.values.length === 0
         await nextTick()
-        renderChart()
+        if (!hasNoData.value) {
+            renderChart()
+        }
     } catch (error) {
         console.error('Error fetching release analytics:', error)
         isLoading.value = false
@@ -197,6 +203,7 @@ function renderChart() {
         console.warn('Chart element #releaseCreationVisHome not found in DOM')
         return
     }
+    
     vegaEmbed.default('#releaseCreationVisHome', 
         toRaw(releaseVisData.value),
         {

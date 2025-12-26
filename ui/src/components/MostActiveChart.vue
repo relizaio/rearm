@@ -1,7 +1,10 @@
 <template>
     <div class="mostActiveChart">
+        <h3 class="chart-title">Most Active {{ chartTypeLabel }}</h3>
         <div class="charts">
-            <div id="mostActiveVisHome"></div>
+            <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
+            <n-empty v-else-if="hasNoData" description="Not enough analytics data" size="large" />
+            <div v-else id="mostActiveVisHome"></div>
         </div>
     </div>
 </template>
@@ -15,6 +18,7 @@ export default {
 <script lang="ts" setup>
 import { ref, Ref, computed, onMounted, watch, toRaw } from 'vue'
 import { useStore } from 'vuex'
+import { NSkeleton, NEmpty } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import * as vegaEmbed from 'vega-embed'
@@ -37,6 +41,16 @@ const myperspective = computed(() => store.getters.myperspective)
 
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
 const featureSetLabelPlural = computed(() => props.featureSetLabel + 's')
+const isLoading = ref(true)
+const hasNoData = ref(false)
+
+const chartTypeLabel = computed(() => {
+    if (props.componentType === 'COMPONENT') return 'Components'
+    if (props.componentType === 'PRODUCT') return 'Products'
+    if (props.componentType === 'BRANCH') return 'Branches'
+    if (props.componentType === 'FEATURE_SET') return featureSetLabelPlural.value
+    return 'Items'
+})
 
 const mostActiveOverTime: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
@@ -88,6 +102,9 @@ function parseActiveComponentsInput() {
 }
 
 function embedActiveComponentsVega() {
+    if (hasNoData.value) {
+        return
+    }
     const mostActiveToEmbed = toRaw(mostActiveOverTime.value)
     vegaEmbed.default('#mostActiveVisHome', mostActiveToEmbed,
         {
@@ -128,6 +145,7 @@ function transformMostActiveDataBasedOnType() {
 }
 
 async function fetchActiveBranchesAnalytics() {
+    isLoading.value = true
     const parsedActiveComponentsInput = parseActiveComponentsInput()
 
     const response = await graphqlClient.query({
@@ -158,12 +176,15 @@ async function fetchActiveBranchesAnalytics() {
             }
             mostActiveOverTime.value.data.values.push(analyticsEl)
         })
+        hasNoData.value = mostActiveOverTime.value.data.values.length === 0
         transformMostActiveDataBasedOnType()
         embedActiveComponentsVega()
     }
+    isLoading.value = false
 }
 
 async function fetchActiveBranchesAnalyticsByPerspective() {
+    isLoading.value = true
     const parsedActiveComponentsInput = parseActiveComponentsInput()
 
     const response = await graphqlClient.query({
@@ -195,12 +216,15 @@ async function fetchActiveBranchesAnalyticsByPerspective() {
             }
             mostActiveOverTime.value.data.values.push(analyticsEl)
         })
+        hasNoData.value = mostActiveOverTime.value.data.values.length === 0
         transformMostActiveDataBasedOnType()
         embedActiveComponentsVega()
     }
+    isLoading.value = false
 }
 
 async function fetchActiveComponentsAnalytics() {
+    isLoading.value = true
     const parsedActiveComponentsInput = parseActiveComponentsInput()
 
     const response = await graphqlClient.query({
@@ -220,12 +244,15 @@ async function fetchActiveComponentsAnalytics() {
     if (response && response.data) {
         mostActiveOverTime.value.data.values = []
         response.data.mostActiveComponentsOverTime.forEach((e: any) => mostActiveOverTime.value.data.values.push(Object.assign({}, e)))
+        hasNoData.value = mostActiveOverTime.value.data.values.length === 0
         transformMostActiveDataBasedOnType()
         embedActiveComponentsVega()
     }
+    isLoading.value = false
 }
 
 async function fetchActiveComponentsAnalyticsByPerspective() {
+    isLoading.value = true
     const parsedActiveComponentsInput = parseActiveComponentsInput()
 
     const response = await graphqlClient.query({
@@ -246,9 +273,11 @@ async function fetchActiveComponentsAnalyticsByPerspective() {
     if (response && response.data) {
         mostActiveOverTime.value.data.values = []
         response.data.mostActiveComponentsOverTimeByPerspective.forEach((e: any) => mostActiveOverTime.value.data.values.push(Object.assign({}, e)))
+        hasNoData.value = mostActiveOverTime.value.data.values.length === 0
         transformMostActiveDataBasedOnType()
         embedActiveComponentsVega()
     }
+    isLoading.value = false
 }
 
 async function fetchActiveComponentsBranchesAnalytics() {
