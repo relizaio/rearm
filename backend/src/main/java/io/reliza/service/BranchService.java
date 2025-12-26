@@ -97,10 +97,6 @@ public class BranchService {
 	public List<Branch> listBranchesOfOrg (UUID orgUuid) {
 		return repository.findBranchesOfOrg(orgUuid.toString());
 	}
-	
-	public List<Branch> listBranchesOfOrg (UUID orgUuid, UUID perspectiveUuid) {
-		return repository.findBranchesOfOrgByPerspective(orgUuid.toString(), perspectiveUuid.toString());
-	}
 
 	public List<Branch> getBranches (Iterable<UUID> uuids) {
 		return (List<Branch>) repository.findAllById(uuids);

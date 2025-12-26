@@ -6,7 +6,6 @@ package io.reliza.service;
 
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -28,7 +27,6 @@ import io.reliza.common.Utils;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalyticsMetrics;
 import io.reliza.model.AnalyticsMetricsData;
-import io.reliza.model.AnalyticsMetricsData.PerspectiveWithHash;
 import io.reliza.model.BranchData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
@@ -115,28 +113,6 @@ public class AnalyticsMetricsService {
 		return Optional.empty();
 	}
 	
-	public Optional<ReleaseMetricsDto> getFindingsPerDayByPerspective(UUID org, UUID perspectiveUuid, String dateKey) {
-		Optional<AnalyticsMetricsData> existingAmd = findAnalyticsMetricsByOrgPerspectiveDateKey(org, perspectiveUuid, dateKey);
-		
-		if (existingAmd.isPresent()) {
-			return Optional.of(existingAmd.get().getMetrics());
-		}
-		
-		// If not found in DB, check if dateKey matches today's date
-		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
-		java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
-		
-		if (requestedDate.equals(today)) {
-			// Compute metrics for today without saving
-			ZonedDateTime createdDate = requestedDate.atTime(23, 59, 59).atZone(java.time.ZoneOffset.UTC);
-			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, perspectiveUuid, createdDate);
-			var metrics = amd.getMetrics().clone();
-			vulnAnalysisService.processReleaseMetricsDto(org, org, AnalysisScope.ORG, metrics);
-			return Optional.of(metrics);
-		}
-		
-		return Optional.empty();
-	}
 	
 	public Optional<ReleaseMetricsDto> getFindingsPerDayForComponent(UUID componentUuid, String dateKey) {
 		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
@@ -213,24 +189,6 @@ public class AnalyticsMetricsService {
 		return chartData;
 	}
 	
-	public List<VulnViolationsChartDto> getVulnViolationByPerspectiveChartData(UUID org, UUID perspectiveUuid,
-			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
-		ZonedDateTime today = ZonedDateTime.now();
-		if (dateTo.isAfter(today)) dateTo = today;
-		
-		// Get stored analytics metrics for the perspective within date range using SQL filtering
-		var amds = listAnalyticsMetricsByOrgPerspectiveDates(org, perspectiveUuid, dateFrom, dateTo);
-		var chartData = new LinkedList<>(amds
-				.stream()
-				.map(amd -> amd.convertToChartDto())
-				.flatMap(List::stream)
-				.toList());
-		
-		// Compute today's data for the perspective
-		var todaysData = computeActualAnalyticsMetricsDataForOrg(org, perspectiveUuid, ZonedDateTime.now());
-		chartData.addAll(todaysData.convertToChartDto());
-		return chartData;
-	}
 	
 	public List<VulnViolationsChartDto> getVulnViolationByComponentChartData(UUID componentUuid, 
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
@@ -330,45 +288,16 @@ public class AnalyticsMetricsService {
 		return chartData;
 	}
 	
-	public void computeAndRecordAnalyticsMetricsPerOrg(UUID org, Set<PerspectiveWithHash> perspectivesWithHash, 
-			ZonedDateTime targetDate) {
-		// Compute for org-wide analytics
-		Optional<AnalyticsMetrics> existingAm = findAnalyticsMetricsByOrgDate(org, targetDate);
-		if (existingAm.isEmpty()) {
-			AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, targetDate);
-			save(new AnalyticsMetrics(), Utils.dataToRecord(amd), WhoUpdated.getAutoWhoUpdated());
-		}
+	public void computeAndRecordAnalyticsMetricsPerOrg (UUID org, ZonedDateTime targetDate) {
+		String dateKey = AnalyticsMetricsData.obtainAnalyticsDateKey(targetDate);
 		
-		// Compute for each perspective
-		if (perspectivesWithHash != null && !perspectivesWithHash.isEmpty()) {
-			for (PerspectiveWithHash pwh : perspectivesWithHash) {
-				AnalyticsMetricsData amdPerspective = computeActualAnalyticsMetricsDataForOrg(org, pwh.perspectiveUuid(), targetDate);
-				amdPerspective.setPerspectiveHash(pwh.perspectiveHash());
-				save(new AnalyticsMetrics(), Utils.dataToRecord(amdPerspective), WhoUpdated.getAutoWhoUpdated());
-			}
-		}
+		// Compute for org-wide
+		Optional<AnalyticsMetrics> existingAm = repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey);
+		AnalyticsMetrics am = existingAm.orElse(new AnalyticsMetrics());
+		AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, targetDate);
+		save(am, Utils.dataToRecord(amd), WhoUpdated.getAutoWhoUpdated());
 	}
 	
-	public void computeAndRecordAnalyticsMetricsForPerspectiveDateRange(UUID org, UUID perspectiveUuid, 
-			String perspectiveHash, ZonedDateTime dateFrom, ZonedDateTime dateTo) {
-		LocalDate startDate = dateFrom.toLocalDate();
-		LocalDate endDate = dateTo.toLocalDate();
-		
-		// Iterate through each day in the range
-		for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-			ZonedDateTime createdDate = date.atStartOfDay(dateFrom.getZone());
-			String dateKey = AnalyticsMetricsData.obtainAnalyticsDateKey(createdDate);
-			
-			// Check if record already exists for this org/perspective/date
-			Optional<AnalyticsMetrics> existingAm = repository.findAnalyticsMetricsByOrgPerspectiveDateKey(
-					org.toString(), perspectiveUuid.toString(), dateKey);
-			AnalyticsMetrics am = existingAm.orElse(new AnalyticsMetrics());
-			
-			AnalyticsMetricsData amdPerspective = computeActualAnalyticsMetricsDataForOrg(org, perspectiveUuid, createdDate);
-			amdPerspective.setPerspectiveHash(perspectiveHash);
-			save(am, Utils.dataToRecord(amdPerspective), WhoUpdated.getAutoWhoUpdated());
-		}
-	}
 	
 	@Transactional
 	public ReleaseMetricsDto computeAndRecordAnalyticsMetricsForOrgAndDate(UUID org, String dateKey, WhoUpdated wu) {
@@ -381,14 +310,8 @@ public class AnalyticsMetricsService {
 	}
 	
 	private AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
-		return computeActualAnalyticsMetricsDataForOrg(org, null, createdDate);
-	}
-	
-	private AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, UUID perspective, ZonedDateTime createdDate) {
 		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
-		var activeBranches = (perspective != null) 
-				? branchService.listBranchesOfOrg(org, perspective)
-				: branchService.listBranchesOfOrg(org);
+		var activeBranches = branchService.listBranchesOfOrg(org);
 		List<ReleaseData> latestReleasesOfBranches;
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
 			latestReleasesOfBranches = customPool.submit(() -> 
@@ -408,7 +331,7 @@ public class AnalyticsMetricsService {
 			rmd2.enrichSourcesWithRelease(rd.getUuid());
 			rmd.mergeWithByContent(rmd2);
 		});
-		return AnalyticsMetricsData.analyticsMetricsDataFactory(org, perspective, rmd, createdDate);
+		return AnalyticsMetricsData.analyticsMetricsDataFactory(org, null, rmd, createdDate);
 	}
 	
 	@Transactional

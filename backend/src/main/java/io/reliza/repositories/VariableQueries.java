@@ -251,14 +251,6 @@ class VariableQueries {
 	protected static final String FIND_BRANCHES_OF_ORG = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED'";
 	
-	protected static final String FIND_BRANCHES_OF_ORG_BY_PERSPECTIVE = """
-			SELECT b.* FROM rearm.branches b
-			INNER JOIN rearm.components c ON c.uuid::text = b.record_data->>'component'
-			WHERE b.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'status' != 'ARCHIVED'
-			AND jsonb_exists(c.record_data->'perspectives', :perspectiveUuidAsString)
-			""";
-	
 	protected static final String FIND_BRANCHES_BY_CHILD_COMPONENT_AND_BRANCH = "select * from rearm.branches b where b.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND b.record_data->>'status' != 'ARCHIVED' AND "
 			+ "jsonb_contains(record_data, jsonb_build_object('dependencies', jsonb_build_array(json_build_object('uuid', :compUuidAsString, 'branch', :branchUuidAsString)))) ";
