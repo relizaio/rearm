@@ -119,10 +119,12 @@ interface Props {
     show: boolean
     findingRow: any
     orgUuid: string
-    // Context for scope selection
+    // Context for scope selection from filters
     releaseUuid?: string
     branchUuid?: string
     componentUuid?: string
+    // Feature set label from organization terminology
+    featureSetLabel?: string
     // If true, only ORG scope is allowed (artifact view)
     artifactViewOnly?: boolean
     // If provided, only these scopes will be available for selection
@@ -133,6 +135,7 @@ const props = withDefaults(defineProps<Props>(), {
     releaseUuid: '',
     branchUuid: '',
     componentUuid: '',
+    featureSetLabel: 'Feature Set',
     artifactViewOnly: false,
     availableScopesOnly: () => []
 })
@@ -170,8 +173,8 @@ const scopeOptions = computed(() => {
     if (props.availableScopesOnly && props.availableScopesOnly.length > 0) {
         const allOptions = [
             { label: 'Organization', value: 'ORG' },
-            { label: 'Component', value: 'COMPONENT' },
-            { label: 'Branch', value: 'BRANCH' },
+            { label: 'Component / Product', value: 'COMPONENT' },
+            { label: `Branch / ${props.featureSetLabel}`, value: 'BRANCH' },
             { label: 'Release', value: 'RELEASE' }
         ]
         return allOptions.filter(opt => props.availableScopesOnly!.includes(opt.value))
@@ -181,13 +184,14 @@ const scopeOptions = computed(() => {
         return [{ label: 'Organization', value: 'ORG' }]
     }
     
+    // Build options based on active filters
     const options = [{ label: 'Organization', value: 'ORG' }]
     
     if (props.componentUuid) {
-        options.push({ label: 'Component', value: 'COMPONENT' })
+        options.push({ label: 'Component / Product', value: 'COMPONENT' })
     }
     if (props.branchUuid) {
-        options.push({ label: 'Branch', value: 'BRANCH' })
+        options.push({ label: `Branch / ${props.featureSetLabel}`, value: 'BRANCH' })
     }
     if (props.releaseUuid) {
         options.push({ label: 'Release', value: 'RELEASE' })
@@ -217,28 +221,9 @@ const rules: FormRules = {
 
 // Helper function to set default scope based on available options
 const setDefaultScope = () => {
-    const availableOptions = scopeOptions.value
-    if (availableOptions.length > 0) {
-        const defaultScope = availableOptions[0].value
-        formData.value.scope = defaultScope
-        
-        // Set the corresponding UUID
-        switch (defaultScope) {
-            case 'RELEASE':
-                formData.value.scopeUuid = props.releaseUuid
-                break
-            case 'BRANCH':
-                formData.value.scopeUuid = props.branchUuid
-                break
-            case 'COMPONENT':
-                formData.value.scopeUuid = props.componentUuid
-                break
-            case 'ORG':
-            default:
-                formData.value.scopeUuid = props.orgUuid
-                break
-        }
-    }
+    // Always default to Organization scope
+    formData.value.scope = 'ORG'
+    formData.value.scopeUuid = props.orgUuid
 }
 
 // Watch for changes in the finding row and populate form
