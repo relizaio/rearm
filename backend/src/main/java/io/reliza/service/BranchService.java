@@ -354,17 +354,24 @@ public class BranchService {
 				bd.setPullRequestData(branchDto.getPullRequestData());
 			}
 			// don't convert from base to regular, only allow make base functionality
-			if (BranchType.BASE == branchDto.getType()) {
-				// previous base must become regular here
-				bd.setType(BranchType.BASE);
-				Branch oldBaseBranch = getBaseBranchOfComponent(bd.getComponent()).get();
+		if (BranchType.BASE == branchDto.getType()) {
+			// Get the old base branch BEFORE setting the new one
+			Optional<Branch> oldBaseBranchOpt = getBaseBranchOfComponent(bd.getComponent());
+			
+			// Only proceed if there's an existing base branch and it's different from the current branch
+			if (oldBaseBranchOpt.isPresent() && !oldBaseBranchOpt.get().getUuid().equals(bd.getUuid())) {
+				Branch oldBaseBranch = oldBaseBranchOpt.get();
 				BranchData oldBaseBranchData = BranchData.branchDataFromDbRecord(oldBaseBranch);
 				oldBaseBranchData.setType(BranchType.REGULAR);
 				Map<String,Object> recordDataOld = Utils.dataToRecord(oldBaseBranchData);
 				saveBranch(oldBaseBranch, recordDataOld, wu);
-			} else if (null != bd.getType() && BranchType.BASE != bd.getType()) {
-				bd.setType(branchDto.getType());
 			}
+			
+			// Now set the current branch to BASE
+			bd.setType(BranchType.BASE);
+		} else if (null != bd.getType() && BranchType.BASE != bd.getType()) {
+			bd.setType(branchDto.getType());
+		}
 			Map<String,Object> recordData = Utils.dataToRecord(bd);
 			b = saveBranch(b, recordData, wu);
 			retBd = BranchData.branchDataFromDbRecord(b);
