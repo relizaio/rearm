@@ -1,7 +1,7 @@
 <template>
     <n-modal
         v-model:show="isVisible"
-        title="Update Vulnerability Analysis"
+        :title="modalTitle"
         preset="dialog"
         :show-icon="false"
         style="width: 60%;"
@@ -101,6 +101,16 @@ const submitting = ref(false)
 const isVisible = computed({
     get: () => props.show,
     set: (value: boolean) => emit('update:show', value)
+})
+
+const modalTitle = computed(() => {
+    if (props.analysisRecord) {
+        const findingId = props.analysisRecord.findingId || 'Unknown'
+        const location = props.analysisRecord.location || 'Unknown'
+        const scope = props.analysisRecord.scope || 'ORG'
+        return `Update Finding Analysis [${scope}]: ${findingId} @ ${location}`
+    }
+    return 'Update Finding Analysis'
 })
 
 const formData = ref({
