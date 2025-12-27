@@ -193,7 +193,7 @@ public class VulnAnalysisService {
 	 * Includes: release-scoped, branch-scoped (parent), component-scoped (parent), and org-wide analyses
 	 */
 	public List<VulnAnalysisData> findAllVulnAnalysisAffectingRelease(UUID releaseUuid) throws RelizaException {
-		Optional<ReleaseData> releaseData = sharedReleaseService.getReleaseData(releaseUuid, null);
+		Optional<ReleaseData> releaseData = sharedReleaseService.getReleaseData(releaseUuid);
 		if (releaseData.isEmpty()) {
 			throw new RelizaException("Release not found: " + releaseUuid);
 		}

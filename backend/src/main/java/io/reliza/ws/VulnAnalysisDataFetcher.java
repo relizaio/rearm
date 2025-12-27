@@ -4,12 +4,10 @@
 
 package io.reliza.ws;
 
-import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -27,7 +25,6 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
-import io.reliza.model.AnalysisScope;
 import io.reliza.model.FindingType;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
@@ -41,6 +38,7 @@ import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.ReleaseService;
+import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.VulnAnalysisService;
 import lombok.extern.slf4j.Slf4j;
@@ -70,59 +68,73 @@ public class VulnAnalysisDataFetcher {
 	@Autowired
 	private ReleaseService releaseService;
 	
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getVulnAnalysis")
-	public List<VulnAnalysisWebDto> getVulnAnalysis(
-			@InputArgument("org") UUID org,
-			@InputArgument("componentUuid") UUID componentUuid,
-			@InputArgument("branchUuid") UUID branchUuid,
-			@InputArgument("releaseUuid") UUID releaseUuid) {
-		
+	public List<VulnAnalysisWebDto> getVulnAnalysis(@InputArgument("org") UUID org) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		
-		// Collect results from each filter
-		Set<VulnAnalysisData> resultSets = null;
+		List<VulnAnalysisData> analyses = vulnAnalysisService.findByOrg(org);
 		
-		if (componentUuid != null) {
-			List<VulnAnalysisData> componentAnalyses = vulnAnalysisService.findByOrgAndScopeAndScopeUuid(
-					org, AnalysisScope.COMPONENT, componentUuid);
-			resultSets = new HashSet<>(componentAnalyses);
-		}
+		return analyses.stream()
+				.map(VulnAnalysisWebDto::fromVulnAnalysisData)
+				.collect(Collectors.toList());
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "getVulnAnalysisByComponent")
+	public List<VulnAnalysisWebDto> getVulnAnalysisByComponent(@InputArgument("componentUuid") UUID componentUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
 		
-		if (branchUuid != null) {
-			List<VulnAnalysisData> branchAnalyses = vulnAnalysisService.findByOrgAndScopeAndScopeUuid(
-					org, AnalysisScope.BRANCH, branchUuid);
-			if (resultSets == null) {
-				resultSets = new HashSet<>(branchAnalyses);
-			} else {
-				// Intersection: keep only items that are in both sets
-				resultSets.retainAll(branchAnalyses);
-			}
-		}
+		var ocd = getComponentService.getComponentData(componentUuid);
+
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		
-		if (releaseUuid != null) {
-			List<VulnAnalysisData> releaseAnalyses = vulnAnalysisService.findByOrgAndScopeAndScopeUuid(
-					org, AnalysisScope.RELEASE, releaseUuid);
-			if (resultSets == null) {
-				resultSets = new HashSet<>(releaseAnalyses);
-			} else {
-				// Intersection: keep only items that are in both sets
-				resultSets.retainAll(releaseAnalyses);
-			}
-		}
+		List<VulnAnalysisData> analyses = vulnAnalysisService.findAllVulnAnalysisAffectingComponent(componentUuid);
 		
-		// If no filters provided, return all analyses for the org
-		List<VulnAnalysisData> analyses;
-		if (resultSets != null) {
-			analyses = List.copyOf(resultSets);
-		} else {
-			// No scope filters provided, return all analyses for the org
-			analyses = vulnAnalysisService.findByOrg(org);
-		}
+		return analyses.stream()
+				.map(VulnAnalysisWebDto::fromVulnAnalysisData)
+				.collect(Collectors.toList());
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "getVulnAnalysisByBranch")
+	public List<VulnAnalysisWebDto> getVulnAnalysisByBranch(@InputArgument("branchUuid") UUID branchUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		var obd = branchService.getBranchData(branchUuid);
+		
+		RelizaObject ro = obd.isPresent() ? obd.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		
+		List<VulnAnalysisData> analyses = vulnAnalysisService.findAllVulnAnalysisAffectingBranch(branchUuid);
+		
+		return analyses.stream()
+				.map(VulnAnalysisWebDto::fromVulnAnalysisData)
+				.collect(Collectors.toList());
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "getVulnAnalysisByRelease")
+	public List<VulnAnalysisWebDto> getVulnAnalysisByRelease(@InputArgument("releaseUuid") UUID releaseUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		var ord = sharedReleaseService.getReleaseData(releaseUuid);
+		
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		
+		List<VulnAnalysisData> analyses = vulnAnalysisService.findAllVulnAnalysisAffectingRelease(releaseUuid);
 		
 		return analyses.stream()
 				.map(VulnAnalysisWebDto::fromVulnAnalysisData)

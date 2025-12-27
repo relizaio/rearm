@@ -83,7 +83,10 @@ type Query {
 	getUserGroups(org: ID!): [UserGroupWebDto]
 	
 	# Vulnerability Analysis
-	getVulnAnalysis(org: ID!, componentUuid: ID, branchUuid: ID, releaseUuid: ID): [VulnAnalysisWebDto]
+	getVulnAnalysis(org: ID!): [VulnAnalysisWebDto]
+	getVulnAnalysisByComponent(componentUuid: ID!): [VulnAnalysisWebDto]
+	getVulnAnalysisByBranch(branchUuid: ID!): [VulnAnalysisWebDto]
+	getVulnAnalysisByRelease(releaseUuid: ID!): [VulnAnalysisWebDto]
 	getVulnAnalysisByLocationAndFinding(org: ID!, location: String!, findingId: String!, findingType: FindingType!): [VulnAnalysisWebDto]
 	getVulnAnalysisByPerspective(perspectiveUuid: ID!): [VulnAnalysisWebDto]
 	
