@@ -221,9 +221,32 @@ const rules: FormRules = {
 
 // Helper function to set default scope based on available options
 const setDefaultScope = () => {
-    // Always default to Organization scope
-    formData.value.scope = 'ORG'
-    formData.value.scopeUuid = props.orgUuid
+    // If availableScopesOnly is provided, use the first available scope
+    if (props.availableScopesOnly && props.availableScopesOnly.length > 0) {
+        const firstAvailableScope = props.availableScopesOnly[0]
+        formData.value.scope = firstAvailableScope
+        
+        // Set the appropriate scopeUuid based on the selected scope
+        switch (firstAvailableScope) {
+            case 'RELEASE':
+                formData.value.scopeUuid = props.releaseUuid
+                break
+            case 'BRANCH':
+                formData.value.scopeUuid = props.branchUuid
+                break
+            case 'COMPONENT':
+                formData.value.scopeUuid = props.componentUuid
+                break
+            case 'ORG':
+            default:
+                formData.value.scopeUuid = props.orgUuid
+                break
+        }
+    } else {
+        // Default to Organization scope
+        formData.value.scope = 'ORG'
+        formData.value.scopeUuid = props.orgUuid
+    }
 }
 
 // Watch for changes in the finding row and populate form
