@@ -699,6 +699,24 @@ async function setDependencyAsFollowVersion (uuid: string) {
 
 const saveModifiedBranch = async function () {
     try {
+        // Check if branch type is being changed to BASE
+        if (modifiedBranch.value.type === 'BASE' && branchData.value.type !== 'BASE') {
+            const result = await Swal.fire({
+                title: 'Change Branch Type to Base?',
+                text: 'Changing this branch to Base will automatically convert the current Base branch to Regular. Only one Base branch can exist per component.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Yes, change to Base',
+                cancelButtonText: 'Cancel'
+            })
+            
+            if (!result.isConfirmed) {
+                return
+            }
+        }
+        
         // If there's an active editing session, apply those changes first
         if (editingRow.value) {
             const editedRow = modifiedBranch.value.effectiveDependencies?.find(
@@ -740,6 +758,9 @@ const saveModifiedBranch = async function () {
             )
         }
         
+        // Track if branch type was changed to BASE
+        const wasChangedToBase = modifiedBranch.value.type === 'BASE' && branchData.value.type !== 'BASE'
+        
         const storeResp = await store.dispatch('updateBranch', modifiedBranch.value)
         modifiedBranch.value = commonFunctions.deepCopy(storeResp)
         customBranchVersionSchema.value = ''
@@ -747,6 +768,12 @@ const saveModifiedBranch = async function () {
         // Clear deletion marks and newly added marks after successful save
         dependenciesMarkedForDeletion.value.clear()
         newlyAddedDependencies.value.clear()
+        
+        // If branch type was changed to BASE, refresh all branches of the component
+        // to update the old Base branch (now Regular) in the UI
+        if (wasChangedToBase && branchData.value.component) {
+            await store.dispatch('fetchBranches', branchData.value.component)
+        }
     } catch (err) {
         notify('error', 'Error Saving Branch', String(err))
     }
