@@ -906,7 +906,7 @@ const resourceGroupMap: ComputedRef<any> = computed((): any => {
 })
 
 const branches: ComputedRef<any> = computed((): any => {
-    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'PULL_REQUEST').map((b: any) => {b.key = b.uuid; return b})
+    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'PULL_REQUEST').map((b: any) => ({...b, key: b.uuid}))
     if (storeBranches && storeBranches.length) {
         // sort - TODO make sort configurable
         storeBranches.sort((a: any, b: any) => {
@@ -1253,7 +1253,7 @@ const onCreateBranchSubmit = async function() {
                 createBranchObject.value.versionSchema = customBranchVersionSchema.value
             }
             const createBranchResp = await store.dispatch('createBranch', createBranchObject.value)
-            await store.dispatch('fetchBranches', componentUuid)
+            await store.dispatch('fetchBranches', { componentId: componentUuid, forceRefresh: true })
             onCreateBranchReset()
             showAddBranchModal.value = false
             selectBranch(createBranchResp.uuid)

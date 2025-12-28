@@ -768,7 +768,7 @@ const saveModifiedBranch = async function () {
         // If branch type was changed to BASE, refresh all branches of the component
         // to update the old Base branch (now Regular) in the UI
         if (wasChangedToBase && branchData.value.component) {
-            await store.dispatch('fetchBranches', branchData.value.component)
+            await store.dispatch('fetchBranches', { componentId: branchData.value.component, forceRefresh: true })
         }
     } catch (err) {
         notify('error', 'Error Saving Branch', String(err))

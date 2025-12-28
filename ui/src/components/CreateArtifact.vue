@@ -371,10 +371,6 @@ const onOrgChange = function (orgId: string) {
     store.dispatch('fetchComponents', orgId)
 }
 
-const onProjChange = function (componentId: string) {
-    store.dispatch('fetchBranches', componentId)
-}
-
 const onReset = function () {
     artifact.value = {
         displayIdentifier: '',

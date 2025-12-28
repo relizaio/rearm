@@ -313,7 +313,7 @@ const storeObject : any = {
             })
             if (archived) {
                 // reload branches
-                store.dispatch('fetchBranches', params.componentUuid)
+                store.dispatch('fetchBranches', { componentId: params.componentUuid, forceRefresh: true })
             }
         },
         async cloneBranch (context: any, brProps: any) {
@@ -578,11 +578,15 @@ const storeObject : any = {
             context.commit('ADD_BRANCH', response.data.branch)
             return response.data.branch
         },
-        async fetchBranches (context : any, componentId : string) {
+        async fetchBranches (context : any, payload: string | { componentId: string, forceRefresh?: boolean }) {
+            // Support both string componentId and object payload for backwards compatibility
+            const componentId = typeof payload === 'string' ? payload : payload.componentId
+            const forceRefresh = typeof payload === 'object' ? payload.forceRefresh : false
+            
             const response = await graphqlClient.query({
                 query: graphqlQueries.BranchesGql,
                 variables: { componentUuid: componentId },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
             })
             const branches = response.data.branchesOfComponent
             const setObj = {
