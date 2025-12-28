@@ -275,7 +275,7 @@ const vcsRepos: ComputedRef<any> = computed((): any => {
 
 const createdVcsRepo = async function (repoValue: string) {
     isCreatedNewRepo.value = true
-    await store.dispatch('fetchVcsRepos', props.orgProp)
+    await store.dispatch('fetchVcsRepos', { org: props.orgProp, forceRefresh: true })
     component.value.vcs = repoValue
 }
 

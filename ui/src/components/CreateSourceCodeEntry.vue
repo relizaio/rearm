@@ -203,12 +203,12 @@ const onSubmit = function () {
 }
 
 const onOrgChange = function (orgId: string) {
-    store.dispatch('fetchComponents', orgId)
+    store.dispatch('fetchComponents', { orgid: orgId, forceRefresh: true })
+    store.dispatch('fetchVcsRepos', { org: orguuid.value, forceRefresh: true })
 }
 
 const onProjChange = function (componentId: string) {
     store.dispatch('fetchBranches', componentId)
-    store.dispatch('fetchVcsRepos', orguuid.value)
 }
 
 </script>

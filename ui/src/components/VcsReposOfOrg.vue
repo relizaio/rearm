@@ -196,7 +196,7 @@ function resetSelectVcs (uuid: string, isName: boolean) {
 }
 function createdVcsRepo () {
     modalVcsOfOrgAddVcsRepo.value=false
-    store.dispatch('fetchVcsRepos', orguuid.value)
+    store.dispatch('fetchVcsRepos', { org: orguuid.value, forceRefresh: true })
 }
 
 async function archiveVcsRepo (repo: VCS) {

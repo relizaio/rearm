@@ -115,7 +115,7 @@ const createdVcsRepo = function (repoId: string) {
     submitted.value = true
 }
 
-await store.dispatch('fetchVcsRepos', props.orgprop)
+await store.dispatch('fetchVcsRepos', { org: props.orgprop, forceRefresh: true })
 if (props.branchUuid) {
     await store.dispatch('fetchBranch', props.branchUuid)
     const br = store.getters.branchById(props.branchUuid)

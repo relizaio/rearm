@@ -983,7 +983,11 @@ const storeObject : any = {
             }
             return archived
         },
-        async fetchVcsRepos (context: any, org: NonNullable<string>) {
+        async fetchVcsRepos (context: any, payload: string | { org: string, forceRefresh?: boolean }) {
+            // Support both string org and object payload for backwards compatibility
+            const org = typeof payload === 'string' ? payload : payload.org
+            const forceRefresh = typeof payload === 'object' ? payload.forceRefresh : false
+            
             const response = await graphqlClient.query({
                 query: gql`
                     query listVcsReposOfOrganization($orgUuid: ID!) {
@@ -998,7 +1002,7 @@ const storeObject : any = {
                 variables: {
                     orgUuid: org
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
             })
             context.commit('SET_VCS_REPOS', response.data.listVcsReposOfOrganization)
             return response.data.listVcsReposOfOrganization

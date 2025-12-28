@@ -76,7 +76,7 @@
             </div>
             <div class="linkedVcsRepoBlock" v-if="branchData.componentDetails.type === 'COMPONENT'">
                 <label>Linked VCS Repository</label>
-                <n-select v-if="isWritable" :options="vcsRepos" v-model:value="modifiedBranch.vcs" @focus="fetchVcsRepos" />
+                <n-select v-if="isWritable" :options="vcsRepos" v-model:value="modifiedBranch.vcs" />
                 <span v-if="!isWritable && modifiedBranch.vcsRepositoryDetails && modifiedBranch.vcsRepositoryDetails.uuid">{{ (modifiedBranch.vcsRepositoryDetails.name === modifiedBranch.vcsRepositoryDetails.uri) ? modifiedBranch.vcsRepositoryDetails.name : modifiedBranch.vcsRepositoryDetails.name + ' - ' + modifiedBranch.vcsRepositoryDetails.uri }}</span>
                 <span v-if="!isWritable && !modifiedBranch.vcsRepositoryDetails">Not Set</span>
             </div>
@@ -670,11 +670,6 @@ const isReleaseFilterActivated: ComputedRef<boolean>  = computed((): boolean => 
 
 const words: Ref<any> = ref({})
 
-const permissionOptions = [
-    {label: 'Required', value: 'REQUIRED'},
-    {label: 'Transient', value: 'TRANSIENT'},
-    {label: 'Ignored', value: 'IGNORED'}
-]
 const branchSelectOptions = [
     {label: 'REGULAR', value: 'REGULAR'}, 
     {label: 'BASE', value: 'BASE'}, 
@@ -1768,7 +1763,7 @@ async function onCreated () {
     })
     releaseTagKeys.value = Object.keys(tagKeyMap)
         .map((x: string) => {return {label: x, value: x}})
-
+    fetchVcsRepos()
     words.value = commonFunctions.resolveWords(branchData.value.componentDetails.type === 'COMPONENT', myorg.value?.terminology)
 }
 

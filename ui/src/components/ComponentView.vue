@@ -191,7 +191,7 @@
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && componentData.type === 'COMPONENT'">
                                             <label>VCS Repository</label>
-                                            <n-select v-if="isWritable" :options="vcsRepos" v-model:value="updatedComponent.vcs" @focus="fetchVcsRepos" />
+                                            <n-select v-if="isWritable" :options="vcsRepos" v-model:value="updatedComponent.vcs" />
                                             <span v-if="!isWritable && updatedComponent.vcsRepositoryDetails">{{ updatedComponent.vcsRepositoryDetails.uri }}</span>
                                             <span v-if="!isWritable && !updatedComponent.vcsRepositoryDetails">Not Set</span>
                                         </div>
@@ -293,7 +293,7 @@
                                                         <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>
                                                         <span v-if="!selectNewIntegrationRepo && !outputTrigger.vcs">Not Set</span>
                                                         <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
-                                                        <vue-feather v-if="!selectNewIntegrationRepo" type="edit" class="clickable" @click="async () => {await fetchVcsRepos(); selectNewIntegrationRepo = true;}" title="Select New Integration Repository" />
+                                                        <vue-feather v-if="!selectNewIntegrationRepo" type="edit" class="clickable" @click="async () => {selectNewIntegrationRepo = true;}" title="Select New Integration Repository" />
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
                                                         <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
@@ -513,7 +513,6 @@ import { NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber,
 import commonFunctions from '../utils/commonFunctions'
 import ComponentAnalytics from './ComponentAnalytics.vue'
 import ChangelogView from './ChangelogView.vue'
-import ReleaseView from './ReleaseView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
@@ -528,7 +527,6 @@ import { BugOutlined } from '@vicons/antd'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
-import { ConditionPoint } from '@vicons/carbon'
 
 const updatedComponent: Ref<any> = ref({})
 
@@ -1376,10 +1374,6 @@ const setComponentVisibility = async function (newVisValue: string) {
     
 }
 
-if (updatedComponent.value.integrations && updatedComponent.value.integrations.length) {
-    await fetchVcsRepos()
-}
-
 const triggerIntegration = function (integrationUuid: string) {
     axios.put('/api/manual/v1/component/triggerIntegration/' + componentData.value.uuid + '/' + integrationUuid).then((response) => {
         if (response.data.successful) {
@@ -2085,6 +2079,7 @@ async function initLoad() {
         component: resolvedWords.component,
         componentsFirstUpper: resolvedWords.componentsFirstUpper
     }
+    fetchVcsRepos()
 }
 
 async function handleTabSwitch(tabName: string) {
