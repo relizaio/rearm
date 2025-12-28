@@ -138,7 +138,8 @@ public class BranchService {
 			Branch testBr = brIter.next();
 			BranchData testBd = BranchData.branchDataFromDbRecord(testBr);
 			String vcsBranch = StringUtils.isEmpty(testBd.getVcsBranch()) ? "" : testBd.getVcsBranch().toLowerCase();
-			if (testBd.getType() != BranchType.BASE && !cleanedLiveBranchNames.contains(testBd.getName().toLowerCase()) 
+			if (testBd.getType() != BranchType.BASE && testBd.getType() != BranchType.TAG 
+					&& !cleanedLiveBranchNames.contains(testBd.getName().toLowerCase()) 
 					&& !cleanedLiveBranchNames.contains(vcsBranch)) {
 				deadBranches.add(testBr.getUuid());
 			}

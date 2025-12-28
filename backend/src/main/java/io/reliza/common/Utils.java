@@ -404,15 +404,19 @@ public class Utils {
 		// refs/pull/123/merge -> pull/123/merge (direct PR ref)
 		branch = branch.replaceAll("refs/remotes/pull/", "pull/");
 		branch = branch.replaceAll("refs/pull/", "pull/");
+
+		branch = branch.replaceAll("refs/tags/", "tags/");
+		branch = branch.replaceAll("refs/remotes/tags/", "tags/");
 		// Handle Azure DevOps PR refs:
 		// refs/remotes/pullrequest/123/merge -> pullrequest/123/merge
 		// refs/pullrequest/123/merge -> pullrequest/123/merge
 		branch = branch.replaceAll("refs/remotes/pullrequest/", "pullrequest/");
 		branch = branch.replaceAll("refs/pullrequest/", "pullrequest/");
 		// Handle regular remote tracking branches: refs/remotes/{remote}/ -> empty
-		branch = branch.replaceAll("refs/remotes/[^/]+/", "");
+		// Use ^refs/remotes/ to ensure we only match at the beginning and don't strip already-cleaned prefixes like tags/
+		branch = branch.replaceAll("^refs/remotes/[^/]+/", "");
 		branch = branch.replaceAll("refs/heads/", ""); // GitHub sends like this
-		branch = branch.replaceFirst("origin/", ""); // Jenkins may send like this
+		branch = branch.replaceFirst("^origin/", ""); // Jenkins may send like this
 		return branch;
 	}
 	

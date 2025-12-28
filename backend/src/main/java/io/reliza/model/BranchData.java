@@ -13,8 +13,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.apache.commons.lang3.StringUtils;
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -79,6 +77,7 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 		REGULAR, // legacy type or for unknown
 		RELEASE,
 		PULL_REQUEST,
+		TAG,
 		DEVELOP,
 		HOTFIX;
 	}
@@ -212,15 +211,19 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 	
 	public static BranchType resolveBranchTypeByName (String name) {
 		BranchType bt = BranchType.REGULAR;
-		if (StringUtils.containsIgnoreCase(name, "hotfix")) {
+		if (name.startsWith("pull/") || name.startsWith("pullrequest/")) {
+			bt = BranchType.PULL_REQUEST;
+		} else if (name.startsWith("tags/")) {
+			bt = BranchType.TAG;
+		} else if (name.toLowerCase().contains("hotfix")) {
 			bt = BranchType.HOTFIX;
-		} else if (StringUtils.containsIgnoreCase(name, "release/")) {
+		} else if (name.toLowerCase().contains("release/")) {
 			bt = BranchType.RELEASE;
-		} else if (StringUtils.equalsIgnoreCase(name, "develop")) {
+		} else if (name.equalsIgnoreCase("develop")) {
 			bt = BranchType.DEVELOP;
-		} else if (StringUtils.containsIgnoreCase(name, "feature/")
-				|| StringUtils.containsIgnoreCase(name, "feature-") 
-				|| StringUtils.containsIgnoreCase(name, "-feature")) {
+		} else if (name.toLowerCase().contains("feature/")
+				|| name.toLowerCase().contains("feature-") 
+				|| name.toLowerCase().contains("-feature")) {
 			bt = BranchType.FEATURE;
 		}
 		return bt;
@@ -233,6 +236,7 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 		Map<String,Object> recordData = b.getRecordData();
 		BranchData bd = Utils.OM.convertValue(recordData, BranchData.class);
 		bd.setUuid(b.getUuid());
+		bd.setCreatedDate(b.getCreatedDate());
 		return bd;
 	}
 	

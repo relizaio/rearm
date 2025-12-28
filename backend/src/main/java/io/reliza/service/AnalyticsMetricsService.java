@@ -78,11 +78,6 @@ public class AnalyticsMetricsService {
 		return ams.stream().map(AnalyticsMetricsData::dataFromRecord).toList();
 	}
 	
-	private Optional<AnalyticsMetrics> findAnalyticsMetricsByOrgDate(UUID org, ZonedDateTime date) {
-		String dateKey = AnalyticsMetricsData.obtainAnalyticsDateKey(date);
-		return repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey);
-	}
-	
 	public Optional<AnalyticsMetricsData> findAnalyticsMetricsByOrgPerspectiveDateKey(UUID org, UUID perspective, String dateKey) {
 		Optional<AnalyticsMetrics> am = repository.findAnalyticsMetricsByOrgPerspectiveDateKey(
 				org.toString(), perspective.toString(), dateKey);
@@ -118,8 +113,10 @@ public class AnalyticsMetricsService {
 		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
 		ZonedDateTime upToDate = requestedDate.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC);
 		
-		// Get all active branches of the component
-		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE);
+		// Get all active branches of the component, excluding TAG branches
+		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE).stream()
+				.filter(b -> b.getType() != BranchData.BranchType.TAG)
+				.collect(Collectors.toList());
 		if (branches.isEmpty()) {
 			return Optional.empty();
 		}
@@ -311,7 +308,10 @@ public class AnalyticsMetricsService {
 	
 	private AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
 		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
-		var activeBranches = branchService.listBranchesOfOrg(org);
+		var activeBranches = branchService.listBranchesOfOrg(org).stream()
+				.map(BranchData::branchDataFromDbRecord)
+				.filter(b -> b.getType() != BranchData.BranchType.TAG)
+				.collect(Collectors.toList());
 		List<ReleaseData> latestReleasesOfBranches;
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
 			latestReleasesOfBranches = customPool.submit(() -> 
