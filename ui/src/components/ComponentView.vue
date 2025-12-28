@@ -15,10 +15,10 @@
                     <n-gi>
                         <findings-over-time-chart
                             :type="selectedBranchUuid ? 'BRANCH' : 'COMPONENT'"
-                            :component-uuid="componentData.uuid"
+                            :component-uuid="componentData?.uuid"
                             :branch-uuid="selectedBranchUuid || undefined"
-                            :component-name="componentData.name"
-                            :component-type="componentData.type"
+                            :component-name="componentData?.name"
+                            :component-type="componentData?.type"
                             :branch-name="selectedBranchUuid ? (branches.find((b: any) => b.uuid === selectedBranchUuid)?.name || '') : ''"
                             :org-uuid="myorg?.uuid"
                             :days-back="120"
@@ -34,8 +34,6 @@
                             <n-space v-cloak>
                                 <vue-feather v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
                                 <vue-feather v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="openComponentSettings" type="tool" />
-                                <!-- vue-feather v-if="componentData"
-                                    @click="showComponentAnalyticsModal = true" class="clickable icons" type="bar-chart" :title="words.componentFirstUpper + ' Analytics'" / -->
                                 <vue-feather v-if="words.componentFirstUpper" type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
                                 <n-tooltip trigger="hover" v-if="componentData && componentData.uuid">
                                     <template #trigger>
@@ -54,6 +52,9 @@
                                     target="_blank"><vue-feather type="external-link" class="clickable icons" title="Open VCS Repository URI in New Window" /></a>
                                 </n-tooltip>
 
+                                <n-icon v-if="componentData" @click="navigateToVulnAnalysis" class="clickable icons" size="24" :title="'Open ' + words.componentFirstUpper + ' Finding Analysis'">
+                                    <bug-outlined />
+                                </n-icon>
                                 <vue-feather v-if="isWritable" @click="archiveComponent" class="clickable" type="trash-2" :title="'Archive ' + words.componentFirstUpper" />
                             </n-space>
                             <n-modal
@@ -523,6 +524,7 @@ import axios from '../utils/axios'
 import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
+import { BugOutlined } from '@vicons/antd'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
@@ -1460,6 +1462,21 @@ const getVcsRepoObjById = function (repoId: string) {
         }
     }
     return myVcsRepo
+}
+
+const navigateToVulnAnalysis = function () {
+    if (!componentData.value) return
+    
+    const query: Record<string, string> = {
+        componentProduct: componentData.value.uuid,
+        type: componentData.value.type
+    }
+    
+    router.push({
+        name: 'VulnerabilityAnalysis',
+        params: { orguuid: componentData.value.org },
+        query
+    })
 }
 
 const archiveComponent = async function () {

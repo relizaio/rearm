@@ -176,7 +176,7 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                             params: {orguuid: org}
                         }
                     },
-                    { default: () => 'Vulnerability Analysis' }
+                    { default: () => 'Finding Analysis' }
                 ),
             key: 'vulnerabilityAnalysis',
             icon: renderIcon(BugOutlined)
