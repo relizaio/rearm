@@ -90,7 +90,7 @@ watch(myorg, (currentValue, oldValue) => {
 });
 watch(myperspective, (currentValue, oldValue) => {
     if (currentValue !== oldValue) {
-        initLoad()
+        initLoad(true) // Force refresh from network when perspective changes
     }
 });
 const orguuid : Ref<string> = ref('')
@@ -129,11 +129,11 @@ const componentProductWords : any = {
 
 const components: ComputedRef<any[]> = computed((): any => (isProduct ? store.getters.productsOfOrg(orguuid.value) : store.getters.componentsOfOrg(orguuid.value)))
 
-async function initLoad () {
+async function initLoad (forceRefresh = false) {
     if (isProduct) {
-        await store.dispatch('fetchProducts', orguuid.value)
+        await store.dispatch('fetchProducts', { orgid: orguuid.value, forceRefresh })
     } else {
-        await store.dispatch('fetchComponents', orguuid.value)
+        await store.dispatch('fetchComponents', { orgid: orguuid.value, forceRefresh })
     }
 }
 

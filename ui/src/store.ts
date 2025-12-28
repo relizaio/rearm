@@ -592,7 +592,11 @@ const storeObject : any = {
             context.commit('SET_BRANCHES_OF_COMP', setObj)
             return branches
         },
-        async fetchComponents (context : any, orgid : string) : Promise<any[]> {
+        async fetchComponents (context : any, payload: string | { orgid: string, forceRefresh?: boolean }) : Promise<any[]> {
+            // Support both string orgid and object payload for backwards compatibility
+            const orgid = typeof payload === 'string' ? payload : payload.orgid
+            const forceRefresh = typeof payload === 'object' ? payload.forceRefresh : false
+            
             const perspectiveUuid = context.state.iam.perspectiveUuid
             const variables: any = { 
                 orgUuid: orgid,
@@ -612,12 +616,16 @@ const storeObject : any = {
                         }
                     }`,
                 variables,
-                fetchPolicy: 'no-cache'
+                fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
             })
             context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'COMPONENT', components: response.data.components })
             return response.data.components
         },
-        async fetchProducts (context : any, orgid : string) : Promise<any[]> {
+        async fetchProducts (context : any, payload: string | { orgid: string, forceRefresh?: boolean }) : Promise<any[]> {
+            // Support both string orgid and object payload for backwards compatibility
+            const orgid = typeof payload === 'string' ? payload : payload.orgid
+            const forceRefresh = typeof payload === 'object' ? payload.forceRefresh : false
+            
             const perspectiveUuid = context.state.iam.perspectiveUuid
             const variables: any = { 
                 orgUuid: orgid,
@@ -637,7 +645,7 @@ const storeObject : any = {
                         }
                     }`,
                 variables,
-                fetchPolicy: 'no-cache'
+                fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
             })
             context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'PRODUCT', components: response.data.components })
             return response.data.components
