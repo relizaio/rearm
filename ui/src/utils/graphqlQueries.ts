@@ -793,17 +793,7 @@ const BRANCH_GQL_DATA = `
     marketingVersionSchema
     metadata
     autoIntegrate
-    pullRequests{
-        title
-        targetBranch
-        endpoint
-        number
-        state
-        createdDate
-        closedDate
-        mergedDate
-        commits
-    }
+    createdDate
     dependencies {
         uuid
         status

@@ -954,18 +954,11 @@ const mainBranch: ComputedRef<string> = computed((): any => {
 const pullRequests: ComputedRef<any> = computed((): any => {
     const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type === 'PULL_REQUEST').map((b: any) => ({...b, key: b.uuid}))
     if (storeBranches && storeBranches.length) {
+        // Sort by creation date in descending order (newest first)
         storeBranches.sort((a: any, b: any) => {
-            if (isMain(a) > isMain(b)) {
-                return -1
-            } else if (isMain(a) < isMain(b)) {
-                return 1
-            } else if (a.name < b.name) {
-                return -1
-            } else if (a.name > b.name) {
-                return 1
-            } else {
-                return 0
-            }
+            const dateA = a.createdDate ? new Date(a.createdDate).getTime() : 0
+            const dateB = b.createdDate ? new Date(b.createdDate).getTime() : 0
+            return dateB - dateA
         })
     }
     return storeBranches
@@ -974,18 +967,11 @@ const pullRequests: ComputedRef<any> = computed((): any => {
 const tags: ComputedRef<any> = computed((): any => {
     const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type === 'TAG').map((b: any) => ({...b, key: b.uuid}))
     if (storeBranches && storeBranches.length) {
+        // Sort by creation date in descending order (newest first)
         storeBranches.sort((a: any, b: any) => {
-            if (isMain(a) > isMain(b)) {
-                return -1
-            } else if (isMain(a) < isMain(b)) {
-                return 1
-            } else if (a.name < b.name) {
-                return -1
-            } else if (a.name > b.name) {
-                return 1
-            } else {
-                return 0
-            }
+            const dateA = a.createdDate ? new Date(a.createdDate).getTime() : 0
+            const dateB = b.createdDate ? new Date(b.createdDate).getTime() : 0
+            return dateB - dateA
         })
     }
     return storeBranches
