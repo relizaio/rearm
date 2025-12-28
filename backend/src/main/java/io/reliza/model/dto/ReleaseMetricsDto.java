@@ -1062,7 +1062,7 @@ public class ReleaseMetricsDto implements Cloneable {
 			return VulnerabilitySeverity.UNASSIGNED;
 		}
 		
-		// Priority order: ANALYSIS > NVD > GHSA > OTHER
+		// Priority order: ANALYSIS > NVD (if not UNASSIGNED) > GHSA > NVD (even if UNASSIGNED) > OTHER
 		// First, look for ANALYSIS severity (from VulnAnalysis)
 		for (SeveritySourceDto severityDto : severities) {
 			if (severityDto.source() == SeveritySource.ANALYSIS) {
@@ -1070,18 +1070,28 @@ public class ReleaseMetricsDto implements Cloneable {
 			}
 		}
 		
-		// If no ANALYSIS found, look for NVD severity
+		// Look for NVD severity (prefer if not UNASSIGNED)
+		VulnerabilitySeverity nvdSeverity = null;
 		for (SeveritySourceDto severityDto : severities) {
 			if (severityDto.source() == SeveritySource.NVD) {
-				return severityDto.severity();
+				nvdSeverity = severityDto.severity();
+				if (nvdSeverity != VulnerabilitySeverity.UNASSIGNED) {
+					return nvdSeverity;
+				}
+				break;
 			}
 		}
 		
-		// If no NVD found, look for GHSA severity
+		// If NVD is UNASSIGNED or not found, look for GHSA severity
 		for (SeveritySourceDto severityDto : severities) {
 			if (severityDto.source() == SeveritySource.GHSA) {
 				return severityDto.severity();
 			}
+		}
+		
+		// If GHSA not found and NVD was UNASSIGNED, return NVD UNASSIGNED
+		if (nvdSeverity != null) {
+			return nvdSeverity;
 		}
 		
 		// If no ANALYSIS, NVD or GHSA found, use OTHER or any available
