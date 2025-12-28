@@ -484,7 +484,18 @@
                     </div>
                 </div>
                 <div class="componentDetails">
-                    <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" :default-expanded-row-keys="[selectedBranchUuid]" />
+                    <n-tabs v-if="componentData && componentData.type === 'COMPONENT'" v-model:value="selectedTab" type="line" @update:value="handleTabChange">
+                        <n-tab-pane name="branches" tab="Branches">
+                            <n-data-table :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                        </n-tab-pane>
+                        <n-tab-pane name="pull-requests" tab="Pull Requests">
+                            <n-data-table :data="pullRequests" :columns="pullRequestFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                        </n-tab-pane>
+                        <n-tab-pane name="tags" tab="Tags">
+                            <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                        </n-tab-pane>
+                    </n-tabs>
+                    <n-data-table v-else :data="branches" :columns="branchFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                 </div>
             </n-gi>
             <n-gi span="7">
@@ -690,7 +701,7 @@ const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
-const chartViewType: Ref<'COMPONENT' | 'BRANCH'> = ref('COMPONENT')
+const selectedTab: Ref<string> = ref((route.query.tab as string) || 'branches')
 const branchCollapseState: Ref<any> = ref({})
 const selectedPullRequest: Ref<string> = routePrnumber !== '' ? ref(branchRouteId + '-pr-' + routePrnumber) : ref('')
 branchCollapseState.value['branchCollapse' + branchRouteId] = true
@@ -940,10 +951,9 @@ const mainBranch: ComputedRef<string> = computed((): any => {
     return mainBranch
 })
 
-const prBranches: ComputedRef<any> = computed((): any => {
-    let storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type === 'PULL_REQUEST')
+const pullRequests: ComputedRef<any> = computed((): any => {
+    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type === 'PULL_REQUEST').map((b: any) => ({...b, key: b.uuid}))
     if (storeBranches && storeBranches.length) {
-        // sort - TODO make sort configurable
         storeBranches.sort((a: any, b: any) => {
             if (isMain(a) > isMain(b)) {
                 return -1
@@ -960,17 +970,26 @@ const prBranches: ComputedRef<any> = computed((): any => {
     }
     return storeBranches
 })
-const prFields = [
-    {
-        key: 'name',
-        title: 'Pull Request Name'
-    },
-    {
-        key: 'versionSchema',
-        title: 'Version Schema',
-        render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
+
+const tags: ComputedRef<any> = computed((): any => {
+    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type === 'TAG').map((b: any) => ({...b, key: b.uuid}))
+    if (storeBranches && storeBranches.length) {
+        storeBranches.sort((a: any, b: any) => {
+            if (isMain(a) > isMain(b)) {
+                return -1
+            } else if (isMain(a) < isMain(b)) {
+                return 1
+            } else if (a.name < b.name) {
+                return -1
+            } else if (a.name > b.name) {
+                return 1
+            } else {
+                return 0
+            }
+        })
     }
-]
+    return storeBranches
+})
 
 const branchesForEnvMapping: ComputedRef<any> = computed((): any => {
     const envMappingBranches: any = []
@@ -1002,9 +1021,24 @@ function selectBranch (uuid: string) {
                 orguuid: route.params.orguuid,
                 compuuid: componentUuid,
                 branchuuid: selectedBranchUuid.value
-            }
+            },
+            query: route.query
         })
     }
+}
+
+function handleTabChange (tabName: string) {
+    // Clear selected branch when switching tabs
+    selectedBranchUuid.value = ''
+    
+    router.push({
+        name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
+        params: {
+            orguuid: route.params.orguuid,
+            compuuid: componentUuid
+        },
+        query: { ...route.query, tab: tabName }
+    })
 }
 
 const createBranchForm = ref<FormInst | null>(null)
@@ -1654,71 +1688,6 @@ const branchRowClassName = (row: any) => {
 }
 const branchFields: any[] = [
     {
-        type: 'expand',
-        expandable: () => false, // isComponent,
-        renderExpand: (row: any) => {
-            if(!row.pullRequests?.length)
-                return `No Pull Requests recorded.`
-            let el = h(NDataTable,{
-                data: row.pullRequests,
-                columns: [
-                    {
-                        key: 'number',
-                        title: '#'
-                    },
-                    {
-                        key: 'title',
-                        title: 'Title'
-                    },
-                    {
-                        key: 'state',
-                        title: 'State'
-                    },
-                    {
-                        key: 'target',
-                        title: 'Target',
-                        render: (innerRow: any) => {
-                            const target = branches.value.find((b:any) => b.uuid === innerRow.targetBranch)
-                            return target?.name
-                        }
-                    },
-                    {
-                        title: '',
-                        key: 'manage',
-                        render: (innerRow: any) => {
-                            return h('a', {
-                                href: innerRow.endpoint,
-                                rel: 'noopener noreferrer',
-                                target: '_blank'
-                            },
-                            [
-                                h(
-                                    NIcon,
-                                    {
-                                        title: 'Permanent Link',
-                                        class: 'icons',
-                                        size: 25
-                                    },
-                                    () => h(LinkIcon)
-                                )
-                            ])
-                        }
-                    }
-
-                ],
-                rowProps: (innerRow: any) => {
-                    return {
-                        style: 'cursor: pointer;',
-                        onClick: () => {
-                            selectBranchPr(row.uuid ,innerRow.number)
-                        }
-                    }
-                }
-            })
-            return el
-        }
-    },
-    {
         title: () => {
             return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
                 h('span', words.value.branchFirstUpper),
@@ -1762,6 +1731,32 @@ if (!isComponent.value && isWritable){
 }
 
 const branchTableRowKey = (row: any) => row.uuid
+
+// Pull Request fields - same as branch fields but with "Pull Request" header
+const pullRequestFields: any[] = [
+    {
+        title: 'Pull Request',
+        key: 'name'
+    },
+    {
+        title: 'Version Schema',
+        key: 'versionSchema',
+        render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
+    }
+]
+
+// Tag fields - same as branch fields but with "Tag" header
+const tagFields: any[] = [
+    {
+        title: 'Tag',
+        key: 'name'
+    },
+    {
+        title: 'Version Schema',
+        key: 'versionSchema',
+        render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
+    }
+]
 
 async function addOutputTrigger () {
     if (!updatedComponent.value.outputTriggers) {
