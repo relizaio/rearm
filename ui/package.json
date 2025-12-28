@@ -9,7 +9,7 @@
     "lint": "eslint --ext .js,.vue --ignore-path .gitignore --fix src"
   },
   "dependencies": {
-    "@apollo/client": "^4.0.9",
+    "@apollo/client": "^4.0.11",
     "@ts-stack/markdown": "^1.5.0",
     "@vicons/utils": "^0.1.4",
     "apollo-upload-client": "^19.0.0",
