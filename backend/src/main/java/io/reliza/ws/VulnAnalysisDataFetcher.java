@@ -25,8 +25,11 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.BranchData;
+import io.reliza.model.ComponentData;
 import io.reliza.model.FindingType;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.ReleaseData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.WhoUpdated;
@@ -245,5 +248,37 @@ public class VulnAnalysisDataFetcher {
 				wu);
 		
 		return VulnAnalysisWebDto.fromVulnAnalysisData(vad);
+	}
+	
+	/** Sub-fields **/
+	
+	@DgsData(parentType = "VulnAnalysisWebDto", field = "releaseDetails")
+	public ReleaseData releaseOfVulnAnalysis(DgsDataFetchingEnvironment dfe) {
+		VulnAnalysisWebDto dto = dfe.getSource();
+		if (dto.getRelease() == null) {
+			return null;
+		}
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(dto.getRelease());
+		return ord.orElse(null);
+	}
+	
+	@DgsData(parentType = "VulnAnalysisWebDto", field = "branchDetails")
+	public BranchData branchOfVulnAnalysis(DgsDataFetchingEnvironment dfe) {
+		VulnAnalysisWebDto dto = dfe.getSource();
+		if (dto.getBranch() == null) {
+			return null;
+		}
+		Optional<BranchData> obd = branchService.getBranchData(dto.getBranch());
+		return obd.orElse(null);
+	}
+	
+	@DgsData(parentType = "VulnAnalysisWebDto", field = "componentDetails")
+	public ComponentData componentOfVulnAnalysis(DgsDataFetchingEnvironment dfe) {
+		VulnAnalysisWebDto dto = dfe.getSource();
+		if (dto.getComponent() == null) {
+			return null;
+		}
+		Optional<ComponentData> ocd = getComponentService.getComponentData(dto.getComponent());
+		return ocd.orElse(null);
 	}
 }

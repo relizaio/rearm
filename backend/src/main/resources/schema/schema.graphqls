@@ -2006,6 +2006,9 @@ type VulnAnalysisWebDto {
 	analysisJustification: AnalysisJustification
 	analysisHistory: [AnalysisHistoryWebDto]
 	severity: VulnerabilitySeverity
+	releaseDetails: Release
+	branchDetails: Branch
+	componentDetails: Component
 }
 
 type AnalysisHistoryWebDto {
