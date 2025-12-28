@@ -2,7 +2,7 @@
     <div class="findingsOverTimeChart">
         <h3 class="chart-title">Findings Over Time</h3>
         <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
-        <n-empty v-else-if="hasNoData" :description="`No findings reported for the last ${props.daysBack} days`" size="large" />
+        <n-empty v-else-if="hasNoData" style="height: 220px;" :description="`No findings reported for the last ${props.daysBack} days`" size="large" />
         <div v-else id="findingsOverTimeVis"></div>
         <vulnerability-modal
             v-model:show="showFindingsPerDayModal"

@@ -3,7 +3,7 @@
         <h3 class="chart-title">Releases Per Day</h3>
         <div class="charts">
             <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
-            <n-empty v-else-if="hasNoData" :description="`No releases added for the last ${props.daysBack} days`" size="large" />
+            <n-empty v-else-if="hasNoData" style="height: 220px;" :description="`No releases added for the last ${props.daysBack} days`" size="large" />
             <div v-else id="releaseCreationVisHome"></div>
         </div>
     </div>
