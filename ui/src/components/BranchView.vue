@@ -322,6 +322,7 @@
             :release-uuid="selectedReleaseForModal?.uuid || ''"
             :branch-uuid="branchData.uuid || ''"
             :component-uuid="branchData.componentDetails?.uuid || ''"
+            :component-type="branchData.componentDetails?.type || ''"
             :artifact-view-only="false"
             :initial-severity-filter="currentSeverityFilter"
             :initial-type-filter="currentTypeFilter"

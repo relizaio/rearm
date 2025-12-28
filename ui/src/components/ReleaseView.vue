@@ -496,6 +496,7 @@
             :release-uuid="currentArtifactDisplayId ? '' : releaseUuid"
             :branch-uuid="release.branchDetails?.uuid || ''"
             :component-uuid="release.componentDetails?.uuid || ''"
+            :component-type="release.componentDetails?.type || ''"
             :artifact-view-only="!!currentArtifactDisplayId"
             :initial-severity-filter="currentSeverityFilter"
             :initial-type-filter="currentTypeFilter"
