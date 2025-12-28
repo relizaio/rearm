@@ -917,7 +917,7 @@ const resourceGroupMap: ComputedRef<any> = computed((): any => {
 })
 
 const branches: ComputedRef<any> = computed((): any => {
-    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'PULL_REQUEST').map((b: any) => ({...b, key: b.uuid}))
+    const storeBranches = store.getters.branchesOfComponent(componentUuid).filter((b: any) => b.type !== 'PULL_REQUEST' && b.type !== 'TAG').map((b: any) => ({...b, key: b.uuid}))
     if (storeBranches && storeBranches.length) {
         // sort - TODO make sort configurable
         storeBranches.sort((a: any, b: any) => {
@@ -1599,35 +1599,7 @@ const showReleaseModal = function (rluuid: string) {
     // this.$refs['modal-component-edit-release'].show()
 }
 
-// PR
-
-const showBranchDetails = function(brUuid: string) {
-    branchCollapseState.value['branchCollapse' + brUuid] = !branchCollapseState.value['branchCollapse' + brUuid]
-}
-const selectBranchPr = function(uuid: string, identifier: string) {
-    branchCollapseState.value['branchCollapse' + uuid] = true
-    selectedPullRequest.value = uuid + '-pr-' + identifier
-    router.push({
-        name: 'ComponentsOfOrg',
-        params: {
-            orguuid: route.params.orguuid,
-            compuuid: componentUuid,
-            branchuuid: uuid,
-            prnumber: identifier
-        }
-    })
-}
-const isSelectedBranchPR : ComputedRef<boolean> = computed((): any => {
-    const isPR: boolean = prBranches.value.find((b:any) => b.uuid === selectedBranchUuid.value) != undefined
-    return isPR
-})
-// if(isSelectedBranchPR.value){
-//     selectedComponentTab.value = 'PULL_REQUEST'
-// }
-
-
 const marketingVersionEnabled = ref(updatedComponent.value.versionType === 'MARKETING')
-
 
 const toggleMarketingVersion = async function(value: boolean){
     if(value){
