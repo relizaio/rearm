@@ -15,8 +15,11 @@
                     <n-gi>
                         <findings-over-time-chart
                             :type="selectedBranchUuid ? 'BRANCH' : 'COMPONENT'"
-                            :component-uuid="selectedBranchUuid ? undefined : componentData?.uuid"
+                            :component-uuid="componentData.uuid"
                             :branch-uuid="selectedBranchUuid || undefined"
+                            :component-name="componentData.name"
+                            :component-type="componentData.type"
+                            :branch-name="selectedBranchUuid ? (branches.find((b: any) => b.uuid === selectedBranchUuid)?.name || '') : ''"
                             :org-uuid="myorg?.uuid"
                             :days-back="120"
                         />

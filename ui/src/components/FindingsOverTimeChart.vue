@@ -11,6 +11,9 @@
             :data="findingsPerDayData"
             :loading="findingsPerDayLoading"
             :org-uuid="orgUuid"
+            :component-uuid="props.componentUuid"
+            :branch-uuid="props.branchUuid"
+            :component-type="props.componentType"
             :initial-severity-filter="directFindingsDate ? directFindingsSeverity : findingsPerDaySeverity"
             :initial-type-filter="directFindingsDate ? directFindingsType : findingsPerDayType"
             @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
@@ -41,11 +44,17 @@ const props = withDefaults(defineProps<{
     branchUuid?: string
     componentUuid?: string
     perspectiveUuid?: string
+    componentName?: string
+    branchName?: string
+    componentType?: string
     dateFrom?: Date
     dateTo?: Date
     daysBack?: number
 }>(), {
-    daysBack: 60
+    daysBack: 60,
+    componentName: '',
+    branchName: '',
+    componentType: ''
 })
 
 const store = useStore()
@@ -70,7 +79,25 @@ const findingsPerDayDate = computed(() => route.query.date as string || '')
 const findingsPerDaySeverity = computed(() => route.query.severity as string || '')
 const findingsPerDayType = computed(() => route.query.type as string || '')
 
-const findingsPerDayModalTitle = computed(() => `Findings for ${directFindingsDate.value || findingsPerDayDate.value}`)
+const findingsPerDayModalTitle = computed(() => {
+    const date = directFindingsDate.value || findingsPerDayDate.value
+    const contextParts: string[] = []
+    
+    if (props.type === 'BRANCH' && props.branchName) {
+        const branchLabel = props.componentType === 'PRODUCT' 
+            ? (myorg.value?.terminology?.featureSetLabel || 'Feature Set')
+            : 'Branch'
+        contextParts.push(`${branchLabel}: ${props.branchName}`)
+    } else if (props.type === 'COMPONENT' && props.componentName) {
+        const typeLabel = props.componentType === 'PRODUCT' ? 'Product' : 'Component'
+        contextParts.push(`${typeLabel}: ${props.componentName}`)
+    }
+    
+    if (contextParts.length > 0) {
+        return `Findings for ${date} - ${contextParts.join(', ')}`
+    }
+    return `Findings for ${date}`
+})
 
 // Common GraphQL fields for findings queries
 const FINDINGS_FIELDS = `
