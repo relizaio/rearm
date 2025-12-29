@@ -1,5 +1,5 @@
 <template>
-    <div class="branchView" v-if="modifiedBranch && branchData && modifiedBranch.name && branchData.name && branchData.componentDetails">
+    <div class="branchView" v-if="modifiedBranch && branchData && modifiedBranch.name && branchData.name && branchData.componentDetails && words.branchFirstUpper">
         <h5>{{ words.branchFirstUpper }}: {{ branchData.name }}</h5>
         <div class="branchControls">
             <div class="mainControls">
@@ -365,8 +365,6 @@ import LinkVcs from './LinkVcs.vue'
 import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
-import GqlQueries from '../utils/graphqlQueries'
-import { Edit24Regular } from '@vicons/fluent'
 import { Edit, Eye, X, QuestionMark } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
@@ -684,14 +682,7 @@ const isReleaseFilterActivated: ComputedRef<boolean>  = computed((): boolean => 
     return isActivated
 })
 
-const words: Ref<any> = ref({
-    branchFirstUpper: '',
-    branchFirstUpperPlural: '',
-    branch: '',
-    componentFirstUpper: '',
-    component: '',
-    componentsFirstUpper: ''
-})
+const words: Ref<any> = ref({})
 
 const branchSelectOptions = [
     {label: 'REGULAR', value: 'REGULAR'}, 
