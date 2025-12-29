@@ -1,6 +1,7 @@
 <template>
-    <div>
-        <div class="row">
+    <n-spin :show="isLoading" size="large">
+        <div>
+            <div class="row">
 
             <n-modal
                 v-model:show="showMarketingVersionModal"
@@ -544,8 +545,8 @@
                 </n-space>
             </n-form>
         </n-modal>
-    </div>
-    
+            </div>
+    </n-spin>
 
 </template>
     
@@ -620,6 +621,7 @@ const lifecycleOptions = constants.LifecycleOptions
 onMounted(async () => {
     await fetchRelease()
     await fetchReleaseKeys()
+    isLoading.value = false
 })
 
 const pullRequest: ComputedRef<any> = computed((): any => {
@@ -647,6 +649,7 @@ const givenApprovals: Ref<any> = ref({})
 
 const words: Ref<any> = ref({})
 const isComponent: Ref<boolean> = ref(true)
+const isLoading: Ref<boolean> = ref(true)
 
 async function fetchRelease () {
     let rlzFetchObj: any = {
