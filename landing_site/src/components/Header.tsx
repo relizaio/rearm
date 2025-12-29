@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { FaGithub } from 'react-icons/fa';
 
 export default function Header() {
@@ -6,8 +7,8 @@ export default function Header() {
     <div style={{ marginBottom: "106px" }}>
       <nav className="navbar navbar-expand-lg navbar-light fixed-top" style={{ background: "white", minHeight: "100px", boxShadow: "rgba(0, 0, 0, 0.1) 0px 20px 25px -5px, rgba(0, 0, 0, 0.04) 0px 10px 10px -5px" }}>
         <div className="container-fluid">
-          <Link className="navbar-brand" href="/">
-            <span style={{ fontWeight: 700, color: "#243377", fontSize: 20, padding: "15px" }}>ReARM</span>
+          <Link className="navbar-brand" href="/" style={{ marginLeft: "20px", marginRight: "-20px" }}>
+            <Image src="/home/rearm.png" alt="ReARM" width={75} height={74} />
           </Link>
           <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
             <span className="navbar-toggler-icon"></span>
