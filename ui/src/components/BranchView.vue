@@ -684,7 +684,14 @@ const isReleaseFilterActivated: ComputedRef<boolean>  = computed((): boolean => 
     return isActivated
 })
 
-const words: Ref<any> = ref({})
+const words: Ref<any> = ref({
+    branchFirstUpper: '',
+    branchFirstUpperPlural: '',
+    branch: '',
+    componentFirstUpper: '',
+    component: '',
+    componentsFirstUpper: ''
+})
 
 const branchSelectOptions = [
     {label: 'REGULAR', value: 'REGULAR'}, 
