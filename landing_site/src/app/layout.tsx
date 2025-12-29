@@ -20,16 +20,17 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
+  title: "ReARM",
   description:
-    "Supply Chain Security and Digital Asset Management for Releases, SBOMs, xBOMs, and Security Artifacts.",
+    "ReARM stores SBOMs/xBOMs and other artifacts per release for 10+ years, versioned and audit-ready with vulnerability insights for supply chain compliance.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com"),
+  alternates: { canonical: "/" },
   openGraph: {
-    title: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
+    title: "ReARM - Supply Chain Evidence Store",
     description:
-      "Supply Chain Security and Digital Asset Management for Releases, SBOMs, xBOMs, and Security Artifacts.",
+      "ReARM stores SBOMs/xBOMs and other artifacts per release for 10+ years, versioned and audit-ready with vulnerability insights for supply chain compliance.",
     url: "/",
-    siteName: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
+    siteName: "ReARM",
     images: [
       {
         url: "/rearm.png",
@@ -42,9 +43,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
+    title: "ReARM - Supply Chain Evidence Store",
     description:
-      "Supply Chain Security and Digital Asset Management for Releases, SBOMs, xBOMs, and Security Artifacts.",
+      "ReARM stores SBOMs/xBOMs and other artifacts per release for 10+ years, versioned and audit-ready with vulnerability insights for supply chain compliance.",
     images: ["/rearm.png"],
   },
 };
