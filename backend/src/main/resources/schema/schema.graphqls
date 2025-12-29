@@ -499,6 +499,7 @@ type Branch {
 	autoIntegrate: AutoIntegrateState
 	vcsRepositoryDetails: VcsRepository
 	pullRequests: [PullRequestData]
+	findingAnalyticsParticipation: FindingAnalyticsParticipation
 }
 
 type ChildComponent {
@@ -1184,6 +1185,7 @@ input BranchInput {
 	autoIntegrate: AutoIntegrateState
 	type: BranchType
 	marketingVersionSchema: String
+	findingAnalyticsParticipation: FindingAnalyticsParticipation
 }
 
 input DependencyPatternInput {
@@ -1708,6 +1710,11 @@ enum BranchType {
 	TAG
 	DEVELOP
 	HOTFIX
+}
+
+enum FindingAnalyticsParticipation {
+	INCLUDED
+	EXCLUDED
 }
 
 enum ConditionType {

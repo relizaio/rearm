@@ -87,6 +87,11 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 		DISABLED;
 	}
 	
+	public enum FindingAnalyticsParticipation {
+		INCLUDED,
+		EXCLUDED;
+	}
+	
 	private UUID uuid;
 	@JsonProperty(CommonVariables.NAME_FIELD)
 	private String name;
@@ -132,6 +137,9 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 	private String metadata;
 	
 	private AutoIntegrateState autoIntegrate = AutoIntegrateState.DISABLED;
+	
+	@JsonProperty("findingAnalyticsParticipation")
+	private FindingAnalyticsParticipation findingAnalyticsParticipation;
 
 	@Builder
 	@Data
@@ -205,6 +213,13 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 		bd.setVersionSchema(versionPin);
 		bd.setMarketingVersionSchema(marketingVersionPin);
 		bd.setOrg(orgUuid);
+		
+		// Set findingAnalyticsParticipation to EXCLUDED for TAG branches
+		if (bType == BranchType.TAG) {
+			bd.setFindingAnalyticsParticipation(FindingAnalyticsParticipation.EXCLUDED);
+		} else {
+			bd.setFindingAnalyticsParticipation(FindingAnalyticsParticipation.INCLUDED);
+		}
 
 		return bd;
 	}
@@ -237,6 +252,7 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 		BranchData bd = Utils.OM.convertValue(recordData, BranchData.class);
 		bd.setUuid(b.getUuid());
 		bd.setCreatedDate(b.getCreatedDate());
+		if (null == bd.getFindingAnalyticsParticipation()) bd.setFindingAnalyticsParticipation(FindingAnalyticsParticipation.INCLUDED);
 		return bd;
 	}
 	

@@ -333,6 +333,9 @@ public class BranchService {
 			if (null != branchDto.getAutoIntegrate()) {
 				bd.setAutoIntegrate(branchDto.getAutoIntegrate());
 			}
+			if (null != branchDto.getFindingAnalyticsParticipation()) {
+				bd.setFindingAnalyticsParticipation(branchDto.getFindingAnalyticsParticipation());
+			}
 			if (null != branchDto.getDependencies()) {
 				bd.setDependencies(branchDto.getDependencies());
 			}

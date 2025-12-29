@@ -16,6 +16,7 @@ import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.BranchData.DependencyPattern;
+import io.reliza.model.BranchData.FindingAnalyticsParticipation;
 import io.reliza.model.BranchData.PullRequestData;
 import lombok.Builder;
 import lombok.Data;
@@ -40,4 +41,6 @@ public class BranchDto {
 	private AutoIntegrateState autoIntegrate;
 	private BranchType type;
 	private Map<Integer, PullRequestData> pullRequestData;
+	@JsonProperty("findingAnalyticsParticipation")
+	private FindingAnalyticsParticipation findingAnalyticsParticipation;
 }

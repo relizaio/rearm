@@ -113,9 +113,9 @@ public class AnalyticsMetricsService {
 		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
 		ZonedDateTime upToDate = requestedDate.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC);
 		
-		// Get all active branches of the component, excluding TAG branches
+		// Get all active branches of the component, excluding branches with EXCLUDED findingAnalyticsParticipation
 		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE).stream()
-				.filter(b -> b.getType() != BranchData.BranchType.TAG)
+				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
 				.collect(Collectors.toList());
 		if (branches.isEmpty()) {
 			return Optional.empty();
@@ -310,7 +310,7 @@ public class AnalyticsMetricsService {
 		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
 		var activeBranches = branchService.listBranchesOfOrg(org).stream()
 				.map(BranchData::branchDataFromDbRecord)
-				.filter(b -> b.getType() != BranchData.BranchType.TAG)
+				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
 				.collect(Collectors.toList());
 		List<ReleaseData> latestReleasesOfBranches;
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
