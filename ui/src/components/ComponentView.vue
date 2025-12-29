@@ -745,20 +745,21 @@ const openComponentSettings = async function() {
     await fetchApprovalPolicies()
     showComponentSettingsModal.value = true
     
-    // Update router query parameter
-    await router.push({
-        query: { ...route.query, componentSettingsView: 'true' }
-    })
+    // Update URL without triggering Vue Router navigation
+    const newQuery = new URLSearchParams(window.location.search)
+    newQuery.set('componentSettingsView', 'true')
+    const newUrl = `${window.location.pathname}?${newQuery.toString()}`
+    window.history.replaceState({}, '', newUrl)
 }
 
-const closeComponentSettings = async function() {
+const closeComponentSettings = function() {
     showComponentSettingsModal.value = false
     
-    // Remove componentSettingsView query parameter from URL
-    const { componentSettingsView, ...queryWithoutSettings } = route.query
-    await router.push({
-        query: queryWithoutSettings
-    })
+    // Remove componentSettingsView parameter from URL without triggering Vue Router navigation
+    const newQuery = new URLSearchParams(window.location.search)
+    newQuery.delete('componentSettingsView')
+    const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
+    window.history.replaceState({}, '', newUrl)
 }
 
 // Perspectives management

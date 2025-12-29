@@ -610,23 +610,24 @@ async function triggerAutoIntegrate () {
     showBranchSettingsModal.value = false
 }
 
-const openBranchSettings = async function() {
+const openBranchSettings = function() {
     showBranchSettingsModal.value = true
     
-    // Update router query parameter
-    await router.push({
-        query: { ...route.query, branchSettingsView: 'true' }
-    })
+    // Update URL without triggering Vue Router navigation
+    const newQuery = new URLSearchParams(window.location.search)
+    newQuery.set('branchSettingsView', 'true')
+    const newUrl = `${window.location.pathname}?${newQuery.toString()}`
+    window.history.replaceState({}, '', newUrl)
 }
 
-const closeBranchSettings = async function() {
+const closeBranchSettings = function() {
     showBranchSettingsModal.value = false
     
-    // Remove branchSettingsView query parameter from URL
-    const { branchSettingsView, ...queryWithoutSettings } = route.query
-    await router.push({
-        query: queryWithoutSettings
-    })
+    // Remove branchSettingsView parameter from URL without triggering Vue Router navigation
+    const newQuery = new URLSearchParams(window.location.search)
+    newQuery.delete('branchSettingsView')
+    const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
+    window.history.replaceState({}, '', newUrl)
 }
 
 const approvalMatrix = ref({})
