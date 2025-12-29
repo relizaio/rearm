@@ -74,7 +74,7 @@
                 />
                 <n-input v-else class="w-25" type="text" :value="branchData.type" readonly/>
             </div>
-            <div class="findingAnalyticsParticipationBlock"">
+            <div class="findingAnalyticsParticipationBlock">
                 <label>
                     Finding Analytics Participation
                     <n-tooltip trigger="hover">
@@ -83,7 +83,7 @@
                                 <QuestionMark />
                             </n-icon>
                         </template>
-                        When set to "EXCLUDED", this branch or Feature Set will not be included in any finding analytics aggregations, <br/>
+                        When set to "EXCLUDED", this {{ words.branch }} will not be included in any finding analytics aggregations, <br/>
                         including component, product, organization or perspective totals, including home page dashboard.
                     </n-tooltip>
                 </label>
