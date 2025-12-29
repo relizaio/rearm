@@ -529,25 +529,26 @@ if (route.query.release) {
     showReleaseUuid.value = route.query.release as string
     showReleaseModal.value = true
 }
-const showRelease = async function(uuid: string) {
+const showRelease = function(uuid: string) {
     showReleaseUuid.value = uuid
     showReleaseModal.value = true
     
-    // Update router query parameter
-    await router.push({
-        query: { ...route.query, release: uuid }
-    })
+    // Update URL without triggering Vue Router navigation
+    const newQuery = new URLSearchParams(window.location.search)
+    newQuery.set('release', uuid)
+    const newUrl = `${window.location.pathname}?${newQuery.toString()}`
+    window.history.replaceState({}, '', newUrl)
 }
 
-const closeReleaseModal = async function() {
+const closeReleaseModal = function() {
     showReleaseModal.value = false
     showReleaseUuid.value = ''
     
-    // Remove release query parameter from URL
-    const { release, ...queryWithoutRelease } = route.query
-    await router.push({
-        query: queryWithoutRelease
-    })
+    // Remove release parameter from URL without triggering Vue Router navigation
+    const newQuery = new URLSearchParams(window.location.search)
+    newQuery.delete('release')
+    const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
+    window.history.replaceState({}, '', newUrl)
 }
 
 const cloneReleaseToFsObj = ref({
