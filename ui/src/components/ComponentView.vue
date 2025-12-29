@@ -991,10 +991,6 @@ const branchesForEnvMapping: ComputedRef<any> = computed((): any => {
     return envMappingBranches
 })
 
-if (branches.value.length < 1) {
-    store.dispatch('fetchBranches', componentUuid)
-}
-
 function selectBranch (uuid: string) {
     selectedBranchUuid.value = uuid
     branchCollapseState.value['branchCollapse' + uuid] = true
@@ -2016,6 +2012,7 @@ async function loadUsers() {
 
 async function initLoad() {
     const compUuid = route.params.compuuid.toString()
+    await store.dispatch('fetchBranches', compUuid)
     let storeComponent = store.getters.componentById(compUuid)
     if (!storeComponent || !storeComponent.versionType) {
         storeComponent = await store.dispatch('fetchComponentFull', compUuid)
@@ -2033,6 +2030,20 @@ async function initLoad() {
         componentsFirstUpper: resolvedWords.componentsFirstUpper
     }
     fetchVcsRepos()
+    
+    // Auto-select tab based on branch type if branchuuid is provided
+    if (branchRouteId && !route.query.tab) {
+        const allBranches = store.getters.branchesOfComponent(compUuid)
+        const selectedBranch = allBranches.find((b: any) => b.uuid === branchRouteId)
+        if (selectedBranch) {
+            if (selectedBranch.type === 'PULL_REQUEST') {
+                selectedTab.value = 'pull-requests'
+            } else if (selectedBranch.type === 'TAG') {
+                selectedTab.value = 'tags'
+            }
+            // For 'BRANCH' type or undefined, keep default 'branches'
+        }
+    }
 }
 
 async function handleTabSwitch(tabName: string) {
