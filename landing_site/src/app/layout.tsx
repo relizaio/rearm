@@ -20,7 +20,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ReARM",
+  title: "ReARM - Supply Chain Evidence Store by Reliza",
   description:
     "ReARM stores SBOMs/xBOMs and other artifacts per release for 10+ years, versioned and audit-ready with vulnerability insights for supply chain compliance.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com"),
