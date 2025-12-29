@@ -83,7 +83,7 @@
                                 <QuestionMark />
                             </n-icon>
                         </template>
-                        When set to "EXCLUDED", this {{ words.branch }} will not be included in any finding analytics aggregations, <br/>
+                        When set to "EXCLUDED", this branch or Feature Set will not be included in any finding analytics aggregations, <br/>
                         including component, product, organization or perspective totals, including home page dashboard.
                     </n-tooltip>
                 </label>
