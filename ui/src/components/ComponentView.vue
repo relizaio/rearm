@@ -2032,7 +2032,8 @@ async function initLoad() {
     fetchVcsRepos()
     
     // Auto-select tab based on branch type if branchuuid is provided
-    if (branchRouteId && !route.query.tab) {
+    // Only run on initial load, not when closing settings modal
+    if (branchRouteId && !route.query.tab && !route.query.branchSettingsView) {
         const allBranches = store.getters.branchesOfComponent(compUuid)
         const selectedBranch = allBranches.find((b: any) => b.uuid === branchRouteId)
         if (selectedBranch) {
