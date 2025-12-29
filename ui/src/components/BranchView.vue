@@ -74,6 +74,22 @@
                 />
                 <n-input v-else class="w-25" type="text" :value="branchData.type" readonly/>
             </div>
+            <div class="findingAnalyticsParticipationBlock"">
+                <label>
+                    Finding Analytics Participation
+                    <n-tooltip trigger="hover">
+                        <template #trigger>
+                            <n-icon size="16" style="cursor: help; margin-left: 4px;">
+                                <QuestionMark />
+                            </n-icon>
+                        </template>
+                        When set to "EXCLUDED", this {{ words.branch }} will not be included in any finding analytics aggregations, <br/>
+                        including component, product, organization or perspective totals, including home page dashboard.
+                    </n-tooltip>
+                </label>
+                <n-select v-if="isWritable" :options="[{label: 'INCLUDED', value: 'INCLUDED'}, {label: 'EXCLUDED', value: 'EXCLUDED'}]" v-model:value="modifiedBranch.findingAnalyticsParticipation" />
+                <n-input v-else type="text" :value="modifiedBranch.findingAnalyticsParticipation || 'INCLUDED'" readonly/>
+            </div>
             <div class="linkedVcsRepoBlock" v-if="branchData.componentDetails.type === 'COMPONENT'">
                 <label>Linked VCS Repository</label>
                 <n-select v-if="isWritable" :options="vcsRepos" v-model:value="modifiedBranch.vcs" />
@@ -800,6 +816,7 @@ const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         modifiedBranch.value.vcs !== branchData.value.vcs ||
         modifiedBranch.value.vcsBranch !== branchData.value.vcsBranch ||
         modifiedBranch.value.autoIntegrate !== branchData.value.autoIntegrate ||
+        modifiedBranch.value.findingAnalyticsParticipation !== branchData.value.findingAnalyticsParticipation ||
         patternsChanged ||
         dependenciesChanged ||
         hasDeletionMarks ||
@@ -816,6 +833,7 @@ function resetBranchSettings() {
     modifiedBranch.value.vcs = branchData.value.vcs
     modifiedBranch.value.vcsBranch = branchData.value.vcsBranch
     modifiedBranch.value.autoIntegrate = branchData.value.autoIntegrate
+    modifiedBranch.value.findingAnalyticsParticipation = branchData.value.findingAnalyticsParticipation || 'INCLUDED'
     modifiedBranch.value.dependencyPatterns = commonFunctions.deepCopy(branchData.value.dependencyPatterns || [])
     modifiedBranch.value.dependencies = commonFunctions.deepCopy(branchData.value.dependencies || [])
     modifiedBranch.value.effectiveDependencies = commonFunctions.deepCopy(branchData.value.effectiveDependencies || [])
@@ -2043,7 +2061,7 @@ onCreated()
     border-left: 4px solid #4caf50 !important;
     box-shadow: inset 0 0 0 1px #c8e6c9 !important;
 }
-.versionSchemaBlock, .versionMetadataBlock, .branchNameBlock, .branchTypeBlock, .linkedVcsRepoBlock, .vcsBranchBlock, .autoIntegrateBlock {
+.versionSchemaBlock, .versionMetadataBlock, .branchNameBlock, .branchTypeBlock, .linkedVcsRepoBlock, .findingAnalyticsParticipationBlock, .vcsBranchBlock, .autoIntegrateBlock {
     padding-top: 15px;
     padding-bottom: 15px;
     display: flex;

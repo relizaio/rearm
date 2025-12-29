@@ -776,7 +776,8 @@ const storeObject : any = {
                 dependencyPatterns: dependencyPatterns,
                 autoIntegrate: brProps.autoIntegrate,
                 type: brProps.type,
-                marketingVersionSchema: brProps.marketingVersionSchema
+                marketingVersionSchema: brProps.marketingVersionSchema,
+                findingAnalyticsParticipation: brProps.findingAnalyticsParticipation
             }
             const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.BranchGqlMutate,

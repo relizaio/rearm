@@ -793,6 +793,7 @@ const BRANCH_GQL_DATA = `
     marketingVersionSchema
     metadata
     autoIntegrate
+    findingAnalyticsParticipation
     createdDate
     dependencies {
         uuid
