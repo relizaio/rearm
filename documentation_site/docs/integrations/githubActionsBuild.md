@@ -1,6 +1,18 @@
-# Build and push Container image, Helm Charts, other deliverables on GitHub Actions
+# GitHub Actions for ReARM
 
-## 1. Build and push Docker image on GitHub Actions
+## 1. ReARM GitHub Actions
+We have bundled GitHub Actions for ReARM in the [rearm-actions](https://github.com/relizaio/rearm-actions) repository.
+
+Currently the bundle includes following actions:
+
+- relizaio/rearm-actions/setup-cli (installs ReARM CLI - https://github.com/relizaio/rearm-cli)
+- relizaio/rearm-actions/initialize (initializes ReARM with last commit, commit diff, versions, synchronizes branches and creates pending release on ReARM)
+- relizaio/rearm-actions/sbom-sign-scan (generates SBOMs and signs them and deliverables, alternatively can be replaced with your own workflow for SBOMs and other artifacts)
+- relizaio/rearm-actions/finalize (pushes metadata to ReARM and finalizes ReARM release)
+
+See some opinionated usage below.
+
+## 2. Opinionated action for building and pushing container images on GitHub Actions
 
 Use the [rearm-docker-action](https://github.com/relizaio/rearm-docker-action).
 
@@ -10,15 +22,18 @@ Refer to our [tutorial](/tutorials/github-actions-docker) for detailed walk thro
 
 Also, for sample usage, refer to another sample in our [Demo workflow](https://github.com/Reliza-Demos/rebom-demo-on-rearm/blob/master/.github/workflows/github_actions.yml).
 
-## 2. Build and push Helm chart on GitHub Actions
+Further, you can inspect this action to see a sample how individual ReARM actions are used - https://github.com/relizaio/rearm-docker-action/blob/main/action.yaml
+
+## 3. Opinionated action for building and pushing Helm charts on GitHub Actions
 
 Use the [rearm-helm-action](https://github.com/relizaio/rearm-helm-action).
 
 For sample usage, refer to our [Demo workflow](https://github.com/Reliza-Demos/rebom-demo-on-rearm/blob/master/.github/workflows/github_actions.yml).
 
-## 3. Other ReARM GitHub Actions
-The [rearm-docker-action](https://github.com/relizaio/rearm-docker-action) and the [rearm-helm-action](https://github.com/relizaio/rearm-helm-action) action reuse the following actions, which can be wired to create other custom workflows:
+## 4. Legacy Actions
+There are 2 legacy actions available for ReARM:
 
-1. [setup-rearm-cli](https://github.com/relizaio/setup-rearm-cli-action): This action, sets up ReARM CLI on GitHub's hosted Actions runners.
-2. [rearm-get-version](https://github.com/relizaio/rearm-get-version): This action uses ReARM CLI to get the version for current release.
-3. [rearm-add-release](https://github.com/relizaio/rearm-add-release): This action uses ReARM CLI to submit release metadata to ReARM.
+- relizaio/rearm-add-release
+- relizaio/setup-rearm-cli-action
+
+These actions are not recommended for use in new workflows. New ReARM actions are available as mentioned in point 1.
