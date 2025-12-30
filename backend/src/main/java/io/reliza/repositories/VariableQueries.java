@@ -199,8 +199,44 @@ class VariableQueries {
 	+ " and jsonb_contains(record_data, jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))";
 	
 	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECTS = """
-				select * from rearm.artifacts a where a.record_data->'metrics'->>'dependencyTrackProject' in (:dtrackProjectIds)
-			""";
+			select * from rearm.artifacts a where a.record_data->'metrics'->>'dependencyTrackProject' in (:dtrackProjectIds)
+		""";
+	
+	protected static final String FIND_ORPHANED_DTRACK_PROJECTS = """
+			SELECT DISTINCT a.record_data->'metrics'->>'dependencyTrackProject' as project_id
+			FROM rearm.artifacts a
+			WHERE a.record_data->>'org' = :orgUuidAsString
+			AND a.record_data->'metrics'->>'dependencyTrackProject' IS NOT NULL
+			AND a.record_data->'metrics'->>'dependencyTrackProject' != ''
+			AND NOT EXISTS (
+				-- Path 1: Not used by active branch via direct release artifacts
+				SELECT 1 FROM rearm.releases r
+				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+				WHERE jsonb_contains(r.record_data, 
+					jsonb_build_object('artifacts', jsonb_build_array(a.uuid::text)))
+				AND b.record_data->>'status' != 'ARCHIVED'
+			)
+			AND NOT EXISTS (
+				-- Path 2: Not used by active branch via SCE artifacts
+				SELECT 1 FROM rearm.source_code_entries sce
+				JOIN rearm.releases r ON r.record_data->>'sourceCodeEntry' = sce.uuid::text
+				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+				WHERE jsonb_contains(sce.record_data,
+					jsonb_build_object('artifacts', jsonb_build_array(a.uuid::text)))
+				AND b.record_data->>'status' != 'ARCHIVED'
+			)
+			AND NOT EXISTS (
+				-- Path 3: Not used by active branch via deliverable artifacts
+				SELECT 1 FROM rearm.deliverables d
+				JOIN rearm.variants v ON jsonb_contains(v.record_data,
+					jsonb_build_object('outboundDeliverables', jsonb_build_array(d.uuid::text)))
+				JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
+				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+				WHERE jsonb_contains(d.record_data,
+					jsonb_build_object('artifacts', jsonb_build_array(a.uuid::text)))
+				AND b.record_data->>'status' != 'ARCHIVED'
+			)
+		""";
 	
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """
 			SELECT * FROM rearm.artifacts

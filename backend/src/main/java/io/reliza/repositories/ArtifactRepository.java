@@ -34,6 +34,11 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	List<Artifact> findArtifactsByDtrackProjects(List<String> dtrackProjectIds);
 	
 	@Query(
+			value = VariableQueries.FIND_ORPHANED_DTRACK_PROJECTS,
+			nativeQuery = true)
+	List<String> findOrphanedDtrackProjects(String orgUuidAsString);
+	
+	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_VULNERABILITY,
 			nativeQuery = true)
 	List<Artifact> findArtifactsWithVulnerability(String orgUuidAsString, String location, String findingId);

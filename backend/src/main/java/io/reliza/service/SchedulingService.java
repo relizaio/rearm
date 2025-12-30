@@ -36,6 +36,9 @@ public class SchedulingService {
     @Autowired
     OrganizationService organizationService;
     
+    @Autowired
+    IntegrationService integrationService;
+    
     private Boolean getLock (AdvisoryLockKey alk) {
     	String query = "SELECT pg_try_advisory_lock(" + alk.getQueryVal() + ")";
         return (Boolean) entityManager.createNativeQuery(query).getSingleResult();
@@ -136,6 +139,50 @@ public class SchedulingService {
 		} catch (Exception e) {
 			log.error("Sync dependency track data run failed with an error", e);
 		}
+    }
+    
+    @Scheduled(cron="0 0 3 * * SUN") // weekly on Sunday at 3:00 AM
+    public void scheduleDependencyTrackProjectCleanup() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.CLEANUP_DEPENDENCY_TRACK_PROJECTS);
+            log.debug("DTrack project cleanup lock acquired {}", lock);
+            
+            if (lock) {
+                try {
+                    log.info("Starting scheduled DTrack project cleanup");
+                    
+                    var allOrgs = organizationService.listAllOrganizationData();
+                    
+                    int totalDeleted = 0;
+                    int totalFailed = 0;
+                    
+                    for (var org : allOrgs) {
+                        try {
+                            var result = integrationService.cleanupArchivedDtrackProjects(org.getUuid());
+                            
+                            totalDeleted += result.projectsDeleted();
+                            totalFailed += result.projectsFailed();
+                            
+                            log.info("Cleaned up {} DTrack projects for org {}", 
+                                result.projectsDeleted(), org.getUuid());
+                            
+                        } catch (Exception e) {
+                            log.error("Error cleaning up DTrack projects for org " + org.getUuid(), e);
+                        }
+                    }
+                    
+                    log.info("Completed DTrack project cleanup: deleted={}, failed={}", 
+                        totalDeleted, totalFailed);
+                    
+                } catch (Exception e) {
+                    log.error("Exception in DTrack project cleanup", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.CLEANUP_DEPENDENCY_TRACK_PROJECTS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("DTrack project cleanup run failed with an error", e);
+        }
     }
 
 }

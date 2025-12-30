@@ -94,6 +94,10 @@ public class IntegrationService {
 	@Lazy
 	private VulnAnalysisService vulnAnalysisService;
 	
+	@Autowired
+	@Lazy
+	private ArtifactService artifactService;
+	
 	private static final Logger log = LoggerFactory.getLogger(IntegrationService.class);
 
 	private final IntegrationRepository repository;
@@ -1126,5 +1130,263 @@ public class IntegrationService {
 				saveIntegration(i, Utils.dataToRecord(intD), wu);
 			}
 		});
+	}
+	
+	/**
+	 * Result of DTrack project cleanup operation
+	 */
+	public record DtrackProjectCleanupResult(
+		int projectsEvaluated,
+		int projectsDeleted,
+		int projectsFailed,
+		List<String> deletedProjectIds,
+		List<String> errors
+	) {}
+	
+	/**
+	 * Clean up DTrack projects that are only used by archived branches
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @return Cleanup result summary
+	 */
+	@Transactional
+	public DtrackProjectCleanupResult cleanupArchivedDtrackProjects(UUID orgUuid) {
+		log.info("[DTRACK-CLEANUP] Starting cleanup for org {}", orgUuid);
+		
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(
+			orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		
+		if (oid.isEmpty()) {
+			log.debug("[DTRACK-CLEANUP] No DTrack integration configured for org {}", orgUuid);
+			return new DtrackProjectCleanupResult(0, 0, 0, List.of(), List.of());
+		}
+		
+		IntegrationData dtrackIntegration = oid.get();
+		String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
+		
+		List<String> orphanedProjectIds = artifactService.findOrphanedDtrackProjects(orgUuid);
+		log.info("[DTRACK-CLEANUP] Found {} orphaned projects for org {}", orphanedProjectIds.size(), orgUuid);
+		
+		if (orphanedProjectIds.isEmpty()) {
+			return new DtrackProjectCleanupResult(0, 0, 0, List.of(), List.of());
+		}
+		
+		List<String> deletedProjects = new ArrayList<>();
+		List<String> errors = new ArrayList<>();
+		
+		BatchDeleteResult batchResult = deleteDtrackProjectsBatch(dtrackIntegration, apiToken, orphanedProjectIds);
+		
+		if (batchResult.allSucceeded()) {
+			deletedProjects.addAll(orphanedProjectIds);
+			log.info("[DTRACK-CLEANUP] Batch delete succeeded for all {} projects", orphanedProjectIds.size());
+		} else if (batchResult.partialSuccess()) {
+			deletedProjects.addAll(batchResult.succeededProjects());
+			log.info("[DTRACK-CLEANUP] Batch delete partial success: {} succeeded, {} failed", 
+				batchResult.succeededProjects().size(), batchResult.failedProjects().size());
+			
+			// Only retry the failed projects
+			if (!batchResult.failedProjects().isEmpty()) {
+				log.info("[DTRACK-CLEANUP] Retrying {} failed projects individually", batchResult.failedProjects().size());
+				for (String projectId : batchResult.failedProjects()) {
+					try {
+						boolean deleted = deleteDtrackProject(dtrackIntegration, apiToken, projectId);
+						if (deleted) {
+							deletedProjects.add(projectId);
+						} else {
+							log.warn("[DTRACK-CLEANUP] Failed to delete project {} on retry", projectId);
+							errors.add("Failed to delete project " + projectId);
+						}
+					} catch (Exception ex) {
+						log.error("[DTRACK-CLEANUP] Error deleting project {}: {}", projectId, ex.getMessage());
+						errors.add("Error deleting project " + projectId + ": " + ex.getMessage());
+					}
+				}
+			}
+		} else {
+			// Complete failure - fall back to individual deletion for all
+			log.warn("[DTRACK-CLEANUP] Batch delete failed, falling back to individual deletions for {} projects", orphanedProjectIds.size());
+			for (String projectId : orphanedProjectIds) {
+				try {
+					boolean deleted = deleteDtrackProject(dtrackIntegration, apiToken, projectId);
+					if (deleted) {
+						deletedProjects.add(projectId);
+					} else {
+						log.warn("[DTRACK-CLEANUP] Failed to delete project {}", projectId);
+						errors.add("Failed to delete project " + projectId);
+					}
+				} catch (Exception ex) {
+					log.error("[DTRACK-CLEANUP] Error deleting project {}: {}", projectId, ex.getMessage());
+					errors.add("Error deleting project " + projectId + ": " + ex.getMessage());
+				}
+			}
+		}
+		
+		DtrackProjectCleanupResult result = new DtrackProjectCleanupResult(
+			orphanedProjectIds.size(),
+			deletedProjects.size(),
+			errors.size(),
+			deletedProjects,
+			errors
+		);
+		
+		log.info("[DTRACK-CLEANUP] Completed for org {}: evaluated={}, deleted={}, failed={}", 
+			orgUuid, result.projectsEvaluated(), result.projectsDeleted(), result.projectsFailed());
+		
+		return result;
+	}
+	
+	/**
+	 * Result of a batch delete operation
+	 */
+	private record BatchDeleteResult(
+		boolean allSucceeded,
+		List<String> succeededProjects,
+		List<String> failedProjects
+	) {
+		boolean partialSuccess() {
+			return !succeededProjects.isEmpty() && !failedProjects.isEmpty();
+		}
+	}
+	
+	/**
+	 * Batch delete multiple projects from Dependency Track (v4.12+)
+	 * DTrack API limits batch size to 1000 projects per request
+	 */
+	private BatchDeleteResult deleteDtrackProjectsBatch(IntegrationData dtrackIntegration, String apiToken, List<String> projectIds) {
+		// DTrack API enforces max 1000 projects per batch
+		final int MAX_BATCH_SIZE = 1000;
+		
+		if (projectIds.size() > MAX_BATCH_SIZE) {
+			log.info("[DTRACK-CLEANUP] Processing {} projects in chunks of {}", projectIds.size(), MAX_BATCH_SIZE);
+			
+			// Split into chunks and process each
+			List<String> allSucceeded = new ArrayList<>();
+			List<String> allFailed = new ArrayList<>();
+			
+			for (int i = 0; i < projectIds.size(); i += MAX_BATCH_SIZE) {
+				int end = Math.min(i + MAX_BATCH_SIZE, projectIds.size());
+				List<String> chunk = projectIds.subList(i, end);
+				
+				BatchDeleteResult chunkResult = deleteDtrackProjectsBatchInternal(dtrackIntegration, apiToken, chunk);
+				allSucceeded.addAll(chunkResult.succeededProjects());
+				allFailed.addAll(chunkResult.failedProjects());
+			}
+			
+			return new BatchDeleteResult(allFailed.isEmpty(), allSucceeded, allFailed);
+		}
+		
+		return deleteDtrackProjectsBatchInternal(dtrackIntegration, apiToken, projectIds);
+	}
+	
+	/**
+	 * Internal method to perform the actual batch delete API call
+	 * Returns which projects succeeded and which failed
+	 */
+	private BatchDeleteResult deleteDtrackProjectsBatchInternal(IntegrationData dtrackIntegration, String apiToken, List<String> projectIds) {
+		try {
+			URI batchDeleteUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/project/batchDelete");
+			
+			// DTrack batch delete expects POST method with Set<UUID>, not DELETE with List
+			Set<String> projectIdsSet = new HashSet<>(projectIds);
+			
+			var response = dtrackWebClient
+				.post()
+				.uri(batchDeleteUri)
+				.header("X-API-Key", apiToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue(projectIdsSet)
+				.retrieve()
+				.toEntity(String.class)
+				.block();
+			
+			if (response != null && response.getStatusCode().is2xxSuccessful()) {
+				// All projects succeeded
+				return new BatchDeleteResult(true, new ArrayList<>(projectIds), List.of());
+			}
+			
+			return new BatchDeleteResult(false, List.of(), new ArrayList<>(projectIds));
+			
+		} catch (WebClientResponseException wcre) {
+			String responseBody = wcre.getResponseBodyAsString();
+			
+			if (wcre.getStatusCode() == HttpStatus.NOT_FOUND) {
+				log.warn("[DTRACK-CLEANUP] Batch delete endpoint not found (404) - DTrack version < v4.12");
+				throw new UnsupportedOperationException("Batch delete endpoint not available (DTrack < v4.12)");
+			}
+			
+			// Parse error response to identify which projects failed
+			if (wcre.getStatusCode() == HttpStatus.BAD_REQUEST && responseBody != null && responseBody.contains("errors")) {
+				try {
+					JsonNode errorJson = Utils.OM.readTree(responseBody);
+					JsonNode errorsNode = errorJson.get("errors");
+					
+					if (errorsNode != null && errorsNode.isObject()) {
+						List<String> actualFailures = new ArrayList<>();
+						
+						// Categorize errors: "Project not found" = already deleted (success), others = actual failures
+						errorsNode.properties().iterator().forEachRemaining(entry -> {
+							String projectId = entry.getKey();
+							String errorMessage = entry.getValue().asText();
+							
+							if (!"Project not found".equalsIgnoreCase(errorMessage)) {
+								actualFailures.add(projectId);
+								log.warn("[DTRACK-CLEANUP] Project {} failed with error: {}", projectId, errorMessage);
+							}
+						});
+						
+						// Calculate succeeded projects = all - actual failures (already-deleted count as success)
+						List<String> succeededProjectIds = new ArrayList<>(projectIds);
+						succeededProjectIds.removeAll(actualFailures);
+						
+						// Only return actual failures for retry, not already-deleted projects
+						return new BatchDeleteResult(actualFailures.isEmpty(), succeededProjectIds, actualFailures);
+					}
+				} catch (Exception parseEx) {
+					log.warn("[DTRACK-CLEANUP] Failed to parse batch delete error response: {}", parseEx.getMessage());
+				}
+			}
+			
+			log.error("[DTRACK-CLEANUP] Error batch deleting projects: {}", wcre.getMessage());
+			throw wcre;
+		} catch (Exception e) {
+			log.error("[DTRACK-CLEANUP] Unexpected error batch deleting projects: {}", e.getMessage());
+			throw e;
+		}
+	}
+	
+	/**
+	 * Delete a project from Dependency Track
+	 */
+	private boolean deleteDtrackProject(IntegrationData dtrackIntegration, String apiToken, String projectId) {
+		try {
+			URI deleteUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/project/" + projectId);
+			log.debug("[DTRACK-CLEANUP] Calling individual delete API: {}", deleteUri);
+			
+			var response = dtrackWebClient
+				.delete()
+				.uri(deleteUri)
+				.header("X-API-Key", apiToken)
+				.retrieve()
+				.toEntity(String.class)
+				.block();
+			
+			boolean success = response.getStatusCode().is2xxSuccessful();
+			log.debug("[DTRACK-CLEANUP] Individual delete response for {}: status={}, success={}", 
+				projectId, response.getStatusCode(), success);
+			return success;
+			
+		} catch (WebClientResponseException wcre) {
+			if (wcre.getStatusCode() == HttpStatus.NOT_FOUND) {
+				log.info("[DTRACK-CLEANUP] DTrack project {} already deleted (404) - treating as success", projectId);
+				return true;
+			}
+			log.error("[DTRACK-CLEANUP] WebClient error deleting DTrack project {}: status={}, message={}", 
+				projectId, wcre.getStatusCode(), wcre.getMessage());
+			return false;
+		} catch (Exception e) {
+			log.error("[DTRACK-CLEANUP] Unexpected error deleting DTrack project {}: {} - {}", 
+				projectId, e.getClass().getSimpleName(), e.getMessage());
+			return false;
+		}
 	}
 }

@@ -181,6 +181,14 @@ public class ArtifactService {
 		return repository.findArtifactsByDtrackProjects(dtrackProjectsForQuery);
 	}
 	
+	public List<String> findOrphanedDtrackProjects (UUID orgUuid) {
+		return repository.findOrphanedDtrackProjects(orgUuid.toString())
+			.stream()
+			.filter(StringUtils::isNotEmpty)
+			.distinct()
+			.toList();
+	}
+	
 	//Creates or Updates existing artifact
 	@Transactional
 	public Artifact createArtifact(ArtifactDto artifactDto, WhoUpdated wu) throws RelizaException{
