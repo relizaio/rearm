@@ -1,6 +1,6 @@
 ---
 layout: home
-title: ReARM
+title: ReARM Documentation
 titleTemplate: null
 
 hero:
