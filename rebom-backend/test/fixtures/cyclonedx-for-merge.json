@@ -1,0 +1,38 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:4f782798-496c-52g6-b41g-b69032b70b80",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2023-01-01T00:00:00Z",
+    "tools": {
+      "components": []
+    },
+    "component": {
+      "type": "application",
+      "name": "test-app-2",
+      "version": "2.0.0",
+      "purl": "pkg:npm/test-app-2@2.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "lodash",
+      "version": "4.17.21",
+      "purl": "pkg:npm/lodash@4.17.21"
+    },
+    {
+      "type": "library",
+      "name": "axios",
+      "version": "1.6.0",
+      "purl": "pkg:npm/axios@1.6.0"
+    },
+    {
+      "type": "library",
+      "name": "react",
+      "version": "18.2.0",
+      "purl": "pkg:npm/react@18.2.0"
+    }
+  ]
+}

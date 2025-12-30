@@ -11,8 +11,7 @@ import { PackageURL } from 'packageurl-js'
 import { v4 as uuidv4 } from 'uuid'
 import { SpdxService } from './spdxService';
 import * as SpdxRepository from './spdxRepository';
-
-const utils = require('./utils')
+import * as utils from './utils';
 
 export async function bomToExcel(bom: any): Promise<string> {
   const fields = [
@@ -190,8 +189,8 @@ export async function findAllBoms(): Promise<BomDto[]> {
 export async function findBomObjectById(id: string, org: string): Promise<Object> {
   logger.debug({ id, org }, "findBomObjectById called");
   
-  const bomResults = await BomRepository.bomBySerialNumber(id, org);
-  logger.debug({ resultsCount: bomResults.length, id, org }, "bomBySerialNumber results");
+  const bomResults = await BomRepository.bomById(id);
+  logger.debug({ resultsCount: bomResults.length, id, org }, "bomById results");
   
   const bomById = bomResults[0];
   if (!bomById) {
@@ -628,7 +627,10 @@ function extractDevFilteredBom(bom: any): any {
       await utils.deleteTmpFiles(bomPaths)
 
       const jsonObj = JSON.parse(mergeResponse)
-      jsonObj.metadata.tools = []
+      // Clear tools - will be repopulated by attachRebomToolToBom with correct format for spec version
+      const specVersion = jsonObj.specVersion || '1.6';
+      const isLegacyFormat = specVersion === '1.4' || specVersion === '1.3' || specVersion === '1.2';
+      jsonObj.metadata.tools = isLegacyFormat ? [] : { components: [] };
       const processedBom = await processBomObj(jsonObj)
       // let bomRoots = bomObjects.map(bomObj => bomObj.metadata.component)
       // use the bom roots to prep the root level dep obj if doesn't already exist!
@@ -770,9 +772,25 @@ function createRebomToolObject(specVersion: string) {
 
 function attachRebomToolToBom(finalBom: any): any {
     const rebomTool = createRebomToolObject(finalBom.specVersion);
-    if (!finalBom.metadata.tools) finalBom.metadata.tools = { components: [] };
-    if (!finalBom.metadata.tools.components) finalBom.metadata.tools.components = [];
-    finalBom.metadata.tools.components.push(rebomTool);
+    
+    // Handle different spec versions:
+    // - Spec 1.4 and below: tools is an array
+    // - Spec 1.5+: tools is an object with components array
+    const specVersion = finalBom.specVersion || '1.6';
+    const isLegacyFormat = specVersion === '1.4' || specVersion === '1.3' || specVersion === '1.2';
+    
+    if (isLegacyFormat) {
+        // Spec 1.4 and below: tools is a direct array
+        if (!finalBom.metadata.tools) finalBom.metadata.tools = [];
+        if (!Array.isArray(finalBom.metadata.tools)) finalBom.metadata.tools = [];
+        finalBom.metadata.tools.push(rebomTool);
+    } else {
+        // Spec 1.5+: tools is an object with components array
+        if (!finalBom.metadata.tools) finalBom.metadata.tools = { components: [] };
+        if (!finalBom.metadata.tools.components) finalBom.metadata.tools.components = [];
+        finalBom.metadata.tools.components.push(rebomTool);
+    }
+    
     return finalBom;
 }
 

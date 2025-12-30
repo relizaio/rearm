@@ -1,5 +1,5 @@
-const pg = require('pg')
-const { spawn } = require('node:child_process')
+import * as pg from 'pg';
+import { spawn } from 'node:child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -18,6 +18,9 @@ const pool = new pg.Pool({
 export function getPool() {
     return pool
 }
+
+// Export pool directly for tests
+export { pool }
 
 export async function runQuery (query: string, params: any[]) : Promise<any> {
     const client = await pool.connect()

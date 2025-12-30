@@ -4,7 +4,11 @@
   "description": "Reliza SBOM repository backend",
   "main": "src/index.js",
   "scripts": {
-    "test": "test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ci": "MOCK_OCI=true vitest run",
+    "test:unit": "MOCK_OCI=true vitest run test/unit",
+    "test:docker": "MOCK_OCI=true vitest run test/unit",
     "start": "ts-node src/index.ts",
     "js": "node src/index.js",
     "dev": "nodemon src/index.ts",
@@ -43,6 +47,8 @@
   },
   "devDependencies": {
     "@tsconfig/recommended": "^1.0.13",
-    "@types/node": "^24.10.1"
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.16.0",
+    "vitest": "^2.1.8"
   }
 }

@@ -3,27 +3,66 @@ FROM node:24.11.1-alpine3.23@sha256:682368d8253e0c3364b803956085c456a612d738bd63
 ARG TARGETARCH
 ARG TARGETOS
 
+# Install PostgreSQL and unzip for running tests (same approach as rearm-saas/backend)
+RUN apk add postgresql postgresql-contrib unzip wget
+
+# Initialize PostgreSQL database for tests
+RUN mkdir /run/postgresql && \
+    chown postgres:postgres /run/postgresql/ && \
+    su - postgres -c "mkdir /var/lib/postgresql/data && \
+                      chmod 0700 /var/lib/postgresql/data && \
+                      initdb -D /var/lib/postgresql/data && \
+                      echo \"port = 5438\" > /var/lib/postgresql/data/postgresql.conf && \
+                      sed -i \"s#/run/postgresql#/tmp#g\" /var/lib/postgresql/data/postgresql.conf" && \
+    su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && \
+    su - postgres -c "psql -p 5438 -c \"alter role postgres with encrypted password 'password'\"" && \
+    su - postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
+
 RUN mkdir /app
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --ignore-scripts
-COPY ./ .
-RUN npm run build
 
-
+# Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/25.12.1/rearm-25.12.1-linux-amd64.zip ;\
+        unzip rearm-25.12.1-linux-amd64.zip ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.29.1/cyclonedx-linux-musl-x64 ;\
         mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
     elif [ "$TARGETARCH" = "arm64" ]; then \
+        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/25.12.1/rearm-25.12.1-linux-arm64.zip ;\
+        unzip rearm-25.12.1-linux-arm64.zip ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.29.1/cyclonedx-${TARGETOS}-${TARGETARCH} ;\
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
-fi
+    fi && \
+    mv rearm /usr/local/bin/rearm-cli && \
+    chmod +x /usr/local/bin/rearm-cli && \
+    chmod +x /usr/local/bin/cyclonedx-cli
 
-ADD https://d7ge14utcyki8.cloudfront.net/rearm-download/25.12.1/rearm-25.12.1-${TARGETOS}-${TARGETARCH}.zip rearm-25.12.1-${TARGETOS}-${TARGETARCH}.zip
+COPY package*.json ./
+RUN npm ci --ignore-scripts
+COPY ./ .
 
-RUN sha256sum -c tools.${TARGETARCH}.sha256
-RUN unzip rearm-25.12.1-${TARGETOS}-${TARGETARCH}.zip
-RUN mv rearm /usr/local/bin/rearm-cli
+# Run ALL tests (unit + integration) with PostgreSQL running
+ENV MOCK_OCI=true
+ENV POSTGRES_HOST=localhost
+ENV POSTGRES_PORT=5438
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=password
+ENV POSTGRES_DATABASE=postgres
+
+# Start PostgreSQL, create schema, run migrations, run tests, then stop PostgreSQL
+RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && \
+    sleep 2 && \
+    su - postgres -c "psql -p 5438 -d postgres -c 'CREATE SCHEMA IF NOT EXISTS rebom;'" && \
+    su - postgres -c "psql -p 5438 -d postgres -c 'SET search_path TO rebom, public;'" && \
+    for migration in /app/migrations/*.sql; do \
+        echo "Running migration: $migration"; \
+        su - postgres -c "psql -p 5438 -d postgres -v ON_ERROR_STOP=1 -c 'SET search_path TO rebom, public;' -f $migration"; \
+    done && \
+    npm test && \
+    su - postgres -c "pg_ctl -D /var/lib/postgresql/data stop"
+
+# Build after tests pass
+RUN npm run build
 
 FROM node:24.11.1-alpine3.23@sha256:682368d8253e0c3364b803956085c456a612d738bd635926d73fa24db3ce53d7 AS package
 

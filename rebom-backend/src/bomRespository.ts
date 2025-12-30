@@ -1,4 +1,4 @@
-const utils = require('./utils')
+import * as utils from './utils';
 import { BomRecord } from './types';
 
 export async function findAllBoms(): Promise<BomRecord[]> {
@@ -49,7 +49,7 @@ export async function allBomsBySerialNumber(serialNumber: string, org: string): 
 }
 
 export async function bomsByIds(ids: string[]): Promise<BomRecord[]> {
-    let queryRes = await utils.runQuery(`select * from rebom.boms where uuid::text in ('` + ids.join('\',\'') + `')`)
+    let queryRes = await utils.runQuery(`select * from rebom.boms where uuid::text in ('` + ids.join('\',\'') + `')`, [])
     let boms = queryRes.rows as BomRecord[]
     return boms
 }

@@ -1,9 +1,7 @@
 import { mergeBomObjects, findBomObjectById, overrideRootComponent } from "./bomService"
 import { logger } from './logger';
 import { RebomOptions } from './types';
-
-
-const utils = require('./utils')
+import * as utils from './utils';
 import { BomDiffResult, ComponentDiff } from "./bomDiffResult.interface"
 async function mergeBomsForDiff(ids:[string], org: string){
 
