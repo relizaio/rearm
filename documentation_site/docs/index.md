@@ -1,7 +1,7 @@
 ---
 layout: home
 title: ReARM Documentation
-titleTemplate: null
+titleTemplate: false
 
 hero:
   name: ReARM Documentation - Supply Chain Evidence Store

@@ -68,13 +68,14 @@ function sidebar() {
 export default defineConfig ({
   lang: 'en-CA',
   title: 'ReARM',
+  titleTemplate: ':title | ReARM Documentation',
   description: 'ReARM - System to Manage Releases, SBOMs, xBOMs',
   themeConfig: {
     nav: navbar(),
     sidebar: sidebar(),
     contributors: false,
     footer: {
-      copyright: 'Copyright © 2019-present. Reliza Incorporated.'
+      copyright: 'Copyright © 2019-2026. Reliza Incorporated.'
     },
     search: {
       provider: 'local'
