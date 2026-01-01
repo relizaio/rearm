@@ -80,7 +80,7 @@
                             <n-select
                                 v-if="isWritable"
                                 @update:value="handleFollowIntegrationUpdate"
-                                :value="updatedMarketingRelease.branch"
+                                :value="updatedMarketingRelease.integrateBranch"
                                 :options="followBranches" 
                             />
                             <span v-else>
