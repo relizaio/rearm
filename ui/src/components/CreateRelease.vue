@@ -334,7 +334,6 @@ const onSubmit = async function () {
 
 
 const onCreate = async function () {
-    store.dispatch('fetchComponents', constants.ExternalPublicComponentsOrg)
     if (!release.value.org) {
         store.dispatch('fetchMyOrganizations')
     } else {
