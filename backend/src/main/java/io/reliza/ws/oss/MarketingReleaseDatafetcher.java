@@ -59,7 +59,7 @@ public class MarketingReleaseDatafetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Query", field = "releaseLifecycles")
+	@DgsData(parentType = "Query", field = "marketingReleaseLifecycles")
 	public void listReleaseLifecycles () {
 		throw new RuntimeException("Currently not part of ReARM CE");
 	}
@@ -87,7 +87,7 @@ public class MarketingReleaseDatafetcher {
 	
 	@Transactional
 	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "advanceMarketingReleaseLifecycle")
+	@DgsData(parentType = "Mutation", field = "modifyMarketingReleaseLifecycle")
 	public void advanceLifecycle(@InputArgument("marketingReleaseUuid") String marketingReleaseUuid,
 			@InputArgument("newLifecycle") String newLifecycleStr) throws RelizaException {
 		throw new RuntimeException("Currently not part of ReARM CE");
