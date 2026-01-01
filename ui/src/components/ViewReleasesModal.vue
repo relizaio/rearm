@@ -233,13 +233,25 @@ const columns: DataTableColumns<any> = [
     {
         title: 'Type',
         key: 'componentType',
-        width: 120
+        width: 120,
+        filter: true,
+        filterOptions: [
+            { label: 'COMPONENT', value: 'COMPONENT' },
+            { label: 'PRODUCT', value: 'PRODUCT' }
+        ],
+        filterMultiple: true
     },
     {
         title: 'Status',
         key: 'branchStatus',
         width: 100,
-        render: (row: any) => row.branchStatus || 'N/A'
+        render: (row: any) => row.branchStatus || 'N/A',
+        filter: true,
+        filterOptions: [
+            { label: 'ACTIVE', value: 'ACTIVE' },
+            { label: 'ARCHIVED', value: 'ARCHIVED' }
+        ],
+        filterMultiple: true
     },
     {
         title: 'Earliest Version',
@@ -284,7 +296,16 @@ const columns: DataTableColumns<any> = [
                 checked: row.isLatest,
                 disabled: true
             })
-        }
+        },
+        filter: (value: any, row: any) => {
+            if (value === 'true') return row.isLatest === true
+            if (value === 'false') return row.isLatest === false
+            return true
+        },
+        filterOptions: [
+            { label: 'Yes', value: 'true' },
+            { label: 'No', value: 'false' }
+        ]
     }
 ]
 </script>
