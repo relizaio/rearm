@@ -419,21 +419,30 @@ async function releaseMarketingRelease() {
     }
 
     const onSwalConfirm = async function () {
-        const mrResponse = await graphqlClient.mutate({
-            mutation: gql`
-                mutation releaseMarketingRelease($marketingRelease: MarketingReleaseInput!, $marketingVersion: String!) {
-                    releaseMarketingRelease(marketingRelease: $marketingRelease, marketingVersion: $marketingVersion) {
-                        ${graphqlQueries.MarketingRelease}
+        try {
+            const mrResponse = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseMarketingRelease($marketingRelease: MarketingReleaseInput!, $marketingVersion: String!) {
+                        releaseMarketingRelease(marketingRelease: $marketingRelease, marketingVersion: $marketingVersion) {
+                            ${graphqlQueries.MarketingRelease}
+                        }
                     }
+                    `,
+                variables: {
+                    marketingRelease: rlzConfirmObject,
+                    marketingVersion: releasedVersion.value
                 }
-                `,
-            variables: {
-                marketingRelease: rlzConfirmObject,
-                marketingVersion: releasedVersion.value
-            }
-        })
-        marketingRelease.value = mrResponse.data.releaseMarketingRelease
-        updatedMarketingRelease.value = deepCopyRelease(marketingRelease.value)
+            })
+            marketingRelease.value = mrResponse.data.releaseMarketingRelease
+            updatedMarketingRelease.value = deepCopyRelease(marketingRelease.value)
+        } catch (err: any) {
+            Swal.fire(
+                'Error!',
+                commonFunctions.parseGraphQLError(err.message),
+                'error'
+            )
+            throw err
+        }
     }
 
     const swalData: SwalData = {
