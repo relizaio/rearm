@@ -1,7 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 import FormData from 'form-data';
 import { createHash } from 'crypto';
-import { logger } from './logger';
+import { logger } from '../../logger';
 
 // Mock OCI storage for CI/testing
 const MOCK_OCI = process.env.MOCK_OCI === 'true';

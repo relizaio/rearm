@@ -1,5 +1,5 @@
-import { VulnerabilityDto, VulnerabilitySeverity } from './types';
-import { logger } from './logger';
+import { VulnerabilityDto, VulnerabilitySeverity } from '../../types';
+import { logger } from '../../logger';
 // Note: using our own lightweight JSON types and parser; no external CycloneDX model usage
 
 // Lightweight structural types aligned with CycloneDX VDR/BOV JSON

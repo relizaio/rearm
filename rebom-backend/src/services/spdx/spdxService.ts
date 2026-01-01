@@ -1,8 +1,8 @@
 import { createHash } from 'crypto';
-import { logger } from './logger';
-import { SpdxMetadata, ConversionResult, RebomOptions } from './types';
+import { logger } from '../../logger';
+import { SpdxMetadata, ConversionResult, RebomOptions } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
-import { shellExec, createTempFile, deleteTempFile } from './utils';
+import { shellExec, createTempFile, deleteTempFile } from '../../utils';
 
 // Known SPDX conversion fixes
 const SPDX_FIXES = {

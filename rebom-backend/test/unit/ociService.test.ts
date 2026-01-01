@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { pushToOci, fetchFromOci, clearMockOciStorage } from '../../src/ociService';
+import { pushToOci, fetchFromOci, clearMockOciStorage } from '../../src/services/oci';
 
 /**
  * Unit tests for OCI Service

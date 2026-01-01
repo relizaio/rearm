@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSarifFromString } from '../../src/sarifParser';
+import { parseSarifFromString } from '../../src/services/sarif/sarifParser';
 
 /**
  * Unit tests for SARIF (Static Analysis Results Interchange Format) parser

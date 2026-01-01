@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import validateBom from '../src/validateBom';
 
 /**
  * Test helper utilities for rebom-backend tests
@@ -84,4 +85,73 @@ export async function cleanupTestBoms(pool: any, serialNumbers: string[]): Promi
         `DELETE FROM rebom.boms WHERE meta->>'serialNumber' IN (${placeholders})`,
         serialNumbers
     );
+}
+
+/**
+ * Validate CycloneDX BOM structure using official CycloneDX validator
+ * Ensures BOM conforms to spec requirements
+ */
+export async function validateCycloneDxStructure(bom: any, specVersion: string = '1.6'): Promise<void> {
+    if (!bom) {
+        throw new Error('BOM is null or undefined');
+    }
+    
+    // Use official CycloneDX validator from validateBom.ts
+    const isValid = await validateBom(bom);
+    if (!isValid) {
+        throw new Error('BOM failed CycloneDX validation');
+    }
+    
+    // Additional regression check: dependsOn must be array
+    if (bom.dependencies && Array.isArray(bom.dependencies)) {
+        bom.dependencies.forEach((dep: any, index: number) => {
+            if ('dependsOn' in dep && !Array.isArray(dep.dependsOn)) {
+                throw new Error(`dependencies[${index}].dependsOn must be an array, got ${typeof dep.dependsOn}`);
+            }
+        });
+    }
+}
+
+/**
+ * Validate BOM metadata structure
+ */
+export function validateBomMetadata(meta: any): void {
+    if (!meta) {
+        throw new Error('Metadata is null or undefined');
+    }
+    if (!meta.serialNumber || !meta.serialNumber.match(/^urn:uuid:/)) {
+        throw new Error(`Invalid metadata serialNumber: ${meta.serialNumber}`);
+    }
+    if (!meta.bomVersion) {
+        throw new Error('Metadata missing bomVersion');
+    }
+}
+
+/**
+ * Validate BOM has rebom tool in metadata
+ */
+export function validateRebomTool(bom: any, specVersion: string = '1.6'): void {
+    if (!bom.metadata || !bom.metadata.tools) {
+        throw new Error('BOM missing metadata.tools');
+    }
+    
+    const tools = specVersion === '1.6' ? bom.metadata.tools.components : bom.metadata.tools;
+    if (!Array.isArray(tools)) {
+        throw new Error('Tools must be an array');
+    }
+    
+    const rebomTool = tools.find((t: any) => t.name === 'rebom');
+    if (!rebomTool) {
+        throw new Error('BOM missing rebom tool in metadata');
+    }
+    if (rebomTool.type !== 'application') {
+        throw new Error(`rebom tool type should be 'application', got '${rebomTool.type}'`);
+    }
+    
+    // Spec 1.6 uses 'authors' array, older specs use 'author' string
+    if (specVersion === '1.6') {
+        if (!rebomTool.authors || !Array.isArray(rebomTool.authors)) {
+            throw new Error('Spec 1.6 rebom tool should have authors array');
+        }
+    }
 }

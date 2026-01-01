@@ -1,6 +1,6 @@
 import { logger } from './logger';
 import { SpdxBomRecord, SpdxMetadata } from './types';
-import { OASResponse } from './ociService';
+import { OASResponse } from './services/oci';
 import { runQuery } from './utils';
 
 export async function createSpdxBom(spdxRecord: Partial<SpdxBomRecord>): Promise<SpdxBomRecord> {

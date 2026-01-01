@@ -18,6 +18,7 @@ const typeDefs = gql`
     bomDiff(fromIds: [ID], toIds: [ID], org: ID!): BomDiffResult
     parseSarifContent(sarifContent: String!): [Weakness]
     parseCycloneDxContent(vdrContent: String!): [Vulnerability]
+    health: HealthStatus!
   }
 
   type Mutation {
@@ -82,6 +83,12 @@ const typeDefs = gql`
     severity: VulnerabilitySeverity!
   }
 
+  type HealthStatus {
+    status: String!
+    database: Boolean!
+    oci: Boolean!
+    version: String!
+  }
 
   enum VulnerabilitySeverity {
     CRITICAL

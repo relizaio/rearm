@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import * as BomRepository from '../../src/bomRespository';
+import * as BomRepository from '../../src/bomRepository';
 import { pool } from '../../src/utils';
 import { TEST_ORG_UUID, generateSerialNumber } from '../helpers';
 

@@ -1,8 +1,7 @@
-import { mergeBomObjects, findBomObjectById, overrideRootComponent } from "./bomService"
-import { logger } from './logger';
-import { RebomOptions } from './types';
-import * as utils from './utils';
-import { BomDiffResult, ComponentDiff } from "./bomDiffResult.interface"
+import { mergeBomObjects, findBomObjectById, overrideRootComponent } from '../../bomService';
+import { logger } from '../../logger';
+import { RebomOptions, BomDiffResult, ComponentDiff } from '../../types';
+import { createTempFile, deleteTempFile, shellExec } from '../../utils';
 async function mergeBomsForDiff(ids:[string], org: string){
 
     const rebomOptions: RebomOptions = {
@@ -60,8 +59,8 @@ async function mergeBomsForDiff(ids:[string], org: string){
       const fromBomObj = await mergeBomsForDiff(fromIds, org)
       const toBomObj = await mergeBomsForDiff(toIds, org)
     
-      fromBomPath = await utils.createTempFile(fromBomObj)
-      toBomPath = await utils.createTempFile(toBomObj)
+      fromBomPath = await createTempFile(fromBomObj)
+      toBomPath = await createTempFile(toBomObj)
       const command = ['diff']
       // logger.info(`fromBomPath: ${fromBomPath}`)
       // logger.info(`toBomPath: ${toBomPath}`)
@@ -74,22 +73,22 @@ async function mergeBomsForDiff(ids:[string], org: string){
         fromBomPath
       )
 
-      const diffResultString: string = await utils.shellExec('cyclonedx-cli',command)
+      const diffResultString: string = await shellExec('cyclonedx-cli',command)
       const diffResult: BomDiffResult = JSON.parse(diffResultString)
       
       // Clean up temporary files after successful diff
-      await utils.deleteTempFile(fromBomPath)
-      await utils.deleteTempFile(toBomPath)
+      await deleteTempFile(fromBomPath)
+      await deleteTempFile(toBomPath)
       
       return diffResult
     } catch (e) {
       logger.error({ err: e }, "Error During diff")
       // Clean up temporary files in case of error
       if (fromBomPath) {
-        await utils.deleteTempFile(fromBomPath)
+        await deleteTempFile(fromBomPath)
       }
       if (toBomPath) {
-        await utils.deleteTempFile(toBomPath)
+        await deleteTempFile(toBomPath)
       }
       throw e
     }

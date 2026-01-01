@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as BomService from '../../src/bomService';
-import * as BomDiffService from '../../src/bomDiffService';
+import * as BomDiffService from '../../src/services/bom/bomDiffService';
 import { pool } from '../../src/utils';
-import { clearMockOciStorage } from '../../src/ociService';
+import { clearMockOciStorage } from '../../src/services/oci';
 import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumber } from '../helpers';
 
 /**

@@ -1,5 +1,5 @@
-import { SarifService } from '../src/sarifService';
-import { parseSarifFromString } from '../src/sarifParser';
+import { SarifService } from '../src/services/sarif';
+import { parseSarifFromString } from '../src/services/sarif/sarifParser';
 import * as fs from 'fs';
 import * as path from 'path';
 

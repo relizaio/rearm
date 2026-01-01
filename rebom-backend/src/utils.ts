@@ -1,53 +1,15 @@
-import * as pg from 'pg';
-import { spawn } from 'node:child_process';
+const { spawn } = require('node:child_process')
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { logger } from './logger';
-
-// init db
-const pool = new pg.Pool({
-    user: process.env.POSTGRES_USER ? process.env.POSTGRES_USER : `postgres`,
-    host: process.env.POSTGRES_HOST ? process.env.POSTGRES_HOST : `localhost`,
-    database: process.env.POSTGRES_DATABASE ? process.env.POSTGRES_DATABASE : `postgres`,
-    password: process.env.POSTGRES_PASSWORD ? process.env.POSTGRES_PASSWORD : `password`,
-    port: process.env.POSTGRES_PORT ? parseInt(process.env.POSTGRES_PORT) : 5438,
-    ssl: (process.env.POSTGRES_SSL === 'true') ? true : false
-})
+import { pool, runQuery } from './db';
 
 export function getPool() {
-    return pool
+    return pool;
 }
 
-// Export pool directly for tests
-export { pool }
-
-export async function runQuery (query: string, params: any[]) : Promise<any> {
-    const client = await pool.connect()
-    try {
-      return await client.query(query, params)
-    
-    } catch (error: any) {
-        logger.error(`Error running query: ${error}`)
-        if (error.code === '23505') { // unique_violation
-            console.log('Unique constraint violation:', error.detail);
-            throw new Error(`Duplicate entry: ${error.detail}`);
-        } else if (error.code === '23502') { // not_null_violation
-            console.log('Not-null constraint violation:', error.detail);
-            throw new Error(`Cannot be null: ${error.detail}`);
-        } else if (error.code === '23503') { // foreign_key_violation
-            console.log('Foreign key constraint violation:', error.detail);
-            throw new Error(`Invalid reference: ${error.detail}`);
-        }
-        // Re-throw other errors
-        throw error;
-    }
-     finally {
-      // Make sure to release the client before any error handling,
-      // just in case the error handling itself throws an error.
-      client.release()
-    }
-}
+export { runQuery, pool };
 
 export async function shellExec(cmd: string, args: any[], timeout?: number): Promise<string> { // timeout = in ms
   return new Promise((resolve, reject) => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCycloneDxFromString } from '../../src/cycloneDxParser';
+import { parseCycloneDxFromString } from '../../src/services/cyclonedx/cycloneDxParser';
 
 /**
  * Unit tests for CycloneDX VDR (Vulnerability Disclosure Report) parser
