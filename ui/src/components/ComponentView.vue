@@ -149,7 +149,7 @@
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
                                             <label id="componentVersionSchemaLabel" for="componentVersionSchema">Marketing Version</label>
-                                            Enabled:  <n-switch v-model:value="marketingVersionEnabled"  @update:value="toggleMarketingVersion"/>
+                                            Enabled:  <n-switch v-model:value="marketingVersionEnabled" @update:value="toggleMarketingVersion"/>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="marketingVersionEnabled && myUser.installationType !== 'OSS'">
                                             <label>Marketing Version Schema</label>
@@ -1336,6 +1336,7 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
     
     return updatedComponent.value.name !== componentData.value.name ||
         updatedComponent.value.versionSchema !== componentData.value.versionSchema ||
+        updatedComponent.value.versionType !== componentData.value.versionType ||
         updatedComponent.value.marketingVersionSchema !== componentData.value.marketingVersionSchema ||
         updatedComponent.value.featureBranchVersioning !== componentData.value.featureBranchVersioning ||
         updatedComponent.value.defaultConfig !== componentData.value.defaultConfig ||
@@ -1350,6 +1351,7 @@ function resetCoreSettings() {
     if (!componentData.value) return
     updatedComponent.value.name = componentData.value.name
     updatedComponent.value.versionSchema = componentData.value.versionSchema
+    updatedComponent.value.versionType = componentData.value.versionType
     updatedComponent.value.marketingVersionSchema = componentData.value.marketingVersionSchema
     updatedComponent.value.featureBranchVersioning = componentData.value.featureBranchVersioning
     updatedComponent.value.defaultConfig = componentData.value.defaultConfig
@@ -1357,6 +1359,9 @@ function resetCoreSettings() {
     updatedComponent.value.vcs = componentData.value.vcs
     updatedComponent.value.approvalPolicy = componentData.value.approvalPolicy
     updatedComponent.value.identifiers = commonFunctions.deepCopy(componentData.value.identifiers)
+    
+    // Reset marketing version enabled state
+    marketingVersionEnabled.value = componentData.value.versionType === 'MARKETING'
     
     // Reset authentication if it exists
     if (componentData.value.authentication && updatedComponent.value.authentication) {
@@ -1587,12 +1592,10 @@ const marketingVersionEnabled = ref(updatedComponent.value.versionType === 'MARK
 
 function toggleMarketingVersion (value: boolean) {
     if(value){
-        marketingVersionEnabled.value = true
         updatedComponent.value.versionType = 'MARKETING'
     }
     else{
         updatedComponent.value.versionType = 'DEV'
-        marketingVersionEnabled.value = false
     }
 }
 let clickTimer: ReturnType<typeof setTimeout> | null = null
