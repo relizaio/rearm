@@ -89,7 +89,7 @@
                         </div>
                         <div class="versionSchemaBlock">
                             <label>Development Release Version</label>
-                            <router-link v-if="updatedMarketingRelease && updatedMarketingRelease.devReleasePointer" :to="{ name: 'ReleaseView', params: { uuid: updatedMarketingRelease.devReleasePointer } }">
+                            <router-link v-if="updatedMarketingRelease && updatedMarketingRelease.devReleasePointer && updatedMarketingRelease.devReleaseDetails" :to="{ name: 'ReleaseView', params: { uuid: updatedMarketingRelease.devReleasePointer } }">
                                 {{ updatedMarketingRelease.devReleaseDetails.version }}
                             </router-link>
                             <span v-else>Not Set</span>
@@ -377,7 +377,6 @@ function handleFollowIntegrationUpdate (value: string) {
 }
 
 function handleTargetIntegrationUpdate (rlz: any) {
-    console.log(rlz)
     updatedMarketingRelease.value.integrateBranch = rlz.branch
     updatedMarketingRelease.value.devReleasePointer = rlz.uuid
     save()
