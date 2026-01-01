@@ -24,6 +24,7 @@
                             <div><strong>Created: </strong>{{ updatedMarketingRelease ? (new
                                 Date(updatedMarketingRelease.createdDate)).toLocaleString('en-CA') : '' }}
                             </div>
+                            <div><strong>Status: </strong>{{ updatedMarketingRelease.status.toUpperCase() }}</div>
                         </n-tooltip>
                         <!-- router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
                             <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
@@ -45,7 +46,7 @@
                     <n-gi span="1">
                         <span class="lifecycle" style="float: right; margin-right: 80px;">
                             <span v-if="isWritable">
-                                <n-dropdown v-if="updatedMarketingRelease.lifecycle" trigger="hover" :options="marketingReleaseLifecyclesOptions">
+                                <n-dropdown v-if="updatedMarketingRelease.lifecycle" trigger="hover" :options="marketingReleaseLifecyclesOptions" @select="modifyMarketingReleaseLifecycle">
                                     <n-tag type="success">{{ marketingReleaseLifecyclesOptions.find((lo: any) => lo.key === updatedMarketingRelease.lifecycle)?.label }}</n-tag>
                                 </n-dropdown>
                             </span>
@@ -97,18 +98,6 @@
                         <n-grid cols="12" item-responsive>
                             <n-gi :span="3">
                                 <div class="row">
-                                    <h5>Status: {{ updatedMarketingRelease.status.toUpperCase() }}</h5>
-                                    <div v-if="isWritable">
-                                        <h3>Lifecycle: {{ updatedMarketingRelease.lifecycle }} </h3>
-                                        <n-button @click="advanceReleaseLifecycle">Advance Lifecycle</n-button>
-                                        <!-- n-dropdown v-if="statuses && updatedMarketingRelease.status" trigger="hover" :options="statusesOptions" @select="statusChange">
-                                            <n-button>{{updatedMarketingRelease.status}}</n-button>
-                                        </n-dropdown -->
-                                    </div>
-                                    <div v-if="!isWritable">
-                                        <h5>Lifecycle: {{ updatedMarketingRelease.lifecycle }}</h5>
-                                    </div>
-
                                     <div v-if="isWritable">
                                         <label>Suggested Release Version: {{ computedReleasedVersion }}</label>
                                         <n-input v-model:value="releasedVersion" />
@@ -392,27 +381,29 @@ function handleTargetIntegrationUpdate (rlz: any) {
     showSelectTargetIntegrateModal.value = false
 }
 
-async function advanceReleaseLifecycle() {
+async function modifyMarketingReleaseLifecycle(newLifecycle: string) {
     const onSwalConfirm = async function () {
         const mrResponse = await graphqlClient.mutate({
             mutation: gql`
-                mutation advanceMarketingReleaseLifecycle($marketingReleaseUuid: ID!) {
-                    advanceMarketingReleaseLifecycle(marketingReleaseUuid: $marketingReleaseUuid) {
+                mutation modifyMarketingReleaseLifecycle($marketingReleaseUuid: ID!, $newLifecycle: MarketingReleaseLifecycleEnum) {
+                    modifyMarketingReleaseLifecycle(marketingReleaseUuid: $marketingReleaseUuid, newLifecycle: $newLifecycle) {
                         ${graphqlQueries.MarketingRelease}
                     }
                 }
                 `,
             variables: {
-                marketingReleaseUuid: marketingReleaseUuid.value
+                marketingReleaseUuid: marketingReleaseUuid.value,
+                newLifecycle
             }
         })
-        marketingRelease.value = mrResponse.data.advanceMarketingReleaseLifecycle
+        marketingRelease.value = mrResponse.data.modifyMarketingReleaseLifecycle
         updatedMarketingRelease.value = deepCopyRelease(marketingRelease.value)
     }
+    const lifecycleLabel = marketingReleaseLifecyclesOptions.value.find((lo: any) => lo.key === newLifecycle)?.label || newLifecycle
     const swalData: SwalData = {
-        questionText: `Are you sure you want to advance lifecycle for the Marketing Release version ${marketingRelease.value.version}?`,
+        questionText: `Are you sure you want to change lifecycle to ${lifecycleLabel} for the Marketing Release version ${marketingRelease.value.version}?`,
         successTitle: 'Lifecycle Updated!',
-        successText: `The Marketing Release version ${marketingRelease.value.version} lifecycle has been updated.`,
+        successText: `The Marketing Release version ${marketingRelease.value.version} lifecycle has been updated to ${lifecycleLabel}.`,
         dismissText: 'Lifecycle update has been cancelled.'
     }
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
