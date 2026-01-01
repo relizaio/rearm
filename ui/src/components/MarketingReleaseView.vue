@@ -63,47 +63,51 @@
             <n-tabs style="padding-left:2%;" type="line">
                 <n-tab-pane name="integration" tab="Integration">
                     <div class="container" v-if="updatedMarketingRelease.type !== 'PLACEHOLDER'">
-                    <div>
-                        <strong>Integration Type: </strong> 
-                        <n-select
-                            v-if="isEditIntegrationType"
-                            @update:value="handleIntegrateTypeUpdate"
-                            :value="updatedMarketingRelease.integrateType"
-                            :options="[{value: 'FOLLOW', label: 'FOLLOW'}, {value: 'TARGET', label: 'TARGET'}, {value: 'NONE', label: 'NONE'}]" 
-                        />
-                        <span v-else>
-                            {{ updatedMarketingRelease.integrateType ? updatedMarketingRelease.integrateType : 'NONE' }}
-                        </span>
-                        <vue-feather v-if="isWritable" type="edit" class="clickable" @click="isEditIntegrationType = true" title="Edit Integration Settings" />
-                    </div>
-                    <div>
-                        <strong>Integration {{ words.branchFirstUpper }}: </strong> 
-                        <n-select
-                            v-if="isEditFollowIntegration"
-                            @update:value="handleFollowIntegrationUpdate"
-                            :value="updatedMarketingRelease.branch"
-                            :options="followBranches" 
-                        />
-                        <span v-else>
-                            {{ updatedMarketingRelease.integrateBranchDetails ? updatedMarketingRelease.integrateBranchDetails.name : 'Not Set' }}
-                        </span>
-                        <vue-feather v-if="isWritable && updatedMarketingRelease.integrateType === 'FOLLOW'" type="edit" class="clickable" @click="editFollowIntegration" title="Set Follow Integration" />
-                    </div>
-                    <div>
-                        <strong>Development Release Version: </strong>{{ updatedMarketingRelease && updatedMarketingRelease.devReleasePointer ? updatedMarketingRelease.devReleaseDetails.version : 'Not Set' }}
-                        <vue-feather v-if="isWritable && updatedMarketingRelease.integrateType === 'TARGET'" type="edit" class="clickable" @click="showSelectTargetIntegrateModal = true" title="Set Target Integration" />
-                    </div>
-                        <n-grid cols="12" item-responsive>
-                            <n-gi :span="3">
-                                <div class="row">
-                                    <div v-if="isWritable">
-                                        <label>Suggested Release Version: {{ computedReleasedVersion }}</label>
-                                        <n-input v-model:value="releasedVersion" />
-                                        <n-button @click="releaseMarketingRelease">Release!</n-button>
+                        <div class="versionSchemaBlock">
+                            <label>Integration Type</label>
+                            <n-select
+                                v-if="isWritable"
+                                @update:value="handleIntegrateTypeUpdate"
+                                :value="updatedMarketingRelease.integrateType"
+                                :options="[{value: 'FOLLOW', label: 'FOLLOW'}, {value: 'TARGET', label: 'TARGET'}]" 
+                            />
+                            <span v-else>
+                                {{ updatedMarketingRelease.integrateType ? updatedMarketingRelease.integrateType : 'NONE' }}
+                            </span>
+                        </div>
+                        <div class="versionSchemaBlock">
+                            <label>Integration {{ words.branchFirstUpper }}</label>
+                            <n-select
+                                v-if="isWritable"
+                                @update:value="handleFollowIntegrationUpdate"
+                                :value="updatedMarketingRelease.branch"
+                                :options="followBranches" 
+                            />
+                            <span v-else>
+                                {{ updatedMarketingRelease.integrateBranch ? updatedMarketingRelease.integrateBranch : 'Not Set' }}
+                            </span>
+                        </div>
+                        <div class="versionSchemaBlock">
+                            <label>Development Release Version</label>
+                            <span>{{ updatedMarketingRelease && updatedMarketingRelease.devReleasePointer ? updatedMarketingRelease.devReleaseDetails.version : 'Not Set' }}</span>
+                            <vue-feather v-if="isWritable && updatedMarketingRelease.integrateType === 'TARGET' && updatedMarketingRelease.integrateBranch" type="edit" class="clickable versionIcon" @click="showSelectTargetIntegrateModal = true" title="Set Target Integration" />
+                        </div>
+                        <div class="versionSchemaBlock" v-if="isWritable">
+                            <label>
+                                Version to Release
+                                <n-tooltip trigger="hover">
+                                    <template #trigger>
+                                        <Icon class="clickable" style="margin-left: 5px;" size="16"><Info20Regular/></Icon>
+                                    </template>
+                                    <div>
+                                        <strong>Suggested Version:</strong> {{ computedReleasedVersion }}
+                                        <n-button size="small" type="primary" style="margin-left: 10px;" @click="releasedVersion = computedReleasedVersion">Use This Version</n-button>
                                     </div>
-                                </div>
-                            </n-gi>
-                        </n-grid>
+                                </n-tooltip>
+                            </label>
+                            <n-input v-model:value="releasedVersion" :placeholder="`Version to Release (suggested: ${computedReleasedVersion})`" />
+                            <n-button @click="releaseMarketingRelease">Release!</n-button>
+                        </div>
                     </div>
                 </n-tab-pane>
                 <n-tab-pane name="history" tab="Release History">
@@ -154,6 +158,7 @@
                             :orgProp="updatedMarketingRelease.org"
                             :inputComponent="updatedMarketingRelease.component"
                             :inputType="updatedMarketingRelease.componentDetails.type"
+                            :inputBranch="updatedMarketingRelease.integrateBranch"
                             :attemptPickRelease="true"
                             :disallowPlaceholder="true"
                             :disallowCreateRelease="true"
@@ -224,6 +229,8 @@ const statuses: Ref<any[]> = ref([])
 onMounted(async () => {
     await fetchMarketingRelease()
     fetchLifecycles()
+    const storeBranches = await store.dispatch('fetchBranches', marketingRelease.value.component)
+    followBranches.value = storeBranches.map((b: any) => {return {label: b.name, value: b.uuid};})
 })
 
 const marketingReleaseUuid: Ref<string> = ref(props.uuidprop ?? route.params.uuid.toString())
@@ -233,7 +240,7 @@ const computedReleasedVersion: ComputedRef<string> = computed((): any => {
     let rlzVer = ''
     if (marketingRelease.value && marketingRelease.value.version && marketingRelease.value.lifecycle && marketingReleaseLifecycles.value.length) {
         const lifecycle = marketingReleaseLifecycles.value.find((l: any) => l.lifecycle === marketingRelease.value.lifecycle)
-        rlzVer = marketingRelease.value.version + "-" + lifecycle.suffix
+        rlzVer = ('ga' === lifecycle.suffix ? marketingRelease.value.version : marketingRelease.value.version + "-" + lifecycle.suffix)
     }
     return rlzVer
 })
@@ -250,8 +257,6 @@ const marketingReleaseLifecyclesOptions: ComputedRef<SelectOption[]> = computed(
     }))
 })
 
-const isEditIntegrationType = ref(false)
-const isEditFollowIntegration = ref(false)
 const showSelectTargetIntegrateModal = ref(false)
 const followBranches: Ref<any[]> = ref([])
 
@@ -349,22 +354,14 @@ function deepCopyRelease (rlz: any) {
     return Object.assign({}, rlz)
 }
 
-async function editFollowIntegration () {
-    isEditFollowIntegration.value = true
-    const storeBranches = await store.dispatch('fetchBranches', marketingRelease.value.component)
-    followBranches.value = storeBranches.map((b: any) => {return {label: b.name, value: b.uuid};})
-}
-
 function handleIntegrateTypeUpdate (value: string) {
     updatedMarketingRelease.value.integrateType = value
     save()
-    isEditIntegrationType.value = false
 }
 
 function handleFollowIntegrationUpdate (value: string) {
     updatedMarketingRelease.value.integrateBranch = value
     save()
-    isEditFollowIntegration.value = false
 }
 
 function handleTargetIntegrationUpdate (rlz: any) {
@@ -598,6 +595,54 @@ function addTag () {
 .historyHeader {
     background-color: #f9dddd;
     font-weight: bold;
+}
+
+.versionSchemaBlock {
+    padding-top: 15px;
+    padding-bottom: 15px;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 12px;
+    
+    label {
+        font-weight: bold;
+        min-width: 250px;
+        flex-shrink: 0;
+    }
+    input {
+        flex: 1;
+        min-width: 0;
+    }
+    .n-input {
+        flex: 1;
+        min-width: 200px;
+        
+        :deep(.n-input-wrapper) {
+            padding-left: 12px;
+            padding-right: 12px;
+        }
+        :deep(.n-input__input-el) {
+            padding: 0;
+        }
+    }
+    .n-select {
+        flex: 1;
+        min-width: 200px;
+    }
+    .n-button {
+        flex-shrink: 0;
+    }
+    select {
+        flex: 1;
+        min-width: 200px;
+    }
+    span {
+        flex: 1;
+    }
+    .versionIcon {
+        flex-shrink: 0;
+    }
 }
 
 </style>
