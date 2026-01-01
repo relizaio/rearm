@@ -4,22 +4,6 @@
             <div class="row">
 
             <n-modal
-                v-model:show="showMarketingVersionModal"
-                title='Set Next Marketing Version'
-                preset="dialog"
-                :show-icon="false" >
-                <n-form>
-                    <n-form-item :label="!nextMarketingVersion ? 'Set Marketing Version' : 'Next Marketing Version is: ' + nextMarketingVersion">
-                        <n-input
-                            v-model:value="updatedMarketingVersion"
-                            required
-                            placeholder="Enter Marketing Version" 
-                        />
-                    </n-form-item>
-                    <n-button type="success" @click="setMarketingVersion">Save</n-button>
-                </n-form>
-            </n-modal>
-            <n-modal
                 v-model:show="showExportSBOMModal"
                 title='Export Release BOM'
                 preset="dialog"
@@ -188,7 +172,6 @@
                             style="margin-left:10px;"
                         />
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
-                        <Icon v-if="release.lifecycle === 'ASSEMBLED' && release.componentDetails.versionType === 'MARKETING' && isWritable" @click="openMarketingVersionModal" class="clickable" style="margin-left:10px;" size="16" title="Set Marketing Version For this Release" ><GlobeAdd24Regular/></Icon>
                     </n-gi>
                     <n-gi span="2">
                         <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
@@ -770,63 +753,7 @@ const exportSbomWithConfig = async function() {
 
 } 
 
-const showMarketingVersionModal: Ref<boolean> = ref(false)
-const nextMarketingVersion: Ref<string> = ref(release.value.marketingVersion)
-const updatedMarketingVersion: Ref<string> = ref(release.value.marketingVersion ?? nextMarketingVersion.value)
-
 const showEditIdentifiersModal: Ref<boolean> = ref(false)
-const openMarketingVersionModal = async function(){
-    await getNextVersion(release.value.branchDetails.uuid)
-    showMarketingVersionModal.value = true
-}
-const getNextVersion = async function (branch: string){
-    const resp = await graphqlClient.query({
-        query: gql`
-            query getNextVersion($branchUuid: ID!) {
-                getNextVersion(branchUuid: $branchUuid, versionType: MARKETING)
-            }
-            `,
-        variables: { branchUuid: branch },
-        fetchPolicy: 'no-cache'
-    })
-    nextMarketingVersion.value = resp.data.getNextVersion
-    updatedMarketingVersion.value = updatedRelease.value.marketingVersion ?? nextMarketingVersion.value
-
-}
-const setMarketingVersion = async function (){
-    let success = false
-    try {
-        let resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setReleaseMarketingVersion($releaseUuid: ID!, $versionString: String!) {
-                    setReleaseMarketingVersion(releaseUuid: $releaseUuid, versionString: $versionString)
-                }
-                `,
-            variables: { releaseUuid: releaseUuid.value, versionString: updatedMarketingVersion.value },
-            fetchPolicy: 'no-cache'
-        })
-        success = resp.data.setReleaseMarketingVersion
-    } catch (err: any) {
-        showMarketingVersionModal.value = false
-        emit('closeRelease')
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
-    }
-    showMarketingVersionModal.value = false
-    if (success) {
-        emit('closeRelease')
-        Swal.fire(
-            'Success',
-            `Success setting marketing version on release.`,
-            'success'
-        )
-    }
-
-}
-
 const onCreateIdentifier = () => {
     return {
         idType: '',
