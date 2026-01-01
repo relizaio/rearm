@@ -1,5 +1,5 @@
 <template>
-    <n-spin :show="isLoading" size="large">
+    <n-spin :show="isLoading" size="large" style="display: flex; justify-content: center; align-items: center; min-height: 50vh;">
         <div>
             <div class="row">
 
