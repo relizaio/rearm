@@ -33,7 +33,7 @@ type Query {
 	apiKeys(orgUuid: ID!): [ApiKey]
 	marketingRelease(marketingReleaseUuid: ID!): MarketingRelease
 	marketingReleases(componentUuid: ID!): [MarketingRelease]
-	releaseLifecycles: [MarketingReleaseLifecycle]
+	marketingReleaseLifecycles: [MarketingReleaseLifecycle]
 	defaultApprovalRoles: [ApprovalRole]
 	approvalPoliciesOfOrg(orgUuid: ID!): [ApprovalPolicy]
 	approvalEntriesOfOrg(orgUuid: ID!): [ApprovalEntry]
@@ -148,7 +148,7 @@ type Mutation {
 	updateReleaseTagsMeta(release: ReleaseInput!): Release
 	addMarketingReleaseManual(marketingRelease: MarketingReleaseInput!): MarketingRelease
 	updateMarketingRelease(marketingRelease: MarketingReleaseInput!): MarketingRelease
-	advanceMarketingReleaseLifecycle(marketingReleaseUuid: ID!, newLifecycle: MarketingReleaseLifecycleEnum): MarketingRelease 
+	modifyMarketingReleaseLifecycle(marketingReleaseUuid: ID!, newLifecycle: MarketingReleaseLifecycleEnum): MarketingRelease 
 	archiveMarketingRelease(marketingReleaseUuid: ID!): Boolean
 	releaseMarketingRelease(marketingRelease: MarketingReleaseInput!, marketingVersion: String!): MarketingRelease
 	addApprovalRole(orgUuid: ID!, approvalRole: ApprovalRoleInput!): Organization
@@ -648,7 +648,7 @@ type MarketingRelease {
 }
 
 type MarketingReleaseEvent {
-	release: String
+	release: ID
 	releaseDetails: Release
 	lifecycle: MarketingReleaseLifecycleEnum
 	date: DateTime
