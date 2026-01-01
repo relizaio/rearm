@@ -10,9 +10,9 @@
         <n-spin :show="loading">
             <n-data-table
                 :columns="columns"
-                :data="releases"
+                :data="tableData"
                 :pagination="{ pageSize: 20 }"
-                :row-key="(row: any) => row.uuid"
+                :row-key="(row: any) => row.key"
             />
         </n-spin>
     </n-modal>
@@ -32,6 +32,38 @@ import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import constants from '@/utils/constants'
 
+// Transform component data into flat table rows
+const tableData = computed(() => {
+    const rows: any[] = []
+    componentData.value.forEach((component: any) => {
+        component.branches?.forEach((branch: any) => {
+            if (branch.releases && branch.releases.length > 0) {
+                // Sort releases to get earliest and latest
+                const sortedReleases = [...branch.releases].sort((a: any, b: any) => 
+                    new Date(a.createdDate).getTime() - new Date(b.createdDate).getTime()
+                )
+                const earliestRelease = sortedReleases[0]
+                const latestRelease = sortedReleases[sortedReleases.length - 1]
+                
+                rows.push({
+                    key: `${component.uuid}-${branch.uuid}`,
+                    componentUuid: component.uuid,
+                    componentName: component.name,
+                    componentType: component.type,
+                    branchUuid: branch.uuid,
+                    branchName: branch.name,
+                    earliestVersion: earliestRelease.version,
+                    earliestReleaseUuid: earliestRelease.uuid,
+                    latestVersion: latestRelease.version,
+                    latestReleaseUuid: latestRelease.uuid,
+                    releases: branch.releases
+                })
+            }
+        })
+    })
+    return rows
+})
+
 const props = defineProps<{
     show: boolean
     cveId: string
@@ -41,7 +73,7 @@ const props = defineProps<{
 const emit = defineEmits(['update:show'])
 
 const loading = ref(false)
-const releases = ref<any[]>([])
+const componentData = ref<any[]>([])
 
 const show = computed({
     get: () => props.show,
@@ -62,28 +94,29 @@ const fetchReleases = async () => {
                 query searchReleasesByCveId($org: ID!, $cveId: String!) {
                     searchReleasesByCveId(org: $org, cveId: $cveId) {
                         uuid
-                        version
-                        marketingVersion
-                        createdDate
-                        lifecycle
-                        componentDetails {
+                        name
+                        type
+                        versionSchema
+                        branches {
                             uuid
                             name
-                            type
-                        }
-                        branchDetails {
-                            uuid
-                            name
-                        }
-                        metrics {
-                            critical
-                            high
-                            medium
-                            low
-                            unassigned
-                            policyViolationsLicenseTotal
-                            policyViolationsSecurityTotal
-                            policyViolationsOperationalTotal
+                            versionSchema
+                            releases {
+                                uuid
+                                version
+                                createdDate
+                                lifecycle
+                                metrics {
+                                    critical
+                                    high
+                                    medium
+                                    low
+                                    unassigned
+                                    policyViolationsLicenseTotal
+                                    policyViolationsSecurityTotal
+                                    policyViolationsOperationalTotal
+                                }
+                            }
                         }
                     }
                 }
@@ -94,87 +127,28 @@ const fetchReleases = async () => {
             },
             fetchPolicy: 'no-cache'
         })
-        releases.value = (response.data as any).searchReleasesByCveId || []
+        componentData.value = (response.data as any).searchReleasesByCveId || []
     } catch (error) {
         console.error('Error fetching releases by CVE ID:', error)
-        releases.value = []
+        componentData.value = []
     } finally {
         loading.value = false
     }
 }
 
-const columns: DataTableColumns<any> = [
+// Nested table columns for expanded releases
+const releaseColumns: DataTableColumns<any> = [
     {
-        title: 'Component / Product',
-        key: 'componentName',
-        width: 200,
-        render: (row: any) => {
-            if (!row.componentDetails?.uuid || !row.componentDetails?.name) {
-                return 'N/A'
-            }
-            const routeName = row.componentDetails.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
-            return h(
-                RouterLink,
-                {
-                    to: {
-                        name: routeName,
-                        params: {
-                            orguuid: props.orgUuid,
-                            compuuid: row.componentDetails.uuid
-                        }
-                    }
-                },
-                { default: () => row.componentDetails.name }
-            )
-        }
-    },
-    {
-        title: 'Branch / Feature Set',
-        key: 'branchName',
-        width: 180,
-        render: (row: any) => {
-            if (!row.branchDetails?.uuid || !row.branchDetails?.name || !row.componentDetails?.uuid) {
-                return 'N/A'
-            }
-            const routeName = row.componentDetails.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
-            return h(
-                RouterLink,
-                {
-                    to: {
-                        name: routeName,
-                        params: {
-                            orguuid: props.orgUuid,
-                            compuuid: row.componentDetails.uuid,
-                            branchuuid: row.branchDetails.uuid
-                        }
-                    }
-                },
-                { default: () => row.branchDetails.name }
-            )
-        }
-    },
-    {
-        title: 'Type',
-        key: 'type',
-        width: 120,
-        render: (row: any) => row.componentDetails?.type || 'N/A'
-    },
-    {
-        title: 'Version',
+        title: 'Release Version',
         key: 'version',
         width: 150,
         render: (row: any) => {
-            if (!row.uuid || !row.version) {
-                return 'N/A'
-            }
             return h(
                 RouterLink,
                 {
                     to: {
                         name: 'ReleaseView',
-                        params: {
-                            uuid: row.uuid
-                        }
+                        params: { uuid: row.uuid }
                     }
                 },
                 { default: () => row.version }
@@ -192,67 +166,102 @@ const columns: DataTableColumns<any> = [
         key: 'lifecycle',
         width: 120,
         render: (row: any) => constants.LifecycleOptions.find((lo: any) => lo.key === row.lifecycle)?.label || row.lifecycle
-    },
+    }
+]
+
+// Main table columns with expandable rows
+const columns: DataTableColumns<any> = [
     {
-        title: 'Vulnerabilities',
-        key: 'vulnerabilities',
-        width: 200,
-        render: (row: any) => {
-            if (row.metrics) {
-                const criticalEl = h('div', { 
-                    title: 'Critical Severity Vulnerabilities', 
-                    class: 'circle', 
-                    style: 'background: #f86c6b;' 
-                }, row.metrics.critical || 0)
-                const highEl = h('div', { 
-                    title: 'High Severity Vulnerabilities', 
-                    class: 'circle', 
-                    style: 'background: #fd8c00;' 
-                }, row.metrics.high || 0)
-                const medEl = h('div', { 
-                    title: 'Medium Severity Vulnerabilities', 
-                    class: 'circle', 
-                    style: 'background: #ffc107;' 
-                }, row.metrics.medium || 0)
-                const lowEl = h('div', { 
-                    title: 'Low Severity Vulnerabilities', 
-                    class: 'circle', 
-                    style: 'background: #4dbd74;' 
-                }, row.metrics.low || 0)
-                const unassignedEl = h('div', { 
-                    title: 'Vulnerabilities with Unassigned Severity', 
-                    class: 'circle', 
-                    style: 'background: #777;' 
-                }, row.metrics.unassigned || 0)
-                return h(NSpace, { size: 1 }, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])
-            }
-            return 'N/A'
+        type: 'expand',
+        expandable: (row: any) => row.releases && row.releases.length > 0,
+        renderExpand: (row: any) => {
+            return h(NDataTable, {
+                data: row.releases,
+                columns: releaseColumns,
+                pagination: false
+            })
         }
     },
     {
-        title: 'Violations',
-        key: 'violations',
+        title: 'Component / Product',
+        key: 'componentName',
+        width: 200,
+        render: (row: any) => {
+            const routeName = row.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+            return h(
+                RouterLink,
+                {
+                    to: {
+                        name: routeName,
+                        params: {
+                            orguuid: props.orgUuid,
+                            compuuid: row.componentUuid
+                        }
+                    }
+                },
+                { default: () => row.componentName }
+            )
+        }
+    },
+    {
+        title: 'Branch / Feature Set',
+        key: 'branchName',
         width: 180,
         render: (row: any) => {
-            if (row.metrics) {
-                const licenseEl = h('div', { 
-                    title: 'Licensing Policy Violations', 
-                    class: 'circle', 
-                    style: 'background: blue;' 
-                }, row.metrics.policyViolationsLicenseTotal || 0)
-                const securityEl = h('div', { 
-                    title: 'Security Policy Violations', 
-                    class: 'circle', 
-                    style: 'background: red;' 
-                }, row.metrics.policyViolationsSecurityTotal || 0)
-                const operationalEl = h('div', { 
-                    title: 'Operational Policy Violations', 
-                    class: 'circle', 
-                    style: 'background: grey;' 
-                }, row.metrics.policyViolationsOperationalTotal || 0)
-                return h(NSpace, { size: 1 }, () => [licenseEl, securityEl, operationalEl])
-            }
-            return 'N/A'
+            const routeName = row.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+            return h(
+                RouterLink,
+                {
+                    to: {
+                        name: routeName,
+                        params: {
+                            orguuid: props.orgUuid,
+                            compuuid: row.componentUuid,
+                            branchuuid: row.branchUuid
+                        }
+                    }
+                },
+                { default: () => row.branchName }
+            )
+        }
+    },
+    {
+        title: 'Type',
+        key: 'componentType',
+        width: 120
+    },
+    {
+        title: 'Earliest Version',
+        key: 'earliestVersion',
+        width: 150,
+        render: (row: any) => {
+            return h(
+                RouterLink,
+                {
+                    to: {
+                        name: 'ReleaseView',
+                        params: { uuid: row.earliestReleaseUuid }
+                    }
+                },
+                { default: () => row.earliestVersion }
+            )
+        }
+    },
+    {
+        title: 'Newest Version',
+        key: 'latestVersion',
+        width: 150,
+        render: (row: any) => {
+            return h(
+                RouterLink,
+                {
+                    to: {
+                        name: 'ReleaseView',
+                        params: { uuid: row.latestReleaseUuid }
+                    }
+                },
+                { default: () => row.latestVersion }
+            )
         }
     }
 ]
