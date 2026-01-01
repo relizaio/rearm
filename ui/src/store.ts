@@ -897,7 +897,7 @@ const storeObject : any = {
                 approvalPolicy: component.approvalPolicy,
                 outputTriggers: component.outputTriggers,
                 releaseInputTriggers: component.releaseInputTriggers,
-                identifiers: component.identifiers
+                identifiers: component.identifiers?.map(({ idType, idValue }: any) => ({ idType, idValue }))
             }
             console.log(compUpdObject)
             const data = await graphqlClient.mutate({
