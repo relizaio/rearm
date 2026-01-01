@@ -1322,6 +1322,7 @@ const fetchVcsRepos = async function () : Promise<any[]> {
 
 async function save () {
     updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', updatedComponent.value))
+    notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
 }
 
 const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
