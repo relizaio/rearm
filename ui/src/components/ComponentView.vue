@@ -1585,7 +1585,7 @@ const showReleaseModal = function (rluuid: string) {
 
 const marketingVersionEnabled = ref(updatedComponent.value.versionType === 'MARKETING')
 
-const toggleMarketingVersion = async function(value: boolean){
+function toggleMarketingVersion (value: boolean) {
     if(value){
         marketingVersionEnabled.value = true
         updatedComponent.value.versionType = 'MARKETING'
@@ -1594,8 +1594,6 @@ const toggleMarketingVersion = async function(value: boolean){
         updatedComponent.value.versionType = 'DEV'
         marketingVersionEnabled.value = false
     }
-        
-    save()
 }
 let clickTimer: ReturnType<typeof setTimeout> | null = null
 let preventSingleClick = false
