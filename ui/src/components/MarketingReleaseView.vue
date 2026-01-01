@@ -1,25 +1,62 @@
 <template>
     <div>
         <div class="row">
+            <div v-if="marketingRelease && marketingRelease.orgDetails">
+                <n-grid :cols="7">
+                    <n-gi span="4">
+                        <h3 style="color: #537985; display: inline;">                  
+                            <router-link
+                                style="text-decoration: none; color: rgb(39 179 223);"
+                                :to="{name: isComponent ? 'ComponentsOfOrg' : 'ProductsOfOrg', params: { orguuid: marketingRelease.orgDetails.uuid, compuuid: marketingRelease.componentDetails.uuid } }">{{
+                                marketingRelease.componentDetails.name }} </router-link>
+                            <span style="margin-left: 6px;">-</span>
+                            <span style="margin-left: 6px;">{{words.componentFirstUpper}} Marketing Release
+                            <span>-</span>
+                            {{ updatedMarketingRelease ? updatedMarketingRelease.version : '' }}</span>
+                        </h3>
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <Icon class="clickable" style="margin-left:10px;" size="16"><Info20Regular/></Icon>
+                            </template>
+                            <strong>UUID: </strong> {{ marketingReleaseUuid }} 
+                            <Icon class="clickable" style="margin-left: 5px;" size="14" @click="copyToClipboard(marketingReleaseUuid)"><Copy20Regular/></Icon>
+                            <div class=""><strong>Organization:</strong> {{ marketingRelease.orgDetails.name }}</div>
+                            <div><strong>Created: </strong>{{ updatedMarketingRelease ? (new
+                                Date(updatedMarketingRelease.createdDate)).toLocaleString('en-CA') : '' }}
+                            </div>
+                        </n-tooltip>
+                        <!-- router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
+                            <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
+                        </router-link -->
+                    </n-gi>
+                    <n-gi span="2">
+                        <!-- n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
+                            <span title="Criticial Severity Vulnerabilities" class="circle" style="background: #f86c6b; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', 'Vulnerability')">{{ updatedRelease.metrics.critical }}</span>    
+                            <span title="High Severity Vulnerabilities" class="circle" style="background: #fd8c00; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'HIGH', 'Vulnerability')">{{ updatedRelease.metrics.high }}</span>
+                            <span title="Medium Severity Vulnerabilities" class="circle" style="background: #ffc107; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'MEDIUM', 'Vulnerability')">{{ updatedRelease.metrics.medium }}</span>
+                            <span title="Low Severity Vulnerabilities" class="circle" style="background: #4dbd74; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'LOW', 'Vulnerability')">{{ updatedRelease.metrics.low }}</span>
+                            <span title="Vulnerabilities with Unassigned Severity" class="circle" style="background: #777; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'UNASSIGNED', 'Vulnerability')">{{ updatedRelease.metrics.unassigned }}</span>
+                            <div style="width: 30px;"></div>
+                            <span title="Licensing Policy Violations" class="circle" style="background: blue; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
+                            <span title="Security Policy Violations" class="circle" style="background: red; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
+                            <span title="Operational Policy Violations" class="circle" style="background: grey; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
+                        </n-space> -->
+                    </n-gi>
+                    <n-gi span="1">
+                        <span class="lifecycle" style="float: right; margin-right: 80px;">
+                            <span v-if="isWritable">
+                                <n-dropdown v-if="updatedMarketingRelease.lifecycle" trigger="hover" :options="marketingReleaseLifecyclesOptions">
+                                    <n-tag type="success">{{ marketingReleaseLifecyclesOptions.find((lo: any) => lo.key === updatedMarketingRelease.lifecycle)?.label }}</n-tag>
+                                </n-dropdown>
+                            </span>
+                            <span v-if="!isWritable">
+                                <n-tag type="success">{{ updatedMarketingRelease.lifecycle }}</n-tag>
+                            </span>
+                        </span>
+                    </n-gi>
+                </n-grid>
+            </div>
             <div v-if="marketingRelease && marketingRelease.orgDetails" class="row" style="margin-left:4%;">
-                <div>
-                    <strong>UUID: </strong> {{ marketingReleaseUuid }} <vue-feather class="clickable icons" @click="copyToClipboard(marketingReleaseUuid)" type="clipboard"/>
-                </div>
-                <div><strong>Organization:</strong> {{ marketingRelease.orgDetails.name }}</div>
-                <div>
-                    <strong>
-                        <span v-if="marketingRelease.componentDetails.type === 'PRODUCT'">Product</span>
-                        <span v-else>{{ words.componentFirstUpper }}</span>:
-                    </strong>
-                    <router-link
-                        :to="{ name: marketingRelease.componentDetails.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg', params: { orguuid: marketingRelease.orgDetails.uuid, compuuid: marketingRelease.componentDetails.uuid } }">{{
-                            marketingRelease.componentDetails.name }}</router-link>
-                </div>
-                <div><strong>Created: </strong>{{ updatedMarketingRelease ? (new
-                    Date(updatedMarketingRelease.createdDate)).toLocaleString('en-CA') : '' }}
-                </div>
-                <div><strong>Version: </strong>{{ updatedMarketingRelease ? updatedMarketingRelease.version : '' }}</div>
-
                 <div>
                     <strong>Integration Type: </strong> 
                     <n-select
@@ -150,23 +187,21 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import ReleaseEl from '@/components/ReleaseEl.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
-import { GlobeAdd24Regular, Info24Regular } from '@vicons/fluent'
+import { Info20Regular, Copy20Regular } from '@vicons/fluent'
 import { Box, CirclePlus, ClipboardCheck, Download, FileInvoice, GitCompare, Link, Trash, Upload } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, DataTableColumns, NDropdown, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputGroup, NModal, NRadioButton, NRadioGroup, NSelect, NSpin, NSwitch, NTabPane, NTabs, NTag, NTooltip, NUpload, NotificationType, useNotification } from 'naive-ui'
+import { NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, DataTableColumns, NDropdown, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputGroup, NModal, NRadioButton, NRadioGroup, NSelect, NSpin, NSwitch, NTabPane, NTabs, NTag, NTooltip, NotificationType, useNotification } from 'naive-ui'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-
 
 const route = useRoute()
 const router = useRouter()
@@ -184,6 +219,7 @@ const notify = async function (type: NotificationType, title: string, content: s
 const myUser = store.getters.myuser
 const isWritable = ref(false)
 const isAdmin = ref(false)
+const isComponent: Ref<boolean> = ref(true)
 
 const copyToClipboard = async function (text: string) {
     try {
@@ -212,8 +248,8 @@ const marketingRelease: Ref<any> = ref({})
 const updatedMarketingRelease: Ref<any> = ref({})
 const computedReleasedVersion: ComputedRef<string> = computed((): any => {
     let rlzVer = ''
-    if (marketingRelease.value && marketingRelease.value.version && marketingRelease.value.lifecycle && releaseLifecycles.value.length) {
-        const lifecycle = releaseLifecycles.value.find((l: any) => l.lifecycle === marketingRelease.value.lifecycle)
+    if (marketingRelease.value && marketingRelease.value.version && marketingRelease.value.lifecycle && marketingReleaseLifecycles.value.length) {
+        const lifecycle = marketingReleaseLifecycles.value.find((l: any) => l.lifecycle === marketingRelease.value.lifecycle)
         rlzVer = marketingRelease.value.version + "-" + lifecycle.suffix
     }
     return rlzVer
@@ -221,7 +257,15 @@ const computedReleasedVersion: ComputedRef<string> = computed((): any => {
 const releasedVersion: Ref<string> = ref('')
 
 const words: Ref<any> = ref({})
-const releaseLifecycles: Ref<any[]> = ref([])
+const marketingReleaseLifecycles: Ref<any[]> = ref([])
+
+const marketingReleaseLifecyclesOptions: ComputedRef<SelectOption[]> = computed(() => {
+    return marketingReleaseLifecycles.value.map((lifecycle: any) => ({
+        key: lifecycle.lifecycle,
+        label: lifecycle.prettyName || lifecycle.lifecycle,
+        value: lifecycle.lifecycle
+    }))
+})
 
 const isEditIntegrationType = ref(false)
 const isEditFollowIntegration = ref(false)
@@ -299,13 +343,14 @@ async function fetchMarketingRelease () {
     words.value = commonFunctions.resolveWords(marketingRelease.value.componentDetails.type === 'COMPONENT')
     isWritable.value = commonFunctions.isWritable(marketingRelease.value.orgDetails.uuid, myUser, 'COMPONENT')
     isAdmin.value = commonFunctions.isAdmin(marketingRelease.value.orgDetails.uuid, myUser)
+    isComponent.value = (updatedMarketingRelease.value.componentDetails.type === 'COMPONENT')
 }
 
 async function fetchLifecycles () {
     const resp = await graphqlClient.query({
         query: gql`
-            query releaseLifecycles {
-                releaseLifecycles {
+            query marketingReleaseLifecycles {
+                marketingReleaseLifecycles {
                     lifecycle
 	                suffix
 	                prettyName
@@ -314,7 +359,7 @@ async function fetchLifecycles () {
             }
             `
     })
-    releaseLifecycles.value = resp.data.releaseLifecycles
+    marketingReleaseLifecycles.value = resp.data.marketingReleaseLifecycles
 }
 
 function deepCopyRelease (rlz: any) {
@@ -452,14 +497,6 @@ async function save() {
     updatedMarketingRelease.value = deepCopyRelease(marketingRelease.value)
 }
 
-function renderIcon (icon: Component) {
-    return () => h(NIcon, null, { default: () => h(icon) })
-}
-
-function dateDisplay(date: any){
-    return commonFunctions.dateDisplay(date)
-}
-
 // Meta
 const newTagKey: Ref<string> = ref('')
 const newTagValue: Ref<string> = ref('')
@@ -514,16 +551,7 @@ function addTag () {
         }
     }
 }
-async function fetchReleaseKeys () {
-    const response = await graphqlClient.query({
-        query: gql`
-            query releaseTagKeys($orgId: ID!) {
-                releaseTagKeys(orgUuid: $orgId)
-            }`,
-        variables: { orgId: marketingRelease.value.org }
-    })
-    releaseTagKeys.value = response.data.releaseTagKeys.map((tag: string) => {return {'label': tag, 'value': tag}})
-}
+
 </script>
     
 <style scoped lang="scss">
