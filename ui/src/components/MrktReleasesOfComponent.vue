@@ -26,7 +26,6 @@
         <n-modal 
             style="min-height: 95vh; background-color: white;" 
             v-model:show="showMarketingReleaseModal" 
-            title="Marketing Release View"
             preset="dialog"
             :show-icon="false" >
             <marketing-release-view :uuidprop="showMarketingReleaseUuid" @closeMarketingRelease="showMarketingReleaseModal=false" />
