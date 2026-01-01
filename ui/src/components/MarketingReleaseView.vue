@@ -89,12 +89,15 @@
                         </div>
                         <div class="versionSchemaBlock">
                             <label>Development Release Version</label>
-                            <span>{{ updatedMarketingRelease && updatedMarketingRelease.devReleasePointer ? updatedMarketingRelease.devReleaseDetails.version : 'Not Set' }}</span>
+                            <router-link v-if="updatedMarketingRelease && updatedMarketingRelease.devReleasePointer" :to="{ name: 'ReleaseView', params: { uuid: updatedMarketingRelease.devReleasePointer } }">
+                                {{ updatedMarketingRelease.devReleaseDetails.version }}
+                            </router-link>
+                            <span v-else>Not Set</span>
                             <vue-feather v-if="isWritable && updatedMarketingRelease.integrateType === 'TARGET' && updatedMarketingRelease.integrateBranch" type="edit" class="clickable versionIcon" @click="showSelectTargetIntegrateModal = true" title="Set Target Integration" />
                         </div>
                         <div class="versionSchemaBlock" v-if="isWritable">
                             <label>
-                                Version to Release
+                                Marketing Version to Release
                                 <n-tooltip trigger="hover">
                                     <template #trigger>
                                         <Icon class="clickable" style="margin-left: 5px;" size="16"><Info20Regular/></Icon>
@@ -106,7 +109,7 @@
                                 </n-tooltip>
                             </label>
                             <n-input v-model:value="releasedVersion" :placeholder="`Version to Release (suggested: ${computedReleasedVersion})`" />
-                            <n-button @click="releaseMarketingRelease">Release!</n-button>
+                            <n-button @click="releaseMarketingRelease" :title="!releasedVersion ? 'Please enter a version to release' : 'Release Marketing Release'" :disabled="!releasedVersion">Release!</n-button>
                         </div>
                     </div>
                 </n-tab-pane>
@@ -282,7 +285,16 @@ const releasedReleasesItems: ComputedRef<any> = computed((): any => {
 const releasedReleasesFields: DataTableColumns<any> = [
     {
         key: 'version',
-        title: 'Dev Version'
+        title: 'Dev Version',
+        render(row: any) {
+            return h(
+                RouterLink,
+                {
+                    to: { name: 'ReleaseView', params: { uuid: row.uuid } }
+                },
+                { default: () => row.version }
+            )
+        }
     },
     {
         key: 'marketingVersion',
