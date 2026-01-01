@@ -2018,6 +2018,7 @@ async function initLoad() {
         storeComponent = await store.dispatch('fetchComponentFull', compUuid)
     }
     updatedComponent.value = commonFunctions.deepCopy(storeComponent)
+    marketingVersionEnabled.value = updatedComponent.value.versionType === 'MARKETING'
     isComponent.value = updatedComponent.value.type === 'COMPONENT'
     const orgTerminology = myorg.value?.terminology
     const resolvedWords = commonFunctions.resolveWords(!isComponent.value ? false : true, orgTerminology)
