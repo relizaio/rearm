@@ -709,7 +709,7 @@ async function setDependencyAsFollowVersion (uuid: string) {
     saveModifiedBranch()
 }
 
-const saveModifiedBranch = async function () {
+async function saveModifiedBranch () {
     try {
         // Check if branch type is being changed to BASE
         if (modifiedBranch.value.type === 'BASE' && branchData.value.type !== 'BASE') {
@@ -780,7 +780,7 @@ const saveModifiedBranch = async function () {
         // Clear deletion marks and newly added marks after successful save
         dependenciesMarkedForDeletion.value.clear()
         newlyAddedDependencies.value.clear()
-        
+        notify('success', 'Success', `${words.value.branchFirstUpper} updated successfully`)
         // If branch type was changed to BASE, refresh all branches of the component
         // to update the old Base branch (now Regular) in the UI
         if (wasChangedToBase && branchData.value.component) {
