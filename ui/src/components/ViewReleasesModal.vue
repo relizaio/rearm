@@ -26,7 +26,7 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NDataTable, NSpace, DataTableColumns } from 'naive-ui'
+import { NModal, NSpin, NDataTable, NSpace, NCheckbox, DataTableColumns } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
@@ -52,10 +52,13 @@ const tableData = computed(() => {
                     componentType: component.type,
                     branchUuid: branch.uuid,
                     branchName: branch.name,
+                    branchStatus: branch.status,
                     earliestVersion: earliestRelease.version,
                     earliestReleaseUuid: earliestRelease.uuid,
                     latestVersion: latestRelease.version,
                     latestReleaseUuid: latestRelease.uuid,
+                    latestReleaseVersion: branch.latestReleaseVersion,
+                    isLatest: latestRelease.version === branch.latestReleaseVersion,
                     releases: branch.releases
                 })
             }
@@ -100,7 +103,9 @@ const fetchReleases = async () => {
                         branches {
                             uuid
                             name
+                            status
                             versionSchema
+                            latestReleaseVersion
                             releases {
                                 uuid
                                 version
@@ -231,6 +236,12 @@ const columns: DataTableColumns<any> = [
         width: 120
     },
     {
+        title: 'Status',
+        key: 'branchStatus',
+        width: 100,
+        render: (row: any) => row.branchStatus || 'N/A'
+    },
+    {
         title: 'Earliest Version',
         key: 'earliestVersion',
         width: 150,
@@ -262,6 +273,17 @@ const columns: DataTableColumns<any> = [
                 },
                 { default: () => row.latestVersion }
             )
+        }
+    },
+    {
+        title: 'Is Latest?',
+        key: 'isLatest',
+        width: 100,
+        render: (row: any) => {
+            return h(NCheckbox, {
+                checked: row.isLatest,
+                disabled: true
+            })
         }
     }
 ]
