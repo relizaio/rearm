@@ -60,7 +60,7 @@
         </div>
        
         <div class="row" v-if="marketingRelease && marketingRelease.orgDetails && updatedMarketingRelease && updatedMarketingRelease.orgDetails">
-            <n-tabs style="padding-left:2%;" type="line">
+            <n-tabs style="padding-left:2%;" type="line" @update:value="handleTabChange">
                 <n-tab-pane name="integration" tab="Integration">
                     <div class="container" v-if="updatedMarketingRelease.type !== 'PLACEHOLDER'">
                         <div class="versionSchemaBlock">
@@ -251,6 +251,7 @@ const releasedVersion: Ref<string> = ref('')
 
 const words: Ref<any> = ref({})
 const marketingReleaseLifecycles: Ref<any[]> = ref([])
+const users: Ref<any[]> = ref([])
 
 const marketingReleaseLifecyclesOptions: ComputedRef<SelectOption[]> = computed(() => {
     return marketingReleaseLifecycles.value.map((lifecycle: any) => ({
@@ -267,22 +268,31 @@ const releasedReleasesItems: ComputedRef<any> = computed((): any => {
     let releaseItems: any[] = []
     if (updatedMarketingRelease.value && updatedMarketingRelease.value.events && updatedMarketingRelease.value.events.length) {
         releaseItems = updatedMarketingRelease.value.events.map((ev: any) => {
+            const releasedByUuid = ev.wu.lastUpdatedBy
+            let releasedByName = ''
+            if (releasedByUuid && users.value.find((user) => user.uuid === releasedByUuid)) {
+                releasedByName = users.value.find((user) => user.uuid === releasedByUuid)['name']
+            }
             return {
                 uuid: ev.release,
                 version: ev.releaseDetails.version,
                 marketingVersion: ev.releaseDetails.marketingVersion,
                 createdDate: ev.releaseDetails.createdDate,
                 releasedDate: ev.date,
-                releasedBy: ev.wu.lastUpdatedBy,
+                releasedBy: releasedByName || releasedByUuid,
                 status: ev.releaseDetails.status
             }
-        })
+        }).sort((a: any, b: any) => new Date(b.releasedDate).getTime() - new Date(a.releasedDate).getTime())
     }
     return releaseItems
 })
 
 
 const releasedReleasesFields: DataTableColumns<any> = [
+    {
+        key: 'marketingVersion',
+        title: 'Marketing Version',
+    },
     {
         key: 'version',
         title: 'Dev Version',
@@ -297,16 +307,14 @@ const releasedReleasesFields: DataTableColumns<any> = [
         }
     },
     {
-        key: 'marketingVersion',
-        title: 'Marketing Version',
-    },
-    {
         key: 'createdDate',
-        title: 'Created Date'
+        title: 'Dev Release Created Date',
+        render: (row: any) => (new Date(row.createdDate)).toLocaleString('en-CA', {hour12: false})
     },
     {
         key: 'releasedDate',
-        title: 'Released Date'
+        title: 'Released Date',
+        render: (row: any) => (new Date(row.releasedDate)).toLocaleString('en-CA', {hour12: false})
     },
     {
         key: 'releasedBy',
@@ -452,6 +460,18 @@ async function releaseMarketingRelease() {
         dismissText: 'The release has been cancelled!'
     }
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
+}
+
+async function loadUsers() {
+    if (marketingRelease.value && marketingRelease.value.orgDetails) {
+        users.value = await store.dispatch('fetchUsers', marketingRelease.value.orgDetails.uuid)
+    }
+}
+
+function handleTabChange(tabName: string) {
+    if (tabName === 'history' && users.value.length === 0) {
+        loadUsers()
+    }
 }
 
 async function archiveMarketingRelease() {
