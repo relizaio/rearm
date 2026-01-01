@@ -89,6 +89,13 @@ watch(() => props.show, async (newVal) => {
     }
 })
 
+// Also watch for cveId changes to trigger search when modal is already open
+watch(() => props.cveId, async (newVal) => {
+    if (props.show && newVal && props.orgUuid) {
+        await fetchReleases()
+    }
+})
+
 const fetchReleases = async () => {
     loading.value = true
     try {
