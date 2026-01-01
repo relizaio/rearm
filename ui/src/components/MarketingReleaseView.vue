@@ -103,12 +103,12 @@
                                         <Icon class="clickable" style="margin-left: 5px;" size="16"><Info20Regular/></Icon>
                                     </template>
                                     <div>
-                                        <strong>Suggested Version:</strong> {{ computedReleasedVersion }}
-                                        <n-button size="small" type="primary" style="margin-left: 10px;" @click="releasedVersion = computedReleasedVersion">Use This Version</n-button>
+                                        <strong>Suggested Version:</strong> {{ computedReleaseVersion }}
+                                        <n-button size="small" type="primary" style="margin-left: 10px;" @click="releasedVersion = computedReleaseVersion">Use This Version</n-button>
                                     </div>
                                 </n-tooltip>
                             </label>
-                            <n-input v-model:value="releasedVersion" :placeholder="`Version to Release (suggested: ${computedReleasedVersion})`" />
+                            <n-input v-model:value="releasedVersion" :placeholder="`Version to Release (suggested: ${computedReleaseVersion})`" />
                             <n-button @click="releaseMarketingRelease" :title="!releasedVersion ? 'Please enter a version to release' : 'Release Marketing Release'" :disabled="!releasedVersion">Release!</n-button>
                         </div>
                     </div>
@@ -239,11 +239,35 @@ onMounted(async () => {
 const marketingReleaseUuid: Ref<string> = ref(props.uuidprop ?? route.params.uuid.toString())
 const marketingRelease: Ref<any> = ref({})
 const updatedMarketingRelease: Ref<any> = ref({})
-const computedReleasedVersion: ComputedRef<string> = computed((): any => {
+const computedReleaseVersion: ComputedRef<string> = computed((): any => {
     let rlzVer = ''
     if (marketingRelease.value && marketingRelease.value.version && marketingRelease.value.lifecycle && marketingReleaseLifecycles.value.length) {
         const lifecycle = marketingReleaseLifecycles.value.find((l: any) => l.lifecycle === marketingRelease.value.lifecycle)
-        rlzVer = ('ga' === lifecycle.suffix ? marketingRelease.value.version : marketingRelease.value.version + "-" + lifecycle.suffix)
+        const baseVersion = ('ga' === lifecycle.suffix ? marketingRelease.value.version : marketingRelease.value.version + "-" + lifecycle.suffix)
+        
+        // Check if this version already exists in events
+        const existingVersions = new Set<string>()
+        if (updatedMarketingRelease.value && updatedMarketingRelease.value.events && updatedMarketingRelease.value.events.length) {
+            updatedMarketingRelease.value.events.forEach((ev: any) => {
+                if (ev.releaseDetails && ev.releaseDetails.marketingVersion) {
+                    existingVersions.add(ev.releaseDetails.marketingVersion)
+                }
+            })
+        }
+        
+        // If base version doesn't exist, use it
+        if (!existingVersions.has(baseVersion)) {
+            rlzVer = baseVersion
+        } else {
+            // Find the next available version by incrementing
+            let counter = 1
+            let candidateVersion = baseVersion + counter
+            while (existingVersions.has(candidateVersion)) {
+                counter++
+                candidateVersion = baseVersion + counter
+            }
+            rlzVer = candidateVersion
+        }
     }
     return rlzVer
 })
