@@ -46,6 +46,9 @@
                         v-model="release.uuid"
                         v-on:update:value="value => checkIfCreateNewRelease(value)"
                         :options="releaseCandidates" />
+                <div v-if="!isReleasesLoading && releaseCandidates && releaseCandidates.length === 0" style="color: #999; font-style: italic;">
+                    No releases discovered.
+                </div>
             </n-form-item>
             <n-form-item
                         v-if="isCreateNewRelease && release.branch"
@@ -56,7 +59,7 @@
                         placeholder="Enter release version" />
             </n-form-item>
         </n-form>
-        <div> 
+        <div v-if="!props.attemptPickRelease || (releaseCandidates && releaseCandidates.length > 0)"> 
             <n-button type="success" @click="onSubmit" variant="primary">
                 <span v-if="props.createButtonText">{{ props.createButtonText }}</span>
                 <span v-else>Create Release</span>
