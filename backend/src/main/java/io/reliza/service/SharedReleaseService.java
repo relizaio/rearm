@@ -43,6 +43,9 @@ import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseVersionComparator;
+import io.reliza.model.dto.CveSearchResultDto;
+import io.reliza.model.dto.CveSearchResultDto.BranchWithReleases;
+import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.ReleaseRepository;
@@ -887,15 +890,78 @@ public class SharedReleaseService {
 	}
 	
 	/**
-	 * Search for releases by CVE ID in their metrics
+	 * Search for releases by CVE ID in their metrics, organized by Component -> Branch -> Releases
 	 * @param orgUuid Organization UUID
 	 * @param cveId CVE ID to search for (searches both vulnId and alias aliasId)
-	 * @return List of ReleaseData matching the CVE ID
+	 * @return List of ComponentWithBranches containing hierarchical release data
 	 */
-	public List<ReleaseData> findReleasesByCveId(UUID orgUuid, String cveId) {
+	public List<ComponentWithBranches> findReleasesByCveId(UUID orgUuid, String cveId) {
 		List<Release> releases = repository.findReleasesByCveId(orgUuid.toString(), cveId);
-		return releases.stream()
+		List<ReleaseData> releaseDataList = releases.stream()
 				.map(ReleaseData::dataFromRecord)
 				.collect(Collectors.toList());
+		
+		// Group releases by component
+		Map<UUID, List<ReleaseData>> releasesByComponent = releaseDataList.stream()
+				.collect(Collectors.groupingBy(ReleaseData::getComponent));
+		
+		// Build hierarchical structure
+		List<ComponentWithBranches> result = new ArrayList<>();
+		
+		for (Map.Entry<UUID, List<ReleaseData>> componentEntry : releasesByComponent.entrySet()) {
+			UUID componentUuid = componentEntry.getKey();
+			List<ReleaseData> componentReleases = componentEntry.getValue();
+
+			ComponentData componentData = getComponentService.getComponentData(componentUuid).get();
+			
+			// Group releases by branch
+			Map<UUID, List<ReleaseData>> releasesByBranch = componentReleases.stream()
+					.collect(Collectors.groupingBy(ReleaseData::getBranch));
+			
+			// Build branch list
+			List<BranchWithReleases> branches = new ArrayList<>();
+			
+			for (Map.Entry<UUID, List<ReleaseData>> branchEntry : releasesByBranch.entrySet()) {
+				UUID branchUuid = branchEntry.getKey();
+				List<ReleaseData> branchReleases = branchEntry.getValue();
+				
+				BranchData branchData = branchService.getBranchData(branchUuid).get();
+				
+				// Sort releases by version schema
+				branchReleases.sort(new ReleaseVersionComparator(componentData.getVersionSchema(), branchData.getVersionSchema()));
+				
+				// Get latest DRAFT release version
+				String latestReleaseVersion = null;
+				Optional<ReleaseData> latestDraftRelease = getReleaseDataOfBranch(orgUuid, branchUuid, ReleaseLifecycle.DRAFT);
+				if (latestDraftRelease.isPresent()) {
+					latestReleaseVersion = latestDraftRelease.get().getVersion();
+				}
+				
+				branches.add(new BranchWithReleases(
+						branchUuid,
+						branchData.getName(),
+						branchData.getStatus(),
+						branchData.getVersionSchema(),
+						latestReleaseVersion,
+						branchReleases
+				));
+			}
+			
+			// Sort branches by name
+			branches.sort((b1, b2) -> b1.name().compareTo(b2.name()));
+			
+			result.add(new ComponentWithBranches(
+					componentUuid,
+					componentData.getName(),
+					componentData.getType(),
+					componentData.getVersionSchema(),
+					branches
+			));
+		}
+		
+		// Sort components by name
+		result.sort((c1, c2) -> c1.name().compareTo(c2.name()));
+		
+		return result;
 	}
 }

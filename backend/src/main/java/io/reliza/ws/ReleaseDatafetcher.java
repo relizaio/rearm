@@ -82,6 +82,7 @@ import io.reliza.model.dto.AddDeliverablesDto;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.ComponentJsonDto;
+import io.reliza.model.dto.CveSearchResultDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
@@ -1356,7 +1357,7 @@ public class ReleaseDatafetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchReleasesByCveId")
-	public List<ReleaseData> searchReleasesByCveId(
+	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByCveId(
 			@InputArgument("org") UUID orgUuid,
 			@InputArgument("cveId") String cveId) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();

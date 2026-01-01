@@ -95,7 +95,7 @@ type Query {
 	componentsOfPerspective(perspectiveUuid: ID!): [Component]
 	
 	# CVE Search
-	searchReleasesByCveId(org: ID!, cveId: String!): [Release]
+	searchReleasesByCveId(org: ID!, cveId: String!): [ComponentWithBranches]
 	# Pattern Preview
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status): [EffectiveDependency]
 }
@@ -500,6 +500,23 @@ type Branch {
 	vcsRepositoryDetails: VcsRepository
 	pullRequests: [PullRequestData]
 	findingAnalyticsParticipation: FindingAnalyticsParticipation
+}
+
+type BranchWithReleases {
+	uuid: ID
+	name: String
+	status: Status
+	versionSchema: String
+	latestReleaseVersion: String
+	releases: [Release]
+}
+
+type ComponentWithBranches {
+	uuid: ID
+	name: String
+	type: ComponentType
+	versionSchema: String
+	branches: [BranchWithReleases]
 }
 
 type ChildComponent {
