@@ -893,13 +893,23 @@ public class SharedReleaseService {
 	 * Search for releases by CVE ID in their metrics, organized by Component -> Branch -> Releases
 	 * @param orgUuid Organization UUID
 	 * @param cveId CVE ID to search for (searches both vulnId and alias aliasId)
+	 * @param perspectiveUuid Optional perspective UUID to filter components by perspective
 	 * @return List of ComponentWithBranches containing hierarchical release data
 	 */
-	public List<ComponentWithBranches> findReleasesByCveId(UUID orgUuid, String cveId) {
+	public List<ComponentWithBranches> findReleasesByCveId(UUID orgUuid, String cveId, UUID perspectiveUuid) {
 		List<Release> releases = repository.findReleasesByCveId(orgUuid.toString(), cveId);
 		List<ReleaseData> releaseDataList = releases.stream()
 				.map(ReleaseData::dataFromRecord)
 				.collect(Collectors.toList());
+		
+		// Get perspective components if perspectiveUuid is provided
+		Set<UUID> perspectiveComponentUuids = null;
+		if (perspectiveUuid != null) {
+			List<ComponentData> perspectiveComponents = getComponentService.listComponentsByPerspective(perspectiveUuid);
+			perspectiveComponentUuids = perspectiveComponents.stream()
+					.map(ComponentData::getUuid)
+					.collect(Collectors.toSet());
+		}
 		
 		// Group releases by component
 		Map<UUID, List<ReleaseData>> releasesByComponent = releaseDataList.stream()
@@ -911,6 +921,11 @@ public class SharedReleaseService {
 		for (Map.Entry<UUID, List<ReleaseData>> componentEntry : releasesByComponent.entrySet()) {
 			UUID componentUuid = componentEntry.getKey();
 			List<ReleaseData> componentReleases = componentEntry.getValue();
+			
+			// Filter by perspective if perspectiveUuid is provided
+			if (perspectiveComponentUuids != null && !perspectiveComponentUuids.contains(componentUuid)) {
+				continue;
+			}
 
 			ComponentData componentData = getComponentService.getComponentData(componentUuid).get();
 			

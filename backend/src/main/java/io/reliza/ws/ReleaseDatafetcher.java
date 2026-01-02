@@ -1359,10 +1359,11 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Query", field = "searchReleasesByCveId")
 	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByCveId(
 			@InputArgument("org") UUID orgUuid,
-			@InputArgument("cveId") String cveId) {
+			@InputArgument("cveId") String cveId,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
-		return sharedReleaseService.findReleasesByCveId(orgUuid, cveId);
+		return sharedReleaseService.findReleasesByCveId(orgUuid, cveId, perspectiveUuid);
 	}
 }

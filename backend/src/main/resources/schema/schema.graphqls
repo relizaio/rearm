@@ -95,7 +95,7 @@ type Query {
 	componentsOfPerspective(perspectiveUuid: ID!): [Component]
 	
 	# CVE Search
-	searchReleasesByCveId(org: ID!, cveId: String!): [ComponentWithBranches]
+	searchReleasesByCveId(org: ID!, cveId: String!, perspectiveUuid: ID): [ComponentWithBranches]
 	# Pattern Preview
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status): [EffectiveDependency]
 }
