@@ -3,7 +3,7 @@
         v-model:show="show"
         preset="dialog"
         :show-icon="false"
-        :title="`Releases Affected by ${cveId}`"
+        :title="modalTitle"
         style="width: 95%; max-width: 1400px;"
         :auto-focus="false"
     >
@@ -71,12 +71,22 @@ const props = defineProps<{
     show: boolean
     cveId: string
     orgUuid: string
+    perspectiveUuid?: string
+    perspectiveName?: string
 }>()
 
 const emit = defineEmits(['update:show'])
 
 const loading = ref(false)
 const componentData = ref<any[]>([])
+
+const modalTitle = computed(() => {
+    let title = `Releases Affected by ${props.cveId}`
+    if (props.perspectiveName) {
+        title += `, Perspective: ${props.perspectiveName}`
+    }
+    return title
+})
 
 const show = computed({
     get: () => props.show,
@@ -101,8 +111,8 @@ const fetchReleases = async () => {
     try {
         const response = await graphqlClient.query({
             query: gql`
-                query searchReleasesByCveId($org: ID!, $cveId: String!) {
-                    searchReleasesByCveId(org: $org, cveId: $cveId) {
+                query searchReleasesByCveId($org: ID!, $cveId: String!, $perspectiveUuid: ID) {
+                    searchReleasesByCveId(org: $org, cveId: $cveId, perspectiveUuid: $perspectiveUuid) {
                         uuid
                         name
                         type
@@ -135,7 +145,8 @@ const fetchReleases = async () => {
             `,
             variables: {
                 org: props.orgUuid,
-                cveId: props.cveId
+                cveId: props.cveId,
+                perspectiveUuid: props.perspectiveUuid || null
             },
             fetchPolicy: 'no-cache'
         })
