@@ -25,12 +25,13 @@
     <java.version>21</java.version>
     <main-class>org.springframework.boot.loader.launch.JarLauncher</main-class>
     <start-class>io.reliza.ws.App</start-class>
+    <log4j2.version>2.25.3</log4j2.version>
   </properties>
   
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.8</version>
+        <version>3.5.9</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     
@@ -107,8 +108,8 @@
     </dependency>
 	<dependency>
 	    <groupId>io.hypersistence</groupId>
-	    <artifactId>hypersistence-utils-hibernate-62</artifactId>
-	    <version>3.9.4</version>
+	    <artifactId>hypersistence-utils-hibernate-63</artifactId>
+	    <version>3.14.1</version>
 	</dependency>
     <dependency>
         <groupId>com.sendgrid</groupId>
@@ -118,19 +119,19 @@
     <dependency>
         <groupId>org.apache.commons</groupId>
         <artifactId>commons-lang3</artifactId>
-        <version>3.19.0</version>
+        <version>3.20.0</version>
     </dependency>
 <!-- https://mvnrepository.com/artifact/commons-validator/commons-validator -->
     <dependency>
         <groupId>commons-validator</groupId>
         <artifactId>commons-validator</artifactId>
-        <version>1.10.0</version>
+        <version>1.10.1</version>
     </dependency>
     <!-- Bouncy Castle for Argon2 password encoding -->
     <dependency>
         <groupId>org.bouncycastle</groupId>
         <artifactId>bcprov-jdk18on</artifactId>
-        <version>1.82</version>
+        <version>1.83</version>
     </dependency>
     <dependency>
       <groupId>org.projectlombok</groupId>
@@ -178,7 +179,7 @@
 	<dependency>
 	    <groupId>org.json</groupId>
 	    <artifactId>json</artifactId>
-	    <version>20250517</version>
+	    <version>20251224</version>
 	</dependency>
 	<dependency>
 	    <groupId>org.apache.commons</groupId>
@@ -204,12 +205,12 @@
     <dependency>
         <groupId>org.jsoup</groupId>
         <artifactId>jsoup</artifactId>
-        <version>1.21.2</version>
+        <version>1.22.1</version>
     </dependency>
     <dependency>
         <groupId>org.openapitools</groupId>
         <artifactId>jackson-databind-nullable</artifactId>
-        <version>0.2.7</version>
+        <version>0.2.8</version>
     </dependency>
     <!-- Bean Validation API support -->
     <dependency>
@@ -219,7 +220,7 @@
 	<dependency>
 	    <groupId>io.swagger.core.v3</groupId>
 	    <artifactId>swagger-annotations</artifactId>
-	    <version>2.2.37</version>
+	    <version>2.2.41</version>
 	</dependency>
     <dependency>
         <groupId>com.github.package-url</groupId>
@@ -256,7 +257,7 @@
         <plugin>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-maven-plugin</artifactId>
-            <version>11.13.2</version>
+            <version>11.20.0</version>
             <configuration>
                 <url>jdbc:postgresql://localhost:5440/postgres</url>
                 <user>postgres</user>
