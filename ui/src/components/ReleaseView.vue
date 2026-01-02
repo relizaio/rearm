@@ -259,7 +259,7 @@
                             />
                         </div>
                     </div>
-                    <div class="container" v-if="false">
+                    <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
                         <h3>
                             Produced Deliverables
                             <Icon v-if="isWritable && isUpdatable" class="clickable addIcon" size="25" title="Add Deliverable" @click="showReleaseAddDeliverableModal=true">
