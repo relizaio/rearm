@@ -69,7 +69,7 @@ type Query {
 	healthCheck: String
 	searchDigestVersion(orgUuid: ID!, query: String!): SearchDigestVersionResponse
 	releasesByTags(orgUuid: ID!, branchUuid: ID, tagKey: String!, tagValue:String): [Release]
-	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID]): [Release]
+	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID]): [ComponentWithBranches]
 	sbomComponentSearch(orgUuid: ID!, queries: [SbomComponentSearchInput!]!): [ComponentPurlToDtrack]
 	searchDtrackComponentByPurlAndProjects(orgUuid: ID!, purl: String!, dtrackProjects: [ID]!): ID
 	

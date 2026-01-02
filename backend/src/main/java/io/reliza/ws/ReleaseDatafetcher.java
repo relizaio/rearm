@@ -1019,7 +1019,7 @@ public class ReleaseDatafetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "releasesByDtrackProjects")
-	public List<ReleaseData> searchReleasesByDtrackProjects(DgsDataFetchingEnvironment dfe,
+	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByDtrackProjects(DgsDataFetchingEnvironment dfe,
 			@InputArgument("orgUuid") final UUID orgUuid,
 			@InputArgument("dtrackProjects") List<UUID> dtrackProjects) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();

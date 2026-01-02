@@ -782,14 +782,14 @@ public class SharedReleaseService {
 		return findReleasesBySce(sce,org).stream().map(ReleaseData::dataFromRecord).toList();
 	}
 	
-	public List<ReleaseData> findReleaseDatasByDtrackProjects(Collection<UUID> dtrackProjects, final UUID org) {
+	public List<ComponentWithBranches> findReleaseDatasByDtrackProjects(Collection<UUID> dtrackProjects, final UUID org) {
 		Set<UUID> arts = artifactService.listArtifactsByDtrackProjects(dtrackProjects).stream().map(x -> x.getUuid()).collect(Collectors.toSet());
 		Set<UUID> releaseIds = new HashSet<>();
 		arts.forEach(aId -> {
 			releaseIds.addAll(gatherReleaseIdsForArtifact(aId, org));
 		});
 		var releaseDatas = getReleaseDataList(releaseIds, org);
-		return sortReleasesByBranchAndVersion(releaseDatas);
+		return convertReleasesToComponentWithBranches(releaseDatas, org, null);
 	}
 	
 	public List<ReleaseData> findReleasesByOrgAndIdentifier(UUID org, TeaIdentifierType idType, String idValue) {
@@ -890,17 +890,14 @@ public class SharedReleaseService {
 	}
 	
 	/**
-	 * Search for releases by CVE ID in their metrics, organized by Component -> Branch -> Releases
-	 * @param orgUuid Organization UUID
-	 * @param cveId CVE ID to search for (searches both vulnId and alias aliasId)
+	 * Convert a list of releases to hierarchical ComponentWithBranches structure
+	 * @param releaseDataList List of release data to organize
+	 * @param orgUuid Organization UUID for fetching latest DRAFT releases
 	 * @param perspectiveUuid Optional perspective UUID to filter components by perspective
 	 * @return List of ComponentWithBranches containing hierarchical release data
 	 */
-	public List<ComponentWithBranches> findReleasesByCveId(UUID orgUuid, String cveId, UUID perspectiveUuid) {
-		List<Release> releases = repository.findReleasesByCveId(orgUuid.toString(), cveId);
-		List<ReleaseData> releaseDataList = releases.stream()
-				.map(ReleaseData::dataFromRecord)
-				.collect(Collectors.toList());
+	private List<ComponentWithBranches> convertReleasesToComponentWithBranches(
+			List<ReleaseData> releaseDataList, UUID orgUuid, UUID perspectiveUuid) {
 		
 		// Get perspective components if perspectiveUuid is provided
 		Set<UUID> perspectiveComponentUuids = null;
@@ -978,5 +975,21 @@ public class SharedReleaseService {
 		result.sort((c1, c2) -> c1.name().compareTo(c2.name()));
 		
 		return result;
+	}
+	
+	/**
+	 * Search for releases by CVE ID in their metrics, organized by Component -> Branch -> Releases
+	 * @param orgUuid Organization UUID
+	 * @param cveId CVE ID to search for (searches both vulnId and alias aliasId)
+	 * @param perspectiveUuid Optional perspective UUID to filter components by perspective
+	 * @return List of ComponentWithBranches containing hierarchical release data
+	 */
+	public List<ComponentWithBranches> findReleasesByCveId(UUID orgUuid, String cveId, UUID perspectiveUuid) {
+		List<Release> releases = repository.findReleasesByCveId(orgUuid.toString(), cveId);
+		List<ReleaseData> releaseDataList = releases.stream()
+				.map(ReleaseData::dataFromRecord)
+				.collect(Collectors.toList());
+		
+		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid);
 	}
 }
