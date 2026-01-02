@@ -164,18 +164,6 @@ const columns = computed<DataTableColumns<any>>(() => [
         filterMultiple: true
     },
     {
-        title: 'Status',
-        key: 'branchStatus',
-        width: 100,
-        render: (row: any) => row.branchStatus || 'N/A',
-        filter: true,
-        filterOptions: [
-            { label: 'ACTIVE', value: 'ACTIVE' },
-            { label: 'ARCHIVED', value: 'ARCHIVED' }
-        ],
-        filterMultiple: true
-    },
-    {
         title: 'Earliest Version',
         key: 'earliestVersion',
         width: 150,
