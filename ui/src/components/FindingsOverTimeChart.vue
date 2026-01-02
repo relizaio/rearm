@@ -294,7 +294,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                     orgUuid: orgUuid.value,
                     date: dateToUse
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: 'network-only'
             })
             
             if (response.data.findingsPerDay) {
@@ -354,7 +354,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                     perspectiveUuid: props.perspectiveUuid,
                     date: dateToUse
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: 'network-only'
             })
             
             if (response.data.findingsPerDayByPerspective) {

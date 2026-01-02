@@ -54,7 +54,7 @@
                             animated
                             style="margin: 0 -4px"
                             pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
-                            @update:value="(value: string) => { if (value === 'searchreleasesbytags') fetchReleaseKeys(myorg.uuid) }"
+                            @update:value="handleTabChange"
                             >
                                 <n-tab-pane name="searchreleasesbytext" tab="By Version, Digest, Commit">
                                     <h5>Search For Releases By Digest, Version, Commit, Git Tag</h5>
@@ -158,9 +158,13 @@
                                         inline
                                         @submit="searchByFinding">
                                         <n-input-group>
-                                            <n-input
+                                            <n-auto-complete
                                                 placeholder="Enter Finding ID (e.g., CVE-2024-1234, CWE-79)"
                                                 v-model:value="findingSearchQuery"
+                                                :options="findingIdOptions"
+                                                :loading="findingIdsLoading"
+                                                @update:value="handleFindingSearchInput"
+                                                clearable
                                             />
                                             <n-button
                                                 variant="contained-text"
@@ -480,7 +484,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag, NSpace, useNotification, NotificationType } from 'naive-ui'
+import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag, NSpace, NAutoComplete, useNotification, NotificationType } from 'naive-ui'
 import { useStore } from 'vuex'
 import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
@@ -494,7 +498,6 @@ import { AspectRatio, Box, Eye, QuestionMark, Refresh } from '@vicons/tabler'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import { useRouter, useRoute } from 'vue-router'
-import * as vegaEmbed from 'vega-embed'
 import Swal from 'sweetalert2'
 import commonFunctions from '@/utils/commonFunctions'
 import constants from '@/utils/constants'
@@ -560,6 +563,24 @@ const currentPerspectiveName = computed(() => {
 const hashSearchQuery = ref('')
 const findingSearchQuery = ref('')
 const showReleasesByCveModal = ref(false)
+const findingIds: Ref<string[]> = ref([])
+const findingIdsLoading = ref(false)
+const filteredFindingIds: Ref<string[]> = ref([])
+
+const findingIdOptions = computed(() => {
+    return filteredFindingIds.value.map(id => ({ label: id, value: id }))
+})
+
+const handleFindingSearchInput = (value: string) => {
+    if (!value || value.trim() === '') {
+        filteredFindingIds.value = findingIds.value
+    } else {
+        const searchTerm = value.toLowerCase()
+        filteredFindingIds.value = findingIds.value.filter(id => 
+            id.toLowerCase().includes(searchTerm)
+        )
+    }
+}
 const sbomSearchQuery = ref('')
 const sbomSearchVersion = ref('')
 const sbomSearchMode = ref('simple')
@@ -585,6 +606,14 @@ const releaseKeySearchObj: Ref<any> = ref({
     key: ''
 })
 
+const handleTabChange = (value: string) => {
+    if (value === 'searchreleasesbytags') {
+        fetchReleaseKeys(myorg.value.uuid)
+    } else if (value === 'searchreleasesbyfinding') {
+        fetchFindingIds()
+    }
+}
+
 const searchByFinding = (e: Event) => {
     e.preventDefault()
     if (!findingSearchQuery.value.trim()) {
@@ -592,6 +621,75 @@ const searchByFinding = (e: Event) => {
         return
     }
     showReleasesByCveModal.value = true
+}
+
+const fetchFindingIds = async () => {
+    if (!myorg.value?.uuid) return
+    
+    findingIdsLoading.value = true
+    try {
+        const today = new Date()
+        const dateToUse = today.toISOString().split('T')[0]
+        
+        let response
+        
+        if (myperspective.value && myperspective.value !== 'default') {
+            // Fetch by perspective
+            response = await graphqlClient.query({
+                query: gql`
+                    query findingsPerDayByPerspective($perspectiveUuid: ID!, $date: String!) {
+                        findingsPerDayByPerspective(perspectiveUuid: $perspectiveUuid, date: $date) {
+                            vulnerabilityDetails {
+                                vulnId
+                            }
+                        }
+                    }
+                `,
+                variables: {
+                    perspectiveUuid: myperspective.value,
+                    date: dateToUse
+                }
+            })
+            
+            if (response.data.findingsPerDayByPerspective?.vulnerabilityDetails) {
+                const vulnIds = response.data.findingsPerDayByPerspective.vulnerabilityDetails
+                    .map((v: any) => v.vulnId)
+                    .filter((id: string) => id)
+                findingIds.value = [...new Set(vulnIds)].sort()
+                filteredFindingIds.value = findingIds.value
+            }
+        } else {
+            // Fetch by organization
+            response = await graphqlClient.query({
+                query: gql`
+                    query findingsPerDay($orgUuid: ID!, $date: String!) {
+                        findingsPerDay(orgUuid: $orgUuid, date: $date) {
+                            vulnerabilityDetails {
+                                vulnId
+                            }
+                        }
+                    }
+                `,
+                variables: {
+                    orgUuid: myorg.value.uuid,
+                    date: dateToUse
+                }
+            })
+            
+            if (response.data.findingsPerDay?.vulnerabilityDetails) {
+                const vulnIds = response.data.findingsPerDay.vulnerabilityDetails
+                    .map((v: any) => v.vulnId)
+                    .filter((id: string) => id)
+                findingIds.value = [...new Set(vulnIds)].sort()
+                filteredFindingIds.value = findingIds.value
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching finding IDs:', error)
+        findingIds.value = []
+    } finally {
+        findingIdsLoading.value = false
+    }
 }
 
 const fetchReleaseKeys = async function (orgUuid: string) {
