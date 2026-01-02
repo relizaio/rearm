@@ -1139,6 +1139,10 @@ class VariableQueries {
 					jsonb_array_elements(vuln->'aliases') AS alias
 					WHERE alias->>'aliasId' = :cveId
 				)
+				EXISTS (
+					SELECT 1 FROM jsonb_array_elements(r.record_data->'metrics'->'weaknessDetails') AS weakness
+					WHERE weakness->>'cweId' = :cveId
+				)
 			)
 			ORDER BY r.created_date DESC
 			""";
