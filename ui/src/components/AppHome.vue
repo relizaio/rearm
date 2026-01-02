@@ -152,7 +152,7 @@
                                         </n-button>
                                     </n-form>
                                 </n-tab-pane>
-                                <n-tab-pane name="searchreleasesbyfinding" tab="By Finding">
+                                <n-tab-pane name="searchreleasesbyfinding" tab="By Findings">
                                     <h5>Search For Releases By Finding ID (CVE, CWE, GHSA, etc.)</h5>
                                     <n-form
                                         inline
@@ -642,6 +642,9 @@ const fetchFindingIds = async () => {
                             vulnerabilityDetails {
                                 vulnId
                             }
+                            weaknessDetails {
+                                cweId
+                            }
                         }
                     }
                 `,
@@ -651,11 +654,14 @@ const fetchFindingIds = async () => {
                 }
             })
             
-            if (response.data.findingsPerDayByPerspective?.vulnerabilityDetails) {
-                const vulnIds = response.data.findingsPerDayByPerspective.vulnerabilityDetails
+            if (response.data.findingsPerDayByPerspective) {
+                const vulnIds = (response.data.findingsPerDayByPerspective.vulnerabilityDetails || [])
                     .map((v: any) => v.vulnId)
                     .filter((id: string) => id)
-                findingIds.value = [...new Set(vulnIds)].sort()
+                const cweIds = (response.data.findingsPerDayByPerspective.weaknessDetails || [])
+                    .map((w: any) => w.cweId)
+                    .filter((id: string) => id)
+                findingIds.value = [...new Set([...vulnIds, ...cweIds])].sort()
                 filteredFindingIds.value = findingIds.value
             }
         } else {
@@ -667,6 +673,9 @@ const fetchFindingIds = async () => {
                             vulnerabilityDetails {
                                 vulnId
                             }
+                            weaknessDetails {
+                                cweId
+                            }
                         }
                     }
                 `,
@@ -676,11 +685,14 @@ const fetchFindingIds = async () => {
                 }
             })
             
-            if (response.data.findingsPerDay?.vulnerabilityDetails) {
-                const vulnIds = response.data.findingsPerDay.vulnerabilityDetails
+            if (response.data.findingsPerDay) {
+                const vulnIds = (response.data.findingsPerDay.vulnerabilityDetails || [])
                     .map((v: any) => v.vulnId)
                     .filter((id: string) => id)
-                findingIds.value = [...new Set(vulnIds)].sort()
+                const cweIds = (response.data.findingsPerDay.weaknessDetails || [])
+                    .map((w: any) => w.cweId)
+                    .filter((id: string) => id)
+                findingIds.value = [...new Set([...vulnIds, ...cweIds])].sort()
                 filteredFindingIds.value = findingIds.value
             }
         }
