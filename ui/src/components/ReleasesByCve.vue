@@ -26,11 +26,14 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NDataTable, NSpace, NCheckbox, DataTableColumns } from 'naive-ui'
+import { NModal, NSpin, NDataTable, NSpace, NCheckbox, DataTableColumns, useNotification } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import constants from '@/utils/constants'
+import commonFunctions from '@/utils/commonFunctions'
+
+const notification = useNotification()
 
 // Transform component data into flat table rows
 const tableData = computed(() => {
@@ -151,9 +154,15 @@ const fetchReleases = async () => {
             fetchPolicy: 'no-cache'
         })
         componentData.value = (response.data as any).searchReleasesByCveId || []
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching releases by CVE ID:', error)
         componentData.value = []
+        notification.error({
+            title: 'Error',
+            content: `Failed to fetch releases for ${props.cveId}: ${commonFunctions.parseGraphQLError(error.message)}`,
+            duration: 5000,
+            keepAliveOnHover: true
+        })
     } finally {
         loading.value = false
     }
