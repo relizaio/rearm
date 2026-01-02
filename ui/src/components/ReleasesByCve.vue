@@ -262,7 +262,9 @@ const columns: DataTableColumns<any> = [
         title: 'Type',
         key: 'componentType',
         width: 120,
-        filter: true,
+        filter(value: any, row: any) {
+            return row.componentType === value
+        },
         filterOptions: [
             { label: 'COMPONENT', value: 'COMPONENT' },
             { label: 'PRODUCT', value: 'PRODUCT' }
@@ -274,7 +276,9 @@ const columns: DataTableColumns<any> = [
         key: 'branchStatus',
         width: 100,
         render: (row: any) => row.branchStatus || 'N/A',
-        filter: true,
+        filter(value: any, row: any) {
+            return row.branchStatus === value
+        },
         filterOptions: [
             { label: 'ACTIVE', value: 'ACTIVE' },
             { label: 'ARCHIVED', value: 'ARCHIVED' }

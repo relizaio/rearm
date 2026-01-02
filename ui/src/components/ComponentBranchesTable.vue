@@ -156,7 +156,9 @@ const columns = computed<DataTableColumns<any>>(() => [
         title: 'Type',
         key: 'componentType',
         width: 120,
-        filter: true,
+        filter(value: any, row: any) {
+            return row.componentType === value
+        },
         filterOptions: [
             { label: 'COMPONENT', value: 'COMPONENT' },
             { label: 'PRODUCT', value: 'PRODUCT' }
