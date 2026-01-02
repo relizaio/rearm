@@ -56,7 +56,7 @@
                             pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
                             @update:value="(value: string) => { if (value === 'searchreleasesbytags') fetchReleaseKeys(myorg.uuid) }"
                             >
-                                <n-tab-pane name="searchreleasesbytext" tab="Search by Version, Digest, Commit">
+                                <n-tab-pane name="searchreleasesbytext" tab="By Version, Digest, Commit">
                                     <h5>Search For Releases By Digest, Version, Commit, Git Tag</h5>
                                     <n-form
                                         inline
@@ -74,7 +74,7 @@
                                         </n-input-group>
                                     </n-form>
                                 </n-tab-pane>
-                                <n-tab-pane name="searchreleasesbytags" tab="Search by Tags">
+                                <n-tab-pane name="searchreleasesbytags" tab="By Tags">
                                     <h5>Search For Releases By Reliza Tags</h5>
                                     <n-form
                                         inline
@@ -94,7 +94,7 @@
                                         </n-input-group>
                                     </n-form>
                                 </n-tab-pane>
-                                <n-tab-pane name="searchreleasesbydsbom" tab="Search by SBOM Components">
+                                <n-tab-pane name="searchreleasesbydsbom" tab="By SBOM Components">
                                     <h5>Search For Releases By SBOM Component Name, Group or Purl</h5>
                                     <n-radio-group v-model:value="sbomSearchMode" style="margin-bottom: 10px;">
                                         <n-radio-button value="simple">Simple</n-radio-button>
@@ -150,6 +150,24 @@
                                             attr-type="submit">
                                             Find
                                         </n-button>
+                                    </n-form>
+                                </n-tab-pane>
+                                <n-tab-pane name="searchreleasesbyfinding" tab="By Finding">
+                                    <h5>Search For Releases By Finding ID (CVE, CWE, GHSA, etc.)</h5>
+                                    <n-form
+                                        inline
+                                        @submit="searchByFinding">
+                                        <n-input-group>
+                                            <n-input
+                                                placeholder="Enter Finding ID (e.g., CVE-2024-1234, CWE-79)"
+                                                v-model:value="findingSearchQuery"
+                                            />
+                                            <n-button
+                                                variant="contained-text"
+                                                attr-type="submit">
+                                                Find
+                                            </n-button>
+                                        </n-input-group>
                                     </n-form>
                                 </n-tab-pane>
                                 <n-tab-pane v-if="false && installationType !== 'OSS'" name="searchinstancesbytags" tab="Search Instances by Tags">
@@ -438,6 +456,14 @@
                             </div>
                             <div v-else>No results.</div>
                         </n-modal>
+                        
+                        <releases-by-cve
+                            v-model:show="showReleasesByCveModal"
+                            :cve-id="findingSearchQuery"
+                            :org-uuid="myorg?.uuid"
+                            :perspective-uuid="currentPerspectiveUuid"
+                            :perspective-name="currentPerspectiveName"
+                        />
                     </div>
                 </n-gi>
                 <n-gi>
@@ -475,6 +501,7 @@ import constants from '@/utils/constants'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import MostActiveChart from './MostActiveChart.vue'
+import ReleasesByCve from './ReleasesByCve.vue'
 
 const store = useStore()
 const router = useRouter()
@@ -515,7 +542,24 @@ const releaseChartProps: ComputedRef<any> = computed(() => {
 const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 const featureSetLabelPlural = computed(() => featureSetLabel.value + 's')
 
+// Get perspectives for ReleasesByCve modal
+const perspectives: ComputedRef<any[]> = computed((): any => store.getters.perspectivesOfOrg(myorg.value?.uuid || ''))
+
+const currentPerspectiveUuid = computed(() => {
+    return myperspective.value !== 'default' ? myperspective.value : undefined
+})
+
+const currentPerspectiveName = computed(() => {
+    if (myperspective.value === 'default') {
+        return undefined
+    }
+    const perspective = perspectives.value.find((p: any) => p.uuid === myperspective.value)
+    return perspective ? perspective.name : undefined
+})
+
 const hashSearchQuery = ref('')
+const findingSearchQuery = ref('')
+const showReleasesByCveModal = ref(false)
 const sbomSearchQuery = ref('')
 const sbomSearchVersion = ref('')
 const sbomSearchMode = ref('simple')
@@ -540,6 +584,15 @@ const releaseKeySearchObj: Ref<any> = ref({
     value: '',
     key: ''
 })
+
+const searchByFinding = (e: Event) => {
+    e.preventDefault()
+    if (!findingSearchQuery.value.trim()) {
+        notify('warning', 'Warning', 'Please enter a finding ID')
+        return
+    }
+    showReleasesByCveModal.value = true
+}
 
 const fetchReleaseKeys = async function (orgUuid: string) {
     const response = await graphqlClient.query({
