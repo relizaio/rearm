@@ -335,7 +335,7 @@ const columns: DataTableColumns<any> = [
         filterMultiple: true
     },
     {
-        title: 'Earliest Version',
+        title: 'From Version',
         key: 'earliestVersion',
         width: 150,
         render: (row: any) => {
@@ -352,7 +352,7 @@ const columns: DataTableColumns<any> = [
         }
     },
     {
-        title: 'Newest Version',
+        title: 'To Version',
         key: 'latestVersion',
         width: 150,
         render: (row: any) => {
