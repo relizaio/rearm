@@ -1,6 +1,5 @@
 <template>
-    <n-spin :show="isLoading" size="large">
-        <div>
+    <div>
             <div class="row">
 
             <n-modal
@@ -529,7 +528,6 @@
             </n-form>
         </n-modal>
             </div>
-    </n-spin>
 
 </template>
     
@@ -556,7 +554,7 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -571,6 +569,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useStore()
 const notification = useNotification()
+const loadingBar = useLoadingBar()
 const notify = async function (type: NotificationType, title: string, content: string) {
     notification[type]({
         content: content,
@@ -602,9 +601,11 @@ const emit = defineEmits(['approvalsChanged', 'closeRelease'])
 const lifecycleOptions = constants.LifecycleOptions
 
 onMounted(async () => {
+    loadingBar.start()
     await fetchRelease()
     await fetchReleaseKeys()
     isLoading.value = false
+    loadingBar.finish()
 })
 
 const pullRequest: ComputedRef<any> = computed((): any => {
