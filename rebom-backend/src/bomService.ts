@@ -1242,7 +1242,18 @@ function computeRootDepIndex (bom: any) : number {
     })
     outBom.components = out_components
     if ('dependencies' in bom) {
-      outBom.dependencies = bom.dependencies
+      const dependencyMap = new Map<string, any>();
+      bom.dependencies.forEach((dep: any) => {
+        const key = JSON.stringify({ ref: dep.ref, dependsOn: dep.dependsOn?.sort() || [] });
+        if (!dependencyMap.has(key)) {
+          dependencyMap.set(key, dep);
+        }
+      });
+      outBom.dependencies = Array.from(dependencyMap.values());
+      const dedupedCount = bom.dependencies.length - outBom.dependencies.length;
+      if (dedupedCount > 0) {
+        logger.info(`Deduped ${dedupedCount} duplicate dependencies from BOM ${bom.serialNumber}`);
+      }
     }
 
     logger.info(`Dedup BOM ${bom.serialNumber} - reduced json from ${Object.keys(bom).length} to ${Object.keys(outBom).length}`)
