@@ -26,8 +26,9 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NDataTable, NSpace, NCheckbox, DataTableColumns, useNotification } from 'naive-ui'
+import { NModal, NSpin, NDataTable, NSpace, NIcon, DataTableColumns, useNotification } from 'naive-ui'
 import { RouterLink } from 'vue-router'
+import { Check, X } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import constants from '@/utils/constants'
@@ -315,13 +316,14 @@ const columns: DataTableColumns<any> = [
         }
     },
     {
-        title: 'Is Latest?',
+        title: 'In Latest?',
         key: 'isLatest',
         width: 100,
         render: (row: any) => {
-            return h(NCheckbox, {
-                checked: row.isLatest,
-                disabled: true
+            return h(NIcon, {
+                component: row.isLatest ? Check : X,
+                color: row.isLatest ? '#18a058' : '#d03050',
+                size: 20
             })
         },
         filter: (value: any, row: any) => {
