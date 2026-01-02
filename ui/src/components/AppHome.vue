@@ -288,7 +288,7 @@
                             v-model:show="showDtrackSearchResultsModal"
                             preset="dialog"
                             :show-icon="false"
-                            style="width: 90%"
+                            style="width: 100%"
                         >
                             <div style="height: 710px; overflow: auto;">
                                 <h3 style="margin-top:0px;">Search by SBOM Components</h3>
@@ -361,8 +361,8 @@
                                         :status="searchFailed ? 'error' : 'success'"
                                     />
                                 </div>
-                                <n-grid x-gap="3" cols="2">
-                                    <n-gi>
+                                <n-grid x-gap="3" cols="3">
+                                    <n-gi span="1">
                                         <n-data-table
                                             :data="dtrackSearchResults"
                                             :columns="dtrackSearchResultRows"
@@ -370,12 +370,12 @@
                                             :loading="dtrackSearchLoading"
                                         />
                                     </n-gi>
-                                    <n-gi>
-                                        <n-data-table
+                                    <n-gi span="2">
+                                        <component-branches-table
                                             :data="dtrackSearchReleases"
-                                            :columns="dtrackSearchReleaseRows"
-                                            :pagination="releasePagination"
+                                            :org-uuid="myorg?.uuid"
                                             :loading="dtrackReleasesLoading"
+                                            :feature-set-label="featureSetLabel"
                                         />
                                     </n-gi>
                                 </n-grid>
@@ -505,6 +505,7 @@ import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import MostActiveChart from './MostActiveChart.vue'
 import ReleasesByCve from './ReleasesByCve.vue'
+import ComponentBranchesTable from './ComponentBranchesTable.vue'
 
 const store = useStore()
 const router = useRouter()
@@ -924,17 +925,44 @@ async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
     document.body.style.cursor = 'wait'
     dtrackReleasesLoading.value = true
     try {
-        const searchParams = {
-            orgUuid: myorg.value.uuid,
-            dtrackProjects
-        }
-        dtrackSearchReleases.value = await store.dispatch('searchReleasesByDtrackProject', searchParams)
+        const response = await graphqlClient.query({
+            query: gql`
+                query releasesByDtrackProjects($orgUuid: ID!, $dtrackProjects: [ID]) {
+                    releasesByDtrackProjects(orgUuid: $orgUuid, dtrackProjects: $dtrackProjects) {
+                        uuid
+                        name
+                        type
+                        versionSchema
+                        branches {
+                            uuid
+                            name
+                            status
+                            versionSchema
+                            latestReleaseVersion
+                            releases {
+                                uuid
+                                version
+                                createdDate
+                                lifecycle
+                            }
+                        }
+                    }
+                }
+            `,
+            variables: { 
+                orgUuid: myorg.value.uuid, 
+                dtrackProjects 
+            },
+            fetchPolicy: 'no-cache'
+        })
+        dtrackSearchReleases.value = (response.data as any).releasesByDtrackProjects || []
     } catch (err: any) {
         Swal.fire(
             'Error!',
             commonFunctions.parseGraphQLError(err.message),
             'error'
         )
+        dtrackSearchReleases.value = []
     } finally {
         document.body.style.cursor = 'default'
         dtrackReleasesLoading.value = false
@@ -1078,7 +1106,6 @@ const releaseSearchResultRows = [
     }
 ]
 const pagination = { pageSize: 7 }
-const releasePagination = { pageSize: 8 }
 
 const dtrackSearchResultRows = [
     {
@@ -1097,68 +1124,7 @@ async function handlePurlSearchClick (row: any) {
     searchReleasesByDtrackProjects(row.projects)
 }
 
-const dtrackSearchReleaseRows: DataTableColumns<any> = [
-    {
-        type: 'expand',
-        expandable: (row: any) => row.componentDetails ? row.componentDetails.type === 'PRODUCT' && row.parentReleases : false,
-        renderExpand: (row: any) => {
-            if (row.componentDetails) {
-                return h(NDataTable, {
-                    data: row.parentReleases,
-                    columns: dtrackSearchReleaseRows
-                })
-            }
-        }
-    },
-    {
-        key: 'component',
-        title: 'Component / Product',
-        render(row: any) {
-            if (row.componentDetails) {
-                const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
-                return h(RouterLink, 
-                    {to: {name: routeName,
-                        params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid}},
-                    style: "text-decoration: none;"},
-                    () => row.componentDetails.name )
-            }
-        }
-    },
-    {
-        key: 'branch',
-        title: 'Branch / ' + featureSetLabel.value,
-        render(row: any) {
-            if (row.componentDetails) {
-                const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
-                return h(RouterLink, 
-                    {to: {name: routeName,
-                        params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid,
-                            branchuuid: row.branchDetails.uuid
-                        }},
-                    style: "text-decoration: none;"},
-                    () => row.branchDetails.name )
-            }
-        }
-    },
-    {
-        key: 'version',
-        title: 'Version',
-        render(row: any) {
-            if (row.componentDetails) {
-                return h('a', {onclick: () => openRelease(row.uuid), style: "cursor: pointer; color: blue;"}, row.version)
-            }
-        }
-    },
-    {
-        key: 'lifecycle',
-        title: 'Lifecycle',
-        render(row: any) {
-            if (row.componentDetails) {
-                return h('span', row.lifecycle )
-            }
-        }
-    }
-]
+// Removed dtrackSearchReleaseRows - now using ComponentBranchesTable component
 
 const activeComponentsInputDate = ref(new Date())
 const activeComponentsInput = ref({

@@ -1451,19 +1451,6 @@ const storeObject : any = {
             context.commit('SET_RELEASES', response.data.releasesByTags)
             return response.data.releasesByTags
         },
-        async searchReleasesByDtrackProject (context: any, params: any) {
-            const response = await graphqlClient.query({
-                query: gql`
-                    query releasesByDtrackProjects($orgUuid: ID!, $dtrackProjects: [ID]) {
-                        releasesByDtrackProjects(orgUuid: $orgUuid, dtrackProjects: $dtrackProjects) {
-                            ${graphqlQueries.MultiReleaseGqlData}
-                        }
-                    }`,
-                variables: { orgUuid: params.orgUuid, dtrackProjects: params.dtrackProjects }
-            })
-            context.commit('SET_RELEASES', response.data.releasesByDtrackProjects)
-            return response.data.releasesByDtrackProjects
-        },
         async addApprovalRole (context: any, updObj: any) {
             const data = await graphqlClient.mutate({
                 mutation: gql`
