@@ -33,6 +33,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import constants from '@/utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
+import Swal from 'sweetalert2'
 
 const notification = useNotification()
 
@@ -84,12 +85,60 @@ const emit = defineEmits(['update:show'])
 const loading = ref(false)
 const componentData = ref<any[]>([])
 
-const modalTitle = computed(() => {
-    let title = `Releases Affected by ${props.cveId}`
-    if (props.perspectiveName) {
-        title += `, Perspective: ${props.perspectiveName}`
+const confirmAndOpen = async (e: Event, href: string) => {
+    e.preventDefault()
+    try {
+        const LS_KEY = 'rearm_external_link_consent_until'
+        const now = Date.now()
+        const stored = localStorage.getItem(LS_KEY)
+        if (stored && Number(stored) > now) {
+            window.open(href, '_blank')
+            return
+        }
+
+        const result = await Swal.fire({
+            icon: 'info',
+            title: 'Open external link?\n',
+            text: 'This will open a vulnerability database resource external to ReARM. Please confirm that you want to proceed.',
+            showCancelButton: true,
+            confirmButtonText: 'Open',
+            cancelButtonText: 'Cancel',
+            input: 'checkbox',
+            inputValue: 0,
+            inputPlaceholder: "Don't ask me again for 15 days"
+        })
+        if (result.isConfirmed) {
+            if (result.value === 1) {
+                const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000
+                localStorage.setItem(LS_KEY, String(now + fifteenDaysMs))
+            }
+            window.open(href, '_blank')
+        }
+    } catch (err) {
+        window.open(href, '_blank')
     }
-    return title
+}
+
+const modalTitle = computed(() => {
+    const cveId = props.cveId
+    const perspectiveSuffix = props.perspectiveName ? `, Perspective: ${props.perspectiveName}` : ''
+    
+    if (cveId.startsWith('CVE-') || cveId.startsWith('GHSA-')) {
+        const href = `https://osv.dev/vulnerability/${cveId}`
+        return () => h('span', [
+            'Releases Affected by ',
+            h('a', {
+                href,
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                onClick: (e: Event) => confirmAndOpen(e, href),
+                style: 'color: #18a058; text-decoration: underline;'
+            }, cveId),
+            perspectiveSuffix
+        ])
+    }
+    
+    return `Releases Affected by ${cveId}${perspectiveSuffix}`
 })
 
 const show = computed({
