@@ -337,13 +337,23 @@ function deduplicateBom(bom: any): any {
   })
   outBom.components = out_components
   if ('dependencies' in bom) {
-    // Fix dependencies structure - ensure dependsOn is always an array
-    outBom.dependencies = bom.dependencies.map((dep: any) => {
-      if (dep.dependsOn && !Array.isArray(dep.dependsOn)) {
-        return { ...dep, dependsOn: [dep.dependsOn] };
+    const dependencyMap = new Map<string, any>();
+    bom.dependencies.forEach((dep: any) => {
+      // Ensure dependsOn is always an array before creating key
+      const normalizedDep = {
+        ...dep,
+        dependsOn: Array.isArray(dep.dependsOn) ? dep.dependsOn : (dep.dependsOn ? [dep.dependsOn] : [])
+      };
+      const key = JSON.stringify({ ref: normalizedDep.ref, dependsOn: normalizedDep.dependsOn.sort() });
+      if (!dependencyMap.has(key)) {
+        dependencyMap.set(key, normalizedDep);
       }
-      return dep;
     });
+    outBom.dependencies = Array.from(dependencyMap.values());
+    const dedupedCount = bom.dependencies.length - outBom.dependencies.length;
+    if (dedupedCount > 0) {
+      logger.info(`Deduped ${dedupedCount} duplicate dependencies from BOM ${bom.serialNumber}`);
+    }
   }
 
   logger.info(`Dedup BOM ${bom.serialNumber} - reduced json from ${Object.keys(bom).length} to ${Object.keys(outBom).length}`)
