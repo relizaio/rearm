@@ -998,6 +998,10 @@ function selectBranch (uuid: string) {
     
     // Only navigate if not already on this branch to avoid hijacking double-click
     if (route.params.branchuuid !== uuid) {
+        // Clean up query params to prevent release view from reopening
+        const cleanQuery = { ...route.query }
+        delete cleanQuery.release
+        
         router.push({
             name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
             params: {
@@ -1005,7 +1009,7 @@ function selectBranch (uuid: string) {
                 compuuid: componentUuid,
                 branchuuid: selectedBranchUuid.value
             },
-            query: route.query
+            query: cleanQuery
         })
     }
 }
