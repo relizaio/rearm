@@ -203,39 +203,52 @@ class VariableQueries {
 		""";
 	
 	protected static final String FIND_ORPHANED_DTRACK_PROJECTS = """
+			WITH active_artifact_uuids AS (
+				-- Path 1: Artifacts used by active branches via direct release artifacts
+				SELECT DISTINCT jsonb_array_elements_text(r.record_data->'artifacts') as artifact_uuid
+				FROM rearm.releases r
+				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+				WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
+				AND r.record_data->'artifacts' IS NOT NULL
+				
+				UNION
+			
+			-- Path 2a: Artifacts used by active branches via SCE artifacts (sourceCodeEntry)
+			SELECT DISTINCT jsonb_array_elements_text(sce.record_data->'artifacts') as artifact_uuid
+			FROM rearm.source_code_entries sce
+			JOIN rearm.releases r ON r.record_data->>'sourceCodeEntry' = sce.uuid::text
+			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+			WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
+			AND sce.record_data->'artifacts' IS NOT NULL
+			
+			UNION
+			
+			-- Path 2b: Artifacts used by active branches via SCE artifacts (commits array)
+			SELECT DISTINCT jsonb_array_elements_text(sce.record_data->'artifacts') as artifact_uuid
+			FROM rearm.source_code_entries sce
+			JOIN rearm.releases r ON jsonb_contains(r.record_data->'commits', jsonb_build_array(sce.uuid::text))
+			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+			WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
+			AND sce.record_data->'artifacts' IS NOT NULL
+			
+			UNION
+				
+				-- Path 3: Artifacts used by active branches via deliverable artifacts
+				SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') as artifact_uuid
+				FROM rearm.deliverables d
+				JOIN rearm.variants v ON jsonb_contains(v.record_data,
+					jsonb_build_object('outboundDeliverables', jsonb_build_array(d.uuid::text)))
+				JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
+				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+				WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
+				AND d.record_data->'artifacts' IS NOT NULL
+			)
 			SELECT DISTINCT a.record_data->'metrics'->>'dependencyTrackProject' as project_id
 			FROM rearm.artifacts a
 			WHERE a.record_data->>'org' = :orgUuidAsString
 			AND a.record_data->'metrics'->>'dependencyTrackProject' IS NOT NULL
 			AND a.record_data->'metrics'->>'dependencyTrackProject' != ''
-			AND NOT EXISTS (
-				-- Path 1: Not used by active branch via direct release artifacts
-				SELECT 1 FROM rearm.releases r
-				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-				WHERE jsonb_contains(r.record_data, 
-					jsonb_build_object('artifacts', jsonb_build_array(a.uuid::text)))
-				AND b.record_data->>'status' != 'ARCHIVED'
-			)
-			AND NOT EXISTS (
-				-- Path 2: Not used by active branch via SCE artifacts
-				SELECT 1 FROM rearm.source_code_entries sce
-				JOIN rearm.releases r ON r.record_data->>'sourceCodeEntry' = sce.uuid::text
-				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-				WHERE jsonb_contains(sce.record_data,
-					jsonb_build_object('artifacts', jsonb_build_array(a.uuid::text)))
-				AND b.record_data->>'status' != 'ARCHIVED'
-			)
-			AND NOT EXISTS (
-				-- Path 3: Not used by active branch via deliverable artifacts
-				SELECT 1 FROM rearm.deliverables d
-				JOIN rearm.variants v ON jsonb_contains(v.record_data,
-					jsonb_build_object('outboundDeliverables', jsonb_build_array(d.uuid::text)))
-				JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
-				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-				WHERE jsonb_contains(d.record_data,
-					jsonb_build_object('artifacts', jsonb_build_array(a.uuid::text)))
-				AND b.record_data->>'status' != 'ARCHIVED'
-			)
+			AND a.uuid::text NOT IN (SELECT artifact_uuid FROM active_artifact_uuids)
 		""";
 	
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """

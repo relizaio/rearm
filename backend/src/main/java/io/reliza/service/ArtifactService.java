@@ -4,8 +4,6 @@
 
 package io.reliza.service;
 
-import java.io.IOException;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -59,10 +57,16 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.OASResponseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.SyncDtrackStatusResponseDto;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
+import io.reliza.model.BranchData;
+import io.reliza.model.DeliverableData;
+import io.reliza.model.ReleaseData;
+import io.reliza.model.SourceCodeEntryData;
+import io.reliza.model.VariantData;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.service.IntegrationService.UploadableBom;
@@ -88,6 +92,23 @@ public class ArtifactService {
 	@Lazy
 	@Autowired
 	private VulnAnalysisService vulnAnalysisService;
+	
+	@Autowired
+	private BranchService branchService;
+	
+	@Lazy
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+	private GetSourceCodeEntryService getSourceCodeEntryService;
+	
+	@Autowired
+	private VariantService variantService;
+	
+	@Lazy
+	@Autowired
+	private GetDeliverableService getDeliverableService;
 	
 	private final ArtifactRepository repository;
 
@@ -507,8 +528,15 @@ public class ArtifactService {
 			if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest()) ){
 				var a = findArtifactByStoredDigest(orgUuid, rebomResponse.meta().bomDigest());
 				if(a.isPresent()){
-					var metrics = ArtifactData.dataFromRecord(a.get()).getMetrics();
-					dtur = new DependencyTrackUploadResult(metrics.getDependencyTrackProject(), metrics.getUploadToken(), metrics.getProjectName(), metrics.getProjectVersion(),metrics.getDependencyTrackFullUri());
+					ArtifactData existingArtifactData = ArtifactData.dataFromRecord(a.get());
+					// Refetch metrics before reusing DTrack project
+					integrationService.requestMetricsRefreshOnDependencyTrack(existingArtifactData);
+					// Reload the artifact to get updated metrics
+					var reloadedArtifact = sharedArtifactService.getArtifact(existingArtifactData.getUuid());
+					if (reloadedArtifact.isPresent()) {
+						var metrics = ArtifactData.dataFromRecord(reloadedArtifact.get()).getMetrics();
+						dtur = new DependencyTrackUploadResult(metrics.getDependencyTrackProject(), metrics.getUploadToken(), metrics.getProjectName(), metrics.getProjectVersion(),metrics.getDependencyTrackFullUri());
+					}
 				}
 			}
 			if(null == dtur){
@@ -522,13 +550,20 @@ public class ArtifactService {
 				}
 				String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
 				UploadableBom ub = new UploadableBom(bomJson, null, false);
-				// If updating an existing artifact with DTrack project, upload to that project
+				// If updating an existing artifact with DTrack project, refetch metrics first
 				if (null != existingAd && null != existingAd.getMetrics() && 
 						StringUtils.isNotEmpty(existingAd.getMetrics().getDependencyTrackProject())) {
-					dtur = integrationService.uploadBomToExistingDtrackProject(orgUuid, ub, 
-							UUID.fromString(existingAd.getMetrics().getDependencyTrackProject()),
-							existingAd.getMetrics().getProjectName(),
-							existingAd.getMetrics().getProjectVersion());
+					// Refetch metrics before reusing DTrack project
+					integrationService.requestMetricsRefreshOnDependencyTrack(existingAd);
+					// Reload the artifact to get updated metrics
+					var reloadedArtifact = sharedArtifactService.getArtifact(existingAd.getUuid());
+					if (reloadedArtifact.isPresent()) {
+						ArtifactData refreshedAd = ArtifactData.dataFromRecord(reloadedArtifact.get());
+						dtur = integrationService.uploadBomToExistingDtrackProject(orgUuid, ub, 
+							UUID.fromString(refreshedAd.getMetrics().getDependencyTrackProject()),
+							refreshedAd.getMetrics().getProjectName(),
+							refreshedAd.getMetrics().getProjectVersion());
+					}
 				} else {
 					dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
 				}
@@ -932,6 +967,106 @@ public class ArtifactService {
 			   content.contains(":\n") || 
 			   content.contains(": \n") ||
 			   (content.contains(":") && !content.contains("{") && !content.contains("<"));
+	}
+	
+	/**
+	 * Sync DTrack status for all BOM artifacts from active branches of an organization.
+	 * Gathers artifacts from releases, source code entries, and deliverables, then triggers
+	 * metrics refresh on Dependency Track for each BOM artifact.
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @return Response with success count and failed artifact UUIDs
+	 */
+	@Transactional
+	public SyncDtrackStatusResponseDto syncDtrackStatus(UUID orgUuid) {
+		log.info("Starting DTrack status sync for organization: {}", orgUuid);
+		
+		Set<UUID> artifactUuids = new HashSet<>();
+		Set<UUID> failedArtifactUuids = new HashSet<>();
+		int successCount = 0;
+		
+		// Get all active branches for the organization
+		List<BranchData> activeBranches = branchService.listBranchDataOfOrg(orgUuid);
+		
+		log.info("Found {} active branches for organization {}", activeBranches.size(), orgUuid);
+		
+		// For each active branch, gather all releases and their artifacts
+		for (BranchData branch : activeBranches) {
+			List<ReleaseData> releases = sharedReleaseService.listReleaseDataOfBranch(
+				branch.getUuid(), 10000, false
+			);
+			
+			for (ReleaseData release : releases) {
+				// Path 1: Direct release artifacts
+				if (release.getArtifacts() != null) {
+					artifactUuids.addAll(release.getArtifacts());
+				}
+				
+				// Path 2a: Source code entry artifacts (sourceCodeEntry field)
+				if (release.getSourceCodeEntry() != null) {
+					Optional<SourceCodeEntryData> sceOpt = getSourceCodeEntryService.getSourceCodeEntryData(release.getSourceCodeEntry());
+					if (sceOpt.isPresent() && sceOpt.get().getArtifacts() != null) {
+						artifactUuids.addAll(sceOpt.get().getArtifacts().stream().map(x -> x.artifactUuid()).toList());
+					}
+				}
+				
+				// Path 2b: Source code entry artifacts (commits array)
+				if (release.getCommits() != null) {
+					for (UUID commitUuid : release.getCommits()) {
+						Optional<SourceCodeEntryData> sceOpt = getSourceCodeEntryService.getSourceCodeEntryData(commitUuid);
+						if (sceOpt.isPresent() && sceOpt.get().getArtifacts() != null) {
+							artifactUuids.addAll(sceOpt.get().getArtifacts().stream().map(x -> x.artifactUuid()).toList());
+						}
+					}
+				}
+				
+				// Path 3: Variant deliverable artifacts
+				List<VariantData> variants = variantService.getVariantsOfRelease(release.getUuid());
+					
+				for (VariantData variant : variants) {
+					if (variant.getOutboundDeliverables() != null) {
+						for (UUID deliverableUuid : variant.getOutboundDeliverables()) {
+							Optional<DeliverableData> deliverableOpt = getDeliverableService.getDeliverableData(deliverableUuid);
+							if (deliverableOpt.isPresent() && deliverableOpt.get().getArtifacts() != null) {
+								artifactUuids.addAll(deliverableOpt.get().getArtifacts());
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		log.info("Collected {} unique artifact UUIDs for DTrack sync", artifactUuids.size());
+		
+		// Filter to only BOM type artifacts and trigger metrics refresh
+		for (UUID artifactUuid : artifactUuids) {
+			try {
+				Optional<ArtifactData> artifactOpt = getArtifactData(artifactUuid);
+				if (artifactOpt.isPresent()) {
+					ArtifactData artifact = artifactOpt.get();
+					
+					// Only process BOM type artifacts
+					if (artifact.getType() == ArtifactType.BOM && artifact.getStoredIn() == StoredIn.REARM) {
+						boolean success = integrationService.requestMetricsRefreshOnDependencyTrack(artifact);
+						if (success) {
+							successCount++;
+							log.debug("Successfully requested DTrack refresh for artifact: {}", artifactUuid);
+						} else {
+							failedArtifactUuids.add(artifactUuid);
+							log.error("Failed to request DTrack refresh for artifact: {}", artifactUuid);
+						}
+					}
+				}
+			} catch (Exception e) {
+				failedArtifactUuids.add(artifactUuid);
+				log.error("Exception while processing artifact {} for DTrack sync: {}", artifactUuid, e.getMessage(), e);
+			}
+		}
+		
+		log.info("DTrack status sync completed for organization {}. Success: {}, Failed: {}", 
+			orgUuid, successCount, failedArtifactUuids.size());
+		
+		return new SyncDtrackStatusResponseDto(successCount, failedArtifactUuids);
 	}
 
 }

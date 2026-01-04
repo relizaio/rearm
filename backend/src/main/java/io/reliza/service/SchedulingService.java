@@ -141,8 +141,9 @@ public class SchedulingService {
 		}
     }
     
-    @Scheduled(cron="0 0 3 * * SUN") // weekly on Sunday at 3:00 AM
+    // @Scheduled(cron="0 0 3 * * SUN") // weekly on Sunday at 3:00 AM
     public void scheduleDependencyTrackProjectCleanup() {
+        log.info("Initiating DTrack project cleanup scheduler");
         try {
             Boolean lock = getLock(AdvisoryLockKey.CLEANUP_DEPENDENCY_TRACK_PROJECTS);
             log.debug("DTrack project cleanup lock acquired {}", lock);

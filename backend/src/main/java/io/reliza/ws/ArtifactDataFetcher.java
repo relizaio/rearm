@@ -25,6 +25,7 @@ import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.dto.ArtifactWebDto;
+import io.reliza.model.dto.SyncDtrackStatusResponseDto;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.service.ArtifactService;
@@ -218,5 +219,20 @@ public class ArtifactDataFetcher {
 	// 	// copy the artifacy objecy
 	// 	// 
 	// }
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "syncDtrackStatus")
+	public SyncDtrackStatusResponseDto syncDtrackStatus(@InputArgument("orgUuid") String orgUuidStr) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		
+		// Verify user has admin access to the organization
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		
+		log.info("User {} initiated DTrack status sync for organization {}", oud.get().getUuid(), orgUuid);
+		
+		return artifactService.syncDtrackStatus(orgUuid);
+	}
 
 }

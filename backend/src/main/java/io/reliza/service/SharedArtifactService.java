@@ -27,6 +27,7 @@ import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
@@ -86,8 +87,10 @@ public class SharedArtifactService {
 
 		if(null != ad.getInternalBom()){
 			String rebom;
-			// For versioned BOMs, use the version-specific query
-			if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
+			// For versioned BOMs, use the version-specific query -- TODO SPDX
+			if(ad.getBomFormat().equals(BomFormat.SPDX)){
+				rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
+			} else if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
 				try {
 					Integer version = Integer.parseInt(ad.getVersion());
 					rebom = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();

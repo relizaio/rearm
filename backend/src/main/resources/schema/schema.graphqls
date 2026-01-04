@@ -122,6 +122,7 @@ type Mutation {
 	deleteBaseIntegration(org: ID!, type: IntegrationType!): Boolean
 	refetchDependencyTrackMetrics(artifact: ID!): Boolean
 	requestRefreshDependencyTrackMetrics(artifact: ID!): Boolean
+	syncDtrackStatus(orgUuid: ID!): SyncDtrackStatusResponse
 	
 	# components and products
 	createComponent(component: CreateComponentInput!): Component
@@ -759,6 +760,11 @@ type Artifact {
 	componentUuid: ID
 	artifacts: [ID]
 	artifactDetails: [Artifact]
+}
+
+type SyncDtrackStatusResponse {
+	successCount: Int!
+	failedArtifactUuids: [ID]
 }
 
 type DependencyTrackMetrics {

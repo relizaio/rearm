@@ -57,6 +57,7 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
+import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
@@ -462,22 +463,54 @@ public class IntegrationService {
 			try {
 				String apiToken = encryptionService.decrypt(oid.get().getSecret());
 	
+				String projectIdStr = null;
 				
 				DependencyTrackProjectInput dtpi = new DependencyTrackProjectInput(projectName, projectVersion, null, "APPLICATION", List.of(), List.of(), true, false);
 				String projectCreateUriStr = oid.get().getUri().toString() + "/api/v1/project";
 				URI projectCreateUri = URI.create(projectCreateUriStr);
 				
-				var createDtrackProjectResp = dtrackWebClient
-				.put()
-				.uri(projectCreateUri)
-				.header("X-API-Key", apiToken)
-				.bodyValue(dtpi).retrieve()
-				.toEntity(String.class)
-				.block();
+				try {
+					var createDtrackProjectResp = dtrackWebClient
+					.put()
+					.uri(projectCreateUri)
+					.header("X-API-Key", apiToken)
+					.bodyValue(dtpi).retrieve()
+					.toEntity(String.class)
+					.block();
+					
+					@SuppressWarnings("unchecked")
+					Map<String, Object> createProjResp = Utils.OM.readValue(createDtrackProjectResp.getBody(), Map.class);
+					projectIdStr = (String) createProjResp.get("uuid");
+				} catch (WebClientResponseException wcre) {
+					if (wcre.getStatusCode().isSameCodeAs(HttpStatusCode.valueOf(409))) {
+						// Project already exists, look it up
+						log.info("Project {}:{} already exists in DTrack, looking up existing project", projectName, projectVersion);
+						String lookupUriStr = oid.get().getUri().toString() + "/api/v1/project/lookup?name=" + 
+								java.net.URLEncoder.encode(projectName, java.nio.charset.StandardCharsets.UTF_8) + 
+								"&version=" + java.net.URLEncoder.encode(projectVersion, java.nio.charset.StandardCharsets.UTF_8);
+						URI lookupUri = URI.create(lookupUriStr);
+						
+						var lookupResp = dtrackWebClient
+							.get()
+							.uri(lookupUri)
+							.header("X-API-Key", apiToken)
+							.retrieve()
+							.toEntity(String.class)
+							.block();
+						
+						@SuppressWarnings("unchecked")
+						Map<String, Object> lookupProjResp = Utils.OM.readValue(lookupResp.getBody(), Map.class);
+						projectIdStr = (String) lookupProjResp.get("uuid");
+						
+						if (StringUtils.isEmpty(projectIdStr)) {
+							log.error("Project lookup failed for {}:{} - no UUID in response", projectName, projectVersion);
+							throw new RuntimeException("Failed to lookup existing DTrack project");
+						}
+					} else {
+						throw wcre;
+					}
+				}
 				
-				@SuppressWarnings("unchecked")
-				Map<String, Object> createProjResp = Utils.OM.readValue(createDtrackProjectResp.getBody(), Map.class);
-				String projectIdStr = (String) createProjResp.get("uuid");
 				dtur = sendBomToDependencyTrackOnCreatedProject(oid.get(), UUID.fromString(projectIdStr), bom, projectName, projectVersion);
 			} catch (Exception e) {
 				log.error("Error on uploading bom to dependency track", e);
@@ -830,13 +863,42 @@ public class IntegrationService {
 	private boolean resubmitArtifactToDependencyTrack(ArtifactData ad) {
 		try {
 			var downloadable = sharedArtifactService.downloadArtifact(ad);
+			
 			String projectVersion = (null != ad.getMetrics() && StringUtils.isNotEmpty(ad.getMetrics().getProjectVersion())) 
 					? ad.getMetrics().getProjectVersion() : UUID.randomUUID().toString();
 			String projectName = (null != ad.getMetrics() && StringUtils.isNotEmpty(ad.getMetrics().getProjectName())) 
-					? ad.getMetrics().getProjectName() : UUID.randomUUID().toString();  
+					? ad.getMetrics().getProjectName() : UUID.randomUUID().toString();
+			
+			// Track the old project ID to update other artifacts if it changes
+			String oldProjectId = (null != ad.getMetrics() && StringUtils.isNotEmpty(ad.getMetrics().getDependencyTrackProject())) 
+					? ad.getMetrics().getDependencyTrackProject() : null;
+			
 			UploadableBom ub = new UploadableBom(null, downloadable.block().getBody(), true);
-			var dtur = sendBomToDependencyTrack(ad.getOrg(), ub, projectName, projectVersion);
+			DependencyTrackUploadResult dtur = sendBomToDependencyTrack(ad.getOrg(), ub, projectName, projectVersion);
+			
 			sharedArtifactService.updateArtifactFromDtur(ad, dtur);
+			
+			// If the project ID changed, update all other artifacts in the same org with the old project ID
+			if (oldProjectId != null && dtur != null && dtur.projectId() != null && 
+					!oldProjectId.equals(dtur.projectId())) {
+				log.info("DTrack project ID changed from {} to {} for artifact {}, updating related artifacts", 
+						oldProjectId, dtur.projectId(), ad.getUuid());
+				
+				List<Artifact> relatedArtifacts = artifactService.listArtifactsByDtrackProjects(List.of(UUID.fromString(oldProjectId)));
+				for (Artifact artifact : relatedArtifacts) {
+					try {
+						ArtifactData relatedAd = ArtifactData.dataFromRecord(artifact);
+						// Only update if it's in the same org and not the current artifact
+						if (relatedAd.getOrg().equals(ad.getOrg()) && !relatedAd.getUuid().equals(ad.getUuid())) {
+							sharedArtifactService.updateArtifactFromDtur(relatedAd, dtur);
+							log.debug("Updated artifact {} with new DTrack project {}", relatedAd.getUuid(), dtur.projectId());
+						}
+					} catch (Exception e) {
+						log.error("Failed to update related artifact with new DTrack project: {}", e.getMessage());
+					}
+				}
+			}
+			
 			return true;
 		} catch (Exception e) {
 			log.error("Error on resubmitting artifact to dependency track, artifact id = " + ad.getUuid(), e);
