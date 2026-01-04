@@ -58,8 +58,16 @@
                             </n-modal>
                         </div>
                         <div class="row pt-2">
-                            <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')"> Dependency-Track integration configured
-                                <vue-feather @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
+                            <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')">
+                                <div>
+                                    Dependency-Track integration configured
+                                    <vue-feather @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
+                                </div>
+                                <div style="margin-top: 8px;">
+                                    <n-button @click="syncDtrackStatus" :loading="syncingDtrackStatus" type="primary" size="small">
+                                        Sync Dependency-Track Status for All Artifacts
+                                    </n-button>
+                                </div>
                             </div>
                             <div v-else><n-button @click="showOrgSettingsDependencyTrackIntegrationModal = true">Add Dependency-Track Integration</n-button></div>
                             <n-modal
@@ -1128,6 +1136,7 @@ const selectedUser: Ref<any> = ref({})
 const selectedUserType: Ref<string> = ref('')
 const configuredIntegrations: Ref<any[]> = ref([])
 const ciIntegrations: Ref<any[]> = ref([])
+const syncingDtrackStatus: Ref<boolean> = ref(false)
 const createIntegrationObject: Ref<any> = ref({
     org: orgResolved.value,
     uri: '',
@@ -2122,6 +2131,72 @@ async function createApp() {
         newappname.value = ''
         showCreateResourceGroupModal.value = false
         notify('success', 'Created', 'Successfully created resourceGroup ' + appObj.name)
+    }
+}
+
+async function syncDtrackStatus() {
+    syncingDtrackStatus.value = true
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation syncDtrackStatus($orgUuid: ID!) {
+                    syncDtrackStatus(orgUuid: $orgUuid) {
+                        successCount
+                        failedArtifactUuids
+                    }
+                }`,
+            variables: {
+                orgUuid: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        if (resp.data && resp.data.syncDtrackStatus) {
+            const result = resp.data.syncDtrackStatus
+            const failedCount = result.failedArtifactUuids ? result.failedArtifactUuids.length : 0
+            
+            if (failedCount === 0) {
+                notification.success({
+                    title: 'Sync Complete',
+                    content: `Successfully synced ${result.successCount} artifact(s) with Dependency-Track.`,
+                    duration: 5000
+                })
+            } else {
+                notification.warning({
+                    title: 'Sync Partially Complete',
+                    content: `Synced ${result.successCount} artifact(s). Failed to sync ${failedCount} artifact(s).`,
+                    duration: 7000
+                })
+                
+                // Show SweetAlert with failed artifact UUIDs
+                const failedUuidsHtml = result.failedArtifactUuids
+                    .map((uuid: string) => `<div style="text-align: left; font-family: monospace; padding: 2px 0;">${uuid}</div>`)
+                    .join('')
+                
+                await Swal.fire({
+                    icon: 'warning',
+                    title: 'Partial Sync Failure',
+                    html: `<div style="margin-bottom: 10px;">Failed to sync ${failedCount} artifact(s):</div><div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 4px;">${failedUuidsHtml}</div>`,
+                    confirmButtonText: 'OK'
+                })
+            }
+        }
+    } catch (err: any) {
+        notification.error({
+            title: 'Sync Failed',
+            content: err.message || 'Failed to sync Dependency-Track status. Please try again later.',
+            duration: 5000
+        })
+        
+        // Show SweetAlert with error details
+        await Swal.fire({
+            icon: 'error',
+            title: 'Sync Failed',
+            text: err.message || 'Failed to sync Dependency-Track status. Please try again later or contact support.',
+            confirmButtonText: 'OK'
+        })
+    } finally {
+        syncingDtrackStatus.value = false
     }
 }
 
