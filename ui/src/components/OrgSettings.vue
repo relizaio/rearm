@@ -63,7 +63,7 @@
                                     Dependency-Track integration configured
                                     <vue-feather @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
                                 </div>
-                                <div style="margin-top: 8px;">
+                                <div v-if="false" style="margin-top: 8px;">
                                     <n-button @click="syncDtrackStatus" :loading="syncingDtrackStatus" type="primary" size="small">
                                         Sync Dependency-Track Status for All Artifacts
                                     </n-button>
