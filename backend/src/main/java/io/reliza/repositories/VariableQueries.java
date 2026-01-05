@@ -214,7 +214,7 @@ class VariableQueries {
 				UNION
 			
 			-- Path 2a: Artifacts used by active branches via SCE artifacts (sourceCodeEntry)
-			SELECT DISTINCT jsonb_array_elements_text(sce.record_data->'artifacts') as artifact_uuid
+			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
 			FROM rearm.source_code_entries sce
 			JOIN rearm.releases r ON r.record_data->>'sourceCodeEntry' = sce.uuid::text
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
@@ -224,7 +224,7 @@ class VariableQueries {
 			UNION
 			
 			-- Path 2b: Artifacts used by active branches via SCE artifacts (commits array)
-			SELECT DISTINCT jsonb_array_elements_text(sce.record_data->'artifacts') as artifact_uuid
+			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
 			FROM rearm.source_code_entries sce
 			JOIN rearm.releases r ON jsonb_contains(r.record_data->'commits', jsonb_build_array(sce.uuid::text))
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
@@ -234,7 +234,7 @@ class VariableQueries {
 			UNION
 				
 				-- Path 3: Artifacts used by active branches via deliverable artifacts
-				SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') as artifact_uuid
+				SELECT DISTINCT jsonb_array_elements(d.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
 				FROM rearm.deliverables d
 				JOIN rearm.variants v ON jsonb_contains(v.record_data,
 					jsonb_build_object('outboundDeliverables', jsonb_build_array(d.uuid::text)))
@@ -242,13 +242,23 @@ class VariableQueries {
 				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
 				WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
 				AND d.record_data->'artifacts' IS NOT NULL
+			),
+			active_dtrack_projects AS (
+				SELECT DISTINCT a.record_data->'metrics'->>'dependencyTrackProject' as project_id
+				FROM rearm.artifacts a
+				WHERE a.record_data->>'org' = :orgUuidAsString
+				AND a.record_data->'metrics'->>'dependencyTrackProject' IS NOT NULL
+				AND a.record_data->'metrics'->>'dependencyTrackProject' != ''
+				AND a.uuid::text IN (SELECT artifact_uuid FROM active_artifact_uuids)
 			)
 			SELECT DISTINCT a.record_data->'metrics'->>'dependencyTrackProject' as project_id
 			FROM rearm.artifacts a
 			WHERE a.record_data->>'org' = :orgUuidAsString
 			AND a.record_data->'metrics'->>'dependencyTrackProject' IS NOT NULL
 			AND a.record_data->'metrics'->>'dependencyTrackProject' != ''
-			AND a.uuid::text NOT IN (SELECT artifact_uuid FROM active_artifact_uuids)
+			AND a.record_data->'metrics'->>'dependencyTrackProject' NOT IN (
+				SELECT project_id FROM active_dtrack_projects WHERE project_id IS NOT NULL
+			)
 		""";
 	
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """
