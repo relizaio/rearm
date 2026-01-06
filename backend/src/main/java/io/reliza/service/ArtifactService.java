@@ -529,13 +529,28 @@ public class ArtifactService {
 				var a = findArtifactByStoredDigest(orgUuid, rebomResponse.meta().bomDigest());
 				if(a.isPresent()){
 					ArtifactData existingArtifactData = ArtifactData.dataFromRecord(a.get());
-					// Refetch metrics before reusing DTrack project
-					integrationService.requestMetricsRefreshOnDependencyTrack(existingArtifactData);
-					// Reload the artifact to get updated metrics
-					var reloadedArtifact = sharedArtifactService.getArtifact(existingArtifactData.getUuid());
-					if (reloadedArtifact.isPresent()) {
-						var metrics = ArtifactData.dataFromRecord(reloadedArtifact.get()).getMetrics();
-						dtur = new DependencyTrackUploadResult(metrics.getDependencyTrackProject(), metrics.getUploadToken(), metrics.getProjectName(), metrics.getProjectVersion(),metrics.getDependencyTrackFullUri());
+					
+					// Check if DTrack project was deleted during cleanup
+					boolean canReuseProject = true;
+					if (existingArtifactData.getMetrics() != null) {
+						Boolean projectDeleted = existingArtifactData.getMetrics().getDtrackProjectDeleted();
+						if (projectDeleted != null && projectDeleted) {
+							log.info("Existing artifact {} has deleted DTrack project, creating new project instead", 
+								existingArtifactData.getUuid());
+							canReuseProject = false;
+						}
+					}
+					
+					if (canReuseProject) {
+						// Refetch metrics before reusing DTrack project
+						// If project deleted (404), requestMetricsRefreshOnDependencyTrack will resubmit and create new project
+						integrationService.requestMetricsRefreshOnDependencyTrack(existingArtifactData);
+						// Reload the artifact to get updated metrics
+						var reloadedArtifact = sharedArtifactService.getArtifact(existingArtifactData.getUuid());
+						if (reloadedArtifact.isPresent()) {
+							var metrics = ArtifactData.dataFromRecord(reloadedArtifact.get()).getMetrics();
+							dtur = new DependencyTrackUploadResult(metrics.getDependencyTrackProject(), metrics.getUploadToken(), metrics.getProjectName(), metrics.getProjectVersion(),metrics.getDependencyTrackFullUri());
+						}
 					}
 				}
 			}

@@ -1233,6 +1233,10 @@ public class IntegrationService {
 			return new DtrackProjectCleanupResult(0, 0, 0, List.of(), List.of());
 		}
 		
+		// Mark all artifacts using these projects as deleted BEFORE deleting from DTrack
+		log.info("[DTRACK-CLEANUP] Marking artifacts for {} orphaned projects", orphanedProjectIds.size());
+		markArtifactsWithDeletedProjects(orgUuid, orphanedProjectIds);
+		
 		List<String> deletedProjects = new ArrayList<>();
 		List<String> errors = new ArrayList<>();
 		
@@ -1414,6 +1418,36 @@ public class IntegrationService {
 			log.error("[DTRACK-CLEANUP] Unexpected error batch deleting projects: {}", e.getMessage());
 			throw e;
 		}
+	}
+	
+	/**
+	 * Mark all artifacts using the specified DTrack projects as deleted
+	 * This prevents deduplication from reusing deleted project IDs
+	 */
+	private void markArtifactsWithDeletedProjects(UUID orgUuid, List<String> projectIds) {
+		if (projectIds == null || projectIds.isEmpty()) {
+			return;
+		}
+		
+		int totalMarked = 0;
+		for (String projectId : projectIds) {
+			// Convert string project ID to UUID
+			UUID projectUuid = UUID.fromString(projectId);
+			List<Artifact> affectedArtifacts = artifactService.listArtifactsByDtrackProjects(List.of(projectUuid));
+			log.debug("[DTRACK-CLEANUP] Found {} artifacts using project {}", affectedArtifacts.size(), projectId);
+			
+			for (Artifact artifact : affectedArtifacts) {
+				ArtifactData ad = ArtifactData.dataFromRecord(artifact);
+				if (ad.getMetrics() != null && ad.getOrg().equals(orgUuid)) {
+					ad.getMetrics().setDtrackProjectDeleted(true);
+					Map<String, Object> recordData = Utils.dataToRecord(ad);
+					sharedArtifactService.saveArtifact(artifact, recordData, WhoUpdated.getAutoWhoUpdated());
+					totalMarked++;
+				}
+			}
+		}
+		
+		log.info("[DTRACK-CLEANUP] Marked {} artifacts as having deleted DTrack projects", totalMarked);
 	}
 	
 	/**

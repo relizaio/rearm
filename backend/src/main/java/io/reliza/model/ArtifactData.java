@@ -226,6 +226,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
     	private URI dependencyTrackFullUri;
     	private String projectName;
     	private String projectVersion;
+    	private Boolean dtrackProjectDeleted = false;
     	
     	public static DependencyTrackIntegration fromReleaseMetricsDto(ReleaseMetricsDto rmd) {
     		DependencyTrackIntegration dti = new DependencyTrackIntegration();
