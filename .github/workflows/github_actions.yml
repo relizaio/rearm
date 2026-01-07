@@ -102,7 +102,6 @@ jobs:
           rearm_enable_public_cosign_sigstore: 'true'
           rearm_enable_codeql: 'true'
           rearm_codeql_language: 'javascript'
-          no_cache: 'true'
   build-backend:
     permissions:
       id-token: write

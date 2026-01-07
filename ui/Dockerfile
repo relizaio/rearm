@@ -11,7 +11,7 @@ ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
 ARG VERSION=not_versioned
 COPY --from=build-stage /app/dist /usr/share/nginx/html
-COPY nginx/nginx.conf /etc/nginx/conf/
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/default.conf.template /etc/nginx/templates/
 COPY nginx/nginx_start.sh /nginx_start.sh
 RUN echo "version=$VERSION" > /usr/share/nginx/html/version.html && echo "commit=$GIT_COMMIT" >> /usr/share/nginx/html/version.html && echo "branch=$GIT_BRANCH" >> /usr/share/nginx/html/version.html
