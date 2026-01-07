@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit UI Release
-        uses: relizaio/reliza-docker-action@a8ba201f314e111885f1ec036e8eeabcb02739be # v3.14
+        uses: relizaio/reliza-docker-action@95f673fd8409d0487c1faee6542a19cde817cbbd # v3.15 - experimental
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -102,6 +102,7 @@ jobs:
           rearm_enable_public_cosign_sigstore: 'true'
           rearm_enable_codeql: 'true'
           rearm_codeql_language: 'javascript'
+          no_cache: 'true'
   build-backend:
     permissions:
       id-token: write
