@@ -141,7 +141,7 @@ public class SchedulingService {
 		}
     }
     
-    // @Scheduled(cron="0 0 3 * * SUN") // weekly on Sunday at 3:00 AM
+    @Scheduled(cron="0 0 3 * * *") // once daily 3:00 AM
     public void scheduleDependencyTrackProjectCleanup() {
         log.info("Initiating DTrack project cleanup scheduler");
         try {
