@@ -27,7 +27,7 @@ spring:
       jakarta:
         persistence:
           query:
-            timeout: 10000
+            timeout: 70000
   security:
     oauth2:
       resourceserver:
@@ -38,6 +38,9 @@ spring:
     multipart: 
       max-file-size: ${MAX_UPLOAD_SIZE:50MB}
       max-request-size: ${MAX_UPLOAD_SIZE:50MB}
+
+logging:
+  config: classpath:log4j2-${LOG_FORMAT_TYPE:plain}.xml
 # logging:
 #   level:
 #    root: DEBUG

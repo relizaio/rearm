@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN" monitorInterval="30">
+    <Properties>
+        <Property name="LOG_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${sys:PID} --- [%15.15t] %-40.40c{1.} : %m%n%ex</Property>
+    </Properties>
+
+    <Appenders>
+        <!-- Console Appender with JSON Layout -->
+        <Console name="ConsoleJSON" target="SYSTEM_OUT">
+            <JsonLayout compact="true" eventEol="true" properties="true" stacktraceAsString="true">
+                <KeyValuePair key="timestamp" value="$${date:yyyy-MM-dd'T'HH:mm:ss.SSSZ}"/>
+            </JsonLayout>
+        </Console>
+
+        <!-- Fallback Console Appender with Pattern Layout (for debugging if needed) -->
+        <Console name="ConsolePattern" target="SYSTEM_OUT">
+            <PatternLayout pattern="${LOG_PATTERN}"/>
+        </Console>
+
+        <!-- Async Appender for better performance -->
+        <Async name="AsyncConsole">
+            <AppenderRef ref="ConsoleJSON"/>
+        </Async>
+    </Appenders>
+
+    <Loggers>
+        <!-- Application Logger -->
+        <Logger name="io.reliza" level="info" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+        </Logger>
+
+        <!-- Spring Framework -->
+        <Logger name="org.springframework" level="info" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+        </Logger>
+
+        <!-- Hibernate -->
+        <Logger name="org.hibernate" level="warn" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+        </Logger>
+
+        <!-- GraphQL DGS -->
+        <Logger name="com.netflix.graphql.dgs" level="info" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+        </Logger>
+
+        <!-- Security -->
+        <Logger name="org.springframework.security" level="info" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+        </Logger>
+
+        <!-- Root Logger -->
+        <Root level="info">
+            <AppenderRef ref="AsyncConsole"/>
+        </Root>
+    </Loggers>
+</Configuration>
