@@ -93,6 +93,8 @@ spec:
                   name: reliza-props
                   key: encryption-salt-old
 {{- end }}
+            - name: LOG_FORMAT_TYPE
+              value: {{ .Values.backend.logFormatType }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http

@@ -36,6 +36,8 @@ projectProtocol: http
 projectHost: rearm.localhost
 useDefaultSecrets: true
 max_upload_size_in_MB: 50
+backend:
+  logFormatType: "plain"
 
 keycloak:
   enabled: true
