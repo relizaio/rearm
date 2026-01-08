@@ -38,6 +38,7 @@ services:
      - KEYCLOAK_HOST=keycloak
      - KEYCLOAK_PORT=9080
      - KEYCLOAK_ADMIN_ACCESS=
+     - KEYCLOAK_RELIZA_ADMIN_ACCESS=
     deploy:
       replicas: 1
       restart_policy:
