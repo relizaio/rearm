@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -38,6 +39,9 @@ public class SchedulingService {
     
     @Autowired
     IntegrationService integrationService;
+    
+    @Value("${relizaprops.enableDtrackCleanupScheduler}")
+    private boolean enableDtrackCleanupScheduler;
     
     private Boolean getLock (AdvisoryLockKey alk) {
     	String query = "SELECT pg_try_advisory_lock(" + alk.getQueryVal() + ")";
@@ -143,6 +147,11 @@ public class SchedulingService {
     
     @Scheduled(cron="0 0 3 * * *") // once daily 3:00 AM
     public void scheduleDependencyTrackProjectCleanup() {
+        if (!enableDtrackCleanupScheduler) {
+            log.debug("DTrack project cleanup scheduler is disabled");
+            return;
+        }
+        
         log.info("Initiating DTrack project cleanup scheduler");
         try {
             Boolean lock = getLock(AdvisoryLockKey.CLEANUP_DEPENDENCY_TRACK_PROJECTS);
