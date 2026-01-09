@@ -1,6 +1,6 @@
 services:
   rearm-core:
-    image: registry.relizahub.com/library/rearm-backend:26.01.2@sha256:2dd023ef247433b143e65a81fb3df882702b2e4cf23fc462492b6b648f4b029f
+    image: registry.relizahub.com/library/rearm-backend:26.01.6@sha256:48939b4a54c64e01ff8b5ae65c59ef1ced17c658fbde4075f258fa0621728e4c
     env_file:
      - path: ./core.env
        required: false
@@ -27,7 +27,7 @@ services:
         parallelism: 1
         delay: 10s
   rearm-ui:
-    image: registry.relizahub.com/library/rearm-ui:26.01.5@sha256:267f9252c2e21bac0b6f353bab9c4d4d5dda7a42cb61419fa69eb962c9808757
+    image: registry.relizahub.com/library/rearm-ui:26.01.16@sha256:43e4143dbe5184ea00f5cfef55967224ea283d3a18f6d634251feef7409fdf04
     ports:
      - "8092:80"
     environment:
@@ -61,7 +61,7 @@ services:
     volumes:
       - "rearm-postgres-data:/relizaio/postgresql"
   keycloak:
-    image: registry.relizahub.com/library/rearm-keycloak:25.03.14@sha256:3cfcf6b913b333674f7b5cb2c678165fb67dfdf0d5d2b409720c156b4bb7f29b
+    image: registry.relizahub.com/library/rearm-keycloak:25.03.15@sha256:9f31fa258e6aff221792edc93aaed63b60be47450c359737a81c25c5a74f530f
     # build: ../../keycloak
     ports:
      - "9080:9080"
@@ -100,7 +100,7 @@ services:
       - ./postgres-keycloak-init.sql:/docker-entrypoint-initdb.d/init.sql
       - "rearm-keycloak-compose-postgres-data:/relizaio/postgresql"
   oci-artifact-service:
-    image: registry.relizahub.com/library/rearm-oci-artifact-service25:12.2@sha256:09953dfa591284b76c98ee659a38cbd4e154f147cdbd1187728e1041f1549156
+    image: registry.relizahub.com/library/rearm-oci-artifact-service:25.12.2@sha256:09953dfa591284b76c98ee659a38cbd4e154f147cdbd1187728e1041f1549156
     env_file:
      - path: ./oci.env
        required: false
@@ -148,7 +148,7 @@ services:
     volumes:
       - "rebom-postgres-data:/relizaio/postgresql"
   rebom-postgres-init:
-    image: docker.io/redgate/flyway:11.4.0-alpine@sha256:19a1178e519f9c4448956bb7a7d7c52610e6c46503a5f752d13f04120092c45d
+    image: docker.io/redgate/flyway:11.14.0-alpine@sha256:19a1178e519f9c4448956bb7a7d7c52610e6c46503a5f752d13f04120092c45d
     restart: on-failure
     depends_on:
       - rebom-postgresql
