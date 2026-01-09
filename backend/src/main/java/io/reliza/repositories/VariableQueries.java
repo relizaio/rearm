@@ -234,10 +234,9 @@ class VariableQueries {
 			UNION
 				
 				-- Path 3: Artifacts used by active branches via deliverable artifacts
-				SELECT DISTINCT jsonb_array_elements(d.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
+				SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') as artifact_uuid
 				FROM rearm.deliverables d
-				JOIN rearm.variants v ON jsonb_contains(v.record_data,
-					jsonb_build_object('outboundDeliverables', jsonb_build_array(d.uuid::text)))
+				JOIN rearm.variants v ON v.record_data->'outboundDeliverables' ? d.uuid::text
 				JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
 				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
 				WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
