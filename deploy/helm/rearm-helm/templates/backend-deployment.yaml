@@ -95,6 +95,8 @@ spec:
 {{- end }}
             - name: LOG_FORMAT_TYPE
               value: {{ .Values.backend.logFormatType }}
+            - name: ENABLE_DTRACK_CLEANUP_SCHEDULER
+              value: {{ .Values.backend.enableDtrackCleanupScheduler | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
