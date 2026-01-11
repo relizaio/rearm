@@ -240,7 +240,7 @@ public class BranchDataFetcher {
 				pd.getName(), pd.getUuid()
 			));
 		}		
-		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(branchUuid, bumpAction);
+		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersion(branchUuid, bumpAction, null, null, VersionTypeEnum.DEV);
 		if (ova.isPresent()) {
 			return new VersionResponse(ova.get().getVersion(), Utils.dockerTagSafeVersion(ova.get().getVersion()), "");
 		} else {

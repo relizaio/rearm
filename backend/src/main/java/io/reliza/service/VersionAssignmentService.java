@@ -13,13 +13,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
+import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VersionAssignment;
@@ -52,10 +51,6 @@ public class VersionAssignmentService {
 	VersionAssignmentService(VersionAssignmentRepository repository) {
 	    this.repository = repository;
 	}
-	
-	private Optional<VersionAssignment> getVersionAssignment (UUID uuid) {
-		return repository.findById(uuid);
-	}
 
 	public List<VersionAssignment> listVersionAssignmentsByOrg (UUID orgUuid) {
 		return repository.findByOrg(orgUuid);
@@ -85,9 +80,6 @@ public class VersionAssignmentService {
 		return ova;
 	}
 	
-	private Optional<VersionAssignment> getLatestVersionAssignmentOfBranch (UUID branchUuid, int limit, String componentSchema, String branchSchema) {
-		return getLatestVersionAssignmentOfBranch(branchUuid, limit, componentSchema, branchSchema, VersionTypeEnum.DEV);
-	}
 	private Optional<VersionAssignment> getLatestVersionAssignmentOfBranch (UUID branchUuid, int limit, String componentSchema, String branchSchema, VersionTypeEnum versionType) {
 		Optional<VersionAssignment> ova = Optional.empty();
 		List<VersionAssignment> vas = new LinkedList<>();
@@ -154,48 +146,9 @@ public class VersionAssignmentService {
 		return retVersion;
 	}
 	
-	/**
-	 * Same as getSetNewVersion but also resolves collisions up to 3 tries
-	 * @return
-	 */
-	@Transactional
-	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata) {
-		return getSetNewVersionWrapper(branchUuid, bumpAction, modifier, metadata, VersionTypeEnum.DEV);
-	}
-
-	/**
-	 * Same as getSetNewVersion but also resolves collisions up to 3 tries
-	 * @return
-	 */
-	@Transactional
-	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) {
-		Optional<VersionAssignment> va = Optional.empty();
-		boolean resolved = false;
-		int triesLeft = 3;
-		while (!resolved && triesLeft > 0) {
-			try {
-				va = getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType);
-				resolved = true;
-			} catch (DataIntegrityViolationException dae) {
-				log.warn("Collision when trying to obtain next version for branch = " + branchUuid);
-				--triesLeft;
-			}
-		}
-		if (!resolved && triesLeft < 1) {
-			log.error("Could not resolve version due to multiple collisions for branch = " + branchUuid);
-		}
-		return va;
-	}
-	
-	@Transactional
-	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction) {
-		log.info("PSDEBUG: in getSetNewVersion simplified wrapper for branch = " + branchUuid);
-		return getSetNewVersionWrapper(branchUuid, bumpAction, null, null, VersionTypeEnum.DEV);
-	}
-	
 	// TODO: add support for who updated
 	@Transactional
-	private Optional<VersionAssignment> getSetNewVersion (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) {
+	public Optional<VersionAssignment> getSetNewVersion (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) {
 		Optional<VersionAssignment> retVersion = Optional.empty();
 		// retrieve branch and project to get their schemas
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
@@ -234,7 +187,7 @@ public class VersionAssignmentService {
 					if (ord.isPresent()) followedVersion = ord.get().getVersion();
 				}
 			}
-			String versionString = getVersionBumpOnLatestForBranch(obd.get(), pd, bumpAction, modifier, metadata, followedVersion);
+			String versionString = getVersionBumpOnLatestForBranch(obd.get(), pd, bumpAction, modifier, metadata, followedVersion, versionType);
 			va.setVersion(versionString);
 		}
 
@@ -248,13 +201,9 @@ public class VersionAssignmentService {
 		va.setVersionType(VersionTypeEnum.DEV);
 		retVersion = Optional.of(repository.save(va));
 		
-		
 		return retVersion;
 	}
 
-	private String getVersionBumpOnLatestForBranch(BranchData bd, ComponentData pd, ActionEnum bumpAction, String modifier, String metadata, String followedVersion){
-		return getVersionBumpOnLatestForBranch(bd, pd, bumpAction, modifier, metadata, followedVersion, VersionTypeEnum.DEV);
-	}
 	private String getVersionBumpOnLatestForBranch(BranchData bd, ComponentData pd, ActionEnum bumpAction, String modifier, String metadata, String followedVersion, VersionTypeEnum versionType){
 		String projectSchema = pd.getVersionSchema();
 		String branchSchema = bd.getVersionSchema();
@@ -266,38 +215,58 @@ public class VersionAssignmentService {
 		Optional<VersionAssignment> latestOva = getLatestVersionAssignmentOfBranch(bd.getUuid(), 10, projectSchema, branchSchema, versionType);
 
 		String versionString = constructVersionAssignmentStringSub(latestOva, projectSchema, branchSchema, bd, bumpAction, modifier, metadata, followedVersion);
-		// check if resulting version is already registered, and if it is try per-project approach
-		Optional<VersionAssignment> vaCheck = getVersionAssignment(pd.getUuid(), versionString, versionType);
-		if (vaCheck.isPresent()) {
-			// obtain the latest version assignment for the projects
-			latestOva = getLatestVersionAssignmentOfProject(bd.getUuid(), pd.getUuid(), 10, projectSchema, versionType);
-			// if not found, try branch schema also
-			if (latestOva.isEmpty()) {
-				latestOva = getLatestVersionAssignmentOfProject(bd.getUuid(), pd.getUuid(), 10, branchSchema, versionType);
+		
+		int retries = 3;
+		while (retries > 0) {
+			Optional<VersionAssignment> vaCheck = getVersionAssignment(pd.getUuid(), versionString, versionType);
+			if (vaCheck.isPresent()) {
+				versionString = getVersionStringFromVaCheckRetry(latestOva, vaCheck, projectSchema, branchSchema, bd, 
+					bumpAction, modifier, metadata, followedVersion, versionType);
+			} else {
+				break;
 			}
-			versionString = constructVersionAssignmentStringSub(latestOva, projectSchema, branchSchema, bd, bumpAction, modifier, metadata, followedVersion);
+			latestOva = getLatestVersionAssignmentOfBranch(bd.getUuid(), 10, projectSchema, branchSchema, versionType);
+			retries--;
 		}
 		return versionString;
+	}
+
+	private String getVersionStringFromVaCheckRetry (Optional<VersionAssignment> latestOva, Optional<VersionAssignment> vaCheck, String projectSchema, String branchSchema, 
+			BranchData bd, ActionEnum bumpAction, String modifier, String metadata, String followedVersion, VersionTypeEnum versionType) {
+			String versionString;
+			if (StringUtils.isNotEmpty(followedVersion)) {
+				versionString = constructVersionAssignmentStringSub(vaCheck, projectSchema, branchSchema, bd, bumpAction, modifier, metadata, followedVersion);
+			} else {
+				// obtain the latest version assignment for the projects
+				latestOva = getLatestVersionAssignmentOfProject(bd.getUuid(), bd.getComponent(), 10, projectSchema, versionType);
+				// if not found, try branch schema also
+				if (latestOva.isEmpty()) {
+					latestOva = getLatestVersionAssignmentOfProject(bd.getUuid(), bd.getComponent(), 10, branchSchema, versionType);
+				}
+				versionString = constructVersionAssignmentStringSub(latestOva, projectSchema, branchSchema, bd, bumpAction, modifier, metadata, followedVersion);
+			}
+			return versionString;
 	}
 	
 	private String constructVersionAssignmentStringSub (Optional<VersionAssignment> latestOva, String projectSchema, String branchSchema, BranchData bd,
 			ActionEnum bumpAction, String modifier, String metadata, String followedVersion) {
 		Version v = null;
+		String namespace = computeNamespaceForBranch(branchSchema, bd);
 		if (StringUtils.isNotEmpty(followedVersion) && latestOva.isPresent() && VersionUtils.isVersionMatchingSchemaAndPin(branchSchema, followedVersion, latestOva.get().getVersion())) {
 			log.debug("followedVersion = " + followedVersion + ", latestOvaVersion = " + latestOva.get().getVersion());
-			v = Version.getVersionFromPinAndOldVersion(branchSchema, followedVersion, latestOva.get().getVersion(), bumpAction);
+			v = Version.getVersionFromPinAndOldVersion(branchSchema, followedVersion, latestOva.get().getVersion(), bumpAction, namespace);
 		} else if (StringUtils.isNotEmpty(followedVersion)) {
-			v = Version.getVersionFromPin(branchSchema, followedVersion);
+			v = Version.getVersionFromPin(branchSchema, followedVersion, namespace);
 		} else if (latestOva.isPresent() && VersionUtils.isVersionMatchingSchemaAndPin(projectSchema, branchSchema, latestOva.get().getVersion())) {
 			// use this latest version assignment, schema and pin to generate new one
-			v = Version.getVersionFromPinAndOldVersion(projectSchema, branchSchema, latestOva.get().getVersion(), bumpAction);
+			v = Version.getVersionFromPinAndOldVersion(projectSchema, branchSchema, latestOva.get().getVersion(), bumpAction, namespace);
 		} else if (VersionUtils.isPinMatchingSchema(projectSchema, branchSchema)){
 			// try to generate new version based on schema and pin
-			v = Version.getVersionFromPin(projectSchema, branchSchema);
+			v = Version.getVersionFromPin(projectSchema, branchSchema, namespace);
 		} else if (latestOva.isPresent() && VersionUtils.isVersionMatchingSchema(branchSchema, latestOva.get().getVersion())) {
 			// prev version is matching branch
 			// generate version based on this branch only and prev version
-			v = Version.getVersionFromPinAndOldVersion(branchSchema, branchSchema, latestOva.get().getVersion(), bumpAction);
+			v = Version.getVersionFromPinAndOldVersion(branchSchema, branchSchema, latestOva.get().getVersion(), bumpAction, namespace);
 		} else {
 			// generate version solely based on this branch pin
 			v = Version.getVersion(branchSchema);
@@ -308,6 +277,20 @@ public class VersionAssignmentService {
 		}
 		v.setMetadata(metadata);
 		return v.constructVersionString();
+	}
+
+	private String computeNamespaceForBranch(String branchSchema, BranchData bd) {
+		if (bd.getType() == BranchType.BASE) {
+			return null;
+		}
+		if (StringUtils.isEmpty(branchSchema)) {
+			return null;
+		}
+		String schemaLower = branchSchema.toLowerCase();
+		if (schemaLower.equals("semver") || schemaLower.equals("major.minor.patch") || schemaLower.equals("major.minor.micro")) {
+			return bd.getName().toLowerCase().replaceAll("[^a-z0-9]", "_");
+		}
+		return null;
 	}
 	
 	public VersionAssignment saveVersionAssignment (VersionAssignment va) {

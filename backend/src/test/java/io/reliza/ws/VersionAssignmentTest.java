@@ -24,6 +24,7 @@ import io.reliza.model.Organization;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.VersionAssignment;
+import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.service.BranchService;
@@ -64,16 +65,16 @@ public class VersionAssignmentTest
 									.versionSchema("1.3.patch")
 									.build();
 		branchService.updateBranch(branchDto1, WhoUpdated.getTestWhoUpdated());
-		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("1.3.0", ova.get().getVersion());
-		ova = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		ova = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("1.3.1", ova.get().getVersion());
 		BranchDto branchDto2 = BranchDto.builder()
 				.uuid(baseBr.getUuid())
 				.versionSchema("1.minor.patch")
 				.build();
 		branchService.updateBranch(branchDto2, WhoUpdated.getTestWhoUpdated());
-		ova = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), ActionEnum.BUMP_MINOR);
+		ova = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), ActionEnum.BUMP_MINOR, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("1.4.0", ova.get().getVersion());
 	}
 	
@@ -88,9 +89,9 @@ public class VersionAssignmentTest
 				.versionSchema("2019.12.Calvermodifier.Minor.Micro+Metadata")
 				.build();
 		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
-		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("2019.12.Snapshot.0.0", ova.get().getVersion());
-		ova = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), ActionEnum.BUMP_PATCH);
+		ova = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), ActionEnum.BUMP_PATCH, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("2019.12.Snapshot.0.1", ova.get().getVersion());
 	}
 	
@@ -104,7 +105,7 @@ public class VersionAssignmentTest
 				.versionSchema("1.3.patch")
 				.build();
 		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
-		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("1.3.0", ova.get().getVersion());
 		Assertions.assertThrows(DataIntegrityViolationException.class,
 				() -> versionAssignmetService.createNewVersionAssignment(baseBr.getUuid(), "1.3.0", null));
@@ -120,14 +121,14 @@ public class VersionAssignmentTest
 				.versionSchema("semver")
 				.build();
 		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
-		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("0.0.0", ova.get().getVersion());
 		
-		Optional<VersionAssignment> ova1 = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova1 = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("0.0.1", ova1.get().getVersion());
 
 		versionAssignmetService.setNextVesion(baseBr.getUuid(), "3.2.1");
-		Optional<VersionAssignment> ova2 = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova2 = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals("3.2.1", ova2.get().getVersion());
 		
 	}
@@ -149,14 +150,14 @@ public class VersionAssignmentTest
 				.versionSchema(VersionType.CALVER_UBUNTU.getSchema())
 				.build();
 		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
-		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals(CURRENT_YEAR_SHORT+"." + CURRENT_MONTH + ".0", ova.get().getVersion());
 		
-		Optional<VersionAssignment> ova1 = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova1 = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals(CURRENT_YEAR_SHORT+"." + CURRENT_MONTH + ".1", ova1.get().getVersion());
 
 		versionAssignmetService.setNextVesion(baseBr.getUuid(), CURRENT_YEAR_SHORT+"." + CURRENT_MONTH + ".12");
-		Optional<VersionAssignment> ova2 = versionAssignmetService.getSetNewVersionWrapper(baseBr.getUuid(), null);
+		Optional<VersionAssignment> ova2 = versionAssignmetService.getSetNewVersion(baseBr.getUuid(), null, null, null, VersionTypeEnum.DEV);
 		Assertions.assertEquals(CURRENT_YEAR_SHORT+"." + CURRENT_MONTH + ".12", ova2.get().getVersion());
 		
 	}

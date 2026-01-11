@@ -159,10 +159,10 @@ public class OssReleaseService {
 	}
 	
 	public Optional<ReleaseData> getReleasePerProductComponent (UUID orgUuid, UUID projectUuid, UUID productUuid, 
-			String branch) throws RelizaException {
-				return getReleasePerProductComponent(orgUuid, projectUuid, productUuid, branch, ReleaseLifecycle.ASSEMBLED);
-	}
-
+				String branch) throws RelizaException {
+					return getReleasePerProductComponent(orgUuid, projectUuid, productUuid, branch, ReleaseLifecycle.ASSEMBLED);
+		}
+	
 	public Optional<ReleaseData> getReleasePerProductComponent (UUID orgUuid, UUID componentUuid, UUID productUuid, 
 			String branch, ReleaseLifecycle lifecycle) throws RelizaException {
 		return getReleasePerProductComponent(orgUuid, componentUuid, productUuid, branch, lifecycle, null);
@@ -560,7 +560,7 @@ public class OssReleaseService {
 		Set<ParentRelease> updatedReleases = replaceComponentRelease(dependencyReleasesOpt.get(), releaseToUse);
 		
 		// 7. Create the product release
-		createProductRelease(featureSet, triggeringRelease, updatedReleases);
+		createProductRelease(featureSet, triggeringRelease.getOrg(), updatedReleases);
 	}
 	
 	/**
@@ -699,8 +699,13 @@ public class OssReleaseService {
 	
 	/**
 	 * Creates the product release with version calculation and all parent releases.
+	 * This method is shared between manual auto-integrate (GraphQL) and automatic triggers.
+	 * 
+	 * @param featureSet The feature set branch data
+	 * @param orgUuid The organization UUID
+	 * @param parentReleases The parent releases to include in the product
 	 */
-	private void createProductRelease(BranchData featureSet, ReleaseData triggeringRelease, Set<ParentRelease> parentReleases) {
+	public void createProductRelease(BranchData featureSet, UUID orgUuid, Collection<ParentRelease> parentReleases) {
 		// Determine version bump action
 		ActionEnum action = ActionEnum.BUMP;
 		try {
@@ -710,22 +715,23 @@ public class OssReleaseService {
 				new LinkedList<ParentRelease>(parentReleases)
 			);
 		} catch (RelizaException e1) {
-			log.error(e1.getMessage());
+			log.error("Error calculating version action for feature set " + featureSet.getUuid() + ": " + e1.getMessage());
 		}
 		
 		// Get new version
-		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(
+		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersion(
 			featureSet.getUuid(), 
 			action, 
 			null, 
-			null
+			null,
+			VersionTypeEnum.DEV
 		);
 		
 		// Build and create release
 		ReleaseDto releaseDto = ReleaseDto.builder()
 			.component(featureSet.getComponent())
 			.branch(featureSet.getUuid())
-			.org(triggeringRelease.getOrg())
+			.org(orgUuid)
 			.status(ReleaseStatus.ACTIVE)
 			.lifecycle(ReleaseLifecycle.ASSEMBLED)
 			.version(ova.get().getVersion())
@@ -735,8 +741,7 @@ public class OssReleaseService {
 		try {
 			createRelease(releaseDto, WhoUpdated.getAutoWhoUpdated());
 		} catch (Exception e) {
-			log.error("Exception on creating programmatic release, feature set = " + 
-				featureSet.getUuid() + ", trigger release = " + triggeringRelease.getUuid());
+			log.error("Exception on creating programmatic release, feature set = " + featureSet.getUuid());
 		}
 	}
 	
@@ -897,28 +902,32 @@ public class OssReleaseService {
 						|| componentBranch.getVersionSchema().equalsIgnoreCase("Major.Minor.Patch")
 						|| componentBranch.getVersionSchema().equalsIgnoreCase("Major.Minor.Micro")) {
 					// Parse versions into VersionHelper objects in order to iterate through components
-					VersionHelper oldVh = VersionUtils.parseVersion(latestComponentRelease.getVersion());
-					VersionHelper newVh = VersionUtils.parseVersion(currentComponentRelease.getVersion());
+					Optional<VersionHelper> ooldVh = VersionUtils.parseVersion(latestComponentRelease.getVersion(), componentBranch.getVersionSchema(), true);
+					Optional<VersionHelper> onewVh = VersionUtils.parseVersion(currentComponentRelease.getVersion(), componentBranch.getVersionSchema(), true);
 					
+					if (ooldVh.isPresent() && onewVh.isPresent()) {
+						var oldVh = ooldVh.get();
+						var newVh = onewVh.get();
 					// end loop early if we find MAJOR component change, because this is the max
-					for (int i = 0; i < oldVh.getVersionComponents().size() && action != ActionEnum.BUMP_MAJOR; i++) {
-						if (!oldVh.getVersionComponents().get(i).equals(newVh.getVersionComponents().get(i))) {
-							// found differing version components, check which ones
-							switch(i) {
-							case 0:
-								// Major, since major is max, always set to major if we find difference in major component
-								action = ActionEnum.BUMP_MAJOR;
-								break;
-							case 1:
-								// Minor, only set if *action* is not MAJOR
-								action = ActionEnum.BUMP_MINOR;
-								break;
-							case 2:
-								// Micro/Patch, set if action is not already larger (ie: major or minor)
-								if(action != ActionEnum.BUMP_MINOR) {
-									action = ActionEnum.BUMP_PATCH;
+						for (int i = 0; i < oldVh.getVersionComponents().size() && action != ActionEnum.BUMP_MAJOR; i++) {
+							if (!oldVh.getVersionComponents().get(i).equals(newVh.getVersionComponents().get(i))) {
+								// found differing version components, check which ones
+								switch(i) {
+								case 0:
+									// Major, since major is max, always set to major if we find difference in major component
+									action = ActionEnum.BUMP_MAJOR;
+									break;
+								case 1:
+									// Minor, only set if *action* is not MAJOR
+									action = ActionEnum.BUMP_MINOR;
+									break;
+								case 2:
+									// Micro/Patch, set if action is not already larger (ie: major or minor)
+									if(action != ActionEnum.BUMP_MINOR) {
+										action = ActionEnum.BUMP_PATCH;
+									}
+									break;
 								}
-								break;
 							}
 						}
 					}

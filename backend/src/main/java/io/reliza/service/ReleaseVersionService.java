@@ -118,7 +118,7 @@ public class ReleaseVersionService {
 
 		ActionEnum bumpAction = getBumpAction(getNewVersionDto.action(), getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), bd, pd);
 		
-		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(branchUuid, bumpAction, getNewVersionDto.modifier(), getNewVersionDto.modifier(), getNewVersionDto.versionType());
+		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersion(branchUuid, bumpAction, getNewVersionDto.modifier(), getNewVersionDto.modifier(), getNewVersionDto.versionType());
 		if(ova.isEmpty()) {
 			throw new AccessDeniedException("Failed to retrieve next version");
 		}
