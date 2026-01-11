@@ -26,9 +26,9 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NDataTable, NSpace, NIcon, DataTableColumns, useNotification } from 'naive-ui'
+import { NModal, NSpin, NDataTable, NSpace, NIcon, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { RouterLink } from 'vue-router'
-import { Check, X } from '@vicons/tabler'
+import { Check } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import constants from '@/utils/constants'
@@ -369,13 +369,19 @@ const columns: DataTableColumns<any> = [
         }
     },
     {
-        title: 'In Latest?',
+        title: () => {
+            return h(NTooltip, null, {
+                trigger: () => 'In Latest?',
+                default: () => 'Checkmark indicates that the latest known release is affected'
+            })
+        },
         key: 'isLatest',
         width: 100,
         render: (row: any) => {
+            if (!row.isLatest) return null
             return h(NIcon, {
-                component: row.isLatest ? Check : X,
-                color: row.isLatest ? '#18a058' : '#d03050',
+                component: Check,
+                color: '#d03050',
                 size: 20
             })
         },

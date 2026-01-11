@@ -16,9 +16,9 @@ export default {
 
 <script lang="ts" setup>
 import { computed, h } from 'vue'
-import { NDataTable, NIcon, DataTableColumns } from 'naive-ui'
+import { NDataTable, NIcon, NTooltip, DataTableColumns } from 'naive-ui'
 import { RouterLink } from 'vue-router'
-import { Check, X } from '@vicons/tabler'
+import { Check } from '@vicons/tabler'
 import constants from '@/utils/constants'
 
 const props = defineProps<{
@@ -200,13 +200,19 @@ const columns = computed<DataTableColumns<any>>(() => [
         }
     },
     {
-        title: 'In Latest?',
+        title: () => {
+            return h(NTooltip, null, {
+                trigger: () => 'In Latest?',
+                default: () => 'Checkmark indicates that the latest known release is affected'
+            })
+        },
         key: 'isLatest',
         width: 100,
         render: (row: any) => {
+            if (!row.isLatest) return null
             return h(NIcon, {
-                component: row.isLatest ? Check : X,
-                color: row.isLatest ? '#18a058' : '#d03050',
+                component: Check,
+                color: '#d03050',
                 size: 20
             })
         },
