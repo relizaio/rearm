@@ -115,11 +115,6 @@ const orgWithExt: ComputedRef<any> = computed((): any => {
             orgWithExt.push(orgObj)
         }
     })
-    const extOrgObj = {
-        label: 'External Catalog',
-        value: constants.ExternalPublicComponentsOrg
-    }
-    orgWithExt.push(extOrgObj)
     return orgWithExt
 })
 
@@ -202,7 +197,6 @@ const onSubmit = function () {
     onReset()
 }
 
-store.dispatch('fetchProducts', constants.ExternalPublicComponentsOrg)
 if (!org.value) {
     await store.dispatch('fetchMyOrganizations')
 } else {

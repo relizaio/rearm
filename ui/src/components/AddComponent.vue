@@ -114,23 +114,16 @@ const orgWithExt: ComputedRef<any> = computed((): any => {
                 orgWithExt.push(orgObj)
             }
         })
-        const extOrgObj = {
-            label: 'External Public Components',
-            value: constants.ExternalPublicComponentsOrg
-        }
-        orgWithExt.push(extOrgObj)
     }
     return orgWithExt
 })
 
 const components: ComputedRef<any> = computed((): any => {
-    let storeComponents: any[]
+    let storeComponents: any[] = []
     if (componentProduct === 'COMPONENT' && org.value !== constants.ExternalPublicComponentsOrg) {
         storeComponents = store.getters.componentsOfOrg(org.value)
     } else if(componentProduct === 'PRODUCT') {
         storeComponents = store.getters.productsOfOrg(org.value)
-    } else {
-        storeComponents = store.getters.externalComponents()
     }
 
     if (storeComponents) {
@@ -289,7 +282,6 @@ const onSubmit = function () {
     })
 }
 
-store.dispatch('fetchComponents', constants.ExternalPublicComponentsOrg)
 if (!org.value) {
     await store.dispatch('fetchMyOrganizations')
 } else {
