@@ -797,13 +797,13 @@ const hasBranchSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
     // Check if there's an active editing session with unsaved changes
     const hasActiveEdit = editingRow.value !== null
     
-    // Check dependency patterns changes
-    const patternsChanged = JSON.stringify(modifiedBranch.value.dependencyPatterns || []) !== 
-        JSON.stringify(branchData.value.dependencyPatterns || [])
+    // Check dependency patterns changes (use stableStringify to ignore key order)
+    const patternsChanged = commonFunctions.stableStringify(modifiedBranch.value.dependencyPatterns || []) !== 
+        commonFunctions.stableStringify(branchData.value.dependencyPatterns || [])
     
-    // Check dependencies changes
-    const dependenciesChanged = JSON.stringify(modifiedBranch.value.dependencies || []) !== 
-        JSON.stringify(branchData.value.dependencies || [])
+    // Check dependencies changes (use stableStringify to ignore key order)
+    const dependenciesChanged = commonFunctions.stableStringify(modifiedBranch.value.dependencies || []) !== 
+        commonFunctions.stableStringify(branchData.value.dependencies || [])
     
     // Check if any dependencies are marked for deletion
     const hasDeletionMarks = dependenciesMarkedForDeletion.value.size > 0

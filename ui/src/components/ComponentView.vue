@@ -1348,7 +1348,7 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         updatedComponent.value.vcs !== componentData.value.vcs ||
         updatedComponent.value.approvalPolicy !== componentData.value.approvalPolicy ||
         authChanged ||
-        JSON.stringify(updatedComponent.value.identifiers) !== JSON.stringify(componentData.value.identifiers)
+        commonFunctions.stableStringify(updatedComponent.value.identifiers) !== commonFunctions.stableStringify(componentData.value.identifiers)
 })
 
 function resetCoreSettings() {

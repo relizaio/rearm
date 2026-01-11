@@ -98,6 +98,23 @@ function parseGraphQLError (err: string): string {
 function deepCopy (obj: any) {
     return JSON.parse(JSON.stringify(obj))
 }
+
+/**
+ * Serialize objects with sorted keys for stable comparison.
+ * Useful when comparing objects that may have different key ordering
+ * (e.g., GraphQL responses vs locally modified copies).
+ */
+function stableStringify(obj: any): string {
+    return JSON.stringify(obj, (key, value) => {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            return Object.keys(value).sort().reduce((sorted: any, k) => {
+                sorted[k] = value[k]
+                return sorted
+            }, {})
+        }
+        return value
+    })
+}
 function dateDisplay (zonedDate: any) {
     let date = new Date(zonedDate)
     // return date.toLocaleString('en-CA', { timeZone: 'UTC' })
@@ -282,5 +299,6 @@ export default {
     swalWrapper,
     resolveWords,
     isCycloneDXBomArtifact,
-    formatSpecVersion
+    formatSpecVersion,
+    stableStringify
 }
