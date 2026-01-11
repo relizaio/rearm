@@ -73,7 +73,6 @@ import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.ReleaseData.ReleaseDataExtended;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
-import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
@@ -82,7 +81,6 @@ import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VcsRepositoryData;
-import io.reliza.model.VersionAssignment;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.changelog.CommitType;
 import io.reliza.model.changelog.ConventionalCommit;
@@ -100,7 +98,6 @@ import io.reliza.repositories.ReleaseRepository;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
 import io.reliza.service.oss.OssReleaseService;
-import io.reliza.versioning.VersionApi.ActionEnum;
 
 @Service
 public class ReleaseService {
@@ -125,9 +122,6 @@ public class ReleaseService {
 	
 	@Autowired
 	private VcsRepositoryService vcsRepositoryService;
-	
-	@Autowired
-	private VersionAssignmentService versionAssignmentService;
 	
 	@Autowired
 	private ChangeLogService changeLogService;
@@ -1542,8 +1536,8 @@ public class ReleaseService {
 				if (null != cp.getRelease()) {
 					ord = sharedReleaseService.getReleaseData(cp.getRelease());
 				} else {
-					// obtain latest release - TODO - consider more complicated configurable logic later here
-					ord = sharedReleaseService.getReleaseDataOfBranch(bd.getOrg(), cp.getBranch(), null);
+					// obtain latest ASSEMBLED release to match automatic auto-integrate behavior
+					ord = sharedReleaseService.getReleaseDataOfBranch(bd.getOrg(), cp.getBranch(), ReleaseLifecycle.ASSEMBLED);
 				}
 				if (ord.isPresent()) {
 					// TODO handle proper artifact selection via tags
@@ -1565,25 +1559,8 @@ public class ReleaseService {
 			
 		// If one of required projects does not have latest release, then we fail the process and don't yield anything there
 		if (requirementsMet) {
-			// create new product release
-			// obtain next version
-			// TODO take action based on component bump
-			ActionEnum action = ActionEnum.BUMP;
-			Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(bd.getUuid(), action, null, null);
-			ReleaseDto releaseDto = ReleaseDto.builder()
-											.component(bd.getComponent())
-											.branch(bd.getUuid())
-											.org(bd.getOrg())
-											.status(ReleaseStatus.ACTIVE)
-											.lifecycle(ReleaseLifecycle.ASSEMBLED)
-											.version(ova.get().getVersion())
-											.parentReleases(parentReleases)
-											.build();
-			try {
-				ossReleaseService.createRelease(releaseDto, WhoUpdated.getAutoWhoUpdated());
-			} catch (Exception e) {
-				log.error("Exception on creating programmatic release, feature set = " + bd.getUuid() + ", manual trigger");
-			}
+			// create new product release using shared method
+			ossReleaseService.createProductRelease(bd, bd.getOrg(), parentReleases);
 		}
 	}
 	

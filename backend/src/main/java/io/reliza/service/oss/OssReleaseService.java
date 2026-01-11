@@ -1,10 +1,12 @@
 /**
 * Copyright Reliza Incorporated. 2019 - 2025. Licensed under the terms of AGPL-3.0-only.
 */
+
 package io.reliza.service.oss;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -54,6 +56,7 @@ import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.VersionAssignment;
 import io.reliza.model.VersionAssignment.AssignmentTypeEnum;
+import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.repositories.ReleaseRepository;
