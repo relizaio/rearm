@@ -286,8 +286,7 @@ public class VersionAssignmentService {
 		if (StringUtils.isEmpty(branchSchema)) {
 			return null;
 		}
-		String schemaLower = branchSchema.toLowerCase();
-		if (schemaLower.equals("semver") || schemaLower.equals("major.minor.patch") || schemaLower.equals("major.minor.micro")) {
+		if (VersionUtils.isSchemaSemver(branchSchema) || VersionUtils.isSchemaFourPartVersioning(branchSchema) || VersionUtils.isSchemaCalver(branchSchema)) {
 			return bd.getName().toLowerCase().replaceAll("[^a-z0-9]", "_");
 		}
 		return null;

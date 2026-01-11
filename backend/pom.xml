@@ -162,7 +162,7 @@
     <dependency>
         <groupId>io.reliza</groupId>
         <artifactId>versioning</artifactId>
-        <version>2026.01.4</version>
+        <version>2026.01.7</version>
     </dependency>
     <dependency>
         <groupId>org.cyclonedx</groupId>
