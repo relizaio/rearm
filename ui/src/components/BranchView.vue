@@ -184,6 +184,7 @@
                                 :excludePullRequests=true    
                                 :requireBranch=true
                                 :showTypeSelector=true
+                                :excludeComponents="[branchData.component]"
                                 @addedComponent="addedComponent" />
             </n-modal>
             <n-modal
@@ -609,7 +610,7 @@ const openBranchSettings = function() {
 }
 
 const hasBranchChanges = function() {
-    return JSON.stringify(originalBranch.value) !== JSON.stringify(modifiedBranch.value)
+    return commonFunctions.stableStringify(originalBranch.value) !== commonFunctions.stableStringify(modifiedBranch.value)
 }
 
 const handleBranchSettingsClose = async function(show: boolean) {

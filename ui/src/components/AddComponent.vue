@@ -80,7 +80,8 @@ const props = defineProps<{
     inputRelease?: string,
     requireBranch?: boolean,
     excludePullRequests?: boolean,
-    showTypeSelector?: boolean
+    showTypeSelector?: boolean,
+    excludeComponents?: string[]
 }>()
 
 const emit = defineEmits(['addedComponent'])
@@ -161,6 +162,11 @@ const components: ComputedRef<any> = computed((): any => {
         })
     }
     
+    
+    // Filter out excluded components
+    if (props.excludeComponents && props.excludeComponents.length > 0) {
+        storeComponents = storeComponents.filter((c: any) => !props.excludeComponents!.includes(c.uuid))
+    }
     
     return storeComponents.map((proj: any) => {
         const projObj = {
