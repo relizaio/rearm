@@ -172,22 +172,11 @@ const formData = ref({
 })
 
 const scopeOptions = computed(() => {
-    // If availableScopesOnly is provided, filter to only those scopes
-    if (props.availableScopesOnly && props.availableScopesOnly.length > 0) {
-        const allOptions = [
-            { label: 'Organization', value: 'ORG' },
-            { label: 'Component / Product', value: 'COMPONENT' },
-            { label: `Branch / ${props.featureSetLabel}`, value: 'BRANCH' },
-            { label: 'Release', value: 'RELEASE' }
-        ]
-        return allOptions.filter(opt => props.availableScopesOnly!.includes(opt.value))
-    }
-    
     if (props.artifactViewOnly) {
         return [{ label: 'Organization', value: 'ORG' }]
     }
     
-    // Build options based on active filters
+    // Build all options with dynamic labels
     const options = [{ label: 'Organization', value: 'ORG' }]
     
     if (props.componentUuid) {
@@ -212,6 +201,11 @@ const scopeOptions = computed(() => {
         const release = store.getters.releaseById(props.releaseUuid)
         const releaseVersion = release?.version || ''
         options.push({ label: `Release version ${releaseVersion ? releaseVersion : ''} of ${componentType} ${componentName ? componentName : ''}`, value: 'RELEASE' })
+    }
+    
+    // If availableScopesOnly is provided, filter to only those scopes
+    if (props.availableScopesOnly && props.availableScopesOnly.length > 0) {
+        return options.filter(opt => props.availableScopesOnly!.includes(opt.value))
     }
     
     return options
