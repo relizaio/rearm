@@ -22,7 +22,7 @@
                                 {{ footerVersionText }}
                             </div>
                             <div class="footer-text">
-                                © Reliza Incorporated, 2019-2025
+                                © Reliza Incorporated, 2019-2026
                             </div>
                             <div class="footer-links">
                                 <a href="https://docs.rearmhq.com" rel="noopener noreferrer" target="_blank" class="footer-link">Documentation</a>
