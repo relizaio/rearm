@@ -190,7 +190,7 @@ const onSubmitSuccess = async function () {
 
 const onReset = function () {
     component.value = {
-        defaultBranch: '',
+        defaultBranch: 'main',
         featureBranchVersioning: '',
         name: '',
         org: props.orgProp,
@@ -205,7 +205,7 @@ const onReset = function () {
 }
 
 const component = ref({
-    defaultBranch: '',
+    defaultBranch: 'main',
     featureBranchVersioning: '',
     name: '',
     org: props.orgProp ? props.orgProp : '',
@@ -242,6 +242,10 @@ const rules = {
             }
             return true
         }
+    },
+    defaultBranch: {
+        required: true,
+        message: 'Default branch is required'
     },
     org: {
         required: true,
