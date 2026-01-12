@@ -153,9 +153,7 @@
                         Shows all dependencies including pattern-matched and manual ones. Use the buttons below to add dependencies or configure patterns above.
                     </n-tooltip>
                     <vue-feather v-if="isWritable" class="clickable" type="plus-circle"
-                        @click="showAddComponentModal = true" title="Add Component Dependency" />
-                    <vue-feather v-if="isWritable" class="clickable" type="folder-plus"
-                        @click="showAddComponentProductModal = true" title="Add Product Dependency" />
+                        @click="showAddComponentModal = true" title="Add Dependency" />
                     <vue-feather v-if="isWritable && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable" type="trending-up"
                         @click="triggerAutoIntegrate" title="Trigger Auto Integrate" />
                 </p>
@@ -185,19 +183,7 @@
                                 :addExtOrg=false
                                 :excludePullRequests=true    
                                 :requireBranch=true
-                                @addedComponent="addedComponent" />
-            </n-modal>
-            <n-modal
-                v-model:show="showAddComponentProductModal"
-                preset="dialog"
-                :show-icon="false"
-                style="width: 70%"
-            >
-                <add-component
-                                :orgProp="branchData.org"
-                                :addExtOrg=false
-                                :requireBranch=true
-                                inputType='PRODUCT'
+                                :showTypeSelector=true
                                 @addedComponent="addedComponent" />
             </n-modal>
             <n-modal
@@ -461,7 +447,6 @@ if (route.query.branchSettingsView === 'true') {
 }
 const showSetNextVersionModal: Ref<boolean> = ref(false)
 const showAddComponentModal: Ref<boolean> = ref(false)
-const showAddComponentProductModal: Ref<boolean> = ref(false)
 const showEditComponentModal: Ref<boolean> = ref(false)
 const showAddOssArtifactModal: Ref<boolean> = ref(false)
 const showCreateReleaseModal: Ref<boolean> = ref(false)
@@ -973,7 +958,6 @@ const addedComponent = function (component: any) {
         if (exists) {
             notify('warning', 'Cannot Add Component', 'Component Already Exists')
             showAddComponentModal.value = false
-            showAddComponentProductModal.value = false
             return
         }
         
@@ -1039,7 +1023,6 @@ const addedComponent = function (component: any) {
     } finally {
         // Always close modals
         showAddComponentModal.value = false
-        showAddComponentProductModal.value = false
     }
 }
 

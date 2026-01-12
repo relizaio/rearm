@@ -3,6 +3,14 @@
         <n-form ref="formRef" :model="addComponentObject" :rules="formRules">
 
             <n-form-item
+                        v-if="props.showTypeSelector"
+                        label="Dependency Type" >
+                <n-select
+                        v-model:value="componentProduct"
+                        v-on:update:value="onTypeChange"
+                        :options="typeOptions" />
+            </n-form-item>
+            <n-form-item
                         v-if="!org || props.addExtOrg"
                         label="Parent Organization" >
                 <n-select
@@ -71,7 +79,8 @@ const props = defineProps<{
     inputStatus?: string,
     inputRelease?: string,
     requireBranch?: boolean,
-    excludePullRequests?: boolean
+    excludePullRequests?: boolean,
+    showTypeSelector?: boolean
 }>()
 
 const emit = defineEmits(['addedComponent'])
@@ -80,17 +89,30 @@ const store = useStore()
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const initialOrg = props.orgProp ? props.orgProp : myorg.value
 const org = ref(initialOrg)
-const componentProduct = props.inputType ? props.inputType : 'COMPONENT'
+const componentProduct = ref(props.inputType ? props.inputType : 'COMPONENT')
 const orgTerminology = myorg.value?.terminology
-const resolvedWords = commonFunctions.resolveWords(componentProduct === 'COMPONENT', orgTerminology)
-const words: Ref<any> = ref({})
-words.value = {
-    branchFirstUpper: resolvedWords.branchFirstUpper,
-    branch: resolvedWords.branch,
-    componentFirstUpper: resolvedWords.componentFirstUpper,
-    component: resolvedWords.component,
-    componentsFirstUpper: resolvedWords.componentsFirstUpper
+
+const typeOptions = [
+    { label: 'Component', value: 'COMPONENT' },
+    { label: 'Product', value: 'PRODUCT' }
+]
+
+const onTypeChange = function(value: string) {
+    componentProduct.value = value
+    // Reset component selection when type changes
+    addComponentObject.value.uuid = ''
+    addComponentObject.value.branch = ''
+    addComponentObject.value.release = ''
 }
+
+const resolvedWords = computed(() => commonFunctions.resolveWords(componentProduct.value === 'COMPONENT', orgTerminology))
+const words = computed(() => ({
+    branchFirstUpper: resolvedWords.value.branchFirstUpper,
+    branch: resolvedWords.value.branch,
+    componentFirstUpper: resolvedWords.value.componentFirstUpper,
+    component: resolvedWords.value.component,
+    componentsFirstUpper: resolvedWords.value.componentsFirstUpper
+}))
 const orgs: ComputedRef<any> = computed((): any => {
     const storeOrgs = store.getters.allOrganizations
     return storeOrgs.map((so: any) => {
@@ -121,9 +143,9 @@ const orgWithExt: ComputedRef<any> = computed((): any => {
 
 const components: ComputedRef<any> = computed((): any => {
     let storeComponents: any[] = []
-    if (componentProduct === 'COMPONENT' && org.value !== constants.ExternalPublicComponentsOrg) {
+    if (componentProduct.value === 'COMPONENT' && org.value !== constants.ExternalPublicComponentsOrg) {
         storeComponents = store.getters.componentsOfOrg(org.value)
-    } else if(componentProduct === 'PRODUCT') {
+    } else if(componentProduct.value === 'PRODUCT') {
         storeComponents = store.getters.productsOfOrg(org.value)
     }
 
@@ -139,32 +161,6 @@ const components: ComputedRef<any> = computed((): any => {
         })
     }
     
-    
-    return storeComponents.map((proj: any) => {
-        const projObj = {
-            label: proj.name,
-            value: proj.uuid
-        }
-        return projObj
-    })
-})
-
-const products: ComputedRef<any> = computed((): any => {
-    let storeComponents: any[]
-    
-    storeComponents = store.getters.productsOfOrg(org.value)
-
-    if (storeComponents) {
-        storeComponents.sort((a: any, b: any) => {
-            if (a.name < b.name) {
-                return -1
-            } else if (a.name > b.name) {
-                return 1
-            } else {
-                return 0
-            }
-        })
-    }
     
     return storeComponents.map((proj: any) => {
         const projObj = {
