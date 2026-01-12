@@ -139,7 +139,7 @@ async function initLoad (forceRefresh = false) {
 
 async function componentCreated (uuid: string) {
     showAddComponentModal.value = false
-    await initLoad()
+    await initLoad(true)
     selectComponent(uuid)
 }
 
