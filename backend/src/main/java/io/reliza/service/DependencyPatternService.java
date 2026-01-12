@@ -45,7 +45,7 @@ public class DependencyPatternService {
 	 */
 	public List<ChildComponent> resolveEffectiveDependencies(BranchData featureSet) {
 		Map<UUID, ChildComponent> effectiveDeps = new LinkedHashMap<>();
-		log.info("Resolving effective dependencies for feature set {} with {} patterns", 
+		log.debug("Resolving effective dependencies for feature set {} with {} patterns", 
 			featureSet.getUuid(), featureSet.getDependencyPatterns() != null ? featureSet.getDependencyPatterns().size() : 0);
 		
 		// 1. Resolve patterns first
