@@ -16,6 +16,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.model.Branch;
+import io.reliza.model.BranchData;
+import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
 import io.reliza.repositories.ComponentRepository;
@@ -29,6 +33,14 @@ public class GetComponentService {
 	@Autowired
 	@Lazy
 	private SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+	@Lazy
+	private BranchService branchService;
+	
+	@Autowired
+	@Lazy
+	private DependencyPatternService dependencyPatternService;
 
 	GetComponentService(
 		ComponentRepository repository
@@ -113,6 +125,21 @@ public class GetComponentService {
 		allComponentUuids.add(productUuid);
 		Set<UUID> productComponents = sharedReleaseService.obtainComponentsOfProductOrComponent(productUuid, allComponentUuids);
 		allComponentUuids.addAll(productComponents);
+		
+		// Get feature sets of the product and resolve their effective dependencies
+		List<Branch> featureSets = branchService.listBranchesOfComponent(productUuid, StatusEnum.ACTIVE);
+		for (Branch fs : featureSets) {
+			BranchData fsData = BranchData.branchDataFromDbRecord(fs);
+			List<ChildComponent> effectiveDeps = dependencyPatternService.resolveEffectiveDependencies(fsData);
+			for (ChildComponent dep : effectiveDeps) {
+				if (!allComponentUuids.contains(dep.getUuid())) {
+					allComponentUuids.add(dep.getUuid());
+					// Recursively get child components of this dependency
+					Set<UUID> childComponents = sharedReleaseService.obtainComponentsOfProductOrComponent(dep.getUuid(), allComponentUuids);
+					allComponentUuids.addAll(childComponents);
+				}
+			}
+		}
 		
 		return getListOfComponentData(allComponentUuids);
 	}
