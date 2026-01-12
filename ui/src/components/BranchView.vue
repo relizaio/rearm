@@ -182,7 +182,8 @@
             >
                 <add-component
                                 :orgProp="branchData.org"
-                                :addExtOrg=true
+                                :addExtOrg=false
+                                :excludePullRequests=true    
                                 :requireBranch=true
                                 @addedComponent="addedComponent" />
             </n-modal>
@@ -194,7 +195,7 @@
             >
                 <add-component
                                 :orgProp="branchData.org"
-                                :addExtOrg=true
+                                :addExtOrg=false
                                 :requireBranch=true
                                 inputType='PRODUCT'
                                 @addedComponent="addedComponent" />

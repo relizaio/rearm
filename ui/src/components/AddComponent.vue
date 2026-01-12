@@ -70,7 +70,8 @@ const props = defineProps<{
     inputBranch?: string,
     inputStatus?: string,
     inputRelease?: string,
-    requireBranch?: boolean
+    requireBranch?: boolean,
+    excludePullRequests?: boolean
 }>()
 
 const emit = defineEmits(['addedComponent'])
@@ -178,7 +179,13 @@ const branches: ComputedRef<any> = computed((): any => {
     let branches = []
     const compuuid = addComponentObject.value.uuid
     if (compuuid) {
-        const storeBranches = store.getters.branchesOfComponent(compuuid)
+        let storeBranches = store.getters.branchesOfComponent(compuuid)
+        
+        // Filter out pull requests if excludePullRequests prop is true
+        if (props.excludePullRequests) {
+            storeBranches = storeBranches.filter((br: any) => br.type !== 'PULL_REQUEST')
+        }
+        
         branches = storeBranches.sort((a: any, b: any) => {
             if (a.name === "master" || a.name === "main") {
                 return -1
