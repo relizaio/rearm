@@ -15,6 +15,11 @@ const VERSION_TYPES = [
         label: 'Ubuntu CalVer (YY.0M.Micro)',
         value: 'YY.0M.Micro'
     },
+
+    {
+        label: 'Four-Part (Major.Minor.Patch.Nano-Modifier)',
+        value: 'four_part'
+    },
     {
         label: 'Youtube_dl CalVer (YYYY.0M.0D)',
         value: 'YYYY.0M.0D'
@@ -53,6 +58,10 @@ const BRANCH_VERSION_TYPES = [
     {
         label: 'Ubuntu CalVer (YY.0M.Micro)',
         value: 'YY.0M.Micro'
+    },
+    {
+        label: 'Four-Part (Major.Minor.Patch.Nano-Modifier)',
+        value: 'four_part'
     },
     {
         label: 'Single Component (Major)',
