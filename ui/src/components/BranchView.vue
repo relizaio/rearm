@@ -803,6 +803,8 @@ async function saveModifiedBranch () {
         
         const storeResp = await store.dispatch('updateBranch', modifiedBranch.value)
         modifiedBranch.value = commonFunctions.deepCopy(storeResp)
+        // Update originalBranch to match current state so hasBranchChanges() returns false
+        originalBranch.value = commonFunctions.deepCopy(storeResp)
         customBranchVersionSchema.value = ''
         selectNewVcsRepo.value = false
         // Clear deletion marks and newly added marks after successful save

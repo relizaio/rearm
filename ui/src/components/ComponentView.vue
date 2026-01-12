@@ -1355,6 +1355,8 @@ const fetchVcsRepos = async function () : Promise<any[]> {
 
 async function save () {
     updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', updatedComponent.value))
+    // Update originalComponent to match current state so hasComponentChanges() returns false
+    originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
 }
 
