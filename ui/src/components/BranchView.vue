@@ -31,7 +31,7 @@
             preset="dialog"
             :show-icon="false"
             style="width: 90%"
-            :on-after-leave="closeBranchSettings"
+            @update:show="handleBranchSettingsClose"
         >
             <h3>{{ words.branchFirstUpper }} Settings for {{ branchData.name }} of {{ branchData.componentDetails.name }}</h3>
             <div class="branchNameBlock">
@@ -482,6 +482,7 @@ const marketingVersionEnabled: ComputedRef<boolean> = computed((): any => {
     return branchData.value.componentDetails.versionType === 'MARKETING'
 })
 const modifiedBranch: Ref<any> = ref({})
+const originalBranch: Ref<any> = ref({})
 const customBranchVersionSchema = ref('')
 
 const isWritable : boolean = commonFunctions.isWritable(orguuid, myUser, 'BRANCH')
@@ -611,6 +612,7 @@ async function triggerAutoIntegrate () {
 }
 
 const openBranchSettings = function() {
+    originalBranch.value = commonFunctions.deepCopy(modifiedBranch.value)
     showBranchSettingsModal.value = true
     
     // Update URL without triggering Vue Router navigation
@@ -620,14 +622,39 @@ const openBranchSettings = function() {
     window.history.replaceState({}, '', newUrl)
 }
 
-const closeBranchSettings = function() {
-    showBranchSettingsModal.value = false
+const hasBranchChanges = function() {
+    return JSON.stringify(originalBranch.value) !== JSON.stringify(modifiedBranch.value)
+}
+
+const handleBranchSettingsClose = async function(show: boolean) {
+    if (!show && hasBranchChanges()) {
+        // User is trying to close, check for unsaved changes
+        const result = await Swal.fire({
+            title: 'Unsaved Changes',
+            text: 'You have unsaved changes. Are you sure you want to close?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, close',
+            cancelButtonText: 'No, stay'
+        })
+        
+        if (!result.isConfirmed) {
+            // Prevent closing by setting it back to true
+            showBranchSettingsModal.value = true
+            return
+        }
+        
+        // Revert changes
+        modifiedBranch.value = commonFunctions.deepCopy(originalBranch.value)
+    }
     
-    // Remove branchSettingsView parameter from URL without triggering Vue Router navigation
-    const newQuery = new URLSearchParams(window.location.search)
-    newQuery.delete('branchSettingsView')
-    const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
-    window.history.replaceState({}, '', newUrl)
+    if (!show) {
+        // Remove branchSettingsView parameter from URL without triggering Vue Router navigation
+        const newQuery = new URLSearchParams(window.location.search)
+        newQuery.delete('branchSettingsView')
+        const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
+        window.history.replaceState({}, '', newUrl)
+    }
 }
 
 const approvalMatrix = ref({})

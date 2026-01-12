@@ -120,7 +120,7 @@
                                 preset="dialog"
                                 :show-icon="false"
                                 style="width: 90%"
-                                :on-after-leave="closeComponentSettings"
+                                @update:show="handleComponentSettingsClose"
                             >
                                 <h3>{{ words.componentFirstUpper }} Settings for {{ componentData?.name }}</h3>
                                 <n-tabs
@@ -540,6 +540,7 @@ import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
 
 const updatedComponent: Ref<any> = ref({})
+const originalComponent: Ref<any> = ref({})
 
 onMounted(async () => {
     await initLoad()
@@ -743,6 +744,7 @@ async function fetchApprovalPolicies () {
 
 const openComponentSettings = async function() {
     await fetchApprovalPolicies()
+    originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     showComponentSettingsModal.value = true
     
     // Update URL without triggering Vue Router navigation
@@ -752,14 +754,39 @@ const openComponentSettings = async function() {
     window.history.replaceState({}, '', newUrl)
 }
 
-const closeComponentSettings = function() {
-    showComponentSettingsModal.value = false
+const hasComponentChanges = function() {
+    return JSON.stringify(originalComponent.value) !== JSON.stringify(updatedComponent.value)
+}
+
+const handleComponentSettingsClose = async function(show: boolean) {
+    if (!show && hasComponentChanges()) {
+        // User is trying to close, check for unsaved changes
+        const result = await Swal.fire({
+            title: 'Unsaved Changes',
+            text: 'You have unsaved changes. Are you sure you want to close?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, close',
+            cancelButtonText: 'No, stay'
+        })
+        
+        if (!result.isConfirmed) {
+            // Prevent closing by setting it back to true
+            showComponentSettingsModal.value = true
+            return
+        }
+        
+        // Revert changes
+        updatedComponent.value = commonFunctions.deepCopy(originalComponent.value)
+    }
     
-    // Remove componentSettingsView parameter from URL without triggering Vue Router navigation
-    const newQuery = new URLSearchParams(window.location.search)
-    newQuery.delete('componentSettingsView')
-    const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
-    window.history.replaceState({}, '', newUrl)
+    if (!show) {
+        // Remove componentSettingsView parameter from URL without triggering Vue Router navigation
+        const newQuery = new URLSearchParams(window.location.search)
+        newQuery.delete('componentSettingsView')
+        const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
+        window.history.replaceState({}, '', newUrl)
+    }
 }
 
 // Perspectives management
