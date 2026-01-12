@@ -1,7 +1,7 @@
 <template>
     <n-modal
         v-model:show="isVisible"
-        title="Create Vulnerability Analysis"
+        title="Create Finding Analysis"
         preset="dialog"
         :show-icon="false"
         style="width: 70%;"
@@ -110,10 +110,13 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue'
+import { useStore } from 'vuex'
 import { NModal, NForm, NFormItem, NInput, NSelect, NButton, NSpace, NTag, NDynamicInput, useNotification, FormInst, FormRules } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { ANALYSIS_STATE_OPTIONS, ANALYSIS_JUSTIFICATION_OPTIONS } from '@/constants/vulnAnalysis'
+
+const store = useStore()
 
 interface Props {
     show: boolean
@@ -188,13 +191,27 @@ const scopeOptions = computed(() => {
     const options = [{ label: 'Organization', value: 'ORG' }]
     
     if (props.componentUuid) {
-        options.push({ label: 'Component / Product', value: 'COMPONENT' })
+        const component = store.getters.componentById(props.componentUuid)
+        const componentName = component?.name || ''
+        const componentType = component?.type === 'PRODUCT' ? 'Product' : 'Component'
+        options.push({ label: `${componentType} ${componentName ? componentName : ''}`, value: 'COMPONENT' })
     }
     if (props.branchUuid) {
-        options.push({ label: `Branch / ${props.featureSetLabel}`, value: 'BRANCH' })
+        const component = store.getters.componentById(props.componentUuid)
+        const componentName = component?.name || ''
+        const componentType = component?.type === 'PRODUCT' ? 'Product' : 'Component'
+        const branch = store.getters.branchById(props.branchUuid)
+        const branchName = branch?.name || ''
+        const branchType = component?.type === 'PRODUCT' ? props.featureSetLabel : 'Branch'
+        options.push({ label: `${branchType} ${branchName ? branchName : ''} of ${componentType} ${componentName ? componentName : ''}`, value: 'BRANCH' })
     }
     if (props.releaseUuid) {
-        options.push({ label: 'Release', value: 'RELEASE' })
+        const component = store.getters.componentById(props.componentUuid)
+        const componentName = component?.name || ''
+        const componentType = component?.type === 'PRODUCT' ? 'Product' : 'Component'
+        const release = store.getters.releaseById(props.releaseUuid)
+        const releaseVersion = release?.version || ''
+        options.push({ label: `Release version ${releaseVersion ? releaseVersion : ''} of ${componentType} ${componentName ? componentName : ''}`, value: 'RELEASE' })
     }
     
     return options
@@ -355,9 +372,9 @@ const handleSubmit = async () => {
         emit('created', response.data.createVulnAnalysis)
         isVisible.value = false
     } catch (error: any) {
-        console.error('Error creating vulnerability analysis:', error)
+        console.error('Error creating finding analysis:', error)
         notification.error({
-            content: 'Failed to create vulnerability analysis',
+            content: 'Failed to create finding analysis',
             meta: error.message || 'Unknown error',
             duration: 5000
         })
