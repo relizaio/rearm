@@ -126,13 +126,25 @@ public class OssReleaseService {
 		this.repository = repository;
 	}
 
+	public enum AcollectionMode { RESOLVE, SKIP }
+	
 	@Transactional
 	public Release saveRelease (Release r, Map<String,Object> recordData, WhoUpdated wu) {
-		return saveRelease (r, recordData, wu, true);
+		return saveRelease (r, recordData, wu, true, AcollectionMode.RESOLVE);
 	}
 			
 	@Transactional
 	public Release saveRelease (Release r, Map<String,Object> recordData, WhoUpdated wu, boolean considerTriggers) {
+		return saveRelease (r, recordData, wu, considerTriggers, AcollectionMode.RESOLVE);
+	}
+	
+	@Transactional
+	public Release saveRelease (Release r, Map<String,Object> recordData, WhoUpdated wu, AcollectionMode acollectionMode) {
+		return saveRelease (r, recordData, wu, true, acollectionMode);
+	}
+	
+	@Transactional
+	public Release saveRelease (Release r, Map<String,Object> recordData, WhoUpdated wu, boolean considerTriggers, AcollectionMode acollectionMode) {
 		// let's add some validation here
 		// per schema version 0 we require that schema version 0 has name and project
 		if (null == recordData || recordData.isEmpty() ||  null == recordData.get(CommonVariables.VERSION_FIELD)) {
@@ -157,7 +169,7 @@ public class OssReleaseService {
 		log.debug("setting release recordData:{}", recordData);
 		r = (Release) WhoUpdated.injectWhoUpdatedData(r, wu);
 		r = repository.save(r);
-		acollectionService.resolveReleaseCollection(r.getUuid(), wu);
+		if (acollectionMode == AcollectionMode.RESOLVE) acollectionService.resolveReleaseCollection(r.getUuid(), wu);
 		return r;
 	}
 	

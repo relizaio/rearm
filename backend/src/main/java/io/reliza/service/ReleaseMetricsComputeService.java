@@ -24,6 +24,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.service.oss.OssReleaseService;
+import io.reliza.service.oss.OssReleaseService.AcollectionMode;
 
 /**
  * Service for computing release metrics.
@@ -90,7 +91,7 @@ public class ReleaseMetricsComputeService {
 			rmd.setLastScanned(lastScanned);
 			rd.setMetrics(rmd);
 			Map<String,Object> recordData = Utils.dataToRecord(rd);
-			ossReleaseService.saveRelease(r, recordData, WhoUpdated.getAutoWhoUpdated());
+			ossReleaseService.saveRelease(r, recordData, WhoUpdated.getAutoWhoUpdated(), AcollectionMode.SKIP);
 		}
 	}
 
@@ -111,7 +112,7 @@ public class ReleaseMetricsComputeService {
 			if (!clonedMetrics.equals(originalMetrics)) {
 				rd.setMetrics(clonedMetrics);
 				Map<String,Object> recordData = Utils.dataToRecord(rd);
-				ossReleaseService.saveRelease(r, recordData, WhoUpdated.getAutoWhoUpdated());
+				ossReleaseService.saveRelease(r, recordData, WhoUpdated.getAutoWhoUpdated(), AcollectionMode.SKIP);
 			}
 		}
 	}
