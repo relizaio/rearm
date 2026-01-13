@@ -583,32 +583,42 @@ class VariableQueries {
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
 	WITH
 	  lastComputedRlz (maxVal) AS (
-	    select coalesce(max(cast (record_data->'metrics'->>'lastScanned' as float)), 0) AS lastUpd from rearm.releases
+	    SELECT coalesce(max(cast(record_data->'metrics'->>'lastScanned' as float)), 0) FROM rearm.releases
 	  ),
 	  unprocessedArts (uuid) AS (
-	    SELECT ra.uuid from lastComputedRlz, rearm.artifacts ra where coalesce(cast (record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal ),
+	    SELECT ra.uuid FROM lastComputedRlz, rearm.artifacts ra 
+	    WHERE coalesce(cast(ra.record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal
+	  ),
 	  unprocessedSces (uuid) AS (
-	    SELECT sce.uuid from unprocessedArts, rearm.source_code_entries sce
-	      WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(jsonb_build_object('artifactUuid', unprocessedArts.uuid)))))
-	  SELECT rlzs.* FROM unprocessedSces, rearm.releases rlzs
-	    WHERE record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text);
+	    SELECT DISTINCT sce.uuid 
+	    FROM rearm.source_code_entries sce, jsonb_array_elements(sce.record_data->'artifacts') AS art
+	    WHERE (art->>'artifactUuid')::uuid IN (SELECT uuid FROM unprocessedArts)
+	  )
+	SELECT rlzs.* FROM unprocessedSces, rearm.releases rlzs
+	WHERE rlzs.record_data->>'sourceCodeEntry' = cast(unprocessedSces.uuid as text);
 	""";
 	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES = """
 	WITH
 	  lastComputedRlz (maxVal) AS (
-	    select coalesce(max(cast (record_data->'metrics'->>'lastScanned' as float)), 0) AS lastUpd from rearm.releases
+	    SELECT coalesce(max(cast(record_data->'metrics'->>'lastScanned' as float)), 0) FROM rearm.releases
 	  ),
 	  unprocessedArts (uuid) AS (
-	    SELECT ra.uuid from lastComputedRlz, rearm.artifacts ra where coalesce(cast (record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal ),
+	    SELECT ra.uuid FROM lastComputedRlz, rearm.artifacts ra 
+	    WHERE coalesce(cast(ra.record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal
+	  ),
 	  unprocessedDeliverables (uuid) AS (
-	    SELECT del.uuid from unprocessedArts, rearm.deliverables del
-	      WHERE jsonb_contains(record_data, jsonb_build_object('artifacts', jsonb_build_array(unprocessedArts.uuid)))),
+	    SELECT DISTINCT del.uuid 
+	    FROM rearm.deliverables del, jsonb_array_elements_text(del.record_data->'artifacts') AS art
+	    WHERE art::uuid IN (SELECT uuid FROM unprocessedArts)
+	  ),
 	  unprocessedRlzIds (uuid) AS (
-	    SELECT distinct var.record_data->>'release' from unprocessedDeliverables, rearm.variants var
-	      WHERE jsonb_contains(record_data, jsonb_build_object('outboundDeliverables', jsonb_build_array(unprocessedDeliverables.uuid))))
-	  SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
-	    WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
+	    SELECT DISTINCT var.record_data->>'release' 
+	    FROM rearm.variants var, jsonb_array_elements_text(var.record_data->'outboundDeliverables') AS deliv
+	    WHERE deliv::uuid IN (SELECT uuid FROM unprocessedDeliverables)
+	  )
+	SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
+	WHERE rlzs.uuid = cast(unprocessedRlzIds.uuid as uuid);
 	""";
 	
 	protected static final String FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE = """
