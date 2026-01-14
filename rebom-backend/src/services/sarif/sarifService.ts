@@ -1,6 +1,6 @@
-import { WeaknessDto } from './types';
+import { WeaknessDto } from '../../types';
 import { parseSarifFromString, parseSarifToWeaknesses, validateSarifReport } from './sarifParser';
-import { logger } from './logger';
+import { logger } from '../../logger';
 import * as fs from 'fs';
 
 /**

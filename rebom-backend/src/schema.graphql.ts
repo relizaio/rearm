@@ -8,7 +8,7 @@ const typeDefs = gql`
     hello: String
     dbtest: String
     allBoms: [Bom]
-    findBom(bomSearch: BomSearch): [Bom]
+    findBom(bomSearch: BomSearch): [Bom] @deprecated(reason: "Not used by rearm-saas. Use bomById, bomBySerialNumberAndVersion, or bomMetaBySerialNumber instead.")
     bomById(id: ID, org: ID): Object
     rawBomId(id: ID, org: ID, format: BomFormat): Object
     bomByIdCsv(id: ID, org: ID): String
@@ -18,6 +18,7 @@ const typeDefs = gql`
     bomDiff(fromIds: [ID], toIds: [ID], org: ID!): BomDiffResult
     parseSarifContent(sarifContent: String!): [Weakness]
     parseCycloneDxContent(vdrContent: String!): [Vulnerability]
+    health: HealthStatus!
   }
 
   type Mutation {
@@ -82,6 +83,12 @@ const typeDefs = gql`
     severity: VulnerabilitySeverity!
   }
 
+  type HealthStatus {
+    status: String!
+    database: Boolean!
+    oci: Boolean!
+    version: String!
+  }
 
   enum VulnerabilitySeverity {
     CRITICAL

@@ -1,8 +1,9 @@
 import { createHash } from 'crypto';
-import { logger } from './logger';
-import { SpdxMetadata, ConversionResult, RebomOptions } from './types';
+import { logger } from '../../logger';
+import { SpdxMetadata, ConversionResult, RebomOptions } from '../../types';
+import { BomConversionError } from '../../types/errors';
 import { v4 as uuidv4 } from 'uuid';
-import { shellExec, createTempFile, deleteTempFile } from './utils';
+import { shellExec, createTempFile, deleteTempFile } from '../../utils';
 
 // Known SPDX conversion fixes
 const SPDX_FIXES = {
@@ -57,7 +58,12 @@ export class SpdxService {
             return metadata;
         } catch (error) {
             logger.error({ err: error }, 'Error extracting SPDX metadata');
-            throw new Error(`Failed to extract SPDX metadata: ${error instanceof Error ? error.message : String(error)}`);
+            throw new BomConversionError(
+                `Failed to extract SPDX metadata: ${error instanceof Error ? error.message : String(error)}`,
+                'SPDX',
+                undefined,
+                error instanceof Error ? error : new Error(String(error))
+            );
         }
     }
 
@@ -114,7 +120,12 @@ export class SpdxService {
             return processed;
         } catch (error) {
             logger.error({ err: error }, 'Error preprocessing SPDX');
-            throw new Error(`Failed to preprocess SPDX: ${error instanceof Error ? error.message : String(error)}`);
+            throw new BomConversionError(
+                `Failed to preprocess SPDX: ${error instanceof Error ? error.message : String(error)}`,
+                'SPDX',
+                'SPDX',
+                error instanceof Error ? error : new Error(String(error))
+            );
         }
     }
 
@@ -164,7 +175,12 @@ export class SpdxService {
                 logger.debug("CycloneDX validation passed");
             } catch (validationError) {
                 logger.error({ validationError, outputFile }, "CycloneDX validation failed");
-                throw new Error(`CycloneDX validation failed: ${validationError}`);
+                throw new BomConversionError(
+                    `CycloneDX validation failed: ${validationError}`,
+                    'SPDX',
+                    'CYCLONEDX',
+                    validationError instanceof Error ? validationError : new Error(String(validationError))
+                );
             }
 
             // Read converted CycloneDX file

@@ -1,5 +1,5 @@
-import { WeaknessDto, VulnerabilitySeverity, SarifReport, SarifResult, SarifRule } from './types';
-import { logger } from './logger';
+import { WeaknessDto, VulnerabilitySeverity, SarifReport, SarifResult, SarifRule } from '../../types';
+import { logger } from '../../logger';
 
 /**
  * Parses a SARIF report and extracts weakness information

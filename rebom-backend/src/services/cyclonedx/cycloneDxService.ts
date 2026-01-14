@@ -1,6 +1,6 @@
-import { VulnerabilityDto } from './types';
+import { VulnerabilityDto } from '../../types';
 import { parseCycloneDxFromString, parseCycloneDxToVulnerabilities, validateCycloneDxVdr } from './cycloneDxParser';
-import { logger } from './logger';
+import { logger } from '../../logger';
 import * as fs from 'fs';
 
 /**

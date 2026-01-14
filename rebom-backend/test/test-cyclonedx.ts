@@ -1,4 +1,4 @@
-import { CycloneDxService } from '../src/cycloneDxService';
+import { CycloneDxService } from '../src/services/cyclonedx';
 import { logger } from '../src/logger';
 import * as path from 'path';
 import * as fs from 'fs';
