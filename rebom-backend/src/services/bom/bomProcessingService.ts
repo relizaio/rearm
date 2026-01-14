@@ -1,5 +1,6 @@
 import { logger } from '../../logger';
 import { RebomOptions, HIERARCHICHAL } from '../../types';
+import { BomValidationError, BomStorageError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
@@ -128,7 +129,14 @@ export function establishPurl(origPurl: string | undefined, rebomOverride: Rebom
   if (!purlStr) {
     if (!rebomOverride.name || !rebomOverride.version || !rebomOverride.group) {
       logger.error({ rebomOverride }, "Missing required fields for PURL generation");
-      throw new Error(`Missing required fields for PURL generation: name=${rebomOverride.name}, version=${rebomOverride.version}, group=${rebomOverride.group}`);
+      throw new BomValidationError(
+        `Missing required fields for PURL generation: name=${rebomOverride.name}, version=${rebomOverride.version}, group=${rebomOverride.group}`,
+        {
+          field: 'rebomOptions',
+          constraint: 'name, version, and group are required for PURL generation',
+          value: { name: rebomOverride.name, version: rebomOverride.version, group: rebomOverride.group }
+        }
+      );
     }
     
     let origPurlParsed: PackageURL | undefined = undefined
@@ -181,22 +189,34 @@ export function computeRootDepIndex(bom: any): number {
   return rootdepIndex
 }
 
-export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, lastUpdatedDate?: string | Date): any {
+/**
+ * Augments a BOM's root component with release/component context.
+ * Adds: name, version, group, purl, authors, supplier, timestamp.
+ * 
+ * This augmentation adds component metadata to the BOM's root component,
+ * making it clear which release/component this BOM belongs to.
+ * 
+ * @param bom - Processed BOM (already sanitized, deduplicated, validated)
+ * @param componentDetails - Release/component metadata (name, version, group, etc.)
+ * @param lastUpdatedDate - Optional timestamp for metadata
+ * @returns BOM with augmented root component
+ */
+export function augmentBomWithComponentContext(bom: any, componentDetails: RebomOptions, lastUpdatedDate?: string | Date): any {
   const newMetadata = { ...bom.metadata };
   const origPurl = (bom.metadata && bom.metadata.component && bom.metadata.component.purl) ? bom.metadata.component.purl : undefined;
-  const newPurl = establishPurl(origPurl, rebomOverride);
+  const newPurl = establishPurl(origPurl, componentDetails);
   logger.debug(`established purl: ${newPurl}`);
 
   newMetadata.component = {
     ...newMetadata.component,
     purl: newPurl,
     ['bom-ref']: newPurl,
-    name: rebomOverride.name,
-    version: rebomOverride.version,
-    group: rebomOverride.group
+    name: componentDetails.name,
+    version: componentDetails.version,
+    group: componentDetails.group
   };
-  newMetadata['authors'] = [{ name: rebomOverride.group }];
-  newMetadata['supplier'] = { name: rebomOverride.group };
+  newMetadata['authors'] = [{ name: componentDetails.group }];
+  newMetadata['supplier'] = { name: componentDetails.group };
   if (lastUpdatedDate) {
     newMetadata['timestamp'] = (new Date(lastUpdatedDate)).toISOString();
   }
@@ -211,6 +231,13 @@ export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, las
     metadata: newMetadata,
     dependencies: newDependencies
   };
+}
+
+/**
+ * @deprecated Use augmentBomWithComponentContext instead. This alias is kept for backward compatibility.
+ */
+export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, lastUpdatedDate?: string | Date): any {
+  return augmentBomWithComponentContext(bom, rebomOverride, lastUpdatedDate);
 }
 
 export function createRebomToolObject(specVersion: string): any {
@@ -229,7 +256,7 @@ export function createRebomToolObject(specVersion: string): any {
       { url: "https://reliza.io", type: "website" }
     ]
   };
-  if (specVersion === '1.6') {
+  if (specVersion === '1.6' || specVersion === '1.7') {
     rebomTool["authors"] = [{ name: "Reliza Incorporated", email: "info@reliza.io" }];
   } else {
     rebomTool["author"] = "Reliza Incorporated";
@@ -237,12 +264,68 @@ export function createRebomToolObject(specVersion: string): any {
   return rebomTool;
 }
 
+/**
+ * Attaches rebom tool information to a BOM's metadata.
+ * This marks the BOM as having been processed by rebom.
+ * 
+ * Handles both CycloneDX formats:
+ * - 1.4 and earlier: metadata.tools is an array
+ * - 1.5 and later: metadata.tools is an object with components array
+ * 
+ * @param finalBom - BOM to attach tool information to
+ * @returns BOM with rebom tool information added
+ */
 export function attachRebomToolToBom(finalBom: any): any {
   const rebomTool = createRebomToolObject(finalBom.specVersion);
-  if (!finalBom.metadata.tools) finalBom.metadata.tools = { components: [] };
-  if (!finalBom.metadata.tools.components) finalBom.metadata.tools.components = [];
-  finalBom.metadata.tools.components.push(rebomTool);
+  
+  // Determine spec version to handle format differences
+  const specVersion = finalBom.specVersion || '1.4';
+  const majorMinor = specVersion.split('.').slice(0, 2).join('.');
+  const isLegacyFormat = parseFloat(majorMinor) < 1.5;
+  
+  if (isLegacyFormat) {
+    // CycloneDX 1.4 and earlier: tools is an array
+    if (!finalBom.metadata.tools) {
+      finalBom.metadata.tools = [];
+    }
+    // Ensure it's an array (in case it was incorrectly set as object)
+    if (!Array.isArray(finalBom.metadata.tools)) {
+      finalBom.metadata.tools = [];
+    }
+    finalBom.metadata.tools.push(rebomTool);
+  } else {
+    // CycloneDX 1.5+: tools is an object with components array
+    if (!finalBom.metadata.tools) {
+      finalBom.metadata.tools = { components: [] };
+    }
+    // Ensure it's an object (in case it was incorrectly set as array)
+    if (Array.isArray(finalBom.metadata.tools)) {
+      finalBom.metadata.tools = { components: [] };
+    }
+    if (!finalBom.metadata.tools.components) {
+      finalBom.metadata.tools.components = [];
+    }
+    finalBom.metadata.tools.components.push(rebomTool);
+  }
+  
   return finalBom;
+}
+
+/**
+ * Fully augments a BOM with component context and rebom tool information.
+ * This is a convenience function that combines augmentBomWithComponentContext
+ * and attachRebomToolToBom in a single call.
+ * 
+ * Use this when preparing a BOM for storage that should include full augmentation.
+ * 
+ * @param bom - Processed BOM (already sanitized, deduplicated, validated)
+ * @param componentDetails - Release/component metadata (name, version, group, etc.)
+ * @param lastUpdatedDate - Optional timestamp for metadata
+ * @returns Fully augmented BOM ready for storage
+ */
+export function augmentBomForStorage(bom: any, componentDetails: RebomOptions, lastUpdatedDate?: string | Date): any {
+  const augmentedBom = augmentBomWithComponentContext(bom, componentDetails, lastUpdatedDate);
+  return attachRebomToolToBom(augmentedBom);
 }
 
 function extractComponentIdentity(components: any[]): any[] {
@@ -264,7 +347,7 @@ function extractComponentIdentity(components: any[]): any[] {
   })
 }
 
-export function computeBomDigest(bom: any, stripBom: string): string {
+export function computeBomDigest(bom: any): string {
   let bomForDigest: any = {}
   
   bomForDigest["components"] = extractComponentIdentity(bom["components"])
@@ -306,6 +389,10 @@ function computeSha256Hash(obj: string): string {
     hash.update(obj);
     return hash.digest('hex');
   } catch (error) {
-    throw new Error(`Failed to compute hash: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new BomStorageError(
+      `Failed to compute hash: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      error instanceof Error ? error : new Error(String(error)),
+      { operation: 'computeDigest' }
+    );
   }
 }

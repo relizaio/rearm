@@ -1,5 +1,6 @@
 import { logger } from '../../logger';
-import { RebomOptions, BomInput, BomRecord } from '../../types';
+import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
+import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
 import { extractTldFromBom, extractDevFilteredBom, establishPurl, attachRebomToolToBom } from './bomProcessingService';
 import validateBom from '../../validateBom';
@@ -42,6 +43,7 @@ export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOption
     throw e
   }
 }
+
 
 async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: boolean, org: string) {
   logger.info(`findBomsForMerge: ${ids}`)
@@ -98,7 +100,7 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     
     // Ensure required CycloneDX fields are present
     if (!jsonObj.specVersion) {
-      jsonObj.specVersion = '1.6';
+      jsonObj.specVersion = '1.6'; 
     }
     if (!jsonObj.bomFormat) {
       jsonObj.bomFormat = 'CycloneDX';
@@ -115,14 +117,14 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
       });
     }
     
-    // Fix metadata structure for CycloneDX 1.6
+    // Fix metadata structure for CycloneDX 1.6+
     if (!jsonObj.metadata) {
       jsonObj.metadata = {};
     }
     if (!jsonObj.metadata.timestamp) {
       jsonObj.metadata.timestamp = new Date().toISOString();
     }
-    // Ensure tools structure exists for spec 1.6
+    // Ensure tools structure exists for spec 1.6+ (tools.components array)
     if (!jsonObj.metadata.tools) {
       jsonObj.metadata.tools = { components: [] };
     }
@@ -265,6 +267,10 @@ async function sanitizeBom(bom: any, patterns: Record<string, string>): Promise<
     return JSON.parse(jsonString)
   } catch (e) {
     logger.error({ err: e }, "Error sanitizing bom")
-    throw new Error("Error sanitizing bom: " + (e instanceof Error ? e.message : String(e)));
+    throw new BomStorageError(
+      "Error sanitizing bom: " + (e instanceof Error ? e.message : String(e)),
+      e instanceof Error ? e : new Error(String(e)),
+      { operation: 'sanitizeBom' }
+    );
   }
 }

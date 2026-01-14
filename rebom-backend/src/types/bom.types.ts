@@ -77,7 +77,11 @@ export type RebomOptions = {
     bomVersion: string,
     purl?: string,
     rootComponentMergeMode?: RootComponentMergeMode,
-    ignoreDev?: boolean
+    ignoreDev?: boolean,
+    // Deduplication metadata
+    isDuplicate?: boolean,
+    duplicateOf?: string,  // UUID of the original BOM if this is a duplicate
+    deduplicationTimestamp?: string  // ISO timestamp when deduplication was detected
 }
 
 export type BomSearch = {

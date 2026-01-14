@@ -1,14 +1,24 @@
 import { logger } from '../../logger';
 import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto } from '../../types';
+import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError } from '../../types/errors';
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { SpdxService } from '../spdx';
 import { fetchFromOci, OASResponse, pushToOci } from '../oci';
-import { computeBomDigest } from './bomProcessingService';
+import { computeBomDigest, augmentBomForStorage } from './bomProcessingService';
 import { findBom, findBomByMeta } from './bomSearchService';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
 import { runQuery } from '../../utils';
+
+/**
+ * Configuration flag: When true, BOMs are augmented with component context before storage.
+ * When false, BOMs are stored processed but not augmented (augmentation happens on-demand).
+ * 
+ * Set to true to match SPDX and merged BOM behavior.
+ * Set to false to revert to on-demand augmentation.
+ */
+const AUGMENT_ON_STORAGE = true;
 
 export async function addBom(bomInput: BomInput): Promise<BomRecord> {
   const format: BomFormat = (bomInput.bomInput as any).format || 'CYCLONEDX';
@@ -19,82 +29,213 @@ export async function addBom(bomInput: BomInput): Promise<BomRecord> {
   }
 }
 
+/**
+ * Find the latest BOM version by serial number.
+ * Returns the BOM with the highest version number for the given serialNumber.
+ * Used for version comparison and deduplication checks.
+ */
+async function findLatestBomBySerialNumber(serialNumber: string, org: string): Promise<BomRecord | null> {
+  const existingBoms = await BomRepository.allBomsBySerialNumber(serialNumber, org);
+  
+  if (existingBoms.length === 0) {
+    return null;
+  }
+  
+  // allBomsBySerialNumber returns BOMs ordered by bomVersion DESC
+  // So the first one is the latest version
+  const latestBom = existingBoms[0];
+  
+  logger.debug({ 
+    serialNumber, 
+    totalVersions: existingBoms.length,
+    latestVersion: latestBom.meta?.bomVersion,
+    latestUuid: latestBom.uuid
+  }, "Found existing BOM versions");
+  
+  return latestBom;
+}
+
+/**
+ * Find BOM by exact raw file digest across all versions.
+ * Used for deduplication - checks if this exact file was already uploaded.
+ */
+async function findBomByRawDigest(serialNumber: string, rawDigest: string, org: string): Promise<BomRecord | null> {
+  const existingBoms = await BomRepository.allBomsBySerialNumber(serialNumber, org);
+  
+  // Check all versions for matching raw file digest
+  const matchingBom = existingBoms.find(bom => bom.meta?.originalFileDigest === rawDigest);
+  
+  if (matchingBom) {
+    logger.debug({ 
+      serialNumber,
+      rawDigest,
+      matchingUuid: matchingBom.uuid,
+      matchingVersion: matchingBom.meta?.bomVersion
+    }, "Found BOM with matching raw file digest");
+  }
+  
+  return matchingBom || null;
+}
+
+/**
+ * Adds a CycloneDX BOM to the system.
+ * 
+ * Flow:
+ * 1. Process and validate BOM (sanitize, deduplicate, validate)
+ * 2. Auto-detect existing BOM by serialNumber from BOM content
+ * 3. If exists and identical content → return existing (deduplication)
+ * 4. If exists and different content → UPDATE existing record
+ * 5. If not exists → INSERT new record
+ * 
+ * @param bomInput - BOM input containing the raw BOM and metadata
+ * @returns BOM record (existing or newly created)
+ */
 async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
-  // Preserve the truly raw, unmodified BOM artifact (preserves signatures)
+  // Step 1: Process and validate BOM
   const rawBom = bomInput.bomInput.bom;
-  const rawBomSha = computeBomDigest(rawBom, 'false'); // Hash of raw artifact
-  
-  // Process BOM for internal use (sanitize, deduplicate, validate)
-  let processedBom = await processBomObj(rawBom)
+  const processedBom = await processBomObj(rawBom);
 
-  let proceed: boolean = await validateBom(processedBom)
-  const rebomOptions: RebomOptions = bomInput.bomInput.rebomOptions ?? {}
-  rebomOptions.serialNumber = processedBom.serialNumber
-  const bomSha: string = computeBomDigest(processedBom, rebomOptions.stripBom)
-  rebomOptions.bomDigest = bomSha
-  rebomOptions.bomVersion = processedBom.version
-  const newUuid = uuidv4();
-  
-  let oasResponse: OASResponse
-  let bomRows: BomRecord[]
-  let bomRecord: BomRecord
-
-  if (process.env.OCI_STORAGE_ENABLED) {
-    // CRITICAL: Store raw unmodified artifact (preserves signatures)
-    // Use separate UUID suffix to distinguish raw from processed
-    const rawUuid = newUuid + '-raw';
-    await pushToOci(rawUuid, rawBom);
-    
-    // Store processed BOM for internal operations (this is what gets fetched by default)
-    oasResponse = await pushToOci(newUuid, processedBom);
-    rebomOptions.storage = 'oci';
-  } else {
-    throw new Error("OCI Storage not enabled");
+  const isValid = await validateBom(processedBom);
+  if (!isValid) {
+    throw new BomValidationError('BOM validation failed', {
+      field: 'bom',
+      constraint: 'must pass schema validation'
+    });
   }
 
+  // Step 2: Prepare metadata
+  const rebomOptions: RebomOptions = bomInput.bomInput.rebomOptions ?? {};
+  rebomOptions.serialNumber = processedBom.serialNumber;
+  rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by rearm-saas)
   rebomOptions.mod = 'raw';
-  
-  // Check for duplicates BEFORE adding raw artifact metadata
-  // This ensures duplicate detection works correctly
-  let queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
-  let queryParams = [newUuid, rebomOptions, oasResponse, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
-  
-  if (rebomOptions.serialNumber) {
-    let bomSearch: BomSearch = {
-      bomSearch: {
-        serialNumber: rebomOptions.serialNumber as string,
-        version: '',
-        componentVersion: '',
-        componentGroup: '',
-        componentName: '',
-        singleQuery: '',
-        page: 0,
-        offset: 0
-      }
-    }
-    
-    let bomDtos = await findBom(bomSearch);
 
-    if (!bomDtos || !bomDtos.length)
-      bomDtos = await findBomByMeta(rebomOptions);
+  // Step 3: Optionally augment BOM with component context
+  let finalBom = processedBom;
+  if (AUGMENT_ON_STORAGE) {
+    logger.debug({ serialNumber: rebomOptions.serialNumber }, "Augmenting BOM with component context before storage");
+    finalBom = augmentBomForStorage(processedBom, rebomOptions, new Date());
+  }
+  
+  // Compute digest on the final BOM (augmented or processed, depending on config)
+  rebomOptions.bomDigest = computeBomDigest(finalBom);
 
-    if (bomDtos && bomDtos.length && bomDtos[0].uuid) {
-      queryText = 'UPDATE rebom.boms SET meta = $1, bom = $2, tags = $3 WHERE uuid = $4 RETURNING *';
-      queryParams = [rebomOptions, oasResponse, bomInput.bomInput.tags, bomDtos[0].uuid];
+  const newUuid = uuidv4();
+  const rawUuid = newUuid + '-raw';
+
+  // Step 4: Store artifacts in OCI
+  const rawOasResponse = await pushToOci(rawUuid, rawBom);  // Raw BOM (original, untouched)
+  const oasResponse = await pushToOci(newUuid, finalBom);  // Processed (and optionally augmented) BOM
+  
+  // Track raw BOM metadata for rearm-saas (use actual file digest from OCI)
+  // Note: rawBomUuid is always `uuid + '-raw'` so rearm-saas can reconstruct it
+  rebomOptions.originalFileDigest = rawOasResponse.fileSHA256Digest;  // Actual file digest from OCI
+  rebomOptions.originalFileSize = rawOasResponse.originalSize;
+  rebomOptions.originalMediaType = rawOasResponse.originalMediaType;
+
+  // Step 5: Check for deduplication and determine INSERT vs UPDATE
+  const serialNumber = rebomOptions.serialNumber;
+  const newRawDigest = rebomOptions.originalFileDigest;
+  
+  // First check if this exact file was already uploaded (any version)
+  if (newRawDigest) {
+    const duplicateBom = await findBomByRawDigest(serialNumber, newRawDigest, bomInput.bomInput.org);
+    if (duplicateBom) {
+      logger.info({ 
+        serialNumber, 
+        rawFileDigest: newRawDigest,
+        existingUuid: duplicateBom.uuid,
+        existingVersion: duplicateBom.meta?.bomVersion
+      }, "Duplicate CycloneDX BOM detected (identical raw file) - returning existing record");
+      
+      return duplicateBom;
     }
   }
   
-  // NOW add raw artifact metadata after duplicate check
-  // Store raw artifact reference in meta for retrieval
-  const rawUuid = newUuid + '-raw';
-  (rebomOptions as any).rawBomUuid = rawUuid;
-  (rebomOptions as any).rawBomDigest = rawBomSha;
-
-  let queryRes = await runQuery(queryText, queryParams)
-  bomRows = queryRes.rows
-  bomRecord = bomRows[0]
+  // Not a duplicate - check for latest version to compare
+  const latestBom = await findLatestBomBySerialNumber(serialNumber, bomInput.bomInput.org);
   
-  return bomRecord
+  let queryText: string;
+  let queryParams: any[];
+  
+  if (latestBom) {
+    // Different raw file - determine if this is a version increment or replacement
+    const latestVersion = parseInt(latestBom.meta?.bomVersion) || 0;
+    const newVersion = parseInt(rebomOptions.bomVersion) || 0;
+    
+    if (newVersion > latestVersion) {
+      // Version increment - INSERT new version
+      logger.info({ 
+        serialNumber,
+        bomVersion: rebomOptions.bomVersion,
+        uuid: newUuid,
+        latestVersion: latestBom.meta?.bomVersion,
+        latestRawDigest: latestBom.meta?.originalFileDigest,
+        newRawDigest
+      }, "Inserting new version of existing BOM (version increment)");
+      
+      queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
+      queryParams = [newUuid, rebomOptions, oasResponse, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
+    } else {
+      // Same or lower version - REPLACE/UPDATE existing record
+      logger.info({ 
+        serialNumber,
+        bomVersion: rebomOptions.bomVersion,
+        latestUuid: latestBom.uuid,
+        latestVersion: latestBom.meta?.bomVersion,
+        latestRawDigest: latestBom.meta?.originalFileDigest,
+        newRawDigest
+      }, "Replacing existing BOM record (same or lower version - correction/replacement)");
+      
+      // Use existing UUID for storage to replace old files
+      const existingUuid = latestBom.uuid;
+      const existingRawUuid = existingUuid + '-raw';
+      
+      // Re-upload to existing UUIDs (overwrites old files in OCI)
+      await pushToOci(existingRawUuid, rawBom);
+      const replacementOasResponse = await pushToOci(existingUuid, finalBom);
+      
+      queryText = 'UPDATE rebom.boms SET meta = $1, bom = $2, tags = $3, last_updated_date = NOW() WHERE uuid = $4 RETURNING *';
+      queryParams = [rebomOptions, replacementOasResponse, bomInput.bomInput.tags, existingUuid];
+    }
+  } else {
+    // No existing BOM - INSERT new record
+    logger.info({ 
+      serialNumber,
+      bomVersion: rebomOptions.bomVersion,
+      uuid: newUuid
+    }, "Inserting new BOM (no existing record)");
+    
+    queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
+    queryParams = [newUuid, rebomOptions, oasResponse, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
+  }
+  
+  // Step 6: Execute database operation
+  logger.info({ 
+    queryType: queryText.startsWith('INSERT') ? 'INSERT' : 'UPDATE',
+    serialNumber,
+    bomVersion: rebomOptions.bomVersion,
+    bomDigest: rebomOptions.bomDigest,
+    augmented: AUGMENT_ON_STORAGE
+  }, "Executing database operation");
+
+  const queryRes = await runQuery(queryText, queryParams);
+  const bomRecord = queryRes.rows[0];
+  
+  if (!bomRecord) {
+    throw new BomStorageError('Failed to store BOM record', undefined, {
+      operation: queryText.startsWith('INSERT') ? 'INSERT' : 'UPDATE',
+      bomId: queryText.startsWith('INSERT') ? newUuid : latestBom?.uuid,
+      serialNumber
+    });
+  }
+  
+  logger.info({ 
+    bomRecordUuid: bomRecord.uuid,
+    bomVersion: rebomOptions.bomVersion,
+    operation: queryText.startsWith('INSERT') ? 'INSERT' : 'UPDATE'
+  }, "BOM record stored successfully");
+  
+  return bomRecord;
 }
 
 async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
@@ -102,7 +243,10 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     const spdxContent = bomInput.bomInput.bom;
     
     if (!SpdxService.validateSpdxFormat(spdxContent)) {
-      throw new Error('Invalid SPDX format');
+      throw new BomValidationError('Invalid SPDX format', {
+        field: 'bom',
+        constraint: 'must be valid SPDX format'
+      });
     }
 
     const spdxMetadata = SpdxService.extractSpdxMetadata(spdxContent);
@@ -139,24 +283,27 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
               return existingBomRecords[0];
             }
           }
-          throw new Error(`SPDX document exists but linked BOM record not found`);
+          throw new BomNotFoundError(
+            `SPDX document exists but linked BOM record not found`,
+            existingByNamespace.converted_bom_uuid,
+            { namespace: spdxMetadata.documentNamespace, context: 'spdx_duplicate_check' }
+          );
         }
         
-        throw new Error(
+        throw new BomValidationError(
           `SPDX document with namespace "${spdxMetadata.documentNamespace}" already exists with different content. ` +
-          `To update an existing artifact, use the update flow with existingSerialNumber.`
+          `To update an existing artifact, use the update flow with existingSerialNumber.`,
+          {
+            field: 'documentNamespace',
+            value: spdxMetadata.documentNamespace,
+            constraint: 'namespace must be unique or use update flow with existingSerialNumber'
+          }
         );
       }
     }
     
     const spdxUuid = uuidv4();
-    let spdxOciResponse: OASResponse;
-    
-    if (process.env.OCI_STORAGE_ENABLED) {
-      spdxOciResponse = await pushToOci(spdxUuid, spdxContent);
-    } else {
-      throw new Error("OCI Storage not enabled");
-    }
+    const spdxOciResponse = await pushToOci(spdxUuid, spdxContent);
 
     const spdxRecord = await SpdxRepository.createSpdxBom({
       uuid: spdxUuid,
@@ -178,7 +325,12 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
         'failed',
         conversionResult.error
       );
-      throw new Error(`SPDX conversion failed: ${conversionResult.error}`);
+      throw new BomConversionError(
+        `SPDX conversion failed: ${conversionResult.error}`,
+        'SPDX',
+        'CYCLONEDX',
+        new Error(conversionResult.error)
+      );
     }
 
     const rebomOptions = SpdxService.generateRebomOptionsFromSpdx(spdxMetadata, bomVersion, existingSerialNumber);
@@ -203,7 +355,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     }
     
     const convertedBom = conversionResult.convertedBom;
-    const bomDigest = computeBomDigest(convertedBom, mergedOptions.stripBom);
+    const bomDigest = computeBomDigest(convertedBom);
     mergedOptions.bomDigest = bomDigest;
     mergedOptions.originalFileDigest = fileHash;
     mergedOptions.originalFileSize = JSON.stringify(spdxContent).length;
@@ -211,13 +363,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     mergedOptions.bomVersion = String(bomVersion);
     
     const convertedBomUuid = uuidv4();
-    let cycloneDxOciResponse: OASResponse;
-    
-    if (process.env.OCI_STORAGE_ENABLED) {
-      cycloneDxOciResponse = await pushToOci(convertedBomUuid, conversionResult.convertedBom);
-    } else {
-      throw new Error("OCI Storage not enabled");
-    }
+    const cycloneDxOciResponse = await pushToOci(convertedBomUuid, conversionResult.convertedBom);
 
     const queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format, source_spdx_uuid) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *';
     const queryParams = [
@@ -369,6 +515,10 @@ async function sanitizeBom(bom: any, patterns: Record<string, string>): Promise<
     return JSON.parse(jsonString)
   } catch (e) {
     logger.error({ err: e }, "Error sanitizing bom")
-    throw new Error("Error sanitizing bom: " + (e instanceof Error ? e.message : String(e)));
+    throw new BomStorageError(
+      "Error sanitizing bom: " + (e instanceof Error ? e.message : String(e)),
+      e instanceof Error ? e : new Error(String(e)),
+      { operation: 'sanitizeBom' }
+    );
   }
 }

@@ -8,7 +8,7 @@ const typeDefs = gql`
     hello: String
     dbtest: String
     allBoms: [Bom]
-    findBom(bomSearch: BomSearch): [Bom]
+    findBom(bomSearch: BomSearch): [Bom] @deprecated(reason: "Not used by rearm-saas. Use bomById, bomBySerialNumberAndVersion, or bomMetaBySerialNumber instead.")
     bomById(id: ID, org: ID): Object
     rawBomId(id: ID, org: ID, format: BomFormat): Object
     bomByIdCsv(id: ID, org: ID): String

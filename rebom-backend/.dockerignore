@@ -5,6 +5,7 @@ node_modules
 get_version_command
 get_version_exec
 reliza_command
+dist
 # Don't ignore dist - it's built during Docker build
 # Don't ignore test files - needed for test execution in Docker build
 *.md

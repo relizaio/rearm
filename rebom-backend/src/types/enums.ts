@@ -1,18 +1,19 @@
 export enum StorageType {
-    OCI = 'OCI',
-    DATABASE = 'DATABASE',
+    OCI = 'OCI'
 }
 
 export enum BomState {
     RAW = 'RAW',
+    PROCESSED = 'PROCESSED',
     MERGED = 'MERGED',
-    CROSS_MERGED = 'CROSS_MERGED'
+    CONVERTED = 'CONVERTED'
 }
 
-export enum ModificationType {
+export enum BomModification {
     RAW = 'RAW',
-    REBOM = 'REBOM',
-    USER = 'USER'
+    TLD = 'TLD',
+    DEV_FILTERED = 'DEV_FILTERED',
+    MERGED = 'MERGED'
 }
 
 export enum BomStructure {
@@ -20,21 +21,14 @@ export enum BomStructure {
     HIERARCHICAL = 'HIERARCHICAL'
 }
 
-export function normalizeStorageType(value: string): StorageType {
-    const upper = value.toUpperCase();
-    if (upper === 'OCI') return StorageType.OCI;
-    if (upper === 'DB' || upper === 'DATABASE') return StorageType.DATABASE;
-    return StorageType.OCI;
-}
-
 export function normalizeBomState(value: string): BomState {
     const upper = value.toUpperCase().replace('-', '_');
     return BomState[upper as keyof typeof BomState] ?? BomState.RAW;
 }
 
-export function normalizeModificationType(value: string): ModificationType {
+export function normalizeBomModification(value: string): BomModification {
     const upper = value.toUpperCase();
-    return ModificationType[upper as keyof typeof ModificationType] ?? ModificationType.RAW;
+    return BomModification[upper as keyof typeof BomModification] ?? BomModification.RAW;
 }
 
 export function normalizeBomStructure(value: string): BomStructure {

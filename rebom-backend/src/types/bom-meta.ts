@@ -32,6 +32,11 @@ export interface BomMetaNested {
         originalFileSize?: number;
         originalMediaType?: string;
     };
+    deduplication?: {
+        isDuplicate: boolean;
+        duplicateOf?: string;
+        deduplicationTimestamp?: string;
+    };
     notes?: string;
 }
 
@@ -46,7 +51,7 @@ export function toNestedMeta(opts: RebomOptions): BomMetaNested {
             bomVersion: parseInt(opts.bomVersion) || 1
         },
         storage: {
-            type: opts.storage?.toUpperCase() === 'DB' ? 'DATABASE' : 'OCI',
+            type: 'OCI',  // OCI is the only storage type
             state: opts.bomState?.toUpperCase().replace('-', '_') as any || 'RAW',
             modification: opts.mod?.toUpperCase() as any || 'RAW',
             bomDigest: opts.bomDigest,
@@ -75,6 +80,14 @@ export function toNestedMeta(opts: RebomOptions): BomMetaNested {
             originalFileDigest: opts.originalFileDigest,
             originalFileSize: opts.originalFileSize,
             originalMediaType: opts.originalMediaType
+        };
+    }
+
+    if (opts.isDuplicate !== undefined) {
+        nested.deduplication = {
+            isDuplicate: opts.isDuplicate,
+            duplicateOf: opts.duplicateOf,
+            deduplicationTimestamp: opts.deduplicationTimestamp
         };
     }
 
@@ -107,6 +120,9 @@ export function fromNestedMeta(nested: BomMetaNested): RebomOptions {
         originalFileDigest: nested.spdx?.originalFileDigest,
         originalFileSize: nested.spdx?.originalFileSize,
         originalMediaType: nested.spdx?.originalMediaType,
+        isDuplicate: nested.deduplication?.isDuplicate,
+        duplicateOf: nested.deduplication?.duplicateOf,
+        deduplicationTimestamp: nested.deduplication?.deduplicationTimestamp,
         notes: nested.notes ?? ''
     };
 }

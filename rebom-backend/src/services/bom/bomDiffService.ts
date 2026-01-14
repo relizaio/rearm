@@ -1,4 +1,4 @@
-import { mergeBomObjects, findBomObjectById, overrideRootComponent } from '../../bomService';
+import { mergeBomObjects, findBomObjectById, augmentBomWithComponentContext } from '../../bomService';
 import { logger } from '../../logger';
 import { RebomOptions, BomDiffResult, ComponentDiff } from '../../types';
 import { createTempFile, deleteTempFile, shellExec } from '../../utils';
@@ -20,11 +20,12 @@ async function mergeBomsForDiff(ids:[string], org: string){
     const bomRecords =  await Promise.all(ids.map(async(id, index : number) => {
       
         const bomRecord = await findBomObjectById(id, org)
-        // override the root component, with a purl and version, the purl is a custom purl specific to the diff functionality and injected into the bom just so the root component don't show up in diff
-        const overriddenBom = overrideRootComponent(bomRecord, {...rebomOptions, version: "1"+ index, purl: "pkg:generic/diff/test@"+ index}, new Date())
+        // Augment the root component with a custom purl and version specific to diff functionality
+        // This prevents the root component from showing up in diff results
+        const augmentedBom = augmentBomWithComponentContext(bomRecord, {...rebomOptions, version: "1"+ index, purl: "pkg:generic/diff/test@"+ index}, new Date())
         
         
-        return overriddenBom
+        return augmentedBom
     }))
 
     return await mergeBomObjects(bomRecords, rebomOptions)

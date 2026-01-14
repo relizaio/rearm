@@ -22,6 +22,7 @@ RUN mkdir /app
 WORKDIR /app
 
 # Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
+COPY tools.${TARGETARCH}.sha256 /tmp/tools.sha256
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         wget https://d7ge14utcyki8.cloudfront.net/rearm-download/25.12.1/rearm-25.12.1-linux-amd64.zip ;\
         unzip rearm-25.12.1-linux-amd64.zip ;\
@@ -33,6 +34,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.29.1/cyclonedx-${TARGETOS}-${TARGETARCH} ;\
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
     fi && \
+    sha256sum -c /tmp/tools.sha256 && \
     mv rearm /usr/local/bin/rearm-cli && \
     chmod +x /usr/local/bin/rearm-cli && \
     chmod +x /usr/local/bin/cyclonedx-cli
@@ -93,7 +95,7 @@ COPY --chown=apprunner:apprunner migrations /app/migrations
 
 USER apprunner
 
-RUN npm ci --omit=dev
+RUN npm ci --ignore-scripts --omit=dev
 
 LABEL git_commit=$GIT_COMMIT
 LABEL git_branch=$GIT_BRANCH

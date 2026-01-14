@@ -30,7 +30,6 @@ export {
 export {
   findBom,
   findBomByMeta,
-  findBomViaSingleQuery,
   updateSearchObj
 } from './services/bom/bomSearchService';
 
@@ -42,7 +41,9 @@ export {
 
 // Processing Operations
 export {
-  overrideRootComponent,
+  augmentBomWithComponentContext,
+  augmentBomForStorage,
+  overrideRootComponent, // @deprecated - use augmentBomWithComponentContext
   extractTldFromBom,
   extractDevFilteredBom,
   establishPurl,

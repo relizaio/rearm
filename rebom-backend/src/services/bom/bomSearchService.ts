@@ -1,44 +1,52 @@
 import { logger } from '../../logger';
 import { BomSearch, BomDto, RebomOptions, SearchObject, BomRecord } from '../../types';
 import { fetchFromOci } from '../oci';
-import { overrideRootComponent, attachRebomToolToBom } from './bomProcessingService';
+import { augmentBomWithComponentContext, attachRebomToolToBom } from './bomProcessingService';
 import { runQuery } from '../../utils';
+import { BomMapper } from './bomMapper';
+
+/**
+ * @deprecated This search function is not used by rearm-saas and may be removed in a future version.
+ * Use bomById, bomBySerialNumberAndVersion, or bomMetaBySerialNumber instead.
+ */
 
 export async function findBom(bomSearch: BomSearch): Promise<BomDto[]> {
+  logger.warn('findBom is deprecated and not used by rearm-saas. Consider using bomById or bomBySerialNumberAndVersion instead.');
   let searchObject = {
     queryText: `select * from rebom.boms where 1 = 1`,
     queryParams: [],
     paramId: 1
   }
 
-  let bomDtos: BomDto[] = []
+  let bomRecords: BomRecord[] = []
 
   if (bomSearch.bomSearch.singleQuery) {
-    bomDtos = await findBomViaSingleQuery(bomSearch.bomSearch.singleQuery)
+    bomRecords = await findBomViaSingleQueryRecords(bomSearch.bomSearch.singleQuery)
   } else {
     if (bomSearch.bomSearch.serialNumber) {
       if (!bomSearch.bomSearch.serialNumber.startsWith('urn')) {
         bomSearch.bomSearch.serialNumber = 'urn:uuid:' + bomSearch.bomSearch.serialNumber
       }
-      updateSearchObj(searchObject, `bom->>'serialNumber'`, bomSearch.bomSearch.serialNumber)
+      updateSearchObj(searchObject, `meta->>'serialNumber'`, bomSearch.bomSearch.serialNumber)
     }
 
-    if (bomSearch.bomSearch.version) updateSearchObj(searchObject, `bom->>'version'`, bomSearch.bomSearch.version)
+    if (bomSearch.bomSearch.version) updateSearchObj(searchObject, `meta->>'version'`, bomSearch.bomSearch.version)
 
-    if (bomSearch.bomSearch.componentVersion) updateSearchObj(searchObject, `bom->'metadata'->'component'->>'version'`,
+    if (bomSearch.bomSearch.componentVersion) updateSearchObj(searchObject, `meta->>'version'`,
       bomSearch.bomSearch.componentVersion)
 
-    if (bomSearch.bomSearch.componentGroup) updateSearchObj(searchObject, `bom->'metadata'->'component'->>'group'`,
+    if (bomSearch.bomSearch.componentGroup) updateSearchObj(searchObject, `meta->>'group'`,
       bomSearch.bomSearch.componentGroup)
 
-    if (bomSearch.bomSearch.componentName) updateSearchObj(searchObject, `bom->'metadata'->'component'->>'name'`,
+    if (bomSearch.bomSearch.componentName) updateSearchObj(searchObject, `meta->>'name'`,
       bomSearch.bomSearch.componentName)
 
     let queryRes = await runQuery(searchObject.queryText, searchObject.queryParams)
-    let bomRecords = queryRes.rows as BomRecord[]
-    bomDtos = await Promise.all(bomRecords.map(async (b) => bomRecordToDto(b)))
+    bomRecords = queryRes.rows as BomRecord[]
   }
-  return bomDtos
+  
+  // Use BomMapper for consistent conversion with OCI content fetching
+  return BomMapper.toDtoArrayWithContent(bomRecords);
 }
 
 export async function findBomByMeta(bomMeta: RebomOptions): Promise<BomDto[]> {
@@ -54,33 +62,32 @@ export async function findBomByMeta(bomMeta: RebomOptions): Promise<BomDto[]> {
   return bomDtos
 }
 
-export async function findBomViaSingleQuery(singleQuery: string): Promise<BomDto[]> {
+async function findBomViaSingleQueryRecords(singleQuery: string): Promise<BomRecord[]> {
   let proceed: boolean = false
-  let queryRes = await runQuery(`select * from rebom.boms where bom->>'serialNumber' = $1`, [singleQuery])
+  let queryRes = await runQuery(`select * from rebom.boms where meta->>'serialNumber' = $1`, [singleQuery])
   proceed = (queryRes.rows.length < 1)
 
   if (proceed) {
-    queryRes = await runQuery(`select * from rebom.boms where bom->>'serialNumber' = $1`, ['urn:uuid:' + singleQuery])
+    queryRes = await runQuery(`select * from rebom.boms where meta->>'serialNumber' = $1`, ['urn:uuid:' + singleQuery])
     proceed = (queryRes.rows.length < 1)
   }
 
   if (proceed) {
-    queryRes = await runQuery(`select * from rebom.boms where bom->'metadata'->'component'->>'name' like $1`, ['%' + singleQuery + '%'])
+    queryRes = await runQuery(`select * from rebom.boms where meta->>'name' like $1`, ['%' + singleQuery + '%'])
     proceed = (queryRes.rows.length < 1)
   }
 
   if (proceed) {
-    queryRes = await runQuery(`select * from rebom.boms where bom->'metadata'->'component'->>'group' like $1`, ['%' + singleQuery + '%'])
+    queryRes = await runQuery(`select * from rebom.boms where meta->>'group' like $1`, ['%' + singleQuery + '%'])
     proceed = (queryRes.rows.length < 1)
   }
 
   if (proceed) {
-    queryRes = await runQuery(`select * from rebom.boms where bom->'metadata'->'component'->>'version' = $1`, [singleQuery])
+    queryRes = await runQuery(`select * from rebom.boms where meta->>'version' = $1`, [singleQuery])
     proceed = (queryRes.rows.length < 1)
   }
 
-  let bomRecords = queryRes.rows as BomRecord[]
-  return await Promise.all(bomRecords.map(async (b) => bomRecordToDto(b)))
+  return queryRes.rows as BomRecord[]
 }
 
 export function updateSearchObj(searchObject: SearchObject, queryPath: string, addParam: string) {
@@ -94,9 +101,9 @@ async function bomRecordToDto(bomRecord: BomRecord, rootOverride: boolean = true
   let group = ''
   let name = ''
   let bomVersion = ''
-  if (process.env.OCI_STORAGE_ENABLED) {
-    bomRecord.bom = await fetchFromOci(bomRecord.uuid)
-  }
+  
+  // Fetch BOM content from OCI storage
+  bomRecord.bom = await fetchFromOci(bomRecord.uuid)
   
   if (rootOverride)
     bomRecord.bom = rootComponentOverride(bomRecord)
@@ -124,10 +131,17 @@ async function bomRecordToDto(bomRecord: BomRecord, rootOverride: boolean = true
   return bomDto
 }
 
+/**
+ * Augments a BOM record with component context on-demand.
+ * Used for legacy search operations that need augmented BOMs.
+ * 
+ * @param bomRecord - BOM record from database
+ * @returns Augmented BOM with component context and rebom tool
+ */
 function rootComponentOverride(bomRecord: BomRecord): any {
   const rebomOverride = bomRecord.meta;
   const bom = bomRecord.bom;
   if (!rebomOverride) return bom;
-  const overriddenBom = overrideRootComponent(bom, rebomOverride, bomRecord.last_updated_date);
-  return attachRebomToolToBom(overriddenBom);
+  const augmentedBom = augmentBomWithComponentContext(bom, rebomOverride, bomRecord.last_updated_date);
+  return attachRebomToolToBom(augmentedBom);
 }
