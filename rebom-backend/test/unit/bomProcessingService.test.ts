@@ -160,8 +160,8 @@ describe('BOM Processing Service - Unit Tests', () => {
         it('should generate consistent SHA256 digest', () => {
             const bom = loadFixture('cyclonedx-simple.json');
             
-            const digest1 = BomProcessingService.computeBomDigest(bom, 'false');
-            const digest2 = BomProcessingService.computeBomDigest(bom, 'false');
+            const digest1 = BomProcessingService.computeBomDigest(bom);
+            const digest2 = BomProcessingService.computeBomDigest(bom);
             
             expect(digest1).toBe(digest2);
             expect(digest1).toMatch(/^[a-f0-9]{64}$/); // SHA256 hex format
@@ -170,8 +170,8 @@ describe('BOM Processing Service - Unit Tests', () => {
         it('should handle stripBom option', () => {
             const bom = loadFixture('cyclonedx-simple.json');
             
-            const normalDigest = BomProcessingService.computeBomDigest(bom, 'false');
-            const strippedDigest = BomProcessingService.computeBomDigest(bom, 'true');
+            const normalDigest = BomProcessingService.computeBomDigest(bom);
+            const strippedDigest = BomProcessingService.computeBomDigest(bom);
             
             // Both should be valid SHA256
             expect(normalDigest).toMatch(/^[a-f0-9]{64}$/);
@@ -185,15 +185,15 @@ describe('BOM Processing Service - Unit Tests', () => {
             const bom1 = loadFixture('cyclonedx-simple.json');
             const bom2 = loadFixture('cyclonedx-for-merge.json');
             
-            const digest1 = BomProcessingService.computeBomDigest(bom1, 'false');
-            const digest2 = BomProcessingService.computeBomDigest(bom2, 'false');
+            const digest1 = BomProcessingService.computeBomDigest(bom1);
+            const digest2 = BomProcessingService.computeBomDigest(bom2);
             
             expect(digest1).not.toBe(digest2);
         });
 
         it('should handle BOMs with different component counts', () => {
             const bom = loadFixture('cyclonedx-simple.json');
-            const originalDigest = BomProcessingService.computeBomDigest(bom, 'false');
+            const originalDigest = BomProcessingService.computeBomDigest(bom);
             
             // Add a component
             bom.components.push({
@@ -203,7 +203,7 @@ describe('BOM Processing Service - Unit Tests', () => {
                 purl: 'pkg:npm/new-lib@1.0.0'
             });
             
-            const modifiedDigest = BomProcessingService.computeBomDigest(bom, 'false');
+            const modifiedDigest = BomProcessingService.computeBomDigest(bom);
             
             expect(modifiedDigest).not.toBe(originalDigest);
         });

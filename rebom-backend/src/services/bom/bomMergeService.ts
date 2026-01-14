@@ -163,9 +163,10 @@ async function processBomObj(bom: any): Promise<any> {
     'git+https://github': 'ssh://git@github',
   })
 
-  // Fix dependencies structure BEFORE validation - ensure dependsOn is always an array
+  // Fix dependencies structure BEFORE validation - ensure dependsOn is always an array and deduplicate
   if (processedBom.dependencies && Array.isArray(processedBom.dependencies)) {
     let fixedCount = 0;
+    let dedupCount = 0;
     processedBom.dependencies = processedBom.dependencies.map((dep: any) => {
       if ('dependsOn' in dep) {
         if (!Array.isArray(dep.dependsOn)) {
@@ -178,11 +179,23 @@ async function processBomObj(bom: any): Promise<any> {
             return { ...dep, dependsOn: [dep.dependsOn] };
           }
         }
+        // Deduplicate dependsOn array items
+        if (Array.isArray(dep.dependsOn)) {
+          const uniqueDependsOn = [...new Set(dep.dependsOn)];
+          if (uniqueDependsOn.length !== dep.dependsOn.length) {
+            dedupCount++;
+            logger.debug({ ref: dep.ref, original: dep.dependsOn.length, deduped: uniqueDependsOn.length }, "Deduplicating dependsOn array");
+          }
+          return { ...dep, dependsOn: uniqueDependsOn };
+        }
       }
       return dep;
     });
     if (fixedCount > 0) {
       logger.info(`Fixed ${fixedCount} dependencies with non-array dependsOn`);
+    }
+    if (dedupCount > 0) {
+      logger.info(`Deduplicated ${dedupCount} dependencies with duplicate dependsOn items`);
     }
   }
 
