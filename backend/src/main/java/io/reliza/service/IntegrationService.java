@@ -99,6 +99,10 @@ public class IntegrationService {
 	@Lazy
 	private ArtifactService artifactService;
 	
+	@Autowired
+	@Lazy
+	private DTrackService dtrackService;
+	
 	private static final Logger log = LoggerFactory.getLogger(IntegrationService.class);
 
 	private final IntegrationRepository repository;
@@ -575,18 +579,13 @@ public class IntegrationService {
 	 */
 	public DependencyTrackUploadResult uploadBomToExistingDtrackProject(UUID orgUuid, UploadableBom bom, 
 			UUID existingProjectId, String projectName, String projectVersion) {
-		DependencyTrackUploadResult dtur = null;
-		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(orgUuid, IntegrationType.DEPENDENCYTRACK,
-				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
-		if (oid.isPresent()) {
-			try {
-				dtur = sendBomToDependencyTrackOnCreatedProject(oid.get(), existingProjectId, bom, projectName, projectVersion);
-			} catch (Exception e) {
-				log.error("Error uploading BOM to existing Dependency Track project: " + existingProjectId, e);
-				throw new RuntimeException("Error uploading BOM to existing Dependency Track project");
-			}
+		try {
+			return dtrackService.uploadBomToExistingProject(orgUuid, bom, existingProjectId, 
+				projectName, projectVersion);
+		} catch (RelizaException e) {
+			log.error("Error uploading BOM to existing Dependency Track project: " + existingProjectId, e);
+			throw new RuntimeException("Error uploading BOM to existing Dependency Track project: " + e.getMessage());
 		}
-		return dtur;
 	}
 	
 	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad, ZonedDateTime lastScanned) throws RelizaException {
@@ -818,92 +817,39 @@ public class IntegrationService {
 	
 	@Transactional
 	public boolean requestMetricsRefreshOnDependencyTrack (ArtifactData ad) {
-		boolean isRequested = false;
-		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(ad.getOrg(), IntegrationType.DEPENDENCYTRACK,
-				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
-		
-		if (oid.isEmpty() || ad.getType() != ArtifactType.BOM) {
-			// No DTrack integration configured, nothing to do
-			return isRequested;
+		return dtrackService.requestMetricsRefresh(ad);
+	}
+	
+	/**
+	 * Upload BOM to DTrack and update related artifacts if project ID changes.
+	 * Handles both initial upload and resubmission scenarios.
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @param bom BOM to upload (JsonNode or raw bytes)
+	 * @param projectName DTrack project name
+	 * @param projectVersion DTrack project version
+	 * @param oldProjectId Previous project ID (null for new artifacts)
+	 * @param updateArtifact Artifact to update with result (null to skip)
+	 * @return DependencyTrackUploadResult with project ID and token
+	 */
+	public DependencyTrackUploadResult uploadBomAndUpdateRelated(
+			UUID orgUuid,
+			UploadableBom bom,
+			String projectName,
+			String projectVersion,
+			String oldProjectId,
+			ArtifactData updateArtifact) {
+		try {
+			return dtrackService.uploadBomAndUpdateRelated(orgUuid, bom, projectName, 
+				projectVersion, oldProjectId, updateArtifact);
+		} catch (RelizaException e) {
+			log.error("Error uploading BOM to DTrack", e);
+			throw new RuntimeException("Error uploading BOM to DTrack: " + e.getMessage());
 		}
-		
-		String depTrackProject = (null != ad.getMetrics()) ? ad.getMetrics().getDependencyTrackProject() : null;
-		
-		if (StringUtils.isEmpty(depTrackProject)) {
-			// No existing project, go straight to resubmit
-			isRequested = resubmitArtifactToDependencyTrack(ad);
-		} else {
-			// Try to refresh existing project, resubmit on 404
-			IntegrationData dtrackIntegration = oid.get();
-			try {
-				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
-				URI refreshUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/metrics/project/" + depTrackProject + "/refresh");
-				var processingResp = dtrackWebClient
-						.get()
-						.uri(refreshUri)
-						.header("X-API-Key", apiToken)
-						.retrieve()
-						.toEntity(String.class)
-						.block();
-				if (processingResp.getStatusCode() == HttpStatus.OK) isRequested = true;
-				else log.warn(processingResp.toString());
-			} catch (WebClientResponseException wcre) {
-				if (wcre.getStatusCode().isSameCodeAs(HttpStatusCode.valueOf(404)) && null != ad.getMetrics()) {
-					isRequested = resubmitArtifactToDependencyTrack(ad);
-				} else {
-					log.error("Web exception processing status of artifact on dependency track with id = " + ad.getUuid(), wcre);
-				}
-			} catch (Exception e) {
-				log.error("Exception processing status of artifact on dependency track with id = " + ad.getUuid(), e);
-			}
-		}
-		return isRequested;
 	}
 	
 	private boolean resubmitArtifactToDependencyTrack(ArtifactData ad) {
-		try {
-			var downloadable = sharedArtifactService.downloadArtifact(ad);
-			
-			String projectVersion = (null != ad.getMetrics() && StringUtils.isNotEmpty(ad.getMetrics().getProjectVersion())) 
-					? ad.getMetrics().getProjectVersion() : UUID.randomUUID().toString();
-			String projectName = (null != ad.getMetrics() && StringUtils.isNotEmpty(ad.getMetrics().getProjectName())) 
-					? ad.getMetrics().getProjectName() : UUID.randomUUID().toString();
-			
-			// Track the old project ID to update other artifacts if it changes
-			String oldProjectId = (null != ad.getMetrics() && StringUtils.isNotEmpty(ad.getMetrics().getDependencyTrackProject())) 
-					? ad.getMetrics().getDependencyTrackProject() : null;
-			
-			UploadableBom ub = new UploadableBom(null, downloadable.block().getBody(), true);
-			DependencyTrackUploadResult dtur = sendBomToDependencyTrack(ad.getOrg(), ub, projectName, projectVersion);
-			
-			sharedArtifactService.updateArtifactFromDtur(ad, dtur);
-			
-			// If the project ID changed, update all other artifacts in the same org with the old project ID
-			if (oldProjectId != null && dtur != null && dtur.projectId() != null && 
-					!oldProjectId.equals(dtur.projectId())) {
-				log.info("DTrack project ID changed from {} to {} for artifact {}, updating related artifacts", 
-						oldProjectId, dtur.projectId(), ad.getUuid());
-				
-				List<Artifact> relatedArtifacts = artifactService.listArtifactsByDtrackProjects(List.of(UUID.fromString(oldProjectId)));
-				for (Artifact artifact : relatedArtifacts) {
-					try {
-						ArtifactData relatedAd = ArtifactData.dataFromRecord(artifact);
-						// Only update if it's in the same org and not the current artifact
-						if (relatedAd.getOrg().equals(ad.getOrg()) && !relatedAd.getUuid().equals(ad.getUuid())) {
-							sharedArtifactService.updateArtifactFromDtur(relatedAd, dtur);
-							log.debug("Updated artifact {} with new DTrack project {}", relatedAd.getUuid(), dtur.projectId());
-						}
-					} catch (Exception e) {
-						log.error("Failed to update related artifact with new DTrack project: {}", e.getMessage());
-					}
-				}
-			}
-			
-			return true;
-		} catch (Exception e) {
-			log.error("Error on resubmitting artifact to dependency track, artifact id = " + ad.getUuid(), e);
-			return false;
-		}
+		return dtrackService.resubmitArtifact(ad);
 	}
 	
 	/**
@@ -1413,10 +1359,10 @@ public class IntegrationService {
 			}
 			
 			log.error("[DTRACK-CLEANUP] Error batch deleting projects: {}", wcre.getMessage());
-			throw wcre;
+			return new BatchDeleteResult(false, List.of(), new ArrayList<>(projectIds));
 		} catch (Exception e) {
 			log.error("[DTRACK-CLEANUP] Unexpected error batch deleting projects: {}", e.getMessage());
-			throw e;
+			return new BatchDeleteResult(false, List.of(), new ArrayList<>(projectIds));
 		}
 	}
 	

@@ -234,13 +234,13 @@ class VariableQueries {
 			UNION
 				
 				-- Path 3: Artifacts used by active branches via deliverable artifacts
-				SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') as artifact_uuid
-				FROM rearm.deliverables d
-				JOIN rearm.variants v ON jsonb_exists(v.record_data->'outboundDeliverables', d.uuid::text)
-				JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
-				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-				WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
-				AND d.record_data->'artifacts' IS NOT NULL
+			SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') as artifact_uuid
+			FROM rearm.deliverables d
+			JOIN rearm.variants v ON jsonb_exists(v.record_data->'outboundDeliverables', d.uuid::text)
+			JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
+			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+			WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
+			AND d.record_data->'artifacts' IS NOT NULL
 			),
 			active_dtrack_projects AS (
 				SELECT DISTINCT a.record_data->'metrics'->>'dependencyTrackProject' as project_id
@@ -255,6 +255,8 @@ class VariableQueries {
 			WHERE a.record_data->>'org' = :orgUuidAsString
 			AND a.record_data->'metrics'->>'dependencyTrackProject' IS NOT NULL
 			AND a.record_data->'metrics'->>'dependencyTrackProject' != ''
+			AND (a.record_data->'metrics'->>'dtrackProjectDeleted' IS NULL 
+				OR (a.record_data->'metrics'->>'dtrackProjectDeleted')::boolean = false)
 			AND a.record_data->'metrics'->>'dependencyTrackProject' NOT IN (
 				SELECT project_id FROM active_dtrack_projects WHERE project_id IS NOT NULL
 			)

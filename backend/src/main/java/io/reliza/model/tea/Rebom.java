@@ -72,7 +72,12 @@ public class Rebom {
         }
     }
 
-    public record RebomResponse(UUID uuid, OASResponseDto bom, RebomOptions meta, Boolean duplicate) {}
+    public record RebomResponse(
+        UUID uuid, 
+        OASResponseDto bom, 
+        RebomOptions meta, 
+        Boolean duplicate
+    ) {}
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record InternalBom (UUID id, ArtifactBelongsTo belongsTo){}
 

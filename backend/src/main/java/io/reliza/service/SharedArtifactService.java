@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -81,15 +82,40 @@ public class SharedArtifactService {
 		return repository.findById(uuid);
 	}
 	
+	/**
+	 * Find artifact by stored digest (REARM scope)
+	 * Used for BOM deduplication
+	 */
+	public Optional<Artifact> findArtifactByStoredDigest(UUID orgUuid, String digest) {
+		Optional<Artifact> a = Optional.empty();
+		List<Artifact> artifacts = repository.findArtifactsByStoredDigest(orgUuid.toString(), digest);
+		if (null != artifacts && artifacts.size() > 0) {
+			a = Optional.of(artifacts.get(0));
+		}
+		return a;
+	}
+	
 	public Mono<ResponseEntity<byte[]>> downloadArtifact(ArtifactData ad) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
         log.info("download artifacts for ad: {}", ad);
 
 		if(null != ad.getInternalBom()){
 			String rebom;
-			// For versioned BOMs, use the version-specific query -- TODO SPDX
+			// For SPDX, augmented BOM is the converted CycloneDX
 			if(ad.getBomFormat().equals(BomFormat.SPDX)){
-				rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
+				// Support version parameter for SPDX augmented downloads
+				if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
+					try {
+						Integer version = Integer.parseInt(ad.getVersion());
+						rebom = rebomService.findBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
+					} catch (NumberFormatException e) {
+						// Version is not numeric, fall back to latest converted CycloneDX
+						rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
+					}
+				} else {
+					// No version specified, return latest converted CycloneDX
+					rebom = (rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), BomFormat.CYCLONEDX)).toString();
+				}
 			} else if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
 				try {
 					Integer version = Integer.parseInt(ad.getVersion());
@@ -141,18 +167,38 @@ public class SharedArtifactService {
 
 		if(null != ad.getInternalBom()){
 			String rebom;
-			// For versioned BOMs (like SPDX), use the version-specific query
+			// For SPDX BOMs, pass the format to get original SPDX instead of converted CycloneDX
+			BomFormat format = ad.getBomFormat().equals(BomFormat.SPDX) ? BomFormat.SPDX : null;
+			log.info("downloadRawArtifact: bomFormat={}, format parameter={}, internalBomId={}, version={}", 
+				ad.getBomFormat(), format, ad.getInternalBom().id(), ad.getVersion());
+			
+			// Check if version is specified for version-specific downloads
 			if (ad.getVersion() != null && !ad.getVersion().isEmpty()) {
 				try {
 					Integer version = Integer.parseInt(ad.getVersion());
+					log.info("Downloading version-specific raw BOM: version={}, format={}", version, ad.getBomFormat());
+					// Use findRawBomByVersion for both SPDX and CycloneDX when version is specified
 					rebom = rebomService.findRawBomByVersion(ad.getInternalBom().id(), ad.getOrg(), version).toString();
 				} catch (NumberFormatException e) {
-					// Version is not numeric, fall back to latest
-					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+					// Version is not numeric, fall back to latest with format
+					log.warn("Version is not numeric: {}, falling back to latest", ad.getVersion());
+					if (ad.getBomFormat().equals(BomFormat.SPDX)) {
+						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format).toString();
+					} else {
+						rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+					}
 				}
 			} else {
-				rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+				// No version specified - download latest
+				if (ad.getBomFormat().equals(BomFormat.SPDX)) {
+					log.info("Downloading latest raw SPDX BOM with format: {}", format);
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg(), format).toString();
+				} else {
+					log.info("Downloading latest raw CycloneDX BOM");
+					rebom = rebomService.findRawBomById(ad.getInternalBom().id(), ad.getOrg()).toString();
+				}
 			}
+			
 			byte[] byteArray = rebom.getBytes();
 			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);

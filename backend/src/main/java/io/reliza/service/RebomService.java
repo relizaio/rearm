@@ -83,6 +83,85 @@ public class RebomService {
     }
 
     public record GraphQLResponse<T>(T data, List<Object> errors) {}
+    
+    /**
+     * Structured error codes from rebom-backend
+     */
+    public enum RebomErrorCode {
+        BOM_VALIDATION_ERROR,
+        BOM_STORAGE_ERROR,
+        BOM_NOT_FOUND,
+        BOM_CONVERSION_ERROR,
+        BOM_MERGE_ERROR,
+        OCI_STORAGE_ERROR,
+        INTERNAL_ERROR,
+        UNKNOWN
+    }
+    
+    /**
+     * Parse and handle structured errors from rebom-backend GraphQL response
+     */
+    private void handleRebomError(GraphQLResponse<?> response) throws RelizaException {
+        if (response.errors() != null && !response.errors().isEmpty()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> error = (Map<String, Object>) response.errors().get(0);
+            String message = (String) error.get("message");
+            
+            // Extract structured error information
+            @SuppressWarnings("unchecked")
+            Map<String, Object> extensions = (Map<String, Object>) error.get("extensions");
+            
+            if (extensions != null) {
+                String codeStr = (String) extensions.get("code");
+                Object details = extensions.get("details");
+                
+                RebomErrorCode code = parseErrorCode(codeStr);
+                
+                // Log structured error with details
+                log.error("Rebom error [{}]: {} - Details: {}", code, message, details);
+                
+                // Throw specific exception based on error code
+                switch (code) {
+                    case BOM_VALIDATION_ERROR:
+                        throw new RelizaException("BOM validation failed: " + message + 
+                            (details != null ? " - " + details : ""));
+                    case BOM_STORAGE_ERROR:
+                        throw new RelizaException("BOM storage failed: " + message);
+                    case BOM_NOT_FOUND:
+                        throw new RelizaException("BOM not found: " + message);
+                    case BOM_CONVERSION_ERROR:
+                        throw new RelizaException("BOM conversion failed: " + message);
+                    case BOM_MERGE_ERROR:
+                        throw new RelizaException("BOM merge failed: " + message);
+                    case OCI_STORAGE_ERROR:
+                        throw new RelizaException("OCI storage error: " + message);
+                    case INTERNAL_ERROR:
+                    case UNKNOWN:
+                    default:
+                        throw new RelizaException("Rebom error: " + message);
+                }
+            } else {
+                // Fallback for errors without extensions
+                log.error("Rebom error (no extensions): {}", message);
+                throw new RelizaException("Rebom error: " + message);
+            }
+        }
+    }
+    
+    /**
+     * Parse error code string to enum
+     */
+    private RebomErrorCode parseErrorCode(String codeStr) {
+        if (codeStr == null) {
+            return RebomErrorCode.UNKNOWN;
+        }
+        try {
+            return RebomErrorCode.valueOf(codeStr);
+        } catch (IllegalArgumentException e) {
+            log.warn("Unknown error code from rebom-backend: {}", codeStr);
+            return RebomErrorCode.UNKNOWN;
+        }
+    }
 
 
     private Mono<Map<String, Object>> executeGraphQLQuery(String query, Map<String, Object> variables) {
@@ -98,8 +177,11 @@ public class RebomService {
             )
             .bodyToMono(GraphQLResponse.class)
             .map(response -> {
-                if (response.errors() != null && !response.errors().isEmpty()) {
-                    throw new RuntimeException("GraphQL failed: " + response.errors());
+                // Use structured error handler
+                try {
+                    handleRebomError(response);
+                } catch (RelizaException e) {
+                    throw new RuntimeException(e);
                 }
                 @SuppressWarnings("unchecked")
 				Map<String, Object> gqlResp = (Map<String, Object>) response.data();

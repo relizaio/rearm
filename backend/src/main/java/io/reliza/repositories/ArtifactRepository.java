@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.CrudRepository;
 
 import io.reliza.model.Artifact;
@@ -36,7 +37,7 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	@Query(
 			value = VariableQueries.FIND_ORPHANED_DTRACK_PROJECTS,
 			nativeQuery = true)
-	List<String> findOrphanedDtrackProjects(String orgUuidAsString);
+	List<String> findOrphanedDtrackProjects(@Param("orgUuidAsString") String orgUuidAsString);
 	
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_VULNERABILITY,

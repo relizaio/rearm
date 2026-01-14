@@ -87,6 +87,9 @@ public class ArtifactService {
     private IntegrationService integrationService;
 	
 	@Autowired
+	private BomLifecycleService bomLifecycleService;
+	
+	@Autowired
     private SystemInfoService systemInfoService;
 	
 	@Lazy
@@ -444,7 +447,8 @@ public class ArtifactService {
 	@Transactional
 	private OASResponseDto storeArtifactOnRebom (ArtifactDto artifactDto, Resource file, ArtifactData existingAd, RebomOptions rebomOptions) throws RelizaException {
 		UUID orgUuid = artifactDto.getOrg();
-		DependencyTrackUploadResult dtur = null;
+		
+		// 1. Parse BOM file
 		JsonNode bomJson;
 		try {
 			bomJson = Utils.readJsonFromResource(file);
@@ -452,153 +456,244 @@ public class ArtifactService {
 			log.error("Error reading Json", e);
 			throw new RelizaException("Cannot parse artifact JSON. Make sure artifact type is set correctly.");
 		}
-		if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
-			String newbomVerString = bomJson.get("version").asText();
-			Integer newBomVersion = Integer.valueOf(newbomVerString);
-			artifactDto.setVersion(newbomVerString);
-			//case of update
-			if(null != existingAd){
-				// find the existing artifact data
-				Integer oldBomVersion =  Integer.valueOf(getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg()));		
-				String oldBomSerial = existingAd.getInternalBom().id().toString();
 		
-
-				String newBomSerial = bomJson.get("serialNumber").textValue();
-				if(newBomSerial.startsWith("urn")){
-					newBomSerial = newBomSerial.replace("urn:uuid:","");
-				}
-				
-				// compare and reject if lesser
-				if(oldBomSerial.equals(newBomSerial)){
-					if(newBomVersion <= oldBomVersion)
-						throw new RelizaException("Uploaded bom should have an incremented version");
-				}else{
-					artifactDto.setUuid(UUID.randomUUID());
-				}
-			}
-		}
+		log.info("Starting BOM processing for artifact {}, format: {}", 
+			artifactDto.getUuid(), artifactDto.getBomFormat());
 		
-		// SPDX versioning: pass existing serialNumber for updates to maintain continuity
-		// Unlike CycloneDX (which auto-detects updates by serialNumber), SPDX always has unique
-		// documentNamespace, so we explicitly pass the existing serialNumber when updating
+		// 2. Prepare for processing (format-specific validation/setup)
 		UUID existingSerialNumberForSpdx = null;
-		if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
-			if(null != existingAd && null != existingAd.getInternalBom()){
-				// User is updating existing SPDX artifact - pass existing serialNumber for continuity
-				existingSerialNumberForSpdx = existingAd.getInternalBom().id();
-				// For SPDX, we keep the same artifact UUID (unlike CycloneDX different-serial case)
-				// Version is managed by rebom-backend (bom_version counter)
-			}
+		if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
+			validateCycloneDxUpdate(artifactDto, bomJson, existingAd);
+		} else if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
+			existingSerialNumberForSpdx = prepareSpdxUpdate(existingAd);
 		}
 
-		RebomResponse rebomResponse = rebomService.uploadSbom(bomJson, rebomOptions, artifactDto.getBomFormat(), orgUuid, existingSerialNumberForSpdx);
-		
-		// For SPDX, set version from rebom response (Rearm-managed bomVersion)
-		if(artifactDto.getBomFormat().equals(BomFormat.SPDX) && rebomResponse.meta().bomVersion() != null){
-			artifactDto.setVersion(rebomResponse.meta().bomVersion());
+		// 3. Process BOM through lifecycle service
+		BomLifecycleService.BomLifecycleResult lifecycleResult;
+		try {
+			lifecycleResult = bomLifecycleService.processBomArtifact(
+				bomJson,
+				rebomOptions,
+				artifactDto.getBomFormat(),
+				orgUuid,
+				artifactDto.getUuid(),
+				existingAd,
+				existingSerialNumberForSpdx
+			);
+		} catch (Exception e) {
+			log.error("BOM lifecycle processing failed for artifact {}: {}", 
+				artifactDto.getUuid(), e.getMessage(), e);
+			throw new RelizaException("BOM processing failed: " + e.getMessage());
 		}
 		
-		Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
-		if(null!=rebomResponse && StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
-			digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rebomResponse.meta().bomDigest(), DigestScope.REARM));
-			// For SPDX, use originalFileDigest for ORIGINAL_FILE scope (hash of original SPDX file)
-			if (StringUtils.isNotEmpty(rebomResponse.meta().originalFileDigest())) {
-				digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rebomResponse.meta().originalFileDigest(), DigestScope.ORIGINAL_FILE));
+		RebomResponse rebomResponse = lifecycleResult.rebomResponse();
+		
+		// 4. Apply response to artifact (format-specific)
+		OASResponseDto response;
+		if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
+			applyCycloneDxResponse(artifactDto, rebomResponse, lifecycleResult, rebomOptions);
+			response = rebomResponse.bom();
+		} else if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
+			response = applySpdxResponse(artifactDto, rebomResponse, lifecycleResult, rebomOptions);
+		} else {
+			throw new RelizaException("Unsupported BOM format: " + artifactDto.getBomFormat());
+		}
+		
+		log.info("BOM processing complete for artifact {}, internalBomId: {}", 
+			artifactDto.getUuid(), artifactDto.getInternalBom().id());
+		
+		return response;
+	}
+
+	/**
+	 * Validates CycloneDX BOM update logic:
+	 * - Extracts version from BOM
+	 * - Checks if update vs new artifact (by serialNumber)
+	 * - Validates version progression
+	 * - Updates artifact UUID if different serialNumber
+	 */
+	private void validateCycloneDxUpdate(
+		ArtifactDto artifactDto, 
+		JsonNode bomJson, 
+		ArtifactData existingAd
+	) throws RelizaException {
+		String newbomVerString = bomJson.get("version").asText();
+		Integer newBomVersion = Integer.valueOf(newbomVerString);
+		artifactDto.setVersion(newbomVerString);
+		
+		if(null != existingAd){
+			Integer oldBomVersion = Integer.valueOf(
+				getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg())
+			);
+			String oldBomSerial = existingAd.getInternalBom().id().toString();
+			
+			String newBomSerial = bomJson.get("serialNumber").textValue();
+			if(newBomSerial.startsWith("urn")){
+				newBomSerial = newBomSerial.replace("urn:uuid:","");
 			}
-			artifactDto.setDigestRecords(digestRecords);
+			
+			if(oldBomSerial.equals(newBomSerial)){
+				if(newBomVersion <= oldBomVersion)
+					throw new RelizaException("Uploaded bom should have an incremented version");
+			} else {
+				artifactDto.setUuid(UUID.randomUUID());
+			}
 		}
-		// UUID internalBomId = rebomOptions.serialNumber();
-		UUID internalBomId;
-		try{
+	}
+
+	/**
+	 * Prepares SPDX BOM for processing:
+	 * - Detects if update (existingAd present)
+	 * - Returns existingSerialNumber for continuity
+	 * 
+	 * Note: Unlike CycloneDX, SPDX versioning is managed by rebom-backend.
+	 * We just pass existingSerialNumber to maintain artifact continuity.
+	 */
+	private UUID prepareSpdxUpdate(ArtifactData existingAd) {
+		if(null != existingAd && null != existingAd.getInternalBom()){
+			return existingAd.getInternalBom().id();
+		}
+		return null;
+	}
+
+	/**
+	 * Extracts internalBomId from rebom response serialNumber.
+	 * Handles both "urn:uuid:..." and plain UUID formats.
+	 */
+	private UUID extractInternalBomId(RebomResponse rebomResponse) throws RelizaException {
+		try {
 			String bomSerialNumber = rebomResponse.meta().serialNumber();
 			if(bomSerialNumber.startsWith("urn")){
 				bomSerialNumber = bomSerialNumber.replace("urn:uuid:","");
 			}
-			internalBomId = UUID.fromString(bomSerialNumber);
-		}catch (Exception e){
-			throw new RelizaException("Error uploading BOM: " + e.getMessage());
+			return UUID.fromString(bomSerialNumber);
+		} catch (Exception e) {
+			throw new RelizaException("Error parsing BOM serialNumber: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Applies CycloneDX-specific data from rebom response to artifact:
+	 * - Extracts bomDigest (REARM scope)
+	 * - Sets internalBom
+	 * - Handles DTrack result
+	 */
+	private void applyCycloneDxResponse(
+		ArtifactDto artifactDto,
+		RebomResponse rebomResponse,
+		BomLifecycleService.BomLifecycleResult lifecycleResult,
+		RebomOptions rebomOptions
+	) throws RelizaException {
+		// Extract digests
+		Set<DigestRecord> digestRecords = artifactDto.getDigestRecords() != null 
+			? artifactDto.getDigestRecords() 
+			: new HashSet<>();
+		
+		if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
+			digestRecords.add(new DigestRecord(
+				TeaChecksumType.SHA_256, 
+				rebomResponse.meta().bomDigest(), 
+				DigestScope.REARM
+			));
+		}
+		
+		artifactDto.setDigestRecords(digestRecords);
+		
+		// Set internalBom
+		UUID internalBomId = extractInternalBomId(rebomResponse);
 		artifactDto.setInternalBom(new InternalBom(internalBomId, rebomOptions.belongsTo()));
 		
+		// Ensure UUID is set
 		if(null == artifactDto.getUuid()){
 			artifactDto.setUuid(UUID.randomUUID());
 		}
-		if (artifactDto.getType().equals(ArtifactType.BOM)) {
-			// Check if we can reuse existing DTrack project info (by digest match)
-			if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest()) ){
-				var a = findArtifactByStoredDigest(orgUuid, rebomResponse.meta().bomDigest());
-				if(a.isPresent()){
-					ArtifactData existingArtifactData = ArtifactData.dataFromRecord(a.get());
-					
-					// Check if DTrack project was deleted during cleanup
-					boolean canReuseProject = true;
-					if (existingArtifactData.getMetrics() != null) {
-						Boolean projectDeleted = existingArtifactData.getMetrics().getDtrackProjectDeleted();
-						if (projectDeleted != null && projectDeleted) {
-							log.info("Existing artifact {} has deleted DTrack project, creating new project instead", 
-								existingArtifactData.getUuid());
-							canReuseProject = false;
-						}
-					}
-					
-					if (canReuseProject) {
-						// Refetch metrics before reusing DTrack project
-						// If project deleted (404), requestMetricsRefreshOnDependencyTrack will resubmit and create new project
-						integrationService.requestMetricsRefreshOnDependencyTrack(existingArtifactData);
-						// Reload the artifact to get updated metrics
-						var reloadedArtifact = sharedArtifactService.getArtifact(existingArtifactData.getUuid());
-						if (reloadedArtifact.isPresent()) {
-							var metrics = ArtifactData.dataFromRecord(reloadedArtifact.get()).getMetrics();
-							dtur = new DependencyTrackUploadResult(metrics.getDependencyTrackProject(), metrics.getUploadToken(), metrics.getProjectName(), metrics.getProjectVersion(),metrics.getDependencyTrackFullUri());
-						}
-					}
-				}
+		
+		// Handle DTrack result
+		if (artifactDto.getType().equals(ArtifactType.BOM) && lifecycleResult.dtrackResult() != null) {
+			artifactDto.setDtur(lifecycleResult.dtrackResult());
+			if (lifecycleResult.dtrackResult().projectId() != null) {
+				log.info("DTrack integration successful for artifact {}", artifactDto.getUuid());
+			} else {
+				log.warn("DTrack integration failed for artifact {}", artifactDto.getUuid());
 			}
-			if(null == dtur){
-				// for an SPDX bom, we fetch the converted CycloneDX bomJson
-				if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
-					try {
-						bomJson = rebomService.findRawBomById(internalBomId, orgUuid, BomFormat.CYCLONEDX);
-					} catch (JsonProcessingException e) {
-						throw new RelizaException("Failed to process BOM JSON: " + e.getMessage());
-					}
-				}
-				String dtrackVersion = rebomOptions.version() + "-" + artifactDto.getUuid().toString();
-				UploadableBom ub = new UploadableBom(bomJson, null, false);
-				// If updating an existing artifact with DTrack project, refetch metrics first
-				if (null != existingAd && null != existingAd.getMetrics() && 
-						StringUtils.isNotEmpty(existingAd.getMetrics().getDependencyTrackProject())) {
-					// Refetch metrics before reusing DTrack project
-					integrationService.requestMetricsRefreshOnDependencyTrack(existingAd);
-					// Reload the artifact to get updated metrics
-					var reloadedArtifact = sharedArtifactService.getArtifact(existingAd.getUuid());
-					if (reloadedArtifact.isPresent()) {
-						ArtifactData refreshedAd = ArtifactData.dataFromRecord(reloadedArtifact.get());
-						dtur = integrationService.uploadBomToExistingDtrackProject(orgUuid, ub, 
-							UUID.fromString(refreshedAd.getMetrics().getDependencyTrackProject()),
-							refreshedAd.getMetrics().getProjectName(),
-							refreshedAd.getMetrics().getProjectVersion());
-					}
-				} else {
-					dtur = integrationService.sendBomToDependencyTrack(orgUuid, ub, rebomOptions.name(), dtrackVersion);
-				}
-			}
-			artifactDto.setDtur(dtur);
+		}
+	}
+
+	/**
+	 * Applies SPDX-specific data from rebom response to artifact:
+	 * - Extracts rebom-managed version
+	 * - Extracts originalFileDigest (hash of original SPDX file)
+	 * - Extracts original file metadata (size, mediaType)
+	 * - Sets internalBom
+	 * - Handles DTrack result
+	 * - Updates OASResponse with original file info
+	 */
+	private OASResponseDto applySpdxResponse(
+		ArtifactDto artifactDto,
+		RebomResponse rebomResponse,
+		BomLifecycleService.BomLifecycleResult lifecycleResult,
+		RebomOptions rebomOptions
+	) throws RelizaException {
+		// Extract version (rebom-managed)
+		if(rebomResponse.meta().bomVersion() != null){
+			artifactDto.setVersion(rebomResponse.meta().bomVersion());
 		}
 		
-		// For SPDX, set original file info from rebom response meta
-		OASResponseDto response = rebomResponse.bom();
-		if (artifactDto.getBomFormat().equals(BomFormat.SPDX)) {
-			if (rebomResponse.meta().originalFileSize() != null) {
-				response.setOriginalSize(rebomResponse.meta().originalFileSize());
-			}
-			if (StringUtils.isNotEmpty(rebomResponse.meta().originalMediaType())) {
-				response.setOriginalMediaType(rebomResponse.meta().originalMediaType());
-			}
-			if (StringUtils.isNotEmpty(rebomResponse.meta().originalFileDigest())) {
-				response.setFileSHA256Digest(rebomResponse.meta().originalFileDigest());
+		// Extract digests
+		Set<DigestRecord> digestRecords = artifactDto.getDigestRecords() != null 
+			? artifactDto.getDigestRecords() 
+			: new HashSet<>();
+		
+		if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
+			digestRecords.add(new DigestRecord(
+				TeaChecksumType.SHA_256, 
+				rebomResponse.meta().bomDigest(), 
+				DigestScope.REARM
+			));
+		}
+		
+		// For SPDX, originalFileDigest is hash of original SPDX file (not converted CycloneDX)
+		if (StringUtils.isNotEmpty(rebomResponse.meta().originalFileDigest())) {
+			digestRecords.add(new DigestRecord(
+				TeaChecksumType.SHA_256, 
+				rebomResponse.meta().originalFileDigest(), 
+				DigestScope.ORIGINAL_FILE
+			));
+		}
+		
+		artifactDto.setDigestRecords(digestRecords);
+		
+		// Set internalBom
+		UUID internalBomId = extractInternalBomId(rebomResponse);
+		artifactDto.setInternalBom(new InternalBom(internalBomId, rebomOptions.belongsTo()));
+		
+		// Ensure UUID is set
+		if(null == artifactDto.getUuid()){
+			artifactDto.setUuid(UUID.randomUUID());
+		}
+		
+		// Handle DTrack result
+		if (artifactDto.getType().equals(ArtifactType.BOM) && lifecycleResult.dtrackResult() != null) {
+			artifactDto.setDtur(lifecycleResult.dtrackResult());
+			if (lifecycleResult.dtrackResult().projectId() != null) {
+				log.info("DTrack integration successful for artifact {}", artifactDto.getUuid());
+			} else {
+				log.warn("DTrack integration failed for artifact {}", artifactDto.getUuid());
 			}
 		}
+		
+		// Update OASResponse with original SPDX file metadata
+		OASResponseDto response = rebomResponse.bom();
+		if (rebomResponse.meta().originalFileSize() != null) {
+			response.setOriginalSize(rebomResponse.meta().originalFileSize());
+		}
+		if (StringUtils.isNotEmpty(rebomResponse.meta().originalMediaType())) {
+			response.setOriginalMediaType(rebomResponse.meta().originalMediaType());
+		}
+		if (StringUtils.isNotEmpty(rebomResponse.meta().originalFileDigest())) {
+			response.setFileSHA256Digest(rebomResponse.meta().originalFileDigest());
+		}
+		
 		return response;
 	}
 
