@@ -245,10 +245,18 @@ function deduplicateBom(bom: any): any {
   })
   outBom.components = out_components
   if ('dependencies' in bom) {
-    // Fix dependencies structure - ensure dependsOn is always an array
+    // Fix dependencies structure - ensure dependsOn is always an array and deduplicate items
     outBom.dependencies = bom.dependencies.map((dep: any) => {
       if (dep.dependsOn && !Array.isArray(dep.dependsOn)) {
         return { ...dep, dependsOn: [dep.dependsOn] };
+      }
+      // Deduplicate dependsOn array items
+      if (dep.dependsOn && Array.isArray(dep.dependsOn)) {
+        const uniqueDependsOn = [...new Set(dep.dependsOn)];
+        if (uniqueDependsOn.length !== dep.dependsOn.length) {
+          logger.debug({ ref: dep.ref, original: dep.dependsOn.length, deduped: uniqueDependsOn.length }, "Deduplicating dependsOn array");
+        }
+        return { ...dep, dependsOn: uniqueDependsOn };
       }
       return dep;
     });
