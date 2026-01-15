@@ -24,7 +24,7 @@ RUN sed -i "s,Version_Managed_By_CI_AND_Reliza,$VERSION," pom.xml \
 
 This is a Maven project that uses CycloneDX Maven plugin to generate SBOM during the build process and places it into `/sbom/sbom.json` file in the produced container image.
 
-Then during the CI phase, ReARM GitHub action extracts this SBOM and uploads it to ReARM as a source code level SBOM.
+Then during the CI phase, ReARM GitHub action extracts this SBOM and uploads it to ReARM as a source code level SBOM. To enable this feature in GitHub Actions, you need to set `source_code_sbom_type` parameter to `custom` in the ReARM's [sbom-sign-scan](https://github.com/relizaio/rearm-actions/tree/main/sbom-sign-scan) action. 
 
 However, similar approach can be used with other tools. Here is a sample script that can be used to extract SBOM from a container image:
 
