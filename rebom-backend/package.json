@@ -32,6 +32,9 @@
   "dependencies": {
     "@apollo/server": "^5.2.0",
     "@cyclonedx/cyclonedx-library": "^9.4.1",
+    "ajv": "^8.12.0",
+    "ajv-formats": "^3.0.1",
+    "ajv-formats-draft2019": "^1.6.1",
     "axios": "^1.13.2",
     "canonicalize": "^2.1.0",
     "exceljs": "^4.4.0",
