@@ -128,7 +128,14 @@ export async function findBomBySerialNumberAndVersion(serialNumber: string, vers
         // Native CycloneDX - fetch raw BOM
         const rawBomUuid = bomRecord.uuid + '-raw';
         logger.debug({ rawBomUuid, version, serialNumber }, "Fetching raw CycloneDX BOM by version");
-        return await fetchFromOci(rawBomUuid);
+        try {
+            return await fetchFromOci(rawBomUuid);
+        } catch (error) {
+            // Fallback for older BOMs without -raw suffix
+            logger.warn({ rawBomUuid, bomUuid: bomRecord.uuid, error: error instanceof Error ? error.message : String(error) }, 
+                "Failed to fetch raw BOM with -raw suffix, retrying without suffix for legacy BOM");
+            return await fetchFromOci(bomRecord.uuid);
+        }
     } else {
         // Augmented/processed BOM requested
         logger.debug({ uuid: bomRecord.uuid, version, serialNumber }, "Fetching augmented BOM by version");
@@ -200,7 +207,14 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
         // Native CycloneDX - fetch raw BOM
         const rawBomUuid = bomById.uuid + '-raw';
         logger.debug({ rawBomUuid, bomUuid: bomById.uuid }, "Fetching raw CycloneDX BOM");
-        return await fetchFromOci(rawBomUuid);
+        try {
+            return await fetchFromOci(rawBomUuid);
+        } catch (error) {
+            // Fallback for older BOMs without -raw suffix
+            logger.warn({ rawBomUuid, bomUuid: bomById.uuid, error: error instanceof Error ? error.message : String(error) }, 
+                "Failed to fetch raw BOM with -raw suffix, retrying without suffix for legacy BOM");
+            return await fetchFromOci(bomById.uuid);
+        }
     } 
     else if (format === 'SPDX') {
         if (bomById.source_format === 'SPDX' && bomById.source_spdx_uuid) {
@@ -240,7 +254,14 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
             const rawBomUuid = bomById.uuid + '-raw';
             logger.debug({ rawBomUuid, bomUuid: bomById.uuid, sourceFormat: bomById.source_format }, 
                 "Fetching raw CycloneDX BOM (no format specified)");
-            return await fetchFromOci(rawBomUuid);
+            try {
+                return await fetchFromOci(rawBomUuid);
+            } catch (error) {
+                // Fallback for older BOMs without -raw suffix
+                logger.warn({ rawBomUuid, bomUuid: bomById.uuid, error: error instanceof Error ? error.message : String(error) }, 
+                    "Failed to fetch raw BOM with -raw suffix, retrying without suffix for legacy BOM");
+                return await fetchFromOci(bomById.uuid);
+            }
         }
         
         // Fallback to primary UUID (processed/augmented BOM)
