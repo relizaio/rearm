@@ -289,4 +289,96 @@ describe('BOM Service - Unit Tests', () => {
             expect(result.meta.serialNumber).toBe(fullSerialNumber);
         });
     });
+
+    describe('BOM without components field', () => {
+        it('should handle CycloneDX 1.4+ BOM without components field', async () => {
+            // This tests the production bug fix where bom.components was undefined
+            // CycloneDX 1.4+ allows BOMs without components field
+            const serialNumber = generateSerialNumber();
+            createdSerialNumbers.push(serialNumber);
+            
+            const bomWithoutComponents = {
+                bomFormat: 'CycloneDX',
+                specVersion: '1.6',
+                serialNumber: serialNumber,
+                version: 1,
+                metadata: {
+                    timestamp: '2026-01-16T00:00:00Z',
+                    component: {
+                        'bom-ref': 'test-app@1.0.0',
+                        type: 'application',
+                        name: 'test-app',
+                        version: '1.0.0'
+                    }
+                }
+                // Note: NO components field - this is valid per CycloneDX 1.4+ spec
+            };
+
+            const bomInput = {
+                bomInput: {
+                    format: 'CYCLONEDX' as const,
+                    bom: bomWithoutComponents,
+                    org: TEST_ORG_UUID,
+                    rebomOptions: createTestRebomOptions({
+                        serialNumber,
+                        name: 'test-no-components',
+                        version: '1.0.0'
+                    })
+                }
+            };
+
+            // Should NOT throw "Cannot read properties of undefined (reading 'forEach')"
+            const result = await BomService.addBom(bomInput);
+            
+            expect(result).toBeDefined();
+            expect(result.uuid).toBeDefined();
+            expect(result.meta.serialNumber).toBe(serialNumber);
+        });
+
+        it('should handle BOM with empty components array', async () => {
+            const serialNumber = generateSerialNumber();
+            createdSerialNumbers.push(serialNumber);
+            
+            const bomWithEmptyComponents = {
+                bomFormat: 'CycloneDX',
+                specVersion: '1.6',
+                serialNumber: serialNumber,
+                version: 1,
+                metadata: {
+                    timestamp: '2026-01-16T00:00:00Z',
+                    component: {
+                        'bom-ref': 'test-app@1.0.0',
+                        type: 'application',
+                        name: 'test-app',
+                        version: '1.0.0'
+                    }
+                },
+                components: [] // Empty array is also valid
+            };
+
+            const bomInput = {
+                bomInput: {
+                    format: 'CYCLONEDX' as const,
+                    bom: bomWithEmptyComponents,
+                    org: TEST_ORG_UUID,
+                    rebomOptions: createTestRebomOptions({
+                        serialNumber,
+                        name: 'test-empty-components',
+                        version: '1.0.0'
+                    })
+                }
+            };
+
+            const result = await BomService.addBom(bomInput);
+            
+            expect(result).toBeDefined();
+            expect(result.uuid).toBeDefined();
+            
+            // Verify the BOM can be retrieved
+            const retrieved = await BomService.findBomObjectById(result.uuid, TEST_ORG_UUID) as any;
+            expect(retrieved.components).toBeDefined();
+            expect(Array.isArray(retrieved.components)).toBe(true);
+            expect(retrieved.components.length).toBe(0);
+        });
+    });
 });

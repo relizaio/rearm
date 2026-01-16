@@ -461,26 +461,28 @@ function deduplicateBom(bom: any): any {
   let purl_dedup_map: any = {}
   let name_dedup_map: any = {}
   let out_components: any[] = []
-  bom.components.forEach((component: any) => {
-    if ('purl' in component) {
-      if (!(component.purl in purl_dedup_map)) {
-        out_components.push(component)
-        purl_dedup_map[component.purl] = true
+  if (bom.components && Array.isArray(bom.components)) {
+    bom.components.forEach((component: any) => {
+      if ('purl' in component) {
+        if (!(component.purl in purl_dedup_map)) {
+          out_components.push(component)
+          purl_dedup_map[component.purl] = true
+        } else {
+          logger.info(`deduped comp by purl: ${component.purl}`)
+        }
+      } else if ('name' in component && 'version' in component) {
+        let nver: string = component.name + '_' + component.version
+        if (!(nver in name_dedup_map)) {
+          out_components.push(component)
+          name_dedup_map[nver] = true
+        } else {
+          logger.info(`deduped comp by name: ${nver}`)
+        }
       } else {
-        logger.info(`deduped comp by purl: ${component.purl}`)
-      }
-    } else if ('name' in component && 'version' in component) {
-      let nver: string = component.name + '_' + component.version
-      if (!(nver in name_dedup_map)) {
         out_components.push(component)
-        name_dedup_map[nver] = true
-      } else {
-        logger.info(`deduped comp by name: ${nver}`)
       }
-    } else {
-      out_components.push(component)
-    }
-  })
+    })
+  }
   outBom.components = out_components
   if ('dependencies' in bom) {
     const dependencyMap = new Map<string, any>();
