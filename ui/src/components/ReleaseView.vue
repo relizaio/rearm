@@ -328,8 +328,8 @@
                             </div>
                             <div>
                                 <changelog-view 
-                                    :release1prop="updatedRelease.uuid" 
-                                    :release2prop="selectedReleaseId"
+                                    :release1prop="selectedReleaseId"
+                                    :release2prop="updatedRelease.uuid"
                                     :orgprop="updatedRelease.orgDetails.uuid"
                                     :componenttypeprop="release.componentDetails.type" 
                                     :iscomponentchangelog="false"

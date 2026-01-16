@@ -704,6 +704,49 @@ const CHANGES_GQL_DATA = `
 
 const CHANGELOG_GQL_DATA = `
     ${COMPONENT_TITLE_GQL_DATA}
+    sbomChanges {
+        added {
+            purl
+            version
+        }
+        removed {
+            purl
+            version
+        }
+    }
+    vulnerabilityChanges {
+        appeared {
+            findingId
+            aliases
+            severity
+            affectedComponent
+            analysisState
+            sources
+        }
+        resolved {
+            findingId
+            aliases
+            severity
+            affectedComponent
+            analysisState
+            sources
+        }
+        severityChanged {
+            findingId
+            aliases
+            severity
+            previousSeverity
+            affectedComponent
+            analysisState
+            sources
+        }
+        summary {
+            totalAppeared
+            totalResolved
+            totalSeverityChanged
+            netChange
+        }
+    }
     branches {
         uuid
         name
