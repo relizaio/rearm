@@ -11,9 +11,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.service.ReleaseService.ChangeRecord;
 import io.reliza.service.ReleaseService.ReleaseRecord;
 import io.reliza.service.ReleaseService.TicketRecord;
+import io.reliza.model.dto.VulnerabilityChangesDto.VulnerabilityChangesRecord;
 import lombok.Builder;
 import lombok.Data;
 
@@ -41,4 +43,8 @@ public class ComponentJsonDto {
 	private List<ComponentJsonDto> components;
 	@JsonProperty(CommonVariables.BRANCHES_FIELD)
 	private List<ComponentJsonDto> branches;
+	@JsonProperty("sbomChanges")
+	private ArtifactChangelog sbomChanges;
+	@JsonProperty("vulnerabilityChanges")
+	private VulnerabilityChangesRecord vulnerabilityChanges;
 }

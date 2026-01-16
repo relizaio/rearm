@@ -312,7 +312,8 @@ public class ReleaseDatafetcher {
 			@InputArgument("release2") UUID uuid2,
 			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("aggregated") AggregationType aggregated,
-			@InputArgument("timeZone") String timeZone
+			@InputArgument("timeZone") String timeZone,
+			@InputArgument("includeSbomAndVuln") Boolean includeSbomAndVuln
 		) throws RelizaException {
 
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
@@ -320,7 +321,10 @@ public class ReleaseDatafetcher {
 		
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		
-		return releaseService.getChangelogBetweenReleases(uuid1, uuid2, orgUuid, aggregated, timeZone);
+		// Default to true if not specified
+		boolean includeData = includeSbomAndVuln == null ? true : includeSbomAndVuln;
+		
+		return releaseService.getChangelogBetweenReleases(uuid1, uuid2, orgUuid, aggregated, timeZone, includeData);
 	}
 	
 

@@ -5,7 +5,7 @@ type Query {
 	allOrganizations: [Organization]
 	
 	# changelog
-	getChangelogBetweenReleases(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
+	getChangelogBetweenReleases(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String, includeSbomAndVuln: Boolean): ComponentChangeLog
 	getComponentChangeLog(componentUuid:ID!,branchUuid:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
 	
 	releaseTagKeys(orgUuid: ID!): [String]
@@ -425,6 +425,8 @@ type ComponentChangeLog {
 	changes: [ChangeChangeLog]
 	components: [ComponentChangeLog]
 	branches: [ComponentChangeLog]
+	sbomChanges: ArtifactChangelog
+	vulnerabilityChanges: VulnerabilityChanges
 }
 
 
@@ -462,6 +464,30 @@ type CommitChangeLog {
 	rawText: String
 	commitAuthor: String
 	commitEmail: String
+}
+
+type VulnerabilityChanges {
+	appeared: [VulnerabilityChange]
+	resolved: [VulnerabilityChange]
+	severityChanged: [VulnerabilityChange]
+	summary: VulnerabilityChangesSummary
+}
+
+type VulnerabilityChange {
+	findingId: String
+	aliases: [String]
+	severity: VulnerabilitySeverity
+	previousSeverity: VulnerabilitySeverity
+	affectedComponent: String
+	analysisState: AnalysisState
+	sources: [ID]
+}
+
+type VulnerabilityChangesSummary {
+	totalAppeared: Int
+	totalResolved: Int
+	totalSeverityChanged: Int
+	netChange: Int
 }
 
 type VcsRepository {

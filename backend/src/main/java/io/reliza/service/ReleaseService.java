@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -56,6 +57,7 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.AcollectionData;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.AutoIntegrateState;
@@ -90,7 +92,9 @@ import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ComponentJsonDto.ComponentJsonDtoBuilder;
 import io.reliza.model.dto.ReleaseDto;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.SceDto;
+import io.reliza.model.dto.VulnerabilityChangesDto;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaIdentifier;
@@ -152,6 +156,9 @@ public class ReleaseService {
 
 	@Autowired
 	private ReleaseMetricsComputeService releaseMetricsComputeService;
+
+	@Autowired
+	private AcollectionService acollectionService;
 
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
@@ -1206,21 +1213,271 @@ public class ReleaseService {
 	}
 
 	public ComponentJsonDto getChangelogBetweenReleases(UUID uuid1, UUID uuid2, UUID org, AggregationType aggregated, String userTimeZone) throws RelizaException{
+		return getChangelogBetweenReleases(uuid1, uuid2, org, aggregated, userTimeZone, true);
+	}
+	
+	public ComponentJsonDto getChangelogBetweenReleases(UUID uuid1, UUID uuid2, UUID org, AggregationType aggregated, String userTimeZone, boolean includeSbomAndVulnChanges) throws RelizaException{
 		ComponentJsonDto changelog = null;
 		//gets one extra element at the end for product component comparision
 		List<ReleaseData> rds = sharedReleaseService.listAllReleasesBetweenReleases(uuid1,  uuid2);
+		
 		if(rds.size() > 0){
 			ReleaseData rd = rds.get(0);
 			if(rd != null){
 				Optional <ComponentData> opd = getComponentService.getComponentData(rd.getComponent());
 				ComponentData pd = opd.get();
+				
 				if(pd.getType().equals(ComponentType.COMPONENT)){
 					changelog = getChangeLogJsonForReleaseDataList(rds, org, true, pd, aggregated, userTimeZone);
 				}
 				else changelog = getChangeLogJsonForProductReleaseDataList(rds, org, true, aggregated, userTimeZone);
+				
+				// Add SBOM and vulnerability changes in parallel for better performance
+				// Skip if includeSbomAndVulnChanges is false for faster initial load
+				if (changelog != null && includeSbomAndVulnChanges) {
+					ComponentJsonDto finalChangelog = changelog;
+					
+					// Run SBOM and vulnerability comparisons in parallel
+					CompletableFuture<AcollectionData.ArtifactChangelog> sbomFuture = CompletableFuture.supplyAsync(() -> {
+						try {
+							return aggregateSbomChanges(uuid1, uuid2, org);
+						} catch (Exception e) {
+							log.warn("Failed to aggregate SBOM changes for changelog between {} and {}: {}", 
+									uuid1, uuid2, e.getMessage());
+							return new AcollectionData.ArtifactChangelog(Set.of(), Set.of());
+						}
+					});
+					
+					CompletableFuture<VulnerabilityChangesDto.VulnerabilityChangesRecord> vulnFuture = CompletableFuture.supplyAsync(() -> {
+						try {
+							return compareVulnerabilityChanges(uuid1, uuid2, org);
+						} catch (Exception e) {
+							log.warn("Failed to compare vulnerability changes for changelog between {} and {}: {}", 
+									uuid1, uuid2, e.getMessage());
+							return new VulnerabilityChangesDto.VulnerabilityChangesRecord(
+								List.of(), List.of(), List.of(),
+								new VulnerabilityChangesDto.VulnerabilityChangesSummary(0, 0, 0, 0)
+							);
+						}
+					});
+					
+					// Wait for both to complete and set results
+					try {
+						CompletableFuture.allOf(sbomFuture, vulnFuture).join();
+						finalChangelog.setSbomChanges(sbomFuture.get());
+						finalChangelog.setVulnerabilityChanges(vulnFuture.get());
+					} catch (Exception e) {
+						log.error("Error waiting for SBOM/vulnerability comparison: {}", e.getMessage());
+					}
+				}
 			}
 		}
+		
 		return changelog;
+	}
+
+	/**
+	 * Aggregates SBOM changes across multiple releases by collecting
+	 * ArtifactChangelog data from each release's Acollection
+	 * 
+	 * @param release1Uuid Starting release UUID
+	 * @param release2Uuid Ending release UUID
+	 * @param orgUuid Organization UUID
+	 * @return Aggregated ArtifactChangelog with net changes
+	 */
+	public AcollectionData.ArtifactChangelog aggregateSbomChanges(
+			UUID release1Uuid, 
+			UUID release2Uuid, 
+			UUID orgUuid) throws RelizaException {
+		
+		// Get the latest Acollection for both releases
+		AcollectionData acollection1 = acollectionService.getLatestCollectionDataOfRelease(release1Uuid);
+		AcollectionData acollection2 = acollectionService.getLatestCollectionDataOfRelease(release2Uuid);
+		
+		if (acollection1 == null || acollection2 == null) {
+			return new AcollectionData.ArtifactChangelog(Set.of(), Set.of());
+		}
+		
+		// Early bailout: check if artifacts exist before expensive extraction
+		if (acollection1.getArtifacts() == null || acollection1.getArtifacts().isEmpty() ||
+			acollection2.getArtifacts() == null || acollection2.getArtifacts().isEmpty()) {
+			return new AcollectionData.ArtifactChangelog(Set.of(), Set.of());
+		}
+		
+		// Extract BOM artifact UUIDs from both collections
+		List<UUID> artifacts1 = extractBomIdsFromAcollection(acollection1);
+		List<UUID> artifacts2 = extractBomIdsFromAcollection(acollection2);
+		
+		if (artifacts1.isEmpty() || artifacts2.isEmpty()) {
+			return new AcollectionData.ArtifactChangelog(Set.of(), Set.of());
+		}
+		
+		// Use rebomService to compare the SBOMs directly
+		// This compares release2's SBOM against release1's SBOM to get net changes
+		AcollectionData.ArtifactChangelog changelog = rebomService.getArtifactChangelog(
+			artifacts2, artifacts1, orgUuid);
+		
+		return changelog;
+	}
+	
+	/**
+	 * Extracts internal BOM IDs from an Acollection
+	 */
+	private List<UUID> extractBomIdsFromAcollection(AcollectionData collection) {
+		List<UUID> artIds = collection.getArtifacts().stream()
+			.map(AcollectionData.VersionedArtifact::artifactUuid)
+			.toList();
+		
+		List<ArtifactData> artList = artifactService.getArtifactDataList(artIds);
+		
+		return artList.stream()
+			.filter(art -> art.getInternalBom() != null)
+			.map(art -> art.getInternalBom().id())
+			.distinct()
+			.toList();
+	}
+
+	/**
+	 * Compares vulnerability findings between two releases using ReleaseMetricsDto pattern
+	 * from AnalyticsMetricsService
+	 * 
+	 * @param release1Uuid Starting release UUID
+	 * @param release2Uuid Ending release UUID
+	 * @param orgUuid Organization UUID
+	 * @return VulnerabilityChangesRecord with appeared, resolved, and severity changed vulnerabilities
+	 */
+	public VulnerabilityChangesDto.VulnerabilityChangesRecord compareVulnerabilityChanges(
+			UUID release1Uuid,
+			UUID release2Uuid,
+			UUID orgUuid) throws RelizaException {
+		
+		VulnerabilityChangesDto.VulnerabilityChangesRecord emptyResult = 
+			new VulnerabilityChangesDto.VulnerabilityChangesRecord(
+				List.of(), List.of(), List.of(),
+				new VulnerabilityChangesDto.VulnerabilityChangesSummary(0, 0, 0, 0)
+			);
+		
+		// Get release data for both releases
+		Optional<ReleaseData> release1Opt = sharedReleaseService.getReleaseData(release1Uuid, orgUuid);
+		Optional<ReleaseData> release2Opt = sharedReleaseService.getReleaseData(release2Uuid, orgUuid);
+		
+		if (release1Opt.isEmpty() || release2Opt.isEmpty()) {
+			return emptyResult;
+		}
+		
+		ReleaseData release1 = release1Opt.get();
+		ReleaseData release2 = release2Opt.get();
+		
+		// Get metrics for both releases
+		ReleaseMetricsDto metrics1 = release1.getMetrics();
+		ReleaseMetricsDto metrics2 = release2.getMetrics();
+		
+		if (metrics1 == null || metrics2 == null) {
+			return emptyResult;
+		}
+		
+		// Early bailout: if both releases have no vulnerabilities, skip processing
+		if ((metrics1.getVulnerabilityDetails() == null || metrics1.getVulnerabilityDetails().isEmpty()) &&
+			(metrics2.getVulnerabilityDetails() == null || metrics2.getVulnerabilityDetails().isEmpty())) {
+			return emptyResult;
+		}
+		
+		// Build maps of vulnerabilities by key (vulnId + purl)
+		Map<String, ReleaseMetricsDto.VulnerabilityDto> vulns1 = new HashMap<>();
+		Map<String, ReleaseMetricsDto.VulnerabilityDto> vulns2 = new HashMap<>();
+		
+		if (metrics1.getVulnerabilityDetails() != null) {
+			for (ReleaseMetricsDto.VulnerabilityDto vuln : metrics1.getVulnerabilityDetails()) {
+				String key = vuln.vulnId() + "|" + (vuln.purl() != null ? vuln.purl() : "");
+				vulns1.put(key, vuln);
+			}
+		}
+		
+		if (metrics2.getVulnerabilityDetails() != null) {
+			for (ReleaseMetricsDto.VulnerabilityDto vuln : metrics2.getVulnerabilityDetails()) {
+				String key = vuln.vulnId() + "|" + (vuln.purl() != null ? vuln.purl() : "");
+				vulns2.put(key, vuln);
+			}
+		}
+		
+		// Calculate changes
+		List<VulnerabilityChangesDto.VulnerabilityChangeRecord> appeared = new ArrayList<>();
+		List<VulnerabilityChangesDto.VulnerabilityChangeRecord> resolved = new ArrayList<>();
+		List<VulnerabilityChangesDto.VulnerabilityChangeRecord> severityChanged = new ArrayList<>();
+		
+		// Find appeared vulnerabilities (in release2 but not in release1)
+		for (Map.Entry<String, ReleaseMetricsDto.VulnerabilityDto> entry : vulns2.entrySet()) {
+			if (!vulns1.containsKey(entry.getKey())) {
+				ReleaseMetricsDto.VulnerabilityDto vuln = entry.getValue();
+				appeared.add(createVulnerabilityChangeRecord(vuln, null, extractSources(vuln)));
+			}
+		}
+		
+		// Find resolved vulnerabilities (in release1 but not in release2)
+		for (Map.Entry<String, ReleaseMetricsDto.VulnerabilityDto> entry : vulns1.entrySet()) {
+			if (!vulns2.containsKey(entry.getKey())) {
+				ReleaseMetricsDto.VulnerabilityDto vuln = entry.getValue();
+				resolved.add(createVulnerabilityChangeRecord(vuln, null, extractSources(vuln)));
+			}
+		}
+		
+		// Find severity changes (in both but with different severity)
+		for (Map.Entry<String, ReleaseMetricsDto.VulnerabilityDto> entry : vulns2.entrySet()) {
+			String key = entry.getKey();
+			if (vulns1.containsKey(key)) {
+				ReleaseMetricsDto.VulnerabilityDto vuln1 = vulns1.get(key);
+				ReleaseMetricsDto.VulnerabilityDto vuln2 = entry.getValue();
+				
+				if (vuln1.severity() != vuln2.severity()) {
+					severityChanged.add(createVulnerabilityChangeRecord(
+						vuln2, vuln1.severity(), extractSources(vuln2)));
+				}
+			}
+		}
+		
+		// Create summary
+		int netChange = appeared.size() - resolved.size();
+		VulnerabilityChangesDto.VulnerabilityChangesSummary summary = 
+			new VulnerabilityChangesDto.VulnerabilityChangesSummary(
+				appeared.size(), resolved.size(), severityChanged.size(), netChange);
+		
+		return new VulnerabilityChangesDto.VulnerabilityChangesRecord(
+			appeared, resolved, severityChanged, summary);
+	}
+	
+	private VulnerabilityChangesDto.VulnerabilityChangeRecord createVulnerabilityChangeRecord(
+			ReleaseMetricsDto.VulnerabilityDto vuln,
+			ReleaseMetricsDto.VulnerabilitySeverity previousSeverity,
+			Set<UUID> sources) {
+		
+		List<String> aliases = new ArrayList<>();
+		if (vuln.aliases() != null) {
+			aliases = vuln.aliases().stream()
+				.map(ReleaseMetricsDto.VulnerabilityAliasDto::aliasId)
+				.collect(Collectors.toList());
+		}
+		
+		return new VulnerabilityChangesDto.VulnerabilityChangeRecord(
+			vuln.vulnId(),
+			aliases,
+			vuln.severity(),
+			previousSeverity,
+			vuln.purl(),
+			vuln.analysisState(),
+			sources
+		);
+	}
+	
+	private Set<UUID> extractSources(ReleaseMetricsDto.VulnerabilityDto vuln) {
+		Set<UUID> sources = new HashSet<>();
+		if (vuln.sources() != null) {
+			for (ReleaseMetricsDto.FindingSourceDto source : vuln.sources()) {
+				if (source.release() != null) {
+					sources.add(source.release());
+				}
+			}
+		}
+		return sources;
 	}
 	
 	public ComponentJsonDto getChangeLogJsonForProductReleaseDataList(List<ReleaseData> productRds, UUID org,
@@ -1359,7 +1616,135 @@ public class ReleaseService {
 			}
 			json.components(productReleaseRecordList);
 		}
-		return json.build();
+		
+		// Add SBOM and vulnerability changes for product releases
+		ComponentJsonDto changelog = json.build();
+		if (productRds.size() > 0) {
+			UUID firstProductReleaseUuid = productRdFirst.getUuid();
+			UUID lastProductReleaseUuid = productRdLast.getUuid();
+			
+			try {
+				// Aggregate SBOM changes across all component releases in the product
+				AcollectionData.ArtifactChangelog sbomChanges = aggregateSbomChangesForProduct(
+					firstProductReleaseUuid, lastProductReleaseUuid, componentReleaseUuids, org);
+				changelog.setSbomChanges(sbomChanges);
+			} catch (Exception e) {
+				log.warn("Failed to aggregate SBOM changes for product changelog between {} and {}: {}", 
+						firstProductReleaseUuid, lastProductReleaseUuid, e.getMessage());
+			}
+			
+			try {
+				// Aggregate vulnerability changes across all component releases in the product
+				VulnerabilityChangesDto.VulnerabilityChangesRecord vulnChanges = 
+					compareVulnerabilityChangesForProduct(
+						firstProductReleaseUuid, lastProductReleaseUuid, componentReleaseUuids, org);
+				changelog.setVulnerabilityChanges(vulnChanges);
+			} catch (Exception e) {
+				log.warn("Failed to compare vulnerability changes for product changelog between {} and {}: {}", 
+						firstProductReleaseUuid, lastProductReleaseUuid, e.getMessage());
+			}
+		}
+		
+		return changelog;
+	}
+	
+	/**
+	 * Aggregates SBOM changes for product releases by collecting changes from all component releases
+	 */
+	private AcollectionData.ArtifactChangelog aggregateSbomChangesForProduct(
+			UUID productRelease1Uuid,
+			UUID productRelease2Uuid,
+			List<UUID> componentReleaseUuids,
+			UUID orgUuid) {
+		
+		Map<String, AcollectionData.DiffComponent> aggregatedAdded = new HashMap<>();
+		Map<String, AcollectionData.DiffComponent> aggregatedRemoved = new HashMap<>();
+		
+		// Collect SBOM changes from all component releases
+		for (UUID componentReleaseUuid : componentReleaseUuids) {
+			AcollectionData acollection = acollectionService.getLatestCollectionDataOfRelease(componentReleaseUuid);
+			
+			if (acollection != null && acollection.getArtifactComparison() != null) {
+				AcollectionData.ArtifactChangelog changelog = acollection.getArtifactComparison().changelog();
+				
+				if (changelog != null) {
+					if (changelog.added() != null) {
+						for (AcollectionData.DiffComponent comp : changelog.added()) {
+							aggregatedAdded.put(comp.purl(), comp);
+						}
+					}
+					
+					if (changelog.removed() != null) {
+						for (AcollectionData.DiffComponent comp : changelog.removed()) {
+							aggregatedRemoved.put(comp.purl(), comp);
+						}
+					}
+				}
+			}
+		}
+		
+		// Calculate net changes
+		Set<String> netAdded = new HashSet<>(aggregatedAdded.keySet());
+		Set<String> netRemoved = new HashSet<>(aggregatedRemoved.keySet());
+		
+		Set<String> versionChanged = new HashSet<>(netAdded);
+		versionChanged.retainAll(netRemoved);
+		
+		Set<AcollectionData.DiffComponent> finalAdded = netAdded.stream()
+				.map(aggregatedAdded::get)
+				.collect(Collectors.toSet());
+		
+		Set<AcollectionData.DiffComponent> finalRemoved = netRemoved.stream()
+				.map(aggregatedRemoved::get)
+				.collect(Collectors.toSet());
+		
+		return new AcollectionData.ArtifactChangelog(finalAdded, finalRemoved);
+	}
+	
+	/**
+	 * Compares vulnerability changes for product releases by aggregating from all component releases
+	 */
+	private VulnerabilityChangesDto.VulnerabilityChangesRecord compareVulnerabilityChangesForProduct(
+			UUID productRelease1Uuid,
+			UUID productRelease2Uuid,
+			List<UUID> componentReleaseUuids,
+			UUID orgUuid) throws RelizaException {
+		
+		// Aggregate metrics from all component releases
+		Map<String, ReleaseMetricsDto.VulnerabilityDto> allVulns = new HashMap<>();
+		
+		for (UUID componentReleaseUuid : componentReleaseUuids) {
+			Optional<ReleaseData> releaseOpt = sharedReleaseService.getReleaseData(componentReleaseUuid, orgUuid);
+			if (releaseOpt.isPresent()) {
+				ReleaseMetricsDto metrics = releaseOpt.get().getMetrics();
+				if (metrics != null && metrics.getVulnerabilityDetails() != null) {
+					for (ReleaseMetricsDto.VulnerabilityDto vuln : metrics.getVulnerabilityDetails()) {
+						String key = vuln.vulnId() + "|" + (vuln.purl() != null ? vuln.purl() : "");
+						allVulns.put(key, vuln);
+					}
+				}
+			}
+		}
+		
+		// For product releases, we compare the aggregated state
+		// This is a simplified comparison - in reality, you might want to track
+		// vulnerabilities at the product release level differently
+		List<VulnerabilityChangesDto.VulnerabilityChangeRecord> appeared = new ArrayList<>();
+		List<VulnerabilityChangesDto.VulnerabilityChangeRecord> resolved = new ArrayList<>();
+		List<VulnerabilityChangesDto.VulnerabilityChangeRecord> severityChanged = new ArrayList<>();
+		
+		// For now, we'll show all current vulnerabilities as context
+		// A more sophisticated implementation would compare product release states
+		for (ReleaseMetricsDto.VulnerabilityDto vuln : allVulns.values()) {
+			appeared.add(createVulnerabilityChangeRecord(vuln, null, extractSources(vuln)));
+		}
+		
+		VulnerabilityChangesDto.VulnerabilityChangesSummary summary = 
+			new VulnerabilityChangesDto.VulnerabilityChangesSummary(
+				appeared.size(), resolved.size(), severityChanged.size(), appeared.size());
+		
+		return new VulnerabilityChangesDto.VulnerabilityChangesRecord(
+			appeared, resolved, severityChanged, summary);
 	}
 	
 	public ReleaseData addInboundDeliverables(ReleaseData releaseData, List<Map<String, Object>> deliverableDtos,
