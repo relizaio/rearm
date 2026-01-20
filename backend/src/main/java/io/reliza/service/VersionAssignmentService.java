@@ -274,7 +274,7 @@ public class VersionAssignmentService {
 		}
 		if (StringUtils.isNotEmpty(modifier) && !branchSchema.toLowerCase().contains("calvermodifier")) {
 			v.setModifier(modifier);
-		} else if (StringUtils.isEmpty(namespace)) {
+		} else if (!branchSchema.toLowerCase().contains("calvermodifier") && StringUtils.isEmpty(namespace)) {
 			v.setModifier("");
 		}
 		v.setMetadata(metadata);
