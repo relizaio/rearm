@@ -1,5 +1,9 @@
 <template>
-    <div>
+    <div class="release-view">
+        <div v-if="isLoading" class="release-loading-overlay">
+            <n-spin size="large" />
+        </div>
+        <div v-show="!isLoading">
             <div class="row">
 
             <n-modal
@@ -202,7 +206,7 @@
         </div>
 
         <div class="row" v-if="release && release.orgDetails && updatedRelease && updatedRelease.orgDetails">
-            <n-tabs style="padding-left:2%;" type="line" @update:value="handleTabSwitch">
+            <n-tabs style="padding-left:0.2%;" type="line" @update:value="handleTabSwitch">
                 <n-tab-pane name="components" tab="Components">
                     <div class="container" v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'">
                         <h3>Components
@@ -528,6 +532,7 @@
             </n-form>
         </n-modal>
             </div>
+    </div>
 
 </template>
     
@@ -3255,8 +3260,22 @@ async function handleTabSwitch(tabName: string) {
     
 <style scoped lang="scss">
 .row {
-    padding-left: 1%;
+    padding-left: 0.5%;
     font-size: 16px;
+}
+
+.release-view {
+    position: relative;
+}
+
+.release-loading-overlay {
+    position: absolute;
+    inset: 0;
+    min-height: 60vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
 }
 
 .container{
