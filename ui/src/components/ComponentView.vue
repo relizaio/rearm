@@ -646,7 +646,7 @@ const notification = useNotification()
 async function copyToClipboard (text: string) {
     try {
         navigator.clipboard.writeText(text);
-        notify('info', 'Copied', `{words.value.componentFirstUpper} uuid copied: ${text}`)
+        notify('info', 'Copied', `${words.value.componentFirstUpper} uuid copied: ${text}`)
     } catch (error) {
         console.error(error)
     }
