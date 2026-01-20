@@ -761,7 +761,8 @@ const storeObject : any = {
                         uuid: p.uuid,
                         pattern: p.pattern,
                         targetBranchName: p.targetBranchName,
-                        defaultStatus: p.defaultStatus
+                        defaultStatus: p.defaultStatus,
+                        fallbackToBase: p.fallbackToBase
                     }
                 })
             }

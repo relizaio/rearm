@@ -609,9 +609,17 @@ const openBranchSettings = function() {
     window.history.replaceState({}, '', newUrl)
 }
 
-const hasBranchChanges = function() {
-    return commonFunctions.stableStringify(originalBranch.value) !== commonFunctions.stableStringify(modifiedBranch.value)
+const normalizeDependencyPatterns = function (patterns: any[]) {
+    if (!patterns) return []
+    return patterns.map((pattern: any) => ({
+        ...pattern,
+        fallbackToBase: pattern.fallbackToBase ?? 'ENABLED'
+    }))
 }
+
+const hasBranchChanges = computed(() => {
+    return commonFunctions.stableStringify(originalBranch.value) !== commonFunctions.stableStringify(modifiedBranch.value)
+})
 
 const handleBranchSettingsClose = async function(show: boolean) {
     if (!show && hasBranchChanges()) {
@@ -789,6 +797,7 @@ async function saveModifiedBranch () {
         
         const storeResp = await store.dispatch('updateBranch', modifiedBranch.value)
         modifiedBranch.value = commonFunctions.deepCopy(storeResp)
+        modifiedBranch.value.dependencyPatterns = normalizeDependencyPatterns(modifiedBranch.value.dependencyPatterns)
         // Update originalBranch to match current state so hasBranchChanges() returns false
         originalBranch.value = commonFunctions.deepCopy(storeResp)
         customBranchVersionSchema.value = ''
@@ -850,7 +859,9 @@ function resetBranchSettings() {
     modifiedBranch.value.vcsBranch = branchData.value.vcsBranch
     modifiedBranch.value.autoIntegrate = branchData.value.autoIntegrate
     modifiedBranch.value.findingAnalyticsParticipation = branchData.value.findingAnalyticsParticipation || 'INCLUDED'
-    modifiedBranch.value.dependencyPatterns = commonFunctions.deepCopy(branchData.value.dependencyPatterns || [])
+    modifiedBranch.value.dependencyPatterns = normalizeDependencyPatterns(
+        commonFunctions.deepCopy(branchData.value.dependencyPatterns || [])
+    )
     modifiedBranch.value.dependencies = commonFunctions.deepCopy(branchData.value.dependencies || [])
     modifiedBranch.value.effectiveDependencies = commonFunctions.deepCopy(branchData.value.effectiveDependencies || [])
     selectNewVcsRepo.value = false
@@ -1059,6 +1070,7 @@ const addDependencyPattern = function () {
         pattern: '',
         targetBranchName: null,
         defaultStatus: 'REQUIRED',
+        fallbackToBase: 'ENABLED',
         isNew: true  // Mark as new (not saved to backend yet)
     })
 }
@@ -1106,7 +1118,7 @@ const patternTableFields: DataTableColumns<any> = [
             'Target Branch',
             h(NTooltip, { trigger: 'hover' }, {
                 trigger: () => h(NIcon, { size: 16, style: { cursor: 'help' } }, { default: () => h(QuestionMark) }),
-                default: () => 'If not set or set but the branch is not found, defaults to the BASE branch of the component.'
+                default: () => 'If not set, defaults to the BASE branch of the component. If set but the branch is not found, behaviour is controlled by the "Fallback To Base" flag.'
             })
         ]),
         key: 'targetBranchName',
@@ -1122,7 +1134,21 @@ const patternTableFields: DataTableColumns<any> = [
         }
     },
     {
-        title: 'Status',
+        title: () => h('span', {
+            style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+            }
+        }, [
+            'Status',
+            h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h(NIcon, { size: 16, style: { cursor: 'help' } }, { default: () => h(QuestionMark) }),
+                default: () => h('div', { style: { whiteSpace: 'pre-line' } },
+                    'REQUIRED: The dependency is required for the branch to be built.\nIGNORED: The dependency is ignored for the branch to be built.\nTRANSIENT: The dependency is required for the branch to be built, affects matching in the future ReARM DevOps module.'
+                )
+            })
+        ]),
         key: 'defaultStatus',
         width: 130,
         render: (row: any) => {
@@ -1135,6 +1161,31 @@ const patternTableFields: DataTableColumns<any> = [
                 ],
                 onUpdateValue: (val: string) => {
                     row.defaultStatus = val
+                }
+            })
+        }
+    },
+    {
+        title: () => h('span', {
+            style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+            }
+        }, [
+            'Fallback To Base',
+            h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h(NIcon, { size: 16, style: { cursor: 'help' } }, { default: () => h(QuestionMark) }),
+                default: () => 'If enabled, missing target branch defaults to BASE. If disabled, the dependency will not be included when the target branch is missing.'
+            })
+        ]),
+        key: 'fallbackToBase',
+        width: 150,
+        render: (row: any) => {
+            return h(NCheckbox, {
+                checked: row.fallbackToBase === 'ENABLED',
+                'onUpdate:checked': (value: boolean) => {
+                    row.fallbackToBase = value ? 'ENABLED' : 'DISABLED'
                 }
             })
         }
@@ -1667,8 +1718,8 @@ const previewPattern = async function(pattern: any) {
         // Call GraphQL to preview pattern matches
         const response = await graphqlClient.query({
             query: gql`
-                query previewPattern($orgUuid: ID!, $pattern: String!, $targetBranchName: String, $defaultStatus: Status) {
-                    previewPattern(orgUuid: $orgUuid, pattern: $pattern, targetBranchName: $targetBranchName, defaultStatus: $defaultStatus) {
+                query previewPattern($orgUuid: ID!, $pattern: String!, $targetBranchName: String, $defaultStatus: Status, $fallbackToBase: FallbackToBase) {
+                    previewPattern(orgUuid: $orgUuid, pattern: $pattern, targetBranchName: $targetBranchName, defaultStatus: $defaultStatus, fallbackToBase: $fallbackToBase) {
                         component {
                             uuid
                             name
@@ -1686,7 +1737,8 @@ const previewPattern = async function(pattern: any) {
                 orgUuid: orguuid,
                 pattern: pattern.pattern,
                 targetBranchName: pattern.targetBranchName,
-                defaultStatus: pattern.defaultStatus
+                defaultStatus: pattern.defaultStatus,
+                fallbackToBase: pattern.fallbackToBase
             }
         })
         
@@ -1792,6 +1844,7 @@ async function onCreated () {
     } else {
         modifiedBranch.value = commonFunctions.deepCopy(branchData.value)
     }
+    modifiedBranch.value.dependencyPatterns = normalizeDependencyPatterns(modifiedBranch.value.dependencyPatterns)
     if (false && myUser.installationType !== 'OSS') approvalTypes.value = await loadApprovalTypes (branchData.value.org, branchData.value.componentDetails.resourceGroup)
     if (false && myUser.installationType !== 'OSS')  environmentTypes.value = await loadEnvironmentTypes (branchData.value.org)
     const rlz = await store.dispatch('fetchReleases', {branch: branchUuid.value})

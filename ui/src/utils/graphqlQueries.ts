@@ -859,6 +859,7 @@ const BRANCH_GQL_DATA = `
         pattern
         targetBranchName
         defaultStatus
+        fallbackToBase
     }
     effectiveDependencies {
         component {
