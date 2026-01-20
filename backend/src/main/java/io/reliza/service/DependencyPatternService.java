@@ -52,7 +52,7 @@ public class DependencyPatternService {
 		if (featureSet.getDependencyPatterns() != null) {
 			for (DependencyPattern pattern : featureSet.getDependencyPatterns()) {
 				List<ComponentData> matched = findComponentsByPattern(featureSet.getOrg(), pattern.getPattern());
-				log.info("Pattern '{}' matched {} components", pattern.getPattern(), matched.size());
+				log.debug("Pattern '{}' matched {} components", pattern.getPattern(), matched.size());
 				
 				for (ComponentData comp : matched) {
 					// Skip if same as product component (no self-dependency)
