@@ -1096,7 +1096,19 @@ const patternTableFields: DataTableColumns<any> = [
         }
     },
     {
-        title: 'Target Branch',
+        title: () => h('span', {
+            style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+            }
+        }, [
+            'Target Branch',
+            h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h(NIcon, { size: 16, style: { cursor: 'help' } }, { default: () => h(QuestionMark) }),
+                default: () => 'If not set or set but the branch is not found, defaults to the BASE branch of the component.'
+            })
+        ]),
         key: 'targetBranchName',
         width: 200,
         render: (row: any) => {
