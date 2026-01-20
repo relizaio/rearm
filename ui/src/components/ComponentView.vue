@@ -1030,6 +1030,8 @@ function selectBranch (uuid: string) {
         delete cleanQuery.release
         delete cleanQuery.branchSettingsView
         delete cleanQuery.componentSettingsView
+        delete cleanQuery.branchReleasePage
+        delete cleanQuery.branchReleasePerPage
         
         router.push({
             name: isComponent.value ? 'ComponentsOfOrg' : 'ProductsOfOrg',
