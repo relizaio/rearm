@@ -783,8 +783,12 @@ public class OssReleaseService {
 				.collect(Collectors.toList());
 			
 			if (sameComponentDeps.size() == 1) {
-				// Only one entry for this component, use it
-				matchingChild = Optional.of(sameComponentDeps.get(0));
+				// Only one entry for this component
+				ChildComponent singleDep = sameComponentDeps.get(0);
+				if (triggeringRelease.getBranch().equals(singleDep.getBranch())) {
+					matchingChild = Optional.of(singleDep);
+				}
+				// If branch doesn't match, matchingChild remains empty (no auto-integrate)
 			} else if (sameComponentDeps.size() > 1) {
 				// Multiple branches for same component - apply priority logic:
 				// 1. If one of the branches is BASE, that takes priority
@@ -804,7 +808,7 @@ public class OssReleaseService {
 				// If still no match and release branch matches one of the dependencies, use that
 				if (matchingChild.isEmpty()) {
 					matchingChild = sameComponentDeps.stream()
-						.filter(cc -> cc.getBranch() != null && cc.getBranch().equals(triggeringRelease.getBranch()))
+						.filter(cc -> triggeringRelease.getBranch().equals(cc.getBranch()))
 						.findFirst();
 				}
 			}

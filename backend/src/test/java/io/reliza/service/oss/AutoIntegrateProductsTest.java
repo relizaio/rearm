@@ -1546,4 +1546,133 @@ public void testAutoIntegrateProducts_PatternAndManualDependencies() throws Reli
     assertTrue(hasComp1, "Product should contain myapp-api (pattern-matched)");
     assertTrue(hasComp2, "Product should contain custom-lib (manual dependency)");
 }
+
+/**
+ * Test 11: Pattern-based auto-integrate with no branch specified should only trigger for BASE branch releases
+ * 
+ * Scenario:
+ * - Create component "lib" with 2 branches: main (BASE), bugfix (FEATURE)
+ * - Create product with feature set using pattern "^lib-.*" (no explicit branch chosen)
+ * - Pattern defaults to BASE branch
+ * - Create release on main branch -> should trigger auto-integrate
+ * - Create release on bugfix branch -> should NOT trigger auto-integrate
+ * 
+ * This tests that pattern-based auto-integrate respects the branch constraint.
+ */
+@Test
+public void testAutoIntegrateProducts_PatternMatchingOnlyBaseBranch() throws RelizaException {
+    // Arrange
+    Organization org = testInitializer.obtainOrganization();
+    String testId = UUID.randomUUID().toString().substring(0, 8);
+    
+    // Create component with unique name matching pattern
+    Component lib = componentService.createComponent(
+        "lib-" + testId, 
+        org.getUuid(), 
+        ComponentType.COMPONENT, 
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Get the automatically created BASE branch (main)
+    Branch mainBranch = branchService.getBaseBranchOfComponent(lib.getUuid()).get();
+    
+    // Create a FEATURE branch (bugfix)
+    Branch bugfixBranch = branchService.createBranch(
+        "bugfix", 
+        lib.getUuid(), 
+        BranchType.FEATURE, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Create product with feature set using PATTERN (defaults to BASE branch)
+    Component product = componentService.createComponent(
+        "test11-product-" + testId, 
+        org.getUuid(), 
+        ComponentType.PRODUCT, 
+        "semver", 
+        "Branch.Micro", 
+        null, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    Branch featureSet = branchService.createBranch(
+        "test11-fs-" + testId, 
+        product.getUuid(), 
+        BranchType.FEATURE, 
+        WhoUpdated.getTestWhoUpdated()
+    );
+    
+    // Add dependency PATTERN (no targetBranchName, so defaults to BASE branch)
+    BranchData featureSetData = branchService.getBranchData(featureSet.getUuid()).get();
+    BranchData.DependencyPattern pattern = BranchData.DependencyPattern.builder()
+        .uuid(UUID.randomUUID())
+        .pattern("^lib-" + testId + "$")
+        .defaultStatus(StatusEnum.REQUIRED)
+        .build();
+    
+    BranchDto branchDto = BranchDto.builder()
+        .uuid(featureSetData.getUuid())
+        .name(featureSetData.getName())
+        .versionSchema(featureSetData.getVersionSchema())
+        .type(featureSetData.getType())
+        .dependencyPatterns(List.of(pattern))
+        .dependencies(new LinkedList<>())
+        .autoIntegrate(AutoIntegrateState.ENABLED)
+        .build();
+    branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
+    
+    // Act 1: Create release on main (BASE) branch - should trigger auto-integrate
+    ReleaseDto mainReleaseDto = ReleaseDto.builder()
+        .component(lib.getUuid())
+        .branch(mainBranch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("1.0.0")
+        .build();
+    Release mainRelease = ossReleaseService.createRelease(mainReleaseDto, WhoUpdated.getTestWhoUpdated());
+    
+    // Wait for async processing
+    try {
+        Thread.sleep(1000);
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+    }
+    
+    int countAfterMainRelease = sharedReleaseService.listReleaseDataOfBranch(featureSet.getUuid()).size();
+    System.out.println("DEBUG Test11: Product releases after main branch release: " + countAfterMainRelease);
+    
+    // Assert 1: Product release should be created for BASE branch release
+    assertTrue(countAfterMainRelease > 0, 
+        "Pattern-based auto-integrate SHOULD create product release for BASE branch release");
+    
+    // Act 2: Create release on bugfix (FEATURE) branch - should NOT trigger auto-integrate
+    ReleaseDto bugfixReleaseDto = ReleaseDto.builder()
+        .component(lib.getUuid())
+        .branch(bugfixBranch.getUuid())
+        .org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE)
+        .lifecycle(ReleaseLifecycle.ASSEMBLED)
+        .version("1.0.1-bugfix")
+        .build();
+    Release bugfixRelease = ossReleaseService.createRelease(bugfixReleaseDto, WhoUpdated.getTestWhoUpdated());
+    
+    // Wait for async processing
+    try {
+        Thread.sleep(1000);
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+    }
+    
+    int countAfterBugfixRelease = sharedReleaseService.listReleaseDataOfBranch(featureSet.getUuid()).size();
+    System.out.println("DEBUG Test11: Product releases after bugfix branch release: " + countAfterBugfixRelease);
+    
+    // Assert 2: NO new product release should be created for non-BASE branch release
+    assertEquals(countAfterMainRelease, countAfterBugfixRelease, 
+        "Pattern-based auto-integrate should NOT create product release for non-BASE branch release. " +
+        "Pattern defaults to BASE branch, so bugfix branch releases should be ignored.");
+}
 }
