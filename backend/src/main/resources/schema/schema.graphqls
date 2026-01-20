@@ -97,7 +97,7 @@ type Query {
 	# CVE Search
 	searchReleasesByCveId(org: ID!, cveId: String!, perspectiveUuid: ID): [ComponentWithBranches]
 	# Pattern Preview
-	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status): [EffectiveDependency]
+	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
 }
 
 type Mutation {
@@ -562,6 +562,12 @@ type DependencyPattern {
 	pattern: String!
 	targetBranchName: String
 	defaultStatus: Status!
+	fallbackToBase: FallbackToBase
+}
+
+enum FallbackToBase {
+	ENABLED
+	DISABLED
 }
 
 type EffectiveDependency {
@@ -1242,6 +1248,7 @@ input DependencyPatternInput {
 	pattern: String!
 	targetBranchName: String
 	defaultStatus: Status
+	fallbackToBase: FallbackToBase
 }
 
 input ChildComponentInput {

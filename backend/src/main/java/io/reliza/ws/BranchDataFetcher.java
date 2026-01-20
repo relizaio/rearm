@@ -394,6 +394,7 @@ public class BranchDataFetcher {
 			@InputArgument("pattern") String pattern,
 			@InputArgument("targetBranchName") String targetBranchName,
 			@InputArgument("defaultStatus") StatusEnum defaultStatus,
+			@InputArgument("fallbackToBase") BranchData.FallbackToBase fallbackToBase,
 			DgsDataFetchingEnvironment dfe) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -405,6 +406,7 @@ public class BranchDataFetcher {
 			.pattern(pattern)
 			.targetBranchName(targetBranchName)
 			.defaultStatus(defaultStatus != null ? defaultStatus : StatusEnum.REQUIRED)
+			.fallbackToBase(fallbackToBase)
 			.build();
 		
 		// Get components matching the pattern
@@ -422,9 +424,14 @@ public class BranchDataFetcher {
 				if (branch.isPresent()) {
 					branchUuid = branch.get().getUuid();
 				}
+				// Branch name specified but not found - check fallback setting
+				// Default is ENABLED (fall back to BASE) for backward compatibility
+				if (branchUuid == null && tempPattern.getFallbackToBase() == BranchData.FallbackToBase.DISABLED) {
+					continue;  // Skip this component
+				}
 			}
 			
-			// Default: BASE branch
+			// Default: BASE branch (either no branch name specified, or fallback is enabled)
 			if (branchUuid == null) {
 				Optional<Branch> baseBranch = branchService.getBaseBranchOfComponent(comp.getUuid());
 				if (baseBranch.isPresent()) {

@@ -68,7 +68,15 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 		private String targetBranchName;  // specific branch name like "main"
 		
 		@JsonProperty
-		private StatusEnum defaultStatus;  //
+		private StatusEnum defaultStatus;
+		
+		@JsonProperty
+		private FallbackToBase fallbackToBase;  // if ENABLED (default), fall back to BASE branch when targetBranchName doesn't exist
+	}
+	
+	public enum FallbackToBase {
+		ENABLED,   // Fall back to BASE branch if specified branch doesn't exist (default behavior)
+		DISABLED;  // Skip component if specified branch doesn't exist
 	}
 	
 	public enum BranchType {

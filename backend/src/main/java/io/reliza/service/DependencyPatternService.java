@@ -126,16 +126,21 @@ public class DependencyPatternService {
 	 * @return branch UUID or null if not found
 	 */
 	private UUID findTargetBranch(UUID componentUuid, DependencyPattern pattern) {
-		// By branch name (e.g., "main")
+		// By branch name (e.g., "develop")
 		if (pattern.getTargetBranchName() != null) {
 			Optional<BranchData> branch = branchService.findBranchByComponentAndName(
 				componentUuid, pattern.getTargetBranchName());
 			if (branch.isPresent()) {
 				return branch.get().getUuid();
 			}
+			// Branch name specified but not found - check fallback setting
+			// Default is ENABLED (fall back to BASE) for backward compatibility
+			if (pattern.getFallbackToBase() == BranchData.FallbackToBase.DISABLED) {
+				return null;  // Skip this component
+			}
 		}
 		
-		// Default: BASE branch
+		// Default: BASE branch (either no branch name specified, or fallback is enabled)
 		Optional<Branch> baseBranch = branchService.getBaseBranchOfComponent(componentUuid);
 		return baseBranch.map(Branch::getUuid).orElse(null);
 	}
