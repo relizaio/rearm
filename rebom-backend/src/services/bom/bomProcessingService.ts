@@ -19,6 +19,14 @@ export function extractTldFromBom(bom: any): any {
     return bom
   }
   let rootDepObj: any
+  if (!bom.components || !Array.isArray(bom.components)) {
+    logger.warn("BOM does not have components array, skipping TLD extraction and returning full BOM")
+    return bom
+  }
+  if (!bom.dependencies || !Array.isArray(bom.dependencies)) {
+    logger.warn("BOM does not have dependencies array, skipping TLD extraction and returning full BOM")
+    return bom
+  }
   logger.info(`Bom components length before tld extract: ${bom.components.length}`)
   logger.info(`rootComponentRef: ${rootComponentRef}`)
   if (rootComponentRef && bom.dependencies.length) {
