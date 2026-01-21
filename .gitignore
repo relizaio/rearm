@@ -11,6 +11,6 @@
 **/ai-plans/*~
 
 # local launch scripts
-**/launch_locally.sh
+**/launch_locally*.sh
 
 codeqldb
