@@ -43,8 +43,15 @@ public class ArtifactGatherService {
 		variantService.getVariantsOfRelease(rd.getUuid()).forEach(rvd -> {
 			if (null != rvd.getOutboundDeliverables() && !rvd.getOutboundDeliverables().isEmpty()) {
 				rvd.getOutboundDeliverables().forEach(outbd -> {
-					var arts = getDeliverableService.getDeliverableData(outbd).get().getArtifacts();
-					if (null != arts && !arts.isEmpty()) artifactIds.addAll(arts);
+					var deliverableData = getDeliverableService.getDeliverableData(outbd);
+					if (deliverableData.isPresent()) {
+						var arts = deliverableData.get().getArtifacts();
+						if (null != arts && !arts.isEmpty()) {
+							artifactIds.addAll(arts);
+						}
+					} else {
+						log.warn("SBOM_CHANGELOG: Deliverable {} not found", outbd);
+					}
 				});
 			}
 		});

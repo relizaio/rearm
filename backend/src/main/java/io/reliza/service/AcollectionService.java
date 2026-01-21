@@ -172,12 +172,10 @@ public class AcollectionService {
 	}
 
 	public void releaseBomChangelogRoutine(UUID releaseId, UUID branch, UUID org){
-		// log.info("RGDEBUG: releaseBomChangelogRoutine called for releaseId: {}, branch: {}, org: {}", releaseId, branch, org);
 
 		UUID prevReleaseId = null;
 
 		AcollectionData acd = getLatestCollectionDataOfRelease(releaseId);
-		// log.info("RGDEBUG: acd is null: {}", acd == null);
 
 		if(null != acd && null != acd.getArtifactComparison() && null != acd.getArtifactComparison().comparedReleaseUuid()) {
 			prevReleaseId = acd.getArtifactComparison().comparedReleaseUuid();
@@ -213,12 +211,12 @@ public class AcollectionService {
 		}
 		
 		UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
-		// log.info("RGDEBUG: prevReleaseId found: {}", prevReleaseId);
-		// log.info("RGDEBUG: nextReleaseId found: {}", nextReleaseId);
 
 		if (prevReleaseId != null) {
 			// Force recalculate during finalization to handle race condition where initial Acollection had incomplete artifacts
 			resolveBomDiff(releaseId, prevReleaseId, org, true);
+		} else {
+			log.warn("SBOM_CHANGELOG: No previous release found for release {}, cannot calculate diff", releaseId);
 		}
 		if (nextReleaseId != null) {
 			resolveBomDiff(nextReleaseId, releaseId, org, true);
@@ -231,7 +229,6 @@ public class AcollectionService {
 	}
 
 	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate){
-		// log.info("RGDEBUG: resolveBomDiff called for releaseId: {}, prevReleaseId: {}, forceRecalculate: {}", releaseId, prevReleaseId, forceRecalculate);
 		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
 		AcollectionData prevAcollectionData = getLatestCollectionDataOfRelease(prevReleaseId);
 		
@@ -241,13 +238,14 @@ public class AcollectionService {
 			&& prevAcollectionData.getArtifacts().size() > 0
 			&& ! prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts())
 		){
-			// log.info("RGDEBUG: current Release ID: {}", releaseId);
             List<UUID> currArtifacts = getInternalBomIdsFromACollection(currAcollectionData);
-			// log.info("RGDEBUG: current Artifacts: {}", currArtifacts);
 
-			// log.info("RGDEBUG: prev Release ID: {}", prevReleaseId);
 			List<UUID> prevArtifacts = getInternalBomIdsFromACollection(prevAcollectionData);
-			// log.info("RGDEBUG: prev Artifacts: {}", prevArtifacts);
+			
+			if (currArtifacts.isEmpty() && prevArtifacts.isEmpty()) {
+				log.warn("SBOM_CHANGELOG: Both current and previous releases have NO internal BOM IDs - cannot calculate changelog");
+				return;
+			}
 			
 			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(currArtifacts, prevArtifacts, org);
 
@@ -258,8 +256,13 @@ public class AcollectionService {
 				persistArtifactChangelogForCollection(artifactChangelog, prevReleaseId, currAcollectionData.getUuid());
 
 			}else{
-				log.debug("duplicate trigger, not persisting changelog");
+				log.debug("SBOM_CHANGELOG: Duplicate trigger for release {}, not persisting changelog", releaseId);
 			}
+		} else {
+			log.warn("SBOM_CHANGELOG: Skipping resolveBomDiff - conditions not met. Current artifacts null/empty: {}, Previous artifacts null/empty: {}, Artifacts equal: {}",
+				currAcollectionData.getArtifacts() == null || currAcollectionData.getArtifacts().isEmpty(),
+				prevAcollectionData == null || prevAcollectionData.getArtifacts() == null || prevAcollectionData.getArtifacts().isEmpty(),
+				prevAcollectionData != null && prevAcollectionData.getArtifacts() != null && currAcollectionData.getArtifacts() != null && prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts()));
 		}
 	}
 
@@ -284,16 +287,14 @@ public class AcollectionService {
 	}
 	private List<UUID> getInternalBomIdsFromACollection(AcollectionData collection){
 		List<UUID> artIds = collection.getArtifacts().stream().map(VersionedArtifact::artifactUuid).toList();
-		// log.info("RGDEBUG: artIds from Acollection: {}", artIds);
 		List<ArtifactData> artList = artifactService.getArtifactDataList(artIds);
-		// log.info("RGDEBUG: artList size: {}", artList.size());
-		// artList.forEach(art -> log.info("RGDEBUG: artifact {} has internalBom: {}", art.getUuid(), art.getInternalBom()));
+		
 		List<UUID> bomIds = artList.stream()
 		.filter(art -> null != art.getInternalBom())
 		.map(art -> art.getInternalBom().id())
 		.distinct()
 		.toList();
-		// log.info("RGDEBUG: final bomIds: {}", bomIds);
+		
 		return bomIds;
 	}
 }

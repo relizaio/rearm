@@ -4,7 +4,6 @@
 package io.reliza.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.Optional;
@@ -13,7 +12,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import io.reliza.model.ReleaseData;
-import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.WhoUpdated;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -41,17 +40,20 @@ public class ReleaseFinalizerService {
     }
 
     public void finalizeRelease(UUID releaseUuid) {
-        // log.info("RGDEBUG: finalizeRelease called for release {}", releaseUuid);
+
         Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
         if (ord.isPresent()) {
             ReleaseData rd = ord.get();
             UUID branch = rd.getBranch();
             UUID org = rd.getOrg();
-           
+
+            acollectionService.resolveReleaseCollection(releaseUuid, WhoUpdated.getAutoWhoUpdated());
+            
+            // Then calculate the BOM changelog
             acollectionService.releaseBomChangelogRoutine(releaseUuid, branch, org);
             // Add more finalization steps here as needed
         } else {
-            log.warn("RGDEBUG: Release not found for UUID: {}", releaseUuid);
+            log.warn("SBOM_CHANGELOG: Release not found for UUID: {}", releaseUuid);
         }
     }
 }
