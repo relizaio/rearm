@@ -14,6 +14,7 @@ import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,6 +43,10 @@ public class VariantService {
 	
 	@Autowired
 	private AuditService auditService;
+	
+	@Lazy
+	@Autowired
+	private AcollectionService acollectionService;
 			
 	private final VariantRepository repository;
 	
@@ -109,7 +114,9 @@ public class VariantService {
 					null, null, dd.object(), ZonedDateTime.now(), wu)));
 			Map<String,Object> recordData = Utils.dataToRecord(vd);
 			saveVariant(vOpt.get(), recordData, wu);
-			added = true;			
+			added = true;
+			// Resolve acollection to capture artifacts from newly attached deliverables
+			acollectionService.resolveReleaseCollection(vd.getRelease(), wu);
 		}
 		return added;
 	}
