@@ -719,6 +719,24 @@ public class SharedReleaseService {
 		return releases;
 	}
 
+	private Set<UUID> gatherReleaseIdsForArtifacts(Collection<UUID> artifactUuids, UUID orgUuid){
+		if (artifactUuids == null || artifactUuids.isEmpty()) {
+			return new HashSet<>();
+		}
+		Set<UUID> releases = new HashSet<>();
+		Collection<String> artifactUuidsAsStrings = artifactUuids.stream().map(UUID::toString).toList();
+		Set<UUID> allDirectReleases = repository.findReleasesByReleaseArtifacts(artifactUuidsAsStrings, orgUuid.toString())
+				.stream().map(Release::getUuid).collect(Collectors.toSet());
+		Set<UUID> allSceReleases = repository.findReleasesSharingSceArtifacts(artifactUuidsAsStrings)
+				.stream().map(Release::getUuid).collect(Collectors.toSet());
+		Set<UUID> allDeliverableReleases = repository.findReleasesSharingDeliverableArtifacts(artifactUuidsAsStrings)
+				.stream().map(Release::getUuid).collect(Collectors.toSet());
+		releases.addAll(allDirectReleases);
+		releases.addAll(allSceReleases);
+		releases.addAll(allDeliverableReleases);
+		return releases;
+	}
+
 	public List<ReleaseData> gatherReleasesForArtifact(UUID artifactUuid, UUID orgUuid){
 		Set<UUID> releaseIds = gatherReleaseIdsForArtifact(artifactUuid, orgUuid);
 		var releaseDatas = getReleaseDataList(releaseIds, orgUuid);
@@ -783,13 +801,25 @@ public class SharedReleaseService {
 	}
 	
 	public List<ComponentWithBranches> findReleaseDatasByDtrackProjects(Collection<UUID> dtrackProjects, final UUID org) {
+		log.debug("dtrack project size = {}", dtrackProjects.size());
+		long startTime = System.currentTimeMillis();
 		Set<UUID> arts = artifactService.listArtifactsByDtrackProjects(dtrackProjects).stream().map(x -> x.getUuid()).collect(Collectors.toSet());
-		Set<UUID> releaseIds = new HashSet<>();
-		arts.forEach(aId -> {
-			releaseIds.addAll(gatherReleaseIdsForArtifact(aId, org));
-		});
+		log.debug("artifacts size = {}", arts.size());
+		long afterArtifacts = System.currentTimeMillis();
+		log.debug("findReleaseDatasByDtrackProjects - listArtifactsByDtrackProjects took {} ms, found {} artifacts", afterArtifacts - startTime, arts.size());
+		Set<UUID> releaseIds = gatherReleaseIdsForArtifacts(arts, org);
+		long afterGatherReleases = System.currentTimeMillis();
+		log.debug("findReleaseDatasByDtrackProjects - gatherReleaseIdsForArtifacts took {} ms, found {} releases", afterGatherReleases - afterArtifacts, releaseIds.size());
+		
 		var releaseDatas = getReleaseDataList(releaseIds, org);
-		return convertReleasesToComponentWithBranches(releaseDatas, org, null);
+		log.debug("releaseDatas size = {}", releaseDatas.size());
+		long afterGetReleaseData = System.currentTimeMillis();
+		log.debug("findReleaseDatasByDtrackProjects - getReleaseDataList took {} ms", afterGetReleaseData - afterGatherReleases);
+		
+		var result = convertReleasesToComponentWithBranches(releaseDatas, org, null);
+		long endTime = System.currentTimeMillis();
+		log.debug("findReleaseDatasByDtrackProjects - convertReleasesToComponentWithBranches took {} ms, total {} ms", endTime - afterGetReleaseData, endTime - startTime);
+		return result;
 	}
 	
 	public List<ReleaseData> findReleasesByOrgAndIdentifier(UUID org, TeaIdentifierType idType, String idValue) {

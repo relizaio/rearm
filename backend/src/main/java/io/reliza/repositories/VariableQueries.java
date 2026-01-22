@@ -663,6 +663,43 @@ class VariableQueries {
 				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
 		""";
 
+	protected static final String FIND_RELEASES_BY_ARTIFACTS_AND_ORG = """
+		SELECT DISTINCT r.* FROM rearm.releases r
+		WHERE record_data->>'org' IN (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+		AND EXISTS (
+			SELECT 1 FROM jsonb_array_elements_text(r.record_data->'artifacts') AS art
+			WHERE art IN (:artifactUuidsAsStrings)
+		)
+		""";
+
+	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACTS = """
+		WITH
+		unprocessedSces (uuid, componentUuid) AS (
+			SELECT sce.uuid,
+				(artifact_element->>'componentUuid')::uuid as componentUuid
+			FROM rearm.source_code_entries sce,
+				jsonb_array_elements(sce.record_data->'artifacts') as artifact_element
+			WHERE artifact_element->>'artifactUuid' IN (:artifactUuidsAsStrings)
+		)
+		SELECT DISTINCT rlzs.* FROM unprocessedSces, rearm.releases rlzs
+		WHERE record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text)
+			AND (rlzs.record_data->>'component')::uuid = unprocessedSces.componentUuid;
+		""";
+
+	protected static final String FIND_RELEASES_SHARING_DELIVERABLE_ARTIFACTS = """
+		WITH
+			unprocessedDeliverables (uuid) AS (
+				SELECT DISTINCT del.uuid FROM rearm.deliverables del,
+					jsonb_array_elements(del.record_data->'artifacts') AS art
+				WHERE art->>'artifactUuid' IN (:artifactUuidsAsStrings)),
+			unprocessedRlzIds (uuid) AS (
+				SELECT DISTINCT var.record_data->>'release' FROM unprocessedDeliverables, rearm.variants var,
+					jsonb_array_elements_text(var.record_data->'outboundDeliverables') AS del
+				WHERE del = unprocessedDeliverables.uuid::text)
+			SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
+				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
+		""";
+
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY = """
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString

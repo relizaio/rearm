@@ -32,6 +32,7 @@ public class CommonVariables {
 	public static final UUID DEFAULT_RESOURCE_GROUP = new UUID(0,0); // 00000000-0000-0000-0000-000000000000
 	public static final String DEFAULT_RESOURCE_GROUP_NAME = "default";
 	
+	public static final int DTRACK_DEFAULT_PAGE_SIZE = 200;
 	
 	public static final String NAME_FIELD = "name";
 	public static final String DESCRIPTION_FIELD = "description";

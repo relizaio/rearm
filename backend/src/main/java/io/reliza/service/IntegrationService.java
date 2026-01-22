@@ -659,16 +659,8 @@ public class IntegrationService {
 	
 	private List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid) throws JsonMappingException, JsonProcessingException {
-		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject + "?pageNumber=1&pageSize=10000");
-		var resp = dtrackWebClient
-				.get()
-				.uri(dtrackUri)
-				.header("X-API-Key", apiToken)
-				.retrieve()
-				.toEntity(String.class)
-				.block();
-		@SuppressWarnings("unchecked")
-		List<Object> vulnDetailsRaw = Utils.OM.readValue(resp.getBody(), List.class);
+		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
+		List<Object> vulnDetailsRaw = executeDtrackPaginatedCall(baseUri, apiToken, "");
 		List<VulnerabilityDto> vulnerabilityDetails = new LinkedList<>();
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		vulnDetailsRaw.forEach(vd -> {
@@ -699,16 +691,8 @@ public class IntegrationService {
 	
 	private List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid) throws JsonMappingException, JsonProcessingException {
-		URI dtrackUri = URI.create(dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject + "?pageNumber=1&pageSize=10000");
-		var resp = dtrackWebClient
-				.get()
-				.uri(dtrackUri)
-				.header("X-API-Key", apiToken)
-				.retrieve()
-				.toEntity(String.class)
-				.block();
-		@SuppressWarnings("unchecked")
-		List<Object> violationDetailsRaw = Utils.OM.readValue(resp.getBody(), List.class);
+		String baseUri = dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject;
+		List<Object> violationDetailsRaw = executeDtrackPaginatedCall(baseUri, apiToken, "");
 		List<ViolationDto> violationDetails = new LinkedList<>();
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		final Set<FindingSourceDto> sources = Set.of(source);
@@ -735,15 +719,16 @@ public class IntegrationService {
 			try {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
 				List<Map<String, Object>> respList = new LinkedList<>();
+				String baseUri = dtrackIntegration.getUri().toString() + "/api/v1/component/identity";
 				String versionParam = StringUtils.isNotEmpty(version) ? "&version=" + version : "";
 				if (query.startsWith("pkg:")) {
-					URI componentSearchUri = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?purl=" + query + "&pageSize=10000&pageNumber=1" + versionParam);
-					respList = executeDtrackComponentSearch(componentSearchUri, apiToken);
+					String queryParams = "?purl=" + query + versionParam;
+					respList = executeDtrackComponentSearch(baseUri, apiToken, queryParams);
 				} else {
-					URI componentSearchUri1 = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?name=" + query + "&pageSize=10000&pageNumber=1" + versionParam);
-					URI componentSearchUri2 = URI.create(dtrackIntegration.getUri().toString() + "/api/v1/component/identity?group=" + query + "&pageSize=10000&pageNumber=1" + versionParam);
-					var respList1 = executeDtrackComponentSearch(componentSearchUri1, apiToken);
-					var respList2 = executeDtrackComponentSearch(componentSearchUri2, apiToken);
+					String queryParams1 = "?name=" + query + versionParam;
+					String queryParams2 = "?group=" + query + versionParam;
+					var respList1 = executeDtrackComponentSearch(baseUri, apiToken, queryParams1);
+					var respList2 = executeDtrackComponentSearch(baseUri, apiToken, queryParams2);
 					respList.addAll(respList1);
 					respList.addAll(respList2);
 				}
@@ -797,19 +782,61 @@ public class IntegrationService {
 			.toList();
 	}
 
-	private List<Map<String, Object>> executeDtrackComponentSearch (URI componentSearchUri, String apiToken) throws JsonMappingException, JsonProcessingException {
+	/**
+	 * Execute a paginated DTrack API call, fetching all pages until no more results.
+	 * @param baseUri Base URI without pagination parameters
+	 * @param apiToken DTrack API token
+	 * @param existingParams Any existing query parameters (should end with & if not empty, or be empty)
+	 * @return List of all results from all pages
+	 */
+	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams) 
+			throws JsonMappingException, JsonProcessingException {
+		List<Object> allResults = new ArrayList<>();
+		int pageNumber = 1;
+		int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
+		boolean hasMorePages = true;
+		
+		while (hasMorePages) {
+			String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
+			URI dtrackUri = URI.create(baseUri + existingParams + separator + "pageNumber=" + pageNumber + "&pageSize=" + pageSize);
+			
+			var resp = dtrackWebClient
+				.get()
+				.uri(dtrackUri)
+				.header("X-API-Key", apiToken)
+				.retrieve()
+				.toEntity(String.class)
+				.block();
+			
+			if (null == resp.getBody()) {
+				log.warn("Null body from DTrack API for uri = {}", dtrackUri);
+				hasMorePages = false;
+			} else {
+				@SuppressWarnings("unchecked")
+				List<Object> pageResults = Utils.OM.readValue(resp.getBody(), List.class);
+				
+				if (pageResults.isEmpty()) {
+					hasMorePages = false;
+				} else {
+					allResults.addAll(pageResults);
+					if (pageResults.size() < pageSize) {
+						hasMorePages = false;
+					}
+				}
+			}
+			pageNumber++;
+		}
+		return allResults;
+	}
+	
+	private List<Map<String, Object>> executeDtrackComponentSearch (String baseUri, String apiToken, String queryParams) 
+			throws JsonMappingException, JsonProcessingException {
+		List<Object> results = executeDtrackPaginatedCall(baseUri, apiToken, queryParams);
 		List<Map<String, Object>> respList = new LinkedList<>();
-		var resp = dtrackWebClient
-			.get()
-			.uri(componentSearchUri)
-			.header("X-API-Key", apiToken)
-			.retrieve()
-			.toEntity(String.class)
-			.block();
-		if (null != resp.getBody()) {
-			respList = Utils.OM.readValue(resp.getBody(), List.class);
-		} else {
-			log.warn("Null body searching components on dtrack for uri = " + componentSearchUri);
+		for (Object obj : results) {
+			@SuppressWarnings("unchecked")
+			Map<String, Object> map = (Map<String, Object>) obj;
+			respList.add(map);
 		}
 		return respList;
 	}
@@ -868,10 +895,10 @@ public class IntegrationService {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
 				String dateFilter = (lastSyncTime != null) ? "&attributedOnDateFrom=" + lastSyncTime.toLocalDate().toString() : "";
 				
-				// Paginated retrieval with 200 records per page
+				// Paginated retrieval
 				List<Object> vulnerabilityFindings = new ArrayList<>();
 				int pageNumber = 1;
-				int pageSize = 200;
+				int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
 				boolean hasMorePages = true;
 				
 				while (hasMorePages) {
@@ -960,10 +987,10 @@ public class IntegrationService {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
 				String dateFilter = (lastSyncTime != null) ? "&occurredOnDateFrom=" + lastSyncTime.toLocalDate().toString() : "";
 				
-				// Paginated retrieval with 200 records per page
+				// Paginated retrieval
 				List<Object> violationFindings = new ArrayList<>();
 				int pageNumber = 1;
-				int pageSize = 200;
+				int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
 				boolean hasMorePages = true;
 				
 				while (hasMorePages) {
