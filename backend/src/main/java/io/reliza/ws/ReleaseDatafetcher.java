@@ -661,6 +661,8 @@ public class ReleaseDatafetcher {
 				List<UUID> outboundDeliverables = deliverableService
 						.prepareListofDeliverables(outboundDeliverablesList, bd.getUuid(), version, ar.getWhoUpdated());
 				variantService.addOutboundDeliverables(outboundDeliverables, vd.getUuid(), ar.getWhoUpdated());
+				// Re-resolve acollection after outbound deliverables are attached to capture their artifacts
+				acollectionService.resolveReleaseCollection(rd.getUuid(), ar.getWhoUpdated());
 			}
 			return rd;
 		} catch (RelizaException re) {
