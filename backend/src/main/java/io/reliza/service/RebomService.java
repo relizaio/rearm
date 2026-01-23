@@ -70,7 +70,7 @@ public class RebomService {
                                     ExchangeStrategies.builder()
                                     .codecs(codecs -> codecs
                                         .defaultCodecs()
-                                        .maxInMemorySize(5000 * 1024)
+                                        .maxInMemorySize(50 * 1024 * 1024)
                                     ).build()
                                 ).build();
 	}
