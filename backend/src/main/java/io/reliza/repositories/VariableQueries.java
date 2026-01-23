@@ -690,8 +690,8 @@ class VariableQueries {
 		WITH
 			unprocessedDeliverables (uuid) AS (
 				SELECT DISTINCT del.uuid FROM rearm.deliverables del,
-					jsonb_array_elements(del.record_data->'artifacts') AS art
-				WHERE art->>'artifactUuid' IN (:artifactUuidsAsStrings)),
+					jsonb_array_elements_text(del.record_data->'artifacts') AS art
+				WHERE art IN (:artifactUuidsAsStrings)),
 			unprocessedRlzIds (uuid) AS (
 				SELECT DISTINCT var.record_data->>'release' FROM unprocessedDeliverables, rearm.variants var,
 					jsonb_array_elements_text(var.record_data->'outboundDeliverables') AS del
