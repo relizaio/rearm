@@ -711,6 +711,7 @@ public class IntegrationService {
 	public record SbomComponentSearchQuery (String name, String version) {}
 	
 	private List<ComponentPurlToDtrackProject> searchDependencyTrackComponent (String query, UUID org, String version) throws RelizaException {
+		long startTime = System.currentTimeMillis();
 		List<ComponentPurlToDtrackProject> sbomComponents = new LinkedList<>();
 		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(org, IntegrationType.DEPENDENCYTRACK,
 				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
@@ -721,17 +722,17 @@ public class IntegrationService {
 				List<Map<String, Object>> respList = new LinkedList<>();
 				String baseUri = dtrackIntegration.getUri().toString() + "/api/v1/component/identity";
 				String versionParam = StringUtils.isNotEmpty(version) ? "&version=" + version : "";
+				long beforeSearch = System.currentTimeMillis();
 				if (query.startsWith("pkg:")) {
 					String queryParams = "?purl=" + query + versionParam;
 					respList = executeDtrackComponentSearch(baseUri, apiToken, queryParams);
+					log.debug("searchDependencyTrackComponent - purl search took {} ms, found {} results", System.currentTimeMillis() - beforeSearch, respList.size());
 				} else {
-					String queryParams1 = "?name=" + query + versionParam;
-					String queryParams2 = "?group=" + query + versionParam;
-					var respList1 = executeDtrackComponentSearch(baseUri, apiToken, queryParams1);
-					var respList2 = executeDtrackComponentSearch(baseUri, apiToken, queryParams2);
-					respList.addAll(respList1);
-					respList.addAll(respList2);
+					respList = executeDtrackNameAndGroupSearchParallel(baseUri, apiToken, query, versionParam);
+					log.debug("searchDependencyTrackComponent - parallel name+group search took {} ms, found {} results", 
+							System.currentTimeMillis() - beforeSearch, respList.size());
 				}
+				long beforeProcessing = System.currentTimeMillis();
 				if (null != respList && !respList.isEmpty()) {
 					sbomComponents = respList
 						.stream()
@@ -742,6 +743,8 @@ public class IntegrationService {
 						.entrySet().stream()
 						.map(e -> new ComponentPurlToDtrackProject(e.getKey(), e.getValue())).toList();
 				}
+				log.debug("searchDependencyTrackComponent - processing took {} ms, produced {} components, total {} ms", 
+						System.currentTimeMillis() - beforeProcessing, sbomComponents.size(), System.currentTimeMillis() - startTime);
 			} catch (Exception e) {
 				log.error("Exception searching components on dtrack for query = " + query + " and org = " + org, e);
 				throw new RelizaException("Error searching SBOM components");
@@ -795,11 +798,41 @@ public class IntegrationService {
 		int pageNumber = 1;
 		int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
 		boolean hasMorePages = true;
+		String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
 		
 		while (hasMorePages) {
-			String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
-			URI dtrackUri = URI.create(baseUri + existingParams + separator + "pageNumber=" + pageNumber + "&pageSize=" + pageSize);
+			final int page1 = pageNumber;
+			final int page2 = pageNumber + 1;
 			
+			var future1 = java.util.concurrent.CompletableFuture.supplyAsync(() -> 
+				fetchDtrackPage(baseUri, apiToken, existingParams, separator, page1, pageSize));
+			var future2 = java.util.concurrent.CompletableFuture.supplyAsync(() -> 
+				fetchDtrackPage(baseUri, apiToken, existingParams, separator, page2, pageSize));
+			
+			List<Object> results1 = future1.join();
+			List<Object> results2 = future2.join();
+			
+			if (results1 != null && !results1.isEmpty()) {
+				allResults.addAll(results1);
+			}
+			if (results2 != null && !results2.isEmpty()) {
+				allResults.addAll(results2);
+			}
+			
+			// Determine if there are more pages based on the second page result
+			if (results2 == null || results2.isEmpty() || results2.size() < pageSize) {
+				hasMorePages = false;
+			}
+			
+			pageNumber += 2;
+		}
+		return allResults;
+	}
+	
+	private List<Object> fetchDtrackPage(String baseUri, String apiToken, String existingParams, 
+			String separator, int pageNumber, int pageSize) {
+		try {
+			URI dtrackUri = URI.create(baseUri + existingParams + separator + "pageNumber=" + pageNumber + "&pageSize=" + pageSize);
 			var resp = dtrackWebClient
 				.get()
 				.uri(dtrackUri)
@@ -810,23 +843,15 @@ public class IntegrationService {
 			
 			if (null == resp.getBody()) {
 				log.warn("Null body from DTrack API for uri = {}", dtrackUri);
-				hasMorePages = false;
-			} else {
-				@SuppressWarnings("unchecked")
-				List<Object> pageResults = Utils.OM.readValue(resp.getBody(), List.class);
-				
-				if (pageResults.isEmpty()) {
-					hasMorePages = false;
-				} else {
-					allResults.addAll(pageResults);
-					if (pageResults.size() < pageSize) {
-						hasMorePages = false;
-					}
-				}
+				return null;
 			}
-			pageNumber++;
+			@SuppressWarnings("unchecked")
+			List<Object> pageResults = Utils.OM.readValue(resp.getBody(), List.class);
+			return pageResults;
+		} catch (Exception e) {
+			log.error("Error fetching DTrack page {} for uri = {}", pageNumber, baseUri, e);
+			return null;
 		}
-		return allResults;
 	}
 	
 	private List<Map<String, Object>> executeDtrackComponentSearch (String baseUri, String apiToken, String queryParams) 
@@ -839,6 +864,35 @@ public class IntegrationService {
 			respList.add(map);
 		}
 		return respList;
+	}
+	
+	private List<Map<String, Object>> executeDtrackNameAndGroupSearchParallel(String baseUri, String apiToken, String query, String versionParam) {
+		String queryParams1 = "?name=" + query + versionParam;
+		String queryParams2 = "?group=" + query + versionParam;
+		
+		var nameFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+			try {
+				return executeDtrackComponentSearch(baseUri, apiToken, queryParams1);
+			} catch (Exception e) {
+				log.error("Error in name search", e);
+				return new LinkedList<Map<String, Object>>();
+			}
+		});
+		var groupFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+			try {
+				return executeDtrackComponentSearch(baseUri, apiToken, queryParams2);
+			} catch (Exception e) {
+				log.error("Error in group search", e);
+				return new LinkedList<Map<String, Object>>();
+			}
+		});
+		
+		var respList1 = nameFuture.join();
+		var respList2 = groupFuture.join();
+		List<Map<String, Object>> combined = new LinkedList<>();
+		combined.addAll(respList1);
+		combined.addAll(respList2);
+		return combined;
 	}
 	
 	
