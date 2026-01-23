@@ -646,7 +646,7 @@ public class IntegrationService {
 	private record DtrackResolvedLicenseRaw(String licenseId) {}
 	
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	private record DtrackComponentRaw(String purl, DtrackResolvedLicenseRaw resolvedLicense) {}
+	private record DtrackComponentRaw(String purl, DtrackResolvedLicenseRaw resolvedLicense, String licenseExpression) {}
 	
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackAliasRaw(String cveId, String ghsaId, String uuid) {}
@@ -698,7 +698,14 @@ public class IntegrationService {
 		final Set<FindingSourceDto> sources = Set.of(source);
 		violationDetailsRaw.forEach(vd -> {
 			DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
-			String licenseId = (null != dvr.component().resolvedLicense()) ? dvr.component().resolvedLicense().licenseId() : "undetected";
+			String licenseId;
+			if (null != dvr.component().resolvedLicense()) {
+				licenseId = dvr.component().resolvedLicense().licenseId();
+			} else if (StringUtils.isNotEmpty(dvr.component().licenseExpression)) {
+				licenseId = dvr.component().licenseExpression;
+			} else {
+				licenseId = "undetected";
+			}
 			ViolationDto vdto = new ViolationDto(dvr.component().purl(), dvr.type(),
 					licenseId, null, sources, null, null, ZonedDateTime.now());
 			violationDetails.add(vdto);
