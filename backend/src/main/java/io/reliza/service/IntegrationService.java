@@ -860,7 +860,7 @@ public class IntegrationService {
 	
 	private List<Map<String, Object>> executeDtrackComponentSearch (String baseUri, String apiToken, String queryParams) 
 			throws JsonMappingException, JsonProcessingException {
-		List<Object> results = executeDtrackPaginatedCall(baseUri, apiToken, queryParams, 1000);
+		List<Object> results = executeDtrackPaginatedCall(baseUri, apiToken, queryParams, 400);
 		List<Map<String, Object>> respList = new LinkedList<>();
 		for (Object obj : results) {
 			@SuppressWarnings("unchecked")
