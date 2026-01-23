@@ -49,7 +49,7 @@ import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.ReleaseRepository;
-import io.reliza.service.ReleaseService.CommitRecord;
+import io.reliza.service.ChangeLogService.CommitRecord;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j

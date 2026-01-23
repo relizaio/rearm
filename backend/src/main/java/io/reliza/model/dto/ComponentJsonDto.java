@@ -12,10 +12,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
-import io.reliza.service.ReleaseService.ChangeRecord;
-import io.reliza.service.ReleaseService.ReleaseRecord;
-import io.reliza.service.ReleaseService.TicketRecord;
-import io.reliza.model.dto.VulnerabilityChangesDto.VulnerabilityChangesRecord;
+import io.reliza.service.ChangeLogService.ChangeRecord;
+import io.reliza.service.ChangeLogService.ReleaseRecord;
+import io.reliza.service.ChangeLogService.TicketRecord;
+import io.reliza.model.dto.FindingChangesDto.FindingChangesRecord;
 import lombok.Builder;
 import lombok.Data;
 
@@ -45,6 +45,6 @@ public class ComponentJsonDto {
 	private List<ComponentJsonDto> branches;
 	@JsonProperty("sbomChanges")
 	private ArtifactChangelog sbomChanges;
-	@JsonProperty("vulnerabilityChanges")
-	private VulnerabilityChangesRecord vulnerabilityChanges;
+	@JsonProperty("findingChanges")
+	private FindingChangesRecord findingChanges;
 }

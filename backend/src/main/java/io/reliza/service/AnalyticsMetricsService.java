@@ -426,4 +426,36 @@ public class AnalyticsMetricsService {
 		return res;
 	}
 	
+	/**
+	 * Extracts metrics pair for a component between two dates for changelog comparison.
+	 * Uses pre-aggregated daily metrics for performance.
+	 * 
+	 * @param componentUuid Component UUID
+	 * @param dateFrom Start date
+	 * @param dateTo End date
+	 * @return Optional containing metrics pair, or empty if metrics not found
+	 */
+	public Optional<MetricsPair> getMetricsPairForDateRange(
+			UUID componentUuid, 
+			ZonedDateTime dateFrom, 
+			ZonedDateTime dateTo) {
+		
+		String dateKey1 = dateFrom.toLocalDate().toString();
+		String dateKey2 = dateTo.toLocalDate().toString();
+		
+		Optional<ReleaseMetricsDto> m1 = getFindingsPerDayForComponent(componentUuid, dateKey1);
+		Optional<ReleaseMetricsDto> m2 = getFindingsPerDayForComponent(componentUuid, dateKey2);
+		
+		if (m1.isEmpty() || m2.isEmpty()) {
+			return Optional.empty();
+		}
+		
+		return Optional.of(new MetricsPair(m1.get(), m2.get()));
+	}
+	
+	/**
+	 * Helper record to hold a pair of metrics for comparison in changelog operations.
+	 */
+	public record MetricsPair(ReleaseMetricsDto metrics1, ReleaseMetricsDto metrics2) {}
+	
 }

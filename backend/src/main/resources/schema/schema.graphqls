@@ -5,8 +5,8 @@ type Query {
 	allOrganizations: [Organization]
 	
 	# changelog
-	getChangelogBetweenReleases(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String, includeSbomAndVuln: Boolean): ComponentChangeLog
-	getComponentChangeLog(componentUuid:ID!,branchUuid:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
+	getChangelogBetweenReleases(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
+	getComponentChangeLog(componentUuid:ID!,branchUuid:ID, orgUuid:ID!, aggregated: AggregationType, timeZone: String, dateFrom: DateTime, dateTo: DateTime): ComponentChangeLog
 	
 	releaseTagKeys(orgUuid: ID!): [String]
 	component(componentUuid:ID!): Component
@@ -420,15 +420,14 @@ type ComponentChangeLog {
 	org: ID
 	firstRelease: ReleaseChangeLog
 	lastRelease: ReleaseChangeLog
-	tickets: [TicketChangeLog]
-	releases: [ReleaseChangeLog]
 	changes: [ChangeChangeLog]
+	releases: [ReleaseChangeLog]
+	tickets: [TicketChangeLog]
 	components: [ComponentChangeLog]
 	branches: [ComponentChangeLog]
 	sbomChanges: ArtifactChangelog
-	vulnerabilityChanges: VulnerabilityChanges
+	findingChanges: FindingChanges
 }
-
 
 type Ticket {
 	uuid: ID
@@ -452,6 +451,8 @@ type ReleaseChangeLog {
 	version: String
 	lifecycle: ReleaseLifecycleEnum
 	changes: [ChangeChangeLog]
+	sbomChanges: ArtifactChangelog
+	findingChanges: FindingChanges
 }
 
 type ChangeChangeLog {
@@ -466,14 +467,40 @@ type CommitChangeLog {
 	commitEmail: String
 }
 
-type VulnerabilityChanges {
-	appeared: [VulnerabilityChange]
-	resolved: [VulnerabilityChange]
-	severityChanged: [VulnerabilityChange]
-	summary: VulnerabilityChangesSummary
+type FindingChanges {
+	appearedVulnerabilities: [Vulnerability!]!
+	resolvedVulnerabilities: [Vulnerability!]!
+	severityChangedVulnerabilities: [Vulnerability!]!
+	appearedViolations: [Violation!]!
+	resolvedViolations: [Violation!]!
+	appearedWeaknesses: [Weakness!]!
+	resolvedWeaknesses: [Weakness!]!
+	severityChangedWeaknesses: [Weakness!]!
+	summary: FindingChangesSummary!
 }
 
-type VulnerabilityChange {
+type FindingChangesSummary {
+	appearedVulnerabilitiesCount: Int!
+	resolvedVulnerabilitiesCount: Int!
+	severityChangedVulnerabilitiesCount: Int!
+	appearedViolationsCount: Int!
+	resolvedViolationsCount: Int!
+	appearedWeaknessesCount: Int!
+	resolvedWeaknessesCount: Int!
+	severityChangedWeaknessesCount: Int!
+	totalAppearedCount: Int!
+	totalResolvedCount: Int!
+	netChange: Int!
+}
+
+type VulnerabilityChanges {
+	appeared: [VulnerabilityChangeRecord!]!
+	resolved: [VulnerabilityChangeRecord!]!
+	severityChanged: [VulnerabilityChangeRecord!]!
+	summary: VulnerabilityChangesSummary!
+}
+
+type VulnerabilityChangeRecord {
 	findingId: String
 	aliases: [String]
 	severity: VulnerabilitySeverity
@@ -484,10 +511,20 @@ type VulnerabilityChange {
 }
 
 type VulnerabilityChangesSummary {
-	totalAppeared: Int
-	totalResolved: Int
-	totalSeverityChanged: Int
-	netChange: Int
+	appearedCount: Int!
+	resolvedCount: Int!
+	severityChangedCount: Int!
+	netChange: Int!
+}
+
+type VulnerabilityChange {
+	findingId: String
+	aliases: [String]
+	severity: VulnerabilitySeverity
+	previousSeverity: VulnerabilitySeverity
+	affectedComponent: String
+	analysisState: AnalysisState
+	sources: [ID]
 }
 
 type VcsRepository {

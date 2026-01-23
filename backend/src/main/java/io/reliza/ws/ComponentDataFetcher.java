@@ -5,6 +5,7 @@ package io.reliza.ws;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedList;
@@ -66,6 +67,7 @@ import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.service.ChangeLogService;
 import io.reliza.service.IntegrationService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.GetComponentService;
@@ -117,6 +119,9 @@ public class ComponentDataFetcher {
 	
 	@Autowired
 	private ApprovalPolicyService approvalPolicyService;
+
+	@Autowired
+	private ChangeLogService changeLogService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "component")
@@ -157,11 +162,14 @@ public class ComponentDataFetcher {
 			@InputArgument("branchUuid") String branchUuidStr,
 			@InputArgument("orgUuid") String orgUuidStr,
 			@InputArgument("aggregated") AggregationType aggregated,
-			@InputArgument("timeZone") String timeZone
-		) {
+			@InputArgument("timeZone") String timeZone,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo
+		) throws RelizaException {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		UUID branchUuid = UUID.fromString(branchUuidStr);
 		UUID componentUuid = UUID.fromString(componentUuidStr);
+		UUID branchUuid = (branchUuidStr != null && !branchUuidStr.isEmpty()) ? UUID.fromString(branchUuidStr) : null;
+		
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -172,10 +180,22 @@ public class ComponentDataFetcher {
 		
 		ComponentJsonDto changelog = null;
 		aggregated = aggregated == null ? AggregationType.NONE : aggregated;
-		if(opd.get().getType().equals(ComponentType.COMPONENT))
-			changelog = releaseService.getComponentChangeLog(branchUuid, orgUuid, aggregated, timeZone);
-		else if(opd.get().getType().equals(ComponentType.PRODUCT))
-			changelog = releaseService.getProductChangeLog(branchUuid, orgUuid, aggregated, timeZone);
+		
+		// If dateFrom and dateTo are provided, use date-based comparison
+		if (dateFrom != null && dateTo != null) {
+			if(opd.get().getType().equals(ComponentType.COMPONENT)) {
+				changelog = changeLogService.getComponentChangeLogByDate(componentUuid, orgUuid, dateFrom, dateTo, aggregated, timeZone);
+			} else if(opd.get().getType().equals(ComponentType.PRODUCT)) {
+				changelog = changeLogService.getProductChangeLogByDate(componentUuid, orgUuid, dateFrom, dateTo, aggregated, timeZone);
+			}
+		}
+		// Otherwise, use branch-specific changelog
+		else if (branchUuid != null) {
+			if(opd.get().getType().equals(ComponentType.COMPONENT))
+				changelog = changeLogService.getComponentChangeLog(branchUuid, orgUuid, aggregated, timeZone);
+			else if(opd.get().getType().equals(ComponentType.PRODUCT))
+				changelog = changeLogService.getProductChangeLog(branchUuid, orgUuid, aggregated, timeZone);
+		}
 		
 		return changelog;
 	}

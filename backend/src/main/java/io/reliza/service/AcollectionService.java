@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Acollection;
 import io.reliza.model.AcollectionData;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
@@ -296,5 +297,69 @@ public class AcollectionService {
 		.toList();
 		
 		return bomIds;
+	}
+	
+	/**
+	 * Extracts acollections from releases between two releases for SBOM comparison.
+	 * Used for changelog generation to compare SBOM changes across a release range.
+	 * 
+	 * @param uuid1 First release UUID (baseline)
+	 * @param uuid2 Second release UUID (comparison target)
+	 * @return List of acollections from releases in the range (excluding baseline)
+	 * @throws RelizaException if releases cannot be retrieved
+	 */
+	public List<AcollectionData> getAcollectionsForReleaseRange(
+			UUID uuid1, 
+			UUID uuid2) throws RelizaException {
+		
+		List<ReleaseData> releases = sharedReleaseService
+			.listAllReleasesBetweenReleases(uuid1, uuid2);
+		
+		if (releases.isEmpty()) {
+			return List.of();
+		}
+		
+		// Remove last element (release1) as it's the baseline
+		if (releases.size() > 1) {
+			releases.remove(releases.size() - 1);
+		}
+		
+		return releases.stream()
+			.map(r -> getLatestCollectionDataOfRelease(r.getUuid()))
+			.filter(java.util.Objects::nonNull)
+			.toList();
+	}
+	
+	/**
+	 * Extracts acollections for a component across all branches within a date range.
+	 * Used for date-based changelog generation to aggregate SBOM data across branches.
+	 * 
+	 * @param componentUuid Component UUID
+	 * @param dateFrom Start date
+	 * @param dateTo End date
+	 * @return List of acollections from all releases in the date range across all branches
+	 */
+	public List<AcollectionData> getAcollectionsForDateRange(
+			UUID componentUuid, 
+			java.time.ZonedDateTime dateFrom, 
+			java.time.ZonedDateTime dateTo) {
+		
+		List<io.reliza.model.BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, null);
+		List<AcollectionData> acollections = new java.util.ArrayList<>();
+		
+		for (io.reliza.model.BranchData branch : branches) {
+			List<ReleaseData> releases = sharedReleaseService
+				.listReleaseDataOfBranchBetweenDates(
+					branch.getUuid(), dateFrom, dateTo, io.reliza.model.ReleaseData.ReleaseLifecycle.DRAFT);
+			
+			for (ReleaseData release : releases) {
+				AcollectionData ac = getLatestCollectionDataOfRelease(release.getUuid());
+				if (ac != null) {
+					acollections.add(ac);
+				}
+			}
+		}
+		
+		return acollections;
 	}
 }

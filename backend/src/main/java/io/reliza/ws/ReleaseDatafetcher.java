@@ -94,6 +94,7 @@ import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.service.ChangeLogService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.GetComponentService;
@@ -174,6 +175,9 @@ public class ReleaseDatafetcher {
 
 	@Autowired
 	private ReleaseFinalizerService releaseFinalizerService;
+
+	@Autowired
+	private ChangeLogService changelogService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "release")
@@ -312,8 +316,7 @@ public class ReleaseDatafetcher {
 			@InputArgument("release2") UUID uuid2,
 			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("aggregated") AggregationType aggregated,
-			@InputArgument("timeZone") String timeZone,
-			@InputArgument("includeSbomAndVuln") Boolean includeSbomAndVuln
+			@InputArgument("timeZone") String timeZone
 		) throws RelizaException {
 
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
@@ -321,10 +324,7 @@ public class ReleaseDatafetcher {
 		
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		
-		// Default to true if not specified
-		boolean includeData = includeSbomAndVuln == null ? true : includeSbomAndVuln;
-		
-		return releaseService.getChangelogBetweenReleases(uuid1, uuid2, orgUuid, aggregated, timeZone, includeData);
+		return changelogService.getChangelogBetweenReleases(uuid1, uuid2, orgUuid, aggregated, timeZone);
 	}
 	
 

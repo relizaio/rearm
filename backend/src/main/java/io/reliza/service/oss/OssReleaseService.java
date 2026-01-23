@@ -68,7 +68,7 @@ import io.reliza.service.DependencyPatternService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.NotificationService;
-import io.reliza.service.ReleaseService.CommitRecord;
+import io.reliza.service.ChangeLogService.CommitRecord;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.VariantService;
