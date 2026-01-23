@@ -794,9 +794,13 @@ public class IntegrationService {
 	 */
 	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams) 
 			throws JsonMappingException, JsonProcessingException {
+		return executeDtrackPaginatedCall(baseUri, apiToken, existingParams, CommonVariables.DTRACK_DEFAULT_PAGE_SIZE);
+	}
+	
+	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams, int pageSize) 
+			throws JsonMappingException, JsonProcessingException {
 		List<Object> allResults = new ArrayList<>();
 		int pageNumber = 1;
-		int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
 		boolean hasMorePages = true;
 		String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
 		
@@ -856,7 +860,7 @@ public class IntegrationService {
 	
 	private List<Map<String, Object>> executeDtrackComponentSearch (String baseUri, String apiToken, String queryParams) 
 			throws JsonMappingException, JsonProcessingException {
-		List<Object> results = executeDtrackPaginatedCall(baseUri, apiToken, queryParams);
+		List<Object> results = executeDtrackPaginatedCall(baseUri, apiToken, queryParams, 1000);
 		List<Map<String, Object>> respList = new LinkedList<>();
 		for (Object obj : results) {
 			@SuppressWarnings("unchecked")
