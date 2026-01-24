@@ -2,8 +2,10 @@ import { logger } from '../../logger';
 import { RebomOptions, HIERARCHICHAL } from '../../types';
 import { BomValidationError, BomStorageError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
+import { createTempFile, deleteTempFile, shellExec } from '../../utils';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
+import * as fs from 'fs';
 
 export function extractTldFromBom(bom: any): any {
   let newBom: any = {}
@@ -402,5 +404,68 @@ function computeSha256Hash(obj: string): string {
       error instanceof Error ? error : new Error(String(error)),
       { operation: 'computeDigest' }
     );
+  }
+}
+
+/**
+ * Enriches a CycloneDX BOM using rearm-cli bomutils enrich command.
+ * Requires BEAR_URI and BEAR_API_KEY environment variables to be set.
+ * If either env var is missing, returns the original BOM unchanged.
+ * 
+ * @param bom - CycloneDX BOM to enrich
+ * @returns Enriched BOM, or original BOM if enrichment is skipped/fails
+ */
+export async function enrichCycloneDxBom(bom: any): Promise<any> {
+  const bearUri = process.env.BEAR_URI;
+  const bearApiKey = process.env.BEAR_API_KEY;
+
+  if (!bearUri || !bearApiKey) {
+    logger.info('BEAR_URI or BEAR_API_KEY not set, skipping BOM enrichment');
+    return bom;
+  }
+
+  let inputFile: string | null = null;
+  let outputFile: string | null = null;
+
+  try {
+    logger.info({ serialNumber: bom.serialNumber }, 'Starting CycloneDX BOM enrichment using rearm-cli');
+
+    inputFile = await createTempFile(bom);
+    outputFile = await createTempFile({});
+    logger.debug({ inputFile, outputFile }, 'Created temporary files for enrichment');
+
+    const args = [
+      'bomutils',
+      'enrich',
+      '--bearUri', bearUri,
+      '--bearApiKey', bearApiKey,
+      '-f', inputFile,
+      '-o', outputFile
+    ];
+
+    logger.info('Running enrichment: rearm-cli bomutils enrich');
+    const result = await shellExec('rearm-cli', args, 600000); // 600 second timeout
+    logger.debug({ enrichmentOutput: result }, 'rearm-cli enrichment completed');
+
+    const enrichedContent = await fs.promises.readFile(outputFile, 'utf8');
+    const enrichedBom = JSON.parse(enrichedContent);
+    logger.info({
+      componentCount: enrichedBom?.components?.length || 0,
+      serialNumber: enrichedBom?.serialNumber
+    }, 'CycloneDX BOM enrichment successful');
+
+    await Promise.all([
+      deleteTempFile(inputFile),
+      deleteTempFile(outputFile)
+    ]);
+
+    return enrichedBom;
+
+  } catch (error) {
+    if (inputFile) await deleteTempFile(inputFile);
+    if (outputFile) await deleteTempFile(outputFile);
+
+    logger.error({ error: error instanceof Error ? error.message : String(error), serialNumber: bom.serialNumber }, 'CycloneDX BOM enrichment failed, returning original BOM');
+    return bom;
   }
 }

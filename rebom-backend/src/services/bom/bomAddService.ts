@@ -4,9 +4,8 @@ import { BomValidationError, BomStorageError, BomConversionError, OciStorageErro
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { SpdxService } from '../spdx';
-import { fetchFromOci, OASResponse, pushToOci } from '../oci';
-import { computeBomDigest, augmentBomForStorage } from './bomProcessingService';
-import { findBom, findBomByMeta } from './bomSearchService';
+import { pushToOci } from '../oci';
+import { computeBomDigest, augmentBomForStorage, enrichCycloneDxBom } from './bomProcessingService';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
 import { runQuery } from '../../utils';
@@ -109,11 +108,13 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by rearm-saas)
   rebomOptions.mod = 'raw';
 
-  // Step 3: Optionally augment BOM with component context
+  // Step 3: Enrich BOM (if BEAR env vars are set) and optionally augment with component context
   let finalBom = processedBom;
   if (AUGMENT_ON_STORAGE) {
+    logger.debug({ serialNumber: rebomOptions.serialNumber }, "Enriching BOM on BEAR");
+    const enrichedBom = await enrichCycloneDxBom(processedBom);
     logger.debug({ serialNumber: rebomOptions.serialNumber }, "Augmenting BOM with component context before storage");
-    finalBom = augmentBomForStorage(processedBom, rebomOptions, new Date());
+    finalBom = augmentBomForStorage(enrichedBom, rebomOptions, new Date());
   }
   
   // Compute digest on the final BOM (augmented or processed, depending on config)
@@ -363,7 +364,8 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     mergedOptions.bomVersion = String(bomVersion);
     
     const convertedBomUuid = uuidv4();
-    const cycloneDxOciResponse = await pushToOci(convertedBomUuid, conversionResult.convertedBom);
+    const enrichedBom = await enrichCycloneDxBom(conversionResult.convertedBom);
+    const cycloneDxOciResponse = await pushToOci(convertedBomUuid, enrichedBom);
 
     const queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format, source_spdx_uuid) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *';
     const queryParams = [
