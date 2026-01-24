@@ -5,7 +5,7 @@ import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { SpdxService } from '../spdx';
 import { pushToOci } from '../oci';
-import { computeBomDigest, augmentBomForStorage, enrichCycloneDxBom } from './bomProcessingService';
+import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync } from './bomProcessingService';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
 import { runQuery } from '../../utils';
@@ -108,13 +108,14 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by rearm-saas)
   rebomOptions.mod = 'raw';
 
-  // Step 3: Enrich BOM (if BEAR env vars are set) and optionally augment with component context
+  // Step 3: Set enrichment status and optionally augment with component context
+  // Enrichment will happen asynchronously after BOM is stored
+  rebomOptions.enrichmentStatus = getInitialEnrichmentStatus();
+  
   let finalBom = processedBom;
   if (AUGMENT_ON_STORAGE) {
-    logger.debug({ serialNumber: rebomOptions.serialNumber }, "Enriching BOM on BEAR");
-    const enrichedBom = await enrichCycloneDxBom(processedBom);
     logger.debug({ serialNumber: rebomOptions.serialNumber }, "Augmenting BOM with component context before storage");
-    finalBom = augmentBomForStorage(enrichedBom, rebomOptions, new Date());
+    finalBom = augmentBomForStorage(processedBom, rebomOptions, new Date());
   }
   
   // Compute digest on the final BOM (augmented or processed, depending on config)
@@ -235,6 +236,11 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     bomVersion: rebomOptions.bomVersion,
     operation: queryText.startsWith('INSERT') ? 'INSERT' : 'UPDATE'
   }, "BOM record stored successfully");
+  
+  // Trigger async enrichment (fire-and-forget)
+  enrichBomAsync(bomRecord.uuid, finalBom, bomInput.bomInput.org).catch(err => {
+    logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
+  });
   
   return bomRecord;
 }
@@ -364,8 +370,9 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     mergedOptions.bomVersion = String(bomVersion);
     
     const convertedBomUuid = uuidv4();
-    const enrichedBom = await enrichCycloneDxBom(conversionResult.convertedBom);
-    const cycloneDxOciResponse = await pushToOci(convertedBomUuid, enrichedBom);
+    // Set enrichment status - enrichment will happen asynchronously
+    mergedOptions.enrichmentStatus = getInitialEnrichmentStatus();
+    const cycloneDxOciResponse = await pushToOci(convertedBomUuid, convertedBom);
 
     const queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format, source_spdx_uuid) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *';
     const queryParams = [
@@ -385,6 +392,12 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     await SpdxRepository.updateSpdxBomConversionStatus(spdxRecord.uuid, 'success');
 
     logger.info(`Successfully processed SPDX BOM: ${spdxRecord.uuid} -> ${bomRecord.uuid}`);
+    
+    // Trigger async enrichment (fire-and-forget)
+    enrichBomAsync(bomRecord.uuid, convertedBom, bomInput.bomInput.org).catch(err => {
+      logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
+    });
+    
     return bomRecord;
 
   } catch (error) {

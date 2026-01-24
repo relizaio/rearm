@@ -56,6 +56,13 @@ export enum RootComponentMergeMode {
     FLATTEN_UNDER_NEW_ROOT = 'FLATTEN_UNDER_NEW_ROOT'
 }
 
+export enum EnrichmentStatus {
+    PENDING = 'PENDING',
+    COMPLETED = 'COMPLETED',
+    FAILED = 'FAILED',
+    SKIPPED = 'SKIPPED'  // When BEAR env vars are not set
+}
+
 export type RebomOptions = {
     serialNumber: string,
     name: string,
@@ -81,7 +88,11 @@ export type RebomOptions = {
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate
-    deduplicationTimestamp?: string  // ISO timestamp when deduplication was detected
+    deduplicationTimestamp?: string,  // ISO timestamp when deduplication was detected
+    // Enrichment metadata
+    enrichmentStatus?: EnrichmentStatus,
+    enrichmentTimestamp?: string,  // ISO timestamp when enrichment completed/failed
+    enrichmentError?: string  // Error message if enrichment failed
 }
 
 export type BomSearch = {

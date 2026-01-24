@@ -1,8 +1,9 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL } from '../../types';
+import { RebomOptions, HIERARCHICHAL, EnrichmentStatus } from '../../types';
 import { BomValidationError, BomStorageError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
-import { createTempFile, deleteTempFile, shellExec } from '../../utils';
+import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
+import { pushToOci } from '../oci';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -467,5 +468,132 @@ export async function enrichCycloneDxBom(bom: any): Promise<any> {
 
     logger.error({ error: error instanceof Error ? error.message : String(error), serialNumber: bom.serialNumber }, 'CycloneDX BOM enrichment failed, returning original BOM');
     return bom;
+  }
+}
+
+/**
+ * Checks if BEAR enrichment is configured (env vars are set).
+ * Used to determine initial enrichment status.
+ */
+export function isEnrichmentConfigured(): boolean {
+  return !!(process.env.BEAR_URI && process.env.BEAR_API_KEY);
+}
+
+/**
+ * Gets the initial enrichment status based on configuration.
+ * Returns PENDING if BEAR is configured, SKIPPED otherwise.
+ */
+export function getInitialEnrichmentStatus(): EnrichmentStatus {
+  return isEnrichmentConfigured() ? EnrichmentStatus.PENDING : EnrichmentStatus.SKIPPED;
+}
+
+export interface EnrichmentResult {
+  success: boolean;
+  enrichedBom?: any;
+  error?: string;
+}
+
+/**
+ * Performs async BOM enrichment and updates the database record.
+ * This function is meant to be called without await (fire-and-forget).
+ * 
+ * @param bomUuid - UUID of the BOM record to enrich
+ * @param bom - The BOM content to enrich
+ * @param org - Organization ID
+ */
+export async function enrichBomAsync(bomUuid: string, bom: any, org: string): Promise<void> {
+  if (!isEnrichmentConfigured()) {
+    logger.debug({ bomUuid }, 'Enrichment not configured, skipping async enrichment');
+    return;
+  }
+
+  try {
+    // Perform enrichment
+    const enrichedBom = await enrichCycloneDxBom(bom);
+    
+    // Check if enrichment actually happened (compare with original)
+    const wasEnriched = enrichedBom !== bom;
+    
+    if (wasEnriched) {
+      // Push enriched BOM to OCI (overwrites existing)
+      const oasResponse = await pushToOci(bomUuid, enrichedBom);
+      
+      // Update database with new BOM reference and status
+      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, oasResponse);
+      
+      logger.info({ bomUuid, serialNumber: bom.serialNumber }, 'Async BOM enrichment completed successfully');
+    } else {
+      // Enrichment returned original BOM (likely failed silently)
+      await updateEnrichmentStatus(bomUuid, EnrichmentStatus.COMPLETED);
+      logger.info({ bomUuid }, 'Async BOM enrichment completed (no changes)');
+    }
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ bomUuid, error: errorMessage }, 'Async BOM enrichment failed');
+    
+    await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, errorMessage);
+  }
+}
+
+async function updateEnrichmentStatus(
+  bomUuid: string, 
+  status: EnrichmentStatus, 
+  errorMessage?: string
+): Promise<void> {
+  try {
+    const queryText = `
+      UPDATE rebom.boms 
+      SET meta = jsonb_set(
+        jsonb_set(
+          jsonb_set(meta, '{enrichmentStatus}', $2::jsonb),
+          '{enrichmentTimestamp}', $3::jsonb
+        ),
+        '{enrichmentError}', $4::jsonb
+      ),
+      last_updated_date = NOW()
+      WHERE uuid = $1
+    `;
+    
+    await runQuery(queryText, [
+      bomUuid,
+      JSON.stringify(status),
+      JSON.stringify(new Date().toISOString()),
+      JSON.stringify(errorMessage || null)
+    ]);
+  } catch (error) {
+    logger.error({ bomUuid, status, error }, 'Failed to update enrichment status');
+  }
+}
+
+async function updateEnrichmentStatusWithBom(
+  bomUuid: string,
+  status: EnrichmentStatus,
+  oasResponse: any
+): Promise<void> {
+  try {
+    const queryText = `
+      UPDATE rebom.boms 
+      SET 
+        bom = $2,
+        meta = jsonb_set(
+          jsonb_set(
+            jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
+            '{enrichmentTimestamp}', $4::jsonb
+          ),
+          '{enrichmentError}', 'null'::jsonb
+        ),
+        last_updated_date = NOW()
+      WHERE uuid = $1
+    `;
+    
+    await runQuery(queryText, [
+      bomUuid,
+      oasResponse,
+      JSON.stringify(status),
+      JSON.stringify(new Date().toISOString())
+    ]);
+  } catch (error) {
+    logger.error({ bomUuid, status, error }, 'Failed to update enrichment status with BOM');
   }
 }
