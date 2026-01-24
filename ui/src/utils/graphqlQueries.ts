@@ -714,36 +714,115 @@ const CHANGELOG_GQL_DATA = `
             version
         }
     }
-    vulnerabilityChanges {
-        appeared {
-            findingId
-            aliases
+    findingChanges {
+        appearedVulnerabilities {
+            vulnId
+            purl
             severity
-            affectedComponent
+            aliases {
+                type
+                aliasId
+            }
             analysisState
-            sources
+            sources {
+                artifact
+                release
+            }
         }
-        resolved {
-            findingId
-            aliases
+        resolvedVulnerabilities {
+            vulnId
+            purl
             severity
-            affectedComponent
+            aliases {
+                type
+                aliasId
+            }
             analysisState
-            sources
+            sources {
+                artifact
+                release
+            }
         }
-        severityChanged {
-            findingId
-            aliases
+        severityChangedVulnerabilities {
+            vulnId
+            purl
             severity
-            previousSeverity
-            affectedComponent
+            aliases {
+                type
+                aliasId
+            }
             analysisState
-            sources
+            sources {
+                artifact
+                release
+            }
+        }
+        appearedViolations {
+            type
+            purl
+            license
+            violationDetails
+            analysisState
+            sources {
+                artifact
+                release
+            }
+        }
+        resolvedViolations {
+            type
+            purl
+            license
+            violationDetails
+            analysisState
+            sources {
+                artifact
+                release
+            }
+        }
+        appearedWeaknesses {
+            cweId
+            ruleId
+            location
+            severity
+            analysisState
+            sources {
+                artifact
+                release
+            }
+        }
+        resolvedWeaknesses {
+            cweId
+            ruleId
+            location
+            severity
+            analysisState
+            sources {
+                artifact
+                release
+            }
+        }
+        severityChangedWeaknesses {
+            cweId
+            ruleId
+            location
+            severity
+            analysisState
+            sources {
+                artifact
+                release
+            }
         }
         summary {
-            totalAppeared
-            totalResolved
-            totalSeverityChanged
+            appearedVulnerabilitiesCount
+            resolvedVulnerabilitiesCount
+            severityChangedVulnerabilitiesCount
+            appearedViolationsCount
+            resolvedViolationsCount
+            appearedWeaknessesCount
+            resolvedWeaknessesCount
+            severityChangedWeaknessesCount
+            totalAppearedCount
+            totalResolvedCount
             netChange
         }
     }
@@ -756,6 +835,80 @@ const CHANGELOG_GQL_DATA = `
             version
             lifecycle
             ${CHANGES_GQL_DATA}
+            sbomChanges {
+                added {
+                    purl
+                    version
+                }
+                removed {
+                    purl
+                    version
+                }
+            }
+            findingChanges {
+                appearedVulnerabilities {
+                    vulnId
+                    purl
+                    severity
+                    aliases {
+                        type
+                        aliasId
+                    }
+                }
+                resolvedVulnerabilities {
+                    vulnId
+                    purl
+                    severity
+                    aliases {
+                        type
+                        aliasId
+                    }
+                }
+                severityChangedVulnerabilities {
+                    vulnId
+                    purl
+                    severity
+                    aliases {
+                        type
+                        aliasId
+                    }
+                }
+                appearedViolations {
+                    type
+                    purl
+                    license
+                    violationDetails
+                }
+                resolvedViolations {
+                    type
+                    purl
+                    license
+                    violationDetails
+                }
+                appearedWeaknesses {
+                    cweId
+                    ruleId
+                    location
+                    severity
+                }
+                resolvedWeaknesses {
+                    cweId
+                    ruleId
+                    location
+                    severity
+                }
+                severityChangedWeaknesses {
+                    cweId
+                    ruleId
+                    location
+                    severity
+                }
+                summary {
+                    totalAppearedCount
+                    totalResolvedCount
+                    netChange
+                }
+            }
         }
         tickets {
             ticketSubject
@@ -766,6 +919,88 @@ const CHANGELOG_GQL_DATA = `
     components {
         uuid
         name
+        org
+        firstRelease {
+            uuid
+            version
+        }
+        lastRelease {
+            uuid
+            version
+        }
+        sbomChanges {
+            added {
+                purl
+                version
+            }
+            removed {
+                purl
+                version
+            }
+        }
+        findingChanges {
+            appearedVulnerabilities {
+                vulnId
+                purl
+                severity
+                aliases {
+                    type
+                    aliasId
+                }
+            }
+            resolvedVulnerabilities {
+                vulnId
+                purl
+                severity
+            }
+            severityChangedVulnerabilities {
+                vulnId
+                purl
+                severity
+            }
+            appearedViolations {
+                type
+                purl
+                license
+                violationDetails
+            }
+            resolvedViolations {
+                type
+                purl
+                license
+            }
+            appearedWeaknesses {
+                cweId
+                ruleId
+                location
+                severity
+            }
+            resolvedWeaknesses {
+                cweId
+                ruleId
+                location
+                severity
+            }
+            severityChangedWeaknesses {
+                cweId
+                ruleId
+                location
+                severity
+            }
+            summary {
+                appearedVulnerabilitiesCount
+                resolvedVulnerabilitiesCount
+                severityChangedVulnerabilitiesCount
+                appearedViolationsCount
+                resolvedViolationsCount
+                appearedWeaknessesCount
+                resolvedWeaknessesCount
+                severityChangedWeaknessesCount
+                totalAppearedCount
+                totalResolvedCount
+                netChange
+            }
+        }
         branches {
             uuid
             name
@@ -785,6 +1020,60 @@ const CHANGELOG_GQL_DATA = `
             uuid
             name
             org
+            sbomChanges {
+                added {
+                    purl
+                    version
+                }
+                removed {
+                    purl
+                    version
+                }
+            }
+            findingChanges {
+                appearedVulnerabilities {
+                    vulnId
+                    purl
+                    severity
+                    aliases {
+                        type
+                        aliasId
+                    }
+                }
+                resolvedVulnerabilities {
+                    vulnId
+                    purl
+                    severity
+                }
+                appearedViolations {
+                    type
+                    purl
+                    license
+                    violationDetails
+                }
+                resolvedViolations {
+                    type
+                    purl
+                    license
+                }
+                appearedWeaknesses {
+                    cweId
+                    ruleId
+                    location
+                    severity
+                }
+                resolvedWeaknesses {
+                    cweId
+                    ruleId
+                    location
+                    severity
+                }
+                summary {
+                    totalAppearedCount
+                    totalResolvedCount
+                    netChange
+                }
+            }
             branches {
                 uuid
                 name

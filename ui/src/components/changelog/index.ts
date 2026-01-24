@@ -1,0 +1,5 @@
+export { default as FindingChangesDisplay } from './FindingChangesDisplay.vue'
+export { default as SbomChangesDisplay } from './SbomChangesDisplay.vue'
+export { default as CodeChangesDisplay } from './CodeChangesDisplay.vue'
+export { default as ReleaseHeader } from './ReleaseHeader.vue'
+export { default as ComponentHeader } from './ComponentHeader.vue'

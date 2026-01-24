@@ -1254,8 +1254,8 @@ const storeObject : any = {
         async fetchChangelogBetweenReleases (context: any, params: any) {
             const response = await graphqlClient.query({
                 query: gql`
-                    query FetchChangelogBetweenReleases($release1: ID!, $release2: ID!, $org: ID!, $aggregated: AggregationType, $timeZone: String, $includeSbomAndVuln: Boolean) {
-                        getChangelogBetweenReleases(release1: $release1, release2: $release2, orgUuid: $org, aggregated: $aggregated, timeZone: $timeZone, includeSbomAndVuln: $includeSbomAndVuln) {
+                    query FetchChangelogBetweenReleases($release1: ID!, $release2: ID!, $org: ID!, $aggregated: AggregationType, $timeZone: String) {
+                        getChangelogBetweenReleases(release1: $release1, release2: $release2, orgUuid: $org, aggregated: $aggregated, timeZone: $timeZone) {
                             ${graphqlQueries.ChangeLogGqlData}
                         }
                     }`,
@@ -1264,8 +1264,7 @@ const storeObject : any = {
                     release2: params.release2,
                     org: params.org,
                     aggregated: params.aggregated,
-                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                    includeSbomAndVuln: params.includeSbomAndVuln === true
+                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                 }
             })
             return response.data.getChangelogBetweenReleases

@@ -55,8 +55,8 @@ function isAdmin (org : string, myUser : any ) : boolean {
 async function fetchChangelogBetweenReleases (params : any) {
     const response = await graphqlClient.query({
         query: gql`
-            query FetchChangelogBetweenReleases($release1: ID!, $release2: ID!, $org: ID!, $aggregated: AggregationType, $timeZone: String, $includeSbomAndVuln: Boolean) {
-                getChangelogBetweenReleases(release1: $release1, release2: $release2, orgUuid: $org, aggregated: $aggregated, timeZone: $timeZone, includeSbomAndVuln: $includeSbomAndVuln) {
+            query FetchChangelogBetweenReleases($release1: ID!, $release2: ID!, $org: ID!, $aggregated: AggregationType, $timeZone: String) {
+                getChangelogBetweenReleases(release1: $release1, release2: $release2, orgUuid: $org, aggregated: $aggregated, timeZone: $timeZone) {
                     ${graphqlQueries.ChangeLogGqlData}
                 }
             }`,
@@ -65,8 +65,7 @@ async function fetchChangelogBetweenReleases (params : any) {
             release2: params.release2,
             org: params.org,
             aggregated: params.aggregated,
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            includeSbomAndVuln: params.includeSbomAndVuln === true
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
         }
     })
     return response.data.getChangelogBetweenReleases
@@ -75,8 +74,8 @@ async function fetchChangelogBetweenReleases (params : any) {
 async function fetchComponentChangeLog (params : any) {
     const response = await graphqlClient.query({
         query: gql`
-            query FetchComponentChangelog($componentId: ID!, $branchId: ID!, $orgId: ID!, $aggregated: AggregationType, $timeZone: String) {
-                getComponentChangeLog(componentUuid: $componentId, branchUuid: $branchId, orgUuid: $orgId, aggregated: $aggregated, timeZone: $timeZone) {
+            query FetchComponentChangelog($componentId: ID!, $branchId: ID, $orgId: ID!, $aggregated: AggregationType, $timeZone: String, $dateFrom: DateTime, $dateTo: DateTime) {
+                getComponentChangeLog(componentUuid: $componentId, branchUuid: $branchId, orgUuid: $orgId, aggregated: $aggregated, timeZone: $timeZone, dateFrom: $dateFrom, dateTo: $dateTo) {
                     ${graphqlQueries.ChangeLogGqlData}
                 }
             }`,
@@ -85,7 +84,9 @@ async function fetchComponentChangeLog (params : any) {
             orgId: params.orgId,
             branchId: params.branchId,
             aggregated: params.aggregated,
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            dateFrom: params.dateFrom,
+            dateTo: params.dateTo
         },
         fetchPolicy: 'no-cache'
     })
