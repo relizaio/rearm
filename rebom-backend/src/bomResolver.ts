@@ -2,7 +2,7 @@ import * as BomService from './bomService';
 import * as DiffService from './services/bom/bomDiffService';
 import { SarifService } from './services/sarif';
 import { CycloneDxService } from './services/cyclonedx';
-import { BomDto, BomInput, BomRecord, BomSearch, WeaknessDto, VulnerabilityDto } from './types';
+import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, WeaknessDto, VulnerabilityDto } from './types';
 import { toGraphQLError } from './types/errors';
 import { bomToExcel, bomToCsv } from './services/bom/bomExportService';
 import { GraphQLError } from 'graphql';
@@ -33,7 +33,7 @@ const resolvers = {
 	Query: {
 		hello: () => 'world',
 		allBoms: async (): Promise<BomDto[]> => BomService.findAllBoms(),
-		findBom: async (_:any, bomSearch: BomSearch): Promise<BomDto[]> => BomService.findBom(bomSearch),
+		bomMetadataById: async (_:any, input: { id: string, org: string }): Promise<BomMetaDto | null> => BomService.bomMetadataById(input.id, input.org),
 		bomById: async (_:any, input: any): Promise<Object> => BomService.findBomObjectById(input.id, input.org),
 		rawBomId: async (_:any, input: any): Promise<Object> => BomService.findRawBomObjectById(input.id, input.org, input.format),
 		bomByIdCsv: async (_:any, input: any): Promise<string> => {

@@ -8,7 +8,7 @@ const typeDefs = gql`
     hello: String
     dbtest: String
     allBoms: [Bom]
-    findBom(bomSearch: BomSearch): [Bom] @deprecated(reason: "Not used by rearm-saas. Use bomById, bomBySerialNumberAndVersion, or bomMetaBySerialNumber instead.")
+    bomMetadataById(id: ID!, org: ID!): BomMeta
     bomById(id: ID, org: ID): Object
     rawBomId(id: ID, org: ID, format: BomFormat): Object
     bomByIdCsv(id: ID, org: ID): String
@@ -47,6 +47,7 @@ const typeDefs = gql`
   }
 
   type BomMeta {
+    uuid: ID
     name: String
     group: String
     bomVersion: String
@@ -58,6 +59,16 @@ const typeDefs = gql`
     stripBom: String
     serialNumber: ID
     ignoreDev: Boolean
+    enrichmentStatus: EnrichmentStatus
+    enrichmentTimestamp: String
+    enrichmentError: String
+  }
+
+  enum EnrichmentStatus {
+    PENDING
+    COMPLETED
+    FAILED
+    SKIPPED
   }
 
   type BomDiffResult {

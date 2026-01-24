@@ -28,6 +28,7 @@ export type BomDto = {
 }
 
 export type BomMetaDto = {
+    uuid: string,
     name: string,
     group: string,
     bomVersion: string,
@@ -37,7 +38,11 @@ export type BomMetaDto = {
     structure: string,
     notes: string,
     stripBom: string,
-    serialNumber: string
+    serialNumber: string,
+    ignoreDev?: boolean,
+    enrichmentStatus?: EnrichmentStatus,
+    enrichmentTimestamp?: string,
+    enrichmentError?: string
 }
 
 export type BomInput = {

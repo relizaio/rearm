@@ -1,52 +1,40 @@
 import { logger } from '../../logger';
-import { BomSearch, BomDto, RebomOptions, SearchObject, BomRecord } from '../../types';
+import { BomSearch, BomDto, BomMetaDto, RebomOptions, SearchObject, BomRecord } from '../../types';
+import { BomNotFoundError } from '../../types/errors';
 import { fetchFromOci } from '../oci';
 import { augmentBomWithComponentContext, attachRebomToolToBom } from './bomProcessingService';
 import { runQuery } from '../../utils';
 import { BomMapper } from './bomMapper';
+import * as BomRepository from '../../bomRepository';
 
 /**
- * @deprecated This search function is not used by rearm-saas and may be removed in a future version.
- * Use bomById, bomBySerialNumberAndVersion, or bomMetaBySerialNumber instead.
+ * Get BOM metadata by UUID or serial number.
+ * Returns metadata including enrichment status without fetching full BOM content.
+ * 
+ * @param id - UUID or serial number of the BOM
+ * @param org - Organization ID
+ * @returns BOM metadata or null if not found
  */
-
-export async function findBom(bomSearch: BomSearch): Promise<BomDto[]> {
-  logger.warn('findBom is deprecated and not used by rearm-saas. Consider using bomById or bomBySerialNumberAndVersion instead.');
-  let searchObject = {
-    queryText: `select * from rebom.boms where 1 = 1`,
-    queryParams: [],
-    paramId: 1
-  }
-
-  let bomRecords: BomRecord[] = []
-
-  if (bomSearch.bomSearch.singleQuery) {
-    bomRecords = await findBomViaSingleQueryRecords(bomSearch.bomSearch.singleQuery)
-  } else {
-    if (bomSearch.bomSearch.serialNumber) {
-      if (!bomSearch.bomSearch.serialNumber.startsWith('urn')) {
-        bomSearch.bomSearch.serialNumber = 'urn:uuid:' + bomSearch.bomSearch.serialNumber
-      }
-      updateSearchObj(searchObject, `meta->>'serialNumber'`, bomSearch.bomSearch.serialNumber)
-    }
-
-    if (bomSearch.bomSearch.version) updateSearchObj(searchObject, `meta->>'version'`, bomSearch.bomSearch.version)
-
-    if (bomSearch.bomSearch.componentVersion) updateSearchObj(searchObject, `meta->>'version'`,
-      bomSearch.bomSearch.componentVersion)
-
-    if (bomSearch.bomSearch.componentGroup) updateSearchObj(searchObject, `meta->>'group'`,
-      bomSearch.bomSearch.componentGroup)
-
-    if (bomSearch.bomSearch.componentName) updateSearchObj(searchObject, `meta->>'name'`,
-      bomSearch.bomSearch.componentName)
-
-    let queryRes = await runQuery(searchObject.queryText, searchObject.queryParams)
-    bomRecords = queryRes.rows as BomRecord[]
+export async function bomMetadataById(id: string, org: string): Promise<BomMetaDto | null> {
+  logger.debug({ id, org }, "bomMetadataById called");
+  
+  // Try to find by UUID first
+  let bomResults = await BomRepository.bomById(id);
+  
+  // If not found by UUID, try by serialNumber
+  if (!bomResults || bomResults.length === 0) {
+    logger.debug({ id, org }, "BOM not found by UUID, trying serialNumber lookup");
+    bomResults = await BomRepository.bomBySerialNumber(id, org);
   }
   
-  // Use BomMapper for consistent conversion with OCI content fetching
-  return BomMapper.toDtoArrayWithContent(bomRecords);
+  if (!bomResults || bomResults.length === 0) {
+    logger.debug({ id, org }, "No BOM found by UUID or serialNumber");
+    return null;
+  }
+  
+  // Return the first match's metadata
+  const bomRecord = bomResults[0];
+  return BomMapper.toMetaDto(bomRecord);
 }
 
 export async function findBomByMeta(bomMeta: RebomOptions): Promise<BomDto[]> {

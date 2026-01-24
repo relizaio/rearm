@@ -50,6 +50,7 @@ export class BomMapper {
      */
     static toMetaDto(record: BomRecord): BomMetaDto {
         return {
+            uuid: record.uuid,
             name: record.meta.name,
             group: record.meta.group,
             bomVersion: record.meta.bomVersion,
@@ -59,7 +60,11 @@ export class BomMapper {
             structure: record.meta.structure,
             notes: record.meta.notes,
             stripBom: record.meta.stripBom,
-            serialNumber: record.meta.serialNumber
+            serialNumber: record.meta.serialNumber,
+            ignoreDev: record.meta.ignoreDev,
+            enrichmentStatus: record.meta.enrichmentStatus,
+            enrichmentTimestamp: record.meta.enrichmentTimestamp,
+            enrichmentError: record.meta.enrichmentError
         };
     }
 

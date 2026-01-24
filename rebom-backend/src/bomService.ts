@@ -28,7 +28,7 @@ export {
 
 // Search Operations
 export {
-  findBom,
+  bomMetadataById,
   findBomByMeta,
   updateSearchObj
 } from './services/bom/bomSearchService';
