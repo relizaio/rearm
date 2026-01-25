@@ -32,6 +32,7 @@ export type BomMetaDto = {
     name: string,
     group: string,
     bomVersion: string,
+    version: string,
     hash: string | undefined,
     belongsTo: string,
     tldOnly: boolean,

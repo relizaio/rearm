@@ -51,6 +51,7 @@ const typeDefs = gql`
     name: String
     group: String
     bomVersion: String
+    version: String
     hash: String
     belongsTo: String
     tldOnly: Boolean

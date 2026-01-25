@@ -54,6 +54,7 @@ export class BomMapper {
             name: record.meta.name,
             group: record.meta.group,
             bomVersion: record.meta.bomVersion,
+            version: record.meta.version,
             hash: record.meta.hash,
             belongsTo: record.meta.belongsTo,
             tldOnly: record.meta.tldOnly,
