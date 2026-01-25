@@ -62,6 +62,9 @@
                                 <div>
                                     Dependency-Track integration configured
                                     <vue-feather @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
+                                    <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Refresh D-Track Projects" @click="refreshDtrackProjects" style="margin-left: 8px; ">
+                                        <Refresh />
+                                    </n-icon>
                                 </div>
                                 <div v-if="false" style="margin-top: 8px;">
                                     <n-button @click="syncDtrackStatus" :loading="syncingDtrackStatus" type="primary" size="small">
@@ -734,7 +737,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh } from '@vicons/tabler'
 import { Info20Regular, Edit24Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -832,6 +835,7 @@ const selectedComponentToAdd: Ref<string> = ref('')
 const selectedProductToAdd: Ref<string> = ref('')
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
+const isGlobalAdmin = computed(() => myUser.value?.isGlobalAdmin === true)
 
 const orgResolved: Ref<string> = ref('')
 const myorg: ComputedRef<any> = computed((): any => store.getters.orgById(orgResolved.value))
@@ -2131,6 +2135,30 @@ async function createApp() {
         newappname.value = ''
         showCreateResourceGroupModal.value = false
         notify('success', 'Created', 'Successfully created resourceGroup ' + appObj.name)
+    }
+}
+
+async function refreshDtrackProjects() {
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation refreshDtrackProjects($orgUuid: ID!) {
+                    refreshDtrackProjects(orgUuid: $orgUuid)
+                }`,
+            variables: {
+                orgUuid: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        const result = (resp.data as any)?.refreshDtrackProjects
+        if (result) {
+            notify('success', 'D-Track Projects Refresh', 'Successfully refreshed Dependency-Track projects.')
+        } else {
+            notify('warning', 'D-Track Projects Refresh', 'Refresh completed but returned false.')
+        }
+    } catch (err: any) {
+        notify('error', 'D-Track Projects Refresh Failed', err.message || 'Failed to refresh Dependency-Track projects.')
     }
 }
 
