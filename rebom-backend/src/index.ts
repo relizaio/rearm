@@ -3,6 +3,7 @@ import { startStandaloneServer } from '@apollo/server/standalone'
 import typeDefs from './schema.graphql'
 import resolvers from './bomResolver';
 import { logger } from './logger';
+import { startEnrichmentScheduler, stopEnrichmentScheduler } from './services/enrichmentScheduler';
 
 // Global error handlers to prevent process crashes (like Spring Boot)
 // These ensure the service stays running even when unexpected errors occur
@@ -25,11 +26,13 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM signal received - shutting down gracefully');
+  stopEnrichmentScheduler();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   logger.info('SIGINT signal received - shutting down gracefully');
+  stopEnrichmentScheduler();
   process.exit(0);
 });
 
@@ -56,6 +59,9 @@ async function startApolloServer(typeDefs: any, resolvers: any) {
   });
 
   logger.info(`🚀 GraphQL Server ready at ${url}`);
+  
+  // Start enrichment scheduler after server is ready
+  startEnrichmentScheduler();
 }
 
 // Wrap startup in try-catch to handle initialization errors
