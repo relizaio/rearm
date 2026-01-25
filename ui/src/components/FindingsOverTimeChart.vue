@@ -16,6 +16,8 @@
             :component-type="props.componentType"
             :initial-severity-filter="directFindingsDate ? directFindingsSeverity : findingsPerDaySeverity"
             :initial-type-filter="directFindingsDate ? directFindingsType : findingsPerDayType"
+            :show-refresh-action="hasNoExtraContext && isGlobalAdmin"
+            :on-refresh-action="refreshAnalyticsForCurrentDate"
             @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
         />
     </div>
@@ -31,7 +33,7 @@ export default {
 import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { NSkeleton, NEmpty } from 'naive-ui'
+import { NSkeleton, NEmpty, useNotification, NotificationType } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { processMetricsData } from '@/utils/metrics'
@@ -59,7 +61,19 @@ const props = withDefaults(defineProps<{
 
 const store = useStore()
 const route = useRoute()
+const notification = useNotification()
 const myorg = computed(() => store.getters.myorg)
+const myUser = computed(() => store.getters.myuser)
+const isGlobalAdmin = computed(() => myUser.value?.isGlobalAdmin === true)
+
+const notify = (type: NotificationType, title: string, content: string) => {
+    notification[type]({
+        content: content,
+        meta: title,
+        duration: 3500,
+        keepAliveOnHover: true
+    })
+}
 
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
 const isLoading = ref(true)
@@ -98,6 +112,48 @@ const findingsPerDayModalTitle = computed(() => {
     }
     return `Findings for ${date}`
 })
+
+const hasNoExtraContext = computed(() => {
+    return !(props.type === 'BRANCH' && props.branchName) && !(props.type === 'COMPONENT' && props.componentName)
+})
+
+async function computeAnalyticsMetricsForDate(date: string) {
+    if (!orgUuid.value || !date) {
+        notify('error', 'Error', 'Organization UUID or date is missing')
+        return
+    }
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation computeAnalyticsMetricsForDate($orgUuid: ID!, $date: String!) {
+                    computeAnalyticsMetricsForDate(orgUuid: $orgUuid, date: $date) {
+                        lastScanned
+                    }
+                }
+            `,
+            variables: {
+                orgUuid: orgUuid.value,
+                date: date
+            },
+            fetchPolicy: 'no-cache'
+        })
+        const result = resp.data?.computeAnalyticsMetricsForDate
+        if (result) {
+            notify('success', 'Analytics Refresh', `Metrics computed. Last scanned: ${result.lastScanned || 'N/A'}`)
+        } else {
+            notify('warning', 'Analytics Refresh', 'No response received from analytics computation.')
+        }
+    } catch (e: any) {
+        notify('error', 'Analytics Refresh Failed', e.message)
+    }
+}
+
+const refreshAnalyticsForCurrentDate = () => {
+    const date = directFindingsDate.value || findingsPerDayDate.value
+    if (date) {
+        computeAnalyticsMetricsForDate(date)
+    }
+}
 
 // Common GraphQL fields for findings queries
 const FINDINGS_FIELDS = `
