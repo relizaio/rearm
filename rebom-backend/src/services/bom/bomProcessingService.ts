@@ -607,13 +607,15 @@ export interface EnrichmentTriggerResult {
  * Triggers enrichment for a BOM if conditions are met:
  * 1. enrichmentStatus is FAILED, SKIPPED, or null/undefined
  * 2. enrichmentStatus is PENDING but more time than timeout + grace period has passed since creation
+ * 3. If force=true, also triggers on COMPLETED status (for API calls)
  * 
  * @param id - UUID or serial number of the BOM
  * @param org - Organization ID
+ * @param force - If true, triggers enrichment even if status is COMPLETED (default: false)
  * @returns EnrichmentTriggerResult indicating if enrichment was triggered
  */
-export async function triggerEnrichment(id: string, org: string): Promise<EnrichmentTriggerResult> {
-  logger.info({ id, org }, 'triggerEnrichment called');
+export async function triggerEnrichment(id: string, org: string, force: boolean = false): Promise<EnrichmentTriggerResult> {
+  logger.info({ id, org, force }, 'triggerEnrichment called');
   
   if (!isEnrichmentConfigured()) {
     return { triggered: false, message: 'Enrichment not configured (BEAR_URI or BEAR_API_KEY not set)' };
@@ -653,7 +655,12 @@ export async function triggerEnrichment(id: string, org: string): Promise<Enrich
       bomUuid: bomRecord.uuid 
     };
   } else if (enrichmentStatus === EnrichmentStatus.COMPLETED) {
-    return { triggered: false, message: 'Enrichment already completed', bomUuid: bomRecord.uuid };
+    if (force) {
+      shouldTrigger = true;
+      reason = 'Force re-enrichment requested (status was COMPLETED)';
+    } else {
+      return { triggered: false, message: 'Enrichment already completed', bomUuid: bomRecord.uuid };
+    }
   }
   
   if (!shouldTrigger) {

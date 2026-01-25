@@ -75,8 +75,8 @@ const resolvers = {
 			const mergedBom = await BomService.mergeAndStoreBoms(mergeInput.ids, mergeInput.rebomOptions, mergeInput.org, BomService.addBom);
 			return await bomToExcel(mergedBom);
 		}, 'mergeAndStoreBomsExcel'),
-		triggerEnrichment: withErrorHandling(async (_:any, input: { id: string, org: string }) => {
-			return BomService.triggerEnrichment(input.id, input.org);
+		triggerEnrichment: withErrorHandling(async (_:any, input: { id: string, org: string, force?: boolean }) => {
+			return BomService.triggerEnrichment(input.id, input.org, input.force ?? true);
 		}, 'triggerEnrichment')
 	}
 }
