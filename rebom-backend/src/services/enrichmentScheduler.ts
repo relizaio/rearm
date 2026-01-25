@@ -5,7 +5,7 @@ import { fetchFromOci } from './oci';
 import { EnrichmentStatus } from '../types';
 
 const SCHEDULER_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const ENRICHMENT_BATCH_LIMIT = 5;
+const ENRICHMENT_BATCH_LIMIT = 10;
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
