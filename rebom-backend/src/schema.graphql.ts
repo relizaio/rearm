@@ -52,7 +52,7 @@ const typeDefs = gql`
     group: String
     bomVersion: String
     version: String
-    hash: String
+    bomDigest: String
     belongsTo: String
     tldOnly: Boolean
     structure: String
