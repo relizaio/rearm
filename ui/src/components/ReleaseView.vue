@@ -557,7 +557,7 @@ import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { CirclePlus, ClipboardCheck, Download, Edit, GitCompare, Link, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular } from '@vicons/fluent'
-import { SecurityScanOutlined } from '@vicons/antd'
+import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
@@ -2441,6 +2441,16 @@ const artifactsTableFields: DataTableColumns<any> = [
                         onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
                     }, () => h(SecurityScanOutlined))
                 els.push(dtrackRescanEl)
+                if (userPermission.value === 'ADMIN') {
+                    const enrichmentEl = h(NIcon,
+                        {
+                            title: 'Trigger Enrichment',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => triggerEnrichment(row.uuid)
+                        }, () => h(UpCircleOutlined))
+                    els.push(enrichmentEl)
+                }
             }
 
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
@@ -2625,6 +2635,16 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
                         onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
                     }, () => h(SecurityScanOutlined))
                 els.push(dtrackRescanEl)
+                if (userPermission.value === 'ADMIN') {
+                    const enrichmentEl = h(NIcon,
+                        {
+                            title: 'Trigger Enrichment',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => triggerEnrichment(row.uuid)
+                        }, () => h(UpCircleOutlined))
+                    els.push(enrichmentEl)
+                }
             }
 
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
@@ -3247,6 +3267,37 @@ async function requestRefreshDependencyTrackMetrics (artifact: string) {
         notify('success', 'Refresh Requested', 'Dependency-Track metrics refresh requested.')
     } else {
         notify('error', 'Failed to Request Refresh', 'Could not request refresh of Dependency-Track metrics. Please try again later or contact support.')
+    }
+}
+
+async function triggerEnrichment (artifact: string) {
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation triggerEnrichment($artifact: ID!) {
+                    triggerEnrichment(artifact: $artifact) {
+                        triggered
+                        message
+                        bomUuid
+                    }
+                }
+            `,
+            variables: { artifact },
+            fetchPolicy: 'no-cache'
+        })
+        const result = resp.data?.triggerEnrichment
+        if (result) {
+            const message = [
+                `Triggered: ${result.triggered ? 'true' : 'false'}`,
+                result.message ? `Message: ${result.message}` : null,
+                result.bomUuid ? `BOM UUID: ${result.bomUuid}` : null
+            ].filter(Boolean).join(' | ')
+            notify(result.triggered ? 'success' : 'error', 'Enrichment Trigger', message)
+        } else {
+            notify('error', 'Enrichment Trigger Failed', 'No response received from enrichment trigger.')
+        }
+    } catch (e: any) {
+        notify('error', 'Enrichment Trigger Failed', e.message)
     }
 }
 
