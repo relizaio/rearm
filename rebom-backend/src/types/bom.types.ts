@@ -40,6 +40,8 @@ export type BomMetaDto = {
     notes: string,
     stripBom: string,
     serialNumber: string,
+    createdDate: Date,
+    lastUpdatedDate: Date,
     ignoreDev?: boolean,
     enrichmentStatus?: EnrichmentStatus,
     enrichmentTimestamp?: string,

@@ -62,6 +62,8 @@ export class BomMapper {
             notes: record.meta.notes,
             stripBom: record.meta.stripBom,
             serialNumber: record.meta.serialNumber,
+            createdDate: record.created_date,
+            lastUpdatedDate: record.last_updated_date,
             ignoreDev: record.meta.ignoreDev,
             enrichmentStatus: record.meta.enrichmentStatus,
             enrichmentTimestamp: record.meta.enrichmentTimestamp,

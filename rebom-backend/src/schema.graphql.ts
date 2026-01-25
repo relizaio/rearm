@@ -66,6 +66,8 @@ const typeDefs = gql`
     notes: String
     stripBom: String
     serialNumber: ID
+    createdDate: DateTime
+    lastUpdatedDate: DateTime
     ignoreDev: Boolean
     enrichmentStatus: EnrichmentStatus
     enrichmentTimestamp: String
