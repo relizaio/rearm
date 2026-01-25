@@ -1,10 +1,12 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL, EnrichmentStatus } from '../../types';
+import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord } from '../../types';
 import { BomValidationError, BomStorageError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
 import { pushToOci, fetchFromOci } from '../oci';
 import * as BomRepository from '../../bomRepository';
+import * as SpdxRepository from '../../spdxRepository';
+import { SpdxService } from '../spdx';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -667,17 +669,139 @@ export async function triggerEnrichment(id: string, org: string, force: boolean 
     return { triggered: false, message: 'Enrichment conditions not met', bomUuid: bomRecord.uuid };
   }
   
-  logger.info({ bomUuid: bomRecord.uuid, reason }, 'Triggering enrichment');
+  logger.info({ bomUuid: bomRecord.uuid, reason, force }, 'Triggering enrichment');
   
-  // Fetch BOM content from OCI
-  const bomContent = await fetchFromOci(bomRecord.uuid);
-  
-  // Trigger async enrichment (fire-and-forget)
-  enrichBomAsync(bomRecord.uuid, bomContent, org).catch(err => {
-    logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
-  });
+  // For forced re-enrichment, we need to re-process from raw artifacts
+  if (force) {
+    reprocessAndEnrichAsync(bomRecord, org).catch(err => {
+      logger.error({ err, bomUuid: bomRecord.uuid }, 'Forced re-enrichment failed');
+    });
+  } else {
+    // Normal enrichment - just fetch current BOM and enrich
+    const bomContent = await fetchFromOci(bomRecord.uuid);
+    enrichBomAsync(bomRecord.uuid, bomContent, org).catch(err => {
+      logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
+    });
+  }
   
   return { triggered: true, message: reason, bomUuid: bomRecord.uuid };
+}
+
+/**
+ * Re-processes a BOM from raw artifacts and performs enrichment.
+ * For CycloneDX: pulls raw artifact (uuid-raw), re-augments, then enriches.
+ * For SPDX: pulls raw SPDX, re-converts, re-augments, then enriches.
+ * Only pushes the final enriched artifact.
+ */
+async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string): Promise<void> {
+  const bomUuid = bomRecord.uuid;
+  const sourceFormat = bomRecord.source_format;
+  const sourceSpdxUuid = bomRecord.source_spdx_uuid;
+  
+  logger.info({ bomUuid, sourceFormat, sourceSpdxUuid }, 'Starting forced re-enrichment from raw artifacts');
+  
+  try {
+    let bomToEnrich: any;
+    
+    if (sourceFormat === 'SPDX' && sourceSpdxUuid) {
+      // SPDX-sourced BOM - fetch raw SPDX and re-convert
+      bomToEnrich = await reprocessSpdxBom(bomRecord, sourceSpdxUuid, org);
+    } else {
+      // CycloneDX BOM - fetch raw and re-augment
+      bomToEnrich = await reprocessCycloneDxBom(bomRecord);
+    }
+    
+    if (!bomToEnrich) {
+      await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, 'Failed to reprocess raw artifact');
+      return;
+    }
+    
+    // Now perform enrichment
+    const result = await enrichCycloneDxBom(bomToEnrich, bomUuid);
+    
+    if (!result.success) {
+      await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, result.error);
+      return;
+    }
+    
+    // Push only the final enriched BOM
+    const oasResponse = await pushToOci(bomUuid, result.enrichedBom);
+    await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, oasResponse);
+    
+    logger.info({ bomUuid }, 'Forced re-enrichment completed successfully');
+    
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ bomUuid, error: errorMessage }, 'Forced re-enrichment failed');
+    await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, errorMessage);
+  }
+}
+
+/**
+ * Reprocesses a CycloneDX BOM from its raw artifact.
+ * Fetches uuid-raw, applies augmentation, returns BOM ready for enrichment.
+ */
+async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> {
+  const rawUuid = bomRecord.uuid + '-raw';
+  
+  try {
+    logger.debug({ rawUuid, bomUuid: bomRecord.uuid }, 'Fetching raw CycloneDX BOM for reprocessing');
+    const rawBom = await fetchFromOci(rawUuid);
+    
+    // Re-augment the BOM with component context
+    const rebomOptions = bomRecord.meta;
+    const augmentedBom = augmentBomForStorage(rawBom, rebomOptions, new Date());
+    
+    logger.debug({ bomUuid: bomRecord.uuid }, 'CycloneDX BOM reprocessed (augmented)');
+    return augmentedBom;
+    
+  } catch (error) {
+    logger.error({ 
+      rawUuid, 
+      bomUuid: bomRecord.uuid, 
+      error: error instanceof Error ? error.message : String(error) 
+    }, 'Failed to fetch/reprocess raw CycloneDX BOM');
+    return null;
+  }
+}
+
+/**
+ * Reprocesses an SPDX-sourced BOM from its raw SPDX artifact.
+ * Fetches raw SPDX, re-converts to CycloneDX, returns BOM ready for enrichment.
+ */
+async function reprocessSpdxBom(bomRecord: BomRecord, spdxUuid: string, org: string): Promise<any | null> {
+  try {
+    logger.debug({ spdxUuid, bomUuid: bomRecord.uuid }, 'Fetching raw SPDX BOM for reprocessing');
+    
+    // Fetch the SPDX record to get OCI reference
+    const spdxRecord = await SpdxRepository.findSpdxBomById(spdxUuid, org);
+    if (!spdxRecord || !spdxRecord.oci_response) {
+      logger.error({ spdxUuid }, 'SPDX record not found or missing OCI response');
+      return null;
+    }
+    
+    // Fetch raw SPDX content from OCI
+    const fetchId = spdxRecord.oci_response.ociResponse?.digest || spdxRecord.uuid;
+    const spdxContent = await fetchFromOci(fetchId);
+    
+    // Re-convert SPDX to CycloneDX
+    const conversionResult = await SpdxService.convertSpdxToCycloneDx(spdxContent);
+    if (!conversionResult.success) {
+      logger.error({ spdxUuid, error: conversionResult.error }, 'SPDX re-conversion failed');
+      return null;
+    }
+    
+    logger.debug({ bomUuid: bomRecord.uuid }, 'SPDX BOM reprocessed (converted to CycloneDX)');
+    return conversionResult.convertedBom;
+    
+  } catch (error) {
+    logger.error({ 
+      spdxUuid, 
+      bomUuid: bomRecord.uuid, 
+      error: error instanceof Error ? error.message : String(error) 
+    }, 'Failed to fetch/reprocess raw SPDX BOM');
+    return null;
+  }
 }
 
 async function updateEnrichmentStatusWithBom(
