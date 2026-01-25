@@ -50,7 +50,8 @@ export {
   computeRootDepIndex,
   createRebomToolObject,
   attachRebomToolToBom,
-  computeBomDigest
+  computeBomDigest,
+  triggerEnrichment
 } from './services/bom/bomProcessingService';
 
 // Merge Operations

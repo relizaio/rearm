@@ -3,10 +3,15 @@ import { RebomOptions, HIERARCHICHAL, EnrichmentStatus } from '../../types';
 import { BomValidationError, BomStorageError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
-import { pushToOci } from '../oci';
+import { pushToOci, fetchFromOci } from '../oci';
+import * as BomRepository from '../../bomRepository';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
 import * as fs from 'fs';
+
+// Enrichment timeout constant - used by both enrichCycloneDxBom and triggerEnrichment
+const ENRICHMENT_TIMEOUT_MS = 1200000; // 20 minutes timeout
+const ENRICHMENT_GRACE_PERIOD_MS = 300000; // 5 minutes grace period for stale PENDING status
 
 export function extractTldFromBom(bom: any): any {
   let newBom: any = {}
@@ -428,7 +433,6 @@ export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<En
 
   let inputFile: string | null = null;
   let outputFile: string | null = null;
-  const TIMEOUT_MS = 1200000; // 20 minutes timeout
 
   try {
     logger.info({ serialNumber: bom.serialNumber, bomUuid }, 'Starting CycloneDX BOM enrichment using rearm-cli');
@@ -447,7 +451,7 @@ export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<En
     ];
 
     logger.info('Running enrichment: rearm-cli bomutils enrich');
-    const result = await shellExec('rearm-cli', args, TIMEOUT_MS);
+    const result = await shellExec('rearm-cli', args, ENRICHMENT_TIMEOUT_MS);
     logger.debug({ enrichmentOutput: result }, 'rearm-cli enrichment completed');
 
     const enrichedContent = await fs.promises.readFile(outputFile, 'utf8');
@@ -477,7 +481,7 @@ export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<En
       serialNumber: bom.serialNumber, 
       bomUuid,
       isTimeout,
-      timeoutMs: isTimeout ? TIMEOUT_MS : undefined
+      timeoutMs: isTimeout ? ENRICHMENT_TIMEOUT_MS : undefined
     }, isTimeout ? 'CycloneDX BOM enrichment timed out' : 'CycloneDX BOM enrichment failed');
     
     return { success: false, error: errorMessage };
@@ -581,6 +585,82 @@ async function updateEnrichmentStatus(
   } catch (error) {
     logger.error({ bomUuid, status, error }, 'Failed to update enrichment status');
   }
+}
+
+export interface EnrichmentTriggerResult {
+  triggered: boolean;
+  message?: string;
+  bomUuid?: string;
+}
+
+/**
+ * Triggers enrichment for a BOM if conditions are met:
+ * 1. enrichmentStatus is FAILED, SKIPPED, or null/undefined
+ * 2. enrichmentStatus is PENDING but more time than timeout + grace period has passed since creation
+ * 
+ * @param id - UUID or serial number of the BOM
+ * @param org - Organization ID
+ * @returns EnrichmentTriggerResult indicating if enrichment was triggered
+ */
+export async function triggerEnrichment(id: string, org: string): Promise<EnrichmentTriggerResult> {
+  logger.info({ id, org }, 'triggerEnrichment called');
+  
+  if (!isEnrichmentConfigured()) {
+    return { triggered: false, message: 'Enrichment not configured (BEAR_URI or BEAR_API_KEY not set)' };
+  }
+  
+  // Find BOM by UUID or serial number
+  let bomResults = await BomRepository.bomById(id);
+  if (!bomResults || bomResults.length === 0) {
+    bomResults = await BomRepository.bomBySerialNumber(id, org);
+  }
+  
+  if (!bomResults || bomResults.length === 0) {
+    return { triggered: false, message: `BOM not found: ${id}` };
+  }
+  
+  const bomRecord = bomResults[0];
+  const enrichmentStatus = bomRecord.meta?.enrichmentStatus;
+  const createdDate = new Date(bomRecord.created_date);
+  const now = new Date();
+  const timeSinceCreation = now.getTime() - createdDate.getTime();
+  const staleThreshold = ENRICHMENT_TIMEOUT_MS + ENRICHMENT_GRACE_PERIOD_MS;
+  
+  // Check if enrichment should be triggered
+  let shouldTrigger = false;
+  let reason = '';
+  
+  if (!enrichmentStatus || enrichmentStatus === EnrichmentStatus.FAILED || enrichmentStatus === EnrichmentStatus.SKIPPED) {
+    shouldTrigger = true;
+    reason = `Status is ${enrichmentStatus || 'null'}`;
+  } else if (enrichmentStatus === EnrichmentStatus.PENDING && timeSinceCreation > staleThreshold) {
+    shouldTrigger = true;
+    reason = `Status is PENDING and ${Math.round(timeSinceCreation / 1000)}s elapsed (threshold: ${Math.round(staleThreshold / 1000)}s)`;
+  } else if (enrichmentStatus === EnrichmentStatus.PENDING) {
+    return { 
+      triggered: false, 
+      message: `Enrichment already pending (${Math.round(timeSinceCreation / 1000)}s elapsed, threshold: ${Math.round(staleThreshold / 1000)}s)`,
+      bomUuid: bomRecord.uuid 
+    };
+  } else if (enrichmentStatus === EnrichmentStatus.COMPLETED) {
+    return { triggered: false, message: 'Enrichment already completed', bomUuid: bomRecord.uuid };
+  }
+  
+  if (!shouldTrigger) {
+    return { triggered: false, message: 'Enrichment conditions not met', bomUuid: bomRecord.uuid };
+  }
+  
+  logger.info({ bomUuid: bomRecord.uuid, reason }, 'Triggering enrichment');
+  
+  // Fetch BOM content from OCI
+  const bomContent = await fetchFromOci(bomRecord.uuid);
+  
+  // Trigger async enrichment (fire-and-forget)
+  enrichBomAsync(bomRecord.uuid, bomContent, org).catch(err => {
+    logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
+  });
+  
+  return { triggered: true, message: reason, bomUuid: bomRecord.uuid };
 }
 
 async function updateEnrichmentStatusWithBom(

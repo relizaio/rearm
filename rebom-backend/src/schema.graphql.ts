@@ -26,6 +26,13 @@ const typeDefs = gql`
     addBom(bomInput: BomInput!): Bom
     mergeAndStoreBoms(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): Bom
     mergeAndStoreBomsCsv(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): String
+    triggerEnrichment(id: ID!, org: ID!): EnrichmentTriggerResult
+  }
+
+  type EnrichmentTriggerResult {
+    triggered: Boolean!
+    message: String
+    bomUuid: ID
   }
 
   type Bom {
