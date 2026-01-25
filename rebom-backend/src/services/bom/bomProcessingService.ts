@@ -449,6 +449,16 @@ export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<En
       '-f', inputFile,
       '-o', outputFile
     ];
+    
+    // Add skip patterns from BEAR_SKIP_PATTERN env var (comma-separated)
+    const skipPatternEnv = process.env.BEAR_SKIP_PATTERN;
+    if (skipPatternEnv && skipPatternEnv.trim()) {
+      const patterns = skipPatternEnv.split(',').map(p => p.trim()).filter(p => p);
+      for (const pattern of patterns) {
+        args.push('--skipPattern', pattern);
+      }
+      logger.debug({ skipPatterns: patterns }, 'Added skip patterns to enrichment command');
+    }
 
     logger.info('Running enrichment: rearm-cli bomutils enrich');
     const result = await shellExec('rearm-cli', args, ENRICHMENT_TIMEOUT_MS);
