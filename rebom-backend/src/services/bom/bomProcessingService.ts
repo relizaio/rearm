@@ -414,22 +414,24 @@ function computeSha256Hash(obj: string): string {
  * If either env var is missing, returns the original BOM unchanged.
  * 
  * @param bom - CycloneDX BOM to enrich
- * @returns Enriched BOM, or original BOM if enrichment is skipped/fails
+ * @param bomUuid - UUID of the BOM record (for logging)
+ * @returns EnrichmentResult with success status and enriched BOM or error
  */
-export async function enrichCycloneDxBom(bom: any): Promise<any> {
+export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<EnrichmentResult> {
   const bearUri = process.env.BEAR_URI;
   const bearApiKey = process.env.BEAR_API_KEY;
 
   if (!bearUri || !bearApiKey) {
     logger.info('BEAR_URI or BEAR_API_KEY not set, skipping BOM enrichment');
-    return bom;
+    return { success: true, enrichedBom: bom };
   }
 
   let inputFile: string | null = null;
   let outputFile: string | null = null;
+  const TIMEOUT_MS = 600000; // 600 second timeout
 
   try {
-    logger.info({ serialNumber: bom.serialNumber }, 'Starting CycloneDX BOM enrichment using rearm-cli');
+    logger.info({ serialNumber: bom.serialNumber, bomUuid }, 'Starting CycloneDX BOM enrichment using rearm-cli');
 
     inputFile = await createTempFile(bom);
     outputFile = await createTempFile({});
@@ -445,14 +447,15 @@ export async function enrichCycloneDxBom(bom: any): Promise<any> {
     ];
 
     logger.info('Running enrichment: rearm-cli bomutils enrich');
-    const result = await shellExec('rearm-cli', args, 600000); // 600 second timeout
+    const result = await shellExec('rearm-cli', args, TIMEOUT_MS);
     logger.debug({ enrichmentOutput: result }, 'rearm-cli enrichment completed');
 
     const enrichedContent = await fs.promises.readFile(outputFile, 'utf8');
     const enrichedBom = JSON.parse(enrichedContent);
     logger.info({
       componentCount: enrichedBom?.components?.length || 0,
-      serialNumber: enrichedBom?.serialNumber
+      serialNumber: enrichedBom?.serialNumber,
+      bomUuid
     }, 'CycloneDX BOM enrichment successful');
 
     await Promise.all([
@@ -460,14 +463,24 @@ export async function enrichCycloneDxBom(bom: any): Promise<any> {
       deleteTempFile(outputFile)
     ]);
 
-    return enrichedBom;
+    return { success: true, enrichedBom };
 
   } catch (error) {
     if (inputFile) await deleteTempFile(inputFile);
     if (outputFile) await deleteTempFile(outputFile);
 
-    logger.error({ error: error instanceof Error ? error.message : String(error), serialNumber: bom.serialNumber }, 'CycloneDX BOM enrichment failed, returning original BOM');
-    return bom;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT');
+    
+    logger.error({ 
+      error: errorMessage, 
+      serialNumber: bom.serialNumber, 
+      bomUuid,
+      isTimeout,
+      timeoutMs: isTimeout ? TIMEOUT_MS : undefined
+    }, isTimeout ? 'CycloneDX BOM enrichment timed out' : 'CycloneDX BOM enrichment failed');
+    
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -507,32 +520,36 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string): Pr
     return;
   }
 
-  try {
-    // Perform enrichment
-    const enrichedBom = await enrichCycloneDxBom(bom);
-    
-    // Check if enrichment actually happened (compare with original)
-    const wasEnriched = enrichedBom !== bom;
-    
-    if (wasEnriched) {
-      // Push enriched BOM to OCI (overwrites existing)
-      const oasResponse = await pushToOci(bomUuid, enrichedBom);
+  // Perform enrichment
+  const result = await enrichCycloneDxBom(bom, bomUuid);
+  
+  if (!result.success) {
+    // Enrichment failed (timeout or other error)
+    await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, result.error);
+    return;
+  }
+  
+  // Check if enrichment actually changed the BOM
+  const wasEnriched = result.enrichedBom !== bom;
+  
+  if (wasEnriched) {
+    // Push enriched BOM to OCI (overwrites existing)
+    try {
+      const oasResponse = await pushToOci(bomUuid, result.enrichedBom);
       
       // Update database with new BOM reference and status
       await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, oasResponse);
       
       logger.info({ bomUuid, serialNumber: bom.serialNumber }, 'Async BOM enrichment completed successfully');
-    } else {
-      // Enrichment returned original BOM (likely failed silently)
-      await updateEnrichmentStatus(bomUuid, EnrichmentStatus.COMPLETED);
-      logger.info({ bomUuid }, 'Async BOM enrichment completed (no changes)');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({ bomUuid, error: errorMessage }, 'Failed to push enriched BOM to OCI');
+      await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, errorMessage);
     }
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error({ bomUuid, error: errorMessage }, 'Async BOM enrichment failed');
-    
-    await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, errorMessage);
+  } else {
+    // Enrichment succeeded but no changes were made
+    await updateEnrichmentStatus(bomUuid, EnrichmentStatus.COMPLETED);
+    logger.info({ bomUuid }, 'Async BOM enrichment completed (no changes)');
   }
 }
 
