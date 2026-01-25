@@ -428,7 +428,7 @@ export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<En
 
   let inputFile: string | null = null;
   let outputFile: string | null = null;
-  const TIMEOUT_MS = 600000; // 600 second timeout
+  const TIMEOUT_MS = 1200000; // 20 minutes timeout
 
   try {
     logger.info({ serialNumber: bom.serialNumber, bomUuid }, 'Starting CycloneDX BOM enrichment using rearm-cli');
