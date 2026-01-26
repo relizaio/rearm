@@ -48,6 +48,21 @@ spec:
           value: {{ .Values.rebom.backend.oci.registryHost }}
         - name: OCIARTIFACTS_REGISTRY_NAMESPACE
           value: {{ .Values.rebom.backend.oci.registryNamespace }}
+        {{- if .Values.rebom.backend.bearUri }}
+        - name: BEAR_URI
+          value: {{ .Values.rebom.backend.bearUri }}
+        {{- end }}
+        {{- if .Values.rebom.backend.bearSkipPattern }}
+        - name: BEAR_SKIP_PATTERN
+          value: {{ .Values.rebom.backend.bearSkipPattern | quote }}
+        {{- end }}
+        {{- if .Values.rebom.backend.bearApiKeySecretName }}
+        - name: BEAR_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.rebom.backend.bearApiKeySecretName }}
+              key: BEAR_API_KEY
+        {{- end }}
         ports:
         - containerPort: 4000
       initContainers:
