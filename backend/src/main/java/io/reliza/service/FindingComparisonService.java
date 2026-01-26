@@ -4,19 +4,12 @@
 
 package io.reliza.service;
 
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import io.reliza.exceptions.RelizaException;
-import io.reliza.model.ReleaseData;
 import io.reliza.model.dto.FindingChangesDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import lombok.extern.slf4j.Slf4j;
@@ -33,12 +26,6 @@ import lombok.extern.slf4j.Slf4j;
 public class FindingComparisonService {
 	
 	private static final String FINDING_KEY_DELIMITER = "|";
-	
-	@Autowired
-	private SharedReleaseService sharedReleaseService;
-	
-	@Autowired
-	private AnalyticsMetricsService analyticsMetricsService;
 	
 	/**
 	 * Generic comparison result holder
@@ -188,41 +175,6 @@ public class FindingComparisonService {
 	}
 	
 	/**
-	 * Compares all findings (vulnerabilities, violations, weaknesses) between two releases
-	 * 
-	 * @param release1Uuid Starting release UUID
-	 * @param release2Uuid Ending release UUID
-	 * @param orgUuid Organization UUID
-	 * @return FindingChangesRecord with appeared, resolved, and severity changed findings
-	 */
-	public FindingChangesDto.FindingChangesRecord compareFindingChanges(
-			UUID release1Uuid,
-			UUID release2Uuid,
-			UUID orgUuid) throws RelizaException {
-		
-		// Get release data for both releases
-		Optional<ReleaseData> release1Opt = sharedReleaseService.getReleaseData(release1Uuid, orgUuid);
-		Optional<ReleaseData> release2Opt = sharedReleaseService.getReleaseData(release2Uuid, orgUuid);
-		
-		if (release1Opt.isEmpty() || release2Opt.isEmpty()) {
-			return emptyFindingChanges();
-		}
-		
-		ReleaseData release1 = release1Opt.get();
-		ReleaseData release2 = release2Opt.get();
-		
-		// Get metrics for both releases
-		ReleaseMetricsDto metrics1 = release1.getMetrics();
-		ReleaseMetricsDto metrics2 = release2.getMetrics();
-		
-		if (metrics1 == null || metrics2 == null) {
-			return emptyFindingChanges();
-		}
-		
-		return compareFindingMetrics(metrics1, metrics2);
-	}
-	
-	/**
 	 * Compares findings between two metrics objects.
 	 * Pure function - no side effects, no data extraction.
 	 * This is the core comparison logic that can be used with any metrics source.
@@ -299,32 +251,4 @@ public class FindingComparisonService {
 		);
 	}
 	
-	/**
-	 * Compares findings for a component between two dates by aggregating metrics
-	 * from all active branches.
-	 * 
-	 * @param componentUuid Component UUID
-	 * @param dateFrom Start date
-	 * @param dateTo End date
-	 * @return FindingChangesRecord with changes between the two dates
-	 */
-	public FindingChangesDto.FindingChangesRecord compareFindingChangesByDate(
-			UUID componentUuid,
-			ZonedDateTime dateFrom,
-			ZonedDateTime dateTo) throws RelizaException {
-		
-		String dateKey1 = dateFrom.toLocalDate().toString();
-		String dateKey2 = dateTo.toLocalDate().toString();
-		
-		Optional<ReleaseMetricsDto> metrics1Opt = analyticsMetricsService.getFindingsPerDayForComponent(
-			componentUuid, dateKey1);
-		Optional<ReleaseMetricsDto> metrics2Opt = analyticsMetricsService.getFindingsPerDayForComponent(
-			componentUuid, dateKey2);
-		
-		if (metrics1Opt.isEmpty() || metrics2Opt.isEmpty()) {
-			return emptyFindingChanges();
-		}
-		
-		return compareFindingMetrics(metrics1Opt.get(), metrics2Opt.get());
-	}
 }

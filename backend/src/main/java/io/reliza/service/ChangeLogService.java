@@ -82,6 +82,9 @@ public class ChangeLogService {
 	private GetComponentService getComponentService;
 	
 	@Autowired
+	private ComponentService componentService;
+	
+	@Autowired
 	private VcsRepositoryService vcsRepositoryService;
 	
 	@Autowired
@@ -169,52 +172,6 @@ public class ChangeLogService {
 		sortedMap.putAll(groupByType);
 
 		return sortedMap;
-	}
-	
-	// ========== Delegation Methods to Specialized Services ==========
-	
-	/**
-	 * Compares findings between two releases.
-	 * Delegates to FindingComparisonService.
-	 */
-	public FindingChangesDto.FindingChangesRecord compareFindingChanges(
-			UUID release1Uuid,
-			UUID release2Uuid,
-			UUID orgUuid) throws RelizaException {
-		return findingComparisonService.compareFindingChanges(release1Uuid, release2Uuid, orgUuid);
-	}
-	
-	/**
-	 * Compares findings for a component between two dates.
-	 * Delegates to FindingComparisonService.
-	 */
-	public FindingChangesDto.FindingChangesRecord compareFindingChangesByDate(
-			UUID componentUuid,
-			ZonedDateTime dateFrom,
-			ZonedDateTime dateTo) throws RelizaException {
-		return findingComparisonService.compareFindingChangesByDate(componentUuid, dateFrom, dateTo);
-	}
-	
-	/**
-	 * Aggregates SBOM changes between two releases.
-	 * Delegates to SbomComparisonService.
-	 */
-	public AcollectionData.ArtifactChangelog aggregateSbomChanges(
-			UUID release1Uuid,
-			UUID release2Uuid,
-			UUID orgUuid) throws RelizaException {
-		return sbomComparisonService.aggregateSbomChanges(release1Uuid, release2Uuid, orgUuid);
-	}
-	
-	/**
-	 * Compares SBOM changes for a component between two dates.
-	 * Delegates to SbomComparisonService.
-	 */
-	public AcollectionData.ArtifactChangelog compareSbomChangesByDate(
-			UUID componentUuid,
-			ZonedDateTime dateFrom,
-			ZonedDateTime dateTo) {
-		return sbomComparisonService.compareSbomChangesByDate(componentUuid, dateFrom, dateTo);
 	}
 	
 	// ========== Extraction Helper Methods ==========
@@ -345,7 +302,6 @@ public class ChangeLogService {
 				
 				// Add top-level SBOM and finding changes in AGGREGATED mode
 				if (changelog != null && aggregated == AggregationType.AGGREGATED) {
-					long startTime = System.currentTimeMillis();
 
 					MetricsPair metrics = extractMetricsForReleases(uuid1, uuid2, org);
 					List<AcollectionData> acollections = acollectionService.getAcollectionsForReleaseRange(uuid1, uuid2);
@@ -364,8 +320,6 @@ public class ChangeLogService {
 					}
 					changelog.setFindingChanges(findingChanges);
 					
-					log.info("AGGREGATED changelog comparison completed in {}ms for releases {} -> {}",
-							System.currentTimeMillis() - startTime, uuid1, uuid2);
 				}
 			}
 		}
@@ -384,22 +338,20 @@ public class ChangeLogService {
 			ZonedDateTime dateTo,
 			AggregationType aggregated,
 			String timeZone) throws RelizaException {
-		
+				
 		// Get component data
 		Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
 		if (opd.isEmpty()) {
 			log.warn("Component not found: {}", componentUuid);
 			return null;
 		}
-		ComponentData pd = opd.get();
-		
+		ComponentData pd = opd.get();		
 		// Get all active branches for this component
 		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, null);
 		if (branches == null || branches.isEmpty()) {
 			log.warn("No branches found for component: {}", componentUuid);
 			return null;
-		}
-		
+		}		
 		// Collect releases from all branches within the date range
 		List<ReleaseData> allReleases = new ArrayList<>();
 		for (BranchData branch : branches) {
@@ -414,7 +366,6 @@ public class ChangeLogService {
 		}
 		
 		if (allReleases.isEmpty()) {
-			log.info("No releases found for component {} between {} and {}", componentUuid, dateFrom, dateTo);
 			return null;
 		}
 		
@@ -439,7 +390,6 @@ public class ChangeLogService {
 		
 		// Add top-level SBOM and finding changes in AGGREGATED mode
 		if (changelog != null && aggregated == AggregationType.AGGREGATED) {
-			long startTime = System.currentTimeMillis();
 
 			try {
 				Optional<AnalyticsMetricsService.MetricsPair> metricsOpt = analyticsMetricsService.getMetricsPairForDateRange(componentUuid, dateFrom, dateTo);
@@ -455,8 +405,6 @@ public class ChangeLogService {
 				changelog.setSbomChanges(sbomChanges);
 				changelog.setFindingChanges(findingChanges);
 				
-				log.info("Date-based changelog comparison completed in {}ms for component {} ({} to {})",
-						System.currentTimeMillis() - startTime, componentUuid, dateFrom, dateTo);
 			} catch (Exception e) {
 				log.error("Error computing date-based aggregated changes: {}", e.getMessage(), e);
 			}
@@ -569,7 +517,6 @@ public class ChangeLogService {
 			log.warn("Product not found: {}", productUuid);
 			return null;
 		}
-		ComponentData pd = opd.get();
 		
 		// Get all active branches for this product
 		List<BranchData> branches = branchService.listBranchDataOfComponent(productUuid, null);
@@ -596,7 +543,6 @@ public class ChangeLogService {
 		}
 		
 		if (allProductReleases.isEmpty()) {
-			log.info("No product releases found for product {} between {} and {}", productUuid, dateFrom, dateTo);
 			return null;
 		}
 		
@@ -1075,5 +1021,326 @@ public class ChangeLogService {
 		}
 		
 		return commitRecords;
+	}
+	
+	/**
+	 * Gets organization-wide changelog by date range.
+	 * Optionally filters by perspective.
+	 * Includes SBOM changes and Finding changes only (no code changes).
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @param perspectiveUuid Optional perspective UUID (null = all components)
+	 * @param dateFrom Start date
+	 * @param dateTo End date
+	 * @param aggregationType NONE or AGGREGATED
+	 * @param timeZone User timezone for date formatting
+	 * @return Organization changelog with SBOM and Finding changes only
+	 */
+	public ComponentJsonDto getOrganizationChangeLogByDate(
+			UUID orgUuid,
+			UUID perspectiveUuid,
+			ZonedDateTime dateFrom,
+			ZonedDateTime dateTo,
+			AggregationType aggregationType,
+			String timeZone) throws RelizaException {
+				
+		// Get components based on perspective
+		List<ComponentData> components = getComponentsForOrganizationChangelog(orgUuid, perspectiveUuid);
+		
+		if (components.isEmpty()) {
+			log.warn("No components found for organization {} with perspective {}", orgUuid, perspectiveUuid);
+			return null;
+		}
+				
+		// Build organization-level changelog structure
+		ComponentJsonDtoBuilder changelogBuilder = ComponentJsonDto.builder()
+			.uuid(orgUuid)
+			.name("Organization Changelog")
+			.org(orgUuid);
+		
+		List<ComponentJsonDto> componentChangelogs = new ArrayList<>();
+		List<AcollectionData> allAcollections = new ArrayList<>();
+		List<ReleaseData> allReleases = new ArrayList<>();
+		
+		// Process each component
+		for (ComponentData component : components) {
+			log.debug("Processing component: {} ({})", component.getName(), component.getUuid());
+			
+			// Get all active branches for this component
+			List<BranchData> branches = branchService.listBranchDataOfComponent(component.getUuid(), null);
+			if (branches == null || branches.isEmpty()) {
+				log.debug("No branches found for component: {}", component.getName());
+				continue;
+			}
+			
+			log.debug("Found {} branches for component: {}", branches.size(), component.getName());
+			
+			// Collect releases from all branches within the date range
+			List<ReleaseData> componentReleases = new ArrayList<>();
+			for (BranchData branch : branches) {
+				List<ReleaseData> branchReleases = sharedReleaseService.listReleaseDataOfBranchBetweenDates(
+						branch.getUuid(), 
+						dateFrom, 
+						dateTo, 
+						ReleaseLifecycle.DRAFT);
+				if (branchReleases != null && !branchReleases.isEmpty()) {
+					log.debug("Found {} releases for branch {} in date range", branchReleases.size(), branch.getName());
+					componentReleases.addAll(branchReleases);
+					allReleases.addAll(branchReleases);
+				} else {
+					log.debug("No releases found for branch {} in date range", branch.getName());
+				}
+			}
+			
+			if (componentReleases.isEmpty()) {
+				log.debug("No releases found for component {} in date range", component.getName());
+				continue;
+			}
+						
+			// Sort releases by creation date
+			componentReleases.sort((r1, r2) -> r2.getCreatedDate().compareTo(r1.getCreatedDate()));
+			
+			// Compute per-release changes if NONE mode (SBOM and Findings only, no code changes)
+			Map<UUID, ReleaseChanges> perReleaseChanges = null;
+			if (aggregationType == AggregationType.NONE) {
+				perReleaseChanges = computePerReleaseChangesWithoutCode(componentReleases, orgUuid);
+			}
+			
+			// Build component changelog (without code changes)
+			log.debug("Building changelog for component: {}", component.getName());
+			ComponentJsonDto componentChangelog = buildComponentChangelogWithoutCode(
+					componentReleases, 
+					orgUuid, 
+					component, 
+					aggregationType, 
+					timeZone,
+					perReleaseChanges);
+			
+			if (componentChangelog != null) {
+				componentChangelogs.add(componentChangelog);
+				log.debug("Successfully built changelog for component: {}", component.getName());
+				
+				// Collect acollections for AGGREGATED mode
+				if (aggregationType == AggregationType.AGGREGATED) {
+					List<AcollectionData> componentAcollections = acollectionService.getAcollectionsForDateRange(
+							component.getUuid(), dateFrom, dateTo);
+					if (componentAcollections != null) {
+						log.debug("Found {} acollections for component {} in AGGREGATED mode", 
+								componentAcollections.size(), component.getName());
+						allAcollections.addAll(componentAcollections);
+					}
+				}
+			} else {
+				log.warn("Failed to build changelog for component: {}", component.getName());
+			}
+		}
+		
+		if (componentChangelogs.isEmpty()) {
+			log.warn("No component changelogs generated for organization {} between {} and {}", orgUuid, dateFrom, dateTo);
+			return null;
+		}
+				
+		changelogBuilder.components(componentChangelogs);
+		
+		// Add top-level SBOM and finding changes in AGGREGATED mode
+		if (aggregationType == AggregationType.AGGREGATED && !allReleases.isEmpty()) {
+			
+			try {
+				// Aggregate SBOM changes across all components
+				AcollectionData.ArtifactChangelog sbomChanges = sbomComparisonService.aggregateChangelogs(allAcollections);
+				log.debug("Aggregated SBOM changes computed successfully");
+				
+				// For findings, aggregate metrics from first and last release across all components
+				FindingChangesDto.FindingChangesRecord findingChanges = null;
+				if (allReleases.size() >= 2) {
+					// Sort all releases by creation date
+					allReleases.sort((r1, r2) -> r1.getCreatedDate().compareTo(r2.getCreatedDate()));
+					ReleaseData firstRelease = allReleases.get(0);
+					ReleaseData lastRelease = allReleases.get(allReleases.size() - 1);
+					
+					log.debug("Computing finding changes between first release {} and last release {}", 
+							firstRelease.getVersion(), lastRelease.getVersion());
+					
+					MetricsPair metrics = extractMetricsForReleases(firstRelease.getUuid(), lastRelease.getUuid(), orgUuid);
+					
+					findingChanges = (metrics == null)
+						? findingComparisonService.emptyFindingChanges()
+						: findingComparisonService.compareMetrics(metrics.metrics1(), metrics.metrics2());
+					
+					log.debug("Finding changes computed successfully");
+				} else {
+					log.debug("Less than 2 releases, using empty finding changes");
+					findingChanges = findingComparisonService.emptyFindingChanges();
+				}
+				
+				changelogBuilder.sbomChanges(sbomChanges);
+				changelogBuilder.findingChanges(findingChanges);
+				
+			} catch (Exception e) {
+				log.error("Error computing organization-wide aggregated changes: {}", e.getMessage(), e);
+			}
+		}
+		
+		return changelogBuilder.build();
+	}
+	
+	/**
+	 * Helper method to get components for organization changelog.
+	 * Filters by perspective if provided, otherwise returns all active components.
+	 */
+	private List<ComponentData> getComponentsForOrganizationChangelog(UUID orgUuid, UUID perspectiveUuid) {
+		List<ComponentData> components;
+		
+		if (perspectiveUuid == null) {
+			// Get all COMPONENT type components in org
+			components = componentService.listComponentDataByOrganization(orgUuid, ComponentType.COMPONENT);
+		} else {
+			// Get components filtered by perspective
+			components = componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, ComponentType.COMPONENT);
+		}
+		
+		return components;
+	}
+	
+	/**
+	 * Helper method to compute per-release changes without code changes.
+	 * Only includes SBOM and Finding changes.
+	 */
+	private Map<UUID, ReleaseChanges> computePerReleaseChangesWithoutCode(
+			List<ReleaseData> releases, 
+			UUID orgUuid) {
+		
+		Map<UUID, ReleaseChanges> perReleaseChanges = new HashMap<>();
+		
+		for (int i = 0; i < releases.size(); i++) {
+			ReleaseData currentRelease = releases.get(i);
+			ReleaseData previousRelease = (i < releases.size() - 1) ? releases.get(i + 1) : null;
+			
+			if (previousRelease == null) {
+				// First release - no comparison
+				perReleaseChanges.put(currentRelease.getUuid(), ReleaseChanges.empty());
+				continue;
+			}
+			
+			try {
+				// Get acollections for SBOM comparison
+				List<AcollectionData> acollections = acollectionService.getAcollectionsForReleaseRange(
+						previousRelease.getUuid(), currentRelease.getUuid());
+				AcollectionData.ArtifactChangelog sbomChanges = sbomComparisonService.aggregateChangelogs(acollections);
+				
+				// Get metrics for finding comparison
+				MetricsPair metrics = extractMetricsForReleases(previousRelease.getUuid(), currentRelease.getUuid(), orgUuid);
+				
+				FindingChangesDto.FindingChangesRecord findingChanges = (metrics == null)
+					? findingComparisonService.emptyFindingChanges()
+					: findingComparisonService.compareMetrics(metrics.metrics1(), metrics.metrics2());
+				
+				perReleaseChanges.put(currentRelease.getUuid(), 
+					new ReleaseChanges(sbomChanges, findingChanges));
+				
+			} catch (Exception e) {
+				log.error("Error computing changes for release {}: {}", currentRelease.getUuid(), e.getMessage());
+				perReleaseChanges.put(currentRelease.getUuid(), ReleaseChanges.empty());
+			}
+		}
+		
+		return perReleaseChanges;
+	}
+	
+	/**
+	 * Helper method to build component changelog without code changes.
+	 * Similar to getChangeLogJsonForReleaseDataList but excludes code changes.
+	 */
+	private ComponentJsonDto buildComponentChangelogWithoutCode(
+			List<ReleaseData> releases,
+			UUID orgUuid,
+			ComponentData component,
+			AggregationType aggregationType,
+			String timeZone,
+			Map<UUID, ReleaseChanges> perReleaseChanges) {
+		
+		// Group releases by branch
+		Map<UUID, List<ReleaseData>> releasesByBranch = releases.stream()
+			.collect(Collectors.groupingBy(ReleaseData::getBranch));
+		
+		List<ComponentJsonDto> branchRecords = new ArrayList<>();
+		
+		for (Map.Entry<UUID, List<ReleaseData>> entry : releasesByBranch.entrySet()) {
+			UUID branchUuid = entry.getKey();
+			List<ReleaseData> branchReleases = entry.getValue();
+			
+			Optional<BranchData> branchDataOpt = branchService.getBranchData(branchUuid);
+			if (branchDataOpt.isEmpty()) {
+				continue;
+			}
+			BranchData branchData = branchDataOpt.get();
+			
+			if (aggregationType == AggregationType.NONE) {
+				// Build per-release records without code changes
+				List<ReleaseRecord> releaseRecords = branchReleases.stream()
+					.map(rd -> {
+						ReleaseChanges changes = perReleaseChanges.get(rd.getUuid());
+						return new ReleaseRecord(
+							rd.getUuid(),
+							rd.getVersion(),
+							rd.getLifecycle(),
+							null,  // No code changes
+							changes != null ? changes.sbomChanges() : null,
+							changes != null ? changes.findingChanges() : null
+						);
+					})
+					.collect(Collectors.toList());
+				
+				branchRecords.add(ComponentJsonDto.builder()
+					.uuid(branchUuid)
+					.name(branchData.getName())
+					.releases(releaseRecords)
+					.build());
+			} else {
+				// AGGREGATED mode - aggregate at branch level
+				try {
+					List<AcollectionData> branchAcollections = new ArrayList<>();
+					for (ReleaseData rd : branchReleases) {
+						List<AcollectionData> releaseAcollections = acollectionService.getAcollectionsForReleaseRange(
+							rd.getUuid(), rd.getUuid());
+						if (releaseAcollections != null) {
+							branchAcollections.addAll(releaseAcollections);
+						}
+					}
+					
+					AcollectionData.ArtifactChangelog branchSbomChanges = 
+						sbomComparisonService.aggregateChangelogs(branchAcollections);
+					
+					// For findings, get metrics for first and last release
+					FindingChangesDto.FindingChangesRecord branchFindingChanges = null;
+					if (branchReleases.size() >= 2) {
+						ReleaseData firstRelease = branchReleases.get(branchReleases.size() - 1);
+						ReleaseData lastRelease = branchReleases.get(0);
+						
+						MetricsPair metrics = extractMetricsForReleases(firstRelease.getUuid(), lastRelease.getUuid(), orgUuid);
+						
+						branchFindingChanges = (metrics == null)
+							? findingComparisonService.emptyFindingChanges()
+							: findingComparisonService.compareMetrics(metrics.metrics1(), metrics.metrics2());
+					}
+					
+					branchRecords.add(ComponentJsonDto.builder()
+						.uuid(branchUuid)
+						.name(branchData.getName())
+						.sbomChanges(branchSbomChanges)
+						.findingChanges(branchFindingChanges)
+						.build());
+				} catch (Exception e) {
+					log.error("Error aggregating branch changes: {}", e.getMessage());
+				}
+			}
+		}
+		
+		return ComponentJsonDto.builder()
+			.uuid(component.getUuid())
+			.name(component.getName())
+			.org(orgUuid)
+			.branches(branchRecords)
+			.build();
 	}
 }

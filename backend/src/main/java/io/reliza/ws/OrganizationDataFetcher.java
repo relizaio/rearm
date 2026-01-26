@@ -5,6 +5,7 @@ package io.reliza.ws;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
@@ -27,20 +28,24 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
-import io.reliza.model.ResourceGroupData;
-import io.reliza.model.UserData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.ResourceGroupData;
+import io.reliza.model.UserData;
 import io.reliza.model.UserData.OrgUserData;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.changelog.entry.AggregationType;
 import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.ApiKeyForUserDto;
+import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.service.ApiKeyService;
-import io.reliza.service.ResourceGroupService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.ChangeLogService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
+import io.reliza.service.ResourceGroupService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -65,6 +70,9 @@ public class OrganizationDataFetcher {
 	
 	@Autowired
 	private ResourceGroupService resourceGroupService;
+	
+	@Autowired
+	private ChangeLogService changeLogService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "organizations")
@@ -207,5 +215,23 @@ public class OrganizationDataFetcher {
 		
 		String featureSetLabel = terminology != null ? (String) terminology.get("featureSetLabel") : null;
 		return organizationService.updateTerminology(orgUuid, featureSetLabel, wu);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "organizationChangeLogByDate")
+	public ComponentJsonDto organizationChangeLogByDate(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo,
+			@InputArgument("aggregated") AggregationType aggregated,
+			@InputArgument("timeZone") String timeZone) throws RelizaException {
+		
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		
+		return changeLogService.getOrganizationChangeLogByDate(
+			orgUuid, perspectiveUuid, dateFrom, dateTo, aggregated, timeZone);
 	}
 }

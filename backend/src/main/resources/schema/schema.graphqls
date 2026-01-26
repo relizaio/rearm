@@ -7,6 +7,7 @@ type Query {
 	# changelog
 	getChangelogBetweenReleases(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
 	getComponentChangeLog(componentUuid:ID!,branchUuid:ID, orgUuid:ID!, aggregated: AggregationType, timeZone: String, dateFrom: DateTime, dateTo: DateTime): ComponentChangeLog
+	organizationChangeLogByDate(orgUuid: ID!, perspectiveUuid: ID, dateFrom: DateTime!, dateTo: DateTime!, aggregated: AggregationType!, timeZone: String): ComponentChangeLog
 	
 	releaseTagKeys(orgUuid: ID!): [String]
 	component(componentUuid:ID!): Component
