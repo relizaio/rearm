@@ -806,10 +806,10 @@ public class IntegrationService {
 				if (query.startsWith("pkg:")) {
 					String queryParams = "?purl=" + query + versionParam;
 					respList = executeDtrackComponentSearch(baseUri, apiToken, queryParams);
-					log.debug("searchDependencyTrackComponent - purl search took {} ms, found {} results", System.currentTimeMillis() - beforeSearch, respList.size());
+					log.info("searchDependencyTrackComponent - purl search took {} ms, found {} results", System.currentTimeMillis() - beforeSearch, respList.size());
 				} else {
 					respList = executeDtrackNameAndGroupSearchParallel(baseUri, apiToken, query, versionParam);
-					log.debug("searchDependencyTrackComponent - parallel name+group search took {} ms, found {} results", 
+					log.info("searchDependencyTrackComponent - parallel name+group search took {} ms, found {} results", 
 							System.currentTimeMillis() - beforeSearch, respList.size());
 				}
 				long beforeProcessing = System.currentTimeMillis();
@@ -823,7 +823,7 @@ public class IntegrationService {
 						.entrySet().stream()
 						.map(e -> new ComponentPurlToDtrackProject(e.getKey(), e.getValue())).toList();
 				}
-				log.debug("searchDependencyTrackComponent - processing took {} ms, produced {} components, total {} ms", 
+				log.info("searchDependencyTrackComponent - processing took {} ms, produced {} components, total {} ms", 
 						System.currentTimeMillis() - beforeProcessing, sbomComponents.size(), System.currentTimeMillis() - startTime);
 			} catch (Exception e) {
 				log.error("Exception searching components on dtrack for query = " + query + " and org = " + org, e);
@@ -834,6 +834,9 @@ public class IntegrationService {
 	}
 	
 	public List<ComponentPurlToDtrackProject> searchDependencyTrackComponentBatch (List<SbomComponentSearchQuery> queries, UUID org) throws RelizaException {
+		long batchStartTime = System.currentTimeMillis();
+		log.info("searchDependencyTrackComponentBatch - starting batch search for {} queries", queries.size());
+		
 		// Use a concurrent map to combine results by purl, merging project lists
 		Map<String, List<UUID>> combinedResults = new ConcurrentHashMap<>();
 		
@@ -845,6 +848,7 @@ public class IntegrationService {
 			futures.add(executor.submit(() -> searchDependencyTrackComponent(query.name(), org, query.version())));
 		}
 		
+		long parallelStartTime = System.currentTimeMillis();
 		try {
 			for (Future<List<ComponentPurlToDtrackProject>> future : futures) {
 				List<ComponentPurlToDtrackProject> results = future.get();
@@ -858,11 +862,16 @@ public class IntegrationService {
 		} finally {
 			executor.shutdown();
 		}
+		log.info("searchDependencyTrackComponentBatch - parallel execution took {} ms", System.currentTimeMillis() - parallelStartTime);
 		
 		// Convert back to list, deduplicating projects per purl
-		return combinedResults.entrySet().stream()
+		long dedupeStartTime = System.currentTimeMillis();
+		List<ComponentPurlToDtrackProject> result = combinedResults.entrySet().stream()
 			.map(e -> new ComponentPurlToDtrackProject(e.getKey(), e.getValue().stream().distinct().toList()))
 			.toList();
+		log.info("searchDependencyTrackComponentBatch - deduplication took {} ms, produced {} unique purls, total batch time {} ms", 
+				System.currentTimeMillis() - dedupeStartTime, result.size(), System.currentTimeMillis() - batchStartTime);
+		return result;
 	}
 
 	/**
@@ -885,30 +894,18 @@ public class IntegrationService {
 		String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
 		
 		while (hasMorePages) {
-			final int page1 = pageNumber;
-			final int page2 = pageNumber + 1;
+			List<Object> results = fetchDtrackPage(baseUri, apiToken, existingParams, separator, pageNumber, pageSize);
 			
-			var future1 = java.util.concurrent.CompletableFuture.supplyAsync(() -> 
-				fetchDtrackPage(baseUri, apiToken, existingParams, separator, page1, pageSize));
-			var future2 = java.util.concurrent.CompletableFuture.supplyAsync(() -> 
-				fetchDtrackPage(baseUri, apiToken, existingParams, separator, page2, pageSize));
-			
-			List<Object> results1 = future1.join();
-			List<Object> results2 = future2.join();
-			
-			if (results1 != null && !results1.isEmpty()) {
-				allResults.addAll(results1);
-			}
-			if (results2 != null && !results2.isEmpty()) {
-				allResults.addAll(results2);
+			if (results != null && !results.isEmpty()) {
+				allResults.addAll(results);
 			}
 			
-			// Determine if there are more pages based on the second page result
-			if (results2 == null || results2.isEmpty() || results2.size() < pageSize) {
+			// If results returned is less than page size, no more pages
+			if (results == null || results.size() < pageSize) {
 				hasMorePages = false;
 			}
 			
-			pageNumber += 2;
+			pageNumber++;
 		}
 		return allResults;
 	}
@@ -1431,7 +1428,7 @@ public class IntegrationService {
 	 */
 	private BatchDeleteResult deleteDtrackProjectsBatch(IntegrationData dtrackIntegration, String apiToken, List<String> projectIds) {
 		// DTrack API enforces max 1000 projects per batch
-		final int MAX_BATCH_SIZE = 1000;
+		final int MAX_BATCH_SIZE = 100;
 		
 		if (projectIds.size() > MAX_BATCH_SIZE) {
 			log.info("[DTRACK-CLEANUP] Processing {} projects in chunks of {}", projectIds.size(), MAX_BATCH_SIZE);
