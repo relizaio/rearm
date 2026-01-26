@@ -216,6 +216,7 @@ public class SharedArtifactService {
 		dti.setProjectName(dtur.projectName());
 		dti.setProjectVersion(dtur.projectVersion());
 		dti.setDependencyTrackFullUri(dtur.fullProjectUri());
+		dti.setUploadDate(ZonedDateTime.now());
 		Artifact a = getArtifact(ad.getUuid()).get();
 		updateArtifactDti(a, dti, WhoUpdated.getAutoWhoUpdated());
 	}
@@ -236,6 +237,9 @@ public class SharedArtifactService {
 			existingDti.setProjectVersion(dti.getProjectVersion());
 			existingDti.setDependencyTrackFullUri(dti.getDependencyTrackFullUri());
 			existingDti.setLastScanned(dti.getLastScanned());
+			if (dti.getUploadDate() != null) {
+				existingDti.setUploadDate(dti.getUploadDate());
+			}
 		} else {
 			// No existing metrics - use new dti as-is
 			ad.setMetrics(dti);

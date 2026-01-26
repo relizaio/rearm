@@ -25,6 +25,11 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	List<Artifact> listInitialArtifactsPendingOnDependencyTrack();
 	
 	@Query(
+			value = VariableQueries.LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION,
+			nativeQuery = true)
+	List<Artifact> listArtifactsPendingDtrackSubmission(String orgUuidAsString);
+	
+	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_BY_STORED_DIGEST,
 			nativeQuery = true)
 	List<Artifact> findArtifactsByStoredDigest(String orgUuidAsString, String digest);
@@ -53,4 +58,14 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 			value = VariableQueries.FIND_ARTIFACTS_WITH_WEAKNESS,
 			nativeQuery = true)
 	List<Artifact> findArtifactsWithWeakness(String orgUuidAsString, String location, String findingId);
+	
+	@Query(
+			value = VariableQueries.LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG,
+			nativeQuery = true)
+	List<String> listDistinctDtrackProjectsByOrg(String orgUuidAsString);
+	
+	@Query(
+			value = VariableQueries.FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG,
+			nativeQuery = true)
+	List<Artifact> findArtifactsByDtrackProjectAndOrg(String orgUuidAsString, String dtrackProject);
 }

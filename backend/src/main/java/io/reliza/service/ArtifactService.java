@@ -89,6 +89,10 @@ public class ArtifactService {
 	@Autowired
 	private BomLifecycleService bomLifecycleService;
 	
+	@Lazy
+	@Autowired
+	private DTrackService dtrackService;
+	
 	@Autowired
     private SystemInfoService systemInfoService;
 	
@@ -608,15 +612,7 @@ public class ArtifactService {
 			artifactDto.setUuid(UUID.randomUUID());
 		}
 		
-		// Handle DTrack result
-		if (artifactDto.getType().equals(ArtifactType.BOM) && lifecycleResult.dtrackResult() != null) {
-			artifactDto.setDtur(lifecycleResult.dtrackResult());
-			if (lifecycleResult.dtrackResult().projectId() != null) {
-				log.info("DTrack integration successful for artifact {}", artifactDto.getUuid());
-			} else {
-				log.warn("DTrack integration failed for artifact {}", artifactDto.getUuid());
-			}
-		}
+		// Note: DTrack integration is now handled asynchronously via the scheduler
 	}
 
 	/**
@@ -672,15 +668,7 @@ public class ArtifactService {
 			artifactDto.setUuid(UUID.randomUUID());
 		}
 		
-		// Handle DTrack result
-		if (artifactDto.getType().equals(ArtifactType.BOM) && lifecycleResult.dtrackResult() != null) {
-			artifactDto.setDtur(lifecycleResult.dtrackResult());
-			if (lifecycleResult.dtrackResult().projectId() != null) {
-				log.info("DTrack integration successful for artifact {}", artifactDto.getUuid());
-			} else {
-				log.warn("DTrack integration failed for artifact {}", artifactDto.getUuid());
-			}
-		}
+		// Note: DTrack integration is now handled asynchronously via the scheduler
 		
 		// Update OASResponse with original SPDX file metadata
 		OASResponseDto response = rebomResponse.bom();
@@ -734,6 +722,182 @@ public class ArtifactService {
 				log.error("Exception on initial processing artifact on dtrack for id = " + a.getUuid());
 			}
 		});
+	}
+	
+	/**
+	 * Submit pending BOM artifacts to Dependency Track.
+	 * This method finds orgs with DTrack integration, then for each org finds artifacts 
+	 * that have been uploaded to rebom but not yet submitted to DTrack,
+	 * checks their enrichment status, and submits them using the enriched BOM from rebom.
+	 */
+	protected void submitPendingArtifactsToDependencyTrack() {
+		// Get all orgs that have DTrack integration configured
+		List<UUID> orgsWithDtrack = integrationService.listOrgsWithDtrackIntegration();
+		if (orgsWithDtrack.isEmpty()) {
+			log.debug("No orgs with DTrack integration found");
+			return;
+		}
+		
+		log.debug("Found {} orgs with DTrack integration", orgsWithDtrack.size());
+		
+		for (UUID orgUuid : orgsWithDtrack) {
+			List<Artifact> pendingArts = repository.listArtifactsPendingDtrackSubmission(orgUuid.toString());
+			log.debug("Found {} artifacts pending DTrack submission for org {}", pendingArts.size(), orgUuid);
+			
+			for (Artifact a : pendingArts) {
+				try {
+					submitArtifactToDependencyTrack(a);
+				} catch (Exception e) {
+					log.error("Exception submitting artifact {} to DTrack: {}", a.getUuid(), e.getMessage());
+				}
+			}
+		}
+	}
+	
+	/**
+	 * Submit a single artifact to Dependency Track using the enriched BOM from rebom.
+	 * Includes deduplication logic - if another artifact with the same BOM digest already
+	 * has a DTrack project, we reuse that project instead of creating a new one.
+	 */
+	private void submitArtifactToDependencyTrack(Artifact a) {
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		
+		if (ad.getInternalBom() == null || ad.getInternalBom().id() == null) {
+			log.warn("Artifact {} has no internalBom id, skipping DTrack submission", ad.getUuid());
+			return;
+		}
+		
+		UUID internalBomId = ad.getInternalBom().id();
+		UUID orgUuid = ad.getOrg();
+		
+		// Check enrichment status from rebom
+		RebomService.BomMeta bomMeta = rebomService.getBomMetadataById(internalBomId, orgUuid);
+		if (bomMeta == null) {
+			log.warn("Could not retrieve BOM metadata for artifact {}, internalBomId {}", ad.getUuid(), internalBomId);
+			return;
+		}
+		
+		RebomService.EnrichmentStatus enrichmentStatus = bomMeta.enrichmentStatus();
+		
+		// Only proceed if enrichment is COMPLETED, FAILED, or SKIPPED (not PENDING)
+		if (enrichmentStatus == RebomService.EnrichmentStatus.PENDING) {
+			log.debug("Artifact {} enrichment still pending, will retry later", ad.getUuid());
+			return;
+		}
+		
+		if (enrichmentStatus == RebomService.EnrichmentStatus.FAILED) {
+			log.error("Artifact {} enrichment failed: {}", ad.getUuid(), bomMeta.enrichmentError());
+			// Still proceed with submission using non-enriched BOM
+		}
+		
+		// Check for deduplication - if another artifact with same digest already has DTrack project
+		String bomDigest = bomMeta.bomDigest();
+		log.info("PSDEBUG: Checking deduplication for artifact {} with bomDigest {}", ad.getUuid(), bomDigest);
+		if (StringUtils.isNotEmpty(bomDigest)) {
+			Optional<DependencyTrackUploadResult> deduplicatedResult = tryDtrackDeduplication(orgUuid, bomDigest, ad.getUuid());
+			log.info("PSDEBUG: Deduplication result for artifact {}: present={}", ad.getUuid(), deduplicatedResult.isPresent());
+			if (deduplicatedResult.isPresent()) {
+				// Reuse existing DTrack project
+				DependencyTrackUploadResult dtur = deduplicatedResult.get();
+				log.info("Artifact {} deduplicated, reusing existing DTrack project {}", ad.getUuid(), dtur.projectId());
+				sharedArtifactService.updateArtifactFromDtur(ad, dtur);
+				return;
+			}
+		}
+		
+		// Retrieve the enriched BOM from rebom (always CycloneDX)
+		JsonNode bomJson;
+		try {
+			bomJson = rebomService.findBomByIdJson(internalBomId, orgUuid);
+		} catch (Exception e) {
+			log.error("Failed to retrieve BOM for artifact {}: {}", ad.getUuid(), e.getMessage());
+			return;
+		}
+		
+		if (bomJson == null) {
+			log.error("Retrieved null BOM for artifact {}", ad.getUuid());
+			return;
+		}
+		
+		// Determine project name and version
+		String projectName = bomMeta.name();
+		String projectVersion = dtrackService.resolveBomVersionForArtifactUpload(bomMeta, ad.getUuid());
+		if (StringUtils.isEmpty(projectName)) {
+			projectName = ad.getUuid().toString();
+		}
+		
+		// Submit to DTrack
+		try {
+			byte[] bomContent = Utils.OM.writeValueAsBytes(bomJson);
+			UploadableBom ub = new UploadableBom(null, bomContent, true);
+			
+			String oldProjectId = (ad.getMetrics() != null) 
+				? ad.getMetrics().getDependencyTrackProject() : null;
+			
+			DependencyTrackUploadResult dtur = integrationService.uploadBomAndUpdateRelated(
+				orgUuid, ub, projectName, projectVersion, oldProjectId, ad);
+			
+			if (dtur != null) {
+				log.info("Successfully submitted artifact {} to DTrack, project: {}", 
+					ad.getUuid(), dtur.projectId());
+			}
+		} catch (Exception e) {
+			log.error("Failed to submit artifact {} to DTrack: ", ad.getUuid());
+			log.error("Artifact submission error details", e);
+		}
+	}
+	
+	/**
+	 * Try to find an existing artifact with the same BOM digest that already has a DTrack project.
+	 * If found and the project is not deleted, return the DTrack result to reuse.
+	 */
+	private Optional<DependencyTrackUploadResult> tryDtrackDeduplication(UUID orgUuid, String bomDigest, UUID currentArtifactUuid) {
+		Optional<Artifact> existingArtifact = sharedArtifactService.findArtifactByStoredDigest(orgUuid, bomDigest);
+		
+		log.info("PSDEBUG: tryDtrackDeduplication for artifact {} - found existing: {}", 
+			currentArtifactUuid, existingArtifact.isPresent());
+		
+		if (existingArtifact.isEmpty()) {
+			return Optional.empty();
+		}
+		
+		ArtifactData existingAd = ArtifactData.dataFromRecord(existingArtifact.get());
+		log.info("PSDEBUG: Found existing artifact {} for deduplication check", existingAd.getUuid());
+		
+		// Don't deduplicate with self
+		if (existingAd.getUuid().equals(currentArtifactUuid)) {
+			log.info("PSDEBUG: Existing artifact is self, skipping");
+			return Optional.empty();
+		}
+		
+		// Check if existing artifact has DTrack project
+		if (existingAd.getMetrics() == null || StringUtils.isEmpty(existingAd.getMetrics().getDependencyTrackProject())) {
+			log.info("PSDEBUG: Existing artifact {} has no DTrack project (metrics={}, dtrackProject={})", 
+				existingAd.getUuid(), 
+				existingAd.getMetrics() != null,
+				existingAd.getMetrics() != null ? existingAd.getMetrics().getDependencyTrackProject() : "null");
+			return Optional.empty();
+		}
+		
+		// Check if DTrack project was deleted
+		Boolean deleted = existingAd.getMetrics().getDtrackProjectDeleted();
+		if (deleted != null && deleted) {
+			log.info("Existing artifact {} has deleted DTrack project, skipping deduplication", existingAd.getUuid());
+			return Optional.empty();
+		}
+		
+		// Request metrics refresh on the existing project
+		dtrackService.requestMetricsRefresh(existingAd);
+		
+		log.info("DTrack deduplication found: artifact {} will reuse DTrack project from artifact {}", 
+			currentArtifactUuid, existingAd.getUuid());
+		
+		return Optional.of(new DependencyTrackUploadResult(
+			existingAd.getMetrics().getDependencyTrackProject(),
+			existingAd.getMetrics().getUploadToken(),
+			existingAd.getMetrics().getProjectName(),
+			existingAd.getMetrics().getProjectVersion(),
+			existingAd.getMetrics().getDependencyTrackFullUri()));
 	}
 	
 	public boolean fetchDependencyTrackDataForArtifact (Artifact a) throws RelizaException {
@@ -874,6 +1038,7 @@ public class ArtifactService {
 						dti.setDependencyTrackFullUri(ad.getMetrics().getDependencyTrackFullUri());
 						dti.setProjectName(ad.getMetrics().getProjectName());
 						dti.setProjectVersion(ad.getMetrics().getProjectVersion());
+						dti.setUploadDate(ad.getMetrics().getUploadDate());
 					}
 					ad.setMetrics(dti);
 					Map<String, Object> recordData = Utils.dataToRecord(ad);
@@ -1091,9 +1256,138 @@ public class ArtifactService {
 	public SyncDtrackStatusResponseDto syncDtrackStatus(UUID orgUuid) {
 		log.info("Starting DTrack status sync for organization: {}", orgUuid);
 		
-		Set<UUID> artifactUuids = new HashSet<>();
+		Set<UUID> artifactUuids = collectArtifactUuidsFromActiveBranches(orgUuid);
 		Set<UUID> failedArtifactUuids = new HashSet<>();
 		int successCount = 0;
+		
+		log.info("Collected {} unique artifact UUIDs for DTrack sync", artifactUuids.size());
+		
+		// Filter to only BOM type artifacts and trigger metrics refresh
+		for (UUID artifactUuid : artifactUuids) {
+			try {
+				Optional<ArtifactData> artifactOpt = getArtifactData(artifactUuid);
+				if (artifactOpt.isPresent()) {
+					ArtifactData artifact = artifactOpt.get();
+					
+					// Only process BOM type artifacts
+					if (artifact.getType() == ArtifactType.BOM && artifact.getStoredIn() == StoredIn.REARM) {
+						boolean success = integrationService.requestMetricsRefreshOnDependencyTrack(artifact);
+						if (success) {
+							successCount++;
+							log.debug("Successfully requested DTrack refresh for artifact: {}", artifactUuid);
+						} else {
+							failedArtifactUuids.add(artifactUuid);
+							log.error("Failed to request DTrack refresh for artifact: {}", artifactUuid);
+						}
+					}
+				}
+			} catch (Exception e) {
+				failedArtifactUuids.add(artifactUuid);
+				log.error("Exception while processing artifact {} for DTrack sync: {}", artifactUuid, e.getMessage(), e);
+			}
+		}
+		
+		log.info("DTrack status sync completed for organization {}. Success: {}, Failed: {}", 
+			orgUuid, successCount, failedArtifactUuids.size());
+		
+		return new SyncDtrackStatusResponseDto(successCount, failedArtifactUuids);
+	}
+	
+	/**
+	 * Refresh DTrack projects by checking if BOMs were updated since last upload.
+	 * For each distinct DTrack project in the org, finds the latest uploaded artifact
+	 * and checks if it needs resubmission based on BOM update.
+	 * Runs asynchronously.
+	 * 
+	 * @param orgUuid Organization UUID
+	 */
+	@org.springframework.scheduling.annotation.Async
+	public void refreshDtrackProjects(UUID orgUuid) {
+		log.info("Starting DTrack project refresh for organization: {}", orgUuid);
+		
+		int successCount = 0;
+		int failedCount = 0;
+		
+		// Get artifact UUIDs from active branches to scope the refresh
+		Set<UUID> activeBranchArtifactUuids = collectArtifactUuidsFromActiveBranches(orgUuid);
+		log.info("Found {} artifact UUIDs from active branches", activeBranchArtifactUuids.size());
+		
+		// Get distinct DTrack projects for this org
+		List<String> allDtrackProjects = repository.listDistinctDtrackProjectsByOrg(orgUuid.toString());
+		
+		// Filter to only DTrack projects that have at least one artifact from active branches
+		List<String> dtrackProjects = allDtrackProjects.stream()
+			.filter(dtrackProject -> {
+				List<Artifact> artifacts = repository.findArtifactsByDtrackProjectAndOrg(orgUuid.toString(), dtrackProject);
+				return artifacts.stream().anyMatch(a -> activeBranchArtifactUuids.contains(a.getUuid()));
+			})
+			.toList();
+		
+		log.info("Found {} distinct DTrack projects for organization {} ({} have active branch artifacts)", 
+			allDtrackProjects.size(), orgUuid, dtrackProjects.size());
+		
+		for (String dtrackProject : dtrackProjects) {
+			try {
+				// Get all artifacts sharing this DTrack project, ordered by uploadDate desc
+				List<Artifact> artifacts = repository.findArtifactsByDtrackProjectAndOrg(orgUuid.toString(), dtrackProject);
+				
+				if (artifacts.isEmpty()) {
+					log.debug("No artifacts found for DTrack project: {}", dtrackProject);
+					continue;
+				}
+				
+				// Pick the first one (latest uploaded)
+				ArtifactData latestArtifact = ArtifactData.dataFromRecord(artifacts.get(0));
+				
+				log.debug("Processing DTrack project {} with latest artifact {}", dtrackProject, latestArtifact.getUuid());
+				
+				// Check if BOM was updated and resubmit if needed
+				boolean success = dtrackService.checkAndResubmitIfBomUpdated(latestArtifact);
+				if (success) {
+					successCount++;
+					log.debug("Successfully processed DTrack project {} (artifact: {})", dtrackProject, latestArtifact.getUuid());
+					
+					// Update uploadDate for all other artifacts sharing this DTrack project
+					// (latest artifact already updated by resubmitArtifact)
+					ZonedDateTime now = ZonedDateTime.now();
+					for (int i = 1; i < artifacts.size(); i++) {
+						Artifact artifact = artifacts.get(i);
+						ArtifactData ad = ArtifactData.dataFromRecord(artifact);
+						if (ad.getMetrics() != null) {
+							ad.getMetrics().setUploadDate(now);
+							sharedArtifactService.saveArtifact(artifact, Utils.dataToRecord(ad), WhoUpdated.getAutoWhoUpdated());
+						}
+					}
+					log.debug("Updated uploadDate for {} other artifacts sharing DTrack project {}", artifacts.size() - 1, dtrackProject);
+				}
+				
+				// Sleep for 10 seconds between artifacts
+				if (dtrackProjects.indexOf(dtrackProject) < dtrackProjects.size() - 1) {
+					Thread.sleep(10000);
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				log.warn("DTrack project refresh interrupted for organization {}", orgUuid);
+				break;
+			} catch (Exception e) {
+				failedCount++;
+				log.error("Exception while processing DTrack project {}: {}", dtrackProject, e.getMessage(), e);
+			}
+		}
+		
+		log.info("DTrack project refresh completed for organization {}. Success: {}, Failed: {}", 
+			orgUuid, successCount, failedCount);
+	}
+	
+	/**
+	 * Collects all artifact UUIDs from active branches of an organization.
+	 * Gathers artifacts from releases, source code entries, and deliverables.
+	 * 
+	 * @param orgUuid Organization UUID
+	 * @return Set of artifact UUIDs from active branches
+	 */
+	private Set<UUID> collectArtifactUuidsFromActiveBranches(UUID orgUuid) {
+		Set<UUID> artifactUuids = new HashSet<>();
 		
 		// Get all active branches for the organization
 		List<BranchData> activeBranches = branchService.listBranchDataOfOrg(orgUuid);
@@ -1146,37 +1440,7 @@ public class ArtifactService {
 			}
 		}
 		
-		log.info("Collected {} unique artifact UUIDs for DTrack sync", artifactUuids.size());
-		
-		// Filter to only BOM type artifacts and trigger metrics refresh
-		for (UUID artifactUuid : artifactUuids) {
-			try {
-				Optional<ArtifactData> artifactOpt = getArtifactData(artifactUuid);
-				if (artifactOpt.isPresent()) {
-					ArtifactData artifact = artifactOpt.get();
-					
-					// Only process BOM type artifacts
-					if (artifact.getType() == ArtifactType.BOM && artifact.getStoredIn() == StoredIn.REARM) {
-						boolean success = integrationService.requestMetricsRefreshOnDependencyTrack(artifact);
-						if (success) {
-							successCount++;
-							log.debug("Successfully requested DTrack refresh for artifact: {}", artifactUuid);
-						} else {
-							failedArtifactUuids.add(artifactUuid);
-							log.error("Failed to request DTrack refresh for artifact: {}", artifactUuid);
-						}
-					}
-				}
-			} catch (Exception e) {
-				failedArtifactUuids.add(artifactUuid);
-				log.error("Exception while processing artifact {} for DTrack sync: {}", artifactUuid, e.getMessage(), e);
-			}
-		}
-		
-		log.info("DTrack status sync completed for organization {}. Success: {}, Failed: {}", 
-			orgUuid, successCount, failedArtifactUuids.size());
-		
-		return new SyncDtrackStatusResponseDto(successCount, failedArtifactUuids);
+		return artifactUuids;
 	}
 
 }

@@ -296,17 +296,7 @@ public class AnalyticsMetricsService {
 	}
 	
 	
-	@Transactional
-	public ReleaseMetricsDto computeAndRecordAnalyticsMetricsForOrgAndDate(UUID org, String dateKey, WhoUpdated wu) {
-		ZonedDateTime createdDate = java.time.LocalDate.parse(dateKey).atStartOfDay(java.time.ZoneOffset.UTC);
-		Optional<AnalyticsMetrics> existingAm = repository.findAnalyticsMetricsByOrgDateKey(org.toString(), dateKey);
-		AnalyticsMetrics am = existingAm.orElse(new AnalyticsMetrics());
-		AnalyticsMetricsData amd = computeActualAnalyticsMetricsDataForOrg(org, createdDate);
-		save(am, Utils.dataToRecord(amd), wu);
-		return amd.getMetrics();
-	}
-	
-	private AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
+	public AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
 		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
 		var activeBranches = branchService.listBranchesOfOrg(org).stream()
 				.map(BranchData::branchDataFromDbRecord)

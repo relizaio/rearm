@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -331,11 +332,8 @@ public class ArtifactServiceBomProcessingTest {
         );
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
         
-        DependencyTrackUploadResult dtrackResult = new DependencyTrackUploadResult(
-            "project-123", "token-123", "project-name", "1.0.0", null
-        );
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
-            new BomLifecycleService.BomLifecycleResult(rebomResponse, dtrackResult, null, false);
+            new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
         
         RebomOptions rebomOptions = new RebomOptions();
         
@@ -368,7 +366,7 @@ public class ArtifactServiceBomProcessingTest {
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
-            new BomLifecycleService.BomLifecycleResult(rebomResponse, null, null, false);
+            new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
         
         RebomOptions rebomOptions = new RebomOptions();
         
@@ -397,7 +395,7 @@ public class ArtifactServiceBomProcessingTest {
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
-            new BomLifecycleService.BomLifecycleResult(rebomResponse, null, null, false);
+            new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
         
         RebomOptions rebomOptions = new RebomOptions();
         
@@ -424,11 +422,8 @@ public class ArtifactServiceBomProcessingTest {
         );
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
         
-        DependencyTrackUploadResult dtrackResult = new DependencyTrackUploadResult(
-            "project-123", "token-123", "project-name", "1.0.0", null
-        );
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
-            new BomLifecycleService.BomLifecycleResult(rebomResponse, dtrackResult, null, false);
+            new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
         
         RebomOptions rebomOptions = new RebomOptions();
         
@@ -436,9 +431,9 @@ public class ArtifactServiceBomProcessingTest {
         ReflectionTestUtils.invokeMethod(artifactService, "applyCycloneDxResponse",
             artifactDto, rebomResponse, lifecycleResult, rebomOptions);
         
-        // Assert
-        assertNotNull(artifactDto.getDtur());
-        assertEquals("project-123", artifactDto.getDtur().projectId());
+        // Assert - DTrack integration is now async, so no dtur set here
+        // The artifact should still be processed successfully
+        assertNotNull(artifactDto.getInternalBom());
     }
     
     // ==================== applySpdxResponse Tests ====================
@@ -460,7 +455,7 @@ public class ArtifactServiceBomProcessingTest {
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
-            new BomLifecycleService.BomLifecycleResult(rebomResponse, null, null, false);
+            new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
         
         RebomOptions rebomOptions = new RebomOptions();
         
@@ -494,7 +489,7 @@ public class ArtifactServiceBomProcessingTest {
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, mockOasResponse, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
-            new BomLifecycleService.BomLifecycleResult(rebomResponse, null, null, false);
+            new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
         
         RebomOptions rebomOptions = new RebomOptions();
         
@@ -546,7 +541,7 @@ public class ArtifactServiceBomProcessingTest {
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, mockOasResponse, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
-            new BomLifecycleService.BomLifecycleResult(rebomResponse, null, null, false);
+            new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
         
         RebomOptions rebomOptions = new RebomOptions();
         

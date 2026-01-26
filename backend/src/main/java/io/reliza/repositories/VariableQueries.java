@@ -194,12 +194,49 @@ class VariableQueries {
 			select * from rearm.artifacts a where a.record_data->'metrics'->>'lastScanned' is null 
 			and record_data->'metrics'->>'uploadToken' is not null
 		""";
+	
+	protected static final String LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION = """
+			select * from rearm.artifacts a 
+			where a.record_data->>'org' = :orgUuidAsString
+			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
+			and a.record_data->>'type' = 'BOM'
+			and a.record_data->'internalBom'->>'id' is not null
+			and (a.record_data->'metrics'->>'dependencyTrackProject' is null 
+				or a.record_data->'metrics'->>'dependencyTrackProject' = '')
+			and (a.record_data->'metrics'->>'dtrackProjectDeleted' is null 
+				or a.record_data->'metrics'->>'dtrackProjectDeleted' = 'false')
+			order by a.record_data->>'createdDate' desc
+			limit 20
+		""";
 
 	protected static final String FIND_ARTIFACTS_BY_STORED_DIGEST = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString" 
 	+ " and jsonb_contains(record_data, jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))";
 	
 	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECTS = """
 			select * from rearm.artifacts a where a.record_data->'metrics'->>'dependencyTrackProject' in (:dtrackProjectIds)
+		""";
+	
+	protected static final String LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG = """
+			select distinct a.record_data->'metrics'->>'dependencyTrackProject' as dtrack_project
+			from rearm.artifacts a 
+			where a.record_data->>'org' = :orgUuidAsString
+			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
+			and a.record_data->>'type' = 'BOM'
+			and a.record_data->'internalBom'->>'id' is not null
+			and a.record_data->'metrics'->>'dependencyTrackProject' is not null
+			and a.record_data->'metrics'->>'dependencyTrackProject' != ''
+			and (a.record_data->'metrics'->>'dtrackProjectDeleted' is null 
+				or a.record_data->'metrics'->>'dtrackProjectDeleted' = 'false')
+		""";
+	
+	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG = """
+			select * from rearm.artifacts a 
+			where a.record_data->>'org' = :orgUuidAsString
+			and a.record_data->'metrics'->>'dependencyTrackProject' = :dtrackProject
+			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
+			and a.record_data->>'type' = 'BOM'
+			and a.record_data->'internalBom'->>'id' is not null
+			order by a.record_data->'metrics'->>'uploadDate' desc nulls last
 		""";
 	
 	protected static final String FIND_ORPHANED_DTRACK_PROJECTS = """
@@ -924,6 +961,12 @@ class VariableQueries {
 			+ " record_data->>'" + CommonVariables.IDENTIFIER_FIELD + "' = :identifier";
 
 	protected static final String LIST_INTEGRATIONS_BY_ORG = "select * from rearm.integrations a where a.record_data->>'org' = :orgUuidAsString";
+
+	protected static final String LIST_ORGS_WITH_DTRACK_INTEGRATION = """
+			select distinct a.record_data->>'org' as org_uuid from rearm.integrations a 
+			where a.record_data->>'type' = 'DEPENDENCYTRACK'
+			and a.record_data->>'identifier' = 'base'
+		""";
 
 	/*
 	 * Organizations

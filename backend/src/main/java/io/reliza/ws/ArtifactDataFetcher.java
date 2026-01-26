@@ -33,6 +33,8 @@ import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.OrganizationService;
+import io.reliza.service.RebomService;
+import io.reliza.service.RebomService.EnrichmentTriggerResult;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +63,9 @@ public class ArtifactDataFetcher {
 
 	@Autowired
 	SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+	RebomService rebomService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifact")
@@ -233,6 +238,46 @@ public class ArtifactDataFetcher {
 		log.info("User {} initiated DTrack status sync for organization {}", oud.get().getUuid(), orgUuid);
 		
 		return artifactService.syncDtrackStatus(orgUuid);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "triggerEnrichment")
+	public EnrichmentTriggerResult triggerEnrichment(
+			@InputArgument("artifact") UUID artifactUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
+		
+		if (oad.isEmpty()) {
+			return new EnrichmentTriggerResult(false, "Artifact not found", null);
+		}
+		
+		ArtifactData ad = oad.get();
+		
+		// Require ADMIN permission
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), ad.getOrg(), CallType.ADMIN);
+		
+		// Check if artifact has internal BOM
+		if (ad.getInternalBom() == null || ad.getInternalBom().id() == null) {
+			return new EnrichmentTriggerResult(false, "Artifact does not have an internal BOM", null);
+		}
+		
+		return rebomService.triggerEnrichment(ad.getInternalBom().id(), ad.getOrg());
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "refreshDtrackProjects")
+	public Boolean refreshDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		// Verify user has admin access to the organization
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		
+		log.info("User {} initiated DTrack project refresh for organization {}", oud.get().getUuid(), orgUuid);
+		
+		artifactService.refreshDtrackProjects(orgUuid);
+		return true;
 	}
 
 }

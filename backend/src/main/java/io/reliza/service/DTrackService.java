@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -29,8 +30,10 @@ import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.IntegrationType;
+import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.service.IntegrationService.UploadableBom;
+import io.reliza.service.RebomService.BomMeta;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
@@ -90,6 +93,7 @@ public class DTrackService {
     /**
      * Refresh metrics for existing DTrack project.
      * Returns true if refresh was successful or resubmission was triggered.
+     * Also checks if BOM was updated in rebom and resubmits if needed.
      */
     @Transactional
     public boolean requestMetricsRefresh(ArtifactData artifact) {
@@ -98,6 +102,12 @@ public class DTrackService {
         
         if (integration.isEmpty() || artifact.getType() != ArtifactType.BOM) {
             return isRequested;
+        }
+        
+        // Check if BOM was updated in rebom since last upload
+        if (shouldResubmitBasedOnBomUpdate(artifact)) {
+            log.info("BOM was updated since last upload, resubmitting artifact {}", artifact.getUuid());
+            return resubmitArtifact(artifact);
         }
         
         String depTrackProject = (null != artifact.getMetrics()) 
@@ -112,6 +122,59 @@ public class DTrackService {
     }
     
     /**
+     * Check if BOM was updated and resubmit if needed.
+     * Returns true if resubmission was triggered, false otherwise.
+     */
+    public boolean checkAndResubmitIfBomUpdated(ArtifactData artifact) {
+        if (shouldResubmitBasedOnBomUpdate(artifact)) {
+            log.info("BOM was updated since last upload, resubmitting artifact {}", artifact.getUuid());
+            return resubmitArtifact(artifact);
+        }
+        return false;
+    }
+    
+    /**
+     * Check if the BOM was updated in rebom after the artifact was uploaded to DTrack.
+     * Returns true if resubmission is needed.
+     */
+    private boolean shouldResubmitBasedOnBomUpdate(ArtifactData artifact) {
+        if (artifact.getInternalBom() == null || artifact.getInternalBom().id() == null) {
+            return false;
+        }
+        
+        try {
+            BomMeta bomMeta = rebomService.getBomMetadataById(artifact.getInternalBom().id(), artifact.getOrg());
+            if (bomMeta == null || bomMeta.lastUpdatedDate() == null) {
+                log.error("Invalid value on BOM metadata for artifact {}, with internalBomId {}", artifact.getUuid(), artifact.getInternalBom().id());
+                return false;
+            }
+            
+            var uploadDate = (artifact.getMetrics() != null) ? artifact.getMetrics().getUploadDate() : null;
+            
+            // If uploadDate is null, need to resubmit
+            if (uploadDate == null) {
+                log.debug("Artifact {} has no uploadDate, needs resubmission", artifact.getUuid());
+                return true;
+            }
+            
+            // Parse lastUpdatedDate from rebom (ISO format)
+            java.time.ZonedDateTime bomLastUpdated = java.time.ZonedDateTime.parse(bomMeta.lastUpdatedDate());
+            
+            // If BOM was updated after artifact was uploaded, need to resubmit
+            if (bomLastUpdated.isAfter(uploadDate)) {
+                log.debug("BOM lastUpdatedDate {} is after artifact uploadDate {}, needs resubmission", 
+                    bomLastUpdated, uploadDate);
+                return true;
+            }
+            
+            return false;
+        } catch (Exception e) {
+            log.warn("Error checking BOM update status for artifact {}: {}", artifact.getUuid(), e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
      * Resubmit artifact to DTrack (for self-healing when project is deleted).
      */
     public boolean resubmitArtifact(ArtifactData artifact) {
@@ -122,16 +185,37 @@ public class DTrackService {
             var downloadable = sharedArtifactService.downloadArtifact(artifact);
             byte[] bomContent = downloadable.block().getBody();
             
-            log.info("Downloaded BOM for resubmission: size={} bytes, first 100 chars: {}", 
+            log.debug("Downloaded BOM for resubmission: size={} bytes, first 100 chars: {}", 
                 bomContent.length, 
                 new String(bomContent, 0, Math.min(100, bomContent.length)));
             
-            String projectVersion = (null != artifact.getMetrics() && 
-                StringUtils.isNotEmpty(artifact.getMetrics().getProjectVersion())) 
-                ? artifact.getMetrics().getProjectVersion() : UUID.randomUUID().toString();
-            String projectName = (null != artifact.getMetrics() && 
-                StringUtils.isNotEmpty(artifact.getMetrics().getProjectName())) 
-                ? artifact.getMetrics().getProjectName() : UUID.randomUUID().toString();
+            String projectVersion = null;
+            String projectName = null;
+            
+            if (null != artifact.getMetrics()) {
+                projectVersion = artifact.getMetrics().getProjectVersion();
+                projectName = artifact.getMetrics().getProjectName();
+            }
+            
+            // If projectVersion is empty, try to resolve from rebom
+            if (StringUtils.isEmpty(projectVersion) && artifact.getInternalBom() != null 
+                    && artifact.getInternalBom().id() != null) {
+                BomMeta bomMeta = rebomService.getBomMetadataById(artifact.getInternalBom().id(), artifact.getOrg());
+                if (bomMeta != null) {
+                    projectVersion = resolveBomVersionForArtifactUpload(bomMeta, artifact.getUuid());
+                    if (StringUtils.isEmpty(projectName)) {
+                        projectName = bomMeta.name();
+                    }
+                }
+            }
+            
+            // Fallback to random UUID if still empty
+            if (StringUtils.isEmpty(projectVersion)) {
+                projectVersion = UUID.randomUUID().toString();
+            }
+            if (StringUtils.isEmpty(projectName)) {
+                projectName = UUID.randomUUID().toString();
+            }
             
             String oldProjectId = (null != artifact.getMetrics() && 
                 StringUtils.isNotEmpty(artifact.getMetrics().getDependencyTrackProject())) 
@@ -304,7 +388,7 @@ public class DTrackService {
     
     private DependencyTrackUploadResult updateExistingProject(DTrackContext context) 
             throws RelizaException {
-        requestMetricsRefresh(context.existingArtifact());
+        requestMetricsRefresh(context.existingArtifact()); // TODO why this is needed before upload? PS - 2026-01
         
         var reloaded = sharedArtifactService.getArtifact(context.existingArtifact().getUuid());
         if (reloaded.isEmpty()) {
@@ -325,14 +409,25 @@ public class DTrackService {
     private DependencyTrackUploadResult createNewProject(DTrackContext context) 
             throws RelizaException {
         JsonNode bomJson = prepareBomForUpload(context);
-        String projectVersion = context.rebomOptions().version() + "-" + 
-            context.artifactUuid().toString();
+        String projectVersion = resolveBomVersionForArtifactUpload(context.rebomOptions(), context.artifactUuid());
         UploadableBom ub = new UploadableBom(bomJson, null, false);
         String oldProjectId = context.getExistingDTrackProjectId();
         
         return uploadBomAndUpdateRelated(
             context.orgUuid(), ub, context.rebomOptions().name(), 
             projectVersion, oldProjectId, null);
+    }
+    
+    private String resolveBomVersionForArtifactUpload(@NonNull RebomOptions rebomOptions, @NonNull UUID artifactUuid) {
+    	return resolveBomVersionForArtifactUploadSub(rebomOptions.version(), artifactUuid);
+    }
+    
+    protected String resolveBomVersionForArtifactUpload(@NonNull BomMeta bomMeta, @NonNull UUID artifactUuid) {
+    	return resolveBomVersionForArtifactUploadSub(bomMeta.version(), artifactUuid);
+    }
+    
+    private String resolveBomVersionForArtifactUploadSub(@NonNull String version, @NonNull UUID artifactUuid) {
+    	return version + "-" + artifactUuid.toString();
     }
     
     // ========================================
@@ -350,6 +445,7 @@ public class DTrackService {
         
         Optional<DTrackIntegration> integration = getDTrackIntegration(orgUuid);
         if (integration.isEmpty()) {
+        	log.info("PSDEBUG: DTrack inegration is empty, returning null");
             return null;
         }
         

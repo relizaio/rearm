@@ -59,6 +59,13 @@ public class RebomService {
         EXCEL;
     }
     
+    public enum EnrichmentStatus {
+        PENDING,
+        COMPLETED,
+        FAILED,
+        SKIPPED
+    }
+    
     public RebomService(
 		@Value("${relizaprops.rebom.url}") String rebomHost
 	) {
@@ -326,8 +333,42 @@ public class RebomService {
         return bomJson;
     }
     
-    public record BomMeta (String name, String group, String bomVersion, String hash, String belongsTo, Boolean tldOnly, Boolean ignoreDev, String structure,
-    		String notes, String stripBom, String serialNumber) {}
+    public record BomMeta (String name, String group, String version, String bomVersion, String bomDigest, String belongsTo, Boolean tldOnly, Boolean ignoreDev, String structure,
+    		String notes, String stripBom, String serialNumber, EnrichmentStatus enrichmentStatus, String enrichmentTimestamp, String enrichmentError, String lastUpdatedDate) {}
+    
+    public BomMeta getBomMetadataById(UUID bomId, UUID org) {
+        String query = """
+                query bomMetadataById ($id: ID!, $org: ID!) {
+                    bomMetadataById(id: $id, org: $org) {
+                        name
+                        group
+                        version
+                        bomVersion
+                        bomDigest
+                        belongsTo
+                        tldOnly
+                        ignoreDev
+                        structure
+                        notes
+                        stripBom
+                        serialNumber
+                        enrichmentStatus
+                        enrichmentTimestamp
+                        enrichmentError
+                        lastUpdatedDate
+                    }
+                }""";
+            
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("id", bomId.toString());
+        variables.put("org", org.toString());
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var br = response.get("bomMetadataById");
+        if (br == null) {
+            return null;
+        }
+        return Utils.OM.convertValue(br, BomMeta.class);
+    }
     
     public List<BomMeta> resolveBomMetas(UUID bomSerialNumber, UUID org) {
         String query = """
@@ -336,7 +377,7 @@ public class RebomService {
                    	    name
 					    group
 					    bomVersion
-					    hash
+					    bomDigest
 					    belongsTo
 					    tldOnly
 					    ignoreDev
@@ -556,5 +597,30 @@ public class RebomService {
             case "UNKNOWN" -> ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
             default -> ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
         };
+    }
+    
+    public record EnrichmentTriggerResult(Boolean triggered, String message, UUID bomUuid) {}
+    
+    public EnrichmentTriggerResult triggerEnrichment(UUID bomId, UUID org) {
+        String mutation = """
+            mutation triggerEnrichment($id: ID!, $org: ID!, $force: Boolean) {
+                triggerEnrichment(id: $id, org: $org, force: $force) {
+                    triggered
+                    message
+                    bomUuid
+                }
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("id", bomId.toString());
+        variables.put("org", org.toString());
+        variables.put("force", true);
+        
+        Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
+        var result = response.get("triggerEnrichment");
+        if (result == null) {
+            return new EnrichmentTriggerResult(false, "No response from rebom", null);
+        }
+        return Utils.OM.convertValue(result, EnrichmentTriggerResult.class);
     }
 }

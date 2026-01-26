@@ -210,6 +210,18 @@ type Mutation {
 	updatePerspective(uuid: ID!, name: String!): Perspective
 	deletePerspective(uuid: ID!): Perspective
 	setPerspectivesOnComponent(componentUuid: ID!, perspectiveUuids: [ID!]!): Component
+	
+	# Enrichment
+	triggerEnrichment(artifact: ID!): EnrichmentTriggerResult
+	
+	# DTrack
+	refreshDtrackProjects(orgUuid: ID!): Boolean
+}
+
+type EnrichmentTriggerResult {
+	triggered: Boolean!
+	message: String
+	bomUuid: ID
 }
 
 enum BomMediaType {

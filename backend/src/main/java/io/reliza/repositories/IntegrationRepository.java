@@ -30,5 +30,9 @@ public interface IntegrationRepository extends CrudRepository<Integration, UUID>
 			nativeQuery = true)
 	List<Integration> listIntegrationsByOrg(String orgUuidAsString);
 
+	@Query(
+			value = VariableQueries.LIST_ORGS_WITH_DTRACK_INTEGRATION,
+			nativeQuery = true)
+	List<String> listOrgsWithDtrackIntegration();
 
 }

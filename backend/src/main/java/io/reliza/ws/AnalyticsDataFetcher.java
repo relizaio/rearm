@@ -34,6 +34,7 @@ import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.UserService;
+import io.reliza.service.oss.OssAnalyticsMetricsService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -42,6 +43,9 @@ public class AnalyticsDataFetcher {
 	
 	@Autowired
 	private AnalyticsMetricsService analyticsMetricsService;
+	
+	@Autowired
+	private OssAnalyticsMetricsService ossAnalyticsMetricsService;
 	
 	@Autowired
 	private ReleaseService releaseService;
@@ -208,6 +212,6 @@ public class AnalyticsDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		return analyticsMetricsService.computeAndRecordAnalyticsMetricsForOrgAndDate(orgUuid, date, wu);
+		return ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForOrgAndDate(orgUuid, date, wu);
 	}
 }

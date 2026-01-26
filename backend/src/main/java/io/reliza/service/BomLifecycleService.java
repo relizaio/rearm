@@ -17,15 +17,14 @@ import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
-import io.reliza.service.DTrackService.DTrackContext;
-import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * BomLifecycleService coordinates the complete lifecycle of BOM artifacts:
  * 1. Storage in rebom-backend
  * 2. Deduplication detection
- * 3. DTrack integration
+ * 
+ * Note: DTrack integration is now handled asynchronously via the scheduler.
  * 
  * This service follows the same service extraction pattern as rebom-backend's refactoring,
  * providing a single entry point for BOM processing while delegating to specialized services.
@@ -38,9 +37,6 @@ public class BomLifecycleService {
     private RebomService rebomService;
     
     @Autowired
-    private DTrackService dtrackService;
-    
-    @Autowired
     private SharedArtifactService sharedArtifactService;
 
     /**
@@ -48,21 +44,20 @@ public class BomLifecycleService {
      */
     public record BomLifecycleResult(
         RebomResponse rebomResponse,
-        DependencyTrackUploadResult dtrackResult,
         Optional<ArtifactData> deduplicatedArtifact,
         boolean wasDeduplicatedBom
     ) {
         public BomLifecycleResult(
             RebomResponse rebomResponse,
-            DependencyTrackUploadResult dtrackResult,
             Optional<ArtifactData> deduplicatedArtifact
         ) {
-            this(rebomResponse, dtrackResult, deduplicatedArtifact, deduplicatedArtifact.isPresent());
+            this(rebomResponse, deduplicatedArtifact, deduplicatedArtifact.isPresent());
         }
     }
 
     /**
-     * Process complete BOM lifecycle: storage → deduplication → DTrack integration
+     * Process complete BOM lifecycle: storage → deduplication
+     * Note: DTrack integration is now handled asynchronously via the scheduler.
      * 
      * @param bomJson Raw BOM JSON content
      * @param rebomOptions Options for rebom processing
@@ -114,22 +109,9 @@ public class BomLifecycleService {
                 deduplicatedArtifact.get().getUuid(), bomDigest);
         }
         
-        // Step 3: Integrate with DTrack (if BOM artifact)
-        DependencyTrackUploadResult dtrackResult = integratWithDTrack(
-            bomJson,
-            bomDigest,
-            bomFormat,
-            internalBomId,
-            orgUuid,
-            artifactUuid,
-            rebomOptions,
-            existingArtifact,
-            deduplicatedArtifact
-        );
-        
         log.debug("BOM lifecycle processing complete for artifact {}", artifactUuid);
         
-        return new BomLifecycleResult(rebomResponse, dtrackResult, deduplicatedArtifact);
+        return new BomLifecycleResult(rebomResponse, deduplicatedArtifact);
     }
 
     /**
@@ -165,48 +147,6 @@ public class BomLifecycleService {
         } catch (Exception e) {
             log.error("Error checking for deduplicated artifact: {}", e.getMessage(), e);
             return Optional.empty();
-        }
-    }
-
-    /**
-     * Integrate BOM with DTrack
-     */
-    private DependencyTrackUploadResult integratWithDTrack(
-        JsonNode bomJson,
-        String bomDigest,
-        BomFormat bomFormat,
-        UUID internalBomId,
-        UUID orgUuid,
-        UUID artifactUuid,
-        RebomOptions rebomOptions,
-        ArtifactData existingArtifact,
-        Optional<ArtifactData> deduplicatedArtifact
-    ) {
-        try {
-            DTrackContext context = new DTrackContext(
-                orgUuid,
-                bomDigest,
-                bomJson,
-                bomFormat,
-                internalBomId.toString(),
-                rebomOptions,
-                artifactUuid,
-                existingArtifact
-            );
-            
-            DependencyTrackUploadResult result = dtrackService.handleDTrackIntegration(
-                context, 
-                deduplicatedArtifact
-            );
-            
-            log.debug("DTrack integration complete for artifact {}", artifactUuid);
-            return result;
-            
-        } catch (Exception e) {
-            log.error("DTrack integration failed for artifact {}: {}", 
-                artifactUuid, e.getMessage(), e);
-            // Don't fail the entire BOM processing if DTrack integration fails
-            return null;
         }
     }
 

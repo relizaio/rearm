@@ -79,6 +79,7 @@ public class SchedulingService {
             log.debug("resolve dependency track lock acquired {}", lock);
 			if (lock) {
 				try {
+					artifactService.submitPendingArtifactsToDependencyTrack();
 					artifactService.initialProcessArtifactsOnDependencyTrack();
 					releaseService.computeMetricsForAllUnprocessedReleases();
 				} catch (Exception e) {

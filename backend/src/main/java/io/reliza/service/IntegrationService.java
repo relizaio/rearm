@@ -232,6 +232,25 @@ public class IntegrationService {
 		return oid;
 	}
 	
+	/**
+	 * Check if an organization has Dependency Track integration configured.
+	 */
+	public boolean hasDependencyTrackIntegration(UUID orgUuid) {
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(
+			orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		return oid.isPresent();
+	}
+	
+	/**
+	 * Get all organization UUIDs that have Dependency Track integration configured.
+	 */
+	public List<UUID> listOrgsWithDtrackIntegration() {
+		List<String> orgStrings = repository.listOrgsWithDtrackIntegration();
+		return orgStrings.stream()
+			.map(UUID::fromString)
+			.collect(Collectors.toList());
+	}
+	
 	@Transactional
 	public Integration createIntegration (String identifier, UUID organization, IntegrationType type,
 			URI uri, String secret, String schedule, URI frontendUri, WhoUpdated wu) {
@@ -615,6 +634,7 @@ public class IntegrationService {
 					dti.setDependencyTrackFullUri(fullDtrackUri);
 					dti.setDependencyTrackProject(ad.getMetrics().getDependencyTrackProject());
 					dti.setUploadToken(ad.getMetrics().getUploadToken());
+					dti.setUploadDate(ad.getMetrics().getUploadDate());
 					dti.setLastScanned(lastScanned);
 				}
 			} catch (Exception e) {
@@ -639,6 +659,7 @@ public class IntegrationService {
 		if (null == dti.getDependencyTrackProject()) dti.setDependencyTrackProject(ad.getMetrics().getDependencyTrackProject());
 		if (null == dti.getProjectName()) dti.setProjectName(ad.getMetrics().getProjectName());
 		if (null == dti.getProjectVersion()) dti.setProjectVersion(ad.getMetrics().getProjectVersion());
+		if (null == dti.getUploadDate()) dti.setUploadDate(ad.getMetrics().getUploadDate());
 		return dti;
 	}
 
