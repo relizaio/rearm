@@ -652,6 +652,44 @@
                     </n-modal>
                 </div>
             </n-tab-pane>
+            <n-tab-pane name="adminSettings" tab="Admin Settings" v-if="isOrgAdmin">
+                <div class="adminSettingsBlock mt-4">
+                    <h5>Violation Ignore Regexes</h5>
+                    <p class="text-muted">Configure regex patterns to ignore specific violations. Matching violations will be excluded from reports.</p>
+                    
+                    <n-form>
+                        <n-form-item label="License Violation Ignore Patterns">
+                            <n-dynamic-input
+                                v-model:value="ignoreViolation.licenseViolationRegexIgnore"
+                                placeholder="Enter regex pattern"
+                                :min="0"
+                            />
+                        </n-form-item>
+                        
+                        <n-form-item label="Security Violation Ignore Patterns">
+                            <n-dynamic-input
+                                v-model:value="ignoreViolation.securityViolationRegexIgnore"
+                                placeholder="Enter regex pattern"
+                                :min="0"
+                            />
+                        </n-form-item>
+                        
+                        <n-form-item label="Operational Violation Ignore Patterns">
+                            <n-dynamic-input
+                                v-model:value="ignoreViolation.operationalViolationRegexIgnore"
+                                placeholder="Enter regex pattern"
+                                :min="0"
+                            />
+                        </n-form-item>
+                        
+                        <n-space>
+                            <n-button type="primary" @click="saveIgnoreViolation" :loading="savingIgnoreViolation">
+                                Save Ignore Patterns
+                            </n-button>
+                        </n-space>
+                    </n-form>
+                </div>
+            </n-tab-pane>
             <n-tab-pane name="registry" tab="Registry" v-if="globalRegistryEnabled">
                 <div class="mt-4">
                     <h5>Organization Registry</h5>
@@ -794,6 +832,8 @@ async function loadTabSpecificData (tabName: string) {
         fetchApprovalPolicies()
     } else if (tabName === "perspectives") {
         loadPerspectives()
+    } else if (tabName === "adminSettings") {
+        loadIgnoreViolation()
     }
 }
 
@@ -833,6 +873,14 @@ const showAddComponentToPerspectiveModal = ref(false)
 const showAddProductToPerspectiveModal = ref(false)
 const selectedComponentToAdd: Ref<string> = ref('')
 const selectedProductToAdd: Ref<string> = ref('')
+
+// Admin Settings - Ignore Violation Regexes
+const ignoreViolation = reactive({
+    licenseViolationRegexIgnore: [] as string[],
+    securityViolationRegexIgnore: [] as string[],
+    operationalViolationRegexIgnore: [] as string[]
+})
+const savingIgnoreViolation = ref(false)
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
 const isGlobalAdmin = computed(() => myUser.value?.isGlobalAdmin === true)
@@ -2135,6 +2183,53 @@ async function createApp() {
         newappname.value = ''
         showCreateResourceGroupModal.value = false
         notify('success', 'Created', 'Successfully created resourceGroup ' + appObj.name)
+    }
+}
+
+async function loadIgnoreViolation() {
+    if (!myorg.value?.ignoreViolation) return
+    const iv = myorg.value.ignoreViolation
+    ignoreViolation.licenseViolationRegexIgnore = iv.licenseViolationRegexIgnore || []
+    ignoreViolation.securityViolationRegexIgnore = iv.securityViolationRegexIgnore || []
+    ignoreViolation.operationalViolationRegexIgnore = iv.operationalViolationRegexIgnore || []
+}
+
+async function saveIgnoreViolation() {
+    savingIgnoreViolation.value = true
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateOrganizationIgnoreViolation($orgUuid: ID!, $ignoreViolation: IgnoreViolationInput!) {
+                    updateOrganizationIgnoreViolation(orgUuid: $orgUuid, ignoreViolation: $ignoreViolation) {
+                        uuid
+                        ignoreViolation {
+                            licenseViolationRegexIgnore
+                            securityViolationRegexIgnore
+                            operationalViolationRegexIgnore
+                        }
+                    }
+                }`,
+            variables: {
+                orgUuid: orgResolved.value,
+                ignoreViolation: {
+                    licenseViolationRegexIgnore: ignoreViolation.licenseViolationRegexIgnore,
+                    securityViolationRegexIgnore: ignoreViolation.securityViolationRegexIgnore,
+                    operationalViolationRegexIgnore: ignoreViolation.operationalViolationRegexIgnore
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        const result = (resp.data as any)?.updateOrganizationIgnoreViolation
+        if (result) {
+            notify('success', 'Ignore Patterns Saved', 'Violation ignore patterns updated successfully.')
+        } else {
+            notify('warning', 'Save Warning', 'Save completed but no response received.')
+        }
+    } catch (err: any) {
+        notify('error', 'Save Failed', err.message || 'Failed to save violation ignore patterns.')
+    } finally {
+        savingIgnoreViolation.value = false
     }
 }
 

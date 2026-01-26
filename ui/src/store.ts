@@ -508,6 +508,11 @@ const storeObject : any = {
                                 terminology {
                                     featureSetLabel
                                 }
+                                ignoreViolation {
+                                    licenseViolationRegexIgnore
+                                    securityViolationRegexIgnore
+                                    operationalViolationRegexIgnore
+                                }
                             }
                         }`,
                     fetchPolicy: 'no-cache'
