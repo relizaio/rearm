@@ -1,6 +1,14 @@
 <template>
     <div class="findingsOverTimeChart">
-        <h3 class="chart-title">Findings Over Time</h3>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <h3 class="chart-title" style="margin: 0;">Findings Over Time</h3>
+            <vue-feather 
+                type="list" 
+                class="clickable icons"
+                title="View Organization Changelog"
+                @click="showOrgChangelogModal = true"
+            />
+        </div>
         <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
         <n-empty v-else-if="hasNoData" style="height: 220px;" :description="`No findings reported for the last ${props.daysBack} days`" size="large" />
         <div v-else id="findingsOverTimeVis"></div>
@@ -20,6 +28,17 @@
             :on-refresh-action="refreshAnalyticsForCurrentDate"
             @update:show="(val: boolean) => { if (!val) closeFindingsPerDayModal() }"
         />
+        <n-modal
+            v-model:show="showOrgChangelogModal"
+            preset="dialog"
+            :show-icon="false"
+            style="width: 90%"
+        >
+            <organization-changelog-view
+                :org-uuid="orgUuid"
+                :perspective-uuid="props.perspectiveUuid"
+            />
+        </n-modal>
     </div>
 </template>
 
@@ -33,12 +52,13 @@ export default {
 import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { NSkeleton, NEmpty, useNotification, NotificationType } from 'naive-ui'
+import { NSkeleton, NEmpty, NModal, useNotification, NotificationType } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { processMetricsData } from '@/utils/metrics'
 import * as vegaEmbed from 'vega-embed'
 import VulnerabilityModal from './VulnerabilityModal.vue'
+import OrganizationChangelogView from './OrganizationChangelogView.vue'
 
 const props = withDefaults(defineProps<{
     type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT' | 'PERSPECTIVE'
@@ -83,6 +103,7 @@ const hasNoData = ref(false)
 const findingsPerDayData: Ref<any[]> = ref([])
 const findingsPerDayLoading: Ref<boolean> = ref(false)
 const showFindingsPerDayModal: Ref<boolean> = ref(false)
+const showOrgChangelogModal: Ref<boolean> = ref(false)
 const directFindingsDate: Ref<string> = ref('')
 const directFindingsSeverity: Ref<string> = ref('')
 const directFindingsType: Ref<string> = ref('')

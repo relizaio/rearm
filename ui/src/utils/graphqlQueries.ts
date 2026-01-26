@@ -702,8 +702,7 @@ const CHANGES_GQL_DATA = `
     }
 `
 
-const CHANGELOG_GQL_DATA = `
-    ${COMPONENT_TITLE_GQL_DATA}
+const SBOM_CHANGES_GQL = `
     sbomChanges {
         added {
             purl
@@ -714,6 +713,9 @@ const CHANGELOG_GQL_DATA = `
             version
         }
     }
+`
+
+const FINDING_CHANGES_GQL = `
     findingChanges {
         appearedVulnerabilities {
             vulnId
@@ -826,6 +828,12 @@ const CHANGELOG_GQL_DATA = `
             netChange
         }
     }
+`
+
+const CHANGELOG_GQL_DATA = `
+    ${COMPONENT_TITLE_GQL_DATA}
+    ${SBOM_CHANGES_GQL}
+    ${FINDING_CHANGES_GQL}
     branches {
         uuid
         name
@@ -835,80 +843,8 @@ const CHANGELOG_GQL_DATA = `
             version
             lifecycle
             ${CHANGES_GQL_DATA}
-            sbomChanges {
-                added {
-                    purl
-                    version
-                }
-                removed {
-                    purl
-                    version
-                }
-            }
-            findingChanges {
-                appearedVulnerabilities {
-                    vulnId
-                    purl
-                    severity
-                    aliases {
-                        type
-                        aliasId
-                    }
-                }
-                resolvedVulnerabilities {
-                    vulnId
-                    purl
-                    severity
-                    aliases {
-                        type
-                        aliasId
-                    }
-                }
-                severityChangedVulnerabilities {
-                    vulnId
-                    purl
-                    severity
-                    aliases {
-                        type
-                        aliasId
-                    }
-                }
-                appearedViolations {
-                    type
-                    purl
-                    license
-                    violationDetails
-                }
-                resolvedViolations {
-                    type
-                    purl
-                    license
-                    violationDetails
-                }
-                appearedWeaknesses {
-                    cweId
-                    ruleId
-                    location
-                    severity
-                }
-                resolvedWeaknesses {
-                    cweId
-                    ruleId
-                    location
-                    severity
-                }
-                severityChangedWeaknesses {
-                    cweId
-                    ruleId
-                    location
-                    severity
-                }
-                summary {
-                    totalAppearedCount
-                    totalResolvedCount
-                    netChange
-                }
-            }
+            ${SBOM_CHANGES_GQL}
+            ${FINDING_CHANGES_GQL}
         }
         tickets {
             ticketSubject
@@ -928,79 +864,8 @@ const CHANGELOG_GQL_DATA = `
             uuid
             version
         }
-        sbomChanges {
-            added {
-                purl
-                version
-            }
-            removed {
-                purl
-                version
-            }
-        }
-        findingChanges {
-            appearedVulnerabilities {
-                vulnId
-                purl
-                severity
-                aliases {
-                    type
-                    aliasId
-                }
-            }
-            resolvedVulnerabilities {
-                vulnId
-                purl
-                severity
-            }
-            severityChangedVulnerabilities {
-                vulnId
-                purl
-                severity
-            }
-            appearedViolations {
-                type
-                purl
-                license
-                violationDetails
-            }
-            resolvedViolations {
-                type
-                purl
-                license
-            }
-            appearedWeaknesses {
-                cweId
-                ruleId
-                location
-                severity
-            }
-            resolvedWeaknesses {
-                cweId
-                ruleId
-                location
-                severity
-            }
-            severityChangedWeaknesses {
-                cweId
-                ruleId
-                location
-                severity
-            }
-            summary {
-                appearedVulnerabilitiesCount
-                resolvedVulnerabilitiesCount
-                severityChangedVulnerabilitiesCount
-                appearedViolationsCount
-                resolvedViolationsCount
-                appearedWeaknessesCount
-                resolvedWeaknessesCount
-                severityChangedWeaknessesCount
-                totalAppearedCount
-                totalResolvedCount
-                netChange
-            }
-        }
+        ${SBOM_CHANGES_GQL}
+        ${FINDING_CHANGES_GQL}
         branches {
             uuid
             name
@@ -1010,97 +875,13 @@ const CHANGELOG_GQL_DATA = `
                 version
                 lifecycle
                 ${CHANGES_GQL_DATA}
+                ${SBOM_CHANGES_GQL}
+                ${FINDING_CHANGES_GQL}
             }
             tickets {
                 ticketSubject
                 ${CHANGES_GQL_DATA}
             }
-        }
-        components {
-            uuid
-            name
-            org
-            sbomChanges {
-                added {
-                    purl
-                    version
-                }
-                removed {
-                    purl
-                    version
-                }
-            }
-            findingChanges {
-                appearedVulnerabilities {
-                    vulnId
-                    purl
-                    severity
-                    aliases {
-                        type
-                        aliasId
-                    }
-                }
-                resolvedVulnerabilities {
-                    vulnId
-                    purl
-                    severity
-                }
-                appearedViolations {
-                    type
-                    purl
-                    license
-                    violationDetails
-                }
-                resolvedViolations {
-                    type
-                    purl
-                    license
-                }
-                appearedWeaknesses {
-                    cweId
-                    ruleId
-                    location
-                    severity
-                }
-                resolvedWeaknesses {
-                    cweId
-                    ruleId
-                    location
-                    severity
-                }
-                summary {
-                    totalAppearedCount
-                    totalResolvedCount
-                    netChange
-                }
-            }
-            branches {
-                uuid
-                name
-                releases {
-                    uuid
-                    version
-                    lifecycle
-                    ${CHANGES_GQL_DATA}
-                }
-            }
-            releases {
-                uuid
-                version
-                lifecycle
-                ${CHANGES_GQL_DATA}
-            }
-        }
-    }
-    components {
-        ${COMPONENT_TITLE_GQL_DATA}
-        ${CHANGES_GQL_DATA}
-    }
-    components {
-        ${COMPONENT_TITLE_GQL_DATA}
-        tickets {
-            ticketSubject
-            ${CHANGES_GQL_DATA}
         }
     }
 `
@@ -1295,6 +1076,32 @@ const MARKETING_RELEASE_GQL_DATA = `
     }
 `
 
+const ORGANIZATION_CHANGELOG_GQL_DATA = `
+    uuid
+    name
+    org
+    components {
+        uuid
+        name
+        org
+        branches {
+            uuid
+            name
+            releases {
+                uuid
+                version
+                lifecycle
+                ${SBOM_CHANGES_GQL}
+                ${FINDING_CHANGES_GQL}
+            }
+            ${SBOM_CHANGES_GQL}
+            ${FINDING_CHANGES_GQL}
+        }
+    }
+    ${SBOM_CHANGES_GQL}
+    ${FINDING_CHANGES_GQL}
+`
+
 const USER_GQL_DATA = `
     uuid
     name
@@ -1333,6 +1140,7 @@ export default {
     BranchesGql: BRANCHES_GQL,
     BranchGqlMutate: BRANCH_GQL_MUTATE,
     ChangeLogGqlData: CHANGELOG_GQL_DATA,
+    OrganizationChangelogGqlData: ORGANIZATION_CHANGELOG_GQL_DATA,
     InstanceGql: INSTANCE_GQL,
     InstanceGqlData: INSTANCE_GQL_DATA,
     InstancesGql: INSTANCES_GQL,

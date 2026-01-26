@@ -93,6 +93,27 @@ async function fetchComponentChangeLog (params : any) {
     return response.data.getComponentChangeLog
 }
 
+async function fetchOrganizationChangelog (params : any) {
+    const response = await graphqlClient.query({
+        query: gql`
+            query FetchOrganizationChangelog($orgUuid: ID!, $perspectiveUuid: ID, $dateFrom: DateTime!, $dateTo: DateTime!, $aggregated: AggregationType!, $timeZone: String) {
+                organizationChangeLogByDate(orgUuid: $orgUuid, perspectiveUuid: $perspectiveUuid, dateFrom: $dateFrom, dateTo: $dateTo, aggregated: $aggregated, timeZone: $timeZone) {
+                    ${graphqlQueries.OrganizationChangelogGqlData}
+                }
+            }`,
+        variables: {
+            orgUuid: params.orgUuid,
+            perspectiveUuid: params.perspectiveUuid,
+            dateFrom: params.dateFrom,
+            dateTo: params.dateTo,
+            aggregated: params.aggregated,
+            timeZone: params.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        fetchPolicy: 'no-cache'
+    })
+    return response.data.organizationChangeLogByDate
+}
+
 function parseGraphQLError (err: string): string {
     return err.split(': ')[err.split(': ').length - 1]
 }
@@ -292,6 +313,7 @@ export default {
     deepCopy,
     fetchChangelogBetweenReleases,
     fetchComponentChangeLog,
+    fetchOrganizationChangelog,
     isAdmin,
     isWritable,
     linkifyCommit,

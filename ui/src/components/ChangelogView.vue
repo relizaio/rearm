@@ -2,66 +2,38 @@
     <div class="container">
         <h1 v-if="isRouterLink">Changelog</h1>
         <!-- Date-based component changelog -->
-        <div v-if="componentType === 'COMPONENT' && changelog && props.iscomponentchangelog">
-            <h2 v-if="changelog.org">
+        <div v-if="componentType === 'COMPONENT' && props.iscomponentchangelog">
+            <h2 v-if="changelog && changelog.org">
                 <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: changelog.org, compuuid: changelog.uuid }}">{{ changelog.name }}</router-link>
                 <span> - Component-wide Changes</span>
             </h2>
             
-            <!-- Date Range Picker -->
-            <div style="margin-top: 16px; margin-bottom: 16px;">
-                <n-space align="center">
-                    <span style="font-weight: 500;">Date Range:</span>
-                    <n-date-picker
-                        v-model:value="dateRange"
-                        type="daterange"
-                        clearable
-                        style="width: 300px;"
-                    />
-                    <n-button type="primary" @click="getAggregatedChangelog">Apply</n-button>
-                </n-space>
-            </div>
-            
-            <!-- Aggregation Toggle (Top Level - applies to all tabs) -->
-            <div v-if="changelog.branches && changelog.branches.length > 0" style="margin-bottom: 20px; padding: 16px; background: #f5f5f5; border-radius: 4px;">
-                <div style="display: flex; align-items: center; gap: 16px;">
-                    <span style="font-weight: 600;">Aggregation:</span>
-                    <n-radio-group v-model:value="aggregationType" name="aggregatetyperadiogroup">
-                        <n-radio-button
-                            v-for="abtn in aggregationTypes"
-                            :key="abtn.value"
-                            :value="abtn.value"
-                            :label="abtn.key"
-                        />
-                    </n-radio-group>
-                    <span style="color: #666; font-size: 0.9em; font-style: italic;">
-                        Applies to Code, SBOM, and Finding changes
-                    </span>
-                </div>
-            </div>
+            <ChangelogControls
+                v-model:dateRange="dateRange"
+                v-model:aggregationType="aggregationType"
+                :show-aggregation="changelog && changelog.branches && changelog.branches.length > 0"
+                @apply="getAggregatedChangelog"
+            />
             
             <n-tabs type="line" animated style="margin-top: 20px;">
-                <!-- Code Changes tab (if branches data available) -->
+                <!-- Code Changes tab -->
                 <n-tab-pane name="code" tab="📝 Code Changes">
-                    <div style="margin-bottom: 16px; max-width: 30%;">
-                        <n-form-item label="Filter By Severity:">
-                            <n-select v-model:value="selectedSeverity" :options="severityTypes" />
-                        </n-form-item>
+                    <SeverityFilter v-model:selectedSeverity="selectedSeverity" />
+                    
+                    <div v-if="!changelog || !changelog.branches || changelog.branches.length === 0" style="padding: 40px; text-align: center; color: #999;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">No code changes available for the selected date range</p>
+                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
                     </div>
+                    
                     <!-- AGGREGATED view for component-wide -->
-                    <div v-if="aggregationType === 'AGGREGATED'">
+                    <div v-else-if="aggregationType === 'AGGREGATED'">
                         <p style="margin-bottom: 10px; font-style: italic;">Aggregated across all active branches</p>
-                        <div v-if="changelog.branches && changelog.branches.length > 0">
-                            <div v-for="branch in changelog.branches" :key="branch.uuid">
-                                <h3>{{ branch.name }}</h3>
-                                <CodeChangesDisplay 
-                                    :changes="branch.changes" 
-                                    :selected-severity="selectedSeverity"
-                                />
-                            </div>
-                        </div>
-                        <div v-else style="padding: 20px; color: #999; font-style: italic;">
-                            No branches data available for aggregated view
+                        <div v-for="branch in changelog.branches" :key="branch.uuid">
+                            <h3>{{ branch.name }}</h3>
+                            <CodeChangesDisplay 
+                                :changes="branch.changes" 
+                                :selected-severity="selectedSeverity"
+                            />
                         </div>
                     </div>
                     
@@ -85,8 +57,13 @@
                 </n-tab-pane>
                 
                 <n-tab-pane name="sbom" tab="📦 SBOM Changes">
+                    <div v-if="!changelog || !changelog.branches || changelog.branches.length === 0" style="padding: 40px; text-align: center; color: #999;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">No SBOM changes available for the selected date range</p>
+                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
+                    </div>
+                    
                     <!-- NONE mode: Show per-release SBOM changes -->
-                    <div v-if="aggregationType === 'NONE'">
+                    <div v-else-if="aggregationType === 'NONE'">
                         <div v-for="branch in changelog.branches" :key="branch.uuid">
                             <h3>{{ branch.name }}</h3>
                             <div v-for="release in branch.releases" :key="release.uuid">
@@ -108,8 +85,13 @@
                 </n-tab-pane>
                 
                 <n-tab-pane name="vulnerabilities" tab="🔒 Finding Changes">
+                    <div v-if="!changelog || !changelog.branches || changelog.branches.length === 0" style="padding: 40px; text-align: center; color: #999;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">No finding changes available for the selected date range</p>
+                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
+                    </div>
+                    
                     <!-- NONE mode: Show per-release Finding changes -->
-                    <div v-if="aggregationType === 'NONE'">
+                    <div v-else-if="aggregationType === 'NONE'">
                         <div v-for="branch in changelog.branches" :key="branch.uuid">
                             <h3>{{ branch.name }}</h3>
                             <div v-for="release in branch.releases" :key="release.uuid">
@@ -142,31 +124,14 @@
                 <router-link :to="{ name: 'ReleaseView', params: {uuid: changelog.lastRelease.uuid}}">{{changelog.lastRelease.version}}</router-link>
             </h2>
             
-            <!-- Aggregation Toggle (Top Level - applies to all tabs) -->
-            <div style="margin-top: 20px; margin-bottom: 20px; padding: 16px; background: #f5f5f5; border-radius: 4px;">
-                <div style="display: flex; align-items: center; gap: 16px;">
-                    <span style="font-weight: 600;">Aggregation:</span>
-                    <n-radio-group v-model:value="aggregationType" name="aggregatetyperadiogroup">
-                        <n-radio-button
-                            v-for="abtn in aggregationTypes"
-                            :key="abtn.value"
-                            :value="abtn.value"
-                            :label="abtn.key"
-                        />
-                    </n-radio-group>
-                    <span style="color: #666; font-size: 0.9em; font-style: italic;">
-                        Applies to Code, SBOM, and Finding changes
-                    </span>
-                </div>
-            </div>
+            <ChangelogControls
+                v-model:aggregationType="aggregationType"
+                :show-date-picker="false"
+            />
             
             <n-tabs type="line" animated style="margin-top: 20px;">
                 <n-tab-pane name="code" tab="📝 Code Changes">
-                    <div style="margin-bottom: 16px; max-width: 30%;">
-                        <n-form-item label="Filter By Severity:">
-                            <n-select v-model:value="selectedSeverity" :options="severityTypes" />
-                        </n-form-item>
-                    </div>
+                    <SeverityFilter v-model:selectedSeverity="selectedSeverity" />
                     
                     <!-- NONE aggregation: per-release view -->
                     <div v-if="aggregationType === 'NONE'">
@@ -235,54 +200,31 @@
                 </n-tab-pane>
             </n-tabs>
         </div>
-        <div v-if="componentType === 'PRODUCT' && changelog && props.iscomponentchangelog">
-            <h2 v-if="changelog.org">
+        <div v-if="componentType === 'PRODUCT' && props.iscomponentchangelog">
+            <h2 v-if="changelog && changelog.org">
                 <router-link :to="{ name: 'ProductsOfOrg', params: {orguuid: changelog.org, compuuid: changelog.uuid }}">{{ changelog.name }}</router-link>
                 <span> - Product-wide Changes</span>
             </h2>
             
-            <!-- Date Range Picker -->
-            <div style="margin-top: 16px; margin-bottom: 16px;">
-                <n-space align="center">
-                    <span style="font-weight: 500;">Date Range:</span>
-                    <n-date-picker
-                        v-model:value="dateRange"
-                        type="daterange"
-                        clearable
-                        style="width: 300px;"
-                    />
-                    <n-button type="primary" @click="getAggregatedChangelog">Apply</n-button>
-                </n-space>
-            </div>
-            
-            <!-- Aggregation Toggle (Top Level - applies to all tabs) -->
-            <div style="margin-top: 20px; margin-bottom: 20px; padding: 16px; background: #f5f5f5; border-radius: 4px;">
-                <div style="display: flex; align-items: center; gap: 16px;">
-                    <span style="font-weight: 600;">Aggregation:</span>
-                    <n-radio-group v-model:value="aggregationType" name="aggregatetyperadiogroup">
-                        <n-radio-button
-                            v-for="abtn in aggregationTypes"
-                            :key="abtn.value"
-                            :value="abtn.value"
-                            :label="abtn.key"
-                        />
-                    </n-radio-group>
-                    <span style="color: #666; font-size: 0.9em; font-style: italic;">
-                        Applies to Component, SBOM, and Finding changes
-                    </span>
-                </div>
-            </div>
+            <ChangelogControls
+                v-model:dateRange="dateRange"
+                v-model:aggregationType="aggregationType"
+                :show-aggregation="true"
+                aggregation-hint="Applies to Component, SBOM, and Finding changes"
+                @apply="getAggregatedChangelog"
+            />
             
             <n-tabs type="line" animated style="margin-top: 20px;">
                 <n-tab-pane name="components" tab="📝 Component Changes">
-                    <div style="margin-bottom: 16px; max-width: 30%;">
-                        <n-form-item label="Filter By Severity:">
-                            <n-select v-model:value="selectedSeverity" :options="severityTypes" />
-                        </n-form-item>
+                    <SeverityFilter v-model:selectedSeverity="selectedSeverity" />
+                    
+                    <div v-if="!changelog || !changelog.components || changelog.components.length === 0" style="padding: 40px; text-align: center; color: #999;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">No component changes available for the selected date range</p>
+                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
                     </div>
                     
                     <!-- NONE aggregation: per-component, per-release view -->
-                    <div v-if="aggregationType === 'NONE'">
+                    <div v-else-if="aggregationType === 'NONE'">
                         <div v-for="component in changelog.components" :key="component.uuid">
                             <ComponentHeader 
                                 :org-uuid="component.org"
@@ -319,10 +261,11 @@
                                 :last-release="component.lastRelease"
                                 :branch-count="component.branches?.length"
                             />
-                            <ul>
+                            <ul v-if="component.branches && component.branches.length > 0">
                                 <li v-for="branch in component.branches" :key="branch.uuid">
                                     <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: component.org, compuuid: component.uuid, branchuuid: branch.uuid }}">{{ branch.name }}</router-link>
                                     <CodeChangesDisplay 
+                                        v-if="branch.changes && branch.changes.length > 0"
                                         :changes="branch.changes" 
                                         :selected-severity="selectedSeverity"
                                     />
@@ -359,8 +302,13 @@
                 </n-tab-pane>
                 
                 <n-tab-pane name="sbom" tab="📦 SBOM Changes">
+                    <div v-if="!changelog || !changelog.components || changelog.components.length === 0" style="padding: 40px; text-align: center; color: #999;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">No SBOM changes available for the selected date range</p>
+                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
+                    </div>
+                    
                     <!-- NONE mode: Show per-component SBOM changes -->
-                    <div v-if="aggregationType === 'NONE'">
+                    <div v-else-if="aggregationType === 'NONE'">
                         <div v-for="component in changelog.components" :key="component.uuid">
                             <ComponentHeader 
                                 :org-uuid="component.org"
@@ -381,8 +329,13 @@
                 </n-tab-pane>
                 
                 <n-tab-pane name="vulnerabilities" tab="🔒 Finding Changes">
+                    <div v-if="!changelog || !changelog.components || changelog.components.length === 0" style="padding: 40px; text-align: center; color: #999;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">No finding changes available for the selected date range</p>
+                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
+                    </div>
+                    
                     <!-- NONE mode: Show per-component Finding changes -->
-                    <div v-if="aggregationType === 'NONE'">
+                    <div v-else-if="aggregationType === 'NONE'">
                         <div v-for="component in changelog.components" :key="component.uuid">
                             <ComponentHeader 
                                 :org-uuid="component.org"
@@ -414,31 +367,16 @@
                 <router-link v-if="changelog.lastRelease" :to="{ name: 'ReleaseView', params: {uuid: changelog.lastRelease.uuid}}">{{changelog.lastRelease.version}}</router-link>
             </h2>
             
-            <!-- Aggregation Toggle (Top Level - applies to all tabs) -->
-            <div style="margin-top: 20px; margin-bottom: 20px; padding: 16px; background: #f5f5f5; border-radius: 4px;">
-                <div style="display: flex; align-items: center; gap: 16px;">
-                    <span style="font-weight: 600;">Aggregation:</span>
-                    <n-radio-group v-model:value="aggregationType" name="aggregatetyperadiogroup">
-                        <n-radio-button
-                            v-for="abtn in aggregationTypes"
-                            :key="abtn.value"
-                            :value="abtn.value"
-                            :label="abtn.key"
-                        />
-                    </n-radio-group>
-                    <span style="color: #666; font-size: 0.9em; font-style: italic;">
-                        Applies to Component, SBOM, and Finding changes
-                    </span>
-                </div>
-            </div>
+            <ChangelogControls
+                v-model:aggregationType="aggregationType"
+                :show-date-picker="false"
+                :show-aggregation="true"
+                aggregation-hint="Applies to Component, SBOM, and Finding changes"
+            />
             
             <n-tabs type="line" animated style="margin-top: 20px;">
                 <n-tab-pane name="components" tab="📝 Component Changes">
-                    <div style="margin-bottom: 16px; max-width: 30%;">
-                        <n-form-item label="Filter By Severity:">
-                            <n-select v-model:value="selectedSeverity" :options="severityTypes" />
-                        </n-form-item>
-                    </div>
+                    <SeverityFilter v-model:selectedSeverity="selectedSeverity" />
                     
                     <!-- NONE aggregation: per-component, per-release view -->
                     <div v-if="aggregationType === 'NONE'">
@@ -520,61 +458,21 @@
                     <!-- NONE mode: Show per-component SBOM changes -->
                     <div v-if="aggregationType === 'NONE'">
                         <div v-for="component in changelog.components" :key="component.uuid">
-                            <h3>
-                                <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: component.org, compuuid: component.uuid }}">{{ component.name }}</router-link>
-                                <span v-if="component.firstRelease && component.lastRelease">&nbsp;</span>
-                                <router-link v-if="component.firstRelease" :to="{ name: 'ReleaseView', params: {uuid: component.firstRelease.uuid}}">{{component.firstRelease.version}}</router-link>
-                                <span v-if="component.firstRelease && component.lastRelease"> - </span>
-                                <router-link v-if="component.lastRelease" :to="{ name: 'ReleaseView', params: {uuid: component.lastRelease.uuid}}">{{component.lastRelease.version}}</router-link>
-                            </h3>
-                            <div v-if="component.sbomChanges && (component.sbomChanges.added?.length > 0 || component.sbomChanges.removed?.length > 0)">
-                                <div v-if="component.sbomChanges.added?.length > 0">
-                                    <h5 style="color: #18a058;">✓ Added Components ({{ component.sbomChanges.added.length }})</h5>
-                                    <ul>
-                                        <li v-for="comp in component.sbomChanges.added" :key="comp.purl">
-                                            <strong>{{ comp.purl }}</strong> @ {{ comp.version }}
-                                        </li>
-                                    </ul>
-                                </div>
-                                <div v-if="component.sbomChanges.removed?.length > 0">
-                                    <h5 style="color: #d03050;">✗ Removed Components ({{ component.sbomChanges.removed.length }})</h5>
-                                    <ul>
-                                        <li v-for="comp in component.sbomChanges.removed" :key="comp.purl">
-                                            <strong>{{ comp.purl }}</strong> @ {{ comp.version }}
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-                            <div v-else style="padding: 10px; color: #999; font-style: italic;">
-                                No SBOM changes in this component
-                            </div>
+                            <ComponentHeader 
+                                :org-uuid="component.org"
+                                :component-uuid="component.uuid"
+                                :name="component.name"
+                                :first-release="component.firstRelease"
+                                :last-release="component.lastRelease"
+                            />
+                            <SbomChangesDisplay :sbom-changes="component.sbomChanges" />
                         </div>
                     </div>
                     
                     <!-- AGGREGATED mode: Show top-level aggregated changes -->
                     <div v-else-if="aggregationType === 'AGGREGATED'">
-                        <div v-if="changelog.sbomChanges && (changelog.sbomChanges.added?.length > 0 || changelog.sbomChanges.removed?.length > 0)">
-                            <p style="margin-bottom: 10px; font-style: italic;">Aggregated across all components in the product</p>
-                            <div v-if="changelog.sbomChanges.added?.length > 0">
-                                <h4 style="color: #18a058;">✓ Added Components ({{ changelog.sbomChanges.added.length }})</h4>
-                                <ul>
-                                    <li v-for="comp in changelog.sbomChanges.added" :key="comp.purl">
-                                        <strong>{{ comp.purl }}</strong> @ {{ comp.version }}
-                                    </li>
-                                </ul>
-                            </div>
-                            <div v-if="changelog.sbomChanges.removed?.length > 0">
-                                <h4 style="color: #d03050;">✗ Removed Components ({{ changelog.sbomChanges.removed.length }})</h4>
-                                <ul>
-                                    <li v-for="comp in changelog.sbomChanges.removed" :key="comp.purl">
-                                        <strong>{{ comp.purl }}</strong> @ {{ comp.version }}
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                        <div v-else style="padding: 20px; text-align: center; color: #999;">
-                            No SBOM changes detected
-                        </div>
+                        <p style="margin-bottom: 10px; font-style: italic;">Aggregated across all components in the product</p>
+                        <SbomChangesDisplay :sbom-changes="changelog.sbomChanges" />
                     </div>
                 </n-tab-pane>
                 
@@ -618,7 +516,9 @@ import {
     SbomChangesDisplay, 
     CodeChangesDisplay, 
     ReleaseHeader,
-    ComponentHeader 
+    ComponentHeader,
+    ChangelogControls,
+    SeverityFilter
 } from './changelog'
 
 async function getComponentChangelog (org: string, aggregationType: string, component?: string,
@@ -667,7 +567,7 @@ const props = defineProps<{
     iscomponentchangelog: boolean
 }>()
 
-const aggregationType : Ref<string> = ref('NONE')
+const aggregationType : Ref<string> = ref('AGGREGATED')
 const aggregationTypes = [
     { key: 'NONE', value: 'NONE' },
     { key: 'AGGREGATED', value: 'AGGREGATED' }
