@@ -217,6 +217,50 @@ public class OrganizationDataFetcher {
 		return organizationService.updateTerminology(orgUuid, featureSetLabel, wu);
 	}
 	
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "updateOrganizationIgnoreViolation")
+	public OrganizationData updateOrganizationIgnoreViolation(
+			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("ignoreViolation") Map<String, Object> ignoreViolation) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		
+		@SuppressWarnings("unchecked")
+		List<String> licenseViolationRegexIgnore = ignoreViolation != null ? 
+				(List<String>) ignoreViolation.get("licenseViolationRegexIgnore") : null;
+		@SuppressWarnings("unchecked")
+		List<String> securityViolationRegexIgnore = ignoreViolation != null ? 
+				(List<String>) ignoreViolation.get("securityViolationRegexIgnore") : null;
+		@SuppressWarnings("unchecked")
+		List<String> operationalViolationRegexIgnore = ignoreViolation != null ? 
+				(List<String>) ignoreViolation.get("operationalViolationRegexIgnore") : null;
+		
+		// Validate regex patterns
+		validateRegexPatterns(licenseViolationRegexIgnore, "licenseViolationRegexIgnore");
+		validateRegexPatterns(securityViolationRegexIgnore, "securityViolationRegexIgnore");
+		validateRegexPatterns(operationalViolationRegexIgnore, "operationalViolationRegexIgnore");
+		
+		return organizationService.updateIgnoreViolation(orgUuid, licenseViolationRegexIgnore, 
+				securityViolationRegexIgnore, operationalViolationRegexIgnore, wu);
+	}
+	
+	private void validateRegexPatterns(List<String> patterns, String fieldName) throws RelizaException {
+		if (patterns == null) {
+			return;
+		}
+		for (String pattern : patterns) {
+			try {
+				java.util.regex.Pattern.compile(pattern);
+			} catch (java.util.regex.PatternSyntaxException e) {
+				throw new RelizaException("Invalid regex pattern in " + fieldName + ": " + pattern + " - " + e.getMessage());
+			}
+		}
+	}
+	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "organizationChangeLogByDate")
 	public ComponentJsonDto organizationChangeLogByDate(

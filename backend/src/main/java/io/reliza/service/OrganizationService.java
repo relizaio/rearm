@@ -179,7 +179,7 @@ public class OrganizationService {
 		return oup;
 	}
 	
-	protected AuthorizationStatus isUserAuthorizedOrgWide(UserData ud, UUID org, CallType ct) {
+	public AuthorizationStatus isUserAuthorizedOrgWide(UserData ud, UUID org, CallType ct) {
 		AuthorizationStatus as = AuthorizationStatus.AUTHORIZED;
 		boolean authorized = false;
 		try {
@@ -394,6 +394,73 @@ public class OrganizationService {
 		} catch (Exception e) {
 			log.error("Exception when updating organization terminology", e);
 			throw new RuntimeException("Could not update organization terminology");
+		}
+	}
+
+	/**
+	 * Updates the ignore violation settings for an organization.
+	 * Validates that all provided patterns are valid Java regex.
+	 * 
+	 * @param orgUuid organization UUID
+	 * @param licenseViolationRegexIgnore list of regex patterns for license violations to ignore
+	 * @param securityViolationRegexIgnore list of regex patterns for security violations to ignore
+	 * @param operationalViolationRegexIgnore list of regex patterns for operational violations to ignore
+	 * @param wu who updated
+	 * @return updated OrganizationData
+	 */
+	@Transactional
+	public OrganizationData updateIgnoreViolation(@NonNull UUID orgUuid, 
+			List<String> licenseViolationRegexIgnore,
+			List<String> securityViolationRegexIgnore,
+			List<String> operationalViolationRegexIgnore,
+			@NonNull WhoUpdated wu) {
+		try {
+			OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
+					.orElseThrow(() -> new IllegalArgumentException("Organization not found: " + orgUuid));
+			
+			// Validate all regex patterns
+			validateRegexPatterns(licenseViolationRegexIgnore, "licenseViolationRegexIgnore");
+			validateRegexPatterns(securityViolationRegexIgnore, "securityViolationRegexIgnore");
+			validateRegexPatterns(operationalViolationRegexIgnore, "operationalViolationRegexIgnore");
+			
+			// Get or create ignoreViolation object
+			OrganizationData.IgnoreViolation ignoreViolation = od.getIgnoreViolation();
+			if (ignoreViolation == null) {
+				ignoreViolation = new OrganizationData.IgnoreViolation();
+			}
+			
+			// Set the lists (empty list if null)
+			ignoreViolation.setLicenseViolationRegexIgnore(
+					licenseViolationRegexIgnore != null ? licenseViolationRegexIgnore : new java.util.LinkedList<>());
+			ignoreViolation.setSecurityViolationRegexIgnore(
+					securityViolationRegexIgnore != null ? securityViolationRegexIgnore : new java.util.LinkedList<>());
+			ignoreViolation.setOperationalViolationRegexIgnore(
+					operationalViolationRegexIgnore != null ? operationalViolationRegexIgnore : new java.util.LinkedList<>());
+			
+			od.setIgnoreViolation(ignoreViolation);
+			
+			Organization org = getOrganizationService.getOrganization(orgUuid)
+					.orElseThrow(() -> new IllegalStateException("Organization entity not found: " + orgUuid));
+			Organization savedOrg = saveOrganization(org, Utils.dataToRecord(od), wu);
+			return OrganizationData.orgDataFromDbRecord(savedOrg);
+		} catch (IllegalArgumentException e) {
+			throw e;
+		} catch (Exception e) {
+			log.error("Exception when updating organization ignore violation settings", e);
+			throw new RuntimeException("Could not update organization ignore violation settings");
+		}
+	}
+
+	private void validateRegexPatterns(List<String> patterns, String fieldName) {
+		if (patterns == null) {
+			return;
+		}
+		for (String pattern : patterns) {
+			try {
+				java.util.regex.Pattern.compile(pattern);
+			} catch (java.util.regex.PatternSyntaxException e) {
+				throw new IllegalArgumentException("Invalid regex pattern in " + fieldName + ": " + pattern + " - " + e.getMessage());
+			}
 		}
 	}
 }

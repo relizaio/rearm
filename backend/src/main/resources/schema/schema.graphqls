@@ -156,6 +156,7 @@ type Mutation {
 	addApprovalRole(orgUuid: ID!, approvalRole: ApprovalRoleInput!): Organization
 	deleteApprovalRole(orgUuid: ID!, approvalRoleId: String!): Organization
 	updateOrganizationTerminology(orgUuid: ID!, terminology: TerminologyInput!): Organization
+	updateOrganizationIgnoreViolation(orgUuid: ID!, ignoreViolation: IgnoreViolationInput!): Organization
 	createApprovalEntry(approvalEntry: ApprovalEntryInput!): ApprovalEntry
 	archiveApprovalEntry(approvalEntryUuid: ID!): ApprovalEntry
 	createApprovalPolicy(approvalPolicy: ApprovalPolicyInput!): ApprovalPolicy
@@ -308,6 +309,7 @@ type Organization {
 	name: String
 	approvalRoles: [ApprovalRole]
 	terminology: Terminology
+	ignoreViolation: IgnoreViolation
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
@@ -315,6 +317,12 @@ type Organization {
 
 type Terminology {
 	featureSetLabel: String
+}
+
+type IgnoreViolation {
+	licenseViolationRegexIgnore: [String]
+	securityViolationRegexIgnore: [String]
+	operationalViolationRegexIgnore: [String]
 }
 
 type AdminOrganization {
@@ -1230,6 +1238,12 @@ input ApprovalRoleInput {
 
 input TerminologyInput {
 	featureSetLabel: String
+}
+
+input IgnoreViolationInput {
+	licenseViolationRegexIgnore: [String]
+	securityViolationRegexIgnore: [String]
+	operationalViolationRegexIgnore: [String]
 }
 
 input PermissionInput {

@@ -46,6 +46,17 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 			return new Terminology();
 		}
 	}
+
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class IgnoreViolation {
+		@JsonProperty
+		private List<String> licenseViolationRegexIgnore = new LinkedList<>();
+		@JsonProperty
+		private List<String> securityViolationRegexIgnore = new LinkedList<>();
+		@JsonProperty
+		private List<String> operationalViolationRegexIgnore = new LinkedList<>();
+	}
 	
 	public static class InvitedObject {
 		@JsonProperty(CommonVariables.SECRET_FIELD)
@@ -89,6 +100,9 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	private List<ApprovalRole> approvalRoles = new LinkedList<>();
 	@JsonProperty
 	private Terminology terminology;
+	@JsonProperty
+	private IgnoreViolation ignoreViolation;
+
 
 	public void removeInvitee(String email, UUID whoInvited){
 		boolean found = false;

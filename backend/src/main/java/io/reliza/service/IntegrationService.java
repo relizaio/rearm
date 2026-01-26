@@ -76,6 +76,7 @@ import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasType;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.dto.TriggerIntegrationInputDto;
+import io.reliza.model.OrganizationData;
 import io.reliza.repositories.IntegrationRepository;
 import lombok.Data;
 
@@ -102,6 +103,9 @@ public class IntegrationService {
 	@Autowired
 	@Lazy
 	private DTrackService dtrackService;
+	
+	@Autowired
+	private GetOrganizationService getOrganizationService;
 	
 	private static final Logger log = LoggerFactory.getLogger(IntegrationService.class);
 
@@ -652,7 +656,7 @@ public class IntegrationService {
 		List<VulnerabilityDto> vulnerabilityDetails = fetchDependencyTrackVulnerabilityDetails(
 				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid());
 		List<ViolationDto> violationDetails = fetchDependencyTrackViolationDetails(
-				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid());
+				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), ad.getOrg());
 		dti.setVulnerabilityDetails(vulnerabilityDetails);
 		dti.setViolationDetails(violationDetails);
 		vulnAnalysisService.processReleaseMetricsDto(ad.getOrg(), ad.getOrg(), AnalysisScope.ORG, dti);
@@ -711,14 +715,32 @@ public class IntegrationService {
 	}
 	
 	private List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid) throws JsonMappingException, JsonProcessingException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid) throws JsonMappingException, JsonProcessingException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject;
 		List<Object> violationDetailsRaw = executeDtrackPaginatedCall(baseUri, apiToken, "");
 		List<ViolationDto> violationDetails = new LinkedList<>();
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		final Set<FindingSourceDto> sources = Set.of(source);
+		
+		// Get ignore patterns from organization
+		OrganizationData.IgnoreViolation ignoreViolation = null;
+		Optional<OrganizationData> orgOpt = getOrganizationService.getOrganizationData(orgUuid);
+		if (orgOpt.isPresent()) {
+			ignoreViolation = orgOpt.get().getIgnoreViolation();
+		}
+		final OrganizationData.IgnoreViolation finalIgnoreViolation = ignoreViolation;
+		
 		violationDetailsRaw.forEach(vd -> {
 			DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
+			String purl = dvr.component().purl();
+			ViolationType violationType = dvr.type();
+			
+			// Check if this violation should be ignored based on purl regex patterns
+			if (shouldIgnoreViolation(purl, violationType, finalIgnoreViolation)) {
+				log.debug("Ignoring violation for purl {} of type {} based on org ignore patterns", purl, violationType);
+				return;
+			}
+			
 			String licenseId;
 			if (null != dvr.component().resolvedLicense()) {
 				licenseId = dvr.component().resolvedLicense().licenseId();
@@ -727,11 +749,41 @@ public class IntegrationService {
 			} else {
 				licenseId = "undetected";
 			}
-			ViolationDto vdto = new ViolationDto(dvr.component().purl(), dvr.type(),
+			ViolationDto vdto = new ViolationDto(purl, violationType,
 					licenseId, null, sources, null, null, ZonedDateTime.now());
 			violationDetails.add(vdto);
 		});
 		return violationDetails;
+	}
+	
+	private boolean shouldIgnoreViolation(String purl, ViolationType violationType, OrganizationData.IgnoreViolation ignoreViolation) {
+		if (ignoreViolation == null || purl == null) {
+			return false;
+		}
+		
+		List<String> patterns = null;
+		if (violationType == ViolationType.LICENSE) {
+			patterns = ignoreViolation.getLicenseViolationRegexIgnore();
+		} else if (violationType == ViolationType.SECURITY) {
+			patterns = ignoreViolation.getSecurityViolationRegexIgnore();
+		} else if (violationType == ViolationType.OPERATIONAL) {
+			patterns = ignoreViolation.getOperationalViolationRegexIgnore();
+		}
+		
+		if (patterns == null || patterns.isEmpty()) {
+			return false;
+		}
+		
+		for (String pattern : patterns) {
+			try {
+				if (java.util.regex.Pattern.compile(pattern).matcher(purl).matches()) {
+					return true;
+				}
+			} catch (java.util.regex.PatternSyntaxException e) {
+				log.warn("Invalid regex pattern in ignoreViolation: {}", pattern);
+			}
+		}
+		return false;
 	}
 	
 	public record ComponentPurlToDtrackProject (String purl, List<UUID> projects) {}
