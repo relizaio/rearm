@@ -3,6 +3,7 @@
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
             <h3 class="chart-title" style="margin: 0;">Findings Over Time</h3>
             <vue-feather 
+                v-if="props.type === 'ORGANIZATION'"
                 type="list" 
                 class="clickable icons"
                 title="View Organization Changelog"
