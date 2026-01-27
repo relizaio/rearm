@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, establishPurl, attachRebomToolToBom } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, establishPurl } from './bomProcessingService';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
 
@@ -135,9 +135,9 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     const processedBom = await processBomObj(jsonObj)
     await validateBom(processedBom)
     
-    // Attach rebom tool to the merged BOM
-    const finalBom = attachRebomToolToBom(processedBom)
-    return finalBom
+    // Note: rebom tool attachment is handled by addBom() during storage
+    // to ensure consistent behavior across all BOM types
+    return processedBom
 
   } catch (e) {
     logger.error({ err: e }, "Error During merge")

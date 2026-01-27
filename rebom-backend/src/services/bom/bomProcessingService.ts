@@ -261,17 +261,17 @@ export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, las
 export function createRebomToolObject(specVersion: string): any {
   const rebomTool: any = {
     type: "application",
-    name: "rebom",
+    name: "rearm",
     group: "io.reliza",
     version: process.env.npm_package_version,
     supplier: { name: "Reliza Incorporated" },
-    description: "Catalog of SBOMs",
+    description: "The evidence store for your entire supply chain",
     licenses: [
-      { license: { id: "MIT" } }
+      { license: { id: "AGPL-3.0-only" } }
     ],
     externalReferences: [
-      { url: "ssh://git@github.com/relizaio/rebom.git", type: "vcs" },
-      { url: "https://reliza.io", type: "website" }
+      { url: "ssh://git@github.com/relizaio/rearm.git", type: "vcs" },
+      { url: "https://rearmhq.com", type: "website" }
     ]
   };
   if (specVersion === '1.6' || specVersion === '1.7') {
