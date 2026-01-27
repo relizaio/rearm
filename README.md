@@ -39,7 +39,7 @@ ReARM was the first project that introduced the principles of [Product-Component
 
 ## ReARM Product Status Information
 - ReARM itself - General Availability
-- Transparency Exchange API (TEA) implementation - in the process of implementation of TEA Beta 1 - Public Alpha available on ReARM Demo Instance (see below for details)
+- Transparency Exchange API (TEA) implementation - in the process of implementation of TEA Beta 2 - Public Alpha available on ReARM Demo Instance (see below for details)
 
 ## Motivation
 ReARM is a xBOM management system that allows organizations to maintain compliance within various regulatory frameworks, including:
@@ -85,7 +85,7 @@ Creators of ReARM are part of [active contributors](https://github.com/CycloneDX
 
 A lot of core ReARM ideas are shared as a part of the TEA workgroup with permissive Open Source licensing.
 
-ReARM currently supports most of TEA Beta 1 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/index.html).
+ReARM currently supports most of TEA Beta 2 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/index.html).
 
 ## Related Projects
 - ReARM CLI: https://github.com/relizaio/rearm-cli - CLI tool to interact with ReARM for humans and automation bots
