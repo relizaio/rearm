@@ -1,15 +1,15 @@
 <template>
     <div class="findingsOverTimeChart">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+        <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
             <h3 class="chart-title" style="margin: 0;">Findings Over Time</h3>
             <vue-feather 
-                v-if="props.type === 'ORGANIZATION'"
                 type="list" 
                 class="clickable icons"
                 title="View Organization Changelog"
                 @click="showOrgChangelogModal = true"
             />
         </div>
+        <h3 v-else class="chart-title">Findings Over Time</h3>
         <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
         <n-empty v-else-if="hasNoData" style="height: 220px;" :description="`No findings reported for the last ${props.daysBack} days`" size="large" />
         <div v-else id="findingsOverTimeVis"></div>
