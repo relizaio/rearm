@@ -217,6 +217,8 @@ type Mutation {
 	
 	# DTrack
 	refreshDtrackProjects(orgUuid: ID!): Boolean
+	cleanupDtrackProjects(orgUuid: ID!): Boolean
+	recleanupDtrackProjects(orgUuid: ID!): Boolean
 }
 
 type EnrichmentTriggerResult {

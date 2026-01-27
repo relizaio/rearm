@@ -32,6 +32,7 @@ import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.Variant;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
+import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.DeliverableRepository;
 import io.reliza.repositories.ReleaseRepository;
@@ -385,6 +386,10 @@ public class DtrackCleanupQueryTest {
 		artifactData.setType(ArtifactData.ArtifactType.BOM);
 		artifactData.setBomFormat(ArtifactData.BomFormat.CYCLONEDX);
 		
+		// Set internalBom - required by LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG query
+		InternalBom internalBom = new InternalBom(UUID.randomUUID(), null);
+		artifactData.setInternalBom(internalBom);
+		
 		ArtifactData.DependencyTrackIntegration dti = new ArtifactData.DependencyTrackIntegration();
 		dti.setDependencyTrackProject(dtrackProjectId);
 		artifactData.setMetrics(dti);
@@ -504,8 +509,9 @@ public class DtrackCleanupQueryTest {
 		recordData.put("org", orgUuid.toString());
 		recordData.put("release", releaseUuid.toString());
 		
-		Map<String, Object> outboundDeliverables = new HashMap<>();
-		outboundDeliverables.put(deliverableUuid.toString(), true);
+		// outboundDeliverables must be an array of UUID strings, not a map
+		List<String> outboundDeliverables = new ArrayList<>();
+		outboundDeliverables.add(deliverableUuid.toString());
 		recordData.put("outboundDeliverables", outboundDeliverables);
 		
 		variant.setRecordData(recordData);

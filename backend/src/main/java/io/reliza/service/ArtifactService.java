@@ -210,7 +210,67 @@ public class ArtifactService {
 	}
 	
 	public List<String> findOrphanedDtrackProjects (UUID orgUuid) {
-		return repository.findOrphanedDtrackProjects(orgUuid.toString())
+		String orgUuidStr = orgUuid.toString();
+		
+		// Get all distinct dtrack projects for the org
+		List<String> allProjects = repository.listDistinctDtrackProjectsByOrg(orgUuidStr)
+			.stream()
+			.filter(StringUtils::isNotEmpty)
+			.distinct()
+			.toList();
+		
+		log.info("[DTRACK-CLEANUP] Found {} total dtrack projects for org {}", allProjects.size(), orgUuid);
+		
+		// Build 4 HashSets of active artifact UUIDs from each path
+		Set<String> activeReleaseArtifacts = new HashSet<>(
+			repository.listActiveReleaseArtifactUuids(orgUuidStr).stream()
+				.filter(StringUtils::isNotEmpty).toList());
+		log.info("[DTRACK-CLEANUP] Found {} active release artifacts", activeReleaseArtifacts.size());
+		
+		Set<String> activeSceArtifactsViaSourceCodeEntry = new HashSet<>(
+			repository.listActiveSceArtifactUuidsViaSourceCodeEntry(orgUuidStr).stream()
+				.filter(StringUtils::isNotEmpty).toList());
+		log.info("[DTRACK-CLEANUP] Found {} active SCE artifacts via sourceCodeEntry", activeSceArtifactsViaSourceCodeEntry.size());
+		
+		Set<String> activeSceArtifactsViaCommits = new HashSet<>(
+			repository.listActiveSceArtifactUuidsViaCommits(orgUuidStr).stream()
+				.filter(StringUtils::isNotEmpty).toList());
+		log.info("[DTRACK-CLEANUP] Found {} active SCE artifacts via commits", activeSceArtifactsViaCommits.size());
+		
+		Set<String> activeDeliverableArtifacts = new HashSet<>(
+			repository.listActiveDeliverableArtifactUuids(orgUuidStr).stream()
+				.filter(StringUtils::isNotEmpty).toList());
+		log.info("[DTRACK-CLEANUP] Found {} active deliverable artifacts", activeDeliverableArtifacts.size());
+		
+		// Filter out projects that have any artifact in any of the active sets
+		List<String> orphanedProjects = new ArrayList<>();
+		for (String project : allProjects) {
+			// Get all artifacts for this dtrack project
+			List<Artifact> projectArtifacts = repository.findArtifactsByDtrackProjectAndOrg(orgUuidStr, project);
+			
+			boolean isActive = false;
+			for (Artifact artifact : projectArtifacts) {
+				String artifactUuid = artifact.getUuid().toString();
+				if (activeReleaseArtifacts.contains(artifactUuid) ||
+					activeSceArtifactsViaSourceCodeEntry.contains(artifactUuid) ||
+					activeSceArtifactsViaCommits.contains(artifactUuid) ||
+					activeDeliverableArtifacts.contains(artifactUuid)) {
+					isActive = true;
+					break;
+				}
+			}
+			
+			if (!isActive) {
+				orphanedProjects.add(project);
+			}
+		}
+		
+		log.info("[DTRACK-CLEANUP] Found {} orphaned dtrack projects for org {}", orphanedProjects.size(), orgUuid);
+		return orphanedProjects;
+	}
+	
+	public List<String> findDeletedDtrackProjects(UUID orgUuid) {
+		return repository.listDistinctDeletedDtrackProjectsByOrg(orgUuid.toString())
 			.stream()
 			.filter(StringUtils::isNotEmpty)
 			.distinct()
@@ -792,10 +852,10 @@ public class ArtifactService {
 		
 		// Check for deduplication - if another artifact with same digest already has DTrack project
 		String bomDigest = bomMeta.bomDigest();
-		log.info("PSDEBUG: Checking deduplication for artifact {} with bomDigest {}", ad.getUuid(), bomDigest);
+		log.debug("Checking deduplication for artifact {} with bomDigest {}", ad.getUuid(), bomDigest);
 		if (StringUtils.isNotEmpty(bomDigest)) {
 			Optional<DependencyTrackUploadResult> deduplicatedResult = tryDtrackDeduplication(orgUuid, bomDigest, ad.getUuid());
-			log.info("PSDEBUG: Deduplication result for artifact {}: present={}", ad.getUuid(), deduplicatedResult.isPresent());
+			log.debug("Deduplication result for artifact {}: present={}", ad.getUuid(), deduplicatedResult.isPresent());
 			if (deduplicatedResult.isPresent()) {
 				// Reuse existing DTrack project
 				DependencyTrackUploadResult dtur = deduplicatedResult.get();
@@ -854,7 +914,7 @@ public class ArtifactService {
 	private Optional<DependencyTrackUploadResult> tryDtrackDeduplication(UUID orgUuid, String bomDigest, UUID currentArtifactUuid) {
 		Optional<Artifact> existingArtifact = sharedArtifactService.findArtifactByStoredDigest(orgUuid, bomDigest);
 		
-		log.info("PSDEBUG: tryDtrackDeduplication for artifact {} - found existing: {}", 
+		log.debug("tryDtrackDeduplication for artifact {} - found existing: {}", 
 			currentArtifactUuid, existingArtifact.isPresent());
 		
 		if (existingArtifact.isEmpty()) {
@@ -862,17 +922,17 @@ public class ArtifactService {
 		}
 		
 		ArtifactData existingAd = ArtifactData.dataFromRecord(existingArtifact.get());
-		log.info("PSDEBUG: Found existing artifact {} for deduplication check", existingAd.getUuid());
+		log.debug("Found existing artifact {} for deduplication check", existingAd.getUuid());
 		
 		// Don't deduplicate with self
 		if (existingAd.getUuid().equals(currentArtifactUuid)) {
-			log.info("PSDEBUG: Existing artifact is self, skipping");
+			log.debug("Existing artifact is self, skipping");
 			return Optional.empty();
 		}
 		
 		// Check if existing artifact has DTrack project
 		if (existingAd.getMetrics() == null || StringUtils.isEmpty(existingAd.getMetrics().getDependencyTrackProject())) {
-			log.info("PSDEBUG: Existing artifact {} has no DTrack project (metrics={}, dtrackProject={})", 
+			log.debug("Existing artifact {} has no DTrack project (metrics={}, dtrackProject={})", 
 				existingAd.getUuid(), 
 				existingAd.getMetrics() != null,
 				existingAd.getMetrics() != null ? existingAd.getMetrics().getDependencyTrackProject() : "null");

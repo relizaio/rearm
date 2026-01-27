@@ -150,4 +150,49 @@ public class IntegrationDataFetcher {
 		
 		return integrationService.searchDtrackComponentByPurlAndProjects(orgUuid, purl, dtrackProjects);
 	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "refreshDtrackProjects")
+	public Boolean refreshDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		// Verify user has admin access to the organization
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		
+		log.info("User {} initiated DTrack project refresh for organization {}", oud.get().getUuid(), orgUuid);
+		
+		artifactService.refreshDtrackProjects(orgUuid);
+		return true;
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "cleanupDtrackProjects")
+	public Boolean cleanupDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		// Verify user has admin access to the organization
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		
+		log.info("User {} initiated DTrack project cleanup for organization {}", oud.get().getUuid(), orgUuid);
+		
+		integrationService.cleanupArchivedDtrackProjectsAsync(orgUuid);
+		return true;
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "recleanupDtrackProjects")
+	public Boolean recleanupDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		// Verify user has admin access to the organization
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		
+		log.info("User {} initiated DTrack project recleanup for organization {}", oud.get().getUuid(), orgUuid);
+		
+		integrationService.recleanupDtrackProjectsAsync(orgUuid);
+		return true;
+	}
 }

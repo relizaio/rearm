@@ -40,9 +40,24 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	List<Artifact> findArtifactsByDtrackProjects(List<String> dtrackProjectIds);
 	
 	@Query(
-			value = VariableQueries.FIND_ORPHANED_DTRACK_PROJECTS,
+			value = VariableQueries.LIST_ACTIVE_RELEASE_ARTIFACT_UUIDS,
 			nativeQuery = true)
-	List<String> findOrphanedDtrackProjects(@Param("orgUuidAsString") String orgUuidAsString);
+	List<String> listActiveReleaseArtifactUuids(@Param("orgUuidAsString") String orgUuidAsString);
+	
+	@Query(
+			value = VariableQueries.LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_SOURCE_CODE_ENTRY,
+			nativeQuery = true)
+	List<String> listActiveSceArtifactUuidsViaSourceCodeEntry(@Param("orgUuidAsString") String orgUuidAsString);
+	
+	@Query(
+			value = VariableQueries.LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_COMMITS,
+			nativeQuery = true)
+	List<String> listActiveSceArtifactUuidsViaCommits(@Param("orgUuidAsString") String orgUuidAsString);
+	
+	@Query(
+			value = VariableQueries.LIST_ACTIVE_DELIVERABLE_ARTIFACT_UUIDS,
+			nativeQuery = true)
+	List<String> listActiveDeliverableArtifactUuids(@Param("orgUuidAsString") String orgUuidAsString);
 	
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_VULNERABILITY,
@@ -63,6 +78,11 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 			value = VariableQueries.LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG,
 			nativeQuery = true)
 	List<String> listDistinctDtrackProjectsByOrg(String orgUuidAsString);
+	
+	@Query(
+			value = VariableQueries.LIST_DISTINCT_DELETED_DTRACK_PROJECTS_BY_ORG,
+			nativeQuery = true)
+	List<String> listDistinctDeletedDtrackProjectsByOrg(String orgUuidAsString);
 	
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG,

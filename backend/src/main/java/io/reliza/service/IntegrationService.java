@@ -34,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -1319,6 +1320,11 @@ public class IntegrationService {
 	 * @param orgUuid Organization UUID
 	 * @return Cleanup result summary
 	 */
+	@Async
+	public void cleanupArchivedDtrackProjectsAsync(UUID orgUuid) {
+		cleanupArchivedDtrackProjects(orgUuid);
+	}
+	
 	@Transactional
 	public DtrackProjectCleanupResult cleanupArchivedDtrackProjects(UUID orgUuid) {
 		log.info("[DTRACK-CLEANUP] Starting cleanup for org {}", orgUuid);
@@ -1348,50 +1354,20 @@ public class IntegrationService {
 		List<String> deletedProjects = new ArrayList<>();
 		List<String> errors = new ArrayList<>();
 		
-		BatchDeleteResult batchResult = deleteDtrackProjectsBatch(dtrackIntegration, apiToken, orphanedProjectIds);
-		
-		if (batchResult.allSucceeded()) {
-			deletedProjects.addAll(orphanedProjectIds);
-			log.info("[DTRACK-CLEANUP] Batch delete succeeded for all {} projects", orphanedProjectIds.size());
-		} else if (batchResult.partialSuccess()) {
-			deletedProjects.addAll(batchResult.succeededProjects());
-			log.info("[DTRACK-CLEANUP] Batch delete partial success: {} succeeded, {} failed", 
-				batchResult.succeededProjects().size(), batchResult.failedProjects().size());
-			
-			// Only retry the failed projects
-			if (!batchResult.failedProjects().isEmpty()) {
-				log.info("[DTRACK-CLEANUP] Retrying {} failed projects individually", batchResult.failedProjects().size());
-				for (String projectId : batchResult.failedProjects()) {
-					try {
-						boolean deleted = deleteDtrackProject(dtrackIntegration, apiToken, projectId);
-						if (deleted) {
-							deletedProjects.add(projectId);
-						} else {
-							log.warn("[DTRACK-CLEANUP] Failed to delete project {} on retry", projectId);
-							errors.add("Failed to delete project " + projectId);
-						}
-					} catch (Exception ex) {
-						log.error("[DTRACK-CLEANUP] Error deleting project {}: {}", projectId, ex.getMessage());
-						errors.add("Error deleting project " + projectId + ": " + ex.getMessage());
-					}
+		// Delete projects one at a time
+		for (String projectId : orphanedProjectIds) {
+			try {
+				boolean deleted = deleteDtrackProject(dtrackIntegration, apiToken, projectId);
+				if (deleted) {
+					deletedProjects.add(projectId);
+					log.info("[DTRACK-CLEANUP] Successfully deleted project {}", projectId);
+				} else {
+					log.warn("[DTRACK-CLEANUP] Failed to delete project {}", projectId);
+					errors.add("Failed to delete project " + projectId);
 				}
-			}
-		} else {
-			// Complete failure - fall back to individual deletion for all
-			log.warn("[DTRACK-CLEANUP] Batch delete failed, falling back to individual deletions for {} projects", orphanedProjectIds.size());
-			for (String projectId : orphanedProjectIds) {
-				try {
-					boolean deleted = deleteDtrackProject(dtrackIntegration, apiToken, projectId);
-					if (deleted) {
-						deletedProjects.add(projectId);
-					} else {
-						log.warn("[DTRACK-CLEANUP] Failed to delete project {}", projectId);
-						errors.add("Failed to delete project " + projectId);
-					}
-				} catch (Exception ex) {
-					log.error("[DTRACK-CLEANUP] Error deleting project {}: {}", projectId, ex.getMessage());
-					errors.add("Error deleting project " + projectId + ": " + ex.getMessage());
-				}
+			} catch (Exception ex) {
+				log.warn("[DTRACK-CLEANUP] Error deleting project {}: {}", projectId, ex.getMessage());
+				errors.add("Error deleting project " + projectId + ": " + ex.getMessage());
 			}
 		}
 		
@@ -1407,6 +1383,55 @@ public class IntegrationService {
 			orgUuid, result.projectsEvaluated(), result.projectsDeleted(), result.projectsFailed());
 		
 		return result;
+	}
+	
+	/**
+	 * Re-cleanup DTrack projects that were previously marked as deleted but may still exist in DTrack.
+	 * This is useful for retrying deletions that failed due to network issues or other transient errors.
+	 */
+	@Async
+	public void recleanupDtrackProjectsAsync(UUID orgUuid) {
+		log.info("[DTRACK-RECLEANUP] Starting recleanup for org {}", orgUuid);
+		
+		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(
+			orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+		
+		if (oid.isEmpty()) {
+			log.debug("[DTRACK-RECLEANUP] No DTrack integration configured for org {}", orgUuid);
+			return;
+		}
+		
+		IntegrationData dtrackIntegration = oid.get();
+		String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
+		
+		List<String> deletedProjectIds = artifactService.findDeletedDtrackProjects(orgUuid);
+		log.info("[DTRACK-RECLEANUP] Found {} previously deleted projects for org {}", deletedProjectIds.size(), orgUuid);
+		
+		if (deletedProjectIds.isEmpty()) {
+			return;
+		}
+		
+		int successCount = 0;
+		int failCount = 0;
+		
+		for (String projectId : deletedProjectIds) {
+			try {
+				boolean deleted = deleteDtrackProject(dtrackIntegration, apiToken, projectId);
+				if (deleted) {
+					successCount++;
+					log.info("[DTRACK-RECLEANUP] Successfully deleted project {}", projectId);
+				} else {
+					failCount++;
+					log.warn("[DTRACK-RECLEANUP] Failed to delete project {}", projectId);
+				}
+			} catch (Exception ex) {
+				failCount++;
+				log.warn("[DTRACK-RECLEANUP] Error deleting project {}: {}", projectId, ex.getMessage());
+			}
+		}
+		
+		log.info("[DTRACK-RECLEANUP] Completed for org {}: total={}, deleted={}, failed={}", 
+			orgUuid, deletedProjectIds.size(), successCount, failCount);
 	}
 	
 	/**

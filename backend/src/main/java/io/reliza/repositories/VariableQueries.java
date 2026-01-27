@@ -229,6 +229,15 @@ class VariableQueries {
 				or a.record_data->'metrics'->>'dtrackProjectDeleted' = 'false')
 		""";
 	
+	protected static final String LIST_DISTINCT_DELETED_DTRACK_PROJECTS_BY_ORG = """
+			select distinct a.record_data->'metrics'->>'dependencyTrackProject' as dtrack_project
+			from rearm.artifacts a 
+			where a.record_data->>'org' = :orgUuidAsString
+			and a.record_data->'metrics'->>'dependencyTrackProject' is not null
+			and a.record_data->'metrics'->>'dependencyTrackProject' != ''
+			and a.record_data->'metrics'->>'dtrackProjectDeleted' = 'true'
+		""";
+	
 	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG = """
 			select * from rearm.artifacts a 
 			where a.record_data->>'org' = :orgUuidAsString
@@ -239,64 +248,45 @@ class VariableQueries {
 			order by a.record_data->'metrics'->>'uploadDate' desc nulls last
 		""";
 	
-	protected static final String FIND_ORPHANED_DTRACK_PROJECTS = """
-			WITH active_artifact_uuids AS (
-				-- Path 1: Artifacts used by active branches via direct release artifacts
-				SELECT DISTINCT jsonb_array_elements_text(r.record_data->'artifacts') as artifact_uuid
-				FROM rearm.releases r
-				JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-				WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
-				AND r.record_data->'artifacts' IS NOT NULL
-				
-				UNION
-			
-			-- Path 2a: Artifacts used by active branches via SCE artifacts (sourceCodeEntry)
+	protected static final String LIST_ACTIVE_RELEASE_ARTIFACT_UUIDS = """
+			SELECT DISTINCT jsonb_array_elements_text(r.record_data->'artifacts') as artifact_uuid
+			FROM rearm.releases r
+			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+			WHERE b.record_data->>'status' != 'ARCHIVED' 
+			AND b.record_data->>'org' = :orgUuidAsString
+			AND r.record_data->'artifacts' IS NOT NULL
+		""";
+	
+	protected static final String LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_SOURCE_CODE_ENTRY = """
 			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
 			FROM rearm.source_code_entries sce
 			JOIN rearm.releases r ON r.record_data->>'sourceCodeEntry' = sce.uuid::text
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
+			WHERE b.record_data->>'status' != 'ARCHIVED' 
+			AND b.record_data->>'org' = :orgUuidAsString
 			AND sce.record_data->'artifacts' IS NOT NULL
-			
-			UNION
-			
-			-- Path 2b: Artifacts used by active branches via SCE artifacts (commits array)
+		""";
+	
+	protected static final String LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_COMMITS = """
 			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
 			FROM rearm.source_code_entries sce
-			JOIN rearm.releases r ON jsonb_contains(r.record_data->'commits', jsonb_build_array(sce.uuid::text))
+			JOIN rearm.releases r ON r.record_data->>'commits' IS NOT NULL
+				AND sce.uuid::text IN (SELECT jsonb_array_elements_text(r.record_data->'commits'))
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
+			WHERE b.record_data->>'status' != 'ARCHIVED' 
+			AND b.record_data->>'org' = :orgUuidAsString
 			AND sce.record_data->'artifacts' IS NOT NULL
-			
-			UNION
-				
-				-- Path 3: Artifacts used by active branches via deliverable artifacts
+		""";
+	
+	protected static final String LIST_ACTIVE_DELIVERABLE_ARTIFACT_UUIDS = """
 			SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') as artifact_uuid
 			FROM rearm.deliverables d
-			JOIN rearm.variants v ON jsonb_exists(v.record_data->'outboundDeliverables', d.uuid::text)
+			JOIN rearm.variants v ON d.uuid::text IN (SELECT jsonb_array_elements_text(v.record_data->'outboundDeliverables'))
 			JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE b.record_data->>'status' != 'ARCHIVED' AND b.record_data->>'org' = :orgUuidAsString
+			WHERE b.record_data->>'status' != 'ARCHIVED' 
+			AND b.record_data->>'org' = :orgUuidAsString
 			AND d.record_data->'artifacts' IS NOT NULL
-			),
-			active_dtrack_projects AS (
-				SELECT DISTINCT a.record_data->'metrics'->>'dependencyTrackProject' as project_id
-				FROM rearm.artifacts a
-				WHERE a.record_data->>'org' = :orgUuidAsString
-				AND a.record_data->'metrics'->>'dependencyTrackProject' IS NOT NULL
-				AND a.record_data->'metrics'->>'dependencyTrackProject' != ''
-				AND a.uuid::text IN (SELECT artifact_uuid FROM active_artifact_uuids)
-			)
-			SELECT DISTINCT a.record_data->'metrics'->>'dependencyTrackProject' as project_id
-			FROM rearm.artifacts a
-			WHERE a.record_data->>'org' = :orgUuidAsString
-			AND a.record_data->'metrics'->>'dependencyTrackProject' IS NOT NULL
-			AND a.record_data->'metrics'->>'dependencyTrackProject' != ''
-			AND (a.record_data->'metrics'->>'dtrackProjectDeleted' IS NULL 
-				OR (a.record_data->'metrics'->>'dtrackProjectDeleted')::boolean = false)
-			AND a.record_data->'metrics'->>'dependencyTrackProject' NOT IN (
-				SELECT project_id FROM active_dtrack_projects WHERE project_id IS NOT NULL
-			)
 		""";
 	
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """

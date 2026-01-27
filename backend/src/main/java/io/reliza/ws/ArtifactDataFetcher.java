@@ -264,20 +264,5 @@ public class ArtifactDataFetcher {
 		
 		return rebomService.triggerEnrichment(ad.getInternalBom().id(), ad.getOrg());
 	}
-	
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "refreshDtrackProjects")
-	public Boolean refreshDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		
-		// Verify user has admin access to the organization
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
-		
-		log.info("User {} initiated DTrack project refresh for organization {}", oud.get().getUuid(), orgUuid);
-		
-		artifactService.refreshDtrackProjects(orgUuid);
-		return true;
-	}
 
 }
