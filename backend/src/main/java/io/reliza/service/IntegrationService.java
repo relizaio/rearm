@@ -915,6 +915,8 @@ public class IntegrationService {
 			String separator, int pageNumber, int pageSize) {
 		try {
 			URI dtrackUri = URI.create(baseUri + existingParams + separator + "pageNumber=" + pageNumber + "&pageSize=" + pageSize);
+			log.debug("Calling DTrack API page fetch: uri = {}", dtrackUri);
+			final long httpStartNs = System.nanoTime();
 			var resp = dtrackWebClient
 				.get()
 				.uri(dtrackUri)
@@ -929,6 +931,8 @@ public class IntegrationService {
 			}
 			@SuppressWarnings("unchecked")
 			List<Object> pageResults = Utils.OM.readValue(resp.getBody(), List.class);
+			log.debug("DTrack API page fetch completed: uri = {}, pageNumber = {}, pageSize = {}, httpMs = {}",
+				dtrackUri, pageNumber, pageSize, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - httpStartNs));
 			return pageResults;
 		} catch (Exception e) {
 			log.error("Error fetching DTrack page {} for uri = {}", pageNumber, baseUri, e);
