@@ -65,6 +65,9 @@
                                     <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Refresh D-Track Projects" @click="refreshDtrackProjects" style="margin-left: 8px; ">
                                         <Refresh />
                                     </n-icon>
+                                    <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Cleanup D-Track Projects" @click="cleanupDtrackProjects" style="margin-left: 8px; ">
+                                        <Clean />
+                                    </n-icon>
                                 </div>
                                 <div v-if="false" style="margin-top: 8px;">
                                     <n-button @click="syncDtrackStatus" :loading="syncingDtrackStatus" type="primary" size="small">
@@ -776,6 +779,7 @@ import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh } from '@vicons/tabler'
+import { Clean } from '@vicons/carbon'
 import { Info20Regular, Edit24Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -2254,6 +2258,30 @@ async function refreshDtrackProjects() {
         }
     } catch (err: any) {
         notify('error', 'D-Track Projects Refresh Failed', err.message || 'Failed to refresh Dependency-Track projects.')
+    }
+}
+
+async function cleanupDtrackProjects() {
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation cleanupDtrackProjects($orgUuid: ID!) {
+                    cleanupDtrackProjects(orgUuid: $orgUuid)
+                }`,
+            variables: {
+                orgUuid: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        const result = (resp.data as any)?.cleanupDtrackProjects
+        if (result) {
+            notify('success', 'D-Track Projects Cleanup', 'Successfully cleaned up Dependency-Track projects.')
+        } else {
+            notify('warning', 'D-Track Projects Cleanup', 'Cleanup completed but returned false.')
+        }
+    } catch (err: any) {
+        notify('error', 'D-Track Projects Cleanup Failed', err.message || 'Failed to cleanup Dependency-Track projects.')
     }
 }
 
