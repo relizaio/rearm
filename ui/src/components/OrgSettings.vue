@@ -68,6 +68,9 @@
                                     <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Cleanup D-Track Projects" @click="cleanupDtrackProjects" style="margin-left: 8px; ">
                                         <Clean />
                                     </n-icon>
+                                    <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Re-cleanup D-Track Projects" @click="recleanupDtrackProjects" style="margin-left: 8px; ">
+                                        <DeleteDismiss24Regular />
+                                    </n-icon>
                                 </div>
                                 <div v-if="false" style="margin-top: 8px;">
                                     <n-button @click="syncDtrackStatus" :loading="syncingDtrackStatus" type="primary" size="small">
@@ -780,7 +783,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh } from '@vicons/tabler'
 import { Clean } from '@vicons/carbon'
-import { Info20Regular, Edit24Regular } from '@vicons/fluent'
+import { Info20Regular, Edit24Regular, DeleteDismiss24Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import axios from '../utils/axios'
@@ -2282,6 +2285,30 @@ async function cleanupDtrackProjects() {
         }
     } catch (err: any) {
         notify('error', 'D-Track Projects Cleanup Failed', err.message || 'Failed to cleanup Dependency-Track projects.')
+    }
+}
+
+async function recleanupDtrackProjects() {
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation recleanupDtrackProjects($orgUuid: ID!) {
+                    recleanupDtrackProjects(orgUuid: $orgUuid)
+                }`,
+            variables: {
+                orgUuid: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        const result = (resp.data as any)?.recleanupDtrackProjects
+        if (result) {
+            notify('success', 'D-Track Projects Re-cleanup', 'Successfully re-cleaned up Dependency-Track projects.')
+        } else {
+            notify('warning', 'D-Track Projects Re-cleanup', 'Re-cleanup completed but returned false.')
+        }
+    } catch (err: any) {
+        notify('error', 'D-Track Projects Re-cleanup Failed', err.message || 'Failed to re-cleanup Dependency-Track projects.')
     }
 }
 
