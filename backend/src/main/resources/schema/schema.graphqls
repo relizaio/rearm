@@ -1489,7 +1489,20 @@ input AddArtifactInput {
 	release: ID
 	component: ID
 	version: String
-	artifacts: [ArtifactInput]
+	releaseArtifacts: [ArtifactInput]
+	deliverableArtifacts: [DeliverableArtifactInput]
+	sceArtifacts: [SceArtifactInput]
+}
+
+input DeliverableArtifactInput {
+	deliverable: ID!
+	variant: ID
+	artifacts: [ArtifactInput]!
+}
+
+input SceArtifactInput {
+	sce: ID!
+	artifacts: [ArtifactInput]!
 }
 input AddODeliverableInput {
 	release: ID
