@@ -283,8 +283,40 @@ export function createRebomToolObject(specVersion: string): any {
 }
 
 /**
+ * Checks if the rearm tool is already present in the BOM's metadata.tools.
+ * 
+ * @param finalBom - BOM to check
+ * @returns true if rearm tool is already present
+ */
+function hasRearmTool(finalBom: any): boolean {
+  const specVersion = finalBom.specVersion || '1.4';
+  const majorMinor = specVersion.split('.').slice(0, 2).join('.');
+  const isLegacyFormat = parseFloat(majorMinor) < 1.5;
+  
+  if (isLegacyFormat) {
+    // CycloneDX 1.4 and earlier: tools is an array
+    if (Array.isArray(finalBom.metadata?.tools)) {
+      return finalBom.metadata.tools.some((tool: any) => 
+        tool.name === 'rearm' && tool.group === 'io.reliza'
+      );
+    }
+  } else {
+    // CycloneDX 1.5+: tools is an object with components array
+    if (Array.isArray(finalBom.metadata?.tools?.components)) {
+      return finalBom.metadata.tools.components.some((tool: any) => 
+        tool.name === 'rearm' && tool.group === 'io.reliza'
+      );
+    }
+  }
+  return false;
+}
+
+/**
  * Attaches rebom tool information to a BOM's metadata.
  * This marks the BOM as having been processed by rebom.
+ * 
+ * This function is idempotent - if the rearm tool is already present,
+ * it will not be added again.
  * 
  * Handles both CycloneDX formats:
  * - 1.4 and earlier: metadata.tools is an array
@@ -294,6 +326,11 @@ export function createRebomToolObject(specVersion: string): any {
  * @returns BOM with rebom tool information added
  */
 export function attachRebomToolToBom(finalBom: any): any {
+  // Check if rearm tool is already present to prevent duplicates
+  if (hasRearmTool(finalBom)) {
+    return finalBom;
+  }
+  
   const rebomTool = createRebomToolObject(finalBom.specVersion);
   
   // Determine spec version to handle format differences

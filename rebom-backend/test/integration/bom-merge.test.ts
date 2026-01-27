@@ -117,7 +117,7 @@ describe('BOM Merge Operations', () => {
         expect(Array.isArray(mergedBom.metadata.tools.components)).toBe(true);
         
         // Verify rebom tool was added during merge
-        const rebomTool = mergedBom.metadata.tools.components.find((t: any) => t.name === 'rebom');
+        const rebomTool = mergedBom.metadata.tools.components.find((t: any) => t.name === 'rearm');
         expect(rebomTool).toBeDefined();
         expect(rebomTool.type).toBe('application');
         
@@ -432,7 +432,7 @@ describe('BOM Merge Operations', () => {
         expect(Array.isArray(mergedBom.metadata.tools.components)).toBe(true);
         
         // Verify rebom tool was added to tools.components
-        const rebomTool = mergedBom.metadata.tools.components.find((t: any) => t.name === 'rebom');
+        const rebomTool = mergedBom.metadata.tools.components.find((t: any) => t.name === 'rearm');
         expect(rebomTool).toBeDefined();
         expect(rebomTool.type).toBe('application');
         

@@ -215,7 +215,7 @@ describe('BOM Processing Service - Unit Tests', () => {
             
             expect(tool).toBeDefined();
             expect(tool.type).toBe('application');
-            expect(tool.name).toBe('rebom');
+            expect(tool.name).toBe('rearm');
             expect(tool.group).toBe('io.reliza');
             expect(tool.version).toBeDefined();
             
@@ -231,7 +231,7 @@ describe('BOM Processing Service - Unit Tests', () => {
             
             expect(tool).toBeDefined();
             expect(tool.type).toBe('application');
-            expect(tool.name).toBe('rebom');
+            expect(tool.name).toBe('rearm');
             
             // Spec 1.5 uses 'author' string
             expect(tool.author).toBe('Reliza Incorporated');
@@ -247,7 +247,7 @@ describe('BOM Processing Service - Unit Tests', () => {
             
             const websiteRef = tool.externalReferences.find((ref: any) => ref.type === 'website');
             expect(websiteRef).toBeDefined();
-            expect(websiteRef.url).toContain('reliza.io');
+            expect(websiteRef.url).toContain('rearmhq.com');
         });
     });
 
@@ -265,14 +265,14 @@ describe('BOM Processing Service - Unit Tests', () => {
             expect(bomWithTool.metadata.tools.components.length).toBe(originalToolCount + 1);
             
             // Find and validate rebom tool
-            const rebomTool = bomWithTool.metadata.tools.components.find((t: any) => t.name === 'rebom');
+            const rebomTool = bomWithTool.metadata.tools.components.find((t: any) => t.name === 'rearm');
             expect(rebomTool).toBeDefined();
             expect(rebomTool.type).toBe('application');
             expect(rebomTool.group).toBe('io.reliza');
-            expect(rebomTool.name).toBe('rebom');
+            expect(rebomTool.name).toBe('rearm');
             expect(rebomTool.version).toBeDefined();
             expect(rebomTool.supplier).toEqual({ name: 'Reliza Incorporated' });
-            expect(rebomTool.description).toBe('Catalog of SBOMs');
+            expect(rebomTool.description).toBe('The evidence store for your entire supply chain');
             
             // Validate spec 1.6 authors structure (array of objects with name and email)
             expect(rebomTool.authors).toBeDefined();
@@ -286,7 +286,7 @@ describe('BOM Processing Service - Unit Tests', () => {
             expect(Array.isArray(rebomTool.externalReferences)).toBe(true);
             const websiteRef = rebomTool.externalReferences.find((r: any) => r.type === 'website');
             expect(websiteRef).toBeDefined();
-            expect(websiteRef.url).toContain('reliza.io');
+            expect(websiteRef.url).toContain('rearmhq.com');
         });
 
         it('should preserve existing tools when adding rebom', () => {
@@ -309,7 +309,7 @@ describe('BOM Processing Service - Unit Tests', () => {
             });
             
             // Validate rebom tool is the new addition
-            const rebomTool = bomWithTool.metadata.tools.components.find((t: any) => t.name === 'rebom');
+            const rebomTool = bomWithTool.metadata.tools.components.find((t: any) => t.name === 'rearm');
             expect(rebomTool).toBeDefined();
         });
 
