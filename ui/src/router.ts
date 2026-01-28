@@ -49,6 +49,11 @@ const routes : any[] = [
         component: () => import('@/components/FindingsOverTimePage.vue')
     },
     {
+        path: '/releasesPerDay/:orguuid',
+        name: 'ReleasesPerDay',
+        component: () => import('@/components/ReleasesPerDayPage.vue')
+    },
+    {
         path: '/vulnerabilityAnalysis/:orguuid',
         name: 'VulnerabilityAnalysis',
         component: () => import('@/components/VulnerabilityAnalysis.vue')

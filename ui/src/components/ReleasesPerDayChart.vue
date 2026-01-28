@@ -1,6 +1,16 @@
 <template>
     <div class="releasesPerDayChart">
-        <h3 class="chart-title">Releases Per Day</h3>
+        <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; justify-content: space-between;">
+            <h3 class="chart-title" style="margin: 0;">Releases Per Day</h3>
+            <vue-feather 
+                v-if="props.showFullPageIcon"
+                type="maximize-2" 
+                class="clickable icons"
+                title="Open Full Page View"
+                @click="openFullPageView"
+            />
+        </div>
+        <h3 v-else class="chart-title">Releases Per Day</h3>
         <div class="charts">
             <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
             <n-empty v-else-if="hasNoData" style="height: 220px;" :description="`No releases added for the last ${props.daysBack} days`" size="large" />
@@ -51,12 +61,16 @@ const props = withDefaults(defineProps<{
     branchName?: string
     componentType?: string
     daysBack?: number
+    chartHeight?: number
+    showFullPageIcon?: boolean
 }>(), {
     daysBack: 60,
     perspectiveName: '',
     componentName: '',
     branchName: '',
-    componentType: ''
+    componentType: '',
+    chartHeight: 220,
+    showFullPageIcon: true
 })
 
 const store = useStore()
@@ -80,7 +94,7 @@ const releasesPerDayToDate = computed(() => route.query.toDate as string || '')
 const releaseVisData: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
-    height: 220,
+    height: props.chartHeight,
     width: 'container',
     data: {
         values: []
@@ -238,6 +252,11 @@ function closeReleasesModal() {
     if (window.location.search) {
         window.history.replaceState(window.history.state, '', window.location.pathname)
     }
+}
+
+function openFullPageView() {
+    const url = `/releasesPerDay/${orgUuid.value}`
+    window.open(url, '_blank')
 }
 
 function openReleasesModal(fromDate: string, toDate?: string) {
