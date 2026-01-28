@@ -344,7 +344,7 @@
                 </n-tab-pane>
                 <n-tab-pane name="history" tab="History">
                     <h3>Release History</h3>
-                    <n-data-table :columns="releaseHistoryFields" :data="release.updateEvents" class="table-hover" />
+                    <n-data-table :columns="releaseHistoryFields" :data="combinedHistoryEvents" class="table-hover" />
                     <h3>Approval History</h3>
                     <n-data-table :columns="approvalHistoryFields" :data="release.approvalEvents" class="table-hover" />
                 </n-tab-pane>
@@ -588,13 +588,93 @@ const myUser = store.getters.myuser
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
 const users: Ref<any[]> = ref([])
+const acollections: Ref<any[]> = ref([])
+const combinedHistoryEvents: Ref<any[]> = ref([])
+
 async function loadUsers() {
     if (release.value && release.value.orgDetails && release.value.orgDetails.uuid) {
         users.value = await store.dispatch('fetchUsers', release.value.orgDetails.uuid)
     }
 }
 
-function resolveUserById(uuid: string): string {
+async function loadAcollections() {
+    if (!release.value || !release.value.uuid) return
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query GetAcollectionsOfRelease($releaseUuid: ID!) {
+                    getAcollectionsOfRelease(releaseUuid: $releaseUuid) {
+                        uuid
+                        release
+                        org
+                        version
+                        updateReason
+                        updatedDate
+                        whoUpdated {
+                            createdType
+                            lastUpdatedBy
+                        }
+                    }
+                }
+            `,
+            variables: { releaseUuid: release.value.uuid },
+            fetchPolicy: 'no-cache'
+        })
+        acollections.value = response.data.getAcollectionsOfRelease || []
+        buildCombinedHistory()
+    } catch (e) {
+        console.error('Failed to fetch acollections:', e)
+    }
+}
+
+function buildCombinedHistory() {
+    const events: any[] = []
+    
+    // Add release update events, filtering out ARTIFACT scope
+    if (release.value && release.value.updateEvents) {
+        release.value.updateEvents.forEach((event: any) => {
+            if (event.rus !== 'ARTIFACT') {
+                events.push({
+                    date: event.date,
+                    rua: event.rua,
+                    rus: event.rus,
+                    objectId: event.objectId,
+                    wu: event.wu,
+                    source: 'release'
+                })
+            }
+        })
+    }
+    
+    // Add acollection events, filtering out INITIAL_RELEASE
+    acollections.value.forEach((ac: any) => {
+        if (ac.updateReason && ac.updateReason !== 'INITIAL_RELEASE') {
+            // Split updateReason by _ and take second part as action
+            const parts = ac.updateReason.split('_')
+            const action = parts.length > 1 ? parts.slice(1).join('_') : ac.updateReason
+            events.push({
+                date: ac.updatedDate,
+                rua: action,
+                rus: 'ARTIFACT',
+                objectId: ac.uuid,
+                wu: ac.whoUpdated,
+                source: 'acollection'
+            })
+        }
+    })
+    
+    // Sort by date descending
+    events.sort((a, b) => {
+        const dateA = new Date(a.date).getTime()
+        const dateB = new Date(b.date).getTime()
+        return dateB - dateA
+    })
+    
+    combinedHistoryEvents.value = events
+}
+
+function resolveUserById(uuid: string, createdType?: string): string {
+    if (createdType === 'AUTO') return 'System'
     if (!uuid || !users.value.length) return uuid
     const user = users.value.find((u: any) => u.uuid === uuid)
     if (user) {
@@ -2041,8 +2121,8 @@ const releaseHistoryFields = computed(() => [
         key: 'updatedBy',
         title: 'Updated By',
         render(row: any) {
-            if (row.wu && row.wu.lastUpdatedBy) {
-                return resolveUserById(row.wu.lastUpdatedBy)
+            if (row.wu) {
+                return resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType)
             }
         }
     },
@@ -2072,8 +2152,8 @@ const approvalHistoryFields = computed(() => [
         key: 'updatedBy',
         title: 'Updated By',
         render(row: any) {
-            if (row.wu && row.wu.lastUpdatedBy) {
-                return resolveUserById(row.wu.lastUpdatedBy)
+            if (row.wu) {
+                return resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType)
             }
         }
     },
@@ -3293,7 +3373,7 @@ async function handleTabSwitch(tabName: string) {
     if (tabName === "compare") {
         await fetchReleases()
     } else if (tabName === "history") {
-        await loadUsers()
+        await Promise.all([loadUsers(), loadAcollections()])
     }
 }
 
