@@ -879,7 +879,7 @@ public class ReleaseDatafetcher {
 		// Authorization
 		if (null == componentId) componentId = ord.get().getComponent();
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
-		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+		Optional<ComponentData> ocd = (componentId != null) ? getComponentService.getComponentData(componentId) : Optional.empty();
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
 		if (null != ro) {
@@ -898,124 +898,23 @@ public class ReleaseDatafetcher {
 			throw new RelizaException("At least one of 'releaseArtifacts', 'deliverableArtifacts', or 'sceArtifacts' must be provided");
 		}
 		
-		// Process release artifacts
+		// Delegate artifact processing to service layer
 		if (addArtifactInput.containsKey("releaseArtifacts")) {
 			@SuppressWarnings("unchecked")
 			List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) addArtifactInput.get("releaseArtifacts");
-			
-			if (null != artifactsList && !artifactsList.isEmpty()) {
-				String purl = null;
-				Optional<TeaIdentifier> purlId = Optional.empty();
-				if (null != ord.get().getIdentifiers()) {
-					purlId = ord.get().getIdentifiers().stream()
-						.filter(id -> id.getIdType() == TeaIdentifierType.PURL)
-						.findFirst();
-				}
-				if (purlId.isPresent()) purl = purlId.get().getIdValue();
-				
-				List<UUID> artIds = artifactService.uploadListOfArtifacts(
-					od, artifactsList,
-					new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, purl),
-					wu
-				);
-				
-				for (UUID artId : artIds) {
-					releaseService.addArtifact(artId, ord.get().getUuid(), wu);
-				}
-			}
+			releaseService.processReleaseArtifacts(artifactsList, ord.get(), cd, od, version, wu);
 		}
 		
-		// Process deliverable artifacts
 		if (addArtifactInput.containsKey("deliverableArtifacts")) {
 			@SuppressWarnings("unchecked")
 			List<Map<String,Object>> delArtsList = (List<Map<String,Object>>) addArtifactInput.get("deliverableArtifacts");
-			
-			if (null != delArtsList && !delArtsList.isEmpty()) {
-				for (Map<String,Object> delArts : delArtsList) {
-					String deliverableIdStr = (String) delArts.get("deliverable");
-					if (StringUtils.isEmpty(deliverableIdStr)) {
-						throw new RelizaException("'deliverable' field is required in deliverableArtifacts");
-					}
-					
-					UUID deliverableId = UUID.fromString(deliverableIdStr);
-					DeliverableData dd = getDeliverableService.getDeliverableData(deliverableId)
-						.orElseThrow(() -> new RelizaException("Deliverable not found: " + deliverableId));
-					
-					@SuppressWarnings("unchecked")
-					List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) delArts.get("artifacts");
-					if (null == artifactsList || artifactsList.isEmpty()) {
-						throw new RelizaException("'artifacts' list cannot be empty in deliverableArtifacts");
-					}
-					
-					String purl = null;
-					Optional<TeaIdentifier> purlId = Optional.empty();
-					if (null != dd.getIdentifiers()) {
-						purlId = dd.getIdentifiers().stream()
-							.filter(id -> id.getIdType() == TeaIdentifierType.PURL)
-							.findFirst();
-					}
-					if (purlId.isPresent()) purl = purlId.get().getIdValue();
-					
-					// Get digest from deliverable's software metadata if available
-					String hash = null;
-					if (null != dd.getSoftwareMetadata() && null != dd.getSoftwareMetadata().getDigestRecords() 
-							&& !dd.getSoftwareMetadata().getDigestRecords().isEmpty()) {
-						// Use first SHA256 digest if available
-						Optional<DigestRecord> sha256 = dd.getSoftwareMetadata().getDigestRecords().stream()
-							.filter(dr -> dr.algo() == TeaChecksumType.SHA_256)
-							.findFirst();
-						if (sha256.isPresent()) {
-							hash = sha256.get().digest();
-						}
-					}
-					
-					List<UUID> artIds = artifactService.uploadListOfArtifacts(
-						od, artifactsList,
-						new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, hash, StripBom.FALSE, purl),
-						wu
-					);
-					
-					for (UUID artId : artIds) {
-						deliverableService.addArtifact(deliverableId, artId, wu);
-					}
-				}
-			}
+			releaseService.processDeliverableArtifacts(delArtsList, cd, od, version, wu);
 		}
 		
-		// Process SCE artifacts
 		if (addArtifactInput.containsKey("sceArtifacts")) {
 			@SuppressWarnings("unchecked")
 			List<Map<String,Object>> sceArtsList = (List<Map<String,Object>>) addArtifactInput.get("sceArtifacts");
-			
-			if (null != sceArtsList && !sceArtsList.isEmpty()) {
-				for (Map<String,Object> sceArts : sceArtsList) {
-					String sceIdStr = (String) sceArts.get("sce");
-					if (StringUtils.isEmpty(sceIdStr)) {
-						throw new RelizaException("'sce' field is required in sceArtifacts");
-					}
-					
-					UUID sceUuid = UUID.fromString(sceIdStr);
-					SourceCodeEntryData sced = getSourceCodeEntryService.getSourceCodeEntryData(sceUuid)
-						.orElseThrow(() -> new RelizaException("Source Code Entry not found: " + sceUuid));
-					
-					@SuppressWarnings("unchecked")
-					List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) sceArts.get("artifacts");
-					if (null == artifactsList || artifactsList.isEmpty()) {
-						throw new RelizaException("'artifacts' list cannot be empty in sceArtifacts");
-					}
-					
-					List<UUID> artIds = artifactService.uploadListOfArtifacts(
-						od, artifactsList,
-						new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sced.getCommit(), StripBom.FALSE, null),
-						wu
-					);
-					
-					for (UUID artId : artIds) {
-						SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
-						sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
-					}
-				}
-			}
+			releaseService.processSceArtifacts(sceArtsList, cd, od, version, wu);
 		}
 		
 		// Reconcile merged SBOM

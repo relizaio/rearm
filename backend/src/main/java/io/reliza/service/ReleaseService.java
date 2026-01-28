@@ -57,6 +57,7 @@ import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ParentRelease;
@@ -82,6 +83,7 @@ import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
+import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaIdentifier;
@@ -1133,6 +1135,144 @@ public class ReleaseService {
 				added = true;			
 		}
 		return added;
+	}
+	
+	/**
+	 * Process and upload release artifacts, then attach them to the release
+	 */
+	@Transactional
+	public void processReleaseArtifacts(List<Map<String, Object>> artifactsList, ReleaseData rd, 
+			ComponentData cd, OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
+		if (null == artifactsList || artifactsList.isEmpty()) {
+			return;
+		}
+		
+		// Extract PURL from release identifiers
+		String purl = null;
+		if (null != rd.getIdentifiers()) {
+			Optional<TeaIdentifier> purlId = rd.getIdentifiers().stream()
+				.filter(id -> id.getIdType() == TeaIdentifierType.PURL)
+				.findFirst();
+			if (purlId.isPresent()) {
+				purl = purlId.get().getIdValue();
+			}
+		}
+		
+		// Upload artifacts
+		List<UUID> artIds = artifactService.uploadListOfArtifacts(
+			od, artifactsList,
+			new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, purl),
+			wu
+		);
+		
+		// Attach artifacts to release
+		for (UUID artId : artIds) {
+			addArtifact(artId, rd.getUuid(), wu);
+		}
+	}
+	
+	/**
+	 * Process and upload deliverable artifacts, then attach them to the deliverable
+	 */
+	@Transactional
+	public void processDeliverableArtifacts(List<Map<String, Object>> delArtsList, ComponentData cd, 
+			OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
+		if (null == delArtsList || delArtsList.isEmpty()) {
+			return;
+		}
+		
+		for (Map<String, Object> delArts : delArtsList) {
+			String deliverableIdStr = (String) delArts.get("deliverable");
+			if (StringUtils.isEmpty(deliverableIdStr)) {
+				throw new RelizaException("'deliverable' field is required in deliverableArtifacts");
+			}
+			
+			UUID deliverableId = UUID.fromString(deliverableIdStr);
+			DeliverableData dd = getDeliverableService.getDeliverableData(deliverableId)
+				.orElseThrow(() -> new RelizaException("Deliverable not found: " + deliverableId));
+			
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> artifactsList = (List<Map<String, Object>>) delArts.get("artifacts");
+			if (null == artifactsList || artifactsList.isEmpty()) {
+				throw new RelizaException("'artifacts' list cannot be empty in deliverableArtifacts");
+			}
+			
+			// Extract PURL from deliverable identifiers
+			String purl = null;
+			if (null != dd.getIdentifiers()) {
+				Optional<TeaIdentifier> purlId = dd.getIdentifiers().stream()
+					.filter(id -> id.getIdType() == TeaIdentifierType.PURL)
+					.findFirst();
+				if (purlId.isPresent()) {
+					purl = purlId.get().getIdValue();
+				}
+			}
+			
+			// Extract digest from deliverable's software metadata
+			String hash = null;
+			if (null != dd.getSoftwareMetadata() && null != dd.getSoftwareMetadata().getDigestRecords() 
+					&& !dd.getSoftwareMetadata().getDigestRecords().isEmpty()) {
+				Optional<DigestRecord> sha256 = dd.getSoftwareMetadata().getDigestRecords().stream()
+					.filter(dr -> dr.algo() == TeaChecksumType.SHA_256)
+					.findFirst();
+				if (sha256.isPresent()) {
+					hash = sha256.get().digest();
+				}
+			}
+			
+			// Upload artifacts
+			List<UUID> artIds = artifactService.uploadListOfArtifacts(
+				od, artifactsList,
+				new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, hash, StripBom.FALSE, purl),
+				wu
+			);
+			
+			// Attach artifacts to deliverable
+			for (UUID artId : artIds) {
+				deliverableService.addArtifact(deliverableId, artId, wu);
+			}
+		}
+	}
+	
+	/**
+	 * Process and upload SCE artifacts, then attach them to the source code entry
+	 */
+	@Transactional
+	public void processSceArtifacts(List<Map<String, Object>> sceArtsList, ComponentData cd, 
+			OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
+		if (null == sceArtsList || sceArtsList.isEmpty()) {
+			return;
+		}
+		
+		for (Map<String, Object> sceArts : sceArtsList) {
+			String sceIdStr = (String) sceArts.get("sce");
+			if (StringUtils.isEmpty(sceIdStr)) {
+				throw new RelizaException("'sce' field is required in sceArtifacts");
+			}
+			
+			UUID sceUuid = UUID.fromString(sceIdStr);
+			SourceCodeEntryData sced = getSourceCodeEntryService.getSourceCodeEntryData(sceUuid)
+				.orElseThrow(() -> new RelizaException("Source Code Entry not found: " + sceUuid));
+			
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> artifactsList = (List<Map<String, Object>>) sceArts.get("artifacts");
+			if (null == artifactsList || artifactsList.isEmpty()) {
+				throw new RelizaException("'artifacts' list cannot be empty in sceArtifacts");
+			}
+			
+			// Upload artifacts
+			List<UUID> artIds = artifactService.uploadListOfArtifacts(
+				od, artifactsList,
+				new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sced.getCommit(), StripBom.FALSE, null),
+				wu
+			);
+			
+			// Attach artifacts to SCE
+			for (UUID artId : artIds) {
+				SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
+				sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
+			}
+		}
 	}
 	@Transactional
 	public Boolean replaceArtifact(UUID replaceArtifactUuid ,UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
