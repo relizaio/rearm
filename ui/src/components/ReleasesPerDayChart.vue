@@ -1,14 +1,16 @@
 <template>
     <div class="releasesPerDayChart">
-        <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; justify-content: space-between;">
+        <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; gap: 8px;">
             <h3 class="chart-title" style="margin: 0;">Releases Per Day</h3>
-            <vue-feather 
+            <n-icon 
                 v-if="props.showFullPageIcon"
-                type="maximize-2" 
-                class="clickable icons"
+                class="clickable" 
+                size="20" 
                 title="Open Full Page View"
                 @click="openFullPageView"
-            />
+            >
+                <ArrowExpand20Regular />
+            </n-icon>
         </div>
         <h3 v-else class="chart-title">Releases Per Day</h3>
         <div class="charts">
@@ -44,11 +46,12 @@ export default {
 import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { NSkeleton, NEmpty } from 'naive-ui'
+import { NSkeleton, NEmpty, NIcon } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import * as vegaEmbed from 'vega-embed'
 import ReleasesByDateRange from './ReleasesByDateRange.vue'
+import { ArrowExpand20Regular } from '@vicons/fluent'
 
 const props = withDefaults(defineProps<{
     type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT' | 'PERSPECTIVE'

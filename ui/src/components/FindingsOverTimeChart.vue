@@ -1,22 +1,24 @@
 <template>
     <div class="findingsOverTimeChart">
-        <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; justify-content: space-between;">
+        <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; gap: 8px;">
             <h3 class="chart-title" style="margin: 0;">Findings Over Time</h3>
-            <div style="display: flex; gap: 8px;">
-                <vue-feather 
-                    v-if="props.showFullPageIcon"
-                    type="maximize-2" 
-                    class="clickable icons"
-                    title="Open Full Page View"
-                    @click="openFullPageView"
-                />
-                <vue-feather 
-                    type="list" 
-                    class="clickable icons"
-                    title="View Organization Changelog"
-                    @click="showOrgChangelogModal = true"
-                />
-            </div>
+            <n-icon 
+                v-if="props.showFullPageIcon"
+                class="clickable" 
+                size="20" 
+                title="Open Full Page View"
+                @click="openFullPageView"
+            >
+                <ArrowExpand20Regular />
+            </n-icon>
+            <n-icon 
+                class="clickable" 
+                size="20" 
+                title="View Organization Changelog"
+                @click="showOrgChangelogModal = true"
+            >
+                <AppsList20Regular />
+            </n-icon>
         </div>
         <h3 v-else class="chart-title">Findings Over Time</h3>
         <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
@@ -70,6 +72,8 @@ import constants from '@/utils/constants'
 import * as vegaEmbed from 'vega-embed'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 import OrganizationChangelogView from './OrganizationChangelogView.vue'
+import { AppsList20Regular, ArrowExpand20Regular } from '@vicons/fluent'
+import { NIcon } from 'naive-ui'
 
 const props = withDefaults(defineProps<{
     type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT' | 'PERSPECTIVE'
