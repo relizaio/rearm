@@ -587,6 +587,22 @@ const notify = async function (type: NotificationType, title: string, content: s
 const myUser = store.getters.myuser
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
+const users: Ref<any[]> = ref([])
+async function loadUsers() {
+    if (release.value && release.value.orgDetails && release.value.orgDetails.uuid) {
+        users.value = await store.dispatch('fetchUsers', release.value.orgDetails.uuid)
+    }
+}
+
+function resolveUserById(uuid: string): string {
+    if (!uuid || !users.value.length) return uuid
+    const user = users.value.find((u: any) => u.uuid === uuid)
+    if (user) {
+        return user.email ? `${user.name} <${user.email}>` : user.name
+    }
+    return "API Key ID: " + uuid
+}
+
 const copyToClipboard = async function (text: string) {
     try {
         navigator.clipboard.writeText(text);
@@ -2013,7 +2029,7 @@ const releaseTagsFields: any[] = [
     }
 ]
 
-const releaseHistoryFields: any[] = [
+const releaseHistoryFields = computed(() => [
     {
         key: 'date',
         title: 'Date',
@@ -2026,24 +2042,7 @@ const releaseHistoryFields: any[] = [
         title: 'Updated By',
         render(row: any) {
             if (row.wu && row.wu.lastUpdatedBy) {
-                return h(
-                    NTooltip,
-                    {
-                        trigger: 'hover'
-                    }, 
-                    {
-                        trigger: () => {
-                            return h(
-                                NIcon,
-                                {
-                                    class: 'icons',
-                                    size: 25
-                                }, () => h(Info24Regular)
-                            )
-                        },
-                        default: () => row.wu.lastUpdatedBy
-                    }
-                )
+                return resolveUserById(row.wu.lastUpdatedBy)
             }
         }
     },
@@ -2059,9 +2058,9 @@ const releaseHistoryFields: any[] = [
         key: 'objectId',
         title: 'Object ID'
     }
-]
+])
 
-const approvalHistoryFields: any[] = [
+const approvalHistoryFields = computed(() => [
     {
         key: 'date',
         title: 'Date',
@@ -2074,24 +2073,7 @@ const approvalHistoryFields: any[] = [
         title: 'Updated By',
         render(row: any) {
             if (row.wu && row.wu.lastUpdatedBy) {
-                return h(
-                    NTooltip,
-                    {
-                        trigger: 'hover'
-                    }, 
-                    {
-                        trigger: () => {
-                            return h(
-                                NIcon,
-                                {
-                                    class: 'icons',
-                                    size: 25
-                                }, () => h(Info24Regular)
-                            )
-                        },
-                        default: () => row.wu.lastUpdatedBy
-                    }
-                )
+                return resolveUserById(row.wu.lastUpdatedBy)
             }
         }
     },
@@ -2107,7 +2089,7 @@ const approvalHistoryFields: any[] = [
         key: 'state',
         title: 'Approval State'
     }
-]
+])
 
 async function deleteTag (key: string) {
     updatedRelease.value.tags = updatedRelease.value.tags.filter((t: any) => (t.key !== key))
@@ -3310,6 +3292,8 @@ async function triggerEnrichment (artifact: string) {
 async function handleTabSwitch(tabName: string) {
     if (tabName === "compare") {
         await fetchReleases()
+    } else if (tabName === "history") {
+        await loadUsers()
     }
 }
 
