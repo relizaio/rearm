@@ -610,6 +610,24 @@ async function loadAcollections() {
                         version
                         updateReason
                         updatedDate
+                        artifacts {
+                            artifactUuid
+                            version
+                            type
+                            artifactDetails {
+                                uuid
+                                type
+                                specVersion
+                                serializationFormat
+                                bomFormat
+                                displayIdentifier
+                                version
+                                tags { key value }
+                                digestRecords { algo digest scope }
+                                downloadLinks { uri content }
+                                notes
+                            }
+                        }
                         whoUpdated {
                             createdType
                             lastUpdatedBy
@@ -646,22 +664,66 @@ function buildCombinedHistory() {
         })
     }
     
-    // Add acollection events, filtering out INITIAL_RELEASE
-    acollections.value.forEach((ac: any) => {
-        if (ac.updateReason && ac.updateReason !== 'INITIAL_RELEASE') {
-            // Split updateReason by _ and take second part as action
-            const parts = ac.updateReason.split('_')
-            const action = parts.length > 1 ? parts.slice(1).join('_') : ac.updateReason
-            events.push({
-                date: ac.updatedDate,
-                rua: action,
-                rus: 'ARTIFACT',
-                objectId: ac.uuid,
-                wu: ac.whoUpdated,
-                source: 'acollection'
-            })
-        }
-    })
+    // Sort acollections by version to compare consecutive ones
+    const sortedAcollections = [...acollections.value].sort((a, b) => a.version - b.version)
+    
+    // Compare consecutive acollections to find artifact changes
+    for (let i = 1; i < sortedAcollections.length; i++) {
+        const prevAc = sortedAcollections[i - 1]
+        const currAc = sortedAcollections[i]
+        
+        if (currAc.updateReason === 'INITIAL_RELEASE') continue
+        
+        const prevArtifacts = prevAc.artifacts || []
+        const currArtifacts = currAc.artifacts || []
+        
+        // Create maps for easy lookup
+        const prevMap = new Map(prevArtifacts.map((a: any) => [a.artifactUuid, a]))
+        const currMap = new Map(currArtifacts.map((a: any) => [a.artifactUuid, a]))
+        
+        // Find added artifacts (in current but not in previous)
+        currArtifacts.forEach((art: any) => {
+            if (!prevMap.has(art.artifactUuid)) {
+                events.push({
+                    date: currAc.updatedDate,
+                    rua: 'ADDED',
+                    rus: 'ARTIFACT',
+                    artifact: art,
+                    wu: currAc.whoUpdated,
+                    source: 'acollection'
+                })
+            }
+        })
+        
+        // Find removed artifacts (in previous but not in current)
+        prevArtifacts.forEach((art: any) => {
+            if (!currMap.has(art.artifactUuid)) {
+                events.push({
+                    date: currAc.updatedDate,
+                    rua: 'REMOVED',
+                    rus: 'ARTIFACT',
+                    artifact: art,
+                    wu: currAc.whoUpdated,
+                    source: 'acollection'
+                })
+            }
+        })
+        
+        // Find updated artifacts (same UUID but different version)
+        currArtifacts.forEach((art: any) => {
+            const prevArt = prevMap.get(art.artifactUuid)
+            if (prevArt && prevArt.version !== art.version) {
+                events.push({
+                    date: currAc.updatedDate,
+                    rua: 'UPDATED',
+                    rus: 'ARTIFACT',
+                    artifact: art,
+                    wu: currAc.whoUpdated,
+                    source: 'acollection'
+                })
+            }
+        })
+    }
     
     // Sort by date descending
     events.sort((a, b) => {
@@ -2136,7 +2198,45 @@ const releaseHistoryFields = computed(() => [
     },
     {
         key: 'objectId',
-        title: 'Object ID'
+        title: 'Object',
+        render: (row: any) => {
+            // For artifact events from acollections, show type with info icon
+            if (row.source === 'acollection' && row.artifact) {
+                const art = row.artifact.artifactDetails || row.artifact
+                let typeContent = art.type || row.artifact.type
+                if (art.specVersion && art.serializationFormat) {
+                    typeContent += ` - ${commonFunctions.formatSpecVersion(art.specVersion)} (${art.serializationFormat})`
+                } else if (art.type === 'BOM' && art.bomFormat) {
+                    typeContent += ` - ${art.bomFormat}`
+                }
+                
+                // Build facts content
+                const factContent: any[] = []
+                factContent.push(h('li', h('span', [`UUID: ${art.uuid || row.artifact.artifactUuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(art.uuid || row.artifact.artifactUuid) })])))
+                factContent.push(h('li', `Belongs To: Release`))
+                if (art.tags && art.tags.length) art.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
+                if (art.displayIdentifier) factContent.push(h('li', `Display ID: ${art.displayIdentifier}`))
+                if (art.version) factContent.push(h('li', `Version: ${art.version}`))
+                if (art.digestRecords && art.digestRecords.length) art.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
+                if (art.downloadLinks && art.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', art.downloadLinks.map((dl: any) => h('li', `${dl.content}: ${dl.uri}`))))
+                if (art.notes && art.notes.length) factContent.push(h('li', `notes: ${art.notes}`))
+                
+                return h('div', { style: 'display: flex; align-items: center; gap: 5px;' }, [
+                    h('span', typeContent),
+                    h(NTooltip, {
+                        trigger: 'hover'
+                    }, {
+                        trigger: () => h(NIcon, {
+                            class: 'icons',
+                            size: 20
+                        }, () => h(Info20Regular)),
+                        default: () => h('ul', { style: 'list-style: none; padding: 0; margin: 0;' }, factContent)
+                    })
+                ])
+            }
+            // For regular release events, show objectId as before
+            return row.objectId
+        }
     }
 ])
 
