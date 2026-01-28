@@ -80,7 +80,6 @@ const releasesPerDayToDate = computed(() => route.query.toDate as string || '')
 const releaseVisData: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
-    title: 'Releases Per Day',
     height: 220,
     width: 'container',
     data: {

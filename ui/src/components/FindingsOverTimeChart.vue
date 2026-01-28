@@ -261,7 +261,6 @@ const FINDINGS_FIELDS = `
 const analyticsMetrics: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
-    title: 'Findings Over Time',
     height: 220,
     width: 'container',
     data: {
