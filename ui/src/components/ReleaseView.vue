@@ -626,6 +626,7 @@ async function loadAcollections() {
                                 digestRecords { algo digest scope }
                                 downloadLinks { uri content }
                                 notes
+                                internalBom { id belongsTo }
                             }
                         }
                         whoUpdated {
@@ -2213,7 +2214,13 @@ const releaseHistoryFields = computed(() => [
                 // Build facts content
                 const factContent: any[] = []
                 factContent.push(h('li', h('span', [`UUID: ${art.uuid || row.artifact.artifactUuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(art.uuid || row.artifact.artifactUuid) })])))
-                factContent.push(h('li', `Belongs To: Release`))
+                if (art.internalBom && art.internalBom.belongsTo) {
+                    let belongsToDisplay = art.internalBom.belongsTo
+                    if (belongsToDisplay === 'RELEASE') belongsToDisplay = 'Release'
+                    else if (belongsToDisplay === 'SCE') belongsToDisplay = 'Source Code Entry'
+                    else if (belongsToDisplay === 'DELIVERABLE') belongsToDisplay = 'Deliverable'
+                    factContent.push(h('li', h('span', `Belongs To: ${belongsToDisplay}`)))
+                }
                 if (art.tags && art.tags.length) art.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
                 if (art.displayIdentifier) factContent.push(h('li', `Display ID: ${art.displayIdentifier}`))
                 if (art.version) factContent.push(h('li', `Version: ${art.version}`))
