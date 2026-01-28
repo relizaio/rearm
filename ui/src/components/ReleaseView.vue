@@ -2016,7 +2016,10 @@ const releaseTagsFields: any[] = [
 const releaseHistoryFields: any[] = [
     {
         key: 'date',
-        title: 'Date'
+        title: 'Date',
+        render: (row: any) => {
+            if (row.date) return (new Date(row.date)).toLocaleString('en-CA')
+        }
     },
     {
         key: 'updatedBy',
@@ -2061,7 +2064,10 @@ const releaseHistoryFields: any[] = [
 const approvalHistoryFields: any[] = [
     {
         key: 'date',
-        title: 'Date'
+        title: 'Date',
+        render: (row: any) => {
+            if (row.date) return (new Date(row.date)).toLocaleString('en-CA')
+        }
     },
     {
         key: 'updatedBy',
