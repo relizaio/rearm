@@ -1,5 +1,27 @@
 const EXTERNAL_PUBLIC_COMPONENTS_ORG = '00000000-0000-0000-0000-000000000000'
 
+// Vulnerability severity colors
+const VULNERABILITY_COLORS = {
+    CRITICAL: '#f86c6b',
+    HIGH: '#fd8c00',
+    MEDIUM: '#ffc107',
+    LOW: '#4dbd74',
+    UNASSIGNED: '#777'
+}
+
+// Violation type colors
+const VIOLATION_COLORS = {
+    LICENSE: 'blue',
+    SECURITY: 'red',
+    OPERATIONAL: 'grey'
+}
+
+// Combined findings colors for charts (domain/range arrays for Vega-Lite)
+const FINDINGS_CHART_COLORS = {
+    domain: ['Critical Vulnerabilities', 'High Vulnerabilities', 'Medium Vulnerabilities', 'Low Vulnerabilities', 'Unassigned Vulnerabilities', 'License Violations', 'Security Violations', 'Operational Violations'],
+    range: [VULNERABILITY_COLORS.CRITICAL, VULNERABILITY_COLORS.HIGH, VULNERABILITY_COLORS.MEDIUM, VULNERABILITY_COLORS.LOW, VULNERABILITY_COLORS.UNASSIGNED, VIOLATION_COLORS.LICENSE, VIOLATION_COLORS.SECURITY, VIOLATION_COLORS.OPERATIONAL]
+}
+
 const PACKAGE_TYPES = ['MAVEN', 'NPM', 'NUGET', 'GEM', 'PYPI', 'CONTAINER']
 const CDX_TYPES = [ 'APPLICATION', 'FRAMEWORK', 'LIBRARY', 'CONTAINER', 'PLATFORM', 'OPERATING_SYSTEM', 'DEVICE', 'DEVICE_DRIVER', 'FIRMWARE', 
     'FILE', 'MACHINE_LEARNING_MODEL', 'DATA', 'CRYPTOGRAPHIC_ASSET']
@@ -146,5 +168,8 @@ export default {
     TeaArtifactChecksumType,
     TeaArtifactChecksumTypes: TEA_ARTIFACT_CHECKSUM_TYPES,
     ContentTypes: CONTENT_TYPES,
-    BatchModeHelp: BATCH_MODE_HELP
+    BatchModeHelp: BATCH_MODE_HELP,
+    VulnerabilityColors: VULNERABILITY_COLORS,
+    ViolationColors: VIOLATION_COLORS,
+    FindingsChartColors: FINDINGS_CHART_COLORS
 }

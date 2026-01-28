@@ -178,15 +178,15 @@
                     </n-gi>
                     <n-gi span="2">
                         <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
-                            <span title="Criticial Severity Vulnerabilities" class="circle" style="background: #f86c6b; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', 'Vulnerability')">{{ updatedRelease.metrics.critical }}</span>    
-                            <span title="High Severity Vulnerabilities" class="circle" style="background: #fd8c00; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'HIGH', 'Vulnerability')">{{ updatedRelease.metrics.high }}</span>
-                            <span title="Medium Severity Vulnerabilities" class="circle" style="background: #ffc107; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'MEDIUM', 'Vulnerability')">{{ updatedRelease.metrics.medium }}</span>
-                            <span title="Low Severity Vulnerabilities" class="circle" style="background: #4dbd74; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'LOW', 'Vulnerability')">{{ updatedRelease.metrics.low }}</span>
-                            <span title="Vulnerabilities with Unassigned Severity" class="circle" style="background: #777; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'UNASSIGNED', 'Vulnerability')">{{ updatedRelease.metrics.unassigned }}</span>
+                            <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', 'Vulnerability')">{{ updatedRelease.metrics.critical }}</span>    
+                            <span title="High Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.HIGH, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'HIGH', 'Vulnerability')">{{ updatedRelease.metrics.high }}</span>
+                            <span title="Medium Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'MEDIUM', 'Vulnerability')">{{ updatedRelease.metrics.medium }}</span>
+                            <span title="Low Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.LOW, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'LOW', 'Vulnerability')">{{ updatedRelease.metrics.low }}</span>
+                            <span title="Vulnerabilities with Unassigned Severity" class="circle" :style="{background: constants.VulnerabilityColors.UNASSIGNED, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'UNASSIGNED', 'Vulnerability')">{{ updatedRelease.metrics.unassigned }}</span>
                             <div style="width: 30px;"></div>
-                            <span title="Licensing Policy Violations" class="circle" style="background: blue; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
-                            <span title="Security Policy Violations" class="circle" style="background: red; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
-                            <span title="Operational Policy Violations" class="circle" style="background: grey; cursor: pointer;" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
+                            <span title="Licensing Policy Violations" class="circle" :style="{background: constants.ViolationColors.LICENSE, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsLicenseTotal }}</span>
+                            <span title="Security Policy Violations" class="circle" :style="{background: constants.ViolationColors.SECURITY, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsSecurityTotal }}</span>
+                            <span title="Operational Policy Violations" class="circle" :style="{background: constants.ViolationColors.OPERATIONAL, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, '', 'Violation')">{{ updatedRelease.metrics.policyViolationsOperationalTotal }}</span>
                         </n-space>
                     </n-gi>
                     <n-gi span="1">
@@ -2364,11 +2364,11 @@ const artifactsTableFields: DataTableColumns<any> = [
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
                 const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', 'Vulnerability')}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'LOW', 'Vulnerability')}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', 'Vulnerability')}, row.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'LOW', 'Vulnerability')}, row.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2382,9 +2382,9 @@ const artifactsTableFields: DataTableColumns<any> = [
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
                 const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
                 els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2567,11 +2567,11 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
                 const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', 'Vulnerability')}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'LOW', 'Vulnerability')}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', 'Vulnerability')}, row.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'LOW', 'Vulnerability')}, row.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2585,9 +2585,9 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
                 const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; cursor: pointer;', onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
                 els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2860,11 +2860,11 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
         render: (row: any) => {
             let els: any[] = []
             if (row.releaseDetails && row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: 'background: #f86c6b; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'CRITICAL', 'Vulnerability')}, row.releaseDetails.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: 'background: #fd8c00; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'HIGH', 'Vulnerability')}, row.releaseDetails.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: 'background: #ffc107; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'MEDIUM', 'Vulnerability')}, row.releaseDetails.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: 'background: #4dbd74; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'LOW', 'Vulnerability')}, row.releaseDetails.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: 'background: #777; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'UNASSIGNED', 'Vulnerability')}, row.releaseDetails.metrics.unassigned)
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'CRITICAL', 'Vulnerability')}, row.releaseDetails.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'HIGH', 'Vulnerability')}, row.releaseDetails.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'MEDIUM', 'Vulnerability')}, row.releaseDetails.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'LOW', 'Vulnerability')}, row.releaseDetails.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'UNASSIGNED', 'Vulnerability')}, row.releaseDetails.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -2877,9 +2877,9 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
         render: (row: any) => {
             let els: any[] = []
             if (row.releaseDetails && row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: 'background: blue; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: 'background: red; cursor: pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: 'background: grey; pointer;', onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsOperationalTotal)
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsOperationalTotal)
                 els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']

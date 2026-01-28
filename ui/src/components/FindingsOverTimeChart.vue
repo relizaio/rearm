@@ -57,6 +57,7 @@ import { NSkeleton, NEmpty, NModal, useNotification, NotificationType } from 'na
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { processMetricsData } from '@/utils/metrics'
+import constants from '@/utils/constants'
 import * as vegaEmbed from 'vega-embed'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 import OrganizationChangelogView from './OrganizationChangelogView.vue'
@@ -315,7 +316,8 @@ const analyticsMetrics: Ref<any> = ref({
         },
         color: {
             field: 'type',
-            legend: null
+            legend: null,
+            scale: constants.FindingsChartColors
         },
         tooltip: [
             {field: "createdDate", type: "temporal", title: "Date"},
