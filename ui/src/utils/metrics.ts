@@ -275,7 +275,7 @@ export function buildVulnerabilityColumns(
     {
       title: 'Severity',
       key: 'severity',
-      width: 130,
+      width: 140,
       defaultSortOrder: 'ascend',
       filterOptions: [
         { label: 'CRITICAL', value: 'CRITICAL' },
