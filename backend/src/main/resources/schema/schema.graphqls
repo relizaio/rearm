@@ -44,6 +44,9 @@ type Query {
 	deliverable(deliverable: ID!): Deliverable
 	listDeliverablesByComponent(componentUuid: ID!): [Deliverable]
 	
+	# Artifact Collections
+	getAcollectionsOfRelease(releaseUuid: ID!): [AcollectionData]
+	
 	configuredBaseIntegrations(org: ID!): [IntegrationType]
 	ciIntegrations(org: ID!): [CiIntegration]
 	
@@ -2226,4 +2229,33 @@ enum AnalysisJustification {
 	PROTECTED_AT_RUNTIME
 	PROTECTED_AT_PERIMETER
 	PROTECTED_BY_MITIGATING_CONTROL
+}
+
+# Artifact Collections
+type AcollectionData {
+	uuid: ID
+	release: ID
+	org: ID
+	version: Long
+	updateReason: CollectionUpdateReasonType
+	artifactComparison: ArtifactComparison
+	artifacts: [VersionedArtifact]
+	createdDate: DateTime
+	updatedDate: DateTime
+	whoUpdated: WhoUpdated
+}
+
+type VersionedArtifact {
+	artifactUuid: ID
+	version: Long
+	type: ArtifactType
+	artifactDetails: Artifact
+}
+
+enum CollectionUpdateReasonType {
+	INITIAL_RELEASE
+	VEX_UPDATED
+	ARTIFACT_UPDATED
+	ARTIFACT_ADDED
+	ARTIFACT_REMOVED
 }

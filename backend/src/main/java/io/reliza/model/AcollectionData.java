@@ -72,6 +72,10 @@ public class AcollectionData extends RelizaDataParent implements RelizaObject {
 		return org;
 	}
 	
+	public WhoUpdated getWhoUpdated() {
+		return WhoUpdated.getWhoUpdated(getCreatedType(), getLastUpdatedBy(), null); // PS - 2026-01-28:we don't want to expose IP here
+	}
+	
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), uuid, release, org, version, updateReason, artifacts);
