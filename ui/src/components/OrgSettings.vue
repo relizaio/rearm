@@ -61,9 +61,12 @@
                             <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')">
                                 <div>
                                     Dependency-Track integration configured
-                                    <vue-feather @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
-                                    <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Refresh D-Track Projects" @click="refreshDtrackProjects" style="margin-left: 8px; ">
+                                    <vue-feather v-if="isOrgAdmin" @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
+                                    <n-icon v-if="isOrgAdmin" class="clickable" size="24" title="Synchronize D-Track Projects" @click="syncDtrackProjects" style="margin-left: 8px; ">
                                         <Refresh />
+                                    </n-icon>
+                                    <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Re-upload D-Track Projects" @click="refreshDtrackProjects" style="margin-left: 8px; ">
+                                        <ArrowUpload24Regular />
                                     </n-icon>
                                     <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Cleanup D-Track Projects" @click="cleanupDtrackProjects" style="margin-left: 8px; ">
                                         <Clean />
@@ -783,7 +786,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh } from '@vicons/tabler'
 import { Clean } from '@vicons/carbon'
-import { Info20Regular, Edit24Regular, DeleteDismiss24Regular } from '@vicons/fluent'
+import { Info20Regular, Edit24Regular, DeleteDismiss24Regular, ArrowUpload24Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import axios from '../utils/axios'
@@ -2309,6 +2312,30 @@ async function recleanupDtrackProjects() {
         }
     } catch (err: any) {
         notify('error', 'D-Track Projects Re-cleanup Failed', err.message || 'Failed to re-cleanup Dependency-Track projects.')
+    }
+}
+
+async function syncDtrackProjects() {
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation syncDtrackProjects($orgUuid: ID!) {
+                    syncDtrackProjects(orgUuid: $orgUuid)
+                }`,
+            variables: {
+                orgUuid: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        const result = (resp.data as any)?.syncDtrackProjects
+        if (result) {
+            notify('success', 'D-Track Projects Sync', 'Successfully synchronized Dependency-Track projects.')
+        } else {
+            notify('warning', 'D-Track Projects Sync', 'Sync completed but returned false.')
+        }
+    } catch (err: any) {
+        notify('error', 'D-Track Projects Sync Failed', err.message || 'Failed to synchronize Dependency-Track projects.')
     }
 }
 
