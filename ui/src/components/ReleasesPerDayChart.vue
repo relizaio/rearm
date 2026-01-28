@@ -11,6 +11,11 @@
             :org-uuid="orgUuid"
             :perspective-uuid="props.perspectiveUuid"
             :perspective-name="props.perspectiveName"
+            :component-uuid="props.componentUuid"
+            :branch-uuid="props.branchUuid"
+            :component-name="props.componentName"
+            :branch-name="props.branchName"
+            :component-type="props.componentType"
             :initial-start-date="releasesModalStartDate"
             :initial-end-date="releasesModalEndDate"
             @update:show="(val: boolean) => { if (!val) closeReleasesModal() }"
@@ -41,10 +46,16 @@ const props = withDefaults(defineProps<{
     componentUuid?: string
     perspectiveUuid?: string
     perspectiveName?: string
+    componentName?: string
+    branchName?: string
+    componentType?: string
     daysBack?: number
 }>(), {
     daysBack: 60,
-    perspectiveName: ''
+    perspectiveName: '',
+    componentName: '',
+    branchName: '',
+    componentType: ''
 })
 
 const store = useStore()

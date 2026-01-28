@@ -93,6 +93,11 @@ const props = defineProps<{
     orgUuid: string
     perspectiveUuid?: string
     perspectiveName?: string
+    componentUuid?: string
+    branchUuid?: string
+    componentName?: string
+    branchName?: string
+    componentType?: string
     initialStartDate?: number
     initialEndDate?: number
 }>()
@@ -105,18 +110,34 @@ const startDateValue = ref<number | null>(null)
 const endDateValue = ref<number | null>(null)
 
 const modalTitle = computed(() => {
-    const perspectiveSuffix = props.perspectiveName ? `, Perspective: ${props.perspectiveName}` : ''
+    const contextParts: string[] = []
+    
+    // Add component/branch context similar to FindingsOverTimeChart
+    if (props.branchUuid && props.branchName) {
+        const branchLabel = props.componentType === 'PRODUCT' ? 'Feature Set' : 'Branch'
+        contextParts.push(`${branchLabel}: ${props.branchName}`)
+    } else if (props.componentUuid && props.componentName) {
+        const typeLabel = props.componentType === 'PRODUCT' ? 'Product' : 'Component'
+        contextParts.push(`${typeLabel}: ${props.componentName}`)
+    }
+    
+    // Add perspective context
+    if (props.perspectiveName) {
+        contextParts.push(`Perspective: ${props.perspectiveName}`)
+    }
+    
+    const contextSuffix = contextParts.length > 0 ? ` - ${contextParts.join(', ')}` : ''
     
     if (startDateValue.value && endDateValue.value) {
         const startStr = new Date(startDateValue.value).toLocaleDateString('en-CA')
         const endStr = new Date(endDateValue.value).toLocaleDateString('en-CA')
         if (startStr === endStr) {
-            return `Releases for ${startStr}${perspectiveSuffix}`
+            return `Releases for ${startStr}${contextSuffix}`
         }
-        return `Releases from ${startStr} to ${endStr}${perspectiveSuffix}`
+        return `Releases from ${startStr} to ${endStr}${contextSuffix}`
     }
     
-    return `Releases by Date Range${perspectiveSuffix}`
+    return `Releases by Date Range${contextSuffix}`
 })
 
 const show = computed({
@@ -137,7 +158,7 @@ function toEndOfUtcDay(timestamp: number): Date {
 }
 
 watch(() => props.show, async (newVal) => {
-    if (newVal && props.orgUuid) {
+    if (newVal) {
         // Set initial dates if provided
         if (props.initialStartDate) {
             startDateValue.value = props.initialStartDate
@@ -161,6 +182,36 @@ watch(() => [props.initialStartDate, props.initialEndDate], async ([newStart, ne
     }
 })
 
+const COMPONENT_WITH_BRANCHES_FIELDS = `
+    uuid
+    name
+    type
+    versionSchema
+    branches {
+        uuid
+        name
+        status
+        versionSchema
+        latestReleaseVersion
+        releases {
+            uuid
+            version
+            createdDate
+            lifecycle
+            metrics {
+                critical
+                high
+                medium
+                low
+                unassigned
+                policyViolationsLicenseTotal
+                policyViolationsSecurityTotal
+                policyViolationsOperationalTotal
+            }
+        }
+    }
+`
+
 const fetchReleases = async () => {
     if (!startDateValue.value || !endDateValue.value) return
     
@@ -169,49 +220,64 @@ const fetchReleases = async () => {
         const startDate = toStartOfUtcDay(startDateValue.value)
         const endDate = toEndOfUtcDay(endDateValue.value)
         
-        const response = await graphqlClient.query({
-            query: gql`
-                query searchReleasesByTimeFrame($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $perspectiveUuid: ID) {
-                    searchReleasesByTimeFrame(org: $org, startDate: $startDate, endDate: $endDate, perspectiveUuid: $perspectiveUuid) {
-                        uuid
-                        name
-                        type
-                        versionSchema
-                        branches {
-                            uuid
-                            name
-                            status
-                            versionSchema
-                            latestReleaseVersion
-                            releases {
-                                uuid
-                                version
-                                createdDate
-                                lifecycle
-                                metrics {
-                                    critical
-                                    high
-                                    medium
-                                    low
-                                    unassigned
-                                    policyViolationsLicenseTotal
-                                    policyViolationsSecurityTotal
-                                    policyViolationsOperationalTotal
-                                }
-                            }
+        let response
+        
+        if (props.branchUuid) {
+            // Branch-specific query
+            response = await graphqlClient.query({
+                query: gql`
+                    query searchReleasesByTimeFrameAndBranch($branchUuid: ID!, $startDate: DateTime!, $endDate: DateTime!) {
+                        searchReleasesByTimeFrameAndBranch(branchUuid: $branchUuid, startDate: $startDate, endDate: $endDate) {
+                            ${COMPONENT_WITH_BRANCHES_FIELDS}
                         }
                     }
-                }
-            `,
-            variables: {
-                org: props.orgUuid,
-                startDate: startDate.toISOString(),
-                endDate: endDate.toISOString(),
-                perspectiveUuid: props.perspectiveUuid || null
-            },
-            fetchPolicy: 'no-cache'
-        })
-        componentData.value = (response.data as any).searchReleasesByTimeFrame || []
+                `,
+                variables: {
+                    branchUuid: props.branchUuid,
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString()
+                },
+                fetchPolicy: 'no-cache'
+            })
+            componentData.value = (response.data as any).searchReleasesByTimeFrameAndBranch || []
+        } else if (props.componentUuid) {
+            // Component-specific query
+            response = await graphqlClient.query({
+                query: gql`
+                    query searchReleasesByTimeFrameAndComponent($componentUuid: ID!, $startDate: DateTime!, $endDate: DateTime!) {
+                        searchReleasesByTimeFrameAndComponent(componentUuid: $componentUuid, startDate: $startDate, endDate: $endDate) {
+                            ${COMPONENT_WITH_BRANCHES_FIELDS}
+                        }
+                    }
+                `,
+                variables: {
+                    componentUuid: props.componentUuid,
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString()
+                },
+                fetchPolicy: 'no-cache'
+            })
+            componentData.value = (response.data as any).searchReleasesByTimeFrameAndComponent || []
+        } else {
+            // Organization/Perspective query
+            response = await graphqlClient.query({
+                query: gql`
+                    query searchReleasesByTimeFrame($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $perspectiveUuid: ID) {
+                        searchReleasesByTimeFrame(org: $org, startDate: $startDate, endDate: $endDate, perspectiveUuid: $perspectiveUuid) {
+                            ${COMPONENT_WITH_BRANCHES_FIELDS}
+                        }
+                    }
+                `,
+                variables: {
+                    org: props.orgUuid,
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString(),
+                    perspectiveUuid: props.perspectiveUuid || null
+                },
+                fetchPolicy: 'no-cache'
+            })
+            componentData.value = (response.data as any).searchReleasesByTimeFrame || []
+        }
     } catch (error: any) {
         console.error('Error fetching releases by time frame:', error)
         componentData.value = []
