@@ -1,13 +1,22 @@
 <template>
     <div class="findingsOverTimeChart">
-        <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+        <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; justify-content: space-between;">
             <h3 class="chart-title" style="margin: 0;">Findings Over Time</h3>
-            <vue-feather 
-                type="list" 
-                class="clickable icons"
-                title="View Organization Changelog"
-                @click="showOrgChangelogModal = true"
-            />
+            <div style="display: flex; gap: 8px;">
+                <vue-feather 
+                    v-if="props.showFullPageIcon"
+                    type="maximize-2" 
+                    class="clickable icons"
+                    title="Open Full Page View"
+                    @click="openFullPageView"
+                />
+                <vue-feather 
+                    type="list" 
+                    class="clickable icons"
+                    title="View Organization Changelog"
+                    @click="showOrgChangelogModal = true"
+                />
+            </div>
         </div>
         <h3 v-else class="chart-title">Findings Over Time</h3>
         <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
@@ -74,11 +83,15 @@ const props = withDefaults(defineProps<{
     dateFrom?: Date
     dateTo?: Date
     daysBack?: number
+    chartHeight?: number
+    showFullPageIcon?: boolean
 }>(), {
     daysBack: 60,
     componentName: '',
     branchName: '',
-    componentType: ''
+    componentType: '',
+    chartHeight: 220,
+    showFullPageIcon: true
 })
 
 const store = useStore()
@@ -262,7 +275,7 @@ const FINDINGS_FIELDS = `
 const analyticsMetrics: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     background: 'white',
-    height: 220,
+    height: props.chartHeight,
     width: 'container',
     data: {
         values: []
@@ -333,6 +346,15 @@ function closeFindingsPerDayModal() {
     if (window.location.search) {
         window.history.replaceState(window.history.state, '', window.location.pathname)
     }
+}
+
+function openFullPageView() {
+    const params = new URLSearchParams()
+    if (props.perspectiveUuid) {
+        params.set('perspective', props.perspectiveUuid)
+    }
+    const url = `/findingsOverTime/${orgUuid.value}${params.toString() ? '?' + params.toString() : ''}`
+    window.open(url, '_blank')
 }
 
 async function openFindingsModal(date: string, severity: string = '', typeParam: string = '') {
