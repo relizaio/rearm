@@ -79,9 +79,25 @@
                     <n-radio-group v-model:value="downloadType" name="downloadType">
                         <n-radio-button v-if="selectedArtifactForDownload.type === 'BOM'" value="DOWNLOAD">
                             Augmented Artifact
+                            <n-tooltip trigger="hover">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px; vertical-align: middle;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Download artifact in CycloneDX 1.6 format, augmented and enriched by ReARM.
+                            </n-tooltip>
                         </n-radio-button>
                         <n-radio-button value="RAW_DOWNLOAD">
                             Raw Artifact
+                            <n-tooltip trigger="hover">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px; vertical-align: middle;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Download artifact exactly as uploaded to ReARM.
+                            </n-tooltip>
                         </n-radio-button>
                     </n-radio-group>
                 </n-form-item>
@@ -556,7 +572,7 @@ import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { CirclePlus, ClipboardCheck, Download, Edit, GitCompare, Link, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
-import { BoxArrowUp20Regular, Info20Regular, Copy20Regular } from '@vicons/fluent'
+import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
