@@ -19,6 +19,7 @@
             :initial-start-date="releasesModalStartDate"
             :initial-end-date="releasesModalEndDate"
             @update:show="(val: boolean) => { if (!val) closeReleasesModal() }"
+            @update:dates="onDatesUpdate"
         />
     </div>
 </template>
@@ -72,8 +73,9 @@ const releasesModalStartDate: Ref<number | undefined> = ref(undefined)
 const releasesModalEndDate: Ref<number | undefined> = ref(undefined)
 
 // Route-based query params for releases per day display
-const showReleasesPerDay = computed(() => route.query.display === 'releasesPerDay' && route.query.date)
-const releasesPerDayDate = computed(() => route.query.date as string || '')
+const showReleasesPerDay = computed(() => route.query.display === 'releasesPerDay' && route.query.fromDate && route.query.toDate)
+const releasesPerDayFromDate = computed(() => route.query.fromDate as string || '')
+const releasesPerDayToDate = computed(() => route.query.toDate as string || '')
 
 const releaseVisData: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
@@ -239,19 +241,28 @@ function closeReleasesModal() {
     }
 }
 
-function openReleasesModal(date: string) {
-    // Parse the date and set both start and end to the same date
-    const dateObj = new Date(date)
-    const timestamp = dateObj.getTime()
-    releasesModalStartDate.value = timestamp
-    releasesModalEndDate.value = timestamp
+function openReleasesModal(fromDate: string, toDate?: string) {
+    // Parse the dates
+    const fromDateObj = new Date(fromDate)
+    const toDateObj = toDate ? new Date(toDate) : fromDateObj
+    releasesModalStartDate.value = fromDateObj.getTime()
+    releasesModalEndDate.value = toDateObj.getTime()
     showReleasesModal.value = true
     
     // Update URL without triggering watchers so page reload works
+    updateUrlParams(fromDate, toDate || fromDate)
+}
+
+function updateUrlParams(fromDate: string, toDate: string) {
     const params = new URLSearchParams()
     params.set('display', 'releasesPerDay')
-    params.set('date', date)
+    params.set('fromDate', fromDate)
+    params.set('toDate', toDate)
     window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
+}
+
+function onDatesUpdate(dates: { fromDate: string, toDate: string }) {
+    updateUrlParams(dates.fromDate, dates.toDate)
 }
 
 function renderChart() {
@@ -297,8 +308,8 @@ onMounted(() => {
     isMounted.value = true
     fetchReleaseAnalytics()
     // Check if we should open releases modal based on route query params
-    if (showReleasesPerDay.value && releasesPerDayDate.value) {
-        openReleasesModal(releasesPerDayDate.value)
+    if (showReleasesPerDay.value && releasesPerDayFromDate.value && releasesPerDayToDate.value) {
+        openReleasesModal(releasesPerDayFromDate.value, releasesPerDayToDate.value)
     }
 })
 
@@ -315,8 +326,8 @@ watch(() => [props.orgUuid, props.componentUuid, props.branchUuid, props.perspec
 
 // Watch for route changes to handle releases modal opening via URL
 watch(showReleasesPerDay, (newVal) => {
-    if (newVal && releasesPerDayDate.value) {
-        openReleasesModal(releasesPerDayDate.value)
+    if (newVal && releasesPerDayFromDate.value && releasesPerDayToDate.value) {
+        openReleasesModal(releasesPerDayFromDate.value, releasesPerDayToDate.value)
     }
 })
 </script>

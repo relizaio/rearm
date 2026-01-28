@@ -21,9 +21,6 @@
                     placeholder="End Date"
                     :disabled="loading"
                 />
-                <n-button type="primary" @click="fetchReleases" :disabled="loading || !startDateValue || !endDateValue">
-                    Search
-                </n-button>
             </n-space>
             <n-spin :show="loading">
                 <n-data-table
@@ -102,7 +99,7 @@ const props = defineProps<{
     initialEndDate?: number
 }>()
 
-const emit = defineEmits(['update:show'])
+const emit = defineEmits(['update:show', 'update:dates'])
 
 const loading = ref(false)
 const componentData = ref<any[]>([])
@@ -170,6 +167,19 @@ watch(() => props.show, async (newVal) => {
         if (startDateValue.value && endDateValue.value) {
             await fetchReleases()
         }
+    }
+})
+
+// Watch for datepicker changes - auto-fetch and emit to parent for URL sync
+// Note: No timezone adjustment here - the datepicker already shows local dates correctly
+watch([startDateValue, endDateValue], async ([newStart, newEnd]) => {
+    if (props.show && newStart && newEnd) {
+        // Use toLocaleDateString to get the date as shown in the datepicker (local timezone)
+        const fromDate = new Date(newStart).toLocaleDateString('en-CA')
+        const toDate = new Date(newEnd).toLocaleDateString('en-CA')
+        emit('update:dates', { fromDate, toDate })
+        // Auto-fetch on date changes
+        await fetchReleases()
     }
 })
 
