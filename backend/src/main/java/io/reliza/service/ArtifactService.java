@@ -22,6 +22,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -979,6 +980,16 @@ public class ArtifactService {
 	}
 
 	/**
+	 * Async wrapper for syncUnsyncedDependencyTrackData to allow on-demand triggering via API
+	 * @param orgUuid Organization UUID
+	 */
+	@Async
+	public void syncUnsyncedDependencyTrackDataAsync(UUID orgUuid) {
+		log.info("Starting async sync of unsynced dependency track data for org {}", orgUuid);
+		syncUnsyncedDependencyTrackData(orgUuid);
+	}
+	
+	/**
 	 * Sync dependency track data for all unsynced projects
 	 * Retrieves unsynced projects from Dependency Track, finds associated artifacts,
 	 * and updates their dependency track data
@@ -1004,30 +1015,38 @@ public class ArtifactService {
 			return 0;
 		}
 		
-		// Get artifacts for these projects
-		List<Artifact> artifacts = listArtifactsByDtrackProjects(unsyncedProjects);
+		// Get artifact UUIDs for these projects (not full entities to save memory)
+		List<UUID> artifactUuids = listArtifactsByDtrackProjects(unsyncedProjects)
+				.stream().map(Artifact::getUuid).toList();
 		log.info("Found {} artifacts to sync for {} unsynced projects in org {}", 
-				artifacts.size(), unsyncedProjects.size(), orgUuid);
+				artifactUuids.size(), unsyncedProjects.size(), orgUuid);
 		
-		// Process each artifact
+		// Process each artifact individually, fetching fresh each time to allow GC between iterations
 		ZonedDateTime lastScanned = ZonedDateTime.now();
 		int processedCount = 0;
-		for (Artifact artifact : artifacts) {
+		int totalArtifacts = artifactUuids.size();
+		for (UUID artifactUuid : artifactUuids) {
 			try {
-				fetchDependencyTrackDataForArtifact(artifact);
-				processedCount++;
-				log.debug("Successfully processed artifact {} for dependency track sync", artifact.getUuid());
+				// Fetch artifact fresh for each iteration to avoid holding all data in memory
+				Optional<Artifact> artifactOpt = repository.findById(artifactUuid);
+				if (artifactOpt.isPresent()) {
+					fetchDependencyTrackDataForArtifact(artifactOpt.get());
+					processedCount++;
+					log.debug("Successfully processed artifact {} for dependency track sync", artifactUuid);
+				} else {
+					log.warn("Artifact not found for UUID: {} during dependency track sync", artifactUuid);
+				}
 			} catch (Exception e) {
 				log.error("Error processing artifact {} for dependency track sync: {}", 
-						artifact.getUuid(), e.getMessage(), e);
+						artifactUuid, e.getMessage(), e);
 			}
 		}
 		
 		log.info("Completed sync of unsynced dependency track data for org {}. Processed {}/{} artifacts", 
-				orgUuid, processedCount, artifacts.size());
+				orgUuid, processedCount, totalArtifacts);
 		
 		// Count errors and only update last sync time if there are no errors
-		int errorCount = artifacts.size() - processedCount;
+		int errorCount = totalArtifacts - processedCount;
 		if (errorCount == 0) {
 			// Update last sync time to current time only if all artifacts processed successfully
 			systemInfoService.setLastDtrackSync(lastScanned);

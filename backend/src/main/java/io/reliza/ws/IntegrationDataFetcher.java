@@ -195,4 +195,19 @@ public class IntegrationDataFetcher {
 		integrationService.recleanupDtrackProjectsAsync(orgUuid);
 		return true;
 	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "syncDtrackProjects")
+	public Boolean syncDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		// Verify user has admin access to the organization
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		
+		log.info("User {} initiated DTrack project sync for organization {}", oud.get().getUuid(), orgUuid);
+		
+		artifactService.syncUnsyncedDependencyTrackDataAsync(orgUuid);
+		return true;
+	}
 }
