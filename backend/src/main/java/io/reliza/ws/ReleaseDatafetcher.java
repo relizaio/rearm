@@ -884,6 +884,8 @@ public class ReleaseDatafetcher {
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
 		if (null != ro) {
 			ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		} else {
+			authorizationService.gqlValidateAuthorizationResponse(ar);
 		}
 		
 		ComponentData cd = ocd.orElseThrow(() -> new RelizaException("Component not found"));
