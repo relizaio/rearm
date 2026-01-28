@@ -1022,4 +1022,59 @@ public class SharedReleaseService {
 		
 		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid);
 	}
+	
+	/**
+	 * Finds all releases within a time frame for an organization.
+	 * @param orgUuid Organization UUID
+	 * @param startDate Start date (inclusive)
+	 * @param endDate End date (inclusive)
+	 * @param perspectiveUuid Optional perspective UUID to filter components by perspective
+	 * @return List of ComponentWithBranches containing hierarchical release data
+	 */
+	public List<ComponentWithBranches> findReleasesByTimeFrame(UUID orgUuid, ZonedDateTime startDate, ZonedDateTime endDate, UUID perspectiveUuid) {
+		List<Release> releases = repository.findReleasesOfOrgBetweenDates(orgUuid.toString(), startDate, endDate);
+		List<ReleaseData> releaseDataList = releases.stream()
+				.map(ReleaseData::dataFromRecord)
+				.collect(Collectors.toList());
+		
+		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid);
+	}
+	
+	/**
+	 * Finds all releases within a time frame for a component.
+	 * @param componentUuid Component UUID
+	 * @param startDate Start date (inclusive)
+	 * @param endDate End date (inclusive)
+	 * @return List of ComponentWithBranches containing hierarchical release data
+	 */
+	public List<ComponentWithBranches> findReleasesByTimeFrameAndComponent(UUID componentUuid, ZonedDateTime startDate, ZonedDateTime endDate) {
+		List<Release> releases = repository.findReleasesOfComponentBetweenDates(componentUuid.toString(), startDate, endDate);
+		List<ReleaseData> releaseDataList = releases.stream()
+				.map(ReleaseData::dataFromRecord)
+				.collect(Collectors.toList());
+		if (releaseDataList.isEmpty()) {
+			return Collections.emptyList();
+		}
+		UUID orgUuid = releaseDataList.get(0).getOrg();
+		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, null);
+	}
+	
+	/**
+	 * Finds all releases within a time frame for a branch.
+	 * @param branchUuid Branch UUID
+	 * @param startDate Start date (inclusive)
+	 * @param endDate End date (inclusive)
+	 * @return List of ComponentWithBranches containing hierarchical release data
+	 */
+	public List<ComponentWithBranches> findReleasesByTimeFrameAndBranch(UUID branchUuid, ZonedDateTime startDate, ZonedDateTime endDate) {
+		List<Release> releases = repository.findReleasesOfBranchBetweenDates(branchUuid.toString(), startDate, endDate);
+		List<ReleaseData> releaseDataList = releases.stream()
+				.map(ReleaseData::dataFromRecord)
+				.collect(Collectors.toList());
+		if (releaseDataList.isEmpty()) {
+			return Collections.emptyList();
+		}
+		UUID orgUuid = releaseDataList.get(0).getOrg();
+		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, null);
+	}
 }

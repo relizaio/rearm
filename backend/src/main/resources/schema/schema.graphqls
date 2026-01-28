@@ -97,6 +97,10 @@ type Query {
 	
 	# CVE Search
 	searchReleasesByCveId(org: ID!, cveId: String!, perspectiveUuid: ID): [ComponentWithBranches]
+	# Time Frame Search
+	searchReleasesByTimeFrame(org: ID!, startDate: DateTime!, endDate: DateTime!, perspectiveUuid: ID): [ComponentWithBranches]
+	searchReleasesByTimeFrameAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
+	searchReleasesByTimeFrameAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
 	# Pattern Preview
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
 }

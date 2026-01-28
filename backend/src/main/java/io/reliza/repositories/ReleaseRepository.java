@@ -65,6 +65,21 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findReleasesOfOrgAfterDate(String orgUuidAsString, ZonedDateTime cutOffDate);
 	
 	@Query(
+			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG_BETWEEN_DATES,
+			nativeQuery = true)
+	List<Release> findReleasesOfOrgBetweenDates(String orgUuidAsString, ZonedDateTime startDate, ZonedDateTime endDate);
+	
+	@Query(
+			value = VariableQueries.FIND_ALL_RELEASES_OF_COMPONENT_BETWEEN_DATES,
+			nativeQuery = true)
+	List<Release> findReleasesOfComponentBetweenDates(String componentUuidAsString, ZonedDateTime startDate, ZonedDateTime endDate);
+	
+	@Query(
+			value = VariableQueries.FIND_ALL_RELEASES_OF_BRANCH_BETWEEN_DATES,
+			nativeQuery = true)
+	List<Release> findReleasesOfBranchBetweenDates(String branchUuidAsString, ZonedDateTime startDate, ZonedDateTime endDate);
+	
+	@Query(
 			value = VariableQueries.FIND_ALL_RELEASES_OF_COMPONENT_AFTER_CREATE_DATE,
 			nativeQuery = true)
 	List<Release> findReleasesOfComponentAfterDate(String componentUuidAsString, ZonedDateTime cutOffDate);

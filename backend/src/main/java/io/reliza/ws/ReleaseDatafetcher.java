@@ -45,6 +45,7 @@ import org.dataloader.DataLoader;
 import org.dataloader.MappedBatchLoader;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.time.ZonedDateTime;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.AuthPrincipalType;
@@ -1412,5 +1413,46 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		return sharedReleaseService.findReleasesByCveId(orgUuid, cveId, perspectiveUuid);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "searchReleasesByTimeFrame")
+	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByTimeFrame(
+			@InputArgument("org") UUID orgUuid,
+			@InputArgument("startDate") ZonedDateTime startDate,
+			@InputArgument("endDate") ZonedDateTime endDate,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		return sharedReleaseService.findReleasesByTimeFrame(orgUuid, startDate, endDate, perspectiveUuid);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "searchReleasesByTimeFrameAndComponent")
+	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByTimeFrameAndComponent(
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("startDate") ZonedDateTime startDate,
+			@InputArgument("endDate") ZonedDateTime endDate) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		return sharedReleaseService.findReleasesByTimeFrameAndComponent(componentUuid, startDate, endDate);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "searchReleasesByTimeFrameAndBranch")
+	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByTimeFrameAndBranch(
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("startDate") ZonedDateTime startDate,
+			@InputArgument("endDate") ZonedDateTime endDate) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
+		RelizaObject ro = obd.isPresent() ? obd.get() : null;
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		return sharedReleaseService.findReleasesByTimeFrameAndBranch(branchUuid, startDate, endDate);
 	}
 }

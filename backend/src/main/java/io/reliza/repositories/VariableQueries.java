@@ -517,6 +517,15 @@ class VariableQueries {
 	protected static final String FIND_ALL_RELEASES_OF_ORG_AFTER_CREATE_DATE = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND r.created_date > :cutOffDate";
 	
+	protected static final String FIND_ALL_RELEASES_OF_ORG_BETWEEN_DATES = "select * from rearm.releases r where r.record_data->>'"
+			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND r.created_date >= :startDate AND r.created_date <= :endDate";
+
+	protected static final String FIND_ALL_RELEASES_OF_COMPONENT_BETWEEN_DATES = "select * from rearm.releases r where r.record_data->>'"
+			+ CommonVariables.COMPONENT_FIELD + "' = :componentUuidAsString AND r.created_date >= :startDate AND r.created_date <= :endDate";
+
+	protected static final String FIND_ALL_RELEASES_OF_BRANCH_BETWEEN_DATES = "select * from rearm.releases r where r.record_data->>'"
+			+ CommonVariables.BRANCH_FIELD + "' = :branchUuidAsString AND r.created_date >= :startDate AND r.created_date <= :endDate";
+
 	protected static final String FIND_ALL_RELEASES_OF_COMPONENT_AFTER_CREATE_DATE = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.COMPONENT_FIELD + "' = :componentUuidAsString AND r.created_date > :cutOffDate";
 	
