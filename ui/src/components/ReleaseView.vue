@@ -1431,7 +1431,8 @@ function openDownloadArtifactModal(artifact: any) {
 
 function executeDownload() {
     // Use composite key for selection
-    let artifact = selectedArtifactForDownload.value;
+    const originalArtifact = selectedArtifactForDownload.value;
+    let artifact = originalArtifact;
     let version = artifact.version;
 
     if (selectedVersionForDownload.value) {
@@ -1441,7 +1442,13 @@ function executeDownload() {
             (a: any) => `${a.uuid}::${a.version || ''}` === selectedVersionForDownload.value
         );
         if (versionArtifact) {
-            artifact = versionArtifact;
+            // Merge original artifact props (type, bomFormat, specVersion) with version artifact
+            artifact = {
+                ...versionArtifact,
+                type: originalArtifact.type,
+                bomFormat: originalArtifact.bomFormat,
+                specVersion: originalArtifact.specVersion
+            };
             version = versionArtifact.version;
         } else if (selUuid === artifact.uuid && selVersion === (artifact.version || '')) {
             // fallback to current
@@ -1875,8 +1882,46 @@ const downloadArtifact = async (art: any, raw: boolean, version?: string) => {
             url,
             responseType: 'arraybuffer',
         })
-        const artType = art.tags.find((tag: any) => tag.key === 'mediaType')?.value
-        const fileName = art.tags.find((tag: any) => tag.key === 'fileName')?.value
+        const artType = art.tags?.find((tag: any) => tag.key === 'mediaType')?.value
+        const fileNameTag = art.tags?.find((tag: any) => tag.key === 'fileName')?.value
+        
+        // Construct filename: {artifact.uuid}-{artifact.type}.v{version}
+        const versionSuffix = version ? `.v${version}` : ''
+        let fileName = `${art.uuid}-${art.type || 'artifact'}${versionSuffix}`
+        let bomPrefix = ''
+        let extension = ''
+        
+        // Determine BOM prefix and extension
+        if (art.type === 'BOM' && !raw) {
+            // Augmented download - always CycloneDX 1.6 JSON
+            fileName = `${art.uuid}-${art.type}-augmented${versionSuffix}`
+            bomPrefix = '.cdx'
+            extension = '.json'
+        } else if (art.type === 'BOM') {
+            // Raw download - check if SPDX or CycloneDX
+            const isSpdx = (art.specVersion && art.specVersion.toUpperCase().includes('SPDX')) || 
+                          (art.bomFormat && art.bomFormat.toUpperCase() === 'SPDX')
+            bomPrefix = isSpdx ? '.spdx' : '.cdx'
+            
+            // Resolve extension from mediaType or fileName tag
+            if (artType === 'application/json') {
+                extension = '.json'
+            } else if (fileNameTag) {
+                const lastDot = fileNameTag.lastIndexOf('.')
+                if (lastDot > 0) {
+                    extension = fileNameTag.substring(lastDot)
+                }
+            }
+        }
+        
+        // Build final filename
+        fileName = fileName + bomPrefix + extension
+        
+        // Fallback to fileName tag if result appears empty or has placeholders
+        if (!fileName || fileName.includes('undefined') || fileName.includes('null')) {
+            fileName = fileNameTag || `${art.uuid}`
+        }
+        
         let blob = new Blob([downloadResp.data], { type: artType })
         let link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
@@ -2024,7 +2069,13 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         const blob = new Blob([exportContent], { type: blobType })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
-        link.download = updatedRelease.value.uuid + '-sbom.' + (mediaType === 'EXCEL' ? 'xlsx' : mediaType.toLowerCase())
+        let downloadExtension = "cdx.json"
+        if (mediaType === 'EXCEL'){
+            downloadExtension = "xlsx"
+        } else if (mediaType === 'CSV') {
+            downloadExtension = "csv"
+        }
+        link.download = updatedRelease.value.uuid + '-release-bom.' + downloadExtension
         link.click()
         notify('info', 'Processing Download', 'Your artifact is being downloaded...')
     } catch (err: any) {
