@@ -6,6 +6,15 @@
             <n-empty v-else-if="hasNoData" style="height: 220px;" :description="`No releases added for the last ${props.daysBack} days`" size="large" />
             <div v-else id="releaseCreationVisHome"></div>
         </div>
+        <releases-by-date-range
+            v-model:show="showReleasesModal"
+            :org-uuid="orgUuid"
+            :perspective-uuid="props.perspectiveUuid"
+            :perspective-name="props.perspectiveName"
+            :initial-start-date="releasesModalStartDate"
+            :initial-end-date="releasesModalEndDate"
+            @update:show="(val: boolean) => { if (!val) closeReleasesModal() }"
+        />
     </div>
 </template>
 
@@ -18,10 +27,12 @@ export default {
 <script lang="ts" setup>
 import { ref, Ref, computed, onMounted, onBeforeUnmount, watch, toRaw, nextTick } from 'vue'
 import { useStore } from 'vuex'
+import { useRoute } from 'vue-router'
 import { NSkeleton, NEmpty } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import * as vegaEmbed from 'vega-embed'
+import ReleasesByDateRange from './ReleasesByDateRange.vue'
 
 const props = withDefaults(defineProps<{
     type: 'ORGANIZATION' | 'BRANCH' | 'COMPONENT' | 'PERSPECTIVE'
@@ -29,18 +40,29 @@ const props = withDefaults(defineProps<{
     branchUuid?: string
     componentUuid?: string
     perspectiveUuid?: string
+    perspectiveName?: string
     daysBack?: number
 }>(), {
-    daysBack: 60
+    daysBack: 60,
+    perspectiveName: ''
 })
 
 const store = useStore()
+const route = useRoute()
 const myorg = computed(() => store.getters.myorg)
 
 const orgUuid = computed(() => props.orgUuid || myorg.value?.uuid || '')
 const isLoading = ref(true)
 const isMounted = ref(true)
 const hasNoData = ref(false)
+
+const showReleasesModal: Ref<boolean> = ref(false)
+const releasesModalStartDate: Ref<number | undefined> = ref(undefined)
+const releasesModalEndDate: Ref<number | undefined> = ref(undefined)
+
+// Route-based query params for releases per day display
+const showReleasesPerDay = computed(() => route.query.display === 'releasesPerDay' && route.query.date)
+const releasesPerDayDate = computed(() => route.query.date as string || '')
 
 const releaseVisData: Ref<any> = ref({
     $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
@@ -55,9 +77,11 @@ const releaseVisData: Ref<any> = ref({
         type: 'line',
         point: {
             "filled": false,
-            "fill": "white"
+            "fill": "white",
+            "cursor": "pointer"
         },
-        tooltip: true
+        tooltip: true,
+        cursor: 'pointer'
     },
     encoding: {
         y: {
@@ -194,6 +218,31 @@ async function fetchReleaseAnalytics() {
     }
 }
 
+function closeReleasesModal() {
+    showReleasesModal.value = false
+    releasesModalStartDate.value = undefined
+    releasesModalEndDate.value = undefined
+    // Clear query params silently without triggering watchers (only if there are params)
+    if (window.location.search) {
+        window.history.replaceState(window.history.state, '', window.location.pathname)
+    }
+}
+
+function openReleasesModal(date: string) {
+    // Parse the date and set both start and end to the same date
+    const dateObj = new Date(date)
+    const timestamp = dateObj.getTime()
+    releasesModalStartDate.value = timestamp
+    releasesModalEndDate.value = timestamp
+    showReleasesModal.value = true
+    
+    // Update URL without triggering watchers so page reload works
+    const params = new URLSearchParams()
+    params.set('display', 'releasesPerDay')
+    params.set('date', date)
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
+}
+
 function renderChart() {
     if (!isMounted.value) {
         return
@@ -212,12 +261,34 @@ function renderChart() {
             },
             theme: 'powerbi'
         }
-    )
+    ).then((result: any) => {
+        result.view.addEventListener('click', (event: any, item: any) => {
+            if (item && item.datum) {
+                const datum = item.datum
+                const dateObj = new Date(datum.utcyearmonthdate_date)
+                // Adjust for timezone: if UTC-x (negative offset), pick next day; if UTC+x or UTC, use this day
+                const timezoneOffset = dateObj.getTimezoneOffset() // positive for UTC-x, negative for UTC+x
+                if (timezoneOffset > 0) {
+                    dateObj.setUTCDate(dateObj.getUTCDate() + 1)
+                }
+                const date = dateObj.toISOString().split('T')[0]
+                if (date) {
+                    openReleasesModal(date)
+                }
+            }
+        })
+    }).catch((error: any) => {
+        console.error('Error rendering Vega chart:', error)
+    })
 }
 
 onMounted(() => {
     isMounted.value = true
     fetchReleaseAnalytics()
+    // Check if we should open releases modal based on route query params
+    if (showReleasesPerDay.value && releasesPerDayDate.value) {
+        openReleasesModal(releasesPerDayDate.value)
+    }
 })
 
 onBeforeUnmount(() => {
@@ -230,6 +301,13 @@ watch(() => [props.orgUuid, props.componentUuid, props.branchUuid, props.perspec
         fetchReleaseAnalytics()
     }
 }, { flush: 'post' })
+
+// Watch for route changes to handle releases modal opening via URL
+watch(showReleasesPerDay, (newVal) => {
+    if (newVal && releasesPerDayDate.value) {
+        openReleasesModal(releasesPerDayDate.value)
+    }
+})
 </script>
 
 <style scoped lang="scss">

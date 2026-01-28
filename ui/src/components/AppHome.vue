@@ -7,6 +7,7 @@
                         :type="releaseChartType"
                         :org-uuid="releaseChartProps.orgUuid"
                         :perspective-uuid="releaseChartProps.perspectiveUuid"
+                        :perspective-name="releaseChartProps.perspectiveName"
                     />
                 </n-gi>
                 <n-gi>
@@ -533,7 +534,8 @@ const releaseChartProps: ComputedRef<any> = computed(() => {
     if (releaseChartType.value === 'PERSPECTIVE') {
         return {
             type: 'PERSPECTIVE',
-            perspectiveUuid: myperspective.value
+            perspectiveUuid: myperspective.value,
+            perspectiveName: currentPerspectiveName.value
         }
     } else {
         return {
