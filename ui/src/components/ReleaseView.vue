@@ -3182,6 +3182,7 @@ const commitTableFields: DataTableColumns<any> = [
     {
         key: 'facts',
         title: 'Facts',
+        minWidth: 31,
         render: (row: any) => {
             const factContent: any[] = []
             factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
@@ -3206,6 +3207,7 @@ const commitTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 50,
         render: (row: any) => {
             let els: any[] = []
             if (updatedRelease.value.sourceCodeEntryDetails.vcsRepository?.uri) {
