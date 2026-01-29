@@ -255,6 +255,27 @@ public class ReleaseDatafetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "releaseVdrExport")
+	public String releaseVdrExport(
+			@InputArgument("release") String releaseUuidStr,
+			@InputArgument("includeSuppressed") Boolean includeSuppressed) throws Exception {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		RelizaObject ro = null;
+		if (StringUtils.isNoneEmpty(releaseUuidStr)) {
+			var rlzOpt = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
+			if (rlzOpt.isPresent()) {
+				ro = rlzOpt.get();
+			}
+		}
+		
+		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		ReleaseData rd = (ReleaseData) ro;
+		return releaseService.generateVdr(rd, includeSuppressed);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "releaseTagKeys")
 	public Set<String> getReleaseTagKeys(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
 		UUID orgUuid = UUID.fromString(orgUuidStr);

@@ -33,6 +33,9 @@ import org.cyclonedx.model.Hash;
 import org.cyclonedx.model.Hash.Algorithm;
 import org.cyclonedx.model.Pedigree;
 import org.cyclonedx.model.Property;
+import org.cyclonedx.model.vulnerability.Vulnerability;
+import org.cyclonedx.model.vulnerability.Vulnerability.Rating;
+import org.cyclonedx.model.vulnerability.Vulnerability.Source;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +49,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.model.AnalysisState;
+import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
@@ -1481,6 +1488,140 @@ public class ReleaseService {
 		}
 		log.info("Reconcile Routine end");
 
+	}
+	
+	/**
+	 * Generate CycloneDX 1.6 VDR from release metrics vulnerability details
+	 * @param releaseUuid Release UUID
+	 * @param includeSuppressed Whether to include suppressed vulnerabilities (FALSE_POSITIVE, NOT_AFFECTED)
+	 * @return VDR JSON string
+	 */
+	public String generateVdr(UUID releaseUuid, Boolean includeSuppressed) throws Exception {
+		Optional<ReleaseData> releaseOpt = sharedReleaseService.getReleaseData(releaseUuid);
+		if (releaseOpt.isEmpty()) {
+			throw new RelizaException("Release not found; uuid: " + releaseUuid.toString());
+		}
+		return generateVdr(releaseOpt.get(), includeSuppressed);
+	}
+	
+	/**
+	 * Generate CycloneDX 1.6 VDR from release metrics vulnerability details
+	 * @param releaseData Release data
+	 * @param includeSuppressed Whether to include suppressed vulnerabilities (FALSE_POSITIVE, NOT_AFFECTED)
+	 * @return VDR JSON string
+	 */
+	public String generateVdr(ReleaseData releaseData, Boolean includeSuppressed) throws Exception {
+		Bom bom = new Bom();
+		
+		// Set metadata
+		OrganizationData orgData = getOrganizationService.getOrganizationData(releaseData.getOrg()).orElse(null);
+		ComponentData componentData = getComponentService.getComponentData(releaseData.getComponent()).orElse(null);
+		
+		Component bomComponent = new Component();
+		if (componentData != null) {
+			bomComponent.setName(componentData.getName());
+		}
+		bomComponent.setType(Type.APPLICATION);
+		bomComponent.setVersion(releaseData.getVersion());
+		
+		String orgName = orgData != null ? orgData.getName() : "Unknown";
+		Utils.setRearmBomMetadata(bom, orgName, bomComponent);
+		
+		// Transform vulnerabilities to CycloneDX format
+		ReleaseMetricsDto metrics = releaseData.getMetrics();
+		if (metrics != null && metrics.getVulnerabilityDetails() != null) {
+			List<Vulnerability> vulnerabilities = new ArrayList<>();
+			
+			for (VulnerabilityDto vulnDto : metrics.getVulnerabilityDetails()) {
+				// Skip suppressed vulnerabilities (FALSE_POSITIVE and NOT_AFFECTED) unless includeSuppressed is true
+				if (!Boolean.TRUE.equals(includeSuppressed) 
+						&& (vulnDto.analysisState() == AnalysisState.FALSE_POSITIVE 
+						|| vulnDto.analysisState() == AnalysisState.NOT_AFFECTED)) {
+					continue;
+				}
+				Vulnerability vuln = transformVulnerabilityToVdr(vulnDto);
+				vulnerabilities.add(vuln);
+			}
+			
+			bom.setVulnerabilities(vulnerabilities);
+		}
+		
+		// Generate JSON using CycloneDX 1.6
+		BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
+		return generator.toJsonString();
+	}
+	
+	/**
+	 * Transform internal VulnerabilityDto to CycloneDX Vulnerability
+	 */
+	private Vulnerability transformVulnerabilityToVdr(VulnerabilityDto vulnDto) {
+		Vulnerability vuln = new Vulnerability();
+		
+		// Set vulnerability ID
+		vuln.setId(vulnDto.vulnId());
+		
+		// Set source based on vulnerability ID prefix
+		Source source = new Source();
+		if (vulnDto.vulnId() != null) {
+			if (vulnDto.vulnId().startsWith("CVE-")) {
+				source.setName("NVD");
+				source.setUrl("https://nvd.nist.gov/vuln/detail/" + vulnDto.vulnId());
+			} else if (vulnDto.vulnId().startsWith("GHSA-")) {
+				source.setName("GitHub Advisory");
+				source.setUrl("https://github.com/advisories/" + vulnDto.vulnId());
+			} else {
+				source.setName("Other");
+			}
+		}
+		vuln.setSource(source);
+		
+		// Set severity rating
+		if (vulnDto.severity() != null) {
+			Rating rating = new Rating();
+			rating.setSeverity(mapVdrSeverity(vulnDto.severity()));
+			vuln.setRatings(List.of(rating));
+		}
+		
+		// Set affected component (purl)
+		if (vulnDto.purl() != null) {
+			Vulnerability.Affect affect = new Vulnerability.Affect();
+			affect.setRef(vulnDto.purl());
+			vuln.setAffects(List.of(affect));
+		}
+		
+		// Set analysis state if present
+		if (vulnDto.analysisState() != null) {
+			Vulnerability.Analysis analysis = new Vulnerability.Analysis();
+			analysis.setState(mapVdrAnalysisState(vulnDto.analysisState()));
+			vuln.setAnalysis(analysis);
+		}
+		
+		return vuln;
+	}
+	
+	/**
+	 * Map internal severity to CycloneDX severity
+	 */
+	private org.cyclonedx.model.vulnerability.Vulnerability.Rating.Severity mapVdrSeverity(VulnerabilitySeverity severity) {
+		return switch (severity) {
+			case CRITICAL -> org.cyclonedx.model.vulnerability.Vulnerability.Rating.Severity.CRITICAL;
+			case HIGH -> org.cyclonedx.model.vulnerability.Vulnerability.Rating.Severity.HIGH;
+			case MEDIUM -> org.cyclonedx.model.vulnerability.Vulnerability.Rating.Severity.MEDIUM;
+			case LOW -> org.cyclonedx.model.vulnerability.Vulnerability.Rating.Severity.LOW;
+			case UNASSIGNED -> org.cyclonedx.model.vulnerability.Vulnerability.Rating.Severity.UNKNOWN;
+		};
+	}
+	
+	/**
+	 * Map internal analysis state to CycloneDX analysis state
+	 */
+	private Vulnerability.Analysis.State mapVdrAnalysisState(AnalysisState state) {
+		return switch (state) {
+			case EXPLOITABLE -> Vulnerability.Analysis.State.EXPLOITABLE;
+			case IN_TRIAGE -> Vulnerability.Analysis.State.IN_TRIAGE;
+			case FALSE_POSITIVE -> Vulnerability.Analysis.State.FALSE_POSITIVE;
+			case NOT_AFFECTED -> Vulnerability.Analysis.State.NOT_AFFECTED;
+		};
 	}
 	
 }

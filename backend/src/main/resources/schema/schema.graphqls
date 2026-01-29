@@ -178,6 +178,7 @@ type Mutation {
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
 	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType): String
+	releaseVdrExport(release: ID!, includeSuppressed: Boolean): String
 
 	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
 
