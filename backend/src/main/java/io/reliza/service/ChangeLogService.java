@@ -207,10 +207,8 @@ public class ChangeLogService {
 	
 	
 	/**
-	 * Computes SBOM and Finding changes for each release compared to the previous release.
-	 * This is used for NONE aggregation mode to show per-release changes.
-	 * 
-	 * Each release is compared to its immediate predecessor (releases are sorted newest first).
+	 * Pre-computes SBOM and Finding changes for each release in a list.
+	 * Each release is compared to its predecessor (previous release in the list).
 	 * 
 	 * @param releases List of releases (sorted newest first)
 	 * @param orgUuid Organization UUID
@@ -218,46 +216,44 @@ public class ChangeLogService {
 	 */
 	private Map<UUID, ReleaseChanges> computePerReleaseChanges(
 			List<ReleaseData> releases, 
-			UUID orgUuid) throws RelizaException {
+			UUID orgUuid) {
 		
 		Map<UUID, ReleaseChanges> changesMap = new HashMap<>();
 		
-		if (releases == null || releases.size() < 2) {
+		if (releases == null || releases.isEmpty()) {
 			return changesMap;
 		}
-				
-		// Compare each release to the previous one (releases are sorted newest first)
-		// Release at index i is compared to release at index i+1
-		for (int i = 0; i < releases.size() - 1; i++) {
-			ReleaseData currentRelease = releases.get(i);
-			ReleaseData previousRelease = releases.get(i + 1);
-			
-			UUID currentUuid = currentRelease.getUuid();
-			UUID previousUuid = previousRelease.getUuid();
-			
 		
+		// Compare each release to the previous one (releases are sorted newest first)
+		for (int i = 0; i < releases.size(); i++) {
+			ReleaseData currentRelease = releases.get(i);
+			ReleaseData previousRelease = (i < releases.size() - 1) ? releases.get(i + 1) : null;
+			
+			if (previousRelease == null) {
+				// First/oldest release - no comparison
+				changesMap.put(currentRelease.getUuid(), ReleaseChanges.empty());
+				continue;
+			}
+			
 			try {
-				// Extract data for this release pair
-				MetricsPair metrics = extractMetricsForReleases(previousUuid, currentUuid, orgUuid);
-				List<AcollectionData> acollections = acollectionService.getAcollectionsForReleaseRange(previousUuid, currentUuid);
+				// Get acollections for SBOM comparison
+				List<AcollectionData> acollections = acollectionService.getAcollectionsForReleaseRange(
+						previousRelease.getUuid(), currentRelease.getUuid());
+				AcollectionData.ArtifactChangelog sbomChanges = sbomComparisonService.aggregateChangelogs(acollections);
 				
-				FindingChangesDto.FindingChangesRecord findingChanges = (metrics == null) 
+				// Get metrics for finding comparison
+				MetricsPair metrics = extractMetricsForReleases(previousRelease.getUuid(), currentRelease.getUuid(), orgUuid);
+				
+				FindingChangesDto.FindingChangesRecord findingChanges = (metrics == null)
 					? findingComparisonService.emptyFindingChanges()
 					: findingComparisonService.compareMetrics(metrics.metrics1(), metrics.metrics2());
 				
-				AcollectionData.ArtifactChangelog sbomChanges = 
-					sbomComparisonService.aggregateChangelogs(acollections);
-				
-				// Store results
-				ReleaseChanges changes = new ReleaseChanges(sbomChanges, findingChanges);
-				changesMap.put(currentUuid, changes);
-
+				changesMap.put(currentRelease.getUuid(), 
+					new ReleaseChanges(sbomChanges, findingChanges));
 				
 			} catch (Exception e) {
-				log.error("Error comparing release {} to {}: {}", 
-					previousUuid, currentUuid, e.getMessage(), e);
-				// Store empty changes on error
-				changesMap.put(currentUuid, ReleaseChanges.empty());
+				log.error("Error computing changes for release {}: {}", currentRelease.getUuid(), e.getMessage());
+				changesMap.put(currentRelease.getUuid(), ReleaseChanges.empty());
 			}
 		}
 		
@@ -389,21 +385,25 @@ public class ChangeLogService {
 				perReleaseChanges);
 		
 		// Add top-level SBOM and finding changes in AGGREGATED mode
-		if (changelog != null && aggregated == AggregationType.AGGREGATED) {
+		if (changelog != null && aggregated == AggregationType.AGGREGATED && !allReleases.isEmpty()) {
 
 			try {
-				Optional<AnalyticsMetricsService.MetricsPair> metricsOpt = analyticsMetricsService.getMetricsPairForDateRange(componentUuid, dateFrom, dateTo);
+				// For findings, use boundary comparison (same as branch changelog logic)
+				// Compare first release (oldest) to last release (newest) in the date range
+				UUID firstUuid = allReleases.get(allReleases.size() - 1).getUuid();
+				UUID lastUuid = allReleases.get(0).getUuid();
+				
+				MetricsPair metrics = extractMetricsForReleases(firstUuid, lastUuid, orgUuid);
 				List<AcollectionData> acollections = acollectionService.getAcollectionsForDateRange(componentUuid, dateFrom, dateTo);
 				
-				// Sequential comparison
+				FindingChangesDto.FindingChangesRecord findingChanges = (metrics == null)
+					? findingComparisonService.emptyFindingChanges()
+					: findingComparisonService.compareMetrics(metrics.metrics1(), metrics.metrics2());
+				
 				AcollectionData.ArtifactChangelog sbomChanges = sbomComparisonService.aggregateChangelogs(acollections);
 				
-				FindingChangesDto.FindingChangesRecord findingChanges = metricsOpt.isEmpty()
-					? findingComparisonService.emptyFindingChanges()
-					: findingComparisonService.compareMetrics(metricsOpt.get().metrics1(), metricsOpt.get().metrics2());
-				
-				changelog.setSbomChanges(sbomChanges);
 				changelog.setFindingChanges(findingChanges);
+				changelog.setSbomChanges(sbomChanges);
 				
 			} catch (Exception e) {
 				log.error("Error computing date-based aggregated changes: {}", e.getMessage(), e);
@@ -1103,7 +1103,7 @@ public class ChangeLogService {
 			// Compute per-release changes if NONE mode (SBOM and Findings only, no code changes)
 			Map<UUID, ReleaseChanges> perReleaseChanges = null;
 			if (aggregationType == AggregationType.NONE) {
-				perReleaseChanges = computePerReleaseChangesWithoutCode(componentReleases, orgUuid);
+				perReleaseChanges = computePerReleaseChanges(componentReleases, orgUuid);
 			}
 			
 			// Build component changelog (without code changes)
@@ -1202,50 +1202,6 @@ public class ChangeLogService {
 		return components;
 	}
 	
-	/**
-	 * Helper method to compute per-release changes without code changes.
-	 * Only includes SBOM and Finding changes.
-	 */
-	private Map<UUID, ReleaseChanges> computePerReleaseChangesWithoutCode(
-			List<ReleaseData> releases, 
-			UUID orgUuid) {
-		
-		Map<UUID, ReleaseChanges> perReleaseChanges = new HashMap<>();
-		
-		for (int i = 0; i < releases.size(); i++) {
-			ReleaseData currentRelease = releases.get(i);
-			ReleaseData previousRelease = (i < releases.size() - 1) ? releases.get(i + 1) : null;
-			
-			if (previousRelease == null) {
-				// First release - no comparison
-				perReleaseChanges.put(currentRelease.getUuid(), ReleaseChanges.empty());
-				continue;
-			}
-			
-			try {
-				// Get acollections for SBOM comparison
-				List<AcollectionData> acollections = acollectionService.getAcollectionsForReleaseRange(
-						previousRelease.getUuid(), currentRelease.getUuid());
-				AcollectionData.ArtifactChangelog sbomChanges = sbomComparisonService.aggregateChangelogs(acollections);
-				
-				// Get metrics for finding comparison
-				MetricsPair metrics = extractMetricsForReleases(previousRelease.getUuid(), currentRelease.getUuid(), orgUuid);
-				
-				FindingChangesDto.FindingChangesRecord findingChanges = (metrics == null)
-					? findingComparisonService.emptyFindingChanges()
-					: findingComparisonService.compareMetrics(metrics.metrics1(), metrics.metrics2());
-				
-				perReleaseChanges.put(currentRelease.getUuid(), 
-					new ReleaseChanges(sbomChanges, findingChanges));
-				
-			} catch (Exception e) {
-				log.error("Error computing changes for release {}: {}", currentRelease.getUuid(), e.getMessage());
-				perReleaseChanges.put(currentRelease.getUuid(), ReleaseChanges.empty());
-			}
-		}
-		
-		return perReleaseChanges;
-	}
 	
 	/**
 	 * Helper method to build component changelog without code changes.

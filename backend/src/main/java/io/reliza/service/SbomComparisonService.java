@@ -53,19 +53,59 @@ public class SbomComparisonService {
 	public AcollectionData.ArtifactChangelog aggregateChangelogs(List<AcollectionData> acollections) {
 		
 		if (acollections == null || acollections.isEmpty()) {
+			log.debug("SBOM_AGG: No acollections provided");
 			return new AcollectionData.ArtifactChangelog(Set.of(), Set.of());
 		}
+		
+		log.debug("Starting SBOM aggregation with {} acollections", acollections.size());
 		
 		Map<String, AcollectionData.DiffComponent> netAdded = new HashMap<>();
 		Map<String, AcollectionData.DiffComponent> netRemoved = new HashMap<>();
 		
+		int processedCount = 0;
+		int skippedCount = 0;
+		
 		for (AcollectionData acollection : acollections) {
-			if (acollection == null || acollection.getArtifactComparison() == null || 
+			if (acollection == null) {
+				log.debug("SBOM_AGG: Skipping null acollection");
+				skippedCount++;
+				continue;
+			}
+			
+			log.debug("SBOM_AGG: Processing acollection UUID: {}, hasArtifactComparison: {}, hasChangelog: {}", 
+				acollection.getUuid(),
+				acollection.getArtifactComparison() != null,
+				acollection.getArtifactComparison() != null && acollection.getArtifactComparison().changelog() != null);
+			
+			if (acollection.getArtifactComparison() == null || 
 				acollection.getArtifactComparison().changelog() == null) {
+				log.debug("SBOM_AGG: Skipping acollection {} - no changelog", acollection.getUuid());
+				skippedCount++;
 				continue;
 			}
 			
 			AcollectionData.ArtifactChangelog changelog = acollection.getArtifactComparison().changelog();
+			int addedSize = changelog.added() != null ? changelog.added().size() : 0;
+			int removedSize = changelog.removed() != null ? changelog.removed().size() : 0;
+			
+			log.debug("Acollection {} - Added: {}, Removed: {}", 
+				acollection.getUuid(), addedSize, removedSize);
+			
+			if (addedSize > 0 && changelog.added() != null) {
+				log.debug("Added components: {}", 
+					changelog.added().stream()
+						.map(c -> c.purl() + "@" + c.version())
+						.collect(java.util.stream.Collectors.joining(", ")));
+			}
+			
+			if (removedSize > 0 && changelog.removed() != null) {
+				log.debug("Removed components: {}", 
+					changelog.removed().stream()
+						.map(c -> c.purl() + "@" + c.version())
+						.collect(java.util.stream.Collectors.joining(", ")));
+			}
+			
+			processedCount++;
 			
 			// Process added components
 			if (changelog.added() != null) {
@@ -91,6 +131,9 @@ public class SbomComparisonService {
 				}
 			}
 		}
+		
+		log.info("SBOM aggregation complete - Net added: {}, Net removed: {} (processed: {}, skipped: {})", 
+			netAdded.size(), netRemoved.size(), processedCount, skippedCount);
 		
 		return new AcollectionData.ArtifactChangelog(
 			new HashSet<>(netAdded.values()),

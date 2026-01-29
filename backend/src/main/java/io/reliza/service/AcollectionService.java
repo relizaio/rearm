@@ -176,13 +176,10 @@ public class AcollectionService {
 
 		UUID prevReleaseId = null;
 
-		AcollectionData acd = getLatestCollectionDataOfRelease(releaseId);
-
-		if(null != acd && null != acd.getArtifactComparison() && null != acd.getArtifactComparison().comparedReleaseUuid()) {
-			prevReleaseId = acd.getArtifactComparison().comparedReleaseUuid();
-		}else{
-			prevReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(branch, releaseId);
-		}
+		// Always recalculate prevReleaseId during finalization
+		// Don't trust the stored comparedReleaseUuid as it may be incorrect (e.g., from out-of-order finalization)
+		prevReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(branch, releaseId);
+		
 		if(prevReleaseId == null){
 			// First release on this branch: compare with latest release on base branch
 			Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
@@ -214,8 +211,24 @@ public class AcollectionService {
 		UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
 
 		if (prevReleaseId != null) {
-			// Force recalculate during finalization to handle race condition where initial Acollection had incomplete artifacts
-			resolveBomDiff(releaseId, prevReleaseId, org, true);
+			// Validate that prevRelease is actually before current release chronologically
+			// This prevents inverted changelogs from being created
+			Optional<ReleaseData> prevRd = sharedReleaseService.getReleaseData(prevReleaseId);
+			Optional<ReleaseData> currRd = sharedReleaseService.getReleaseData(releaseId);
+			
+			if (prevRd.isPresent() && currRd.isPresent()) {
+				if (prevRd.get().getCreatedDate().isAfter(currRd.get().getCreatedDate())) {
+					log.warn("SBOM_CHANGELOG: prevRelease {} (date: {}) is AFTER current release {} (date: {}) - treating as first release", 
+						prevReleaseId, prevRd.get().getCreatedDate(), 
+						releaseId, currRd.get().getCreatedDate());
+					prevReleaseId = null;
+				}
+			}
+			
+			if (prevReleaseId != null) {
+				// Force recalculate during finalization to handle race condition where initial Acollection had incomplete artifacts
+				resolveBomDiff(releaseId, prevReleaseId, org, true);
+			}
 		} else {
 			log.warn("SBOM_CHANGELOG: No previous release found for release {}, cannot calculate diff", releaseId);
 		}
@@ -230,8 +243,17 @@ public class AcollectionService {
 	}
 
 	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate){
+		log.info("SBOM_DIFF_DEBUG: Starting resolveBomDiff for release {} vs prev {}, forceRecalculate={}", releaseId, prevReleaseId, forceRecalculate);
+		
 		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
 		AcollectionData prevAcollectionData = getLatestCollectionDataOfRelease(prevReleaseId);
+		
+		log.info("SBOM_DIFF_DEBUG: Current acollection: uuid={}, artifacts={}", 
+			currAcollectionData != null ? currAcollectionData.getUuid() : "null",
+			currAcollectionData != null && currAcollectionData.getArtifacts() != null ? currAcollectionData.getArtifacts().size() : "null");
+		log.info("SBOM_DIFF_DEBUG: Previous acollection: uuid={}, artifacts={}", 
+			prevAcollectionData != null ? prevAcollectionData.getUuid() : "null",
+			prevAcollectionData != null && prevAcollectionData.getArtifacts() != null ? prevAcollectionData.getArtifacts().size() : "null");
 		
 		if(null != currAcollectionData.getArtifacts() 
 			&& currAcollectionData.getArtifacts().size() > 0 
@@ -239,16 +261,25 @@ public class AcollectionService {
 			&& prevAcollectionData.getArtifacts().size() > 0
 			&& ! prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts())
 		){
+			log.info("SBOM_DIFF_DEBUG: Conditions met, proceeding with BOM diff calculation");
+			
             List<UUID> currArtifacts = getInternalBomIdsFromACollection(currAcollectionData);
-
 			List<UUID> prevArtifacts = getInternalBomIdsFromACollection(prevAcollectionData);
+			
+			log.info("SBOM_DIFF_DEBUG: Current internal BOM IDs: {}", currArtifacts);
+			log.info("SBOM_DIFF_DEBUG: Previous internal BOM IDs: {}", prevArtifacts);
 			
 			if (currArtifacts.isEmpty() && prevArtifacts.isEmpty()) {
 				log.warn("SBOM_CHANGELOG: Both current and previous releases have NO internal BOM IDs - cannot calculate changelog");
 				return;
 			}
 			
-			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(currArtifacts, prevArtifacts, org);
+			log.info("SBOM_DIFF_DEBUG: Calling rebomService.getArtifactChangelog");
+			// Call with prevArtifacts (old/baseline) first, then currArtifacts (new/current)
+			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(prevArtifacts, currArtifacts, org);
+			log.info("SBOM_DIFF_DEBUG: Changelog result - added: {}, removed: {}", 
+				artifactChangelog != null && artifactChangelog.added() != null ? artifactChangelog.added().size() : "null",
+				artifactChangelog != null && artifactChangelog.removed() != null ? artifactChangelog.removed().size() : "null");
 
 			// If forceRecalculate is true (called from finalization), always update even if changelog appears same
 			// This handles the race condition where initial Acollection had incomplete artifacts
@@ -319,11 +350,8 @@ public class AcollectionService {
 			return List.of();
 		}
 		
-		// Remove last element (release1) as it's the baseline
-		if (releases.size() > 1) {
-			releases.remove(releases.size() - 1);
-		}
-		
+		// Include all acollections for sequential aggregation
+		// The aggregation logic handles null/empty changelogs (e.g., first release) correctly
 		return releases.stream()
 			.map(r -> getLatestCollectionDataOfRelease(r.getUuid()))
 			.filter(java.util.Objects::nonNull)

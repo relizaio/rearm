@@ -113,11 +113,15 @@ public class AnalyticsMetricsService {
 		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
 		ZonedDateTime upToDate = requestedDate.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC);
 		
+		log.info("FINDINGS_COMPARISON: getFindingsPerDayForComponent - component: {}, dateKey: {}, upToDate: {}", 
+			componentUuid, dateKey, upToDate);
+		
 		// Get all active branches of the component, excluding branches with EXCLUDED findingAnalyticsParticipation
 		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE).stream()
 				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
 				.collect(Collectors.toList());
 		if (branches.isEmpty()) {
+			log.warn("FINDINGS_COMPARISON: No active branches found for component {}", componentUuid);
 			return Optional.empty();
 		}
 		
@@ -131,18 +135,30 @@ public class AnalyticsMetricsService {
 				.collect(Collectors.toList());
 		
 		if (latestReleasesOfBranches.isEmpty()) {
+			log.warn("FINDINGS_COMPARISON: No releases found up to date {} for component {}", upToDate, componentUuid);
 			return Optional.empty();
 		}
+		
+		log.info("FINDINGS_COMPARISON: Found {} releases for dateKey {}", latestReleasesOfBranches.size(), dateKey);
+		latestReleasesOfBranches.forEach(rd -> 
+			log.info("FINDINGS_COMPARISON:   - Release: version={}, uuid={}, createdDate={}", 
+				rd.getVersion(), rd.getUuid(), rd.getCreatedDate()));
 		
 		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
 		latestReleasesOfBranches.forEach(rd -> {
 			ReleaseMetricsDto rmd2 = rd.getMetrics();
 			if (rmd2 != null) {
+				log.info("FINDINGS_COMPARISON:   - Merging metrics from release {}: vulnDetails size={}", 
+					rd.getVersion(), rmd2.getVulnerabilityDetails() != null ? rmd2.getVulnerabilityDetails().size() : "null");
 				rmd2.enrichSourcesWithRelease(rd.getUuid());
 				rmd.mergeWithByContent(rmd2);
 			}
 		});
 		vulnAnalysisService.processReleaseMetricsDto(org, componentUuid, AnalysisScope.COMPONENT, rmd);
+		
+		log.info("FINDINGS_COMPARISON: Final merged metrics for dateKey {}: vulnDetails size={}", 
+			dateKey, rmd.getVulnerabilityDetails() != null ? rmd.getVulnerabilityDetails().size() : "null");
+		
 		return Optional.of(rmd);
 	}
 	
@@ -416,36 +432,5 @@ public class AnalyticsMetricsService {
 		return res;
 	}
 	
-	/**
-	 * Extracts metrics pair for a component between two dates for changelog comparison.
-	 * Uses pre-aggregated daily metrics for performance.
-	 * 
-	 * @param componentUuid Component UUID
-	 * @param dateFrom Start date
-	 * @param dateTo End date
-	 * @return Optional containing metrics pair, or empty if metrics not found
-	 */
-	public Optional<MetricsPair> getMetricsPairForDateRange(
-			UUID componentUuid, 
-			ZonedDateTime dateFrom, 
-			ZonedDateTime dateTo) {
-		
-		String dateKey1 = dateFrom.toLocalDate().toString();
-		String dateKey2 = dateTo.toLocalDate().toString();
-		
-		Optional<ReleaseMetricsDto> m1 = getFindingsPerDayForComponent(componentUuid, dateKey1);
-		Optional<ReleaseMetricsDto> m2 = getFindingsPerDayForComponent(componentUuid, dateKey2);
-		
-		if (m1.isEmpty() || m2.isEmpty()) {
-			return Optional.empty();
-		}
-		
-		return Optional.of(new MetricsPair(m1.get(), m2.get()));
-	}
-	
-	/**
-	 * Helper record to hold a pair of metrics for comparison in changelog operations.
-	 */
-	public record MetricsPair(ReleaseMetricsDto metrics1, ReleaseMetricsDto metrics2) {}
 	
 }

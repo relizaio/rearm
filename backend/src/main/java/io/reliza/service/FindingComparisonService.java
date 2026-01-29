@@ -188,18 +188,11 @@ public class FindingComparisonService {
 			ReleaseMetricsDto metrics2) {
 		
 		if (metrics1 == null || metrics2 == null) {
+			log.warn("FINDINGS_COMPARISON: One or both metrics are null - metrics1={}, metrics2={}", 
+				metrics1 != null ? "present" : "null", 
+				metrics2 != null ? "present" : "null");
 			return emptyFindingChanges();
 		}
-		
-		return compareFindingMetrics(metrics1, metrics2);
-	}
-	
-	/**
-	 * Core comparison logic for finding metrics (internal implementation)
-	 */
-	private FindingChangesDto.FindingChangesRecord compareFindingMetrics(
-			ReleaseMetricsDto metrics1,
-			ReleaseMetricsDto metrics2) {
 		
 		// Compare vulnerabilities
 		var vulnChanges = compareVulnerabilities(
