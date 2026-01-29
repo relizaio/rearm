@@ -708,7 +708,9 @@ public class IntegrationService {
 			
 			final ZonedDateTime attributedAt = ZonedDateTime.now();
 			dvr.components().forEach(c -> {
-				VulnerabilityDto vdto = new VulnerabilityDto(c.purl(), dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt);
+				// Decode URL-encoded @ symbol in purl from DTrack
+				String purl = c.purl() != null ? c.purl().replace("%40", "@") : null;
+				VulnerabilityDto vdto = new VulnerabilityDto(purl, dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt);
 				vulnerabilityDetails.add(vdto);
 			});
 		});
@@ -733,7 +735,8 @@ public class IntegrationService {
 		
 		violationDetailsRaw.forEach(vd -> {
 			DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
-			String purl = dvr.component().purl();
+			// Decode URL-encoded @ symbol in purl from DTrack
+			String purl = dvr.component().purl() != null ? dvr.component().purl().replace("%40", "@") : null;
 			ViolationType violationType = dvr.type();
 			
 			// Check if this violation should be ignored based on purl regex patterns
@@ -1035,11 +1038,11 @@ public class IntegrationService {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
 				String dateFilter = (lastSyncTime != null) ? "&attributedOnDateFrom=" + lastSyncTime.toLocalDate().toString() : "";
 				
-				// Paginated retrieval
-				List<Object> vulnerabilityFindings = new ArrayList<>();
+				// Paginated retrieval - extract project UUIDs per page to avoid OOM
 				int pageNumber = 1;
 				int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
 				boolean hasMorePages = true;
+				int totalVulnerabilitiesProcessed = 0;
 				
 				while (hasMorePages) {
 					URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + 
@@ -1063,8 +1066,25 @@ public class IntegrationService {
 						hasMorePages = false;
 						log.debug("No more vulnerability findings found at page {} for org {}", pageNumber, orgUuid);
 					} else {
-						// Add findings from this page to the total list
-						vulnerabilityFindings.addAll(pageFindings);
+						// Extract project UUIDs from this page immediately to avoid holding all findings in memory
+						for (Object finding : pageFindings) {
+							try {
+								@SuppressWarnings("unchecked")
+								Map<String, Object> findingMap = (Map<String, Object>) finding;
+								@SuppressWarnings("unchecked")
+								Map<String, Object> component = (Map<String, Object>) findingMap.get("component");
+								if (component != null) {
+									Object projectObj = component.get("project");
+									if (projectObj != null) {
+										UUID projectUuid = UUID.fromString(projectObj.toString());
+										projectUuids.add(projectUuid);
+									}
+								}
+							} catch (Exception e) {
+								log.warn("Error parsing project UUID from vulnerability finding: {}", e.getMessage());
+							}
+						}
+						totalVulnerabilitiesProcessed += pageFindings.size();
 						log.debug("Retrieved {} vulnerability findings from page {} for org {}", pageFindings.size(), pageNumber, orgUuid);
 						
 						// If we got fewer records than page size, this is the last page
@@ -1077,27 +1097,8 @@ public class IntegrationService {
 					pageNumber++;
 				}
 				
-				// Extract project UUIDs from component.project field
-				vulnerabilityFindings.forEach(finding -> {
-					try {
-						@SuppressWarnings("unchecked")
-						Map<String, Object> findingMap = (Map<String, Object>) finding;
-						@SuppressWarnings("unchecked")
-						Map<String, Object> component = (Map<String, Object>) findingMap.get("component");
-						if (component != null) {
-							Object projectObj = component.get("project");
-							if (projectObj != null) {
-								UUID projectUuid = UUID.fromString(projectObj.toString());
-								projectUuids.add(projectUuid);
-							}
-						}
-					} catch (Exception e) {
-						log.warn("Error parsing project UUID from vulnerability finding: {}", e.getMessage());
-					}
-				});
-				
 				log.info("Retrieved {} unique project UUIDs from {} unsynced vulnerabilities from Dependency Track for org {}", 
-						projectUuids.size(), vulnerabilityFindings.size(), orgUuid);
+						projectUuids.size(), totalVulnerabilitiesProcessed, orgUuid);
 			} catch (WebClientResponseException wcre) {
 				if (wcre.getStatusCode() == HttpStatus.NOT_FOUND) {
 					log.warn("Dependency Track integration not found or no vulnerabilities available for org {}", orgUuid);
@@ -1127,11 +1128,11 @@ public class IntegrationService {
 				String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
 				String dateFilter = (lastSyncTime != null) ? "&occurredOnDateFrom=" + lastSyncTime.toLocalDate().toString() : "";
 				
-				// Paginated retrieval
-				List<Object> violationFindings = new ArrayList<>();
+				// Paginated retrieval - extract project UUIDs per page to avoid OOM
 				int pageNumber = 1;
 				int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
 				boolean hasMorePages = true;
+				int totalViolationsProcessed = 0;
 				
 				while (hasMorePages) {
 					URI dtrackUri = URI.create(dtrackIntegration.getUri().toString() + 
@@ -1155,8 +1156,25 @@ public class IntegrationService {
 						hasMorePages = false;
 						log.debug("No more violation findings found at page {} for org {}", pageNumber, orgUuid);
 					} else {
-						// Add findings from this page to the total list
-						violationFindings.addAll(pageFindings);
+						// Extract project UUIDs from this page immediately to avoid holding all findings in memory
+						for (Object violation : pageFindings) {
+							try {
+								@SuppressWarnings("unchecked")
+								Map<String, Object> violationMap = (Map<String, Object>) violation;
+								@SuppressWarnings("unchecked")
+								Map<String, Object> project = (Map<String, Object>) violationMap.get("project");
+								if (project != null) {
+									Object projectUuidObj = project.get("uuid");
+									if (projectUuidObj != null) {
+										UUID projectUuid = UUID.fromString(projectUuidObj.toString());
+										projectUuids.add(projectUuid);
+									}
+								}
+							} catch (Exception e) {
+								log.warn("Error parsing project UUID from violation finding: {}", e.getMessage());
+							}
+						}
+						totalViolationsProcessed += pageFindings.size();
 						log.debug("Retrieved {} violation findings from page {} for org {}", pageFindings.size(), pageNumber, orgUuid);
 						
 						// If we got fewer records than page size, this is the last page
@@ -1169,27 +1187,8 @@ public class IntegrationService {
 					pageNumber++;
 				}
 				
-				// Extract project UUIDs from project.uuid field
-				violationFindings.forEach(violation -> {
-					try {
-						@SuppressWarnings("unchecked")
-						Map<String, Object> violationMap = (Map<String, Object>) violation;
-						@SuppressWarnings("unchecked")
-						Map<String, Object> project = (Map<String, Object>) violationMap.get("project");
-						if (project != null) {
-							Object projectUuidObj = project.get("uuid");
-							if (projectUuidObj != null) {
-								UUID projectUuid = UUID.fromString(projectUuidObj.toString());
-								projectUuids.add(projectUuid);
-							}
-						}
-					} catch (Exception e) {
-						log.warn("Error parsing project UUID from violation finding: {}", e.getMessage());
-					}
-				});
-				
 				log.info("Retrieved {} unique project UUIDs from {} unsynced violations from Dependency Track for org {}", 
-						projectUuids.size(), violationFindings.size(), orgUuid);
+						projectUuids.size(), totalViolationsProcessed, orgUuid);
 			} catch (WebClientResponseException wcre) {
 				if (wcre.getStatusCode() == HttpStatus.NOT_FOUND) {
 					log.warn("Dependency Track integration not found or no violations available for org {}", orgUuid);
