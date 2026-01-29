@@ -664,7 +664,7 @@ const fetchFindingIds = async () => {
                 const cweIds = (response.data.findingsPerDayByPerspective.weaknessDetails || [])
                     .map((w: any) => w.cweId)
                     .filter((id: string) => id)
-                findingIds.value = [...new Set([...vulnIds, ...cweIds])].sort()
+                findingIds.value = [...new Set([...vulnIds, ...cweIds])].sort().reverse()
                 filteredFindingIds.value = findingIds.value
             }
         } else {
@@ -695,7 +695,7 @@ const fetchFindingIds = async () => {
                 const cweIds = (response.data.findingsPerDay.weaknessDetails || [])
                     .map((w: any) => w.cweId)
                     .filter((id: string) => id)
-                findingIds.value = [...new Set([...vulnIds, ...cweIds])].sort()
+                findingIds.value = [...new Set([...vulnIds, ...cweIds])].sort().reverse()
                 filteredFindingIds.value = findingIds.value
             }
         }
