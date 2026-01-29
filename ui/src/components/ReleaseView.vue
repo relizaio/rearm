@@ -19,6 +19,9 @@
                         <n-radio-button value="OBOM">
                             OBOM
                         </n-radio-button>
+                        <n-radio-button value="VDR">
+                            VDR
+                        </n-radio-button>
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
@@ -69,6 +72,19 @@
                     <span v-if="bomExportPending" class="ml-2">Exporting...</span>
                     <span v-else>Export</span>
                 </n-button>
+                <n-form v-if="exportBomType === 'VDR'">
+                    <n-form-item>
+                        Include Suppressed:<n-switch style="margin-left: 5px;" v-model:value="vdrIncludeSuppressed"/>
+                    </n-form-item>
+                    <n-spin :show="bomExportPending" small style="margin-top: 5px;">
+                        <n-button type="success" 
+                            :disabled="bomExportPending"
+                            @click="exportReleaseVdr">
+                            <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                            <span v-else>Export</span>
+                        </n-button>
+                    </n-spin>
+                </n-form>
             </n-modal>
             <n-modal
                 v-model:show="showDownloadArtifactModal"
@@ -907,6 +923,7 @@ const exportBomType: Ref<string> = ref('SBOM')
 const selectedRebomType: Ref<string> = ref('')
 const tldOnly: Ref<boolean> = ref(true)
 const ignoreDev: Ref<boolean> = ref(false)
+const vdrIncludeSuppressed: Ref<boolean> = ref(false)
 const selectedBomStructureType: Ref<string> = ref('FLAT')
 const bomExportQuery: ComputedRef<string> = computed((): string => {
     let queryOptions = '?tldOnly=false'
@@ -2141,6 +2158,43 @@ async function exportReleaseObom () {
         link.download = fileName
         link.click()
         notify('info', 'Processing Download', 'Your artifact is being downloaded...')
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    } finally {
+        bomExportPending.value = false
+    }
+}
+
+async function exportReleaseVdr () {
+    try {
+        bomExportPending.value = true
+        const gqlResp: any = await graphqlClient.mutate({
+            mutation: gql`
+                mutation releaseVdrExport($release: ID!, $includeSuppressed: Boolean) {
+                    releaseVdrExport(release: $release, includeSuppressed: $includeSuppressed)
+                }
+            `,
+            variables: {
+                release: updatedRelease.value.uuid,
+                includeSuppressed: vdrIncludeSuppressed.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        let exportContent = gqlResp.data.releaseVdrExport
+        if (typeof exportContent !== 'string') {
+            exportContent = JSON.stringify(exportContent, null, 2)
+        }
+        const fileName = updatedRelease.value.uuid + '-vdr.json'
+        const blob = new Blob([exportContent], { type: 'application/json' })
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = fileName
+        link.click()
+        notify('info', 'Processing Download', 'Your VDR is being downloaded...')
     } catch (err: any) {
         Swal.fire(
             'Error!',
