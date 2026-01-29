@@ -235,7 +235,12 @@ public class AnalyticsMetricsService {
 			latestReleasePerBranchPerDay.computeIfAbsent(releaseDate, k -> new HashMap<>());
 			Map<UUID, ReleaseData> branchMap = latestReleasePerBranchPerDay.get(releaseDate);
 			ReleaseData existing = branchMap.get(branchUuid);
-			if (existing == null || rd.getCreatedDate().isAfter(existing.getCreatedDate())) {
+			if (existing == null ||
+				(rd.getCreatedDate().isAfter(existing.getCreatedDate()) && 
+					rd.getLifecycle() != ReleaseLifecycle.CANCELLED && 
+					rd.getLifecycle() != ReleaseLifecycle.REJECTED &&
+					rd.getLifecycle() != ReleaseLifecycle.PENDING
+				))  {
 				branchMap.put(branchUuid, rd);
 			}
 		}
@@ -281,7 +286,12 @@ public class AnalyticsMetricsService {
 		for (ReleaseData rd : releasesInRange) {
 			LocalDate releaseDate = rd.getCreatedDate().toLocalDate();
 			ReleaseData existing = latestReleasePerDay.get(releaseDate);
-			if (existing == null || rd.getCreatedDate().isAfter(existing.getCreatedDate())) {
+			if (existing == null || 
+				(rd.getCreatedDate().isAfter(existing.getCreatedDate()) && 
+					rd.getLifecycle() != ReleaseLifecycle.CANCELLED && 
+					rd.getLifecycle() != ReleaseLifecycle.REJECTED &&
+					rd.getLifecycle() != ReleaseLifecycle.PENDING
+				)) {
 				latestReleasePerDay.put(releaseDate, rd);
 			}
 		}
