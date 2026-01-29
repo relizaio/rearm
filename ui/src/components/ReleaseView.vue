@@ -1423,7 +1423,7 @@ async function fetchArtifactVersionHistory(artifactUuid: string) {
 
 function openDownloadArtifactModal(artifact: any) {
     selectedArtifactForDownload.value = artifact
-    downloadType.value = artifact.bomFormat === 'CYCLONEDX' ? 'DOWNLOAD' : 'RAW_DOWNLOAD'
+    downloadType.value = artifact.type === 'BOM' ? 'DOWNLOAD' : 'RAW_DOWNLOAD'
     showDownloadArtifactModal.value = true
     selectedVersionForDownload.value = `${artifact.uuid}::${artifact.version || ''}`
     fetchArtifactVersionHistory(artifact.uuid)
