@@ -49,7 +49,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.model.AnalysisJustification;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.FindingType;
+import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
@@ -152,6 +156,9 @@ public class ReleaseService {
 
 	@Autowired
 	private ReleaseMetricsComputeService releaseMetricsComputeService;
+	
+	@Autowired
+	private VulnAnalysisService vulnAnalysisService;
 
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
@@ -1546,7 +1553,7 @@ public class ReleaseService {
 						|| vulnDto.analysisState() == AnalysisState.NOT_AFFECTED)) {
 					continue;
 				}
-				Vulnerability vuln = transformVulnerabilityToVdr(vulnDto);
+				Vulnerability vuln = transformVulnerabilityToVdr(vulnDto, releaseData);
 				vulnerabilities.add(vuln);
 			}
 			
@@ -1560,8 +1567,12 @@ public class ReleaseService {
 	
 	/**
 	 * Transform internal VulnerabilityDto to CycloneDX Vulnerability
+	 * @param vulnDto The vulnerability DTO
+	 * @param releaseData The release data for looking up analysis details
 	 */
-	private Vulnerability transformVulnerabilityToVdr(VulnerabilityDto vulnDto) {
+	private Vulnerability transformVulnerabilityToVdr(VulnerabilityDto vulnDto, ReleaseData releaseData) {
+		UUID orgUuid = releaseData.getOrg();
+		UUID releaseUuid = releaseData.getUuid();
 		Vulnerability vuln = new Vulnerability();
 		
 		// Set vulnerability ID
@@ -1596,10 +1607,36 @@ public class ReleaseService {
 			vuln.setAffects(List.of(affect));
 		}
 		
-		// Set analysis state if present
+		// Set analysis state and details if present
 		if (vulnDto.analysisState() != null) {
 			Vulnerability.Analysis analysis = new Vulnerability.Analysis();
 			analysis.setState(mapVdrAnalysisState(vulnDto.analysisState()));
+			
+			// Look up analysis details (justification and detail) from VulnAnalysisData using release scope
+			if (orgUuid != null && releaseUuid != null && vulnDto.purl() != null && vulnDto.vulnId() != null) {
+				try {
+					Optional<VulnAnalysisData> analysisOpt = vulnAnalysisService.findByOrgAndLocationAndFindingIdAndScopeAndType(
+							orgUuid, vulnDto.purl(), vulnDto.vulnId(), AnalysisScope.RELEASE, releaseUuid, FindingType.VULNERABILITY);
+					if (analysisOpt.isPresent()) {
+						VulnAnalysisData analysisData = analysisOpt.get();
+						// Set justification if present
+						if (analysisData.getAnalysisJustification() != null) {
+							analysis.setJustification(mapVdrAnalysisJustification(analysisData.getAnalysisJustification()));
+						}
+						// Set detail from the latest history entry if present
+						List<VulnAnalysisData.AnalysisHistory> history = analysisData.getAnalysisHistory();
+						if (history != null && !history.isEmpty()) {
+							String latestDetail = history.get(history.size() - 1).getDetails();
+							if (StringUtils.isNotEmpty(latestDetail)) {
+								analysis.setDetail(latestDetail);
+							}
+						}
+					}
+				} catch (Exception e) {
+					log.debug("Could not look up analysis details for vulnerability {}: {}", vulnDto.vulnId(), e.getMessage());
+				}
+			}
+			
 			vuln.setAnalysis(analysis);
 		}
 		
@@ -1628,6 +1665,23 @@ public class ReleaseService {
 			case IN_TRIAGE -> Vulnerability.Analysis.State.IN_TRIAGE;
 			case FALSE_POSITIVE -> Vulnerability.Analysis.State.FALSE_POSITIVE;
 			case NOT_AFFECTED -> Vulnerability.Analysis.State.NOT_AFFECTED;
+		};
+	}
+	
+	/**
+	 * Map internal analysis justification to CycloneDX analysis justification
+	 */
+	private Vulnerability.Analysis.Justification mapVdrAnalysisJustification(AnalysisJustification justification) {
+		return switch (justification) {
+			case CODE_NOT_PRESENT -> Vulnerability.Analysis.Justification.CODE_NOT_PRESENT;
+			case CODE_NOT_REACHABLE -> Vulnerability.Analysis.Justification.CODE_NOT_REACHABLE;
+			case REQUIRES_CONFIGURATION -> Vulnerability.Analysis.Justification.REQUIRES_CONFIGURATION;
+			case REQUIRES_DEPENDENCY -> Vulnerability.Analysis.Justification.REQUIRES_DEPENDENCY;
+			case REQUIRES_ENVIRONMENT -> Vulnerability.Analysis.Justification.REQUIRES_ENVIRONMENT;
+			case PROTECTED_BY_COMPILER -> Vulnerability.Analysis.Justification.PROTECTED_BY_COMPILER;
+			case PROTECTED_AT_RUNTIME -> Vulnerability.Analysis.Justification.PROTECTED_AT_RUNTIME;
+			case PROTECTED_AT_PERIMETER -> Vulnerability.Analysis.Justification.PROTECTED_AT_PERIMETER;
+			case PROTECTED_BY_MITIGATING_CONTROL -> Vulnerability.Analysis.Justification.PROTECTED_BY_MITIGATING_CONTROL;
 		};
 	}
 	
