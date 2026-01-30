@@ -724,9 +724,6 @@ const instances: Ref<any[]> = ref([])
 
 const initLoad = async function () {
     instances.value = []
-    activeComponentsInputDate.value = new Date()
-    activeComponentsInputDate.value.setDate(activeComponentsInputDate.value.getDate() - 30)
-    activeComponentsInput.value.cutOffDate = activeComponentsInputDate.value.getTime()
 }
 
 const hashSearchResults : Ref<any> = ref({})
@@ -1131,7 +1128,11 @@ async function handlePurlSearchClick (row: any) {
 
 // Removed dtrackSearchReleaseRows - now using ComponentBranchesTable component
 
-const activeComponentsInputDate = ref(new Date())
+const activeComponentsInputDate = ref((() => {
+    const date = new Date()
+    date.setDate(date.getDate() - 30)
+    return date
+})())
 const activeComponentsInput = ref({
     organization: myorg.value.uuid,
     cutOffDate: activeComponentsInputDate.value.getTime(),
