@@ -2236,6 +2236,13 @@ async function exportReleaseVdrPdf() {
         const releaseVersion = updatedRelease.value.version || ''
         const title = `Vulnerability Disclosure Report (VDR) for release: ${releaseName}${releaseVersion ? `, version ${releaseVersion}` : ''}`
         
+        // Build filename: vdr-{normalized component name}-{normalized version}-{date}.pdf
+        const normalizeForFilename = (str: string) => str.toLowerCase().replace(/[^a-zA-Z0-9\-._]/g, '_')
+        const normalizedName = normalizeForFilename(releaseName)
+        const normalizedVersion = normalizeForFilename(releaseVersion)
+        const dateStr = new Date().toISOString().slice(0, 10)
+        const filenamePrefix = `vdr-${normalizedName}${normalizedVersion ? `-${normalizedVersion}` : ''}-${dateStr}`
+        
         const result = exportFindingsToPdf({
             data: vulnerabilityData,
             title,
@@ -2244,7 +2251,9 @@ async function exportReleaseVdrPdf() {
             severities: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED'],
             includeAnalysis: true,
             includeSuppressed: vdrIncludeSuppressed.value,
-            filenamePrefix: 'vdr'
+            filenamePrefix,
+            skipDateInFilename: true,
+            hideTypeColumn: true
         })
         
         if (!result.success) {

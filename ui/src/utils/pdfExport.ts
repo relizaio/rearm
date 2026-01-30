@@ -13,6 +13,8 @@ export interface PdfExportOptions {
     includeAnalysis?: boolean
     includeSuppressed?: boolean
     filenamePrefix?: string
+    skipDateInFilename?: boolean
+    hideTypeColumn?: boolean
 }
 
 function getSeverityColor(severity: string): string {
@@ -40,7 +42,9 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         severities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED'],
         includeAnalysis = true,
         includeSuppressed = false,
-        filenamePrefix = 'findings'
+        filenamePrefix = 'findings',
+        skipDateInFilename = false,
+        hideTypeColumn = false
     } = options
 
     // Filter data based on settings
@@ -83,13 +87,16 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         return purlA.localeCompare(purlB)
     })
 
-    // Build table header based on includeAnalysis setting
-    const headerRow: any[] = [
-        { text: 'Type', style: 'tableHeader' },
+    // Build table header based on settings
+    const headerRow: any[] = []
+    if (!hideTypeColumn) {
+        headerRow.push({ text: 'Type', style: 'tableHeader' })
+    }
+    headerRow.push(
         { text: 'Issue ID', style: 'tableHeader' },
         { text: 'PURL / Location', style: 'tableHeader' },
         { text: 'Severity', style: 'tableHeader' }
-    ]
+    )
     if (includeAnalysis) {
         headerRow.push({ text: 'Analysis State', style: 'tableHeader' })
     }
@@ -101,22 +108,30 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         const isSuppressedRow = row.analysisState === 'FALSE_POSITIVE' || row.analysisState === 'NOT_AFFECTED'
         const rowStyle = isSuppressedRow ? { decoration: 'lineThrough', color: '#888888' } : {}
         
-        const rowData: any[] = [
-            { text: row.type || '', ...rowStyle },
+        const rowData: any[] = []
+        if (!hideTypeColumn) {
+            rowData.push({ text: row.type || '', ...rowStyle })
+        }
+        rowData.push(
             { text: row.id || '', ...rowStyle },
             { text: row.purl || row.location || '', ...rowStyle },
             { text: row.severity || '', ...rowStyle, color: getSeverityColor(row.severity) }
-        ]
+        )
         if (includeAnalysis) {
             rowData.push({ text: row.analysisState || 'In Triage', ...rowStyle })
         }
         tableBody.push(rowData)
     })
 
-    // Set column widths based on includeAnalysis
-    const widths = includeAnalysis 
-        ? ['auto', 'auto', '*', 'auto', 'auto']
-        : ['auto', 'auto', '*', 'auto']
+    // Set column widths based on settings
+    const widths: string[] = []
+    if (!hideTypeColumn) {
+        widths.push('auto')
+    }
+    widths.push('auto', '*', 'auto')
+    if (includeAnalysis) {
+        widths.push('auto')
+    }
 
     const docDefinition: any = {
         pageOrientation: 'landscape',
@@ -125,7 +140,7 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
             { text: `Organization: ${orgName || 'Unknown'}`, style: 'subheader' },
             { text: `Generated: ${new Date().toLocaleString('en-CA', { hour12: false })}`, style: 'subheader' },
             { text: `Total findings: ${data.length}${includeSuppressed ? ' (including suppressed)' : ''}`, style: 'subheader' },
-            { text: `Tool: ReARM (https://rearmhq.com)`, style: 'subheader', margin: [0, 0, 0, 10] },
+            { text: `Tool: ReARM - rearmhq.com`, style: 'subheader', margin: [0, 0, 0, 10] },
             {
                 table: {
                     headerRows: 1,
@@ -161,7 +176,7 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
 
     // Generate filename
     const timestamp = new Date().toISOString().slice(0, 10)
-    const filename = `${filenamePrefix}-${timestamp}.pdf`
+    const filename = skipDateInFilename ? `${filenamePrefix}.pdf` : `${filenamePrefix}-${timestamp}.pdf`
 
     pdfMake.createPdf(docDefinition).download(filename)
     return { success: true }
