@@ -15,6 +15,7 @@
     "apollo-upload-client": "^19.0.0",
     "axios": "^1.13.2",
     "keycloak-js": "^26.2.1",
+    "pdfmake": "^0.3.3",
     "prismjs": "^1.30.0",
     "sweetalert2": "^11.26.3",
     "vega": "^6.2.0",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@types/apollo-upload-client": "^19.0.0",
+    "@types/pdfmake": "^0.2.12",
     "@types/prismjs": "^1.26.5",
     "@typescript-eslint/eslint-plugin": "^8.46.2",
     "@typescript-eslint/parser": "^8.46.2",
