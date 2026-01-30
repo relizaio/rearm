@@ -26,15 +26,32 @@ const props = defineProps<{
     orgUuid: string
     loading?: boolean
     featureSetLabel?: string
+    showStatusColumn?: boolean
+    showIsLatestColumn?: boolean
 }>()
 
-// Transform component data into flat table rows
-const tableData = computed(() => {
-    const rows: any[] = []
-    props.data.forEach((component: any) => {
+interface ComponentBranchRow {
+    key: string
+    componentUuid: string
+    componentName: string
+    componentType: string
+    branchUuid: string
+    branchName: string
+    branchStatus: string
+    earliestVersion: string
+    earliestReleaseUuid: string
+    latestVersion: string
+    latestReleaseUuid: string
+    latestReleaseVersion: string
+    isLatest: boolean
+    releases: any[]
+}
+
+function transformComponentBranchData(data: any[]): ComponentBranchRow[] {
+    const rows: ComponentBranchRow[] = []
+    data.forEach((component: any) => {
         component.branches?.forEach((branch: any) => {
             if (branch.releases && branch.releases.length > 0) {
-                // Sort releases to get earliest and latest
                 const sortedReleases = [...branch.releases].sort((a: any, b: any) => 
                     new Date(a.createdDate).getTime() - new Date(b.createdDate).getTime()
                 )
@@ -61,170 +78,167 @@ const tableData = computed(() => {
         })
     })
     return rows
-})
+}
 
-// Nested table columns for expanded releases
-const releaseColumns: DataTableColumns<any> = [
-    {
-        title: 'Release Version',
-        key: 'version',
-        width: 150,
-        render: (row: any) => {
-            return h(
-                RouterLink,
-                {
-                    to: {
-                        name: 'ReleaseView',
-                        params: { uuid: row.uuid }
-                    }
-                },
-                { default: () => row.version }
-            )
-        }
-    },
-    {
-        title: 'Created',
-        key: 'createdDate',
-        width: 180,
-        render: (row: any) => (new Date(row.createdDate)).toLocaleString('en-CA', { hour12: false })
-    },
-    {
-        title: 'Lifecycle',
-        key: 'lifecycle',
-        width: 120,
-        render: (row: any) => constants.LifecycleOptions.find((lo: any) => lo.key === row.lifecycle)?.label || row.lifecycle
-    }
-]
-
-// Main table columns with expandable rows
-const columns = computed<DataTableColumns<any>>(() => [
-    {
-        type: 'expand',
-        expandable: (row: any) => row.releases && row.releases.length > 0,
-        renderExpand: (row: any) => {
-            return h(NDataTable, {
-                data: row.releases,
-                columns: releaseColumns,
-                pagination: false
-            })
-        }
-    },
-    {
-        title: 'Component / Product',
-        key: 'componentName',
-        width: 200,
-        render: (row: any) => {
-            const routeName = row.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
-            return h(
-                RouterLink,
-                {
-                    to: {
-                        name: routeName,
-                        params: {
-                            orguuid: props.orgUuid,
-                            compuuid: row.componentUuid
-                        }
-                    }
-                },
-                { default: () => row.componentName }
-            )
-        }
-    },
-    {
-        title: `Branch / ${props.featureSetLabel || 'Feature Set'}`,
-        key: 'branchName',
-        width: 180,
-        render: (row: any) => {
-            const routeName = row.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
-            return h(
-                RouterLink,
-                {
-                    to: {
-                        name: routeName,
-                        params: {
-                            orguuid: props.orgUuid,
-                            compuuid: row.componentUuid,
-                            branchuuid: row.branchUuid
-                        }
-                    }
-                },
-                { default: () => row.branchName }
-            )
-        }
-    },
-    {
-        title: 'Type',
-        key: 'componentType',
-        width: 120,
-        filter(value: any, row: any) {
-            return row.componentType === value
+function getReleaseColumns(): DataTableColumns<any> {
+    return [
+        {
+            title: 'Release Version',
+            key: 'version',
+            width: 150,
+            render: (row: any) => {
+                return h(
+                    RouterLink,
+                    { to: { name: 'ReleaseView', params: { uuid: row.uuid } } },
+                    { default: () => row.version }
+                )
+            }
         },
-        filterOptions: [
-            { label: 'COMPONENT', value: 'COMPONENT' },
-            { label: 'PRODUCT', value: 'PRODUCT' }
-        ],
-        filterMultiple: true
-    },
-    {
+        {
+            title: 'Created',
+            key: 'createdDate',
+            width: 180,
+            render: (row: any) => (new Date(row.createdDate)).toLocaleString('en-CA', { hour12: false })
+        },
+        {
+            title: 'Lifecycle',
+            key: 'lifecycle',
+            width: 120,
+            render: (row: any) => constants.LifecycleOptions.find((lo: any) => lo.key === row.lifecycle)?.label || row.lifecycle
+        }
+    ]
+}
+
+function buildColumns(orgUuid: string, featureSetLabel?: string, showStatusColumn?: boolean, showIsLatestColumn?: boolean): DataTableColumns<any> {
+    const releaseColumns = getReleaseColumns()
+    
+    const columns: any[] = [
+        {
+            type: 'expand',
+            expandable: (row: any) => row.releases && row.releases.length > 0,
+            renderExpand: (row: any) => {
+                return h(NDataTable, {
+                    data: row.releases,
+                    columns: releaseColumns,
+                    pagination: false
+                })
+            }
+        },
+        {
+            title: 'Component / Product',
+            key: 'componentName',
+            width: 200,
+            render: (row: any) => {
+                const routeName = row.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+                return h(
+                    RouterLink,
+                    { to: { name: routeName, params: { orguuid: orgUuid, compuuid: row.componentUuid } } },
+                    { default: () => row.componentName }
+                )
+            }
+        },
+        {
+            title: `Branch / ${featureSetLabel || 'Feature Set'}`,
+            key: 'branchName',
+            width: 180,
+            render: (row: any) => {
+                const routeName = row.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+                return h(
+                    RouterLink,
+                    { to: { name: routeName, params: { orguuid: orgUuid, compuuid: row.componentUuid, branchuuid: row.branchUuid } } },
+                    { default: () => row.branchName }
+                )
+            }
+        },
+        {
+            title: 'Type',
+            key: 'componentType',
+            width: 120,
+            filter(value: any, row: any) { return row.componentType === value },
+            filterOptions: [
+                { label: 'COMPONENT', value: 'COMPONENT' },
+                { label: 'PRODUCT', value: 'PRODUCT' }
+            ],
+            filterMultiple: true
+        }
+    ]
+    
+    if (showStatusColumn) {
+        columns.push({
+            title: 'Status',
+            key: 'branchStatus',
+            width: 100,
+            render: (row: any) => row.branchStatus || 'N/A',
+            filter(value: any, row: any) { return row.branchStatus === value },
+            filterOptions: [
+                { label: 'ACTIVE', value: 'ACTIVE' },
+                { label: 'ARCHIVED', value: 'ARCHIVED' }
+            ],
+            filterMultiple: true
+        })
+    }
+    
+    columns.push({
         title: 'From Version',
         key: 'earliestVersion',
         width: 150,
         render: (row: any) => {
             return h(
                 RouterLink,
-                {
-                    to: {
-                        name: 'ReleaseView',
-                        params: { uuid: row.earliestReleaseUuid }
-                    }
-                },
+                { to: { name: 'ReleaseView', params: { uuid: row.earliestReleaseUuid } } },
                 { default: () => row.earliestVersion }
             )
         }
-    },
-    {
+    })
+    
+    columns.push({
         title: 'To Version',
         key: 'latestVersion',
         width: 150,
         render: (row: any) => {
             return h(
                 RouterLink,
-                {
-                    to: {
-                        name: 'ReleaseView',
-                        params: { uuid: row.latestReleaseUuid }
-                    }
-                },
+                { to: { name: 'ReleaseView', params: { uuid: row.latestReleaseUuid } } },
                 { default: () => row.latestVersion }
             )
         }
-    },
-    {
-        title: () => {
-            return h(NTooltip, null, {
-                trigger: () => 'In Latest?',
-                default: () => 'Checkmark indicates that the latest known release is affected'
-            })
-        },
-        key: 'isLatest',
-        width: 100,
-        render: (row: any) => {
-            if (!row.isLatest) return null
-            return h(NIcon, {
-                component: Check,
-                color: '#d03050',
-                size: 20
-            })
-        },
-        filter: (value: any, row: any) => {
-            if (value === 'true') return row.isLatest === true
-            if (value === 'false') return row.isLatest === false
-            return true
-        },
-        filterOptions: [
-            { label: 'Yes', value: 'true' },
-            { label: 'No', value: 'false' }
-        ]
+    })
+    
+    if (showIsLatestColumn) {
+        columns.push({
+            title: () => {
+                return h(NTooltip, null, {
+                    trigger: () => 'In Latest?',
+                    default: () => 'Checkmark indicates that the latest known release is affected'
+                })
+            },
+            key: 'isLatest',
+            width: 100,
+            render: (row: any) => {
+                if (!row.isLatest) return null
+                return h(NIcon, { component: Check, color: '#d03050', size: 20 })
+            },
+            filter: (value: any, row: any) => {
+                if (value === 'true') return row.isLatest === true
+                if (value === 'false') return row.isLatest === false
+                return true
+            },
+            filterOptions: [
+                { label: 'Yes', value: 'true' },
+                { label: 'No', value: 'false' }
+            ]
+        })
     }
-])
+    
+    return columns
+}
+
+const tableData = computed(() => transformComponentBranchData(props.data))
+
+const columns = computed(() => buildColumns(
+    props.orgUuid,
+    props.featureSetLabel,
+    props.showStatusColumn ?? false,
+    props.showIsLatestColumn ?? true
+))
 </script>

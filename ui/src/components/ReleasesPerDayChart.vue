@@ -30,6 +30,7 @@
             :component-type="props.componentType"
             :initial-start-date="releasesModalStartDate"
             :initial-end-date="releasesModalEndDate"
+            :show-status-column="true"
             @update:show="(val: boolean) => { if (!val) closeReleasesModal() }"
             @update:dates="onDatesUpdate"
         />

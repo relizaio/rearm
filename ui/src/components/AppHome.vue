@@ -377,6 +377,7 @@
                                             :org-uuid="myorg?.uuid"
                                             :loading="dtrackReleasesLoading"
                                             :feature-set-label="featureSetLabel"
+                                            :show-is-latest-column="true"
                                         />
                                     </n-gi>
                                 </n-grid>
@@ -468,6 +469,9 @@
                             :org-uuid="myorg?.uuid"
                             :perspective-uuid="currentPerspectiveUuid"
                             :perspective-name="currentPerspectiveName"
+                            :feature-set-label="featureSetLabel"
+                            :show-status-column="true"
+                            :show-is-latest-column="true"
                         />
                     </div>
                 </n-gi>
