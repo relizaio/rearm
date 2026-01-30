@@ -670,7 +670,7 @@ class VariableQueries {
 	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE = """
 		SELECT * FROM rearm.releases 
-			 WHERE last_updated_date - interval '15 seconds' > to_timestamp(coalesce(cast (record_data->'metrics'->>'lastScanned' as float), 0));
+			 WHERE last_updated_date - interval '10 seconds' > to_timestamp(coalesce(cast (record_data->'metrics'->>'lastScanned' as float), 0));
 	""";
 
 	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACT = """
