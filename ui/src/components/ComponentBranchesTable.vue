@@ -1,7 +1,7 @@
 <template>
     <n-data-table
-        :columns="columns"
-        :data="tableData"
+        :columns="componentColumns"
+        :data="componentTableData"
         :pagination="{ pageSize: 20 }"
         :row-key="(row: any) => row.key"
         :loading="loading"
@@ -26,15 +26,11 @@ const props = defineProps<{
     orgUuid: string
     loading?: boolean
     featureSetLabel?: string
-    showStatusColumn?: boolean
     showIsLatestColumn?: boolean
 }>()
 
-interface ComponentBranchRow {
+interface BranchRow {
     key: string
-    componentUuid: string
-    componentName: string
-    componentType: string
     branchUuid: string
     branchName: string
     branchStatus: string
@@ -45,24 +41,36 @@ interface ComponentBranchRow {
     latestReleaseVersion: string
     isLatest: boolean
     releases: any[]
+    componentType: string
+    componentUuid: string
 }
 
-function transformComponentBranchData(data: any[]): ComponentBranchRow[] {
-    const rows: ComponentBranchRow[] = []
-    data.forEach((component: any) => {
+interface ComponentRow {
+    key: string
+    componentUuid: string
+    componentName: string
+    componentType: string
+    totalReleases: number
+    branches: BranchRow[]
+}
+
+function transformToComponentRows(data: any[]): ComponentRow[] {
+    return data.map((component: any) => {
+        const branches: BranchRow[] = []
+        let totalReleases = 0
+        
         component.branches?.forEach((branch: any) => {
             if (branch.releases && branch.releases.length > 0) {
+                totalReleases += branch.releases.length
+                
                 const sortedReleases = [...branch.releases].sort((a: any, b: any) => 
                     new Date(a.createdDate).getTime() - new Date(b.createdDate).getTime()
                 )
                 const earliestRelease = sortedReleases[0]
                 const latestRelease = sortedReleases[sortedReleases.length - 1]
                 
-                rows.push({
-                    key: `${component.uuid}-${branch.uuid}`,
-                    componentUuid: component.uuid,
-                    componentName: component.name,
-                    componentType: component.type,
+                branches.push({
+                    key: branch.uuid,
                     branchUuid: branch.uuid,
                     branchName: branch.name,
                     branchStatus: branch.status,
@@ -72,12 +80,22 @@ function transformComponentBranchData(data: any[]): ComponentBranchRow[] {
                     latestReleaseUuid: latestRelease.uuid,
                     latestReleaseVersion: branch.latestReleaseVersion,
                     isLatest: latestRelease.version === branch.latestReleaseVersion,
-                    releases: branch.releases
+                    releases: branch.releases,
+                    componentType: component.type,
+                    componentUuid: component.uuid
                 })
             }
         })
-    })
-    return rows
+        
+        return {
+            key: component.uuid,
+            componentUuid: component.uuid,
+            componentName: component.name,
+            componentType: component.type,
+            totalReleases,
+            branches
+        }
+    }).filter(c => c.branches.length > 0)
 }
 
 function getReleaseColumns(): DataTableColumns<any> {
@@ -109,7 +127,7 @@ function getReleaseColumns(): DataTableColumns<any> {
     ]
 }
 
-function buildColumns(orgUuid: string, featureSetLabel?: string, showStatusColumn?: boolean, showIsLatestColumn?: boolean): DataTableColumns<any> {
+function getBranchColumns(orgUuid: string, featureSetLabel?: string, showIsLatestColumn?: boolean): DataTableColumns<any> {
     const releaseColumns = getReleaseColumns()
     
     const columns: any[] = [
@@ -120,21 +138,9 @@ function buildColumns(orgUuid: string, featureSetLabel?: string, showStatusColum
                 return h(NDataTable, {
                     data: row.releases,
                     columns: releaseColumns,
-                    pagination: false
+                    pagination: false,
+                    size: 'small'
                 })
-            }
-        },
-        {
-            title: 'Component / Product',
-            key: 'componentName',
-            width: 200,
-            render: (row: any) => {
-                const routeName = row.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
-                return h(
-                    RouterLink,
-                    { to: { name: routeName, params: { orguuid: orgUuid, compuuid: row.componentUuid } } },
-                    { default: () => row.componentName }
-                )
             }
         },
         {
@@ -151,20 +157,6 @@ function buildColumns(orgUuid: string, featureSetLabel?: string, showStatusColum
             }
         },
         {
-            title: 'Type',
-            key: 'componentType',
-            width: 120,
-            filter(value: any, row: any) { return row.componentType === value },
-            filterOptions: [
-                { label: 'COMPONENT', value: 'COMPONENT' },
-                { label: 'PRODUCT', value: 'PRODUCT' }
-            ],
-            filterMultiple: true
-        }
-    ]
-    
-    if (showStatusColumn) {
-        columns.push({
             title: 'Status',
             key: 'branchStatus',
             width: 100,
@@ -175,34 +167,32 @@ function buildColumns(orgUuid: string, featureSetLabel?: string, showStatusColum
                 { label: 'ARCHIVED', value: 'ARCHIVED' }
             ],
             filterMultiple: true
-        })
-    }
-    
-    columns.push({
-        title: 'From Version',
-        key: 'earliestVersion',
-        width: 150,
-        render: (row: any) => {
-            return h(
-                RouterLink,
-                { to: { name: 'ReleaseView', params: { uuid: row.earliestReleaseUuid } } },
-                { default: () => row.earliestVersion }
-            )
+        },
+        {
+            title: 'From Version',
+            key: 'earliestVersion',
+            width: 150,
+            render: (row: any) => {
+                return h(
+                    RouterLink,
+                    { to: { name: 'ReleaseView', params: { uuid: row.earliestReleaseUuid } } },
+                    { default: () => row.earliestVersion }
+                )
+            }
+        },
+        {
+            title: 'To Version',
+            key: 'latestVersion',
+            width: 150,
+            render: (row: any) => {
+                return h(
+                    RouterLink,
+                    { to: { name: 'ReleaseView', params: { uuid: row.latestReleaseUuid } } },
+                    { default: () => row.latestVersion }
+                )
+            }
         }
-    })
-    
-    columns.push({
-        title: 'To Version',
-        key: 'latestVersion',
-        width: 150,
-        render: (row: any) => {
-            return h(
-                RouterLink,
-                { to: { name: 'ReleaseView', params: { uuid: row.latestReleaseUuid } } },
-                { default: () => row.latestVersion }
-            )
-        }
-    })
+    ]
     
     if (showIsLatestColumn) {
         columns.push({
@@ -233,12 +223,60 @@ function buildColumns(orgUuid: string, featureSetLabel?: string, showStatusColum
     return columns
 }
 
-const tableData = computed(() => transformComponentBranchData(props.data))
+function getComponentColumns(orgUuid: string, featureSetLabel?: string, showIsLatestColumn?: boolean): DataTableColumns<any> {
+    const branchColumns = getBranchColumns(orgUuid, featureSetLabel, showIsLatestColumn)
+    
+    return [
+        {
+            type: 'expand',
+            expandable: (row: any) => row.branches && row.branches.length > 0,
+            renderExpand: (row: any) => {
+                return h(NDataTable, {
+                    data: row.branches,
+                    columns: branchColumns,
+                    pagination: false,
+                    rowKey: (r: any) => r.key,
+                    size: 'small'
+                })
+            }
+        },
+        {
+            title: 'Component / Product',
+            key: 'componentName',
+            width: 250,
+            render: (row: any) => {
+                const routeName = row.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+                return h(
+                    RouterLink,
+                    { to: { name: routeName, params: { orguuid: orgUuid, compuuid: row.componentUuid } } },
+                    { default: () => row.componentName }
+                )
+            }
+        },
+        {
+            title: 'Type',
+            key: 'componentType',
+            width: 120,
+            filter(value: any, row: any) { return row.componentType === value },
+            filterOptions: [
+                { label: 'COMPONENT', value: 'COMPONENT' },
+                { label: 'PRODUCT', value: 'PRODUCT' }
+            ],
+            filterMultiple: true
+        },
+        {
+            title: 'Number of Releases',
+            key: 'totalReleases',
+            width: 150
+        }
+    ]
+}
 
-const columns = computed(() => buildColumns(
+const componentTableData = computed(() => transformToComponentRows(props.data))
+
+const componentColumns = computed(() => getComponentColumns(
     props.orgUuid,
     props.featureSetLabel,
-    props.showStatusColumn ?? false,
     props.showIsLatestColumn ?? true
 ))
 </script>

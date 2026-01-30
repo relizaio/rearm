@@ -470,7 +470,6 @@
                             :perspective-uuid="currentPerspectiveUuid"
                             :perspective-name="currentPerspectiveName"
                             :feature-set-label="featureSetLabel"
-                            :show-status-column="true"
                             :show-is-latest-column="true"
                         />
                     </div>

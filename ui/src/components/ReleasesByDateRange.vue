@@ -27,7 +27,6 @@
                     :data="componentData"
                     :org-uuid="props.orgUuid"
                     :feature-set-label="props.featureSetLabel"
-                    :show-status-column="props.showStatusColumn ?? true"
                     :show-is-latest-column="props.showIsLatestColumn ?? false"
                 />
             </n-spin>
@@ -64,7 +63,6 @@ const props = defineProps<{
     initialStartDate?: number
     initialEndDate?: number
     featureSetLabel?: string
-    showStatusColumn?: boolean
     showIsLatestColumn?: boolean
 }>()
 

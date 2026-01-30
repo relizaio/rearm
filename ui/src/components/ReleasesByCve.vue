@@ -12,7 +12,6 @@
                 :data="componentData"
                 :org-uuid="props.orgUuid"
                 :feature-set-label="props.featureSetLabel"
-                :show-status-column="props.showStatusColumn ?? true"
                 :show-is-latest-column="props.showIsLatestColumn ?? true"
             />
         </n-spin>
@@ -43,7 +42,6 @@ const props = defineProps<{
     perspectiveUuid?: string
     perspectiveName?: string
     featureSetLabel?: string
-    showStatusColumn?: boolean
     showIsLatestColumn?: boolean
 }>()
 
