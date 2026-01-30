@@ -552,7 +552,7 @@ public class Utils {
 		oe.setContacts(List.of(oc));
 		rearmComponent.setSupplier(oe);
 		rearmComponent.setAuthors(List.of(oc));
-		rearmComponent.setDescription("System to Manage Releases, SBOMs, xBOMs");
+		rearmComponent.setDescription("Supply Chain Evidence Store");
 		ExternalReference erRelizaVcs = new ExternalReference();
 		erRelizaVcs.setType(org.cyclonedx.model.ExternalReference.Type.VCS);
 		erRelizaVcs.setUrl("ssh://git@github.com/relizaio/rearm.git");
