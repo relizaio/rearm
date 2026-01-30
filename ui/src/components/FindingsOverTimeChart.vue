@@ -2,15 +2,16 @@
     <div class="findingsOverTimeChart">
         <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; gap: 8px;">
             <h3 class="chart-title" style="margin: 0;">Findings Over Time</h3>
-            <n-icon 
+            <router-link 
                 v-if="props.showFullPageIcon"
-                class="clickable" 
-                size="20" 
+                :to="fullPageViewUrl"
                 title="Open Full Page View"
-                @click="openFullPageView"
+                style="display: flex; align-items: center;"
             >
-                <ArrowExpand20Regular />
-            </n-icon>
+                <n-icon class="clickable" size="20">
+                    <ArrowExpand20Regular />
+                </n-icon>
+            </router-link>
             <n-icon 
                 class="clickable" 
                 size="20" 
@@ -352,14 +353,13 @@ function closeFindingsPerDayModal() {
     }
 }
 
-function openFullPageView() {
+const fullPageViewUrl = computed(() => {
     const params = new URLSearchParams()
     if (props.perspectiveUuid) {
         params.set('perspective', props.perspectiveUuid)
     }
-    const url = `/findingsOverTime/${orgUuid.value}${params.toString() ? '?' + params.toString() : ''}`
-    window.open(url, '_blank')
-}
+    return `/findingsOverTime/${orgUuid.value}${params.toString() ? '?' + params.toString() : ''}`
+})
 
 async function openFindingsModal(date: string, severity: string = '', typeParam: string = '') {
     directFindingsDate.value = date

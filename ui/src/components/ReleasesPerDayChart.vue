@@ -2,15 +2,16 @@
     <div class="releasesPerDayChart">
         <div v-if="props.type === 'ORGANIZATION' || props.type === 'PERSPECTIVE'" style="display: flex; align-items: center; gap: 8px;">
             <h3 class="chart-title" style="margin: 0;">Releases Per Day</h3>
-            <n-icon 
+            <router-link 
                 v-if="props.showFullPageIcon"
-                class="clickable" 
-                size="20" 
+                :to="fullPageViewUrl"
                 title="Open Full Page View"
-                @click="openFullPageView"
+                style="display: flex; align-items: center;"
             >
-                <ArrowExpand20Regular />
-            </n-icon>
+                <n-icon class="clickable" size="20">
+                    <ArrowExpand20Regular />
+                </n-icon>
+            </router-link>
         </div>
         <h3 v-else class="chart-title">Releases Per Day</h3>
         <div class="charts">
@@ -257,10 +258,7 @@ function closeReleasesModal() {
     }
 }
 
-function openFullPageView() {
-    const url = `/releasesPerDay/${orgUuid.value}`
-    window.open(url, '_blank')
-}
+const fullPageViewUrl = computed(() => `/releasesPerDay/${orgUuid.value}`)
 
 function openReleasesModal(fromDate: string, toDate?: string) {
     // Parse the dates
