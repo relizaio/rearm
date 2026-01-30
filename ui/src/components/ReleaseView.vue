@@ -11,7 +11,7 @@
                 title='Export Release BOM'
                 preset="dialog"
                 :show-icon="false" >
-                <n-form-item label="Select xBOM Type">
+                <n-form-item label="Select BOM Type">
                     <n-radio-group v-model:value="exportBomType" name="xBomType">
                         <n-radio-button value="SBOM">
                             SBOM
@@ -67,15 +67,19 @@
                         </n-button>
                     </n-spin>
                 </n-form>
-                <n-button v-if="exportBomType === 'OBOM'" type="success" 
-                    @click.prevent="exportReleaseObom">
-                    <span v-if="bomExportPending" class="ml-2">Exporting...</span>
-                    <span v-else>Export</span>
-                </n-button>
+                <n-form v-if="exportBomType === 'OBOM'">
+                    <h3>Format: CycloneDX 1.6 (JSON)</h3>
+                    <n-button type="success" 
+                        @click.prevent="exportReleaseObom">
+                        <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                        <span v-else>Export</span>
+                    </n-button>
+                </n-form>
                 <n-form v-if="exportBomType === 'VDR'">
                     <n-form-item>
                         Include Suppressed:<n-switch style="margin-left: 5px;" v-model:value="vdrIncludeSuppressed"/>
                     </n-form-item>
+                    <h3>Format: CycloneDX 1.6 (JSON)</h3>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
                             :disabled="bomExportPending"
