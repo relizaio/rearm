@@ -14,13 +14,43 @@
                 <n-form-item label="Select BOM Type">
                     <n-radio-group v-model:value="exportBomType" name="xBomType">
                         <n-radio-button value="SBOM">
-                            SBOM
+                            <span style="display: inline-flex; align-items: center;">
+                                SBOM
+                                <n-tooltip trigger="hover">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    Software Bill of Materials - a list of dependencies in your software.
+                                </n-tooltip>
+                            </span>
                         </n-radio-button>
                         <n-radio-button value="OBOM">
-                            OBOM
+                            <span style="display: inline-flex; align-items: center;">
+                                OBOM
+                                <n-tooltip trigger="hover">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    Operations Bill of Materials - presents this release as a set of runtime and deployment dependencies based on its deliverables.
+                                </n-tooltip>
+                            </span>
                         </n-radio-button>
                         <n-radio-button value="VDR">
-                            VDR
+                            <span style="display: inline-flex; align-items: center;">
+                                VDR
+                                <n-tooltip trigger="hover">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    Vulnerability Disclosure Report - a report of known vulnerabilities affecting this release.
+                                </n-tooltip>
+                            </span>
                         </n-radio-button>
                     </n-radio-group>
                 </n-form-item>
