@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.Release;
@@ -193,19 +194,24 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findBranchReleasesByTagKeyAndValue(String orgUuidAsString, String branchUuidAsString, String tagKey, String tagValue);
 
 	@Query(
+			value = VariableQueries.FIND_MAX_RELEASE_LAST_SCANNED_TIMESTAMP,
+			nativeQuery = true)
+	Double findMaxReleaseLastScannedTimestamp();
+	
+	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByArtifactDirect();
+	List<Release> findReleasesForMetricsComputeByArtifactDirect(@Param("cutoffTimestamp") double cutoffTimestamp);
 	
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeBySce();
+	List<Release> findReleasesForMetricsComputeBySce(@Param("cutoffTimestamp") double cutoffTimestamp);
 	
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByOutboundDeliverables();
+	List<Release> findReleasesForMetricsComputeByOutboundDeliverables(@Param("cutoffTimestamp") double cutoffTimestamp);
 
 	@Query(
 			value = VariableQueries.FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE,

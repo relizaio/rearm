@@ -598,16 +598,16 @@ class VariableQueries {
 			  AND tags.key = :tagKey AND tags.value = :tagValue
 	""";
 
+	protected static final String FIND_MAX_RELEASE_LAST_SCANNED_TIMESTAMP = """
+		SELECT coalesce(max(cast (record_data->'metrics'->>'lastScanned' as float)), 0) FROM rearm.releases
+	""";
+	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT = """
 		WITH
-		lastComputedRlz (maxVal) AS (
-			SELECT coalesce(max(cast (record_data->'metrics'->>'lastScanned' as float)), 0) 
-			FROM rearm.releases
-		),
 		unprocessedArts AS (
 			SELECT ra.uuid 
-			FROM lastComputedRlz, rearm.artifacts ra 
-			WHERE coalesce(cast (ra.record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal
+			FROM rearm.artifacts ra 
+			WHERE coalesce(cast (ra.record_data->'metrics'->>'lastScanned' as float), 0) > :cutoffTimestamp
 		),
 		releases_with_artifacts AS (
 			SELECT rlzs.*, jsonb_array_elements_text(record_data->'artifacts')::uuid as artifact_uuid
@@ -620,12 +620,9 @@ class VariableQueries {
 	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
 	WITH
-	  lastComputedRlz (maxVal) AS (
-	    SELECT coalesce(max(cast(record_data->'metrics'->>'lastScanned' as float)), 0) FROM rearm.releases
-	  ),
 	  unprocessedArts (uuid) AS (
-	    SELECT ra.uuid FROM lastComputedRlz, rearm.artifacts ra 
-	    WHERE coalesce(cast(ra.record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal
+	    SELECT ra.uuid FROM rearm.artifacts ra 
+	    WHERE coalesce(cast(ra.record_data->'metrics'->>'lastScanned' as float), 0) > :cutoffTimestamp
 	  ),
 	  unprocessedSces (uuid) AS (
 	    SELECT DISTINCT sce.uuid 
@@ -638,12 +635,9 @@ class VariableQueries {
 	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES = """
 	WITH
-	  lastComputedRlz (maxVal) AS (
-	    SELECT coalesce(max(cast(record_data->'metrics'->>'lastScanned' as float)), 0) FROM rearm.releases
-	  ),
 	  unprocessedArts (uuid) AS (
-	    SELECT ra.uuid FROM lastComputedRlz, rearm.artifacts ra 
-	    WHERE coalesce(cast(ra.record_data->'metrics'->>'lastScanned' as float), 0) > lastComputedRlz.maxVal
+	    SELECT ra.uuid FROM rearm.artifacts ra 
+	    WHERE coalesce(cast(ra.record_data->'metrics'->>'lastScanned' as float), 0) > :cutoffTimestamp
 	  ),
 	  unprocessedDeliverables (uuid) AS (
 	    SELECT DISTINCT del.uuid 

@@ -1419,9 +1419,16 @@ public class ReleaseService {
 	}
 	
 	protected void computeMetricsForAllUnprocessedReleases () {
-		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect();
-		var releasesBySce = repository.findReleasesForMetricsComputeBySce();
-		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables();
+		// Snapshot the cutoff timestamp at the start to ensure all artifact-based queries use the same stable value
+		Double cutoffTimestamp = repository.findMaxReleaseLastScannedTimestamp();
+		if (cutoffTimestamp == null) {
+			cutoffTimestamp = 0.0;
+		}
+		log.debug("Using cutoff timestamp {} for metrics computation", cutoffTimestamp);
+		
+		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect(cutoffTimestamp);
+		var releasesBySce = repository.findReleasesForMetricsComputeBySce(cutoffTimestamp);
+		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables(cutoffTimestamp);
 		var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate();
 		Set<UUID> dedupProcessedReleases = new HashSet<>();
 		computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases);
