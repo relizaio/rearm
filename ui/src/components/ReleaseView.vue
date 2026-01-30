@@ -45,7 +45,7 @@
                             />
                         </n-radio-group>
                     </n-form-item>
-                    <n-form-item label="Media Type">
+                    <n-form-item label="Format">
                         <n-radio-group v-model:value="selectedSbomMediaType" name="sbomMediaType">
                             <n-radio-button value="JSON">CycloneDX JSON</n-radio-button>
                             <n-radio-button value="CSV">CSV</n-radio-button>
