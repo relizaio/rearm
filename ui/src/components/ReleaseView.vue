@@ -76,15 +76,20 @@
                     </n-button>
                 </n-form>
                 <n-form v-if="exportBomType === 'VDR'">
+                    <n-form-item label="Format">
+                        <n-radio-group v-model:value="vdrExportFormat" name="vdrFormat">
+                            <n-radio-button value="JSON">CycloneDX 1.6 (JSON)</n-radio-button>
+                            <n-radio-button value="PDF">PDF</n-radio-button>
+                        </n-radio-group>
+                    </n-form-item>
                     <n-form-item>
                         Include Suppressed:<n-switch style="margin-left: 5px;" v-model:value="vdrIncludeSuppressed"/>
                     </n-form-item>
-                    <h3>Format: CycloneDX 1.6 (JSON)</h3>
-                    <n-spin :show="bomExportPending" small style="margin-top: 5px;">
+                    <n-spin :show="bomExportPending || vdrPdfExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
-                            :disabled="bomExportPending"
-                            @click="exportReleaseVdr">
-                            <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                            :disabled="bomExportPending || vdrPdfExportPending"
+                            @click="vdrExportFormat === 'PDF' ? exportReleaseVdrPdf() : exportReleaseVdr()">
+                            <span v-if="bomExportPending || vdrPdfExportPending" class="ml-2">Exporting...</span>
                             <span v-else>Export</span>
                         </n-button>
                     </n-spin>
@@ -605,6 +610,7 @@ import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { searchDtrackComponentByPurl as searchDtrackComponentByPurlUtil } from '@/utils/dtrack'
 import { processMetricsData } from '@/utils/metrics'
+import { exportFindingsToPdf } from '@/utils/pdfExport'
 
 const route = useRoute()    
 const router = useRouter()
@@ -928,6 +934,8 @@ const selectedRebomType: Ref<string> = ref('')
 const tldOnly: Ref<boolean> = ref(true)
 const ignoreDev: Ref<boolean> = ref(false)
 const vdrIncludeSuppressed: Ref<boolean> = ref(false)
+const vdrExportFormat: Ref<string> = ref('JSON')
+const vdrPdfExportPending: Ref<boolean> = ref(false)
 const selectedBomStructureType: Ref<string> = ref('FLAT')
 const bomExportQuery: ComputedRef<string> = computed((): string => {
     let queryOptions = '?tldOnly=false'
@@ -2207,6 +2215,52 @@ async function exportReleaseVdr () {
         )
     } finally {
         bomExportPending.value = false
+    }
+}
+
+async function exportReleaseVdrPdf() {
+    try {
+        vdrPdfExportPending.value = true
+        
+        // Fetch vulnerability data for the release
+        const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
+            updatedRelease.value.uuid,
+            release.value.org
+        )
+        
+        // Filter to only Vulnerability type
+        const vulnerabilityData = releaseData.vulnerabilityData
+        
+        // Build title for VDR
+        const releaseName = updatedRelease.value.componentDetails?.name || updatedRelease.value.uuid
+        const releaseVersion = updatedRelease.value.version || ''
+        const title = `Vulnerability Disclosure Report (VDR) for release: ${releaseName}${releaseVersion ? `, version ${releaseVersion}` : ''}`
+        
+        const result = exportFindingsToPdf({
+            data: vulnerabilityData,
+            title,
+            orgName: myorg.value?.name || 'Unknown',
+            types: ['Vulnerability'],
+            severities: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED'],
+            includeAnalysis: true,
+            includeSuppressed: vdrIncludeSuppressed.value,
+            filenamePrefix: 'vdr'
+        })
+        
+        if (!result.success) {
+            notify('warning', 'No Data', result.message || 'No vulnerabilities found for this release')
+            return
+        }
+        
+        notify('info', 'Processing Download', 'Your VDR PDF is being downloaded...')
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    } finally {
+        vdrPdfExportPending.value = false
     }
 }
 
