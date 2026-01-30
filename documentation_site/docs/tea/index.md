@@ -29,10 +29,16 @@ Below we demonstrate ReARM on ReARM as viewed by TEA. It starts with discovery.
 
 Use ReARM CLI for TEA discovery as documented [here](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md).
 
-For example, TEA discovery for ReARM CE release [26.01.34](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md) can be done as follows:
+For example, TEA full flow for ReARM CE release [26.01.34](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md) can be done as follows:
 
 ```
-rearm tea discovery --tei "urn:tei:uuid:demo.rearmhq.com:34de200a-a796-4986-a6e0-014f3d2a5806"
+rearm tea full_tea_flow --tei "urn:tei:uuid:demo.rearmhq.com:34de200a-a796-4986-a6e0-014f3d2a5806"
+```
+
+Call with debug to see all underlying calls as:
+
+```
+rearm tea full_tea_flow --debug true --tei "urn:tei:uuid:demo.rearmhq.com:34de200a-a796-4986-a6e0-014f3d2a5806"
 ```
 
 ## Known issues, limitations and notes
