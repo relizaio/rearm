@@ -2,7 +2,7 @@
     <div class="mostActiveChart">
         <h3 class="chart-title">Most Active {{ chartTypeLabel }}</h3>
         <div class="charts">
-            <n-skeleton v-if="isLoading" height="220px" :sharp="false" />
+            <n-skeleton v-if="isLoading" height="283px" :sharp="false" />
             <n-empty v-else-if="hasNoData" description="No activity data for the specified time frame" size="large" />
             <div v-else id="mostActiveVisHome"></div>
         </div>
