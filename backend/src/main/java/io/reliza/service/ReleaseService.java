@@ -50,11 +50,10 @@ import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.AnalysisJustification;
-import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
-import io.reliza.model.FindingType;
 import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.common.Utils;
@@ -1544,17 +1543,119 @@ public class ReleaseService {
 		// Transform vulnerabilities to CycloneDX format
 		ReleaseMetricsDto metrics = releaseData.getMetrics();
 		if (metrics != null && metrics.getVulnerabilityDetails() != null) {
+			// Collect all unique PURLs and release UUIDs from FindingSourceDto
+			Set<String> allPurls = new LinkedHashSet<>();
+			Set<UUID> allReleaseUuids = new LinkedHashSet<>();
+			
+			for (VulnerabilityDto vulnDto : metrics.getVulnerabilityDetails()) {
+				if (vulnDto.purl() != null) {
+					allPurls.add(vulnDto.purl());
+				}
+				if (vulnDto.sources() != null) {
+					for (FindingSourceDto source : vulnDto.sources()) {
+						if (source.release() != null && !source.release().equals(releaseData.getUuid())) {
+							allReleaseUuids.add(source.release());
+						}
+					}
+				}
+			}
+			
+			// Build components list: PURLs as library components + releases as application components
+			List<Component> components = new ArrayList<>();
+			
+			// Add PURL components (type=library, bom-ref=purl)
+			for (String purl : allPurls) {
+				Component purlComponent = new Component();
+				purlComponent.setType(Type.LIBRARY);
+				purlComponent.setName(purl);
+				purlComponent.setPurl(purl);
+				purlComponent.setBomRef(purl);
+				components.add(purlComponent);
+			}
+			
+			// Add release components (type=application) using OBOM logic
+			// Also build a map of releaseUuid -> bomRef for affects references
+			Map<UUID, String> releaseBomRefMap = new java.util.HashMap<>();
+			
+			for (UUID releaseUuid : allReleaseUuids) {
+				Optional<ReleaseData> relOpt = sharedReleaseService.getReleaseData(releaseUuid);
+				if (relOpt.isPresent()) {
+					ReleaseData rd = relOpt.get();
+					
+					// Determine bom-ref: use PURL if available, otherwise use release UUID
+					String bomRef = null;
+					if (rd.getIdentifiers() != null) {
+						Optional<TeaIdentifier> purlId = rd.getIdentifiers().stream()
+								.filter(id -> id.getIdType() == TeaIdentifierType.PURL)
+								.findFirst();
+						if (purlId.isPresent()) {
+							bomRef = purlId.get().getIdValue();
+						}
+					}
+					if (bomRef == null) {
+						bomRef = releaseUuid.toString();
+					}
+					releaseBomRefMap.put(releaseUuid, bomRef);
+					
+					// Create component using OBOM-like logic
+					Component releaseComponent = new Component();
+					releaseComponent.setType(Type.APPLICATION);
+					releaseComponent.setBomRef(bomRef);
+					releaseComponent.setVersion(rd.getVersion());
+					
+					Optional<ComponentData> compOpt = getComponentService.getComponentData(rd.getComponent());
+					if (compOpt.isPresent()) {
+						releaseComponent.setName(compOpt.get().getName());
+					}
+					
+					// Set PURL if available
+					if (bomRef != null && bomRef.startsWith("pkg:")) {
+						releaseComponent.setPurl(bomRef);
+					}
+					
+					components.add(releaseComponent);
+				}
+			}
+			
+			bom.setComponents(components);
+			
+			// Fetch analysis records for this release (without dependencies)
+			Map<String, VulnAnalysisData> analysisMap = new java.util.HashMap<>();
+			try {
+				List<VulnAnalysisData> allAnalyses = vulnAnalysisService.findAllVulnAnalysisAffectingRelease(releaseData.getUuid());
+				for (VulnAnalysisData analysis : allAnalyses) {
+					String key = computeAnalysisKey(analysis.getLocation(), analysis.getFindingId());
+					analysisMap.put(key, analysis);
+				}
+			} catch (Exception e) {
+				log.debug("Could not fetch analysis records for release {}: {}", releaseData.getUuid(), e.getMessage());
+			}
+			
+			// Also fetch analysis records for each dependency release
+			Map<UUID, Map<String, VulnAnalysisData>> releaseAnalysisMaps = new java.util.HashMap<>();
+			for (UUID releaseUuid : allReleaseUuids) {
+				try {
+					Map<String, VulnAnalysisData> relAnalysisMap = new java.util.HashMap<>();
+					List<VulnAnalysisData> relAnalyses = vulnAnalysisService.findAllVulnAnalysisAffectingRelease(releaseUuid);
+					for (VulnAnalysisData analysis : relAnalyses) {
+						String key = computeAnalysisKey(analysis.getLocation(), analysis.getFindingId());
+						relAnalysisMap.put(key, analysis);
+					}
+					releaseAnalysisMaps.put(releaseUuid, relAnalysisMap);
+				} catch (Exception e) {
+					log.debug("Could not fetch analysis records for dependency release {}: {}", releaseUuid, e.getMessage());
+				}
+			}
+			
+			// Build VDR context for transformation
+			VdrContext vdrContext = new VdrContext(analysisMap, releaseAnalysisMaps, releaseBomRefMap, releaseData.getUuid());
+			
+			// Transform vulnerabilities - split by analysis state if sources have different states
 			List<Vulnerability> vulnerabilities = new ArrayList<>();
 			
 			for (VulnerabilityDto vulnDto : metrics.getVulnerabilityDetails()) {
-				// Skip suppressed vulnerabilities (FALSE_POSITIVE and NOT_AFFECTED) unless includeSuppressed is true
-				if (!Boolean.TRUE.equals(includeSuppressed) 
-						&& (vulnDto.analysisState() == AnalysisState.FALSE_POSITIVE 
-						|| vulnDto.analysisState() == AnalysisState.NOT_AFFECTED)) {
-					continue;
-				}
-				Vulnerability vuln = transformVulnerabilityToVdr(vulnDto, releaseData);
-				vulnerabilities.add(vuln);
+				List<Vulnerability> vulnEntries = transformVulnerabilityToVdr(vulnDto, vdrContext, includeSuppressed);
+				vulnerabilities.addAll(vulnEntries);
 			}
 			
 			bom.setVulnerabilities(vulnerabilities);
@@ -1566,13 +1667,63 @@ public class ReleaseService {
 	}
 	
 	/**
-	 * Transform internal VulnerabilityDto to CycloneDX Vulnerability
-	 * @param vulnDto The vulnerability DTO
-	 * @param releaseData The release data for looking up analysis details
+	 * Context object for VDR transformation containing analysis maps and release mappings
 	 */
-	private Vulnerability transformVulnerabilityToVdr(VulnerabilityDto vulnDto, ReleaseData releaseData) {
-		UUID orgUuid = releaseData.getOrg();
-		UUID releaseUuid = releaseData.getUuid();
+	private record VdrContext(
+		Map<String, VulnAnalysisData> selfAnalysisMap,
+		Map<UUID, Map<String, VulnAnalysisData>> releaseAnalysisMaps,
+		Map<UUID, String> releaseBomRefMap,
+		UUID selfReleaseUuid
+	) {}
+	
+	/**
+	 * Transform internal VulnerabilityDto to CycloneDX Vulnerability entries.
+	 * If sources have different analysis states, creates separate vulnerability entries for each state.
+	 * @param vulnDto The vulnerability DTO
+	 * @param vdrContext Context containing analysis maps and release mappings
+	 * @param includeSuppressed Whether to include suppressed vulnerabilities
+	 * @return List of vulnerability entries (may be multiple if sources have different analysis states)
+	 */
+	private List<Vulnerability> transformVulnerabilityToVdr(VulnerabilityDto vulnDto, VdrContext vdrContext, Boolean includeSuppressed) {
+		List<Vulnerability> result = new ArrayList<>();
+		
+		// Group sources by analysis state
+		Map<AnalysisState, List<FindingSourceDto>> sourcesByState = new java.util.HashMap<>();
+		
+		if (vulnDto.sources() != null && !vulnDto.sources().isEmpty()) {
+			for (FindingSourceDto source : vulnDto.sources()) {
+				AnalysisState state = source.analysisState();
+				sourcesByState.computeIfAbsent(state, k -> new ArrayList<>()).add(source);
+			}
+		} else {
+			// No sources - use the vulnerability's own analysis state
+			sourcesByState.put(vulnDto.analysisState(), new ArrayList<>());
+		}
+		
+		// Create a vulnerability entry for each distinct analysis state
+		for (Map.Entry<AnalysisState, List<FindingSourceDto>> entry : sourcesByState.entrySet()) {
+			AnalysisState analysisState = entry.getKey();
+			List<FindingSourceDto> sourcesForState = entry.getValue();
+			
+			// Skip suppressed vulnerabilities unless includeSuppressed is true
+			if (!Boolean.TRUE.equals(includeSuppressed) 
+					&& (analysisState == AnalysisState.FALSE_POSITIVE 
+					|| analysisState == AnalysisState.NOT_AFFECTED)) {
+				continue;
+			}
+			
+			Vulnerability vuln = buildVdrVulnerabilityEntry(vulnDto, analysisState, sourcesForState, vdrContext);
+			result.add(vuln);
+		}
+		
+		return result;
+	}
+	
+	/**
+	 * Build a single CycloneDX Vulnerability entry for a specific analysis state
+	 */
+	private Vulnerability buildVdrVulnerabilityEntry(VulnerabilityDto vulnDto, AnalysisState analysisState, 
+			List<FindingSourceDto> sourcesForState, VdrContext vdrContext) {
 		Vulnerability vuln = new Vulnerability();
 		
 		// Set vulnerability ID
@@ -1600,40 +1751,79 @@ public class ReleaseService {
 			vuln.setRatings(List.of(rating));
 		}
 		
-		// Set affected component (purl)
+		// Build affects list - include both PURL and release bom-refs
+		List<Vulnerability.Affect> affects = new ArrayList<>();
+		
+		// Always add the PURL as an affect
 		if (vulnDto.purl() != null) {
-			Vulnerability.Affect affect = new Vulnerability.Affect();
-			affect.setRef(vulnDto.purl());
-			vuln.setAffects(List.of(affect));
+			Vulnerability.Affect purlAffect = new Vulnerability.Affect();
+			purlAffect.setRef(vulnDto.purl());
+			affects.add(purlAffect);
 		}
 		
-		// Set analysis state and details if present
-		if (vulnDto.analysisState() != null) {
+		// Add release bom-refs from sources with this analysis state
+		Set<String> addedRefs = new HashSet<>();
+		if (vulnDto.purl() != null) {
+			addedRefs.add(vulnDto.purl()); // Don't duplicate PURL
+		}
+		
+		for (FindingSourceDto srcDto : sourcesForState) {
+			if (srcDto.release() != null && !srcDto.release().equals(vdrContext.selfReleaseUuid())) {
+				String bomRef = vdrContext.releaseBomRefMap().get(srcDto.release());
+				if (bomRef != null && !addedRefs.contains(bomRef)) {
+					Vulnerability.Affect releaseAffect = new Vulnerability.Affect();
+					releaseAffect.setRef(bomRef);
+					affects.add(releaseAffect);
+					addedRefs.add(bomRef);
+				}
+			}
+		}
+		
+		if (!affects.isEmpty()) {
+			vuln.setAffects(affects);
+		}
+		
+		// Set analysis state and details
+		if (analysisState != null) {
 			Vulnerability.Analysis analysis = new Vulnerability.Analysis();
-			analysis.setState(mapVdrAnalysisState(vulnDto.analysisState()));
+			analysis.setState(mapVdrAnalysisState(analysisState));
 			
-			// Look up analysis details (justification and detail) from VulnAnalysisData using release scope
-			if (orgUuid != null && releaseUuid != null && vulnDto.purl() != null && vulnDto.vulnId() != null) {
-				try {
-					Optional<VulnAnalysisData> analysisOpt = vulnAnalysisService.findByOrgAndLocationAndFindingIdAndScopeAndType(
-							orgUuid, vulnDto.purl(), vulnDto.vulnId(), AnalysisScope.RELEASE, releaseUuid, FindingType.VULNERABILITY);
-					if (analysisOpt.isPresent()) {
-						VulnAnalysisData analysisData = analysisOpt.get();
-						// Set justification if present
-						if (analysisData.getAnalysisJustification() != null) {
-							analysis.setJustification(mapVdrAnalysisJustification(analysisData.getAnalysisJustification()));
-						}
-						// Set detail from the latest history entry if present
-						List<VulnAnalysisData.AnalysisHistory> history = analysisData.getAnalysisHistory();
-						if (history != null && !history.isEmpty()) {
-							String latestDetail = history.get(history.size() - 1).getDetails();
-							if (StringUtils.isNotEmpty(latestDetail)) {
-								analysis.setDetail(latestDetail);
+			// Look up analysis details - first try self release, then dependency releases
+			VulnAnalysisData analysisData = null;
+			if (vulnDto.purl() != null && vulnDto.vulnId() != null) {
+				String key = computeAnalysisKey(vulnDto.purl(), vulnDto.vulnId());
+				
+				// Try self release first
+				analysisData = vdrContext.selfAnalysisMap().get(key);
+				
+				// If not found, try dependency releases that have this analysis state
+				if (analysisData == null) {
+					for (FindingSourceDto srcDto : sourcesForState) {
+						if (srcDto.release() != null) {
+							Map<String, VulnAnalysisData> relMap = vdrContext.releaseAnalysisMaps().get(srcDto.release());
+							if (relMap != null) {
+								analysisData = relMap.get(key);
+								if (analysisData != null) {
+									break;
+								}
 							}
 						}
 					}
-				} catch (Exception e) {
-					log.debug("Could not look up analysis details for vulnerability {}: {}", vulnDto.vulnId(), e.getMessage());
+				}
+			}
+			
+			if (analysisData != null) {
+				// Set justification if present
+				if (analysisData.getAnalysisJustification() != null) {
+					analysis.setJustification(mapVdrAnalysisJustification(analysisData.getAnalysisJustification()));
+				}
+				// Set detail from the latest history entry if present
+				List<VulnAnalysisData.AnalysisHistory> history = analysisData.getAnalysisHistory();
+				if (history != null && !history.isEmpty()) {
+					String latestDetail = history.get(history.size() - 1).getDetails();
+					if (StringUtils.isNotEmpty(latestDetail)) {
+						analysis.setDetail(latestDetail);
+					}
 				}
 			}
 			
@@ -1641,6 +1831,10 @@ public class ReleaseService {
 		}
 		
 		return vuln;
+	}
+
+	private String computeAnalysisKey(String purl, String vulnId) {
+		return Utils.minimizePurl(purl) + "|" + vulnId;
 	}
 	
 	/**

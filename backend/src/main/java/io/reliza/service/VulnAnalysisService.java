@@ -214,6 +214,46 @@ public class VulnAnalysisService {
 				.map(VulnAnalysisData::dataFromRecord)
 				.collect(Collectors.toList());
 	}
+
+		/**
+	 * Find all vulnerability analyses affecting a release and its dependencies
+	 * Includes: release-scoped, branch-scoped (parent), component-scoped (parent), and org-wide analyses
+	 * for the release itself and all its unwound dependencies
+	 */
+	public List<VulnAnalysisData> findAllVulnAnalysisAffectingReleaseIncludingDependencies(UUID releaseUuid) throws RelizaException {
+		Optional<ReleaseData> releaseDataOpt = sharedReleaseService.getReleaseData(releaseUuid);
+		if (releaseDataOpt.isEmpty()) {
+			throw new RelizaException("Release not found: " + releaseUuid);
+		}
+		ReleaseData releaseData = releaseDataOpt.get();
+		
+		// Collect all releases: the main release + all its dependencies
+		Set<ReleaseData> allReleases = new LinkedHashSet<>();
+		allReleases.add(releaseData);
+		allReleases.addAll(sharedReleaseService.unwindReleaseDependencies(releaseData));
+		
+		// Collect analyses from all releases
+		Set<VulnAnalysisData> allAnalyses = new LinkedHashSet<>();
+		for (ReleaseData rd : allReleases) {
+			UUID org = rd.getOrg();
+			UUID branchUuid = rd.getBranch();
+			
+			// Get component from branch
+			Optional<BranchData> branchData = branchService.getBranchData(branchUuid);
+			if (branchData.isEmpty()) {
+				continue; // Skip if branch not found
+			}
+			UUID componentUuid = branchData.get().getComponent();
+			
+			List<VulnAnalysis> analyses = vulnAnalysisRepository.findAffectingRelease(
+					org.toString(), rd.getUuid().toString(), branchUuid.toString(), componentUuid.toString());
+			analyses.stream()
+					.map(VulnAnalysisData::dataFromRecord)
+					.forEach(allAnalyses::add);
+		}
+		
+		return allAnalyses.stream().collect(Collectors.toList());
+	}
 	
 	/**
 	 * Internal save method with audit logging and revision increment
@@ -448,7 +488,23 @@ public class VulnAnalysisService {
 					violation.attributedAt());
 		}
 		
-		return violation; // No analysis found
+		// No DB analysis found - compute primary state from sources if available
+		AnalysisState primaryState = computePrimaryAnalysisStateFromSources(violation.sources());
+		ZonedDateTime primaryDate = computePrimaryAnalysisDateFromSources(violation.sources(), primaryState);
+		
+		if (primaryState != null) {
+			return new ReleaseMetricsDto.ViolationDto(
+					violation.purl(),
+					violation.type(),
+					violation.license(),
+					violation.violationDetails(),
+					violation.sources(),
+					primaryState,
+					primaryDate,
+					violation.attributedAt());
+		}
+		
+		return violation; // No analysis found anywhere
 	}
 	
 	private ReleaseMetricsDto.VulnerabilityDto enrichVulnerability(UUID orgId, UUID scopeId, AnalysisScope scopeType, ReleaseMetricsDto.VulnerabilityDto vulnerability) {
@@ -501,7 +557,94 @@ public class VulnAnalysisService {
 					vulnerability.attributedAt());
 		}
 		
-		return vulnerability; // No analysis found
+		// No DB analysis found - compute primary state from sources if available
+		AnalysisState primaryState = computePrimaryAnalysisStateFromSources(vulnerability.sources());
+		ZonedDateTime primaryDate = computePrimaryAnalysisDateFromSources(vulnerability.sources(), primaryState);
+		
+		if (primaryState != null) {
+			return new ReleaseMetricsDto.VulnerabilityDto(
+					vulnerability.purl(),
+					vulnerability.vulnId(),
+					vulnerability.severity(),
+					vulnerability.aliases(),
+					vulnerability.sources(),
+					vulnerability.severities(),
+					primaryState,
+					primaryDate,
+					vulnerability.attributedAt());
+		}
+		
+		return vulnerability; // No analysis found anywhere
+	}
+	
+	/**
+	 * Computes the primary analysis state from sources based on priority:
+	 * EXPLOITABLE > IN_TRIAGE > NULL (not set) > NOT_AFFECTED > FALSE_POSITIVE
+	 * Higher priority states "win" - i.e., if any source says EXPLOITABLE, that's the primary state
+	 */
+	private AnalysisState computePrimaryAnalysisStateFromSources(Set<ReleaseMetricsDto.FindingSourceDto> sources) {
+		if (sources == null || sources.isEmpty()) {
+			return null;
+		}
+		
+		AnalysisState result = null;
+		for (ReleaseMetricsDto.FindingSourceDto source : sources) {
+			AnalysisState sourceState = source.analysisState();
+			result = selectHigherPriorityAnalysisState(result, sourceState);
+		}
+		return result;
+	}
+	
+	/**
+	 * Selects the higher priority analysis state between two states.
+	 * Priority: EXPLOITABLE > IN_TRIAGE > NULL > NOT_AFFECTED > FALSE_POSITIVE
+	 */
+	private AnalysisState selectHigherPriorityAnalysisState(AnalysisState current, AnalysisState candidate) {
+		if (candidate == null) {
+			return current;
+		}
+		if (current == null) {
+			return candidate;
+		}
+		
+		int currentPriority = getAnalysisStatePriority(current);
+		int candidatePriority = getAnalysisStatePriority(candidate);
+		
+		return candidatePriority > currentPriority ? candidate : current;
+	}
+	
+	/**
+	 * Returns priority value for analysis state.
+	 * Higher value = higher priority (wins in conflict resolution)
+	 * EXPLOITABLE(4) > IN_TRIAGE(3) > NOT_AFFECTED(1) > FALSE_POSITIVE(0)
+	 * Note: NULL is handled separately in selectHigherPriorityAnalysisState
+	 */
+	private int getAnalysisStatePriority(AnalysisState state) {
+		if (state == null) {
+			return 2; // NULL is between IN_TRIAGE and NOT_AFFECTED
+		}
+		return switch (state) {
+			case EXPLOITABLE -> 4;
+			case IN_TRIAGE -> 3;
+			case NOT_AFFECTED -> 1;
+			case FALSE_POSITIVE -> 0;
+		};
+	}
+	
+	/**
+	 * Gets the analysis date from the source that has the primary analysis state
+	 */
+	private ZonedDateTime computePrimaryAnalysisDateFromSources(Set<ReleaseMetricsDto.FindingSourceDto> sources, AnalysisState primaryState) {
+		if (sources == null || sources.isEmpty() || primaryState == null) {
+			return null;
+		}
+		
+		for (ReleaseMetricsDto.FindingSourceDto source : sources) {
+			if (primaryState.equals(source.analysisState())) {
+				return source.analysisDate();
+			}
+		}
+		return null;
 	}
 	
 	private ReleaseMetricsDto.WeaknessDto enrichWeakness(UUID orgId, UUID scopeId, AnalysisScope scopeType, ReleaseMetricsDto.WeaknessDto weakness) {
@@ -534,7 +677,24 @@ public class VulnAnalysisService {
 					weakness.attributedAt());
 		}
 		
-		return weakness; // No analysis found
+		// No DB analysis found - compute primary state from sources if available
+		AnalysisState primaryState = computePrimaryAnalysisStateFromSources(weakness.sources());
+		ZonedDateTime primaryDate = computePrimaryAnalysisDateFromSources(weakness.sources(), primaryState);
+		
+		if (primaryState != null) {
+			return new ReleaseMetricsDto.WeaknessDto(
+					weakness.cweId(),
+					weakness.ruleId(),
+					weakness.location(),
+					weakness.fingerprint(),
+					weakness.severity(),
+					weakness.sources(),
+					primaryState,
+					primaryDate,
+					weakness.attributedAt());
+		}
+		
+		return weakness; // No analysis found anywhere
 	}
 	
 	/**

@@ -1141,6 +1141,8 @@ type FindingSourceDto {
 	artifact: ID
 	release: ID
 	variant: ID
+	analysisState: AnalysisState
+	analysisDate: DateTime
 	releaseDetails: Release
 	artifactDetails: Artifact
 }

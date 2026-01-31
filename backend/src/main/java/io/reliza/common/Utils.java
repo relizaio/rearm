@@ -721,7 +721,7 @@ public class Utils {
 	 * @return Minimized PURL string without qualifiers, or null if input is null or invalid
 	 */
 	public static String minimizePurl(String purl) {
-		if (purl == null || purl.isEmpty()) {
+		if (purl == null || purl.isEmpty() || !purl.startsWith("pkg:")) {
 			return null;
 		}
 		

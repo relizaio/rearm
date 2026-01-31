@@ -80,7 +80,11 @@ public class ReleaseMetricsDto implements Cloneable {
 		UNASSIGNED
 	}
 
-	public static record FindingSourceDto (UUID artifact, UUID release, UUID variant) {}
+	public static record FindingSourceDto (UUID artifact, UUID release, UUID variant, AnalysisState analysisState, ZonedDateTime analysisDate) {
+		public FindingSourceDto(UUID artifact, UUID release, UUID variant) {
+			this(artifact, release, variant, null, null);
+		}
+	}
 	
 	public static record ViolationDto (String purl, ViolationType type, 
 		@JsonProperty("license") @JsonAlias("License") String license,
@@ -538,23 +542,27 @@ public class ReleaseMetricsDto implements Cloneable {
 				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
 				if (vuln.sources() != null && !vuln.sources().isEmpty()) {
 					for (FindingSourceDto existingSource : vuln.sources()) {
-						// If source is missing release UUID, enrich it
+						// If source is missing release UUID, enrich it with analysis state
 						if (existingSource.release() == null) {
-							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant()));
+							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant(), vuln.analysisState(), vuln.analysisDate()));
 						} 
-						// If source has different release UUID, keep original and add new one
+						// If source has different release UUID, keep original and add new one with analysis state
 						else if (!releaseUuid.equals(existingSource.release())) {
 							updatedSources.add(existingSource);
-							updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+							updatedSources.add(new FindingSourceDto(null, releaseUuid, null, vuln.analysisState(), vuln.analysisDate()));
 						}
-						// If source already has matching release UUID, keep as is
+						// If source already has matching release UUID, update with analysis state if not set
 						else {
-							updatedSources.add(existingSource);
+							if (existingSource.analysisState() == null && vuln.analysisState() != null) {
+								updatedSources.add(new FindingSourceDto(existingSource.artifact(), existingSource.release(), existingSource.variant(), vuln.analysisState(), vuln.analysisDate()));
+							} else {
+								updatedSources.add(existingSource);
+							}
 						}
 					}
 				} else {
-					// Sources is null or empty - add a new source with just the release UUID
-					updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+					// Sources is null or empty - add a new source with release UUID and analysis state
+					updatedSources.add(new FindingSourceDto(null, releaseUuid, null, vuln.analysisState(), vuln.analysisDate()));
 				}
 				
 				VulnerabilityDto enrichedVuln = new VulnerabilityDto(
@@ -580,23 +588,27 @@ public class ReleaseMetricsDto implements Cloneable {
 				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
 				if (violation.sources() != null && !violation.sources().isEmpty()) {
 					for (FindingSourceDto existingSource : violation.sources()) {
-						// If source is missing release UUID, enrich it
+						// If source is missing release UUID, enrich it with analysis state
 						if (existingSource.release() == null) {
-							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant()));
+							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant(), violation.analysisState(), violation.analysisDate()));
 						} 
-						// If source has different release UUID, keep original and add new one
+						// If source has different release UUID, keep original and add new one with analysis state
 						else if (!releaseUuid.equals(existingSource.release())) {
 							updatedSources.add(existingSource);
-							updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+							updatedSources.add(new FindingSourceDto(null, releaseUuid, null, violation.analysisState(), violation.analysisDate()));
 						}
-						// If source already has matching release UUID, keep as is
+						// If source already has matching release UUID, update with analysis state if not set
 						else {
-							updatedSources.add(existingSource);
+							if (existingSource.analysisState() == null && violation.analysisState() != null) {
+								updatedSources.add(new FindingSourceDto(existingSource.artifact(), existingSource.release(), existingSource.variant(), violation.analysisState(), violation.analysisDate()));
+							} else {
+								updatedSources.add(existingSource);
+							}
 						}
 					}
 				} else {
-					// Sources is null or empty - add a new source with just the release UUID
-					updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+					// Sources is null or empty - add a new source with release UUID and analysis state
+					updatedSources.add(new FindingSourceDto(null, releaseUuid, null, violation.analysisState(), violation.analysisDate()));
 				}
 				
 				ViolationDto enrichedViolation = new ViolationDto(
@@ -621,23 +633,27 @@ public class ReleaseMetricsDto implements Cloneable {
 				Set<FindingSourceDto> updatedSources = new LinkedHashSet<>();
 				if (weakness.sources() != null && !weakness.sources().isEmpty()) {
 					for (FindingSourceDto existingSource : weakness.sources()) {
-						// If source is missing release UUID, enrich it
+						// If source is missing release UUID, enrich it with analysis state
 						if (existingSource.release() == null) {
-							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant()));
+							updatedSources.add(new FindingSourceDto(existingSource.artifact(), releaseUuid, existingSource.variant(), weakness.analysisState(), weakness.analysisDate()));
 						} 
-						// If source has different release UUID, keep original and add new one
+						// If source has different release UUID, keep original and add new one with analysis state
 						else if (!releaseUuid.equals(existingSource.release())) {
 							updatedSources.add(existingSource);
-							updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+							updatedSources.add(new FindingSourceDto(null, releaseUuid, null, weakness.analysisState(), weakness.analysisDate()));
 						}
-						// If source already has matching release UUID, keep as is
+						// If source already has matching release UUID, update with analysis state if not set
 						else {
-							updatedSources.add(existingSource);
+							if (existingSource.analysisState() == null && weakness.analysisState() != null) {
+								updatedSources.add(new FindingSourceDto(existingSource.artifact(), existingSource.release(), existingSource.variant(), weakness.analysisState(), weakness.analysisDate()));
+							} else {
+								updatedSources.add(existingSource);
+							}
 						}
 					}
 				} else {
-					// Sources is null or empty - add a new source with just the release UUID
-					updatedSources.add(new FindingSourceDto(null, releaseUuid, null));
+					// Sources is null or empty - add a new source with release UUID and analysis state
+					updatedSources.add(new FindingSourceDto(null, releaseUuid, null, weakness.analysisState(), weakness.analysisDate()));
 				}
 				
 				WeaknessDto enrichedWeakness = new WeaknessDto(
