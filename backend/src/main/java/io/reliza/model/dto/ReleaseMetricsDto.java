@@ -713,10 +713,15 @@ public class ReleaseMetricsDto implements Cloneable {
 					combinedSeverities.addAll(x.severities());
 				}
 				
+				// Recalculate severity from combined severities to ensure consistency
+				VulnerabilitySeverity bestSeverity = !combinedSeverities.isEmpty()
+						? selectBestSeverity(combinedSeverities)
+						: existing.severity();
+				
 				VulnerabilityDto merged = new VulnerabilityDto(
 					existing.purl(), 
 					existing.vulnId(), 
-					existing.severity(), 
+					bestSeverity, 
 					combinedAliases, 
 					combinedSources,
 					combinedSeverities,
@@ -906,10 +911,15 @@ public class ReleaseMetricsDto implements Cloneable {
 		VulnerabilityDto baseVuln = selectBaseVulnerability(vulnerabilities);
 		
 		if (vulnerabilities.size() == 1) {
-			// Even for single vulnerabilities, ensure proper ID prioritization
+			// Even for single vulnerabilities, ensure proper ID prioritization and severity calculation
 			VulnerabilityDto singleVuln = vulnerabilities.iterator().next();
 			Set<String> allIds = getAllIdentifiers(singleVuln);
 			String bestPrimaryId = selectBestPrimaryId(allIds);
+			
+			// Always recalculate severity from severities array to ensure consistency
+			VulnerabilitySeverity bestSeverity = singleVuln.severities() != null && !singleVuln.severities().isEmpty()
+					? selectBestSeverity(singleVuln.severities())
+					: singleVuln.severity();
 			
 			// If the current primary ID is already the best, still check for alias cleanup
 			if (bestPrimaryId.equals(singleVuln.vulnId())) {
@@ -924,9 +934,9 @@ public class ReleaseMetricsDto implements Cloneable {
 					}
 				}
 				
-				// Return with cleaned aliases if needed, otherwise return as-is
-				if (singleVuln.aliases() == null || cleanedAliases.size() != singleVuln.aliases().size()) {
-					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), cleanedAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt());
+				// Return with cleaned aliases and recalculated severity if needed
+				if (singleVuln.aliases() == null || cleanedAliases.size() != singleVuln.aliases().size() || bestSeverity != singleVuln.severity()) {
+					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, bestSeverity, cleanedAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt());
 				} else {
 					return singleVuln;
 				}
@@ -940,7 +950,7 @@ public class ReleaseMetricsDto implements Cloneable {
 				}
 			}
 			
-			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, singleVuln.severity(), finalAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt());
+			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, bestSeverity, finalAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt());
 		}
 		
 		// Collect all unique identifiers and find the best primary ID (CVE preferred)
