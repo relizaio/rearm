@@ -325,6 +325,7 @@
             :dtrack-project-uuids="currentDtrackProjectUuids"
             :release-uuid="selectedReleaseForModal?.uuid || ''"
             :branch-uuid="branchData.uuid || ''"
+            :branch-name="branchData.name || ''"
             :component-uuid="branchData.componentDetails?.uuid || ''"
             :component-type="branchData.componentDetails?.type || ''"
             :artifact-view-only="false"

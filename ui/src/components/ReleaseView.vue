@@ -553,6 +553,7 @@
             :dtrack-project-uuids="currentDtrackProjectUuids"
             :release-uuid="currentArtifactDisplayId ? '' : releaseUuid"
             :branch-uuid="release.branchDetails?.uuid || ''"
+            :branch-name="release.branchDetails?.name || ''"
             :component-uuid="release.componentDetails?.uuid || ''"
             :component-type="release.componentDetails?.type || ''"
             :artifact-view-only="!!currentArtifactDisplayId"

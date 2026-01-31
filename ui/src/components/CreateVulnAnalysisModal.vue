@@ -126,6 +126,13 @@ interface Props {
     releaseUuid?: string
     branchUuid?: string
     componentUuid?: string
+    // Component details for display
+    componentName?: string
+    componentType?: string
+    // Branch name for display
+    branchName?: string
+    // Release version for display
+    releaseVersion?: string
     // Feature set label from organization terminology
     featureSetLabel?: string
     // If true, only ORG scope is allowed (artifact view)
@@ -138,6 +145,10 @@ const props = withDefaults(defineProps<Props>(), {
     releaseUuid: '',
     branchUuid: '',
     componentUuid: '',
+    componentName: '',
+    componentType: '',
+    branchName: '',
+    releaseVersion: '',
     featureSetLabel: 'Feature Set',
     artifactViewOnly: false,
     availableScopesOnly: () => []
@@ -177,30 +188,29 @@ const scopeOptions = computed(() => {
     }
     
     // Build all options with dynamic labels
+    // Use props first, fall back to store lookups
     const options = [{ label: 'Organization', value: 'ORG' }]
     
+    // Get component info from props or store
+    const storeComponent = props.componentUuid ? store.getters.componentById(props.componentUuid) : null
+    const componentName = props.componentName || storeComponent?.name || ''
+    const componentType = (props.componentType || storeComponent?.type) === 'PRODUCT' ? 'Product' : 'Component'
+    const isProduct = (props.componentType || storeComponent?.type) === 'PRODUCT'
+    
     if (props.componentUuid) {
-        const component = store.getters.componentById(props.componentUuid)
-        const componentName = component?.name || ''
-        const componentType = component?.type === 'PRODUCT' ? 'Product' : 'Component'
-        options.push({ label: `${componentType} ${componentName ? componentName : ''}`, value: 'COMPONENT' })
+        options.push({ label: `${componentType}${componentName ? ' ' + componentName : ''}`, value: 'COMPONENT' })
     }
     if (props.branchUuid) {
-        const component = store.getters.componentById(props.componentUuid)
-        const componentName = component?.name || ''
-        const componentType = component?.type === 'PRODUCT' ? 'Product' : 'Component'
-        const branch = store.getters.branchById(props.branchUuid)
-        const branchName = branch?.name || ''
-        const branchType = component?.type === 'PRODUCT' ? props.featureSetLabel : 'Branch'
-        options.push({ label: `${branchType} ${branchName ? branchName : ''} of ${componentType} ${componentName ? componentName : ''}`, value: 'BRANCH' })
+        const storeBranch = store.getters.branchById(props.branchUuid)
+        const branchName = props.branchName || storeBranch?.name || ''
+        const branchType = isProduct ? props.featureSetLabel : 'Branch'
+        const branchLabel = branchName ? `${branchType} ${branchName}` : branchType
+        options.push({ label: `${branchLabel} of ${componentType}${componentName ? ' ' + componentName : ''}`, value: 'BRANCH' })
     }
     if (props.releaseUuid) {
-        const component = store.getters.componentById(props.componentUuid)
-        const componentName = component?.name || ''
-        const componentType = component?.type === 'PRODUCT' ? 'Product' : 'Component'
-        const release = store.getters.releaseById(props.releaseUuid)
-        const releaseVersion = release?.version || ''
-        options.push({ label: `Release version ${releaseVersion ? releaseVersion : ''} of ${componentType} ${componentName ? componentName : ''}`, value: 'RELEASE' })
+        const storeRelease = store.getters.releaseById(props.releaseUuid)
+        const releaseVersion = props.releaseVersion || storeRelease?.version || ''
+        options.push({ label: `Release${releaseVersion ? ' ' + releaseVersion : ''} of ${componentType}${componentName ? ' ' + componentName : ''}`, value: 'RELEASE' })
     }
     
     // If availableScopesOnly is provided, filter to only those scopes

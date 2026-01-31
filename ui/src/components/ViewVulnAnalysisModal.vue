@@ -34,6 +34,10 @@
         :release-uuid="releaseUuid"
         :branch-uuid="branchUuid"
         :component-uuid="componentUuid"
+        :component-name="componentName"
+        :component-type="componentType"
+        :branch-name="branchName"
+        :release-version="releaseVersion"
         :artifact-view-only="artifactViewOnly"
         :available-scopes-only="availableScopes"
         @created="onAnalysisCreated"
@@ -69,6 +73,10 @@ interface Props {
     releaseUuid?: string
     branchUuid?: string
     componentUuid?: string
+    componentName?: string
+    componentType?: string
+    branchName?: string
+    releaseVersion?: string
     artifactViewOnly?: boolean
 }
 
@@ -78,6 +86,10 @@ const props = withDefaults(defineProps<Props>(), {
     releaseUuid: '',
     branchUuid: '',
     componentUuid: '',
+    componentName: '',
+    componentType: '',
+    branchName: '',
+    releaseVersion: '',
     artifactViewOnly: false
 })
 
