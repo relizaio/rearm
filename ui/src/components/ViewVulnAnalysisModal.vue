@@ -48,12 +48,14 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NDataTable, NTag, NSpace, NButton, NIcon, NTooltip, useNotification, DataTableColumns } from 'naive-ui'
+import { NModal, NSpin, NDataTable, NTag, NSpace, NButton, NIcon, NTooltip, useNotification, DataTableColumns, NA } from 'naive-ui'
+import { RouterLink } from 'vue-router'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import CreateVulnAnalysisModal from './CreateVulnAnalysisModal.vue'
 import UpdateVulnAnalysisModal from './UpdateVulnAnalysisModal.vue'
 import { Edit } from '@vicons/tabler'
+import { useStore } from 'vuex'
 import { Info20Regular } from '@vicons/fluent'
 
 interface Props {
@@ -84,7 +86,11 @@ const emit = defineEmits<{
     'analysis-changed': []
 }>()
 
+const store = useStore()
 const notification = useNotification()
+
+const myorg = computed(() => store.state.org)
+const featureSetLabel = computed(() => myorg.value?.featureSetLabel || 'Feature Set')
 const loading = ref(false)
 const analysisRecords = ref<any[]>([])
 const showCreateAnalysisModal = ref(false)
@@ -177,14 +183,87 @@ const columns: DataTableColumns<any> = [
         key: 'scope',
         width: 120,
         render: (row: any) => {
-            return h(NTag, { type: 'info', size: 'small' }, { default: () => row.scope })
+            // Determine scope label based on component type
+            let scopeLabel = row.scope
+            if (row.componentDetails?.type === 'PRODUCT') {
+                if (row.scope === 'COMPONENT') {
+                    scopeLabel = 'PRODUCT'
+                } else if (row.scope === 'BRANCH') {
+                    scopeLabel = featureSetLabel.value.toUpperCase()
+                }
+            }
+            return h(NTag, { type: 'info', size: 'small' }, { default: () => scopeLabel })
         }
     },
     {
-        title: 'Scope UUID',
+        title: 'Scope Details',
         key: 'scopeUuid',
-        width: 200,
-        ellipsis: { tooltip: true }
+        minWidth: 200,
+        render: (row: any) => {
+            // Determine display based on scope type
+            if (row.scope === 'ORG') {
+                return h('span', { style: 'color: #666;' }, 'Organization-wide')
+            }
+            
+            if (row.scope === 'COMPONENT' && row.componentDetails) {
+                // Product+Component scope -> display as "Product" if type is PRODUCT
+                const routeName = row.componentDetails.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+                const orgUuid = myorg.value?.uuid || props.orgUuid
+                return h(RouterLink, {
+                    to: {
+                        name: routeName,
+                        params: {
+                            orguuid: orgUuid,
+                            compuuid: row.componentDetails.uuid
+                        }
+                    },
+                    style: 'color: #18a058; text-decoration: none;'
+                }, () => row.componentDetails.name)
+            }
+            
+            if (row.scope === 'BRANCH' && row.branchDetails) {
+                // Product+Branch scope -> display as "Feature Set" if type is PRODUCT
+                const componentName = row.componentDetails?.name || ''
+                const branchName = row.branchDetails.name
+                const displayText = componentName ? `${componentName} - ${branchName}` : branchName
+                
+                if (row.componentDetails) {
+                    const routeName = row.componentDetails.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+                    const orgUuid = myorg.value?.uuid || props.orgUuid
+                    return h(RouterLink, {
+                        to: {
+                            name: routeName,
+                            params: {
+                                orguuid: orgUuid,
+                                compuuid: row.componentDetails.uuid,
+                                branchuuid: row.branchDetails.uuid
+                            }
+                        },
+                        style: 'color: #18a058; text-decoration: none;'
+                    }, () => displayText)
+                }
+                return displayText
+            }
+            
+            if (row.scope === 'RELEASE' && row.releaseDetails) {
+                const componentName = row.componentDetails?.name || ''
+                const releaseVersion = row.releaseDetails.version
+                const displayText = componentName ? `${componentName} - ${releaseVersion}` : releaseVersion
+                
+                return h(RouterLink, {
+                    to: {
+                        name: 'ReleaseView',
+                        params: {
+                            uuid: row.releaseDetails.uuid
+                        }
+                    },
+                    style: 'color: #18a058; text-decoration: none;'
+                }, () => displayText)
+            }
+            
+            // Fallback to scopeUuid if no details available
+            return row.scopeUuid || '-'
+        }
     },
     {
         title: 'Location Type',
@@ -230,7 +309,7 @@ const columns: DataTableColumns<any> = [
             }
             
             return h(NSpace, { vertical: true, size: 'small' }, {
-                default: () => row.analysisHistory.reverse().map((history: any, index: number) => {
+                default: () => [...row.analysisHistory].reverse().map((history: any, index: number) => {
                     const stateColors: any = {
                         EXPLOITABLE: 'error',
                         IN_TRIAGE: 'warning',
@@ -340,6 +419,19 @@ const fetchAnalysisRecords = async () => {
                             severity
                             details
                             createdDate
+                        }
+                        releaseDetails {
+                            uuid
+                            version
+                        }
+                        branchDetails {
+                            uuid
+                            name
+                        }
+                        componentDetails {
+                            uuid
+                            name
+                            type
                         }
                     }
                 }
