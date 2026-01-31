@@ -230,7 +230,7 @@ const columns: DataTableColumns<any> = [
             }
             
             return h(NSpace, { vertical: true, size: 'small' }, {
-                default: () => row.analysisHistory.map((history: any, index: number) => {
+                default: () => row.analysisHistory.reverse().map((history: any, index: number) => {
                     const stateColors: any = {
                         EXPLOITABLE: 'error',
                         IN_TRIAGE: 'warning',
