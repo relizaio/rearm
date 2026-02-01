@@ -1,4 +1,4 @@
-FROM node:24.12.0-alpine3.23@sha256:c921b97d4b74f51744057454b306b418cf693865e73b8100559189605f6955b8 AS builder
+FROM node:24.13.0-alpine3.23@sha256:cd6fb7efa6490f039f3471a189214d5f548c11df1ff9e5b181aa49e22c14383e AS builder
 
 ARG TARGETARCH
 ARG TARGETOS
@@ -66,7 +66,7 @@ RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && \
 # Build after tests pass
 RUN npm run build
 
-FROM node:24.12.0-alpine3.23@sha256:c921b97d4b74f51744057454b306b418cf693865e73b8100559189605f6955b8 AS package
+FROM node:24.13.0-alpine3.23@sha256:cd6fb7efa6490f039f3471a189214d5f548c11df1ff9e5b181aa49e22c14383e AS package
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
