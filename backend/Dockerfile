@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21.0.9_10-jdk-alpine-3.23@sha256:28ed6e1a345d150234c2a613a78196b73bb7dd34691f33032845f0b67202e321 AS jre-build
+FROM eclipse-temurin:21.0.9_10-jdk-alpine-3.23@sha256:48631fd96d104fb8a54e81469ac69aa572dafd767783f571a2264e95eb0fb2a5 AS jre-build
 # Create a custom Java runtime
 # to get list of java modules, use the following from target/ directory: 
 # jdeps -R -s --multi-release 16 -cp '.\unjar\BOOT-INF\lib\*' .\rearm-core-Version_Managed_By_CI_AND_Reliza.jar
@@ -11,14 +11,14 @@ RUN $JAVA_HOME/bin/jlink \
          --compress=2 \
          --output /javaruntime
 
-FROM maven:3.9.12-eclipse-temurin-21-alpine@sha256:e45339e025dd9df4d256b54133507495ce59d5473600bba1aff8a73bbaaed42b AS build-cache-stage
+FROM maven:3.9.12-eclipse-temurin-21-alpine@sha256:1ce8199c546899ac4083356d593c73065173c3987fd02041dd981402c1ddbfbb AS build-cache-stage
 RUN mkdir /workdir
 WORKDIR /workdir
 
 COPY ./pom.xml .
 RUN mvn -B dependency:go-offline -T1C 
 
-FROM maven:3.9.12-eclipse-temurin-21-alpine@sha256:e45339e025dd9df4d256b54133507495ce59d5473600bba1aff8a73bbaaed42b AS build-stage
+FROM maven:3.9.12-eclipse-temurin-21-alpine@sha256:1ce8199c546899ac4083356d593c73065173c3987fd02041dd981402c1ddbfbb AS build-stage
 RUN mkdir -p /root/.m2/repository/com
 COPY --from=build-cache-stage /root/.m2 /root/.m2
 
@@ -35,7 +35,7 @@ RUN sed -i "s,Version_Managed_By_CI_AND_Reliza,$VERSION," pom.xml
 
 RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B clean package spring-boot:repackage && cp target/*.jar application.jar && java -Djarmode=layertools -jar application.jar extract
 
-FROM alpine:3.23.2@sha256:865b95f46d98cf867a156fe4a135ad3fe50d2056aa3f25ed31662dff6da4eb62 AS artifact-stage
+FROM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS artifact-stage
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 COPY --from=jre-build /javaruntime $JAVA_HOME
