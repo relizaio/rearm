@@ -353,6 +353,12 @@ public class ReleaseMetricsDto implements Cloneable {
 	    	this.violationDetails = mergeViolationDtos(this.violationDetails, otherRmd.violationDetails);
 	    	this.vulnerabilityDetails = mergeVulnerabilityDtos(this.vulnerabilityDetails, otherRmd.vulnerabilityDetails);
 	    	this.weaknessDetails = mergeWeaknessDtos(this.weaknessDetails, otherRmd.weaknessDetails);
+	    	// Update lastScanned to max of both DTOs
+	    	if (otherRmd.getLastScanned() != null) {
+	    		if (this.lastScanned == null || otherRmd.getLastScanned().isAfter(this.lastScanned)) {
+	    			this.lastScanned = otherRmd.getLastScanned();
+	    		}
+	    	}
 	    	this.computeMetricsFromFacts();
 	    }
 	}
