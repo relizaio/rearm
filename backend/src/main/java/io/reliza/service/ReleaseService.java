@@ -1425,6 +1425,7 @@ public class ReleaseService {
 	}
 	
 	protected void computeMetricsForAllUnprocessedReleases () {
+		log.debug("[compute metrics scheduler]: start compute metrics run");
 		// Snapshot the cutoff timestamp at the start to ensure all artifact-based queries use the same stable value
 		Double cutoffTimestamp = repository.findMaxReleaseLastScannedTimestamp();
 		if (cutoffTimestamp == null) {
@@ -1433,9 +1434,17 @@ public class ReleaseService {
 		log.debug("Using cutoff timestamp {} for metrics computation", cutoffTimestamp);
 		
 		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect(cutoffTimestamp);
+		log.debug("[compute metrics scheduler]: releases by art size = " + releasesByArt.size());
+		for (var r : releasesByArt) log.debug("[compute metrics scheduler]: release by art uuid = " + r.getUuid());
 		var releasesBySce = repository.findReleasesForMetricsComputeBySce(cutoffTimestamp);
+		log.debug("[compute metrics scheduler]: releases by sce size = " + releasesByArt.size());
+		for (var r : releasesBySce) log.debug("[compute metrics scheduler]: release by sce uuid = " + r.getUuid());
 		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables(cutoffTimestamp);
+		log.debug("[compute metrics scheduler]: releases by outbound del size = " + releasesByArt.size());
+		for (var r : releasesByOutboundDel) log.debug("[compute metrics scheduler]: release by od uuid = " + r.getUuid());
 		var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate();
+		log.debug("[compute metrics scheduler]: releases by updated date del size = " + releasesByUpdateDate.size());
+		for (var r : releasesByUpdateDate) log.debug("[compute metrics scheduler]: release by upd uuid = " + r.getUuid());
 		Set<UUID> dedupProcessedReleases = new HashSet<>();
 		computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases);
 		computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases);
@@ -1445,7 +1454,7 @@ public class ReleaseService {
 		
 		var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases);
 		computeMetricsForReleaseList(productReleases, dedupProcessedReleases);
-		
+		log.debug("[compute metrics scheduler]: end compute metrics run");
 		log.debug("processed product releases size for metrics = " + productReleases.size());
 	}
 	
