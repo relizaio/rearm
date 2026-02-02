@@ -1,6 +1,6 @@
 services:
   rearm-core:
-    image: registry.relizahub.com/library/rearm-backend:26.01.6@sha256:48939b4a54c64e01ff8b5ae65c59ef1ced17c658fbde4075f258fa0621728e4c
+    image: registry.relizahub.com/library/rearm-backend:26.01.52@sha256:0a15758b639024df67b7514ebdb79a9a8bf63a6d5f0e1f2e4583f083c8d31e91
     env_file:
      - path: ./core.env
        required: false
@@ -27,7 +27,7 @@ services:
         parallelism: 1
         delay: 10s
   rearm-ui:
-    image: registry.relizahub.com/library/rearm-ui:26.01.16@sha256:43e4143dbe5184ea00f5cfef55967224ea283d3a18f6d634251feef7409fdf04
+    image: registry.relizahub.com/library/rearm-ui:26.01.50@sha256:9de8985868bca94ff146c9f62b4dc32a7660812afc2e18ce5de59a9c19085b71
     ports:
      - "8092:80"
     environment:
@@ -61,7 +61,7 @@ services:
     volumes:
       - "rearm-postgres-data:/relizaio/postgresql"
   keycloak:
-    image: registry.relizahub.com/library/rearm-keycloak:25.03.15@sha256:9f31fa258e6aff221792edc93aaed63b60be47450c359737a81c25c5a74f530f
+    image: registry.relizahub.com/library/rearm-keycloak:25.03.16@sha256:4e059284faf13087488debf80b6b0e9f89d75b128fcb75b4f6d4b93f675b77ea
     # build: ../../keycloak
     ports:
      - "9080:9080"
@@ -100,7 +100,7 @@ services:
       - ./postgres-keycloak-init.sql:/docker-entrypoint-initdb.d/init.sql
       - "rearm-keycloak-compose-postgres-data:/relizaio/postgresql"
   oci-artifact-service:
-    image: registry.relizahub.com/library/rearm-oci-artifact-service:25.12.2@sha256:09953dfa591284b76c98ee659a38cbd4e154f147cdbd1187728e1041f1549156
+    image: registry.relizahub.com/library/rearm-oci-artifact-service:25.12.8@sha256:dc448534b052411f38c7c8f78bef713874e4fdc97867a60dc173f4feb3f36674
     env_file:
      - path: ./oci.env
        required: false
@@ -116,7 +116,7 @@ services:
         parallelism: 1
         delay: 10s
   rebom-backend:
-    image: registry.relizahub.com/library/rebom-backend:0.12.24@sha256:f5c3429716c4463784a2279fcd5738403ab2decc0319780e0fd9c2c2b667ad28
+    image: registry.relizahub.com/library/rebom-backend:0.14.10@sha256:9226173a849e789a98d526249eae3cc920559234b456a68820f09c59c4fa0223
     env_file:
      - path: ./rebom.env
        required: false
