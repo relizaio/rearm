@@ -402,7 +402,7 @@ const artifactTypes = artTypesResp.data.artifactTypes.map((t: string) => {
         label: t,
         value: t
     }
-})
+}).sort((a: {label: string}, b: {label: string}) => a.label.localeCompare(b.label))
 
 const bomFormats = [
     {value: 'CYCLONEDX', label: 'CYCLONEDX'},
