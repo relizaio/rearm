@@ -2,6 +2,9 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { getAllSlugs, getPostBySlug } from "../../../lib/posts";
 import type { Metadata } from "next";
+import Script from "next/script";
+
+const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com").replace(/\/$/, "");
 
 export async function generateStaticParams() {
   const slugs = getAllSlugs();
@@ -14,7 +17,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
   const post = getPostBySlug(slug);
   const title = post ? `${post.title} - ReARM by Reliza` : "Post - ReARM by Reliza";
   const description = post ? getDescription(post.content) : "Blog post on ReARM by Reliza.";
-  const url = `${process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com"}/blog/${slug}`;
+  const url = `${baseUrl}/blog/${slug}/`;
   const ogImageUrl = post?.ogImage ? `/blog_images/${post.ogImage}` : "/rearm.png";
   return {
     title,
@@ -60,8 +63,40 @@ export default async function BlogPostPage({ params }: { params: any }) {
       </main>
     );
   }
+  const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: post.title,
+    datePublished: post.date,
+    dateModified: post.date,
+    author: {
+      "@type": "Organization",
+      name: "Reliza",
+      url: "https://reliza.io",
+    },
+    publisher: {
+      "@type": "Organization",
+      name: "ReARM by Reliza",
+      url: baseUrl,
+      logo: {
+        "@type": "ImageObject",
+        url: `${baseUrl}/rearm.png`,
+      },
+    },
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": `${baseUrl}/blog/${slug}/`,
+    },
+    description: getDescription(post.content),
+  };
+
   return (
     <main className="blogPostContainer">
+      <Script
+        id="article-jsonld"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+      />
       <div className="blogPostHeader">
         <h1 className="blogPostMainTitle">{post.title}</h1>
         <p className="blogPostMainDate"><em>{post.date}</em></p>

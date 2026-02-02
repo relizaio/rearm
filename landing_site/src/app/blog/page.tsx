@@ -1,10 +1,19 @@
 import Link from "next/link";
 import { getAllPosts } from "../../lib/posts";
 
+const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com").replace(/\/$/, "");
+
 export const metadata = {
   title: "ReARM Blog",
   description: "Articles and updates about ReARM, SBOM/xBOM, TEA, and supply chain security.",
-  alternates: { canonical: "/blog" },
+  alternates: { canonical: `${baseUrl}/blog/` },
+  openGraph: {
+    title: "ReARM Blog",
+    description: "Articles and updates about ReARM, SBOM/xBOM, TEA, and supply chain security.",
+    url: `${baseUrl}/blog/`,
+    type: "website",
+    siteName: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
+  },
 };
 
 export default function BlogIndexPage() {
