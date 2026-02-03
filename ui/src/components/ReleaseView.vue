@@ -65,7 +65,29 @@
                             />
                         </n-radio-group>
                     </n-form-item>
-                        <n-form-item label="Select structure">
+                    <n-form-item label="Format">
+                        <n-radio-group v-model:value="selectedSbomMediaType" name="sbomMediaType">
+                            <n-radio-button value="JSON">CycloneDX 1.6 (JSON)</n-radio-button>
+                            <n-radio-button value="CSV">CSV</n-radio-button>
+                            <n-radio-button value="EXCEL">EXCEL</n-radio-button>
+                        </n-radio-group>
+                    </n-form-item>
+                    <n-form-item v-if="selectedSbomMediaType === 'JSON'">
+                        <template #label>
+                            <span style="display: inline-flex; align-items: center;">
+                                Select structure
+                                <n-tooltip trigger="hover">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    Choose the structure of the exported CycloneDX SBOM: <br />
+                                    - Hierarchical option would nest components within components. <br />
+                                    - Flat option still preserves "dependencies" entries if present.
+                                </n-tooltip>
+                            </span>
+                        </template>
                         <n-radio-group v-model:value="selectedBomStructureType" name="bomStructureType">
                             <n-radio-button
                                 v-for="abtn in bomStructureTypes"
@@ -73,13 +95,6 @@
                                 :value="abtn.value"
                                 :label="abtn.key"
                             />
-                        </n-radio-group>
-                    </n-form-item>
-                    <n-form-item label="Format">
-                        <n-radio-group v-model:value="selectedSbomMediaType" name="sbomMediaType">
-                            <n-radio-button value="JSON">CycloneDX 1.6 (JSON)</n-radio-button>
-                            <n-radio-button value="CSV">CSV</n-radio-button>
-                            <n-radio-button value="EXCEL">EXCEL</n-radio-button>
                         </n-radio-group>
                     </n-form-item>
                     <n-form-item>
