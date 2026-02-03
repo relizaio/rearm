@@ -84,6 +84,10 @@ const DEV_DEPENDENCY_PATTERNS = {
 };
 
 function isDevDependency(component: any): boolean {
+  if (component.scope === 'optional' || component.scope === 'excluded') {
+    return true;
+  }
+  
   if (!component.properties || !Array.isArray(component.properties)) {
     return false;
   }
