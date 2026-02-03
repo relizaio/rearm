@@ -55,7 +55,23 @@
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
-                    <n-form-item label="Select SBOM configuration for export">
+                    <n-form-item>
+                        <template #label>
+                            <span style="display: inline-flex; align-items: center;">
+                                Select SBOM configuration for export
+                                <n-tooltip trigger="hover">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    Choose which SBOM configuration to use for the export: <br />
+                                    - DELIVERABLE will only include SBOMs belonging to deliverables <br />
+                                    - RELEASE will only include SBOMs belonging to the whole release <br />
+                                    - SCE will only include SBOMs belonging to Source Code Entries
+                                </n-tooltip>
+                            </span>
+                        </template>
                         <n-radio-group v-model:value="selectedRebomType" name="rebomTypesRG">
                             <n-radio-button
                                 v-for="abtn in rebomTypes"
