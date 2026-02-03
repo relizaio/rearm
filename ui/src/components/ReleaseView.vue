@@ -83,10 +83,39 @@
                         </n-radio-group>
                     </n-form-item>
                     <n-form-item>
-                        Top Level Dependencies Only:<n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
+                        <span style="display: inline-flex; align-items: center;">
+                            Top Level Dependencies Only:
+                            <n-tooltip trigger="hover">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Only include direct dependencies of the software, excluding transitive dependencies.
+                            </n-tooltip>
+                        </span>
+                        <n-switch style="margin-left: 5px;" v-model:value="tldOnly"/>
                     </n-form-item>
                     <n-form-item>
-                        Ignore Dev Dependencies:<n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
+                        <span style="display: inline-flex; align-items: center;">
+                            Ignore Optional Dependencies:
+                            <n-tooltip trigger="hover">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                When on, excludes test and development dependencies from the export. <br /><br />
+                                This will exclude dependencies with Optional or External scope. <br />
+                                This will also exclude dependencies with any of the following CycloneDX taxonomy properties: <br />
+                                - cdx:maven:component_scope (set to 'test')<br />
+                                - cdx:npm:package:development (set to 'true')<br />
+                                - cdx:nuget:development (set to 'true')<br />
+                                - cdx:go:build_tag (set to 'test', 'testing', 'dev', 'development')<br />
+                                - cdx:gradle:component_scope (set to 'testImplementation', 'testCompile', 'testRuntime')
+                            </n-tooltip>
+                        </span>
+                        <n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
                     </n-form-item>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
