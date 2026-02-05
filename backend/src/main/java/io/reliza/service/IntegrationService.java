@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -125,7 +126,7 @@ public class IntegrationService {
 			.defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
 			.build();
 	
-	final int dtrackBufferSize = 64 * 1024 * 1024;
+	final int dtrackBufferSize = 32 * 1024 * 1024;
     final ExchangeStrategies dtrackExchangeStrategies = ExchangeStrategies.builder()
             .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(dtrackBufferSize))
             .build();
@@ -686,42 +687,42 @@ public class IntegrationService {
 	private List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid) throws JsonMappingException, JsonProcessingException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
-		List<Object> vulnDetailsRaw = executeDtrackPaginatedCall(baseUri, apiToken, "");
-		List<VulnerabilityDto> vulnerabilityDetails = new LinkedList<>();
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
-		vulnDetailsRaw.forEach(vd -> {
-			DtrackVulnRaw dvr = Utils.OM.convertValue(vd, DtrackVulnRaw.class);
-			Set<VulnerabilityAliasDto> aliases = new LinkedHashSet<>();
-			if (null != dvr.aliases() && !dvr.aliases().isEmpty()) {
-				dvr.aliases().forEach(a -> {
-					if (a.cveId() != null && !a.cveId().trim().isEmpty()) {
-						aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.CVE, a.cveId()));
-					}
-					if (a.ghsaId() != null && !a.ghsaId().trim().isEmpty()) {
-						aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.GHSA, a.ghsaId()));
-					}
+		final ZonedDateTime attributedAt = ZonedDateTime.now();
+		
+		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
+			List<VulnerabilityDto> pageResults = new ArrayList<>();
+			for (Object vd : rawPage) {
+				DtrackVulnRaw dvr = Utils.OM.convertValue(vd, DtrackVulnRaw.class);
+				Set<VulnerabilityAliasDto> aliases = new LinkedHashSet<>();
+				if (null != dvr.aliases() && !dvr.aliases().isEmpty()) {
+					dvr.aliases().forEach(a -> {
+						if (a.cveId() != null && !a.cveId().trim().isEmpty()) {
+							aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.CVE, a.cveId()));
+						}
+						if (a.ghsaId() != null && !a.ghsaId().trim().isEmpty()) {
+							aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.GHSA, a.ghsaId()));
+						}
+					});
+				}
+				
+				// Create severity source based on the main vulnerability ID
+				SeveritySourceDto severitySource = Utils.createSeveritySourceDto(dvr.vulnId(), dvr.severity());
+				
+				dvr.components().forEach(c -> {
+					// Decode URL-encoded @ symbol in purl from DTrack
+					String purl = c.purl() != null ? c.purl().replace("%40", "@") : null;
+					VulnerabilityDto vdto = new VulnerabilityDto(purl, dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt);
+					pageResults.add(vdto);
 				});
 			}
-			
-			// Create severity source based on the main vulnerability ID
-			SeveritySourceDto severitySource = Utils.createSeveritySourceDto(dvr.vulnId(), dvr.severity());
-			
-			final ZonedDateTime attributedAt = ZonedDateTime.now();
-			dvr.components().forEach(c -> {
-				// Decode URL-encoded @ symbol in purl from DTrack
-				String purl = c.purl() != null ? c.purl().replace("%40", "@") : null;
-				VulnerabilityDto vdto = new VulnerabilityDto(purl, dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt);
-				vulnerabilityDetails.add(vdto);
-			});
+			return pageResults;
 		});
-		return vulnerabilityDetails;
 	}
 	
 	private List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid) throws JsonMappingException, JsonProcessingException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject;
-		List<Object> violationDetailsRaw = executeDtrackPaginatedCall(baseUri, apiToken, "");
-		List<ViolationDto> violationDetails = new LinkedList<>();
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		final Set<FindingSourceDto> sources = Set.of(source);
 		
@@ -733,31 +734,34 @@ public class IntegrationService {
 		}
 		final OrganizationData.IgnoreViolation finalIgnoreViolation = ignoreViolation;
 		
-		violationDetailsRaw.forEach(vd -> {
-			DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
-			// Decode URL-encoded @ symbol in purl from DTrack
-			String purl = dvr.component().purl() != null ? dvr.component().purl().replace("%40", "@") : null;
-			ViolationType violationType = dvr.type();
-			
-			// Check if this violation should be ignored based on purl regex patterns
-			if (shouldIgnoreViolation(purl, violationType, finalIgnoreViolation)) {
-				log.debug("Ignoring violation for purl {} of type {} based on org ignore patterns", purl, violationType);
-				return;
+		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
+			List<ViolationDto> pageResults = new ArrayList<>();
+			for (Object vd : rawPage) {
+				DtrackViolationRaw dvr = Utils.OM.convertValue(vd, DtrackViolationRaw.class);
+				// Decode URL-encoded @ symbol in purl from DTrack
+				String purl = dvr.component().purl() != null ? dvr.component().purl().replace("%40", "@") : null;
+				ViolationType violationType = dvr.type();
+				
+				// Check if this violation should be ignored based on purl regex patterns
+				if (shouldIgnoreViolation(purl, violationType, finalIgnoreViolation)) {
+					log.debug("Ignoring violation for purl {} of type {} based on org ignore patterns", purl, violationType);
+					continue;
+				}
+				
+				String licenseId;
+				if (null != dvr.component().resolvedLicense()) {
+					licenseId = dvr.component().resolvedLicense().licenseId();
+				} else if (StringUtils.isNotEmpty(dvr.component().licenseExpression)) {
+					licenseId = dvr.component().licenseExpression;
+				} else {
+					licenseId = "undetected";
+				}
+				ViolationDto vdto = new ViolationDto(purl, violationType,
+						licenseId, null, sources, null, null, ZonedDateTime.now());
+				pageResults.add(vdto);
 			}
-			
-			String licenseId;
-			if (null != dvr.component().resolvedLicense()) {
-				licenseId = dvr.component().resolvedLicense().licenseId();
-			} else if (StringUtils.isNotEmpty(dvr.component().licenseExpression)) {
-				licenseId = dvr.component().licenseExpression;
-			} else {
-				licenseId = "undetected";
-			}
-			ViolationDto vdto = new ViolationDto(purl, violationType,
-					licenseId, null, sources, null, null, ZonedDateTime.now());
-			violationDetails.add(vdto);
+			return pageResults;
 		});
-		return violationDetails;
 	}
 	
 	private boolean shouldIgnoreViolation(String purl, ViolationType violationType, OrganizationData.IgnoreViolation ignoreViolation) {
@@ -906,6 +910,39 @@ public class IntegrationService {
 			
 			// If results returned is less than page size, no more pages
 			if (results == null || results.size() < pageSize) {
+				hasMorePages = false;
+			}
+			
+			pageNumber++;
+		}
+		return allResults;
+	}
+	
+	/**
+	 * Paginated DTrack call that transforms each page's raw objects immediately,
+	 * discarding the raw data per page to reduce peak memory usage.
+	 * @param baseUri Base URI for the DTrack API endpoint
+	 * @param apiToken API token for authentication
+	 * @param existingParams Existing query parameters
+	 * @param pageTransformer Function that transforms a page of raw objects into the target type
+	 * @return List of all transformed results from all pages
+	 */
+	private <T> List<T> executeDtrackPaginatedCallWithTransform(String baseUri, String apiToken, 
+			String existingParams, Function<List<Object>, List<T>> pageTransformer) {
+		List<T> allResults = new ArrayList<>();
+		int pageNumber = 1;
+		int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
+		boolean hasMorePages = true;
+		String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
+		
+		while (hasMorePages) {
+			List<Object> rawPage = fetchDtrackPage(baseUri, apiToken, existingParams, separator, pageNumber, pageSize);
+			
+			if (rawPage != null && !rawPage.isEmpty()) {
+				allResults.addAll(pageTransformer.apply(rawPage));
+			}
+			
+			if (rawPage == null || rawPage.size() < pageSize) {
 				hasMorePages = false;
 			}
 			
