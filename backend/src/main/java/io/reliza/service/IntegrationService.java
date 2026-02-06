@@ -672,6 +672,20 @@ public class IntegrationService {
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackResolvedLicenseRaw(String licenseId) {}
 	
+	private record DtrackPageResult(List<Object> results, int totalCount) {}
+	
+	private static int parseDtrackTotalCountHeader(org.springframework.http.ResponseEntity<?> resp) {
+		String header = resp.getHeaders().getFirst("X-Total-Count");
+		if (header != null) {
+			try {
+				return Integer.parseInt(header);
+			} catch (NumberFormatException nfe) {
+				log.warn("Invalid X-Total-Count header value: {}", header);
+			}
+		}
+		return -1;
+	}
+
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackComponentRaw(String purl, DtrackResolvedLicenseRaw resolvedLicense, String licenseExpression) {}
 	
@@ -902,14 +916,16 @@ public class IntegrationService {
 		String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
 		
 		while (hasMorePages) {
-			List<Object> results = fetchDtrackPage(baseUri, apiToken, existingParams, separator, pageNumber, pageSize);
+			DtrackPageResult pageResult = fetchDtrackPage(baseUri, apiToken, existingParams, separator, pageNumber, pageSize);
 			
-			if (results != null && !results.isEmpty()) {
-				allResults.addAll(results);
+			if (pageResult != null && pageResult.results() != null && !pageResult.results().isEmpty()) {
+				allResults.addAll(pageResult.results());
 			}
 			
-			// If results returned is less than page size, no more pages
-			if (results == null || results.size() < pageSize) {
+			// Stop if: null result, empty result, fetched all items per totalCount, or partial page
+			if (pageResult == null || pageResult.results() == null || pageResult.results().isEmpty()
+					|| pageResult.results().size() < pageSize
+					|| (pageResult.totalCount() > 0 && allResults.size() >= pageResult.totalCount())) {
 				hasMorePages = false;
 			}
 			
@@ -933,16 +949,21 @@ public class IntegrationService {
 		int pageNumber = 1;
 		int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
 		boolean hasMorePages = true;
+		int totalRawFetched = 0;
 		String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
 		
 		while (hasMorePages) {
-			List<Object> rawPage = fetchDtrackPage(baseUri, apiToken, existingParams, separator, pageNumber, pageSize);
+			DtrackPageResult pageResult = fetchDtrackPage(baseUri, apiToken, existingParams, separator, pageNumber, pageSize);
 			
-			if (rawPage != null && !rawPage.isEmpty()) {
-				allResults.addAll(pageTransformer.apply(rawPage));
+			if (pageResult != null && pageResult.results() != null && !pageResult.results().isEmpty()) {
+				allResults.addAll(pageTransformer.apply(pageResult.results()));
+				totalRawFetched += pageResult.results().size();
 			}
 			
-			if (rawPage == null || rawPage.size() < pageSize) {
+			// Stop if: null result, empty result, fetched all items per totalCount, or partial page
+			if (pageResult == null || pageResult.results() == null || pageResult.results().isEmpty()
+					|| pageResult.results().size() < pageSize
+					|| (pageResult.totalCount() > 0 && totalRawFetched >= pageResult.totalCount())) {
 				hasMorePages = false;
 			}
 			
@@ -951,7 +972,7 @@ public class IntegrationService {
 		return allResults;
 	}
 	
-	private List<Object> fetchDtrackPage(String baseUri, String apiToken, String existingParams, 
+	private DtrackPageResult fetchDtrackPage(String baseUri, String apiToken, String existingParams, 
 			String separator, int pageNumber, int pageSize) {
 		try {
 			URI dtrackUri = URI.create(baseUri + existingParams + separator + "pageNumber=" + pageNumber + "&pageSize=" + pageSize);
@@ -969,11 +990,14 @@ public class IntegrationService {
 				log.warn("Null body from DTrack API for uri = {}", dtrackUri);
 				return null;
 			}
+			
+			int totalCount = parseDtrackTotalCountHeader(resp);
+			
 			@SuppressWarnings("unchecked")
 			List<Object> pageResults = Utils.OM.readValue(resp.getBody(), List.class);
-			log.debug("DTrack API page fetch completed: uri = {}, pageNumber = {}, pageSize = {}, httpMs = {}",
-				dtrackUri, pageNumber, pageSize, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - httpStartNs));
-			return pageResults;
+			log.debug("DTrack API page fetch completed: uri = {}, pageNumber = {}, pageSize = {}, totalCount = {}, httpMs = {}",
+				dtrackUri, pageNumber, pageSize, totalCount, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - httpStartNs));
+			return new DtrackPageResult(pageResults, totalCount);
 		} catch (Exception e) {
 			log.error("Error fetching DTrack page {} for uri = {}", pageNumber, baseUri, e);
 			return null;
@@ -1095,6 +1119,8 @@ public class IntegrationService {
 							.toEntity(String.class)
 							.block();
 					
+					int totalCount = parseDtrackTotalCountHeader(resp);
+					
 					@SuppressWarnings("unchecked")
 					List<Object> pageFindings = Utils.OM.readValue(resp.getBody(), List.class);
 					
@@ -1124,10 +1150,12 @@ public class IntegrationService {
 						totalVulnerabilitiesProcessed += pageFindings.size();
 						log.debug("Retrieved {} vulnerability findings from page {} for org {}", pageFindings.size(), pageNumber, orgUuid);
 						
-						// If we got fewer records than page size, this is the last page
-						if (pageFindings.size() < pageSize) {
+						// Stop if: partial page or fetched all items per totalCount
+						if (pageFindings.size() < pageSize
+								|| (totalCount > 0 && totalVulnerabilitiesProcessed >= totalCount)) {
 							hasMorePages = false;
-							log.debug("Last page reached (partial page) for org {}", orgUuid);
+							log.debug("Last page reached for org {} (pageSize={}, received={}, totalProcessed={}, totalCount={})", 
+									orgUuid, pageSize, pageFindings.size(), totalVulnerabilitiesProcessed, totalCount);
 						}
 					}
 					
@@ -1185,6 +1213,8 @@ public class IntegrationService {
 							.toEntity(String.class)
 							.block();
 					
+					int totalCount = parseDtrackTotalCountHeader(resp);
+					
 					@SuppressWarnings("unchecked")
 					List<Object> pageFindings = Utils.OM.readValue(resp.getBody(), List.class);
 					
@@ -1214,13 +1244,14 @@ public class IntegrationService {
 						totalViolationsProcessed += pageFindings.size();
 						log.debug("Retrieved {} violation findings from page {} for org {}", pageFindings.size(), pageNumber, orgUuid);
 						
-						// If we got fewer records than page size, this is the last page
-						if (pageFindings.size() < pageSize) {
+						// Stop if: partial page or fetched all items per totalCount
+						if (pageFindings.size() < pageSize
+								|| (totalCount > 0 && totalViolationsProcessed >= totalCount)) {
 							hasMorePages = false;
-							log.debug("Last page reached (partial page) for org {}", orgUuid);
+							log.debug("Last page reached for org {} (pageSize={}, received={}, totalProcessed={}, totalCount={})", 
+									orgUuid, pageSize, pageFindings.size(), totalViolationsProcessed, totalCount);
 						}
 					}
-					
 					pageNumber++;
 				}
 				
