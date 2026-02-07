@@ -80,7 +80,7 @@ spec:
                   name: {{ .Release.Name }}-keycloak
                   key: POSTGRES_PASSWORD
             - name: KC_DB_URL
-              value: {{ if .Values.use_external_postgres }}{{ .Values.keycloak_postgres_host }}{{ else }}jdbc:postgresql://keycloak-postgres:5432/postgres{{ end }}
+              value: jdbc:postgresql://{{ if .Values.use_external_postgres }}{{ .Values.keycloak_postgres_host }}:{{ .Values.keycloak_postgres_port }}{{ else }}keycloak-postgres:5432{{ end }}/{{ .Values.keycloak_postgres_database | default "postgres" }}
             - name: KEYCLOAK_ADMIN
               value: admin
             - name: KEYCLOAK_ADMIN_PASSWORD

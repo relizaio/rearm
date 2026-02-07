@@ -32,7 +32,7 @@ spec:
         - name: POSTGRES_USER
           value: {{ .Values.rebom_postgres_username }}
         - name: POSTGRES_PORT
-          value: "5432"
+          value: {{ .Values.rebom_postgres_port | quote }}
         - name: POSTGRES_SSL
           value: "{{ .Values.rebom_postgres_ssl }}"
         - name: POSTGRES_PASSWORD

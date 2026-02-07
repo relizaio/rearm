@@ -7,14 +7,18 @@ use_external_postgres: false
 rearm_postgres_host: ""
 rearm_postgres_database: "postgres"
 rearm_postgres_username: "postgres"
+rearm_postgres_port: "5432"
 
 keycloak_postgres_host: ""
 keycloak_postgres_username: "postgres"
+keycloak_postgres_database: "postgres"
+keycloak_postgres_port: "5432"
 
 rebom_postgres_host: ""
 rebom_postgres_database: "postgres"
 rebom_postgres_username: "postgres"
 rebom_postgres_ssl: "false"
+rebom_postgres_port: "5432"
 
 traefik_crd_api_version: traefik.containo.us/v1alpha1
 
