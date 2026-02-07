@@ -134,7 +134,6 @@ rebom:
     oci:
       enabled: "true"
       serviceHost: http://rearm-oci-artifact
-      registryHost: registry.relizahub.com
       registryNamespace: 123-placeholder
     bearUri: ""
     bearApiKeySecretName: ""
