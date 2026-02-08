@@ -70,7 +70,6 @@ export default defineConfig ({
   title: 'ReARM',
   titleTemplate: ':title | ReARM Documentation',
   description: 'ReARM - System to Manage Releases, SBOMs, xBOMs',
-  lastUpdated: true,
   head: [
     ['meta', { name: 'robots', content: 'index, follow' }],
     ['meta', { property: 'og:type', content: 'website' }],
