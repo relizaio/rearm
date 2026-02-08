@@ -32,7 +32,7 @@ export default function Footer() {
           </div>
         </div>
         <div className="footer_bottom">
-          <span className="footer_rights">© 2019-2025 Reliza Incorporated. All rights reserved.</span>
+          <span className="footer_rights">© 2019-2026 Reliza Incorporated. All rights reserved.</span>
           <a className="footer_rights" target="_blank" href="/privacy.html" rel="noreferrer">Privacy Policy</a>
           <a className="footer_rights" target="_blank" href="/tos.html" rel="noreferrer">Terms of Service</a>
         </div>
