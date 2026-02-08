@@ -70,6 +70,16 @@ export default defineConfig ({
   title: 'ReARM',
   titleTemplate: ':title | ReARM Documentation',
   description: 'ReARM - System to Manage Releases, SBOMs, xBOMs',
+  head: [
+    ['meta', { name: 'robots', content: 'index, follow' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'ReARM Documentation' }],
+    ['meta', { property: 'og:title', content: 'ReARM - Supply Chain Evidence Store' }],
+    ['meta', { property: 'og:description', content: 'SBOMs, xBOMs and every other artifact - stored for 10+ years, versioned and audit-ready' }],
+    ['meta', { property: 'og:url', content: 'https://docs.rearmhq.com' }],
+    ['meta', { property: 'og:image', content: 'https://docs.rearmhq.com/logo.png' }],
+    ['link', { rel: 'canonical', href: 'https://docs.rearmhq.com' }],
+  ],
   themeConfig: {
     nav: navbar(),
     sidebar: sidebar(),
