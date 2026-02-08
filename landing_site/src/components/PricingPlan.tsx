@@ -166,6 +166,7 @@ export default function PricingPlan() {
       amount: startupPrice,
       type: "Per Month",
       bullets: [
+        "Up to 100GB of storage for compressed artifacts*",
         "Priority Support (response within 8 hours)",
         "Managed Dependency-Track",
         "Managed Single Organization Service",
@@ -187,9 +188,10 @@ export default function PricingPlan() {
       amount: standardPrice,
       type: "Per Month",
       bullets: [
+        "Unlimited storage",
         "Premium support (24x7)",
         "Managed Dependency-Track",
-        "Private Managed Service with SSO",
+        "Private Managed Service with SSO and unlimited storage",
         "Approvals & Triggers",
         "Marketing Releases",
         "Support for Multi-Organization Workflow",
@@ -211,7 +213,7 @@ export default function PricingPlan() {
       bullets: [
         "Premium support (24x7)",
         "Managed Dependency-Track",
-        "Private Managed Service with SSO, or on‑prem deployment (air-gap ready)",
+        "Private Managed Service with SSO and unlimited storage, or on‑prem deployment (air-gap ready)",
         "Approvals & Triggers",
         "Marketing Releases",
         "Support for Multi-Organization Workflow",
@@ -298,7 +300,14 @@ export default function PricingPlan() {
             )}
             <ul className="planFeatures">
               {p.bullets.map((b, i) => (
-                <li key={i} className="planFeature">{b}</li>
+                <li key={i} className="planFeature">
+                {b.endsWith("*") ? (
+                  <span className="tooltipWrapper">
+                    {b}
+                    <span className="tooltipText">Usually, enough to store more than 300,000 SBOMs</span>
+                  </span>
+                ) : b}
+              </li>
               ))}
             </ul>
             <a href={p.cta.href} target="_blank" rel="noreferrer" className="planCta">
