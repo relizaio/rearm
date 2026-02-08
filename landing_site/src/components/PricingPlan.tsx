@@ -188,7 +188,6 @@ export default function PricingPlan() {
       amount: standardPrice,
       type: "Per Month",
       bullets: [
-        "Unlimited storage",
         "Premium support (24x7)",
         "Managed Dependency-Track",
         "Private Managed Service with SSO and unlimited storage",
