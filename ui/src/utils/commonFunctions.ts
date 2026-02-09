@@ -52,6 +52,10 @@ function isAdmin (org : string, myUser : any ) : boolean {
 }
 
 
+/**
+ * @deprecated Use fetchComponentChangelogLegacy from utils/changelogQueries.ts instead
+ * This function uses the old GraphQL API and will be removed in a future version
+ */
 async function fetchChangelogBetweenReleases (params : any) {
     const response = await graphqlClient.query({
         query: gql`
@@ -71,6 +75,10 @@ async function fetchChangelogBetweenReleases (params : any) {
     return response.data.getChangelogBetweenReleases
 }
 
+/**
+ * @deprecated Use fetchComponentChangelogByDate from utils/changelogQueries.ts instead
+ * This function uses the old GraphQL API and will be removed in a future version
+ */
 async function fetchComponentChangeLog (params : any) {
     const response = await graphqlClient.query({
         query: gql`
@@ -94,24 +102,16 @@ async function fetchComponentChangeLog (params : any) {
 }
 
 async function fetchOrganizationChangelog (params : any) {
-    const response = await graphqlClient.query({
-        query: gql`
-            query FetchOrganizationChangelog($orgUuid: ID!, $perspectiveUuid: ID, $dateFrom: DateTime!, $dateTo: DateTime!, $aggregated: AggregationType!, $timeZone: String) {
-                organizationChangeLogByDate(orgUuid: $orgUuid, perspectiveUuid: $perspectiveUuid, dateFrom: $dateFrom, dateTo: $dateTo, aggregated: $aggregated, timeZone: $timeZone) {
-                    ${graphqlQueries.OrganizationChangelogGqlData}
-                }
-            }`,
-        variables: {
-            orgUuid: params.orgUuid,
-            perspectiveUuid: params.perspectiveUuid,
-            dateFrom: params.dateFrom,
-            dateTo: params.dateTo,
-            aggregated: params.aggregated,
-            timeZone: params.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone
-        },
-        fetchPolicy: 'no-cache'
+    // Use the new sealed interface API from changelogQueries.ts
+    const { fetchOrganizationChangelogByDate } = await import('./changelogQueries')
+    return await fetchOrganizationChangelogByDate({
+        orgUuid: params.orgUuid,
+        perspectiveUuid: params.perspectiveUuid,
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo,
+        aggregated: params.aggregated,
+        timeZone: params.timeZone
     })
-    return response.data.organizationChangeLogByDate
 }
 
 function parseGraphQLError (err: string): string {

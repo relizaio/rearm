@@ -22,6 +22,15 @@
 <script lang="ts" setup>
 import { computed } from 'vue'
 
+interface Commit {
+    commitId?: string | null
+    commitUri?: string
+    message?: string
+    author?: string | null
+    email?: string | null
+    changeType?: string
+}
+
 interface CommitRecord {
     linkifiedText: string
     rawText: string
@@ -31,7 +40,8 @@ interface CommitRecord {
 
 interface Change {
     changeType: string
-    commitRecords: CommitRecord[]
+    commitRecords?: CommitRecord[]
+    commits?: Commit[]
 }
 
 interface Props {
@@ -43,14 +53,41 @@ const props = withDefaults(defineProps<Props>(), {
     selectedSeverity: 'ALL'
 })
 
-const filteredChanges = computed(() => {
+// Transform commits to commitRecords format for display
+const normalizedChanges = computed(() => {
     if (!props.changes) return []
     
+    return props.changes.map(change => {
+        // If already has commitRecords, use them
+        if (change.commitRecords && change.commitRecords.length > 0) {
+            return change
+        }
+        
+        // Transform commits to commitRecords
+        if (change.commits && change.commits.length > 0) {
+            const commitRecords = change.commits.map(commit => ({
+                linkifiedText: commit.commitUri || '',
+                rawText: commit.message || commit.commitId || 'Change details unavailable',
+                commitAuthor: commit.author || undefined,
+                commitEmail: commit.email || undefined
+            }))
+            
+            return {
+                changeType: change.changeType,
+                commitRecords
+            }
+        }
+        
+        return change
+    })
+})
+
+const filteredChanges = computed(() => {
     if (props.selectedSeverity === 'ALL') {
-        return props.changes
+        return normalizedChanges.value
     }
     
-    return props.changes.filter(change => change.changeType === props.selectedSeverity)
+    return normalizedChanges.value.filter(change => change.changeType === props.selectedSeverity)
 })
 
 const hasChanges = computed(() => {

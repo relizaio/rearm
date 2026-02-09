@@ -704,129 +704,147 @@ const CHANGES_GQL_DATA = `
 
 const SBOM_CHANGES_GQL = `
     sbomChanges {
-        added {
+        artifacts {
             purl
+            name
             version
+            addedIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
+            }
+            removedIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
+            }
+            isNetAdded
+            isNetRemoved
         }
-        removed {
-            purl
-            version
-        }
+        totalAdded
+        totalRemoved
     }
 `
 
 const FINDING_CHANGES_GQL = `
     findingChanges {
-        appearedVulnerabilities {
+        vulnerabilities {
             vulnId
             purl
             severity
             aliases {
-                type
                 aliasId
             }
-            analysisState
-            sources {
-                artifact
-                release
+            resolvedIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
             }
+            appearedIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
+            }
+            presentIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
+            }
+            isNetResolved
+            isNetAppeared
+            isStillPresent
         }
-        resolvedVulnerabilities {
-            vulnId
-            purl
-            severity
-            aliases {
-                type
-                aliasId
-            }
-            analysisState
-            sources {
-                artifact
-                release
-            }
-        }
-        severityChangedVulnerabilities {
-            vulnId
-            purl
-            severity
-            aliases {
-                type
-                aliasId
-            }
-            analysisState
-            sources {
-                artifact
-                release
-            }
-        }
-        appearedViolations {
+        violations {
             type
             purl
-            license
-            violationDetails
-            analysisState
-            sources {
-                artifact
-                release
+            resolvedIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
             }
-        }
-        resolvedViolations {
-            type
-            purl
-            license
-            violationDetails
-            analysisState
-            sources {
-                artifact
-                release
+            appearedIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
             }
+            presentIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
+            }
+            isNetResolved
+            isNetAppeared
+            isStillPresent
         }
-        appearedWeaknesses {
+        weaknesses {
             cweId
             ruleId
             location
-            severity
-            analysisState
-            sources {
-                artifact
-                release
+            resolvedIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
             }
-        }
-        resolvedWeaknesses {
-            cweId
-            ruleId
-            location
-            severity
-            analysisState
-            sources {
-                artifact
-                release
+            appearedIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
             }
-        }
-        severityChangedWeaknesses {
-            cweId
-            ruleId
-            location
-            severity
-            analysisState
-            sources {
-                artifact
-                release
+            presentIn {
+                componentUuid
+                componentName
+                releaseUuid
+                releaseVersion
+                branchUuid
+                branchName
+                comparedToVersion
             }
+            isNetResolved
+            isNetAppeared
+            isStillPresent
         }
-        summary {
-            appearedVulnerabilitiesCount
-            resolvedVulnerabilitiesCount
-            severityChangedVulnerabilitiesCount
-            appearedViolationsCount
-            resolvedViolationsCount
-            appearedWeaknessesCount
-            resolvedWeaknessesCount
-            severityChangedWeaknessesCount
-            totalAppearedCount
-            totalResolvedCount
-            netChange
-        }
+        totalAppeared
+        totalResolved
     }
 `
 

@@ -1,29 +1,66 @@
 <template>
     <div class="sbom-changes">
         <div v-if="hasChanges">
-            <div v-if="showUpdated && processedChanges.updated.length > 0">
-                <h4 class="sbom-updated">🔄 Updated Components ({{ processedChanges.updated.length }})</h4>
+            <!-- Net Added Artifacts -->
+            <div v-if="netAddedArtifacts.length > 0">
+                <h4 class="sbom-added">✓ Net Added ({{ netAddedArtifacts.length }})</h4>
                 <ul>
-                    <li v-for="comp in processedChanges.updated" :key="`updated-${comp.purl}`">
-                        <strong>{{ comp.purl }}</strong>: {{ comp.oldVersion }} → {{ comp.newVersion }}
+                    <li v-for="artifact in netAddedArtifacts" :key="`added-${artifact.purl}`">
+                        <strong>{{ artifact.name }}</strong> @ {{ artifact.version }}
+                        <code class="purl">{{ artifact.purl }}</code>
+                        
+                        <div v-if="showAttribution && artifact.addedIn.length > 0" class="attribution">
+                            <span class="attribution-label">Added in:</span>
+                            <n-tag v-for="attr in artifact.addedIn" :key="attr.releaseUuid" size="small" class="attr-tag">
+                                {{ attr.componentName }} @ {{ attr.releaseVersion }}
+                                <span v-if="attr.branchName"> ({{ attr.branchName }})</span>
+                            </n-tag>
+                        </div>
                     </li>
                 </ul>
             </div>
             
-            <div v-if="processedChanges.added.length > 0">
-                <h4 class="sbom-added">✓ Added Components ({{ processedChanges.added.length }})</h4>
+            <!-- Net Removed Artifacts -->
+            <div v-if="netRemovedArtifacts.length > 0">
+                <h4 class="sbom-removed">✗ Net Removed ({{ netRemovedArtifacts.length }})</h4>
                 <ul>
-                    <li v-for="comp in processedChanges.added" :key="`added-${comp.purl}`">
-                        <strong>{{ comp.purl }}</strong> @ {{ comp.version }}
+                    <li v-for="artifact in netRemovedArtifacts" :key="`removed-${artifact.purl}`">
+                        <strong>{{ artifact.name }}</strong> @ {{ artifact.version }}
+                        <code class="purl">{{ artifact.purl }}</code>
+                        
+                        <div v-if="showAttribution && artifact.removedIn.length > 0" class="attribution">
+                            <span class="attribution-label">Removed in:</span>
+                            <n-tag v-for="attr in artifact.removedIn" :key="attr.releaseUuid" size="small" class="attr-tag">
+                                {{ attr.componentName }} @ {{ attr.releaseVersion }}
+                                <span v-if="attr.branchName"> ({{ attr.branchName }})</span>
+                            </n-tag>
+                        </div>
                     </li>
                 </ul>
             </div>
             
-            <div v-if="processedChanges.removed.length > 0">
-                <h4 class="sbom-removed">✗ Removed Components ({{ processedChanges.removed.length }})</h4>
+            <!-- Still Present (Version Changed) -->
+            <div v-if="stillPresentArtifacts.length > 0">
+                <h4 class="sbom-updated">🔄 Version Changed ({{ stillPresentArtifacts.length }})</h4>
                 <ul>
-                    <li v-for="comp in processedChanges.removed" :key="`removed-${comp.purl}`">
-                        <strong>{{ comp.purl }}</strong> @ {{ comp.version }}
+                    <li v-for="artifact in stillPresentArtifacts" :key="`present-${artifact.purl}`">
+                        <strong>{{ artifact.name }}</strong> @ {{ artifact.version }}
+                        <code class="purl">{{ artifact.purl }}</code>
+                        
+                        <div v-if="showAttribution" class="attribution">
+                            <div v-if="artifact.addedIn.length > 0">
+                                <span class="attribution-label">Added in:</span>
+                                <n-tag v-for="attr in artifact.addedIn" :key="attr.releaseUuid" size="small" class="attr-tag">
+                                    {{ attr.componentName }} @ {{ attr.releaseVersion }}
+                                </n-tag>
+                            </div>
+                            <div v-if="artifact.removedIn.length > 0">
+                                <span class="attribution-label">Removed in:</span>
+                                <n-tag v-for="attr in artifact.removedIn" :key="attr.releaseUuid" size="small" class="attr-tag">
+                                    {{ attr.componentName }} @ {{ attr.releaseVersion }}
+                                </n-tag>
+                            </div>
+                        </div>
                     </li>
                 </ul>
             </div>
@@ -36,100 +73,90 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
-
-interface SbomComponent {
-    purl: string
-    version: string
-}
-
-interface SbomChanges {
-    added?: SbomComponent[]
-    removed?: SbomComponent[]
-}
-
-interface ProcessedChanges {
-    added: SbomComponent[]
-    removed: SbomComponent[]
-    updated: Array<{
-        purl: string
-        oldVersion: string
-        newVersion: string
-    }>
-}
+import { NTag } from 'naive-ui'
+import type { SbomChangesWithAttribution } from '../../types/changelog-attribution'
+import type { ReleaseSbomChanges } from '../../types/changelog-sealed'
 
 interface Props {
-    sbomChanges?: SbomChanges
-    showUpdated?: boolean
+    sbomChanges?: SbomChangesWithAttribution | ReleaseSbomChanges
+    showAttribution?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    showUpdated: false
+    showAttribution: true
 })
 
-const getPackageName = (purl: string): string => {
-    const atIndex = purl.lastIndexOf('@')
-    return atIndex > 0 ? purl.substring(0, atIndex) : purl
-}
+// Type guard to check if it's SbomChangesWithAttribution (AGGREGATED mode)
+const isAggregatedMode = computed(() => {
+    return props.sbomChanges && 'artifacts' in props.sbomChanges
+})
 
-const processedChanges = computed<ProcessedChanges>(() => {
-    if (!props.sbomChanges) {
-        return { added: [], removed: [], updated: [] }
-    }
+// Type guard to check if it's ReleaseSbomChanges (NONE mode)
+const isNoneMode = computed(() => {
+    return props.sbomChanges && 'addedArtifacts' in props.sbomChanges
+})
 
-    const added = props.sbomChanges.added || []
-    const removed = props.sbomChanges.removed || []
+const netAddedArtifacts = computed(() => {
+    if (!props.sbomChanges) return []
     
-    if (!props.showUpdated) {
-        return { added, removed, updated: [] }
+    if (isAggregatedMode.value) {
+        const aggregated = props.sbomChanges as SbomChangesWithAttribution
+        return aggregated.artifacts.filter(a => a.isNetAdded)
+    } else if (isNoneMode.value) {
+        const none = props.sbomChanges as ReleaseSbomChanges
+        // Convert string[] to artifact-like objects for display
+        return none.addedArtifacts.map(purl => ({
+            purl,
+            name: purl.split('/').pop()?.split('@')[0] || purl,
+            version: purl.split('@')[1] || '',
+            isNetAdded: true,
+            isNetRemoved: false,
+            isStillPresent: false,
+            addedIn: [],
+            removedIn: []
+        }))
     }
+    return []
+})
+
+const netRemovedArtifacts = computed(() => {
+    if (!props.sbomChanges) return []
     
-    const addedMap = new Map<string, SbomComponent>()
-    const removedMap = new Map<string, SbomComponent>()
-    
-    added.forEach(comp => {
-        const pkgName = getPackageName(comp.purl)
-        addedMap.set(pkgName, comp)
-    })
-    
-    removed.forEach(comp => {
-        const pkgName = getPackageName(comp.purl)
-        removedMap.set(pkgName, comp)
-    })
-    
-    const updated: Array<{ purl: string; oldVersion: string; newVersion: string }> = []
-    const trulyAdded: SbomComponent[] = []
-    const trulyRemoved: SbomComponent[] = []
-    
-    addedMap.forEach((newComp, pkgName) => {
-        if (removedMap.has(pkgName)) {
-            const oldComp = removedMap.get(pkgName)!
-            updated.push({
-                purl: pkgName,
-                oldVersion: oldComp.version,
-                newVersion: newComp.version
-            })
-        } else {
-            trulyAdded.push(newComp)
-        }
-    })
-    
-    removedMap.forEach((comp, pkgName) => {
-        if (!addedMap.has(pkgName)) {
-            trulyRemoved.push(comp)
-        }
-    })
-    
-    return {
-        added: trulyAdded,
-        removed: trulyRemoved,
-        updated: updated
+    if (isAggregatedMode.value) {
+        const aggregated = props.sbomChanges as SbomChangesWithAttribution
+        return aggregated.artifacts.filter(a => a.isNetRemoved)
+    } else if (isNoneMode.value) {
+        const none = props.sbomChanges as ReleaseSbomChanges
+        // Convert string[] to artifact-like objects for display
+        return none.removedArtifacts.map(purl => ({
+            purl,
+            name: purl.split('/').pop()?.split('@')[0] || purl,
+            version: purl.split('@')[1] || '',
+            isNetAdded: false,
+            isNetRemoved: true,
+            isStillPresent: false,
+            addedIn: [],
+            removedIn: []
+        }))
     }
+    return []
+})
+
+const stillPresentArtifacts = computed(() => {
+    if (!props.sbomChanges) return []
+    
+    if (isAggregatedMode.value) {
+        const aggregated = props.sbomChanges as SbomChangesWithAttribution
+        return aggregated.artifacts.filter(a => a.isStillPresent && !a.isNetAdded && !a.isNetRemoved)
+    }
+    // NONE mode doesn't track "still present" artifacts
+    return []
 })
 
 const hasChanges = computed(() => {
-    return processedChanges.value.added.length > 0 ||
-           processedChanges.value.removed.length > 0 ||
-           processedChanges.value.updated.length > 0
+    return netAddedArtifacts.value.length > 0 ||
+           netRemovedArtifacts.value.length > 0 ||
+           stillPresentArtifacts.value.length > 0
 })
 </script>
 
@@ -158,13 +185,41 @@ const hasChanges = computed(() => {
     
     ul {
         margin-top: 8px;
+        list-style: none;
+        padding-left: 0;
     }
     
-    code {
+    li {
+        margin-bottom: 12px;
+        padding: 8px;
+        background: #fafafa;
+        border-radius: 4px;
+    }
+    
+    code.purl {
         background: #f5f5f5;
         padding: 2px 6px;
         border-radius: 3px;
+        font-size: 0.85em;
+        color: #666;
+        margin-left: 8px;
+    }
+    
+    .attribution {
+        margin-top: 6px;
+        padding-left: 16px;
         font-size: 0.9em;
+    }
+    
+    .attribution-label {
+        color: #666;
+        font-size: 0.85em;
+        margin-right: 6px;
+    }
+    
+    .attr-tag {
+        margin-right: 4px;
+        margin-bottom: 4px;
     }
 }
 </style>

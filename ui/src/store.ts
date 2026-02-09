@@ -1257,22 +1257,14 @@ const storeObject : any = {
             return data.data.setProtectedEnvironments
         },
         async fetchChangelogBetweenReleases (context: any, params: any) {
-            const response = await graphqlClient.query({
-                query: gql`
-                    query FetchChangelogBetweenReleases($release1: ID!, $release2: ID!, $org: ID!, $aggregated: AggregationType, $timeZone: String) {
-                        getChangelogBetweenReleases(release1: $release1, release2: $release2, orgUuid: $org, aggregated: $aggregated, timeZone: $timeZone) {
-                            ${graphqlQueries.ChangeLogGqlData}
-                        }
-                    }`,
-                variables: {
-                    release1: params.release1,
-                    release2: params.release2,
-                    org: params.org,
-                    aggregated: params.aggregated,
-                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-                }
+            const { fetchComponentChangelog } = await import('./utils/changelogQueries')
+            return await fetchComponentChangelog({
+                release1: params.release1,
+                release2: params.release2,
+                org: params.org,
+                aggregated: params.aggregated || 'AGGREGATED',
+                timeZone: params.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone
             })
-            return response.data.getChangelogBetweenReleases
         },
         async updateRelease (context: any, release: any) {
             let rlzUpdObject: any = {

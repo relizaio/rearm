@@ -3,8 +3,8 @@
         <h1 v-if="isRouterLink">Changelog</h1>
         <!-- Date-based component changelog -->
         <div v-if="componentType === 'COMPONENT' && props.iscomponentchangelog">
-            <h2 v-if="changelog && changelog.org">
-                <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: changelog.org, compuuid: changelog.uuid }}">{{ changelog.name }}</router-link>
+            <h2 v-if="changelog && changelog.orgUuid">
+                <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: changelog.orgUuid, compuuid: changelog.componentUuid }}">{{ changelog.componentName }}</router-link>
                 <span> - Component-wide Changes</span>
             </h2>
             
@@ -26,29 +26,29 @@
                     </div>
                     
                     <!-- AGGREGATED view for component-wide -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                         <p style="margin-bottom: 10px; font-style: italic;">Aggregated across all active branches</p>
-                        <div v-for="branch in changelog.branches" :key="branch.uuid">
-                            <h3>{{ branch.name }}</h3>
+                        <div v-for="branch in changelog.branches" :key="branch.branchUuid">
+                            <h3>{{ branch.branchName }}</h3>
                             <CodeChangesDisplay 
-                                :changes="branch.changes" 
+                                :changes="branch.commitsByType" 
                                 :selected-severity="selectedSeverity"
                             />
                         </div>
                     </div>
                     
                     <!-- NONE aggregation: per-release view -->
-                    <div v-else-if="aggregationType === 'NONE'">
-                        <div v-for="branch in changelog.branches" :key="branch.uuid">
-                            <h3>{{ branch.name }}</h3>
-                            <div v-for="release in branch.releases" :key="release.uuid">
+                    <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
+                        <div v-for="branch in changelog.branches" :key="branch.branchUuid">
+                            <h3>{{ branch.branchName }}</h3>
+                            <div v-for="release in branch.releases" :key="release.releaseUuid">
                                 <ReleaseHeader 
-                                    :uuid="release.uuid"
+                                    :uuid="release.releaseUuid"
                                     :version="release.version"
                                     :lifecycle="release.lifecycle"
                                 />
                                 <CodeChangesDisplay 
-                                    :changes="release.changes" 
+                                    :changes="[{changeType: 'all', commits: release.commits}]" 
                                     :selected-severity="selectedSeverity"
                                 />
                             </div>
@@ -63,61 +63,60 @@
                     </div>
                     
                     <!-- NONE mode: Show per-release SBOM changes -->
-                    <div v-else-if="aggregationType === 'NONE'">
-                        <div v-for="branch in changelog.branches" :key="branch.uuid">
-                            <h3>{{ branch.name }}</h3>
-                            <div v-for="release in branch.releases" :key="release.uuid">
+                    <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
+                        <div v-for="branch in changelog.branches" :key="branch.branchUuid">
+                            <h3>{{ branch.branchName }}</h3>
+                            <div v-for="release in branch.releases" :key="release.releaseUuid">
                                 <ReleaseHeader 
-                                    :uuid="release.uuid"
+                                    :uuid="release.releaseUuid"
                                     :version="release.version"
                                     :lifecycle="release.lifecycle"
                                 />
-                                <SbomChangesDisplay :sbom-changes="release.sbomChanges" />
+                                <SbomChangesDisplay :sbom-changes="changelog.sbomChanges.find(s => s.releaseUuid === release.releaseUuid)" />
                             </div>
                         </div>
                     </div>
                     
                     <!-- AGGREGATED mode: Show top-level aggregated changes -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                         <p style="margin-bottom: 10px; font-style: italic;">Aggregated across all active branches</p>
-                        <SbomChangesDisplay :sbom-changes="changelog.sbomChanges" />
+                        <SbomChangesDisplay :sbom-changes="changelog.sbomChanges" :show-attribution="true" />
                     </div>
                 </n-tab-pane>
                 
                 <n-tab-pane name="vulnerabilities" tab="🔒 Finding Changes">
-                    <div v-if="!changelog || !changelog.branches || changelog.branches.length === 0" style="padding: 40px; text-align: center; color: #999;">
-                        <p style="font-size: 16px; margin-bottom: 10px;">No finding changes available for the selected date range</p>
-                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
+                    <div v-if="!changelog || !changelog.branches || changelog.branches.length === 0">
+                        <FindingChangesDisplayWithAttribution />
                     </div>
                     
                     <!-- NONE mode: Show per-release Finding changes -->
-                    <div v-else-if="aggregationType === 'NONE'">
-                        <div v-for="branch in changelog.branches" :key="branch.uuid">
-                            <h3>{{ branch.name }}</h3>
-                            <div v-for="release in branch.releases" :key="release.uuid">
+                    <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
+                        <div v-for="branch in changelog.branches" :key="branch.branchUuid">
+                            <h3>{{ branch.branchName }}</h3>
+                            <div v-for="release in branch.releases" :key="release.releaseUuid">
                                 <ReleaseHeader 
-                                    :uuid="release.uuid"
+                                    :uuid="release.releaseUuid"
                                     :version="release.version"
                                     :lifecycle="release.lifecycle"
                                 />
-                                <FindingChangesDisplay :finding-changes="release.findingChanges" />
+                                <FindingChangesDisplay :finding-changes="changelog.findingChanges.find(f => f.releaseUuid === release.releaseUuid)" />
                             </div>
                         </div>
                     </div>
                     
                     <!-- AGGREGATED mode: Show top-level aggregated changes -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                         <p style="margin-bottom: 10px; font-style: italic;">Aggregated across all active branches</p>
-                        <FindingChangesDisplay :finding-changes="changelog.findingChanges" />
+                        <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" />
                     </div>
                 </n-tab-pane>
             </n-tabs>
         </div>
         
-        <!-- Branch-based changelog (existing) -->
+        <!-- Branch-based changelog (between two releases) -->
         <div v-else-if="componentType === 'COMPONENT' && changelog && changelog.branches && changelog.branches.length === 1">
-            <h2 v-if="changelog.org">
-                <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: changelog.org, compuuid: changelog.uuid, branchuuid: changelog.branches[0].uuid }}">{{ changelog.name + '(' + changelog.branches[0].name + ')' }}</router-link>
+            <h2 v-if="changelog.orgUuid">
+                <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: changelog.branches[0].branchUuid }}">{{ changelog.componentName + '(' + changelog.branches[0].branchName + ')' }}</router-link>
                 <span>&nbsp;</span>
                 <router-link :to="{ name: 'ReleaseView', params: {uuid: changelog.firstRelease.uuid}}">{{changelog.firstRelease.version}}</router-link>
                 <span> - </span>
@@ -134,24 +133,24 @@
                     <SeverityFilter v-model:selectedSeverity="selectedSeverity" />
                     
                     <!-- NONE aggregation: per-release view -->
-                    <div v-if="aggregationType === 'NONE'">
-                        <div v-for="release in changelog.branches[0].releases" :key="release.uuid">
+                    <div v-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
+                        <div v-for="release in changelog.branches[0].releases" :key="release.releaseUuid">
                             <ReleaseHeader 
-                                :uuid="release.uuid"
+                                :uuid="release.releaseUuid"
                                 :version="release.version"
                                 :lifecycle="release.lifecycle"
                             />
                             <CodeChangesDisplay 
-                                :changes="release.changes" 
+                                :changes="[{changeType: 'all', commits: release.commits}]" 
                                 :selected-severity="selectedSeverity"
                             />
                         </div>
                     </div>
                     
                     <!-- AGGREGATED: combined view -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                         <CodeChangesDisplay 
-                            :changes="changelog.branches[0].changes" 
+                            :changes="changelog.branches[0].commitsByType" 
                             :selected-severity="selectedSeverity"
                         />
                     </div>
@@ -160,49 +159,49 @@
                 
                 <n-tab-pane name="sbom" tab="📦 SBOM Changes">
                     <!-- NONE mode: Show per-release SBOM changes -->
-                    <div v-if="aggregationType === 'NONE'">
-                        <div v-for="release in changelog.branches[0].releases" :key="release.uuid">
+                    <div v-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
+                        <div v-for="release in changelog.branches[0].releases" :key="release.releaseUuid">
                             <ReleaseHeader 
-                                :uuid="release.uuid"
+                                :uuid="release.releaseUuid"
                                 :version="release.version"
                                 :lifecycle="release.lifecycle"
                             />
-                            <SbomChangesDisplay :sbom-changes="release.sbomChanges" />
+                            <SbomChangesDisplay :sbom-changes="changelog.sbomChanges.find(s => s.releaseUuid === release.releaseUuid)" />
                         </div>
                     </div>
                     
                     <!-- AGGREGATED mode: Show top-level aggregated changes -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                         <SbomChangesDisplay 
                             :sbom-changes="changelog.sbomChanges" 
-                            :show-updated="true"
+                            :show-attribution="true"
                         />
                     </div>
                 </n-tab-pane>
                 
                 <n-tab-pane name="vulnerabilities" tab="🔒 Finding Changes">
                     <!-- NONE mode: Show per-release Finding changes -->
-                    <div v-if="aggregationType === 'NONE'">
-                        <div v-for="release in changelog.branches[0].releases" :key="release.uuid">
+                    <div v-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
+                        <div v-for="release in changelog.branches[0].releases" :key="release.releaseUuid">
                             <ReleaseHeader 
-                                :uuid="release.uuid"
+                                :uuid="release.releaseUuid"
                                 :version="release.version"
                                 :lifecycle="release.lifecycle"
                             />
-                            <FindingChangesDisplay :finding-changes="release.findingChanges" />
+                            <FindingChangesDisplay :finding-changes="changelog.findingChanges.find(f => f.releaseUuid === release.releaseUuid)" />
                         </div>
                     </div>
                     
                     <!-- AGGREGATED mode: Show top-level aggregated changes -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
-                        <FindingChangesDisplay :finding-changes="changelog.findingChanges" />
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
+                        <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" />
                     </div>
                 </n-tab-pane>
             </n-tabs>
         </div>
         <div v-if="componentType === 'PRODUCT' && props.iscomponentchangelog">
-            <h2 v-if="changelog && changelog.org">
-                <router-link :to="{ name: 'ProductsOfOrg', params: {orguuid: changelog.org, compuuid: changelog.uuid }}">{{ changelog.name }}</router-link>
+            <h2 v-if="changelog && changelog.orgUuid">
+                <router-link :to="{ name: 'ProductsOfOrg', params: {orguuid: changelog.orgUuid, compuuid: changelog.componentUuid }}">{{ changelog.componentName }}</router-link>
                 <span> - Product-wide Changes</span>
             </h2>
             
@@ -218,29 +217,24 @@
                 <n-tab-pane name="components" tab="📝 Component Changes">
                     <SeverityFilter v-model:selectedSeverity="selectedSeverity" />
                     
-                    <div v-if="!changelog || !changelog.components || changelog.components.length === 0" style="padding: 40px; text-align: center; color: #999;">
-                        <p style="font-size: 16px; margin-bottom: 10px;">No component changes available for the selected date range</p>
-                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
-                    </div>
-                    
                     <!-- NONE aggregation: per-component, per-release view -->
-                    <div v-else-if="aggregationType === 'NONE'">
-                        <div v-for="component in changelog.components" :key="component.uuid">
+                    <div v-if="aggregationType === 'NONE' && changelog && changelog.__typename === 'NoneChangelog' && changelog.components">
+                        <div v-for="component in changelog.components" :key="component.componentUuid">
                             <ComponentHeader 
-                                :org-uuid="component.org"
-                                :component-uuid="component.uuid"
-                                :name="component.name"
+                                :org-uuid="component.orgUuid"
+                                :component-uuid="component.componentUuid"
+                                :name="component.componentName"
                                 :first-release="component.firstRelease"
                                 :last-release="component.lastRelease"
                             />
                             <ul>
-                                <li v-for="branch in component.branches" :key="branch.uuid">
-                                    <h4><router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: component.org, compuuid: component.uuid, branchuuid: branch.uuid }}">{{ branch.name }}</router-link></h4>
+                                <li v-for="branch in component.branches" :key="branch.branchUuid">
+                                    <h4><router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: component.orgUuid, compuuid: component.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link></h4>
                                     <ul>
-                                        <li v-for="release in branch.releases" :key="release.uuid">
-                                            <h4><router-link :to="{ name: 'ReleaseView', params: {uuid: release.uuid}}">{{release.version}}</router-link></h4>
+                                        <li v-for="release in branch.releases" :key="release.releaseUuid">
+                                            <h4><router-link :to="{ name: 'ReleaseView', params: {uuid: release.releaseUuid}}">{{release.version}}</router-link></h4>
                                             <CodeChangesDisplay 
-                                                :changes="release.changes" 
+                                                :changes="release.commits ? [{ changeType: 'others', commits: release.commits }] : []" 
                                                 :selected-severity="selectedSeverity"
                                             />
                                         </li>
@@ -250,23 +244,35 @@
                         </div>
                     </div>
                     
-                    <!-- AGGREGATED: combined view -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
-                        <div v-for="component in changelog.components" :key="component.uuid">
+                    <!-- AGGREGATED: combined view for single component or product -->
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog && changelog.__typename === 'AggregatedChangelog'">
+                        <!-- Single component: branches are directly on changelog -->
+                        <ul v-if="changelog.branches && changelog.branches.length > 0">
+                            <li v-for="branch in changelog.branches" :key="branch.branchUuid">
+                                <h4>{{ branch.branchName }}</h4>
+                                <CodeChangesDisplay 
+                                    v-if="branch.commitsByType && branch.commitsByType.length > 0"
+                                    :changes="branch.commitsByType" 
+                                    :selected-severity="selectedSeverity"
+                                />
+                            </li>
+                        </ul>
+                        <!-- Product with multiple components -->
+                        <div v-else-if="changelog.components" v-for="component in changelog.components" :key="component.componentUuid">
                             <ComponentHeader 
-                                :org-uuid="component.org"
-                                :component-uuid="component.uuid"
-                                :name="component.name"
+                                :org-uuid="component.orgUuid"
+                                :component-uuid="component.componentUuid"
+                                :name="component.componentName"
                                 :first-release="component.firstRelease"
                                 :last-release="component.lastRelease"
                                 :branch-count="component.branches?.length"
                             />
                             <ul v-if="component.branches && component.branches.length > 0">
-                                <li v-for="branch in component.branches" :key="branch.uuid">
-                                    <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: component.org, compuuid: component.uuid, branchuuid: branch.uuid }}">{{ branch.name }}</router-link>
+                                <li v-for="branch in component.branches" :key="branch.branchUuid">
+                                    <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: component.orgUuid, compuuid: component.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
                                     <CodeChangesDisplay 
-                                        v-if="branch.changes && branch.changes.length > 0"
-                                        :changes="branch.changes" 
+                                        v-if="branch.commitsByType && branch.commitsByType.length > 0"
+                                        :changes="branch.commitsByType" 
                                         :selected-severity="selectedSeverity"
                                     />
                                 </li>
@@ -274,84 +280,82 @@
                         </div>
                     </div>
                     
-                    <!-- AGGREGATED_BY_TICKET: grouped by ticket -->
-                    <div v-else-if="aggregationType === 'AGGREGATED_BY_TICKET'">
-                        <div v-for="component in changelog.components" :key="component.uuid">
-                            <ComponentHeader 
-                                :org-uuid="component.org"
-                                :component-uuid="component.uuid"
-                                :name="component.name"
-                                :first-release="component.firstRelease"
-                                :last-release="component.lastRelease"
-                                :branch-count="component.branches?.length"
-                            />
-                            <ul>
-                                <li v-for="branch in component.branches" :key="branch.uuid">
-                                    <router-link :to="{ name: 'ComponentsOfOrg', params: {orguuid: component.org, compuuid: component.uuid, branchuuid: branch.uuid }}">{{ branch.name }}</router-link>
-                                    <div v-for="ticket in branch.tickets" :key="ticket.ticketSubject">
-                                        <h4>{{ticket.ticketSubject}}</h4>
-                                        <CodeChangesDisplay 
-                                            :changes="ticket.changes" 
-                                            :selected-severity="selectedSeverity"
-                                        />
-                                    </div>
-                                </li>
-                            </ul>
-                        </div>
+                    <div v-else style="padding: 40px; text-align: center; color: #999;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">No component changes available for the selected date range</p>
+                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
                     </div>
                 </n-tab-pane>
                 
                 <n-tab-pane name="sbom" tab="📦 SBOM Changes">
-                    <div v-if="!changelog || !changelog.components || changelog.components.length === 0" style="padding: 40px; text-align: center; color: #999;">
-                        <p style="font-size: 16px; margin-bottom: 10px;">No SBOM changes available for the selected date range</p>
-                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
-                    </div>
-                    
                     <!-- NONE mode: Show per-component SBOM changes -->
-                    <div v-else-if="aggregationType === 'NONE'">
-                        <div v-for="component in changelog.components" :key="component.uuid">
+                    <div v-if="aggregationType === 'NONE' && changelog && changelog.__typename === 'NoneChangelog' && changelog.components">
+                        <div v-for="component in changelog.components" :key="component.componentUuid">
                             <ComponentHeader 
-                                :org-uuid="component.org"
-                                :component-uuid="component.uuid"
-                                :name="component.name"
+                                :org-uuid="component.orgUuid"
+                                :component-uuid="component.componentUuid"
+                                :name="component.componentName"
                                 :first-release="component.firstRelease"
                                 :last-release="component.lastRelease"
                             />
-                            <SbomChangesDisplay :sbom-changes="component.sbomChanges" />
+                            <div v-for="branch in component.branches" :key="branch.branchUuid">
+                                <h4 class="branch-name">{{ branch.branchName }}</h4>
+                                <div v-for="release in branch.releases" :key="release.releaseUuid">
+                                    <ReleaseHeader
+                                        :uuid="release.releaseUuid"
+                                        :version="release.version"
+                                        :lifecycle="release.lifecycle"
+                                    />
+                                    <SbomChangesDisplay :sbom-changes="component.sbomChanges.find((s: any) => s.releaseUuid === release.releaseUuid)" />
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
                     <!-- AGGREGATED mode: Show top-level aggregated changes -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog && changelog.__typename === 'AggregatedChangelog'">
                         <p style="margin-bottom: 10px; font-style: italic;">Aggregated across all components in the product</p>
-                        <SbomChangesDisplay :sbom-changes="changelog.sbomChanges" />
+                        <SbomChangesDisplay :sbom-changes="changelog.sbomChanges" :show-attribution="true" />
+                    </div>
+                    
+                    <div v-else style="padding: 40px; text-align: center; color: #999;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">No SBOM changes available for the selected date range</p>
+                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
                     </div>
                 </n-tab-pane>
                 
                 <n-tab-pane name="vulnerabilities" tab="🔒 Finding Changes">
-                    <div v-if="!changelog || !changelog.components || changelog.components.length === 0" style="padding: 40px; text-align: center; color: #999;">
-                        <p style="font-size: 16px; margin-bottom: 10px;">No finding changes available for the selected date range</p>
-                        <p style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
-                    </div>
-                    
                     <!-- NONE mode: Show per-component Finding changes -->
-                    <div v-else-if="aggregationType === 'NONE'">
-                        <div v-for="component in changelog.components" :key="component.uuid">
+                    <div v-if="aggregationType === 'NONE' && changelog && changelog.__typename === 'NoneChangelog' && changelog.components">
+                        <div v-for="component in changelog.components" :key="component.componentUuid">
                             <ComponentHeader 
-                                :org-uuid="component.org"
-                                :component-uuid="component.uuid"
-                                :name="component.name"
+                                :org-uuid="component.orgUuid"
+                                :component-uuid="component.componentUuid"
+                                :name="component.componentName"
                                 :first-release="component.firstRelease"
                                 :last-release="component.lastRelease"
                             />
-                            <FindingChangesDisplay :finding-changes="component.findingChanges" />
+                            <div v-for="branch in component.branches" :key="branch.branchUuid">
+                                <h4 class="branch-name">{{ branch.branchName }}</h4>
+                                <div v-for="release in branch.releases" :key="release.releaseUuid">
+                                    <ReleaseHeader
+                                        :uuid="release.releaseUuid"
+                                        :version="release.version"
+                                        :lifecycle="release.lifecycle"
+                                    />
+                                    <FindingChangesDisplay :finding-changes="component.findingChanges.find((f: any) => f.releaseUuid === release.releaseUuid)" />
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
                     <!-- AGGREGATED mode: Show top-level aggregated changes -->
-                    <div v-else-if="aggregationType === 'AGGREGATED'">
+                    <div v-else-if="aggregationType === 'AGGREGATED' && changelog && changelog.__typename === 'AggregatedChangelog'">
                         <p style="margin-bottom: 10px; font-style: italic;">Aggregated across all components in the product</p>
-                        <FindingChangesDisplay :finding-changes="changelog.findingChanges" />
+                        <FindingChangesDisplayWithAttribution :finding-changes="changelog.findingChanges" :show-attribution="true" />
+                    </div>
+                    
+                    <div v-else>
+                        <FindingChangesDisplayWithAttribution />
                     </div>
                 </n-tab-pane>
             </n-tabs>
@@ -359,8 +363,8 @@
         
         <!-- Product Release Comparison View (between two specific releases) -->
         <div v-if="componentType === 'PRODUCT' && changelog && !props.iscomponentchangelog">
-            <h2 v-if="changelog.org">
-                <router-link :to="{ name: 'ProductsOfOrg', params: {orguuid: changelog.org, compuuid: changelog.uuid }}">{{ changelog.name }}</router-link>
+            <h2 v-if="changelog.orgUuid">
+                <router-link :to="{ name: 'ProductsOfOrg', params: {orguuid: changelog.orgUuid, compuuid: changelog.componentUuid }}">{{ changelog.componentName }}</router-link>
                 <span>&nbsp;</span>
                 <router-link v-if="changelog.firstRelease" :to="{ name: 'ReleaseView', params: {uuid: changelog.firstRelease.uuid}}">{{changelog.firstRelease.version}}</router-link>
                 <span> - </span>
@@ -512,7 +516,8 @@ import commonFunctions from '../utils/commonFunctions'
 import { Ref, ref, watch, computed } from 'vue'
 import { NRadioGroup, NRadioButton, NSelect, NFormItem, NTabs, NTabPane, NTag, NSpin, NDatePicker, NSpace, NButton } from 'naive-ui'
 import { 
-    FindingChangesDisplay, 
+    FindingChangesDisplay,
+    FindingChangesDisplayWithAttribution,
     SbomChangesDisplay, 
     CodeChangesDisplay, 
     ReleaseHeader,
@@ -520,40 +525,40 @@ import {
     ChangelogControls,
     SeverityFilter
 } from './changelog'
+import { 
+    fetchComponentChangelogByDate, 
+    fetchComponentChangelog 
+} from '../utils/changelogQueries'
+import type { ComponentChangelog } from '../types/changelog-sealed'
 
 async function getComponentChangelog (org: string, aggregationType: string, component?: string,
-    branch?: string) {
-    let changelog = {}
+    branch?: string): Promise<ComponentChangelog | null> {
     if (component) {
-        // For component changelog, use date-based comparison across all branches
-        const dateTo = new Date(dateRange.value[1]).toISOString() // Use selected date range
+        const dateTo = new Date(dateRange.value[1]).toISOString()
         const dateFrom = new Date(dateRange.value[0]).toISOString()
         
-        let fetchRlzParams = {
-            componentId: component,
-            orgId: org,
-            branchId: branch, // Optional: if provided, will use branch-specific view
-            aggregated: aggregationType,
+        return await fetchComponentChangelogByDate({
+            componentUuid: component,
+            branchUuid: branch,
+            org: org,
+            aggregated: aggregationType as 'NONE' | 'AGGREGATED',
             dateFrom: dateFrom,
             dateTo: dateTo
-        }
-        changelog = await commonFunctions.fetchComponentChangeLog(fetchRlzParams)
+        })
     }
-    return changelog
+    return null
 }
 
-async function getChangelog (org: string, aggregationType: string, release1?: string, release2?: string) {
-    let changelog = {}
+async function getChangelog (org: string, aggregationType: string, release1?: string, release2?: string): Promise<ComponentChangelog | null> {
     if (release1 && release2) {
-        let fetchRlzParams = {
+        return await fetchComponentChangelog({
             release1: release1,
             release2: release2,
             org: org,
-            aggregated:aggregationType
-        }
-        changelog = await commonFunctions.fetchChangelogBetweenReleases(fetchRlzParams)
+            aggregated: aggregationType as 'NONE' | 'AGGREGATED'
+        })
     }
-    return changelog
+    return null
 }
 
 const props = defineProps<{
@@ -586,10 +591,16 @@ const componentType = props.componenttypeprop
 
 
 const getAggregatedChangelog = async function () {
-    if (props.iscomponentchangelog) {
-        changelog.value = await getComponentChangelog(props.orgprop, aggregationType.value, props.componentprop, props.branchprop)
-    } else {
-        changelog.value = await getChangelog(props.orgprop, aggregationType.value, props.release1prop, props.release2prop)
+    try {
+        if (props.iscomponentchangelog) {
+            changelog.value = await getComponentChangelog(props.orgprop, aggregationType.value, props.componentprop, props.branchprop)
+        } else {
+            changelog.value = await getChangelog(props.orgprop, aggregationType.value, props.release1prop, props.release2prop)
+        }
+    } catch (error: any) {
+        console.warn('Changelog query returned no data:', error.message || error)
+        // Set changelog to null so the "no data" message displays
+        changelog.value = null
     }
 }
 

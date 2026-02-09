@@ -73,6 +73,14 @@ const emit = defineEmits<{
 const selectedPreset = ref('last7days')
 
 const presetOptions = [
+
+    { label: 'Last 5 minutes', value: 'last5minutes' },
+    { label: 'Last 10 minutes', value: 'last10minutes' },
+    { label: 'Last 15 minutes', value: 'last15minutes' },
+    { label: 'Last 1 hours', value: 'last1hour' },
+    { label: 'Last 3 hours', value: 'last3hours' },
+    { label: 'Last 6 hours', value: 'last6hours' },
+    { label: 'Last 12 hours', value: 'last12hours' },
     { label: 'Last 24 hours', value: 'last24hours' },
     { label: 'Last 3 days', value: 'last3days' },
     { label: 'Last 7 days', value: 'last7days' },
@@ -93,19 +101,28 @@ const computeDateRangeFromPreset = (preset: string): [number, number] | null => 
     }
     
     const now = Date.now()
-    const msPerDay = 24 * 60 * 60 * 1000
+    const msPerMinute = 60 * 1000
+    const msPerHour = 60 * msPerMinute
+    const msPerDay = 24 * msPerHour
     
     const presetMap: Record<string, number> = {
-        'last24hours': 1,
-        'last3days': 3,
-        'last7days': 7,
-        'last14days': 14,
-        'last30days': 30,
-        'last90days': 90
+        'last5minutes': 5 * msPerMinute,
+        'last10minutes': 10 * msPerMinute,
+        'last15minutes': 15 * msPerMinute,
+        'last1hour': 1 * msPerHour,
+        'last3hours': 3 * msPerHour,
+        'last6hours': 6 * msPerHour,
+        'last12hours': 12 * msPerHour,
+        'last24hours': 1 * msPerDay,
+        'last3days': 3 * msPerDay,
+        'last7days': 7 * msPerDay,
+        'last14days': 14 * msPerDay,
+        'last30days': 30 * msPerDay,
+        'last90days': 90 * msPerDay
     }
     
-    const days = presetMap[preset] || 7
-    return [now - days * msPerDay, now]
+    const milliseconds = presetMap[preset] || (7 * msPerDay)
+    return [now - milliseconds, now]
 }
 
 const handlePresetChange = (value: string) => {
