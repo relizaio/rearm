@@ -333,9 +333,31 @@ public class ReleaseDatafetcher {
 		return retRel;
 	}
 	
+	// @PreAuthorize("isAuthenticated()")
+	// @DgsData(parentType = "Query", field = "getChangelogBetweenReleases")
+	// public ComponentJsonDto getChangelogBetweenReleases(DgsDataFetchingEnvironment dfe,
+	// 		@InputArgument("release1") UUID uuid1,
+	// 		@InputArgument("release2") UUID uuid2,
+	// 		@InputArgument("orgUuid") UUID orgUuid,
+	// 		@InputArgument("aggregated") AggregationType aggregated,
+	// 		@InputArgument("timeZone") String timeZone
+	// 	) throws RelizaException {
+
+	// 	JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+	// 	var oud = userService.getUserDataByAuth(auth);
+		
+	// 	authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		
+	// 	return changelogService.getChangelogBetweenReleases(uuid1, uuid2, orgUuid, aggregated, timeZone);
+	// }
+	
+	/**
+	 * New datafetcher for componentChangelog query using sealed interface pattern.
+	 * Returns either NoneChangelog or AggregatedChangelog based on aggregation type.
+	 */
 	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Query", field = "getChangelogBetweenReleases")
-	public ComponentJsonDto getChangelogBetweenReleases(DgsDataFetchingEnvironment dfe,
+	@DgsData(parentType = "Query", field = "componentChangelog")
+	public ChangeLogService.ComponentChangelog componentChangelog(DgsDataFetchingEnvironment dfe,
 			@InputArgument("release1") UUID uuid1,
 			@InputArgument("release2") UUID uuid2,
 			@InputArgument("orgUuid") UUID orgUuid,
@@ -348,9 +370,69 @@ public class ReleaseDatafetcher {
 		
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
 		
-		return changelogService.getChangelogBetweenReleases(uuid1, uuid2, orgUuid, aggregated, timeZone);
+		return changelogService.getComponentChangelog(uuid1, uuid2, orgUuid, aggregated, timeZone);
 	}
 	
+	/**
+	 * Datafetcher for componentChangelogByDate query using sealed interface pattern.
+	 * Returns either NoneChangelog or AggregatedChangelog based on aggregation type.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "componentChangelogByDate")
+	public ChangeLogService.ComponentChangelog componentChangelogByDate(DgsDataFetchingEnvironment dfe,
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("aggregated") AggregationType aggregated,
+			@InputArgument("timeZone") String timeZone,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo
+		) throws RelizaException {
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		
+		return changelogService.getComponentChangelogByDate(
+			componentUuid, branchUuid, orgUuid, aggregated, timeZone, dateFrom, dateTo);
+	}
+	
+	/**
+	 * Datafetcher for organizationChangelogByDate query using sealed interface pattern.
+	 * Returns either NoneOrganizationChangelog or AggregatedOrganizationChangelog based on aggregation type.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "organizationChangelogByDate")
+	public ChangeLogService.OrganizationChangelog organizationChangelogByDate(DgsDataFetchingEnvironment dfe,
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
+			@InputArgument("dateFrom") ZonedDateTime dateFrom,
+			@InputArgument("dateTo") ZonedDateTime dateTo,
+			@InputArgument("aggregated") AggregationType aggregated,
+			@InputArgument("timeZone") String timeZone
+		) throws RelizaException {
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		
+		return changelogService.getOrganizationChangelogByDate(
+			orgUuid, perspectiveUuid, dateFrom, dateTo, aggregated, timeZone);
+	}
+	
+	/**
+	 * Datafetcher to convert commitsByType Map to List for GraphQL.
+	 * The Java record uses Map<String, List<CodeCommit>> but GraphQL expects [CommitsByType!]!
+	 */
+	@DgsData(parentType = "AggregatedBranchChanges", field = "commitsByType")
+	public List<ChangeLogService.CommitsByType> commitsByType(DgsDataFetchingEnvironment dfe) {
+		ChangeLogService.AggregatedBranchChanges branch = dfe.getSource();
+		return branch.commitsByType().entrySet().stream()
+			.map(entry -> new ChangeLogService.CommitsByType(entry.getKey(), entry.getValue()))
+			.collect(Collectors.toList());
+	}
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "addReleaseManual")

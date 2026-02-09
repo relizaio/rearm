@@ -11,6 +11,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.dto.FindingChangesWithAttribution;
+import io.reliza.dto.SbomChangesWithAttribution;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.service.ChangeLogService.ChangeRecord;
 import io.reliza.service.ChangeLogService.ReleaseRecord;
@@ -44,7 +46,7 @@ public class ComponentJsonDto {
 	@JsonProperty(CommonVariables.BRANCHES_FIELD)
 	private List<ComponentJsonDto> branches;
 	@JsonProperty("sbomChanges")
-	private ArtifactChangelog sbomChanges;
+	private SbomChangesWithAttribution sbomChanges;
 	@JsonProperty("findingChanges")
-	private FindingChangesRecord findingChanges;
+	private FindingChangesWithAttribution findingChanges;
 }

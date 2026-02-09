@@ -169,6 +169,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	UUID findNextReleasesOfBranchForRelease(String branch, UUID release);
 	
 	@Query(
+			value = VariableQueries.FIND_LATEST_RELEASE_BEFORE_TIMESTAMP,
+			nativeQuery = true)
+	UUID findLatestReleaseBeforeTimestamp(String branchUuidAsString, String timestamp);
+	
+	@Query(
 			value = VariableQueries.FIND_DISTINCT_RELEASE_TAG_KEYS_OF_ORG,
 			nativeQuery = true)
 	List<String> findDistrinctReleaseKeysOfOrg(String orgUuidAsString);

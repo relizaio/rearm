@@ -472,6 +472,15 @@ class VariableQueries {
 			""" 
 			+ "select next_release_uuid from NextRelease where record_data->>'branch' = :branch AND uuid = :release ORDER BY created_date desc;";
 
+	protected static final String FIND_LATEST_RELEASE_BEFORE_TIMESTAMP = """
+			SELECT uuid FROM rearm.releases r 
+			WHERE r.record_data->>'branch' = :branchUuidAsString
+			AND r.created_date < cast(:timestamp as timestamptz)
+			AND r.record_data->>'lifecycle' NOT IN ('CANCELLED', 'REJECTED')
+			ORDER BY r.created_date DESC
+			LIMIT 1
+			""";
+
 	protected static final String FIND_ALL_RELEASES_OF_ORG = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString";
 	

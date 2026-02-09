@@ -155,50 +155,50 @@ public class ComponentDataFetcher {
 		return componentService.listComponentDataByOrganization(orgUuid, componentType);
 	}
 	
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Query", field = "getComponentChangeLog")
-	public ComponentJsonDto getComponentChangeLog(
-			@InputArgument("componentUuid") String componentUuidStr,
-			@InputArgument("branchUuid") String branchUuidStr,
-			@InputArgument("orgUuid") String orgUuidStr,
-			@InputArgument("aggregated") AggregationType aggregated,
-			@InputArgument("timeZone") String timeZone,
-			@InputArgument("dateFrom") ZonedDateTime dateFrom,
-			@InputArgument("dateTo") ZonedDateTime dateTo
-		) throws RelizaException {
-		UUID orgUuid = UUID.fromString(orgUuidStr);
-		UUID componentUuid = UUID.fromString(componentUuidStr);
-		UUID branchUuid = (branchUuidStr != null && !branchUuidStr.isEmpty()) ? UUID.fromString(branchUuidStr) : null;
+	// @PreAuthorize("isAuthenticated()")
+	// @DgsData(parentType = "Query", field = "getComponentChangeLog")
+	// public ComponentJsonDto getComponentChangeLog(
+	// 		@InputArgument("componentUuid") String componentUuidStr,
+	// 		@InputArgument("branchUuid") String branchUuidStr,
+	// 		@InputArgument("orgUuid") String orgUuidStr,
+	// 		@InputArgument("aggregated") AggregationType aggregated,
+	// 		@InputArgument("timeZone") String timeZone,
+	// 		@InputArgument("dateFrom") ZonedDateTime dateFrom,
+	// 		@InputArgument("dateTo") ZonedDateTime dateTo
+	// 	) throws RelizaException {
+	// 	UUID orgUuid = UUID.fromString(orgUuidStr);
+	// 	UUID componentUuid = UUID.fromString(componentUuidStr);
+	// 	UUID branchUuid = (branchUuidStr != null && !branchUuidStr.isEmpty()) ? UUID.fromString(branchUuidStr) : null;
 		
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
+	// 	JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+	// 	var oud = userService.getUserDataByAuth(auth);
 		
-		Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
-		RelizaObject ro = opd.isPresent() ? opd.get() : null;
+	// 	Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
+	// 	RelizaObject ro = opd.isPresent() ? opd.get() : null;
 		
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+	// 	authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		
-		ComponentJsonDto changelog = null;
-		aggregated = aggregated == null ? AggregationType.NONE : aggregated;
+	// 	ComponentJsonDto changelog = null;
+	// 	aggregated = aggregated == null ? AggregationType.NONE : aggregated;
 		
-		// If dateFrom and dateTo are provided, use date-based comparison
-		if (dateFrom != null && dateTo != null) {
-			if(opd.get().getType().equals(ComponentType.COMPONENT)) {
-				changelog = changeLogService.getComponentChangeLogByDate(componentUuid, orgUuid, dateFrom, dateTo, aggregated, timeZone);
-			} else if(opd.get().getType().equals(ComponentType.PRODUCT)) {
-				changelog = changeLogService.getProductChangeLogByDate(componentUuid, orgUuid, dateFrom, dateTo, aggregated, timeZone);
-			}
-		}
-		// Otherwise, use branch-specific changelog
-		else if (branchUuid != null) {
-			if(opd.get().getType().equals(ComponentType.COMPONENT))
-				changelog = changeLogService.getComponentChangeLog(branchUuid, orgUuid, aggregated, timeZone);
-			else if(opd.get().getType().equals(ComponentType.PRODUCT))
-				changelog = changeLogService.getProductChangeLog(branchUuid, orgUuid, aggregated, timeZone);
-		}
+	// 	// If dateFrom and dateTo are provided, use date-based comparison
+	// 	if (dateFrom != null && dateTo != null) {
+	// 		if(opd.get().getType().equals(ComponentType.COMPONENT)) {
+	// 			changelog = changeLogService.getComponentChangeLogByDate(componentUuid, orgUuid, dateFrom, dateTo, aggregated, timeZone);
+	// 		} else if(opd.get().getType().equals(ComponentType.PRODUCT)) {
+	// 			changelog = changeLogService.getProductChangeLogByDate(componentUuid, orgUuid, dateFrom, dateTo, aggregated, timeZone);
+	// 		}
+	// 	}
+	// 	// Otherwise, use branch-specific changelog
+	// 	else if (branchUuid != null) {
+	// 		if(opd.get().getType().equals(ComponentType.COMPONENT))
+	// 			changelog = changeLogService.getComponentChangeLog(branchUuid, orgUuid, aggregated, timeZone);
+	// 		else if(opd.get().getType().equals(ComponentType.PRODUCT))
+	// 			changelog = changeLogService.getProductChangeLog(branchUuid, orgUuid, aggregated, timeZone);
+	// 	}
 		
-		return changelog;
-	}
+	// 	return changelog;
+	// }
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "createComponent")

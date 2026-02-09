@@ -30,6 +30,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.ComponentData;
@@ -644,8 +645,82 @@ public class SharedReleaseService {
 	}
 	
 
+	/**
+	 * Find the previous release to compare against for a given release.
+	 * For releases with a previous release on the same branch, returns that release.
+	 * For the first release on a branch (Branch Root), computes the Inferred Fork Point
+	 * by finding the most recent release on the base branch created before this release.
+	 * 
+	 * TODO: Future Enhancement - Exact Parent Linking (parent_hash Strategy)
+	 * Current implementation uses timestamp-based inference which has limitations:
+	 * - Cannot handle "Stacked Branches" (Grandchild -> Child -> Main)
+	 * - Subject to race conditions with concurrent commits
+	 * 
+	 * Future approach:
+	 * 1. Schema: Add parent_hash column to commits table (store Git parent hash from %P)
+	 * 2. Ingestion: Update git log command to extract parent hash for each commit
+	 * 3. Lookup: When findPreviousCommit returns null (Branch Root):
+	 *    - Read parent_hash from current commit
+	 *    - Query: SELECT branchId FROM commits WHERE hash = :parent_hash
+	 *    - Link to that branch's latest release (supports stacked branches)
+	 * 
+	 * This would eliminate timestamp estimation and reflect the exact Git DAG structure.
+	 * 
+	 * @param branchUuid - UUID of the branch
+	 * @param release - UUID of the release to find previous for
+	 * @return UUID of the previous release, or null if none found
+	 */
 	public UUID findPreviousReleasesOfBranchForRelease (UUID branchUuid,  UUID release) {
-		return repository.findPreviousReleasesOfBranchForRelease(branchUuid.toString(), release);
+		UUID prevReleaseId = null;
+
+		prevReleaseId = repository.findPreviousReleasesOfBranchForRelease(branchUuid.toString(), release);
+		// would be null for First release on this branch (Branch Root): compute Inferred Fork Point
+
+		if(prevReleaseId == null){
+			Optional<ReleaseData> ord = getReleaseData(release);
+			if (ord.isPresent()) {
+				ReleaseData rd = ord.get();
+				UUID componentId = rd.getComponent();
+				ZonedDateTime branchRootTimestamp = rd.getCreatedDate(); // T_Start
+				
+				Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+				if (ocd.isPresent() && ocd.get().getDefaultBranch() != null) {
+					String baseBranchName = ocd.get().getDefaultBranch().name();
+					try {
+						Optional<Branch> baseBranchOpt = branchService.findBranchByName(componentId, baseBranchName.toLowerCase());
+						if (baseBranchOpt.isPresent()) {
+							// Inferred Fork Point: Find the most recent release on base branch created BEFORE T_Start
+							UUID inferredForkPointId = repository.findLatestReleaseBeforeTimestamp(
+								baseBranchOpt.get().getUuid().toString(), 
+								branchRootTimestamp.toString()
+							);
+							
+							if (inferredForkPointId != null) {
+								prevReleaseId = inferredForkPointId;
+								log.debug("Inferred Fork Point found for Branch Root release {} at timestamp {}: base branch release {}", 
+									release, branchRootTimestamp, inferredForkPointId);
+							} else {
+								// Fallback: if no release exists before T_Start, use latest release on base branch
+								Optional<ReleaseData> baseBranchLatestRd = getLatestNonCancelledOrRejectedReleaseDataOfBranch(baseBranchOpt.get().getUuid());
+								if (baseBranchLatestRd.isPresent()) {
+									prevReleaseId = baseBranchLatestRd.get().getUuid();
+									log.debug("No Inferred Fork Point found before timestamp {}. Falling back to latest base branch release: {}", 
+										branchRootTimestamp, prevReleaseId);
+								} else {
+									log.debug("No release found on base branch {} for comparison.", baseBranchName);
+								}
+							}
+						} else {
+							log.debug("Base branch {} not found for component {}", baseBranchName, componentId);
+						}
+					} catch (Exception e) {
+						log.error("Error finding base branch by name: {}", baseBranchName, e);
+					}
+				}
+			}
+		}
+		
+		return prevReleaseId;
 	}
 	public UUID findNextReleasesOfBranchForRelease (UUID branchUuid,  UUID release) {
 		return repository.findNextReleasesOfBranchForRelease(branchUuid.toString(), release);

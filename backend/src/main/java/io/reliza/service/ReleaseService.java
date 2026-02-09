@@ -373,8 +373,8 @@ public class ReleaseService {
 		
 		Optional<ReleaseData> latestRelease = ossReleaseService.getReleasePerProductComponent(bd.getOrg(), bd.getComponent(), null, bd.getName(), null);
 		if (latestRelease.isPresent()) {
-			changelog = changeLogService.getChangelogBetweenReleases(
-					ReleaseData.dataFromRecord(release).getUuid(), latestRelease.get().getUuid(), bd.getOrg(), AggregationType.AGGREGATED, null);
+			// changelog = changeLogService.getComponentChangelog(
+			// 		ReleaseData.dataFromRecord(release).getUuid(), latestRelease.get().getUuid(), bd.getOrg(), AggregationType.AGGREGATED, null);
 		}
 		
 		return changelog;

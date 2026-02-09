@@ -180,33 +180,6 @@ public class AcollectionService {
 		// Don't trust the stored comparedReleaseUuid as it may be incorrect (e.g., from out-of-order finalization)
 		prevReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(branch, releaseId);
 		
-		if(prevReleaseId == null){
-			// First release on this branch: compare with latest release on base branch
-			Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
-			if (ord.isPresent()) {
-				ReleaseData rd = ord.get();
-				UUID componentId = rd.getComponent();
-				Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
-				if (ocd.isPresent() && ocd.get().getDefaultBranch() != null) {
-					String baseBranchName = ocd.get().getDefaultBranch().name();
-					try {
-						Optional<Branch> baseBranchOpt = branchService.findBranchByName(componentId, baseBranchName.toLowerCase());
-						if (baseBranchOpt.isPresent()) {
-							Optional<ReleaseData> baseBranchLatestRd = sharedReleaseService.getLatestNonCancelledOrRejectedReleaseDataOfBranch(baseBranchOpt.get().getUuid());
-							if (baseBranchLatestRd.isPresent()) {
-								prevReleaseId = baseBranchLatestRd.get().getUuid();
-							} else {
-								log.debug("No release found on base branch {} for comparison.", baseBranchName);
-							}
-						} else {
-							log.debug("Base branch {} not found for component {}", baseBranchName, componentId);
-						}
-					} catch (Exception e) {
-						log.error("Error finding base branch by name: {}", baseBranchName, e);
-					}
-				}
-			}
-		}
 		
 		UUID nextReleaseId = sharedReleaseService.findNextReleasesOfBranchForRelease(branch, releaseId);
 

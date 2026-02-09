@@ -131,10 +131,7 @@ public class ReleaseVersionService {
 			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, "");
 		} else {
 			ComponentJsonDto changelog = releaseService.createReleaseAndGetChangeLog(getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), nextVersion, getNewVersionDto.lifecycle(), bd, wu);
-
-			if (null != changelog) {
-				vr = new VersionResponse(nextVersion, dockerTagSafeVersion, changelog.toString());
-			}
+				vr = new VersionResponse(nextVersion, dockerTagSafeVersion, null != changelog ? changelog.toString(): "");
 		}
 
 		return vr;

@@ -4,10 +4,15 @@ type Query {
 	adminOrganization(org: ID!): AdminOrganization
 	allOrganizations: [Organization]
 	
-	# changelog
+	# changelog (old API - deprecated)
 	getChangelogBetweenReleases(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
 	getComponentChangeLog(componentUuid:ID!,branchUuid:ID, orgUuid:ID!, aggregated: AggregationType, timeZone: String, dateFrom: DateTime, dateTo: DateTime): ComponentChangeLog
 	organizationChangeLogByDate(orgUuid: ID!, perspectiveUuid: ID, dateFrom: DateTime!, dateTo: DateTime!, aggregated: AggregationType!, timeZone: String): ComponentChangeLog
+	
+	# changelog (new sealed interface API)
+	componentChangelog(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType!, timeZone: String): ComponentChangelog
+	componentChangelogByDate(componentUuid:ID!, branchUuid:ID, orgUuid:ID!, aggregated: AggregationType!, timeZone: String, dateFrom: DateTime!, dateTo: DateTime!): ComponentChangelog
+	organizationChangelogByDate(orgUuid: ID!, perspectiveUuid: ID, dateFrom: DateTime!, dateTo: DateTime!, aggregated: AggregationType!, timeZone: String): OrganizationChangelog
 	
 	releaseTagKeys(orgUuid: ID!): [String]
 	component(componentUuid:ID!): Component
@@ -457,8 +462,8 @@ type ComponentChangeLog {
 	tickets: [TicketChangeLog]
 	components: [ComponentChangeLog]
 	branches: [ComponentChangeLog]
-	sbomChanges: ArtifactChangelog
-	findingChanges: FindingChanges
+	sbomChanges: SbomChangesWithAttribution
+	findingChanges: FindingChangesWithAttribution
 }
 
 type Ticket {
@@ -483,8 +488,8 @@ type ReleaseChangeLog {
 	version: String
 	lifecycle: ReleaseLifecycleEnum
 	changes: [ChangeChangeLog]
-	sbomChanges: ArtifactChangelog
-	findingChanges: FindingChanges
+	sbomChanges: SbomChangesWithAttribution
+	findingChanges: FindingChangesWithAttribution
 }
 
 type ChangeChangeLog {
@@ -498,6 +503,107 @@ type CommitChangeLog {
 	commitAuthor: String
 	commitEmail: String
 }
+
+# ========== NEW: Sealed Interface Changelog Types ==========
+
+union ComponentChangelog = NoneChangelog | AggregatedChangelog
+
+type NoneChangelog {
+	componentUuid: ID!
+	componentName: String!
+	orgUuid: ID!
+	firstRelease: ReleaseInfo!
+	lastRelease: ReleaseInfo!
+	branches: [NoneBranchChanges!]!
+	sbomChanges: [ReleaseSbomChanges!]!
+	findingChanges: [ReleaseFindingChanges!]!
+}
+
+type AggregatedChangelog {
+	componentUuid: ID!
+	componentName: String!
+	orgUuid: ID!
+	firstRelease: ReleaseInfo!
+	lastRelease: ReleaseInfo!
+	branches: [AggregatedBranchChanges!]!
+	sbomChanges: SbomChangesWithAttribution!
+	findingChanges: FindingChangesWithAttribution!
+}
+
+type ReleaseInfo {
+	uuid: ID!
+	version: String!
+	lifecycle: ReleaseLifecycleEnum!
+}
+
+type NoneBranchChanges {
+	branchUuid: ID!
+	branchName: String!
+	releases: [ReleaseCodeChanges!]!
+}
+
+type AggregatedBranchChanges {
+	branchUuid: ID!
+	branchName: String!
+	commitsByType: [CommitsByType!]!
+}
+
+type CommitsByType {
+	changeType: String!
+	commits: [CodeCommit!]!
+}
+
+type ReleaseCodeChanges {
+	releaseUuid: ID!
+	version: String!
+	lifecycle: ReleaseLifecycleEnum!
+	commits: [CodeCommit!]!
+}
+
+type CodeCommit {
+	commitId: String
+	commitUri: String
+	message: String!
+	author: String
+	email: String
+	changeType: String!
+}
+
+type ReleaseSbomChanges {
+	releaseUuid: ID!
+	addedArtifacts: [String!]!
+	removedArtifacts: [String!]!
+}
+
+type ReleaseFindingChanges {
+	releaseUuid: ID!
+	appearedCount: Int!
+	resolvedCount: Int!
+	appearedVulnerabilities: [String!]!
+	resolvedVulnerabilities: [String!]!
+}
+
+# ========== Organization Changelog Types ==========
+
+union OrganizationChangelog = NoneOrganizationChangelog | AggregatedOrganizationChangelog
+
+type NoneOrganizationChangelog {
+	orgUuid: ID!
+	dateFrom: DateTime!
+	dateTo: DateTime!
+	components: [ComponentChangelog!]!
+}
+
+type AggregatedOrganizationChangelog {
+	orgUuid: ID!
+	dateFrom: DateTime!
+	dateTo: DateTime!
+	components: [ComponentChangelog!]!
+	sbomChanges: SbomChangesWithAttribution!
+	findingChanges: FindingChangesWithAttribution!
+}
+
+# ========== End New Types ==========
 
 type FindingChanges {
 	appearedVulnerabilities: [Vulnerability!]!
@@ -523,6 +629,93 @@ type FindingChangesSummary {
 	totalAppearedCount: Int!
 	totalResolvedCount: Int!
 	netChange: Int!
+}
+
+type ComponentAttribution {
+	componentUuid: ID!
+	componentName: String!
+	releaseUuid: ID!
+	releaseVersion: String!
+	branchUuid: ID
+	branchName: String
+	comparedToVersion: String
+}
+
+type VulnerabilityWithAttribution {
+	vulnId: String!
+	severity: String
+	purl: String!
+	aliases: [VulnerabilityAlias!]
+	resolvedIn: [ComponentAttribution!]!
+	appearedIn: [ComponentAttribution!]!
+	presentIn: [ComponentAttribution!]!
+	isNetResolved: Boolean!
+	isNetAppeared: Boolean!
+	isStillPresent: Boolean!
+	orgContext: OrgLevelContext
+}
+
+type VulnerabilityAlias {
+	aliasId: String!
+}
+
+type ViolationWithAttribution {
+	type: String
+	purl: String!
+	resolvedIn: [ComponentAttribution!]!
+	appearedIn: [ComponentAttribution!]!
+	presentIn: [ComponentAttribution!]!
+	isNetResolved: Boolean!
+	isNetAppeared: Boolean!
+	isStillPresent: Boolean!
+	orgContext: OrgLevelContext
+}
+
+type WeaknessWithAttribution {
+	cweId: String!
+	ruleId: String
+	location: String!
+	resolvedIn: [ComponentAttribution!]!
+	appearedIn: [ComponentAttribution!]!
+	presentIn: [ComponentAttribution!]!
+	isNetResolved: Boolean!
+	isNetAppeared: Boolean!
+	isStillPresent: Boolean!
+	orgContext: OrgLevelContext
+}
+
+type OrgLevelContext {
+	isNewToOrganization: Boolean!
+	wasPreviouslyReported: Boolean!
+	isPartiallyResolved: Boolean!
+	isFullyResolved: Boolean!
+	isInheritedInAllComponents: Boolean!
+	componentCount: Int!
+	affectedComponentNames: [String!]!
+}
+
+type FindingChangesWithAttribution {
+	vulnerabilities: [VulnerabilityWithAttribution!]!
+	violations: [ViolationWithAttribution!]!
+	weaknesses: [WeaknessWithAttribution!]!
+	totalAppeared: Int
+	totalResolved: Int
+}
+
+type ArtifactWithAttribution {
+	purl: String!
+	name: String
+	version: String!
+	addedIn: [ComponentAttribution!]!
+	removedIn: [ComponentAttribution!]!
+	isNetAdded: Boolean!
+	isNetRemoved: Boolean!
+}
+
+type SbomChangesWithAttribution {
+	artifacts: [ArtifactWithAttribution!]!
+	totalAdded: Int!
+	totalRemoved: Int!
 }
 
 type VulnerabilityChanges {
