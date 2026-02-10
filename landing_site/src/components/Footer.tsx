@@ -1,4 +1,4 @@
-import { FaDiscord, FaLinkedinIn, FaGithub } from 'react-icons/fa';
+import { FaDiscord, FaLinkedinIn, FaGithub, FaYoutube } from 'react-icons/fa';
 import { FaBluesky } from 'react-icons/fa6';
 import { FaXTwitter } from 'react-icons/fa6';
 
@@ -25,6 +25,9 @@ export default function Footer() {
             </a>
             <a className="footer_social_link" href="https://www.linkedin.com/company/relizaio" target="_blank" rel="noopener noreferrer" title="LinkedIn">
               <FaLinkedinIn />
+            </a>
+            <a className="footer_social_link" href="https://www.youtube.com/@RelizaIO" target="_blank" rel="noopener noreferrer" title="YouTube">
+              <FaYoutube />
             </a>
             <a className="footer_social_link" href="https://www.github.com/relizaio/rearm" target="_blank" title="GitHub">
               <FaGithub />
