@@ -1091,6 +1091,146 @@ a {
   color: var(--header_link_active);
 }
 
+/* ===== Comparisons Page ===== */
+.comparisonsContainer {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+  font-family: "Inter", Arial, Helvetica, sans-serif;
+}
+
+.comparisonsHeader {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.comparisonsTitle {
+  font-size: 42px;
+  font-weight: 700;
+  color: rgb(24, 33, 77);
+  margin-bottom: 12px;
+}
+
+.comparisonsSubtitle {
+  font-size: 18px;
+  color: #555;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.comparisonsToc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 50px;
+}
+
+.comparisonsTocLink {
+  padding: 8px 18px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: rgb(24, 33, 77);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.comparisonsTocLink:hover {
+  background: #e5e7eb;
+}
+
+.comparisonsSection {
+  margin-bottom: 60px;
+  scroll-margin-top: 120px;
+}
+
+.comparisonsSectionTitle {
+  font-size: 28px;
+  font-weight: 700;
+  color: rgb(24, 33, 77);
+  margin-bottom: 12px;
+}
+
+.comparisonsSectionIntro {
+  font-size: 16px;
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.comparisonsTable {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.comparisonsTableHeader {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: rgb(24, 33, 77);
+  color: #fff;
+}
+
+.comparisonsTableHeaderCell {
+  padding: 14px 20px;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.comparisonsTableRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid #e5e7eb;
+}
+
+.comparisonsTableRow:nth-child(even) {
+  background: #f9fafb;
+}
+
+.comparisonsTableCell {
+  padding: 14px 20px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #374151;
+}
+
+.comparisonsTableCellLeft {
+  border-right: 1px solid #e5e7eb;
+}
+
+@media screen and (max-width: 768px) {
+  .comparisonsTitle {
+    font-size: 30px;
+  }
+
+  .comparisonsSectionTitle {
+    font-size: 22px;
+  }
+
+  .comparisonsTableHeader,
+  .comparisonsTableRow {
+    grid-template-columns: 1fr;
+  }
+
+  .comparisonsTableHeaderRight {
+    border-top: 1px solid rgba(255,255,255,0.2);
+  }
+
+  .comparisonsTableCellLeft {
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f0fdf4;
+  }
+
+  .comparisonsTableCellLeft::before {
+    content: "✓ ";
+    color: #10b981;
+    font-weight: bold;
+  }
+}
+
 /* Responsive blog styles */
 @media screen and (max-width: 768px) {
   .blogContainer {
