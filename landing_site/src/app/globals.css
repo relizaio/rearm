@@ -1231,6 +1231,110 @@ a {
   }
 }
 
+/* ===== Pricing FAQ Page ===== */
+.pricingFaqContainer {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+  font-family: "Inter", Arial, Helvetica, sans-serif;
+}
+
+.pricingFaqHeader {
+  text-align: center;
+  margin-bottom: 50px;
+}
+
+.pricingFaqTitle {
+  font-size: 42px;
+  font-weight: 700;
+  color: rgb(24, 33, 77);
+  margin-bottom: 12px;
+}
+
+.pricingFaqSubtitle {
+  font-size: 18px;
+  color: #555;
+}
+
+.pricingFaqList {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+
+.pricingFaqItem {
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 32px;
+}
+
+.pricingFaqItem:last-child {
+  border-bottom: none;
+}
+
+.pricingFaqQuestion {
+  font-size: 20px;
+  font-weight: 600;
+  color: rgb(24, 33, 77);
+  margin-bottom: 14px;
+}
+
+.pricingFaqAnswer {
+  font-size: 16px;
+  line-height: 1.7;
+  color: #374151;
+  margin-bottom: 10px;
+}
+
+.pricingFaqAnswer:last-child {
+  margin-bottom: 0;
+}
+
+.pricingFaqBack {
+  margin-top: 50px;
+}
+
+.pricingFaqBackLink {
+  font-weight: 500;
+  color: var(--btn_getStarted-color);
+  text-decoration: none;
+}
+
+.pricingFaqBackLink:hover {
+  color: var(--header_link_active);
+}
+
+.pricingHelpIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #9ca3af;
+  color: #9ca3af;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  margin-left: 8px;
+  vertical-align: middle;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.pricingHelpIcon:hover {
+  color: var(--btn_getStarted-color);
+  border-color: var(--btn_getStarted-color);
+}
+
+@media screen and (max-width: 768px) {
+  .pricingFaqTitle {
+    font-size: 30px;
+  }
+
+  .pricingFaqQuestion {
+    font-size: 18px;
+  }
+}
+
 /* Responsive blog styles */
 @media screen and (max-width: 768px) {
   .blogContainer {

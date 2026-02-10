@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import PricingPlan from "@/components/PricingPlan";
 export default function Home() {
   return (
@@ -165,7 +166,7 @@ export default function Home() {
       <div className="mainPaddingContainer">
         <div id="homePagePricing" className="container-fluid container6">
           <h4 className="pricingPlan_title1 text-center">Pricing & Plans</h4>
-          <h4 className="mx-auto text-center pricingPlan_title2" style={{ maxWidth: "600px" }}>Fixed predictable rates for any team</h4>
+          <h4 className="mx-auto text-center pricingPlan_title2" style={{ maxWidth: "600px" }}>Fixed predictable rates for any team<Link href="/pricing-faq" className="pricingHelpIcon" title="Pricing FAQ">?</Link></h4>
           <PricingPlan />
           
           {/* Questions section */}
