@@ -15,6 +15,5 @@ public record ComponentAttribution(
     UUID releaseUuid,           // Specific release where change occurred
     String releaseVersion,      // Version of the release
     UUID branchUuid,            // Branch this release belongs to (nullable)
-    String branchName,          // Branch name (nullable if branch deleted)
-    String comparedToVersion    // Previous release version for context (nullable)
+    String branchName           // Branch name (nullable if branch deleted)
 ) {}

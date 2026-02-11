@@ -10,7 +10,8 @@ public record WeaknessWithAttribution(
     // Core weakness data
     String cweId,
     String severity,
-    String location,  // Changed from purl to match GraphQL schema
+    String ruleId,
+    String location,
     
     // Attribution lists - which releases contributed to this weakness's lifecycle
     List<ComponentAttribution> resolvedIn,      // Releases that resolved this weakness

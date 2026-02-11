@@ -4,12 +4,7 @@ type Query {
 	adminOrganization(org: ID!): AdminOrganization
 	allOrganizations: [Organization]
 	
-	# changelog (old API - deprecated)
-	getChangelogBetweenReleases(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType, timeZone: String): ComponentChangeLog
-	getComponentChangeLog(componentUuid:ID!,branchUuid:ID, orgUuid:ID!, aggregated: AggregationType, timeZone: String, dateFrom: DateTime, dateTo: DateTime): ComponentChangeLog
-	organizationChangeLogByDate(orgUuid: ID!, perspectiveUuid: ID, dateFrom: DateTime!, dateTo: DateTime!, aggregated: AggregationType!, timeZone: String): ComponentChangeLog
-	
-	# changelog (new sealed interface API)
+	# changelog (sealed interface API)
 	componentChangelog(release1:ID!, release2:ID!, orgUuid:ID!, aggregated: AggregationType!, timeZone: String): ComponentChangelog
 	componentChangelogByDate(componentUuid:ID!, branchUuid:ID, orgUuid:ID!, aggregated: AggregationType!, timeZone: String, dateFrom: DateTime!, dateTo: DateTime!): ComponentChangelog
 	organizationChangelogByDate(orgUuid: ID!, perspectiveUuid: ID, dateFrom: DateTime!, dateTo: DateTime!, aggregated: AggregationType!, timeZone: String): OrganizationChangelog
@@ -451,21 +446,6 @@ type ResourceGroup {
 	createdDate: DateTime
 }
 
-type ComponentChangeLog {
-	uuid: ID
-	name: String
-	org: ID
-	firstRelease: ReleaseChangeLog
-	lastRelease: ReleaseChangeLog
-	changes: [ChangeChangeLog]
-	releases: [ReleaseChangeLog]
-	tickets: [TicketChangeLog]
-	components: [ComponentChangeLog]
-	branches: [ComponentChangeLog]
-	sbomChanges: SbomChangesWithAttribution
-	findingChanges: FindingChangesWithAttribution
-}
-
 type Ticket {
 	uuid: ID
 	identifier: String
@@ -478,33 +458,7 @@ type Ticket {
 	uri: String
 }
 
-type TicketChangeLog {
-	ticketSubject: String
-	changes: [ChangeChangeLog]
-}
-
-type ReleaseChangeLog {
-	uuid: ID
-	version: String
-	lifecycle: ReleaseLifecycleEnum
-	changes: [ChangeChangeLog]
-	sbomChanges: SbomChangesWithAttribution
-	findingChanges: FindingChangesWithAttribution
-}
-
-type ChangeChangeLog {
-	changeType: String
-	commitRecords: [CommitChangeLog]
-}
-
-type CommitChangeLog {
-	linkifiedText: String
-	rawText: String
-	commitAuthor: String
-	commitEmail: String
-}
-
-# ========== NEW: Sealed Interface Changelog Types ==========
+# ========== Sealed Interface Changelog Types ==========
 
 union ComponentChangelog = NoneChangelog | AggregatedChangelog
 
@@ -515,8 +469,6 @@ type NoneChangelog {
 	firstRelease: ReleaseInfo!
 	lastRelease: ReleaseInfo!
 	branches: [NoneBranchChanges!]!
-	sbomChanges: [ReleaseSbomChanges!]!
-	findingChanges: [ReleaseFindingChanges!]!
 }
 
 type AggregatedChangelog {
@@ -539,7 +491,7 @@ type ReleaseInfo {
 type NoneBranchChanges {
 	branchUuid: ID!
 	branchName: String!
-	releases: [ReleaseCodeChanges!]!
+	releases: [NoneReleaseChanges!]!
 }
 
 type AggregatedBranchChanges {
@@ -553,11 +505,13 @@ type CommitsByType {
 	commits: [CodeCommit!]!
 }
 
-type ReleaseCodeChanges {
+type NoneReleaseChanges {
 	releaseUuid: ID!
 	version: String!
 	lifecycle: ReleaseLifecycleEnum!
 	commits: [CodeCommit!]!
+	sbomChanges: ReleaseSbomChanges!
+	findingChanges: ReleaseFindingChanges!
 }
 
 type CodeCommit {
@@ -569,18 +523,45 @@ type CodeCommit {
 	changeType: String!
 }
 
+type ReleaseSbomArtifact {
+	purl: String!
+	name: String
+	version: String
+}
+
 type ReleaseSbomChanges {
-	releaseUuid: ID!
-	addedArtifacts: [String!]!
-	removedArtifacts: [String!]!
+	addedArtifacts: [ReleaseSbomArtifact!]!
+	removedArtifacts: [ReleaseSbomArtifact!]!
+}
+
+type ReleaseVulnerabilityInfo {
+	vulnId: String!
+	purl: String
+	severity: String
+	aliases: [VulnerabilityAlias!]
+}
+
+type ReleaseViolationInfo {
+	type: String!
+	purl: String
+}
+
+type ReleaseWeaknessInfo {
+	cweId: String!
+	severity: String
+	ruleId: String
+	location: String
 }
 
 type ReleaseFindingChanges {
-	releaseUuid: ID!
 	appearedCount: Int!
 	resolvedCount: Int!
-	appearedVulnerabilities: [String!]!
-	resolvedVulnerabilities: [String!]!
+	appearedVulnerabilities: [ReleaseVulnerabilityInfo!]!
+	resolvedVulnerabilities: [ReleaseVulnerabilityInfo!]!
+	appearedViolations: [ReleaseViolationInfo!]!
+	resolvedViolations: [ReleaseViolationInfo!]!
+	appearedWeaknesses: [ReleaseWeaknessInfo!]!
+	resolvedWeaknesses: [ReleaseWeaknessInfo!]!
 }
 
 # ========== Organization Changelog Types ==========
@@ -603,34 +584,6 @@ type AggregatedOrganizationChangelog {
 	findingChanges: FindingChangesWithAttribution!
 }
 
-# ========== End New Types ==========
-
-type FindingChanges {
-	appearedVulnerabilities: [Vulnerability!]!
-	resolvedVulnerabilities: [Vulnerability!]!
-	severityChangedVulnerabilities: [Vulnerability!]!
-	appearedViolations: [Violation!]!
-	resolvedViolations: [Violation!]!
-	appearedWeaknesses: [Weakness!]!
-	resolvedWeaknesses: [Weakness!]!
-	severityChangedWeaknesses: [Weakness!]!
-	summary: FindingChangesSummary!
-}
-
-type FindingChangesSummary {
-	appearedVulnerabilitiesCount: Int!
-	resolvedVulnerabilitiesCount: Int!
-	severityChangedVulnerabilitiesCount: Int!
-	appearedViolationsCount: Int!
-	resolvedViolationsCount: Int!
-	appearedWeaknessesCount: Int!
-	resolvedWeaknessesCount: Int!
-	severityChangedWeaknessesCount: Int!
-	totalAppearedCount: Int!
-	totalResolvedCount: Int!
-	netChange: Int!
-}
-
 type ComponentAttribution {
 	componentUuid: ID!
 	componentName: String!
@@ -638,7 +591,6 @@ type ComponentAttribution {
 	releaseVersion: String!
 	branchUuid: ID
 	branchName: String
-	comparedToVersion: String
 }
 
 type VulnerabilityWithAttribution {
@@ -673,6 +625,7 @@ type ViolationWithAttribution {
 
 type WeaknessWithAttribution {
 	cweId: String!
+	severity: String
 	ruleId: String
 	location: String!
 	resolvedIn: [ComponentAttribution!]!
@@ -698,8 +651,8 @@ type FindingChangesWithAttribution {
 	vulnerabilities: [VulnerabilityWithAttribution!]!
 	violations: [ViolationWithAttribution!]!
 	weaknesses: [WeaknessWithAttribution!]!
-	totalAppeared: Int
-	totalResolved: Int
+	totalAppeared: Int!
+	totalResolved: Int!
 }
 
 type ArtifactWithAttribution {
@@ -718,39 +671,7 @@ type SbomChangesWithAttribution {
 	totalRemoved: Int!
 }
 
-type VulnerabilityChanges {
-	appeared: [VulnerabilityChangeRecord!]!
-	resolved: [VulnerabilityChangeRecord!]!
-	severityChanged: [VulnerabilityChangeRecord!]!
-	summary: VulnerabilityChangesSummary!
-}
 
-type VulnerabilityChangeRecord {
-	findingId: String
-	aliases: [String]
-	severity: VulnerabilitySeverity
-	previousSeverity: VulnerabilitySeverity
-	affectedComponent: String
-	analysisState: AnalysisState
-	sources: [ID]
-}
-
-type VulnerabilityChangesSummary {
-	appearedCount: Int!
-	resolvedCount: Int!
-	severityChangedCount: Int!
-	netChange: Int!
-}
-
-type VulnerabilityChange {
-	findingId: String
-	aliases: [String]
-	severity: VulnerabilitySeverity
-	previousSeverity: VulnerabilitySeverity
-	affectedComponent: String
-	analysisState: AnalysisState
-	sources: [ID]
-}
 
 type VcsRepository {
 	uuid: ID

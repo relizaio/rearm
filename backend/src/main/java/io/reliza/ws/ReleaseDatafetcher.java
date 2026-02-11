@@ -42,25 +42,21 @@ import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import org.dataloader.BatchLoader;
 import org.dataloader.DataLoader;
-import org.dataloader.MappedBatchLoader;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.time.ZonedDateTime;
 
 import io.reliza.common.CommonVariables;
-import io.reliza.common.CommonVariables.AuthPrincipalType;
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.exceptions.RelizaException;
-import io.reliza.common.CommonVariables.RequestType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
+
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ArtifactData.ArtifactType;
-import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.AcollectionData;
 import io.reliza.model.ArtifactData;
@@ -80,23 +76,22 @@ import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.changelog.entry.AggregationType;
-import io.reliza.model.dto.AddDeliverablesDto;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.AuthorizationResponse;
-import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.CveSearchResultDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
+import io.reliza.dto.ChangelogRecords.ComponentChangelog;
+import io.reliza.dto.ChangelogRecords.OrganizationChangelog;
 import io.reliza.service.ChangeLogService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.DeliverableService;
@@ -333,31 +328,13 @@ public class ReleaseDatafetcher {
 		return retRel;
 	}
 	
-	// @PreAuthorize("isAuthenticated()")
-	// @DgsData(parentType = "Query", field = "getChangelogBetweenReleases")
-	// public ComponentJsonDto getChangelogBetweenReleases(DgsDataFetchingEnvironment dfe,
-	// 		@InputArgument("release1") UUID uuid1,
-	// 		@InputArgument("release2") UUID uuid2,
-	// 		@InputArgument("orgUuid") UUID orgUuid,
-	// 		@InputArgument("aggregated") AggregationType aggregated,
-	// 		@InputArgument("timeZone") String timeZone
-	// 	) throws RelizaException {
-
-	// 	JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-	// 	var oud = userService.getUserDataByAuth(auth);
-		
-	// 	authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
-		
-	// 	return changelogService.getChangelogBetweenReleases(uuid1, uuid2, orgUuid, aggregated, timeZone);
-	// }
-	
 	/**
 	 * New datafetcher for componentChangelog query using sealed interface pattern.
 	 * Returns either NoneChangelog or AggregatedChangelog based on aggregation type.
 	 */
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "componentChangelog")
-	public ChangeLogService.ComponentChangelog componentChangelog(DgsDataFetchingEnvironment dfe,
+	public ComponentChangelog componentChangelog(DgsDataFetchingEnvironment dfe,
 			@InputArgument("release1") UUID uuid1,
 			@InputArgument("release2") UUID uuid2,
 			@InputArgument("orgUuid") UUID orgUuid,
@@ -379,7 +356,7 @@ public class ReleaseDatafetcher {
 	 */
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "componentChangelogByDate")
-	public ChangeLogService.ComponentChangelog componentChangelogByDate(DgsDataFetchingEnvironment dfe,
+	public ComponentChangelog componentChangelogByDate(DgsDataFetchingEnvironment dfe,
 			@InputArgument("componentUuid") UUID componentUuid,
 			@InputArgument("branchUuid") UUID branchUuid,
 			@InputArgument("orgUuid") UUID orgUuid,
@@ -404,7 +381,7 @@ public class ReleaseDatafetcher {
 	 */
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "organizationChangelogByDate")
-	public ChangeLogService.OrganizationChangelog organizationChangelogByDate(DgsDataFetchingEnvironment dfe,
+	public OrganizationChangelog organizationChangelogByDate(DgsDataFetchingEnvironment dfe,
 			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
 			@InputArgument("dateFrom") ZonedDateTime dateFrom,
@@ -414,25 +391,16 @@ public class ReleaseDatafetcher {
 		) throws RelizaException {
 
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+
 		var oud = userService.getUserDataByAuth(auth);
 		
 		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
-		
-		return changelogService.getOrganizationChangelogByDate(
+		OrganizationChangelog oc = changelogService.getOrganizationChangelogByDate(
 			orgUuid, perspectiveUuid, dateFrom, dateTo, aggregated, timeZone);
+
+		return oc;
 	}
 	
-	/**
-	 * Datafetcher to convert commitsByType Map to List for GraphQL.
-	 * The Java record uses Map<String, List<CodeCommit>> but GraphQL expects [CommitsByType!]!
-	 */
-	@DgsData(parentType = "AggregatedBranchChanges", field = "commitsByType")
-	public List<ChangeLogService.CommitsByType> commitsByType(DgsDataFetchingEnvironment dfe) {
-		ChangeLogService.AggregatedBranchChanges branch = dfe.getSource();
-		return branch.commitsByType().entrySet().stream()
-			.map(entry -> new ChangeLogService.CommitsByType(entry.getKey(), entry.getValue()))
-			.collect(Collectors.toList());
-	}
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "addReleaseManual")

@@ -65,6 +65,17 @@ public class BranchService {
 		return repository.findById(uuid);
 	}
 	
+	/**
+	 * Convenience method to get branch name from UUID.
+	 * Returns null if branch not found or UUID is null.
+	 */
+	public String getBranchName(UUID branchUuid) {
+		if (branchUuid == null) return null;
+		return getBranchData(branchUuid)
+			.map(BranchData::getName)
+			.orElse(null);
+	}
+	
 	public Optional<BranchData> getBranchData (UUID uuid) {
 		Optional<BranchData> bData = Optional.empty();
 		Optional<Branch> b = getBranch(uuid);

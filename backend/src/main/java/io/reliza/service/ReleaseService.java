@@ -87,10 +87,8 @@ import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.changelog.entry.AggregationType;
 import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
 import io.reliza.model.dto.BranchDto;
-import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.tea.TeaChecksumType;
@@ -305,9 +303,8 @@ public class ReleaseService {
 	}
 	
 	@Transactional
-	public ComponentJsonDto createReleaseAndGetChangeLog(SceDto sourceCodeEntry, List<SceDto> commitList,
+	public void createReleaseFromVersion(SceDto sourceCodeEntry, List<SceDto> commitList,
 			String nextVersion, ReleaseLifecycle lifecycleResolved, BranchData bd, WhoUpdated wu) throws Exception{
-		ComponentJsonDto changelog = null;
 
 		//check if source code details are present and create a release with these details and version
 		Optional<SourceCodeEntryData> osced = Optional.empty();
@@ -360,24 +357,15 @@ public class ReleaseService {
 			releaseDtoBuilder.sourceCodeEntry(osced.get().getUuid());
 		}
 		
-		Release release = null;
 		try {
 			List<TeaIdentifier> releaseIdentifiers = sharedReleaseService.resolveReleaseIdentifiersFromComponent(nextVersion, cd);
 			releaseDtoBuilder.version(nextVersion)
 							.lifecycle(lifecycleResolved)
 							.identifiers(releaseIdentifiers);
-			release = ossReleaseService.createRelease(releaseDtoBuilder.build(), wu);
+			ossReleaseService.createRelease(releaseDtoBuilder.build(), wu);
 		} catch (RelizaException re) {
 			throw re;
 		}
-		
-		Optional<ReleaseData> latestRelease = ossReleaseService.getReleasePerProductComponent(bd.getOrg(), bd.getComponent(), null, bd.getName(), null);
-		if (latestRelease.isPresent()) {
-			// changelog = changeLogService.getComponentChangelog(
-			// 		ReleaseData.dataFromRecord(release).getUuid(), latestRelease.get().getUuid(), bd.getOrg(), AggregationType.AGGREGATED, null);
-		}
-		
-		return changelog;
 	}
 	
 	public Optional<ReleaseData> matchReleaseGroupsToProductRelease(UUID featureSet, List<Set<UUID>> releaseGroups) {

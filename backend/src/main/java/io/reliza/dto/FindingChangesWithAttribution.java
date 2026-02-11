@@ -10,6 +10,9 @@ public record FindingChangesWithAttribution(
     List<VulnerabilityWithAttribution> vulnerabilities,
     List<ViolationWithAttribution> violations,
     List<WeaknessWithAttribution> weaknesses,
-    Integer totalAppeared,
-    Integer totalResolved
-) {}
+    int totalAppeared,
+    int totalResolved
+) {
+    public static final FindingChangesWithAttribution EMPTY = new FindingChangesWithAttribution(
+        List.of(), List.of(), List.of(), 0, 0);
+}

@@ -10,4 +10,6 @@ public record SbomChangesWithAttribution(
     List<ArtifactWithAttribution> artifacts,
     int totalAdded,
     int totalRemoved
-) {}
+) {
+    public static final SbomChangesWithAttribution EMPTY = new SbomChangesWithAttribution(List.of(), 0, 0);
+}

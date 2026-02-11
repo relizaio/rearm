@@ -27,7 +27,6 @@ import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.VersionAssignment;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ComponentData.ComponentType;
-import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.service.VersionAssignmentService.GetNewVersionDto;
 import io.reliza.service.oss.OssReleaseService;
@@ -130,8 +129,8 @@ public class ReleaseVersionService {
 		if(getNewVersionDto.onlyVersion()) {
 			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, "");
 		} else {
-			ComponentJsonDto changelog = releaseService.createReleaseAndGetChangeLog(getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), nextVersion, getNewVersionDto.lifecycle(), bd, wu);
-				vr = new VersionResponse(nextVersion, dockerTagSafeVersion, null != changelog ? changelog.toString(): "");
+			releaseService.createReleaseFromVersion(getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), nextVersion, getNewVersionDto.lifecycle(), bd, wu);
+			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, "");
 		}
 
 		return vr;

@@ -7,8 +7,8 @@ import java.util.List;
  * Shows which components/releases resolved, introduced, or still have this violation.
  */
 public record ViolationWithAttribution(
-    // Core violation data
-    String policyName,
+    // Core violation data (field name must match GraphQL schema: "type")
+    String type,
     String purl,
     
     // Attribution lists - which releases contributed to this violation's lifecycle

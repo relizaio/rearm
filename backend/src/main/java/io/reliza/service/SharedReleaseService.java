@@ -50,7 +50,7 @@ import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.ReleaseRepository;
-import io.reliza.service.ChangeLogService.CommitRecord;
+import io.reliza.dto.ChangelogRecords.CommitRecord;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -128,8 +128,6 @@ public class SharedReleaseService {
 	 * @return Optional of latest release data for specified branch, excluding CANCELLED or REJECTED; if not found returns empty Optional
 	 */
 	public Optional<ReleaseData> getLatestNonCancelledOrRejectedReleaseDataOfBranch(UUID branchUuid) {
-		BranchData bd = branchService.getBranchData(branchUuid).orElseThrow();
-		log.info("bd: {}", bd);
 		List<ReleaseData> releases = listReleaseDataOfBranch(branchUuid, true); // sorted by version/date desc
 		return releases.stream()
 				.filter(rd -> rd.getLifecycle() != ReleaseData.ReleaseLifecycle.CANCELLED
@@ -644,6 +642,15 @@ public class SharedReleaseService {
 				.collect(Collectors.toList());
 	}
 	
+	public List<ReleaseData> listReleaseDataOfComponentBetweenDates(UUID componentUuid, ZonedDateTime fromDateTime,
+			ZonedDateTime toDateTime, ReleaseLifecycle minLifecycle) {
+		return repository.findReleasesOfComponentBetweenDates(componentUuid.toString(), fromDateTime, toDateTime)
+				.stream()
+				.map(ReleaseData::dataFromRecord)
+				.filter(rd -> rd.getLifecycle() != null && 
+						rd.getLifecycle().ordinal() >= minLifecycle.ordinal())
+				.collect(Collectors.toList());
+	}
 
 	/**
 	 * Find the previous release to compare against for a given release.
@@ -671,27 +678,64 @@ public class SharedReleaseService {
 	 * @return UUID of the previous release, or null if none found
 	 */
 	public UUID findPreviousReleasesOfBranchForRelease (UUID branchUuid,  UUID release) {
+		return findPreviousReleasesOfBranchForRelease(branchUuid, release, null, null, null);
+	}
+
+	/**
+	 * Optimized overload that accepts pre-resolved data to avoid redundant DB lookups.
+	 * When releaseData and componentData are provided, skips getReleaseData() and getComponentData() calls.
+	 * When baseBranchCache is provided, caches the base branch UUID per component to avoid repeated findBranchByName() calls.
+	 */
+	public UUID findPreviousReleasesOfBranchForRelease (UUID branchUuid, UUID release,
+			ReleaseData releaseData, ComponentData componentData, Map<UUID, Optional<UUID>> baseBranchCache) {
 		UUID prevReleaseId = null;
 
 		prevReleaseId = repository.findPreviousReleasesOfBranchForRelease(branchUuid.toString(), release);
 		// would be null for First release on this branch (Branch Root): compute Inferred Fork Point
 
 		if(prevReleaseId == null){
-			Optional<ReleaseData> ord = getReleaseData(release);
-			if (ord.isPresent()) {
-				ReleaseData rd = ord.get();
+			// Use pre-resolved releaseData if available, otherwise fetch from DB
+			ReleaseData rd = releaseData;
+			if (rd == null) {
+				Optional<ReleaseData> ord = getReleaseData(release);
+				rd = ord.orElse(null);
+			}
+			if (rd != null) {
 				UUID componentId = rd.getComponent();
 				ZonedDateTime branchRootTimestamp = rd.getCreatedDate(); // T_Start
 				
-				Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
-				if (ocd.isPresent() && ocd.get().getDefaultBranch() != null) {
-					String baseBranchName = ocd.get().getDefaultBranch().name();
+				// Use pre-resolved componentData if available, otherwise fetch from DB
+				String baseBranchName = null;
+				if (componentData != null && componentData.getDefaultBranch() != null) {
+					baseBranchName = componentData.getDefaultBranch().name();
+				} else if (componentData == null) {
+					Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+					if (ocd.isPresent() && ocd.get().getDefaultBranch() != null) {
+						baseBranchName = ocd.get().getDefaultBranch().name();
+					}
+				}
+				
+				if (baseBranchName != null) {
 					try {
-						Optional<Branch> baseBranchOpt = branchService.findBranchByName(componentId, baseBranchName.toLowerCase());
-						if (baseBranchOpt.isPresent()) {
+						// Use baseBranchCache if available to avoid repeated findBranchByName calls
+						UUID baseBranchUuid = null;
+						if (baseBranchCache != null && baseBranchCache.containsKey(componentId)) {
+							Optional<UUID> cached = baseBranchCache.get(componentId);
+							baseBranchUuid = cached.orElse(null);
+						} else {
+							Optional<Branch> baseBranchOpt = branchService.findBranchByName(componentId, baseBranchName.toLowerCase());
+							if (baseBranchOpt.isPresent()) {
+								baseBranchUuid = baseBranchOpt.get().getUuid();
+							}
+							if (baseBranchCache != null) {
+								baseBranchCache.put(componentId, Optional.ofNullable(baseBranchUuid));
+							}
+						}
+						
+						if (baseBranchUuid != null) {
 							// Inferred Fork Point: Find the most recent release on base branch created BEFORE T_Start
 							UUID inferredForkPointId = repository.findLatestReleaseBeforeTimestamp(
-								baseBranchOpt.get().getUuid().toString(), 
+								baseBranchUuid.toString(), 
 								branchRootTimestamp.toString()
 							);
 							
@@ -701,7 +745,7 @@ public class SharedReleaseService {
 									release, branchRootTimestamp, inferredForkPointId);
 							} else {
 								// Fallback: if no release exists before T_Start, use latest release on base branch
-								Optional<ReleaseData> baseBranchLatestRd = getLatestNonCancelledOrRejectedReleaseDataOfBranch(baseBranchOpt.get().getUuid());
+								Optional<ReleaseData> baseBranchLatestRd = getLatestNonCancelledOrRejectedReleaseDataOfBranch(baseBranchUuid);
 								if (baseBranchLatestRd.isPresent()) {
 									prevReleaseId = baseBranchLatestRd.get().getUuid();
 									log.debug("No Inferred Fork Point found before timestamp {}. Falling back to latest base branch release: {}", 

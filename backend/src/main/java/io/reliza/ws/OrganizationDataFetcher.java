@@ -5,7 +5,6 @@ package io.reliza.ws;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
@@ -36,13 +35,10 @@ import io.reliza.model.ResourceGroupData;
 import io.reliza.model.UserData;
 import io.reliza.model.UserData.OrgUserData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.changelog.entry.AggregationType;
 import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.ApiKeyForUserDto;
-import io.reliza.model.dto.ComponentJsonDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
-import io.reliza.service.ChangeLogService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ResourceGroupService;
@@ -70,9 +66,6 @@ public class OrganizationDataFetcher {
 	
 	@Autowired
 	private ResourceGroupService resourceGroupService;
-	
-	@Autowired
-	private ChangeLogService changeLogService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "organizations")
@@ -261,21 +254,4 @@ public class OrganizationDataFetcher {
 		}
 	}
 	
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Query", field = "organizationChangeLogByDate")
-	public ComponentJsonDto organizationChangeLogByDate(
-			@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
-			@InputArgument("dateFrom") ZonedDateTime dateFrom,
-			@InputArgument("dateTo") ZonedDateTime dateTo,
-			@InputArgument("aggregated") AggregationType aggregated,
-			@InputArgument("timeZone") String timeZone) throws RelizaException {
-		
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
-		
-		return changeLogService.getOrganizationChangeLogByDate(
-			orgUuid, perspectiveUuid, dateFrom, dateTo, aggregated, timeZone);
-	}
 }

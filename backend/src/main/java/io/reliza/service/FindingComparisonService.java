@@ -6,12 +6,17 @@ package io.reliza.service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -22,11 +27,13 @@ import io.reliza.dto.OrgLevelContext;
 import io.reliza.dto.ViolationWithAttribution;
 import io.reliza.dto.VulnerabilityWithAttribution;
 import io.reliza.dto.WeaknessWithAttribution;
-import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ReleaseData;
-import io.reliza.model.dto.FindingChangesDto;
+import io.reliza.dto.FindingChangesRecord;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
+import io.reliza.model.dto.ReleaseMetricsDto.WeaknessDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -48,43 +55,50 @@ public class FindingComparisonService {
 	private static final String FINDING_KEY_DELIMITER = "|";
 	
 	/**
+	 * Returns branch name from cache, or fetches and caches it.
+	 */
+	private String cachedBranchName(UUID branchUuid, Map<UUID, String> cache) {
+		return cache.computeIfAbsent(branchUuid, branchService::getBranchName);
+	}
+	
+	// Reusable null-safe key extractors for each finding type
+	private static final Function<VulnerabilityDto, String> VULN_KEY =
+		vuln -> vuln.vulnId() + FINDING_KEY_DELIMITER + (vuln.purl() != null ? vuln.purl() : "");
+	private static final Function<ViolationDto, String> VIOLATION_KEY =
+		violation -> violation.type() + FINDING_KEY_DELIMITER + (violation.purl() != null ? violation.purl() : "");
+	private static final Function<WeaknessDto, String> WEAKNESS_KEY =
+		weakness -> (weakness.cweId() != null ? weakness.cweId() : weakness.ruleId()) + FINDING_KEY_DELIMITER + (weakness.location() != null ? weakness.location() : "");
+	
+	/**
+	 * Shared comparator that reads metrics directly from ReleaseData objects.
+	 * Used by both component-level and org-level finding comparison methods.
+	 */
+	private final BiFunction<ReleaseData, ReleaseData, FindingChangesRecord> DIRECT_METRICS_COMPARATOR =
+		(older, newer) -> {
+			ReleaseMetricsDto olderMetrics = older.getMetrics();
+			ReleaseMetricsDto newerMetrics = newer.getMetrics();
+			return (olderMetrics != null && newerMetrics != null) ? compareMetrics(olderMetrics, newerMetrics) : null;
+		};
+	
+	/**
 	 * Generic comparison result holder
 	 */
 	private record ComparisonResult<T>(
 		List<T> appeared,
-		List<T> resolved,
-		List<T> severityChanged
+		List<T> resolved
 	) {}
 	
 	/**
-	 * Functional interface for extracting unique key from a finding
-	 */
-	@FunctionalInterface
-	private interface KeyExtractor<T> {
-		String extractKey(T item);
-	}
-	
-	/**
-	 * Functional interface for checking severity changes
-	 */
-	@FunctionalInterface
-	private interface SeverityChecker<T> {
-		boolean hasSeverityChanged(T item1, T item2);
-	}
-	
-	/**
-	 * Generic comparison method for finding lists
-	 * Eliminates code duplication across vulnerability, violation, and weakness comparisons
+	 * Generic comparison method for finding lists.
+	 * Eliminates code duplication across vulnerability, violation, and weakness comparisons.
 	 */
 	private <T> ComparisonResult<T> compareFindings(
 			List<T> list1,
 			List<T> list2,
-			KeyExtractor<T> keyExtractor,
-			SeverityChecker<T> severityChecker) {
+			Function<T, String> keyExtractor) {
 		
 		List<T> appeared = new ArrayList<>();
 		List<T> resolved = new ArrayList<>();
-		List<T> severityChanged = new ArrayList<>();
 		
 		// Build maps by key
 		Map<String, T> map1 = new HashMap<>();
@@ -92,13 +106,13 @@ public class FindingComparisonService {
 		
 		if (list1 != null) {
 			for (T item : list1) {
-				map1.put(keyExtractor.extractKey(item), item);
+				map1.put(keyExtractor.apply(item), item);
 			}
 		}
 		
 		if (list2 != null) {
 			for (T item : list2) {
-				map2.put(keyExtractor.extractKey(item), item);
+				map2.put(keyExtractor.apply(item), item);
 			}
 		}
 		
@@ -116,90 +130,26 @@ public class FindingComparisonService {
 			}
 		}
 		
-		// Find severity changes (in both but different severity)
-		if (severityChecker != null) {
-			for (Map.Entry<String, T> entry : map2.entrySet()) {
-				String key = entry.getKey();
-				if (map1.containsKey(key)) {
-					T item1 = map1.get(key);
-					T item2 = entry.getValue();
-					
-					if (severityChecker.hasSeverityChanged(item1, item2)) {
-						severityChanged.add(item2);
-					}
-				}
-			}
-		}
-		
-		return new ComparisonResult<>(appeared, resolved, severityChanged);
+		return new ComparisonResult<>(appeared, resolved);
 	}
 	
-	/**
-	 * Compare vulnerabilities between two lists
-	 */
-	private ComparisonResult<ReleaseMetricsDto.VulnerabilityDto> compareVulnerabilities(
-			List<ReleaseMetricsDto.VulnerabilityDto> list1,
-			List<ReleaseMetricsDto.VulnerabilityDto> list2) {
-		
-		return compareFindings(
-			list1,
-			list2,
-			vuln -> vuln.vulnId() + FINDING_KEY_DELIMITER + (vuln.purl() != null ? vuln.purl() : ""),
-			(vuln1, vuln2) -> vuln1.severity() != vuln2.severity()
-		);
-	}
 	
-	/**
-	 * Compare violations between two lists
-	 */
-	private ComparisonResult<ReleaseMetricsDto.ViolationDto> compareViolations(
-			List<ReleaseMetricsDto.ViolationDto> list1,
-			List<ReleaseMetricsDto.ViolationDto> list2) {
-		
-		return compareFindings(
-			list1,
-			list2,
-			violation -> violation.type() + FINDING_KEY_DELIMITER + (violation.purl() != null ? violation.purl() : ""),
-			null
-		);
-	}
-	
-	/**
-	 * Compare weaknesses between two lists
-	 */
-	private ComparisonResult<ReleaseMetricsDto.WeaknessDto> compareWeaknesses(
-			List<ReleaseMetricsDto.WeaknessDto> list1,
-			List<ReleaseMetricsDto.WeaknessDto> list2) {
-		
-		return compareFindings(
-			list1,
-			list2,
-			weakness -> {
-				String findingId = weakness.cweId() != null ? weakness.cweId() : weakness.ruleId();
-				return findingId + FINDING_KEY_DELIMITER + (weakness.location() != null ? weakness.location() : "");
-			},
-			(weakness1, weakness2) -> weakness1.severity() != weakness2.severity()
-		);
-	}
-	
-	/**
-	 * Returns an empty FindingChangesRecord
-	 */
-	public FindingChangesDto.FindingChangesRecord emptyFindingChanges() {
-		return new FindingChangesDto.FindingChangesRecord(
-			List.of(), List.of(), List.of(),  // vulnerabilities
-			List.of(), List.of(),              // violations
-			List.of(), List.of(), List.of(),   // weaknesses
-			new FindingChangesDto.FindingChangesSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-		);
-	}
 
-	public class FindingAttribution<T> {
-			T finding;
-			List<ComponentAttribution> appearedIn = new ArrayList<>();
-			List<ComponentAttribution> resolvedIn = new ArrayList<>();
-			List<ComponentAttribution> presentIn = new ArrayList<>();
-		}
+	private static class FindingAttribution<T> {
+		T finding;
+		List<ComponentAttribution> appearedIn = new ArrayList<>();
+		List<ComponentAttribution> resolvedIn = new ArrayList<>();
+		List<ComponentAttribution> presentIn = new ArrayList<>();
+	}
+	
+	/**
+	 * Holder for the three parallel attribution maps, reducing parameter noise.
+	 */
+	private static class AttributionMaps {
+		final Map<String, FindingAttribution<ReleaseMetricsDto.VulnerabilityDto>> vulns = new HashMap<>();
+		final Map<String, FindingAttribution<ReleaseMetricsDto.ViolationDto>> violations = new HashMap<>();
+		final Map<String, FindingAttribution<ReleaseMetricsDto.WeaknessDto>> weaknesses = new HashMap<>();
+	}
 	
 	/**
 	 * Compares findings between two metrics objects.
@@ -210,7 +160,7 @@ public class FindingComparisonService {
 	 * @param metrics2 Ending metrics
 	 * @return FindingChangesRecord with appeared, resolved, and severity changed findings
 	 */
-	public FindingChangesDto.FindingChangesRecord compareMetrics(
+	public FindingChangesRecord compareMetrics(
 			ReleaseMetricsDto metrics1,
 			ReleaseMetricsDto metrics2) {
 		
@@ -218,101 +168,61 @@ public class FindingComparisonService {
 			log.warn("FINDINGS_COMPARISON: One or both metrics are null - metrics1={}, metrics2={}", 
 				metrics1 != null ? "present" : "null", 
 				metrics2 != null ? "present" : "null");
-			return emptyFindingChanges();
+			return FindingChangesRecord.EMPTY;
 		}
 		
 		// Compare vulnerabilities
-		var vulnChanges = compareVulnerabilities(
+		var vulnChanges = compareFindings(
 			metrics1.getVulnerabilityDetails(),
-			metrics2.getVulnerabilityDetails()
+			metrics2.getVulnerabilityDetails(),
+			VULN_KEY
 		);
 		
 		// Compare violations
-		var violationChanges = compareViolations(
+		var violationChanges = compareFindings(
 			metrics1.getViolationDetails(),
-			metrics2.getViolationDetails()
+			metrics2.getViolationDetails(),
+			VIOLATION_KEY
 		);
 		
 		// Compare weaknesses
-		var weaknessChanges = compareWeaknesses(
+		var weaknessChanges = compareFindings(
 			metrics1.getWeaknessDetails(),
-			metrics2.getWeaknessDetails()
+			metrics2.getWeaknessDetails(),
+			WEAKNESS_KEY
 		);
 		
-		// Build summary
-		int totalAppearedCount = vulnChanges.appeared.size() + violationChanges.appeared.size() + weaknessChanges.appeared.size();
-		int totalResolvedCount = vulnChanges.resolved.size() + violationChanges.resolved.size() + weaknessChanges.resolved.size();
-		int netChange = totalAppearedCount - totalResolvedCount;
-		
-		FindingChangesDto.FindingChangesSummary summary = new FindingChangesDto.FindingChangesSummary(
-			vulnChanges.appeared.size(),           // appearedVulnerabilitiesCount
-			vulnChanges.resolved.size(),           // resolvedVulnerabilitiesCount
-			vulnChanges.severityChanged.size(),    // severityChangedVulnerabilitiesCount
-			violationChanges.appeared.size(),      // appearedViolationsCount
-			violationChanges.resolved.size(),      // resolvedViolationsCount
-			weaknessChanges.appeared.size(),       // appearedWeaknessesCount
-			weaknessChanges.resolved.size(),       // resolvedWeaknessesCount
-			weaknessChanges.severityChanged.size(), // severityChangedWeaknessesCount
-			totalAppearedCount,                    // totalAppearedCount
-			totalResolvedCount,                    // totalResolvedCount
-			netChange                              // netChange
-		);
-		
-		return new FindingChangesDto.FindingChangesRecord(
+		return new FindingChangesRecord(
 			vulnChanges.appeared,
 			vulnChanges.resolved,
-			vulnChanges.severityChanged,
 			violationChanges.appeared,
 			violationChanges.resolved,
 			weaknessChanges.appeared,
-			weaknessChanges.resolved,
-			weaknessChanges.severityChanged,
-			summary
+			weaknessChanges.resolved
 		);
 	}
 
 
 	
 	/**
-	 * Generic helper to track appeared findings for any finding type
+	 * Generic helper to track findings (appeared or resolved) for any finding type.
+	 * The listSelector picks which attribution list to add to (e.g. appearedIn or resolvedIn).
 	 */
-	private <T> void trackAppearedFindings(
-			List<T> appearedFindings,
+	private <T> void trackFindings(
+			List<T> findings,
 			Map<String, FindingAttribution<T>> findingMap,
 			ComponentAttribution attr,
 			Set<String> handledFindings,
-			java.util.function.Function<T, String> keyExtractor) {
+			Function<T, String> keyExtractor,
+			Function<FindingAttribution<T>, List<ComponentAttribution>> listSelector) {
 		
-		if (appearedFindings == null) return;
+		if (findings == null) return;
 		
-		for (T finding : appearedFindings) {
+		for (T finding : findings) {
 			String key = keyExtractor.apply(finding);
 			FindingAttribution<T> fa = findingMap.computeIfAbsent(key, k -> new FindingAttribution<>());
 			if (fa.finding == null) fa.finding = finding;
-			fa.appearedIn.add(attr);
-			if (handledFindings != null) {
-				handledFindings.add(key);
-			}
-		}
-	}
-	
-	/**
-	 * Generic helper to track resolved findings for any finding type
-	 */
-	private <T> void trackResolvedFindings(
-			List<T> resolvedFindings,
-			Map<String, FindingAttribution<T>> findingMap,
-			ComponentAttribution attr,
-			Set<String> handledFindings,
-			java.util.function.Function<T, String> keyExtractor) {
-		
-		if (resolvedFindings == null) return;
-		
-		for (T finding : resolvedFindings) {
-			String key = keyExtractor.apply(finding);
-			FindingAttribution<T> fa = findingMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-			if (fa.finding == null) fa.finding = finding;
-			fa.resolvedIn.add(attr);
+			listSelector.apply(fa).add(attr);
 			if (handledFindings != null) {
 				handledFindings.add(key);
 			}
@@ -326,7 +236,7 @@ public class FindingComparisonService {
 			List<T> presentFindings,
 			Map<String, FindingAttribution<T>> findingMap,
 			ComponentAttribution releaseAttr,
-			java.util.function.Function<T, String> keyExtractor) {
+			Function<T, String> keyExtractor) {
 		
 		if (presentFindings == null) return;
 		
@@ -344,13 +254,57 @@ public class FindingComparisonService {
 	}
 	
 	/**
+	 * Tracks appeared and resolved findings for all three finding types from a FindingChangesRecord.
+	 * Eliminates the repeated 6-call pattern used in both component-level and org-level methods.
+	 */
+	private void trackAllFindings(
+			FindingChangesRecord changes,
+			AttributionMaps maps,
+			ComponentAttribution attr,
+			Set<String> handledFindings) {
+		
+		trackFindings(changes.appearedVulnerabilities(), maps.vulns, attr, handledFindings, VULN_KEY, fa -> fa.appearedIn);
+		trackFindings(changes.resolvedVulnerabilities(), maps.vulns, attr, handledFindings, VULN_KEY, fa -> fa.resolvedIn);
+		trackFindings(changes.appearedViolations(), maps.violations, attr, handledFindings, VIOLATION_KEY, fa -> fa.appearedIn);
+		trackFindings(changes.resolvedViolations(), maps.violations, attr, handledFindings, VIOLATION_KEY, fa -> fa.resolvedIn);
+		trackFindings(changes.appearedWeaknesses(), maps.weaknesses, attr, handledFindings, WEAKNESS_KEY, fa -> fa.appearedIn);
+		trackFindings(changes.resolvedWeaknesses(), maps.weaknesses, attr, handledFindings, WEAKNESS_KEY, fa -> fa.resolvedIn);
+	}
+	
+	/**
+	 * Tracks present findings for all three finding types from a metrics object.
+	 */
+	private void trackAllPresentFindings(
+			ReleaseMetricsDto metrics,
+			AttributionMaps maps,
+			ComponentAttribution releaseAttr) {
+		
+		trackPresentFindings(metrics.getVulnerabilityDetails(), maps.vulns, releaseAttr, VULN_KEY);
+		trackPresentFindings(metrics.getViolationDetails(), maps.violations, releaseAttr, VIOLATION_KEY);
+		trackPresentFindings(metrics.getWeaknessDetails(), maps.weaknesses, releaseAttr, WEAKNESS_KEY);
+	}
+	
+	/**
+	 * Tracks inherited findings for all three finding types from a metrics object.
+	 */
+	private void trackAllInheritedFindings(
+			ReleaseMetricsDto metrics,
+			AttributionMaps maps,
+			Set<String> handledFindings) {
+		
+		trackInheritedFindings(metrics.getVulnerabilityDetails(), maps.vulns, handledFindings, VULN_KEY);
+		trackInheritedFindings(metrics.getViolationDetails(), maps.violations, handledFindings, VIOLATION_KEY);
+		trackInheritedFindings(metrics.getWeaknessDetails(), maps.weaknesses, handledFindings, WEAKNESS_KEY);
+	}
+	
+	/**
 	 * Generic helper to track inherited findings for any finding type
 	 */
 	private <T> void trackInheritedFindings(
 			List<T> findings,
 			Map<String, FindingAttribution<T>> findingMap,
 			Set<String> handledFindings,
-			java.util.function.Function<T, String> keyExtractor) {
+			Function<T, String> keyExtractor) {
 		
 		if (findings == null) return;
 		
@@ -370,212 +324,43 @@ public class FindingComparisonService {
 	 * each vulnerability, violation, or weakness appeared/resolved in.
 	 * 
 	 * @param releasesByBranch Releases grouped by branch (sorted newest first within each branch)
-	 * @param branchDataMap Map of branch UUID to BranchData
 	 * @param componentData Component data for attribution
-	 * @param org Organization UUID
-	 * @param metricsExtractor Function to extract metrics for a release pair
 	 * @return Finding changes with accurate per-release attribution
 	 */
 	public FindingChangesWithAttribution compareMetricsWithAttributionAcrossBranches(
-			java.util.LinkedHashMap<UUID, List<ReleaseData>> releasesByBranch,
-			Map<UUID, BranchData> branchDataMap,
+			LinkedHashMap<UUID, List<ReleaseData>> releasesByBranch,
 			ComponentData componentData,
-			UUID org,
-			java.util.function.BiFunction<UUID, UUID, io.reliza.service.ChangeLogService.MetricsPair> metricsExtractor) {
+			Map<UUID, String> branchNameCache,
+			Map<String, ReleaseData> forkPointCache
+		) {
 		
 		log.debug("Starting finding attribution comparison for component {}", componentData.getName());
 		
-		
-		// Track attribution for all three finding types
-		Map<String, FindingAttribution<ReleaseMetricsDto.VulnerabilityDto>> vulnMap = new HashMap<>();
-		Map<String, FindingAttribution<ReleaseMetricsDto.ViolationDto>> violationMap = new HashMap<>();
-		Map<String, FindingAttribution<ReleaseMetricsDto.WeaknessDto>> weaknessMap = new HashMap<>();
+		AttributionMaps maps = new AttributionMaps();
 		
 		// Track findings handled by fork point comparison to avoid treating them as inherited
 		Set<String> forkPointHandledFindings = new HashSet<>();
 		
-		// PHASE 1: Handle branch boundaries (fork point comparisons)
-		// For the first release of each branch, compare against its fork point on the base branch
-		for (Map.Entry<UUID, List<ReleaseData>> entry : releasesByBranch.entrySet()) {
-			UUID branchUuid = entry.getKey();
-			List<ReleaseData> branchReleases = entry.getValue();
-			BranchData branchData = branchDataMap.get(branchUuid);
-			
-			if (branchReleases.isEmpty() || branchData == null) continue;
-			
-			// Get the first (oldest) release in this branch
-			ReleaseData oldestRelease = branchReleases.get(branchReleases.size() - 1);
-			
-			// Find the fork point (previous release to compare against)
-			UUID forkPointReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(
-				branchUuid, oldestRelease.getUuid());
-			
-			if (forkPointReleaseId == null) {
-				log.debug("No fork point found for branch {} release {}", branchData.getName(), oldestRelease.getVersion());
-				continue;
-			}
-			
-			// Get fork point release data
-			var forkPointReleaseOpt = sharedReleaseService.getReleaseData(forkPointReleaseId);
-			if (forkPointReleaseOpt.isEmpty()) {
-				log.warn("Fork point release {} not found", forkPointReleaseId);
-				continue;
-			}
-			
-			ReleaseData forkPointRelease = forkPointReleaseOpt.get();
-			
-			// Only compare if fork point is on a DIFFERENT branch
-			if (forkPointRelease.getBranch().equals(branchUuid)) {
-				log.debug("Fork point is on same branch, skipping");
-				continue;
-			}
-			
-			// Get fork point branch data
-			BranchData forkPointBranchData = branchDataMap.get(forkPointRelease.getBranch());
-			if (forkPointBranchData == null) {
-				var forkPointBranchOpt = branchService.getBranchData(forkPointRelease.getBranch());
-				if (forkPointBranchOpt.isEmpty()) {
-					log.warn("Fork point branch data not found for UUID {}", forkPointRelease.getBranch());
-					continue;
-				}
-				forkPointBranchData = forkPointBranchOpt.get();
-			}
-			
-			log.debug("Comparing branch boundary: {} {} vs {} {} for component {}", 
-				forkPointBranchData.getName(), forkPointRelease.getVersion(),
-				branchData.getName(), oldestRelease.getVersion(), componentData.getName());
-			
-			// Extract metrics for fork point comparison
-			io.reliza.service.ChangeLogService.MetricsPair forkPointMetrics = 
-				metricsExtractor.apply(forkPointReleaseId, oldestRelease.getUuid());
-			
-			if (forkPointMetrics == null) {
-				log.warn("Could not extract metrics for fork point comparison between {} and {}", 
-					forkPointReleaseId, oldestRelease.getUuid());
-				continue;
-			}
-			
-			// Compare findings between fork point and oldest release
-			FindingChangesDto.FindingChangesRecord forkPointChanges = compareMetrics(
-				forkPointMetrics.metrics1(), forkPointMetrics.metrics2());
-			
-			log.debug("Fork point comparison result: {} appeared vulns, {} resolved vulns",
-				forkPointChanges.appearedVulnerabilities() != null ? forkPointChanges.appearedVulnerabilities().size() : 0,
-				forkPointChanges.resolvedVulnerabilities() != null ? forkPointChanges.resolvedVulnerabilities().size() : 0);
-			
-			// Create attribution for the oldest release
-			ComponentAttribution attr = new ComponentAttribution(
-				componentData.getUuid(),
-				componentData.getName(),
-				oldestRelease.getUuid(),
-				oldestRelease.getVersion(),
-				branchUuid,
-				branchData.getName(),
-				forkPointRelease.getVersion()
-			);
-			
-			// Track findings at branch boundary using generic helpers
-			trackAppearedFindings(forkPointChanges.appearedVulnerabilities(), vulnMap, attr, forkPointHandledFindings,
-				vuln -> vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl());
-			trackResolvedFindings(forkPointChanges.resolvedVulnerabilities(), vulnMap, attr, forkPointHandledFindings,
-				vuln -> vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl());
-			
-			trackAppearedFindings(forkPointChanges.appearedViolations(), violationMap, attr, forkPointHandledFindings,
-				violation -> violation.type() + FINDING_KEY_DELIMITER + violation.purl());
-			trackResolvedFindings(forkPointChanges.resolvedViolations(), violationMap, attr, forkPointHandledFindings,
-				violation -> violation.type() + FINDING_KEY_DELIMITER + violation.purl());
-			
-			trackAppearedFindings(forkPointChanges.appearedWeaknesses(), weaknessMap, attr, forkPointHandledFindings,
-				weakness -> weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location());
-			trackResolvedFindings(forkPointChanges.resolvedWeaknesses(), weaknessMap, attr, forkPointHandledFindings,
-				weakness -> weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location());
-		}
+		// PHASES 0-1: Fork point comparisons + pairwise consecutive comparisons
+		processForkPointAndPairwise(releasesByBranch,
+			componentData.getUuid(), componentData.getName(),
+			DIRECT_METRICS_COMPARATOR, maps, forkPointHandledFindings, branchNameCache, forkPointCache, componentData);
 		
-		// PHASE 2: Process each branch sequentially (consecutive pairs within branch)
-		for (Map.Entry<UUID, List<ReleaseData>> entry : releasesByBranch.entrySet()) {
-			UUID branchUuid = entry.getKey();
-			List<ReleaseData> branchReleases = entry.getValue();
-			BranchData branchData = branchDataMap.get(branchUuid);
-			
-			if (branchData == null) {
-				log.warn("Branch data not found for UUID {}", branchUuid);
-				continue;
-			}
-			
-			// Compare consecutive pairs within this branch
-			log.debug("Processing branch {} with {} releases for component {}", branchData.getName(), branchReleases.size(), componentData.getName());
-			for (int i = 0; i < branchReleases.size() - 1; i++) {
-				ReleaseData prevRelease = branchReleases.get(i + 1);  // older
-				ReleaseData currentRelease = branchReleases.get(i);   // newer
-				
-				io.reliza.service.ChangeLogService.MetricsPair metrics = 
-					metricsExtractor.apply(prevRelease.getUuid(), currentRelease.getUuid());
-				
-				if (metrics == null) {
-					log.debug("Metrics null for {} -> {} on branch {}", prevRelease.getVersion(), currentRelease.getVersion(), branchData.getName());
-					continue;
-				}
-				
-				FindingChangesDto.FindingChangesRecord changes = compareMetrics(
-					metrics.metrics1(), metrics.metrics2());
-				
-				log.debug("Consecutive pair {} -> {}: {} appeared vulns, {} resolved vulns", 
-					prevRelease.getVersion(), currentRelease.getVersion(),
-					changes.appearedVulnerabilities() != null ? changes.appearedVulnerabilities().size() : 0,
-					changes.resolvedVulnerabilities() != null ? changes.resolvedVulnerabilities().size() : 0);
-				
-				ComponentAttribution attr = new ComponentAttribution(
-					componentData.getUuid(),
-					componentData.getName(),
-					currentRelease.getUuid(),
-					currentRelease.getVersion(),
-					branchUuid,
-					branchData.getName(),
-					prevRelease.getVersion()
-				);
-				
-				// Track findings using generic helpers
-				trackAppearedFindings(changes.appearedVulnerabilities(), vulnMap, attr, null,
-					vuln -> vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl());
-				trackResolvedFindings(changes.resolvedVulnerabilities(), vulnMap, attr, null,
-					vuln -> vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl());
-				
-				trackAppearedFindings(changes.appearedViolations(), violationMap, attr, null,
-					violation -> violation.type() + FINDING_KEY_DELIMITER + violation.purl());
-				trackResolvedFindings(changes.resolvedViolations(), violationMap, attr, null,
-					violation -> violation.type() + FINDING_KEY_DELIMITER + violation.purl());
-				
-				trackAppearedFindings(changes.appearedWeaknesses(), weaknessMap, attr, null,
-					weakness -> weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location());
-				trackResolvedFindings(changes.resolvedWeaknesses(), weaknessMap, attr, null,
-					weakness -> weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location());
-			}
-		}
-		
-		// PHASE 3: Track truly inherited findings from first (oldest) release in each branch
+		// PHASE 2: Track truly inherited findings from first (oldest) release in each branch
 		// These are findings that existed before the fork point AND were not handled by fork point comparison
 		for (Map.Entry<UUID, List<ReleaseData>> entry : releasesByBranch.entrySet()) {
-			UUID branchUuid = entry.getKey();
 			List<ReleaseData> branchReleases = entry.getValue();
 			
 			if (branchReleases.isEmpty()) continue;
 			
 			// Get the first (oldest) release in this branch
 			ReleaseData firstRelease = branchReleases.get(branchReleases.size() - 1);
+			ReleaseMetricsDto firstMetrics = firstRelease.getMetrics();
 			
-			// Get metrics for first release
-			io.reliza.service.ChangeLogService.MetricsPair firstMetrics = 
-				metricsExtractor.apply(firstRelease.getUuid(), firstRelease.getUuid());
-			
-			if (firstMetrics == null || firstMetrics.metrics2() == null) continue;
+			if (firstMetrics == null) continue;
 			
 			// Track truly inherited findings using generic helper
-			trackInheritedFindings(firstMetrics.metrics2().getVulnerabilityDetails(), vulnMap, forkPointHandledFindings,
-				vuln -> vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl());
-			trackInheritedFindings(firstMetrics.metrics2().getViolationDetails(), violationMap, forkPointHandledFindings,
-				violation -> violation.type() + FINDING_KEY_DELIMITER + violation.purl());
-			trackInheritedFindings(firstMetrics.metrics2().getWeaknessDetails(), weaknessMap, forkPointHandledFindings,
-				weakness -> weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location());
+			trackAllInheritedFindings(firstMetrics, maps, forkPointHandledFindings);
 		}
 		
 		// Track current state by querying ALL releases in each branch
@@ -586,16 +371,11 @@ public class FindingComparisonService {
 			
 			if (branchReleases.isEmpty()) continue;
 			
-			BranchData branchData = branchDataMap.get(branchUuid);
-			if (branchData == null) continue;
-			
 			// Iterate through ALL releases in this branch
 			for (ReleaseData release : branchReleases) {
-				// Get metrics for this release
-				io.reliza.service.ChangeLogService.MetricsPair releaseMetrics = 
-					metricsExtractor.apply(release.getUuid(), release.getUuid());
+				ReleaseMetricsDto releaseMetrics = release.getMetrics();
 				
-				if (releaseMetrics == null || releaseMetrics.metrics2() == null) continue;
+				if (releaseMetrics == null) continue;
 				
 				ComponentAttribution releaseAttr = new ComponentAttribution(
 					componentData.getUuid(),
@@ -603,17 +383,11 @@ public class FindingComparisonService {
 					release.getUuid(),
 					release.getVersion(),
 					branchUuid,
-					branchData.getName(),
-					null
+					cachedBranchName(branchUuid, branchNameCache)
 				);
 				
 				// Track present findings using generic helper
-				trackPresentFindings(releaseMetrics.metrics2().getVulnerabilityDetails(), vulnMap, releaseAttr,
-					vuln -> vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl());
-				trackPresentFindings(releaseMetrics.metrics2().getViolationDetails(), violationMap, releaseAttr,
-					violation -> violation.type() + FINDING_KEY_DELIMITER + violation.purl());
-				trackPresentFindings(releaseMetrics.metrics2().getWeaknessDetails(), weaknessMap, releaseAttr,
-					weakness -> weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location());
+				trackAllPresentFindings(releaseMetrics, maps, releaseAttr);
 			}
 		}
 		
@@ -628,89 +402,158 @@ public class FindingComparisonService {
 			}
 		}
 		
-		// Build attributed findings for all three types
-		List<VulnerabilityWithAttribution> vulnerabilities = vulnMap.values().stream()
-			.map(fa -> {
-				// Calculate flags
-				boolean isNetAppeared = !fa.appearedIn.isEmpty() && fa.resolvedIn.isEmpty();
-				boolean existsInLatestRelease = fa.presentIn.stream()
-					.anyMatch(attr -> latestReleasePerBranch.containsValue(attr.releaseUuid()));
-				
-				// isStillPresent = exists in ANY latest release and is not purely new
-				boolean isStillPresent = existsInLatestRelease && !isNetAppeared;
-				
-				// isNetResolved = resolved somewhere AND not present in any latest release
-				boolean isNetResolved = !fa.resolvedIn.isEmpty() && !existsInLatestRelease;
-				
-				return new VulnerabilityWithAttribution(
-					fa.finding.vulnId(),
-					fa.finding.severity() != null ? fa.finding.severity().name() : "UNKNOWN",
-					fa.finding.purl(),
-					fa.resolvedIn,
-					fa.appearedIn,
-					fa.presentIn,
-					isNetResolved,
-					isNetAppeared,
-					isStillPresent,
-					null  // orgContext not applicable for component-level view
-				);
-			})
-			.collect(Collectors.toList());
+		// Build attributed findings using component-level flag computation
+		return buildAttributedFindings(maps,
+			(key, fa) -> computeComponentFindingFlags(fa, latestReleasePerBranch));
+	}
+	
+	/**
+	 * Shared core logic: processes fork point comparisons and pairwise consecutive comparisons
+	 * for a single component's branches. Used by both component-level and org-level methods.
+	 * 
+	 * @param releasesByBranch Releases grouped by branch (sorted newest first)
+	 * @param componentUuid Component UUID for attribution
+	 * @param componentName Component name for attribution
+	 * @param comparator Function that compares two releases and returns finding changes, or null to skip
+	 * @param maps Attribution maps holder to populate
+	 * @param forkPointHandledFindings Set to track findings handled by fork point (populated by this method)
+	 */
+	private void processForkPointAndPairwise(
+			Map<UUID, List<ReleaseData>> releasesByBranch,
+			UUID componentUuid,
+			String componentName,
+			BiFunction<ReleaseData, ReleaseData, FindingChangesRecord> comparator,
+			AttributionMaps maps,
+			Set<String> forkPointHandledFindings,
+			Map<UUID, String> branchNameCache,
+			Map<String, ReleaseData> forkPointCache) {
+		processForkPointAndPairwise(releasesByBranch, componentUuid, componentName,
+			comparator, maps, forkPointHandledFindings, branchNameCache, forkPointCache, null);
+	}
+
+	private void processForkPointAndPairwise(
+			Map<UUID, List<ReleaseData>> releasesByBranch,
+			UUID componentUuid,
+			String componentName,
+			BiFunction<ReleaseData, ReleaseData, FindingChangesRecord> comparator,
+			AttributionMaps maps,
+			Set<String> forkPointHandledFindings,
+			Map<UUID, String> branchNameCache,
+			Map<String, ReleaseData> forkPointCache,
+			ComponentData componentData) {
 		
-		List<ViolationWithAttribution> violations = violationMap.values().stream()
-			.map(fa -> {
-				// Calculate flags
-				boolean isNetAppeared = !fa.appearedIn.isEmpty() && fa.resolvedIn.isEmpty();
-				boolean existsInLatestRelease = fa.presentIn.stream()
-					.anyMatch(attr -> latestReleasePerBranch.containsValue(attr.releaseUuid()));
-				
-				// isStillPresent = exists in ANY latest release and is not purely new
-				boolean isStillPresent = existsInLatestRelease && !isNetAppeared;
-				
-				// isNetResolved = resolved somewhere AND not present in any latest release
-				boolean isNetResolved = !fa.resolvedIn.isEmpty() && !existsInLatestRelease;
-				
-				return new ViolationWithAttribution(
-					fa.finding.type() != null ? fa.finding.type().name() : "UNKNOWN",
-					fa.finding.purl(),
-					fa.resolvedIn,
-					fa.appearedIn,
-					fa.presentIn,
-					isNetResolved,
-					isNetAppeared,
-					isStillPresent,
-					null  // orgContext not applicable for component-level view
-				);
-			})
-			.collect(Collectors.toList());
+		// baseBranchCache: caches base branch UUID per component to avoid repeated findBranchByName calls
+		Map<UUID, Optional<UUID>> baseBranchCache = new HashMap<>();
 		
-		List<WeaknessWithAttribution> weaknesses = weaknessMap.values().stream()
-			.map(fa -> {
-				// Calculate flags
-				boolean isNetAppeared = !fa.appearedIn.isEmpty() && fa.resolvedIn.isEmpty();
-				boolean existsInLatestRelease = fa.presentIn.stream()
-					.anyMatch(attr -> latestReleasePerBranch.containsValue(attr.releaseUuid()));
+		// PHASE 0: Fork point comparisons for each branch's oldest release
+		for (Map.Entry<UUID, List<ReleaseData>> branchEntry : releasesByBranch.entrySet()) {
+			UUID branchUuid = branchEntry.getKey();
+			List<ReleaseData> branchReleases = branchEntry.getValue();
+			if (branchReleases.isEmpty()) continue;
+			
+			ReleaseData oldestRelease = branchReleases.get(branchReleases.size() - 1);
+			
+			// Use fork point cache to avoid redundant DB lookups
+			String cacheKey = branchUuid + ":" + oldestRelease.getUuid();
+			ReleaseData forkPointRelease = null;
+			
+			if (forkPointCache.containsKey(cacheKey)) {
+				forkPointRelease = forkPointCache.get(cacheKey);
+			} else {
+				UUID forkPointReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(
+					branchUuid, oldestRelease.getUuid(), oldestRelease, componentData, baseBranchCache);
 				
-				// isStillPresent = exists in ANY latest release and is not purely new
-				boolean isStillPresent = existsInLatestRelease && !isNetAppeared;
+				if (forkPointReleaseId != null) {
+					var forkPointReleaseOpt = sharedReleaseService.getReleaseData(forkPointReleaseId);
+					forkPointRelease = forkPointReleaseOpt.orElse(null);
+				}
+				forkPointCache.put(cacheKey, forkPointRelease);
+			}
+			
+			if (forkPointRelease == null) {
+				log.debug("No fork point found for branch {} release {}", 
+					cachedBranchName(branchUuid, branchNameCache), oldestRelease.getVersion());
+				continue;
+			}
+			
+			// Only compare if fork point is on a DIFFERENT branch
+			if (forkPointRelease.getBranch().equals(branchUuid)) {
+				log.debug("Fork point is on same branch for {}/{}, skipping", 
+					componentName, cachedBranchName(branchUuid, branchNameCache));
+				continue;
+			}
+			
+			FindingChangesRecord forkPointChanges = comparator.apply(forkPointRelease, oldestRelease);
+			if (forkPointChanges == null) continue;
+			
+			log.debug("Fork point comparison for {}: {} appeared vulns, {} resolved vulns",
+				componentName,
+				forkPointChanges.appearedVulnerabilities() != null ? forkPointChanges.appearedVulnerabilities().size() : 0,
+				forkPointChanges.resolvedVulnerabilities() != null ? forkPointChanges.resolvedVulnerabilities().size() : 0);
+			
+			ComponentAttribution attr = new ComponentAttribution(
+				componentUuid, componentName,
+				oldestRelease.getUuid(), oldestRelease.getVersion(),
+				branchUuid, cachedBranchName(branchUuid, branchNameCache)
+			);
+			
+			trackAllFindings(forkPointChanges, maps, attr, forkPointHandledFindings);
+		}
+		
+		// PHASE 1: Pairwise consecutive comparisons on each branch
+		processPairwiseComparisons(releasesByBranch, componentUuid, componentName,
+			comparator, maps, branchNameCache);
+	}
+	
+	/**
+	 * Processes pairwise consecutive comparisons within each branch.
+	 * Compares older→newer release pairs and tracks appeared/resolved findings.
+	 * 
+	 * @param releasesByBranch Releases grouped by branch (sorted newest first)
+	 * @param componentUuid Component UUID for attribution
+	 * @param componentName Component name for attribution
+	 * @param pairComparator Function that compares two releases (older, newer) and returns finding changes, or null to skip
+	 * @param maps Attribution maps holder to populate
+	 */
+	private void processPairwiseComparisons(
+			Map<UUID, List<ReleaseData>> releasesByBranch,
+			UUID componentUuid,
+			String componentName,
+			BiFunction<ReleaseData, ReleaseData, FindingChangesRecord> pairComparator,
+			AttributionMaps maps,
+			Map<UUID, String> branchNameCache) {
+		
+		for (Map.Entry<UUID, List<ReleaseData>> branchEntry : releasesByBranch.entrySet()) {
+			List<ReleaseData> branchReleases = branchEntry.getValue();
+			if (branchReleases.size() < 2) continue;
+			
+			// Iterate from oldest to newest (pairwise)
+			for (int i = branchReleases.size() - 1; i > 0; i--) {
+				ReleaseData olderRelease = branchReleases.get(i);
+				ReleaseData newerRelease = branchReleases.get(i - 1);
 				
-				// isNetResolved = resolved somewhere AND not present in any latest release
-				boolean isNetResolved = !fa.resolvedIn.isEmpty() && !existsInLatestRelease;
+				FindingChangesRecord changes = pairComparator.apply(olderRelease, newerRelease);
+				if (changes == null) continue;
 				
-				return new WeaknessWithAttribution(
-					fa.finding.cweId(),
-					fa.finding.severity() != null ? fa.finding.severity().name() : "UNKNOWN",
-					fa.finding.location() != null ? fa.finding.location() : "",
-					fa.resolvedIn,
-					fa.appearedIn,
-					fa.presentIn,
-					isNetResolved,
-					isNetAppeared,
-					isStillPresent,
-					null  // orgContext not applicable for component-level view
+				ComponentAttribution pairAttr = new ComponentAttribution(
+					componentUuid, componentName,
+					newerRelease.getUuid(), newerRelease.getVersion(),
+					newerRelease.getBranch(), cachedBranchName(newerRelease.getBranch(), branchNameCache)
 				);
-			})
-			.collect(Collectors.toList());
+				
+				trackAllFindings(changes, maps, pairAttr, null);
+			}
+		}
+	}
+	
+	/**
+	 * Builds the final FindingChangesWithAttribution from the three attributed finding lists.
+	 * Counts net appeared/resolved totals.
+	 */
+	private FindingChangesWithAttribution buildFindingChangesResult(
+			List<VulnerabilityWithAttribution> vulnerabilities,
+			List<ViolationWithAttribution> violations,
+			List<WeaknessWithAttribution> weaknesses) {
 		
 		int totalAppeared = (int) (vulnerabilities.stream().filter(v -> v.isNetAppeared()).count()
 			+ violations.stream().filter(v -> v.isNetAppeared()).count()
@@ -720,12 +563,170 @@ public class FindingComparisonService {
 			+ violations.stream().filter(v -> v.isNetResolved()).count()
 			+ weaknesses.stream().filter(w -> w.isNetResolved()).count());
 		
-		log.debug("Finding attribution complete - {} vulnerabilities, {} violations, {} weaknesses", 
-			vulnerabilities.size(), violations.size(), weaknesses.size());
-		
 		return new FindingChangesWithAttribution(
-			vulnerabilities, violations, weaknesses, 
+			vulnerabilities, violations, weaknesses,
 			totalAppeared, totalResolved);
+	}
+	
+	/**
+	 * Builds attributed finding lists from the three attribution maps using a flag-computing strategy.
+	 * Shared by both component-level and org-level methods — the only difference is how flags are computed.
+	 *
+	 * @param maps Attribution maps holder
+	 * @param flagComputer Function that takes (key, FindingAttribution) and returns FindingFlags
+	 */
+	private FindingChangesWithAttribution buildAttributedFindings(
+			AttributionMaps maps,
+			BiFunction<String, FindingAttribution<?>, FindingFlags> flagComputer) {
+		
+		List<VulnerabilityWithAttribution> vulnerabilities = maps.vulns.entrySet().stream()
+			.map(e -> {
+				FindingFlags flags = flagComputer.apply(e.getKey(), e.getValue());
+				var fa = e.getValue();
+				return new VulnerabilityWithAttribution(
+					fa.finding.vulnId(),
+					fa.finding.severity() != null ? fa.finding.severity().name() : "UNKNOWN",
+					fa.finding.purl(),
+					fa.finding.aliases(),
+					fa.resolvedIn, fa.appearedIn, fa.presentIn,
+					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
+					flags.orgContext()
+				);
+			})
+			.collect(Collectors.toList());
+		
+		List<ViolationWithAttribution> violations = maps.violations.entrySet().stream()
+			.map(e -> {
+				FindingFlags flags = flagComputer.apply(e.getKey(), e.getValue());
+				var fa = e.getValue();
+				return new ViolationWithAttribution(
+					fa.finding.type() != null ? fa.finding.type().name() : "UNKNOWN",
+					fa.finding.purl(),
+					fa.resolvedIn, fa.appearedIn, fa.presentIn,
+					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
+					flags.orgContext()
+				);
+			})
+			.collect(Collectors.toList());
+		
+		List<WeaknessWithAttribution> weaknesses = maps.weaknesses.entrySet().stream()
+			.map(e -> {
+				FindingFlags flags = flagComputer.apply(e.getKey(), e.getValue());
+				var fa = e.getValue();
+				return new WeaknessWithAttribution(
+					fa.finding.cweId(),
+					fa.finding.severity() != null ? fa.finding.severity().name() : "UNKNOWN",
+					fa.finding.ruleId(),
+					fa.finding.location() != null ? fa.finding.location() : "",
+					fa.resolvedIn, fa.appearedIn, fa.presentIn,
+					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
+					flags.orgContext()
+				);
+			})
+			.collect(Collectors.toList());
+		
+		return buildFindingChangesResult(vulnerabilities, violations, weaknesses);
+	}
+	
+	/**
+	 * Tracks findings that are inherited within a component (present in both first and last metrics of a branch).
+	 * Adds the component UUID to the inheritedInComponents map for each inherited finding key.
+	 */
+	private <T> void trackInheritedInComponents(
+			List<T> firstFindings,
+			List<T> lastFindings,
+			Function<T, String> keyExtractor,
+			Map<String, Set<UUID>> inheritedInComponents,
+			UUID componentUuid) {
+		if (firstFindings == null || lastFindings == null) return;
+		
+		Set<String> firstKeys = new HashSet<>();
+		for (T finding : firstFindings) {
+			firstKeys.add(keyExtractor.apply(finding));
+		}
+		for (T finding : lastFindings) {
+			String key = keyExtractor.apply(finding);
+			if (firstKeys.contains(key)) {
+				inheritedInComponents.computeIfAbsent(key, k -> new HashSet<>()).add(componentUuid);
+			}
+		}
+	}
+	
+	/**
+	 * Computed flags for a finding (used at both component and org level).
+	 */
+	private record FindingFlags(
+		boolean isNetAppeared,
+		boolean isStillPresent,
+		boolean isNetResolved,
+		OrgLevelContext orgContext
+	) {}
+	
+	/**
+	 * Computes component-level flags for a single finding.
+	 */
+	private <T> FindingFlags computeComponentFindingFlags(
+			FindingAttribution<T> fa,
+			Map<UUID, UUID> latestReleasePerBranch) {
+		
+		boolean isNetAppeared = !fa.appearedIn.isEmpty() && fa.resolvedIn.isEmpty();
+		boolean existsInLatestRelease = fa.presentIn.stream()
+			.anyMatch(attr -> latestReleasePerBranch.containsValue(attr.releaseUuid()));
+		boolean isStillPresent = existsInLatestRelease && !isNetAppeared;
+		boolean isNetResolved = !fa.resolvedIn.isEmpty() && !existsInLatestRelease;
+		
+		return new FindingFlags(isNetAppeared, isStillPresent, isNetResolved, null);
+	}
+	
+	
+	/**
+	 * Computes org-level flags and OrgLevelContext for a single finding.
+	 * Centralizes the flag computation logic that was previously triplicated for vulns/violations/weaknesses.
+	 */
+	private <T> FindingFlags computeOrgFindingFlags(
+			String key,
+			FindingAttribution<T> fa,
+			Map<String, Set<UUID>> inheritedInComponents,
+			int totalComponents) {
+		
+		Set<UUID> inherited = inheritedInComponents.getOrDefault(key, Collections.emptySet());
+		Set<UUID> appearedComponents = fa.appearedIn.stream()
+			.map(ComponentAttribution::componentUuid)
+			.collect(Collectors.toSet());
+		Set<UUID> resolvedComponents = fa.resolvedIn.stream()
+			.map(ComponentAttribution::componentUuid)
+			.collect(Collectors.toSet());
+		Set<UUID> presentComponents = fa.presentIn.stream()
+			.map(ComponentAttribution::componentUuid)
+			.collect(Collectors.toSet());
+		
+		boolean isNetAppeared = !fa.appearedIn.isEmpty() && fa.resolvedIn.isEmpty();
+		boolean isStillPresent = !fa.presentIn.isEmpty() && !isNetAppeared;
+		boolean isNetResolved = !fa.resolvedIn.isEmpty() && fa.presentIn.isEmpty();
+		
+		boolean isFullyResolved = resolvedComponents.size() > 0 && presentComponents.isEmpty();
+		boolean isPartiallyResolved = !isFullyResolved && resolvedComponents.size() > 0 && presentComponents.size() > 0;
+		boolean isInheritedInAllComponents = !isFullyResolved && !isPartiallyResolved && inherited.size() == totalComponents && totalComponents > 1;
+		boolean isNewToOrganization = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && inherited.isEmpty();
+		boolean wasPreviouslyReported = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && 
+			(inherited.size() > 0 || presentComponents.stream().anyMatch(c -> !appearedComponents.contains(c)));
+		
+		List<String> affectedComponentNames = fa.presentIn.stream()
+			.map(ComponentAttribution::componentName)
+			.distinct()
+			.collect(Collectors.toList());
+		
+		OrgLevelContext orgContext = new OrgLevelContext(
+			isNewToOrganization,
+			wasPreviouslyReported,
+			isPartiallyResolved,
+			isFullyResolved,
+			isInheritedInAllComponents,
+			presentComponents.size(),
+			affectedComponentNames
+		);
+		
+		return new FindingFlags(isNetAppeared, isStillPresent, isNetResolved, orgContext);
 	}
 	
 	/**
@@ -741,14 +742,13 @@ public class FindingComparisonService {
 	 */
 	public FindingChangesWithAttribution compareMetricsAcrossComponents(
 			Map<UUID, List<ReleaseData>> componentReleases,
-			Map<UUID, String> componentNames) {
+			Map<UUID, String> componentNames,
+			Map<UUID, String> branchNameCache,
+			Map<String, ReleaseData> forkPointCache) {
 		
 		log.debug("ORG-COMPARE: Starting org-level finding comparison across {} components", componentReleases.size());
 		
-		// Use internal attribution structure to track per-component state
-		Map<String, FindingAttribution<ReleaseMetricsDto.VulnerabilityDto>> vulnMap = new HashMap<>();
-		Map<String, FindingAttribution<ReleaseMetricsDto.ViolationDto>> violationMap = new HashMap<>();
-		Map<String, FindingAttribution<ReleaseMetricsDto.WeaknessDto>> weaknessMap = new HashMap<>();
+		AttributionMaps maps = new AttributionMaps();
 		
 		// Track which components have which findings as inherited (first AND last release)
 		Map<String, Set<UUID>> inheritedInComponents = new HashMap<>();
@@ -764,588 +764,53 @@ public class FindingComparisonService {
 			// Group releases by branch to compare per-branch (not just overall first vs last)
 			Map<UUID, List<ReleaseData>> releasesByBranch = releases.stream()
 				.collect(Collectors.groupingBy(ReleaseData::getBranch));
+			// Sort each branch's releases by creation date (newest first) - required by processForkPointAndPairwise
+			releasesByBranch.values().forEach(list -> list.sort(Comparator.comparing(ReleaseData::getCreatedDate).reversed()));
 			
-			// PHASE 0: Fork point comparisons for each branch's oldest release
-			log.debug("ORG-COMPARE: Component {} has {} branches: {}", componentName, releasesByBranch.size(),
-				releasesByBranch.entrySet().stream()
-					.map(be -> getBranchName(be.getKey()) + "(" + be.getValue().size() + " releases)")
-					.collect(Collectors.joining(", ")));
-			for (Map.Entry<UUID, List<ReleaseData>> branchEntry : releasesByBranch.entrySet()) {
-				UUID branchUuid = branchEntry.getKey();
-				List<ReleaseData> branchReleases = branchEntry.getValue();
-				if (branchReleases.isEmpty()) continue;
-				
-				ReleaseData oldestRelease = branchReleases.get(branchReleases.size() - 1);
-				String branchName = getBranchName(branchUuid);
-				
-				UUID forkPointReleaseId = sharedReleaseService.findPreviousReleasesOfBranchForRelease(
-					branchUuid, oldestRelease.getUuid());
-				
-				if (forkPointReleaseId == null) {
-					log.debug("ORG-COMPARE: PHASE0 {}/{}: No fork point found for oldest release {}", componentName, branchName, oldestRelease.getVersion());
-					continue;
-				}
-				
-				var forkPointReleaseOpt = sharedReleaseService.getReleaseData(forkPointReleaseId);
-				if (forkPointReleaseOpt.isEmpty()) continue;
-				
-				ReleaseData forkPointRelease = forkPointReleaseOpt.get();
-				
-				// Only compare if fork point is on a DIFFERENT branch
-				if (forkPointRelease.getBranch().equals(branchUuid)) {
-					log.debug("ORG-COMPARE: PHASE0 {}/{}: Fork point {} is on SAME branch, skipping", componentName, branchName, forkPointRelease.getVersion());
-					continue;
-				}
-				
-				ReleaseMetricsDto forkMetrics = forkPointRelease.getMetrics();
-				ReleaseMetricsDto oldestMetrics = oldestRelease.getMetrics();
-				
-				if (forkMetrics == null || oldestMetrics == null) {
-					log.debug("ORG-COMPARE: PHASE0 {}/{}: Metrics null (fork={}, oldest={})", componentName, branchName, forkMetrics != null, oldestMetrics != null);
-					continue;
-				}
-				
-				log.debug("ORG-COMPARE: PHASE0 {}/{}: Comparing fork point {}({}) vs oldest {}({}). Fork vulns={}, Oldest vulns={}",
-					componentName, branchName,
-					getBranchName(forkPointRelease.getBranch()), forkPointRelease.getVersion(),
-					branchName, oldestRelease.getVersion(),
-					forkMetrics.getVulnerabilityDetails() != null ? forkMetrics.getVulnerabilityDetails().size() : 0,
-					oldestMetrics.getVulnerabilityDetails() != null ? oldestMetrics.getVulnerabilityDetails().size() : 0);
-				
-				FindingChangesDto.FindingChangesRecord forkChanges = compareMetrics(forkMetrics, oldestMetrics);
-				
-				log.debug("ORG-COMPARE: PHASE0 {}/{}: Result: {} appeared vulns, {} resolved vulns",
-					componentName, branchName,
-					forkChanges.appearedVulnerabilities() != null ? forkChanges.appearedVulnerabilities().size() : 0,
-					forkChanges.resolvedVulnerabilities() != null ? forkChanges.resolvedVulnerabilities().size() : 0);
-				if (forkChanges.appearedVulnerabilities() != null) {
-					for (var v : forkChanges.appearedVulnerabilities()) {
-						log.debug("ORG-COMPARE: PHASE0 {}/{}: APPEARED vuln {} in {}", componentName, branchName, v.vulnId(), v.purl());
-					}
-				}
-				if (forkChanges.resolvedVulnerabilities() != null) {
-					for (var v : forkChanges.resolvedVulnerabilities()) {
-						log.debug("ORG-COMPARE: PHASE0 {}/{}: RESOLVED vuln {} in {}", componentName, branchName, v.vulnId(), v.purl());
-					}
-				}
-				
-				ComponentAttribution forkAttr = new ComponentAttribution(
-					componentUuid, componentName,
-					oldestRelease.getUuid(), oldestRelease.getVersion(),
-					branchUuid, getBranchName(branchUuid),
-					forkPointRelease.getVersion()
-				);
-				
-				// Track appeared/resolved at branch boundary
-				if (forkChanges.appearedVulnerabilities() != null) {
-					for (ReleaseMetricsDto.VulnerabilityDto vuln : forkChanges.appearedVulnerabilities()) {
-						String key = vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl();
-						FindingAttribution<ReleaseMetricsDto.VulnerabilityDto> fa =
-							vulnMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-						if (fa.finding == null) fa.finding = vuln;
-						fa.appearedIn.add(forkAttr);
-					}
-				}
-				if (forkChanges.resolvedVulnerabilities() != null) {
-					for (ReleaseMetricsDto.VulnerabilityDto vuln : forkChanges.resolvedVulnerabilities()) {
-						String key = vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl();
-						FindingAttribution<ReleaseMetricsDto.VulnerabilityDto> fa =
-							vulnMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-						if (fa.finding == null) fa.finding = vuln;
-						fa.resolvedIn.add(forkAttr);
-					}
-				}
-				if (forkChanges.appearedViolations() != null) {
-					for (ReleaseMetricsDto.ViolationDto v : forkChanges.appearedViolations()) {
-						String key = v.type() + FINDING_KEY_DELIMITER + v.purl();
-						FindingAttribution<ReleaseMetricsDto.ViolationDto> fa =
-							violationMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-						if (fa.finding == null) fa.finding = v;
-						fa.appearedIn.add(forkAttr);
-					}
-				}
-				if (forkChanges.resolvedViolations() != null) {
-					for (ReleaseMetricsDto.ViolationDto v : forkChanges.resolvedViolations()) {
-						String key = v.type() + FINDING_KEY_DELIMITER + v.purl();
-						FindingAttribution<ReleaseMetricsDto.ViolationDto> fa =
-							violationMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-						if (fa.finding == null) fa.finding = v;
-						fa.resolvedIn.add(forkAttr);
-					}
-				}
-				if (forkChanges.appearedWeaknesses() != null) {
-					for (ReleaseMetricsDto.WeaknessDto w : forkChanges.appearedWeaknesses()) {
-						String key = w.cweId() + FINDING_KEY_DELIMITER + w.location();
-						FindingAttribution<ReleaseMetricsDto.WeaknessDto> fa =
-							weaknessMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-						if (fa.finding == null) fa.finding = w;
-						fa.appearedIn.add(forkAttr);
-					}
-				}
-				if (forkChanges.resolvedWeaknesses() != null) {
-					for (ReleaseMetricsDto.WeaknessDto w : forkChanges.resolvedWeaknesses()) {
-						String key = w.cweId() + FINDING_KEY_DELIMITER + w.location();
-						FindingAttribution<ReleaseMetricsDto.WeaknessDto> fa =
-							weaknessMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-						if (fa.finding == null) fa.finding = w;
-						fa.resolvedIn.add(forkAttr);
-					}
-				}
-			}
+			log.debug("ORG-COMPARE: Component {} has {} branches", componentName, releasesByBranch.size());
 			
-			// PHASE 1: Pairwise consecutive comparisons on each branch
-			// This captures ALL intermediate appeared/resolved findings, not just the net diff
-			for (Map.Entry<UUID, List<ReleaseData>> branchEntry : releasesByBranch.entrySet()) {
-				List<ReleaseData> branchReleases = branchEntry.getValue();
-				String branchName = getBranchName(branchEntry.getKey());
-				if (branchReleases.size() < 2) {
-					log.debug("ORG-COMPARE: PHASE1 {}/{}: Only {} release(s), skipping per-branch comparison", componentName, branchName, branchReleases.size());
-					continue;
-				}
-				
-				// Releases are sorted newest-first; iterate from oldest to newest (pairwise)
-				ReleaseData oldestRelease = branchReleases.get(branchReleases.size() - 1);
-				ReleaseData newestRelease = branchReleases.get(0);
-				log.debug("ORG-COMPARE: PHASE1 {}/{}: Pairwise comparison across {} releases ({} -> {})",
-					componentName, branchName, branchReleases.size(), oldestRelease.getVersion(), newestRelease.getVersion());
-				
-				for (int i = branchReleases.size() - 1; i > 0; i--) {
-					ReleaseData olderRelease = branchReleases.get(i);
-					ReleaseData newerRelease = branchReleases.get(i - 1);
-					
-					ReleaseMetricsDto olderMetrics = olderRelease.getMetrics();
-					ReleaseMetricsDto newerMetrics = newerRelease.getMetrics();
-					
-					if (olderMetrics == null || newerMetrics == null) continue;
-					
-					log.debug("ORG-COMPARE: PHASE1 {}/{}: Comparing {} vs {}",
-						componentName, branchName, olderRelease.getVersion(), newerRelease.getVersion());
-					
-					FindingChangesDto.FindingChangesRecord changes = compareMetrics(olderMetrics, newerMetrics);
-					
-					if (changes.appearedVulnerabilities() != null) {
-						for (var v : changes.appearedVulnerabilities()) {
-							log.debug("ORG-COMPARE: PHASE1 {}/{}: APPEARED vuln {} in {} (since {})", componentName, branchName, v.vulnId(), v.purl(), newerRelease.getVersion());
-						}
-					}
-					if (changes.resolvedVulnerabilities() != null) {
-						for (var v : changes.resolvedVulnerabilities()) {
-							log.debug("ORG-COMPARE: PHASE1 {}/{}: RESOLVED vuln {} in {} (since {})", componentName, branchName, v.vulnId(), v.purl(), newerRelease.getVersion());
-						}
-					}
-					
-					ComponentAttribution pairAttr = new ComponentAttribution(
-						componentUuid, componentName,
-						newerRelease.getUuid(), newerRelease.getVersion(),
-						newerRelease.getBranch(), getBranchName(newerRelease.getBranch()),
-						olderRelease.getVersion()
-					);
-					
-					// Track appeared vulnerabilities
-					if (changes.appearedVulnerabilities() != null) {
-						for (ReleaseMetricsDto.VulnerabilityDto vuln : changes.appearedVulnerabilities()) {
-							String key = vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl();
-							FindingAttribution<ReleaseMetricsDto.VulnerabilityDto> fa = 
-								vulnMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-							if (fa.finding == null) fa.finding = vuln;
-							fa.appearedIn.add(pairAttr);
-						}
-					}
-					
-					// Track resolved vulnerabilities
-					if (changes.resolvedVulnerabilities() != null) {
-						for (ReleaseMetricsDto.VulnerabilityDto vuln : changes.resolvedVulnerabilities()) {
-							String key = vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl();
-							FindingAttribution<ReleaseMetricsDto.VulnerabilityDto> fa = 
-								vulnMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-							if (fa.finding == null) fa.finding = vuln;
-							fa.resolvedIn.add(pairAttr);
-						}
-					}
-					
-					// Track appeared violations
-					if (changes.appearedViolations() != null) {
-						for (ReleaseMetricsDto.ViolationDto violation : changes.appearedViolations()) {
-							String key = violation.type() + FINDING_KEY_DELIMITER + violation.purl();
-							FindingAttribution<ReleaseMetricsDto.ViolationDto> fa = 
-								violationMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-							if (fa.finding == null) fa.finding = violation;
-							fa.appearedIn.add(pairAttr);
-						}
-					}
-					
-					// Track resolved violations
-					if (changes.resolvedViolations() != null) {
-						for (ReleaseMetricsDto.ViolationDto violation : changes.resolvedViolations()) {
-							String key = violation.type() + FINDING_KEY_DELIMITER + violation.purl();
-							FindingAttribution<ReleaseMetricsDto.ViolationDto> fa = 
-								violationMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-							if (fa.finding == null) fa.finding = violation;
-							fa.resolvedIn.add(pairAttr);
-						}
-					}
-					
-					// Track appeared weaknesses
-					if (changes.appearedWeaknesses() != null) {
-						for (ReleaseMetricsDto.WeaknessDto weakness : changes.appearedWeaknesses()) {
-							String key = weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location();
-							FindingAttribution<ReleaseMetricsDto.WeaknessDto> fa = 
-								weaknessMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-							if (fa.finding == null) fa.finding = weakness;
-							fa.appearedIn.add(pairAttr);
-						}
-					}
-					
-					// Track resolved weaknesses
-					if (changes.resolvedWeaknesses() != null) {
-						for (ReleaseMetricsDto.WeaknessDto weakness : changes.resolvedWeaknesses()) {
-							String key = weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location();
-							FindingAttribution<ReleaseMetricsDto.WeaknessDto> fa = 
-								weaknessMap.computeIfAbsent(key, k -> new FindingAttribution<>());
-							if (fa.finding == null) fa.finding = weakness;
-							fa.resolvedIn.add(pairAttr);
-						}
-					}
-				}
-				
-				// Track inherited findings: existed in BOTH oldest AND newest release of this branch
-				ReleaseMetricsDto firstMetrics = oldestRelease.getMetrics();
-				ReleaseMetricsDto lastMetrics = newestRelease.getMetrics();
-				
+			// PHASES 0-1: Fork point comparisons + pairwise consecutive comparisons (uses cache from component-level)
+			processForkPointAndPairwise(releasesByBranch, componentUuid, componentName,
+				DIRECT_METRICS_COMPARATOR, maps, new HashSet<>(), branchNameCache, forkPointCache);
+			
+			// Track inherited findings per branch: existed in BOTH oldest AND newest release
+			for (List<ReleaseData> branchReleases : releasesByBranch.values()) {
+				if (branchReleases.size() < 2) continue;
+				ReleaseMetricsDto firstMetrics = branchReleases.get(branchReleases.size() - 1).getMetrics();
+				ReleaseMetricsDto lastMetrics = branchReleases.get(0).getMetrics();
 				if (firstMetrics != null && lastMetrics != null) {
-					Set<String> firstVulns = new HashSet<>();
-					if (firstMetrics.getVulnerabilityDetails() != null) {
-						for (ReleaseMetricsDto.VulnerabilityDto vuln : firstMetrics.getVulnerabilityDetails()) {
-							firstVulns.add(vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl());
-						}
-					}
-					if (lastMetrics.getVulnerabilityDetails() != null) {
-						for (ReleaseMetricsDto.VulnerabilityDto vuln : lastMetrics.getVulnerabilityDetails()) {
-							String key = vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl();
-							if (firstVulns.contains(key)) {
-								inheritedInComponents.computeIfAbsent(key, k -> new HashSet<>()).add(componentUuid);
-							}
-						}
-					}
-					
-					Set<String> firstViols = new HashSet<>();
-					if (firstMetrics.getViolationDetails() != null) {
-						for (ReleaseMetricsDto.ViolationDto v : firstMetrics.getViolationDetails()) {
-							firstViols.add(v.type() + FINDING_KEY_DELIMITER + v.purl());
-						}
-					}
-					if (lastMetrics.getViolationDetails() != null) {
-						for (ReleaseMetricsDto.ViolationDto v : lastMetrics.getViolationDetails()) {
-							String key = v.type() + FINDING_KEY_DELIMITER + v.purl();
-							if (firstViols.contains(key)) {
-								inheritedInComponents.computeIfAbsent(key, k -> new HashSet<>()).add(componentUuid);
-							}
-						}
-					}
-					
-					Set<String> firstWeaks = new HashSet<>();
-					if (firstMetrics.getWeaknessDetails() != null) {
-						for (ReleaseMetricsDto.WeaknessDto w : firstMetrics.getWeaknessDetails()) {
-							firstWeaks.add(w.cweId() + FINDING_KEY_DELIMITER + w.location());
-						}
-					}
-					if (lastMetrics.getWeaknessDetails() != null) {
-						for (ReleaseMetricsDto.WeaknessDto w : lastMetrics.getWeaknessDetails()) {
-							String key = w.cweId() + FINDING_KEY_DELIMITER + w.location();
-							if (firstWeaks.contains(key)) {
-								inheritedInComponents.computeIfAbsent(key, k -> new HashSet<>()).add(componentUuid);
-							}
-						}
-					}
+					trackInheritedInComponents(firstMetrics.getVulnerabilityDetails(),
+						lastMetrics.getVulnerabilityDetails(), VULN_KEY, inheritedInComponents, componentUuid);
+					trackInheritedInComponents(firstMetrics.getViolationDetails(),
+						lastMetrics.getViolationDetails(), VIOLATION_KEY, inheritedInComponents, componentUuid);
+					trackInheritedInComponents(firstMetrics.getWeaknessDetails(),
+						lastMetrics.getWeaknessDetails(), WEAKNESS_KEY, inheritedInComponents, componentUuid);
 				}
 			}
-		}
-		
-		// Second pass: populate presentIn with latest release data per branch
-		log.debug("ORG-COMPARE: PASS2 - Tracking present state from latest releases per branch");
-		for (Map.Entry<UUID, List<ReleaseData>> entry : componentReleases.entrySet()) {
-			UUID componentUuid = entry.getKey();
-			List<ReleaseData> releases = entry.getValue();
-			String componentName = componentNames.getOrDefault(componentUuid, "Unknown");
 			
-			if (releases.isEmpty()) continue;
-			
-			// Group by branch and check the latest release of each branch
-			Map<UUID, List<ReleaseData>> releasesByBranch = releases.stream()
-				.collect(Collectors.groupingBy(ReleaseData::getBranch));
-			
+			// Track present findings from latest release per branch
 			for (List<ReleaseData> branchReleases : releasesByBranch.values()) {
 				if (branchReleases.isEmpty()) continue;
 				
-				// Index 0 = newest (latest) release on this branch
 				ReleaseData latestRelease = branchReleases.get(0);
 				ReleaseMetricsDto latestMetrics = latestRelease.getMetrics();
 				
 				if (latestMetrics == null) continue;
 				
-				log.debug("ORG-COMPARE: PASS2 {}/{} latest={}: {} vulns in metrics",
-					componentName, getBranchName(latestRelease.getBranch()), latestRelease.getVersion(),
-					latestMetrics.getVulnerabilityDetails() != null ? latestMetrics.getVulnerabilityDetails().size() : 0);
-				
 				ComponentAttribution latestAttr = new ComponentAttribution(
 					componentUuid, componentName,
 					latestRelease.getUuid(), latestRelease.getVersion(),
-					latestRelease.getBranch(), getBranchName(latestRelease.getBranch()),
-					null
+					latestRelease.getBranch(), cachedBranchName(latestRelease.getBranch(), branchNameCache)
 				);
 				
-				if (latestMetrics.getVulnerabilityDetails() != null) {
-					for (ReleaseMetricsDto.VulnerabilityDto vuln : latestMetrics.getVulnerabilityDetails()) {
-						String key = vuln.vulnId() + FINDING_KEY_DELIMITER + vuln.purl();
-						FindingAttribution<ReleaseMetricsDto.VulnerabilityDto> fa = vulnMap.get(key);
-						if (fa != null) {
-							fa.presentIn.add(latestAttr);
-							log.debug("ORG-COMPARE: PASS2 {}/{}/{}: vuln {} PRESENT in latest",
-								componentName, getBranchName(latestRelease.getBranch()), latestRelease.getVersion(), vuln.vulnId());
-						}
-					}
-				}
-				
-				if (latestMetrics.getViolationDetails() != null) {
-					for (ReleaseMetricsDto.ViolationDto violation : latestMetrics.getViolationDetails()) {
-						String key = violation.type() + FINDING_KEY_DELIMITER + violation.purl();
-						FindingAttribution<ReleaseMetricsDto.ViolationDto> fa = violationMap.get(key);
-						if (fa != null) {
-							fa.presentIn.add(latestAttr);
-						}
-					}
-				}
-				
-				if (latestMetrics.getWeaknessDetails() != null) {
-					for (ReleaseMetricsDto.WeaknessDto weakness : latestMetrics.getWeaknessDetails()) {
-						String key = weakness.cweId() + FINDING_KEY_DELIMITER + weakness.location();
-						FindingAttribution<ReleaseMetricsDto.WeaknessDto> fa = weaknessMap.get(key);
-						if (fa != null) {
-							fa.presentIn.add(latestAttr);
-						}
-					}
-				}
+				trackAllPresentFindings(latestMetrics, maps, latestAttr);
 			}
 		}
 		
-		// Build final attributed findings with correct flags
-		List<VulnerabilityWithAttribution> vulnerabilities = vulnMap.entrySet().stream()
-			.map(e -> {
-				String key = e.getKey();
-				FindingAttribution<ReleaseMetricsDto.VulnerabilityDto> fa = e.getValue();
-				
-				// Build org-level context sets
-				Set<UUID> inheritedComponents = inheritedInComponents.getOrDefault(key, Collections.emptySet());
-				Set<UUID> appearedComponents = fa.appearedIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				Set<UUID> resolvedComponents = fa.resolvedIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				Set<UUID> presentComponents = fa.presentIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				
-				// isNetAppeared = appeared somewhere AND NOT resolved anywhere
-				boolean isNetAppeared = !fa.appearedIn.isEmpty() && fa.resolvedIn.isEmpty();
-				
-				// isStillPresent = present in any latest release AND not purely new
-				boolean isStillPresent = !fa.presentIn.isEmpty() && !isNetAppeared;
-				
-				// isNetResolved = resolved somewhere AND not present in any latest release
-				boolean isNetResolved = !fa.resolvedIn.isEmpty() && fa.presentIn.isEmpty();
-				
-				int totalComponents = componentReleases.size();
-				// Categories are mutually exclusive with priority:
-				// fullyResolved > partiallyResolved > inheritedInAll > newToOrg
-				boolean isFullyResolved = resolvedComponents.size() > 0 && presentComponents.isEmpty();
-				boolean isPartiallyResolved = !isFullyResolved && resolvedComponents.size() > 0 && presentComponents.size() > 0;
-				boolean isInheritedInAllComponents = !isFullyResolved && !isPartiallyResolved && inheritedComponents.size() == totalComponents && totalComponents > 1;
-				boolean isNewToOrganization = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && inheritedComponents.isEmpty();
-				boolean wasPreviouslyReported = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && 
-					(inheritedComponents.size() > 0 || presentComponents.stream().anyMatch(c -> !appearedComponents.contains(c)));
-				
-				log.debug("ORG-COMPARE: FLAGS vuln {}: appearedIn=[{}], resolvedIn=[{}], presentIn=[{}], inherited={} -> category: new={}, partialRes={}, fullyRes={}, inherited={}, prevReported={}",
-					fa.finding.vulnId(),
-					fa.appearedIn.stream().map(a -> a.componentName() + "/" + a.releaseVersion()).collect(Collectors.joining(", ")),
-					fa.resolvedIn.stream().map(a -> a.componentName() + "/" + a.releaseVersion()).collect(Collectors.joining(", ")),
-					fa.presentIn.stream().map(a -> a.componentName() + "/" + a.branchName() + "/" + a.releaseVersion()).collect(Collectors.joining(", ")),
-					inheritedComponents.size(),
-					isNewToOrganization, isPartiallyResolved, isFullyResolved, isInheritedInAllComponents, wasPreviouslyReported);
-				
-				List<String> affectedComponentNames = fa.presentIn.stream()
-					.map(ComponentAttribution::componentName)
-					.distinct()
-					.collect(Collectors.toList());
-				
-				OrgLevelContext orgContext = new OrgLevelContext(
-					isNewToOrganization,
-					wasPreviouslyReported,
-					isPartiallyResolved,
-					isFullyResolved,
-					isInheritedInAllComponents,
-					presentComponents.size(),
-					affectedComponentNames
-				);
-				
-				return new VulnerabilityWithAttribution(
-					fa.finding.vulnId(),
-					fa.finding.severity() != null ? fa.finding.severity().name() : "UNKNOWN",
-					fa.finding.purl(),
-					fa.resolvedIn,
-					fa.appearedIn,
-					fa.presentIn,
-					isNetResolved,
-					isNetAppeared,
-					isStillPresent,
-					orgContext
-				);
-			})
-			.collect(Collectors.toList());
-		
-		List<ViolationWithAttribution> violations = violationMap.entrySet().stream()
-			.map(e -> {
-				String key = e.getKey();
-				FindingAttribution<ReleaseMetricsDto.ViolationDto> fa = e.getValue();
-				
-				Set<UUID> inheritedComponents = inheritedInComponents.getOrDefault(key, Collections.emptySet());
-				Set<UUID> appearedComponents = fa.appearedIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				Set<UUID> resolvedComponents = fa.resolvedIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				Set<UUID> presentComponents = fa.presentIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				
-				boolean isNetAppeared = !fa.appearedIn.isEmpty() && fa.resolvedIn.isEmpty();
-				boolean isStillPresent = !fa.presentIn.isEmpty() && !isNetAppeared;
-				boolean isNetResolved = !fa.resolvedIn.isEmpty() && fa.presentIn.isEmpty();
-				
-				int totalComponents = componentReleases.size();
-				// Categories are mutually exclusive with priority:
-				// fullyResolved > partiallyResolved > inheritedInAll > newToOrg
-				boolean isFullyResolved = resolvedComponents.size() > 0 && presentComponents.isEmpty();
-				boolean isPartiallyResolved = !isFullyResolved && resolvedComponents.size() > 0 && presentComponents.size() > 0;
-				boolean isInheritedInAllComponents = !isFullyResolved && !isPartiallyResolved && inheritedComponents.size() == totalComponents && totalComponents > 1;
-				boolean isNewToOrganization = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && inheritedComponents.isEmpty();
-				boolean wasPreviouslyReported = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && 
-					(inheritedComponents.size() > 0 || presentComponents.stream().anyMatch(c -> !appearedComponents.contains(c)));
-				
-				List<String> affectedComponentNames = fa.presentIn.stream()
-					.map(ComponentAttribution::componentName)
-					.distinct()
-					.collect(Collectors.toList());
-				
-				OrgLevelContext orgContext = new OrgLevelContext(
-					isNewToOrganization,
-					wasPreviouslyReported,
-					isPartiallyResolved,
-					isFullyResolved,
-					isInheritedInAllComponents,
-					presentComponents.size(),
-					affectedComponentNames
-				);
-				
-				return new ViolationWithAttribution(
-					fa.finding.type() != null ? fa.finding.type().name() : "UNKNOWN",
-					fa.finding.purl(),
-					fa.resolvedIn,
-					fa.appearedIn,
-					fa.presentIn,
-					isNetResolved,
-					isNetAppeared,
-					isStillPresent,
-					orgContext
-				);
-			})
-			.collect(Collectors.toList());
-		
-		List<WeaknessWithAttribution> weaknesses = weaknessMap.entrySet().stream()
-			.map(e -> {
-				String key = e.getKey();
-				FindingAttribution<ReleaseMetricsDto.WeaknessDto> fa = e.getValue();
-				
-				Set<UUID> inheritedComponents = inheritedInComponents.getOrDefault(key, Collections.emptySet());
-				Set<UUID> appearedComponents = fa.appearedIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				Set<UUID> resolvedComponents = fa.resolvedIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				Set<UUID> presentComponents = fa.presentIn.stream()
-					.map(ComponentAttribution::componentUuid)
-					.collect(Collectors.toSet());
-				
-				boolean isNetAppeared = !fa.appearedIn.isEmpty() && fa.resolvedIn.isEmpty();
-				boolean isStillPresent = !fa.presentIn.isEmpty() && !isNetAppeared;
-				boolean isNetResolved = !fa.resolvedIn.isEmpty() && fa.presentIn.isEmpty();
-				
-				int totalComponents = componentReleases.size();
-				// Categories are mutually exclusive with priority:
-				// fullyResolved > partiallyResolved > inheritedInAll > newToOrg
-				boolean isFullyResolved = resolvedComponents.size() > 0 && presentComponents.isEmpty();
-				boolean isPartiallyResolved = !isFullyResolved && resolvedComponents.size() > 0 && presentComponents.size() > 0;
-				boolean isInheritedInAllComponents = !isFullyResolved && !isPartiallyResolved && inheritedComponents.size() == totalComponents && totalComponents > 1;
-				boolean isNewToOrganization = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && inheritedComponents.isEmpty();
-				boolean wasPreviouslyReported = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && 
-					(inheritedComponents.size() > 0 || presentComponents.stream().anyMatch(c -> !appearedComponents.contains(c)));
-				
-				List<String> affectedComponentNames = fa.presentIn.stream()
-					.map(ComponentAttribution::componentName)
-					.distinct()
-					.collect(Collectors.toList());
-				
-				OrgLevelContext orgContext = new OrgLevelContext(
-					isNewToOrganization,
-					wasPreviouslyReported,
-					isPartiallyResolved,
-					isFullyResolved,
-					isInheritedInAllComponents,
-					presentComponents.size(),
-					affectedComponentNames
-				);
-				
-				return new WeaknessWithAttribution(
-					fa.finding.cweId(),
-					fa.finding.severity() != null ? fa.finding.severity().name() : "UNKNOWN",
-					fa.finding.location() != null ? fa.finding.location() : "",
-					fa.resolvedIn,
-					fa.appearedIn,
-					fa.presentIn,
-					isNetResolved,
-					isNetAppeared,
-					isStillPresent,
-					orgContext
-				);
-			})
-			.collect(Collectors.toList());
-		
-		int totalAppeared = (int) (vulnerabilities.stream().filter(v -> v.isNetAppeared()).count()
-			+ violations.stream().filter(v -> v.isNetAppeared()).count()
-			+ weaknesses.stream().filter(w -> w.isNetAppeared()).count());
-		
-		int totalResolved = (int) (vulnerabilities.stream().filter(v -> v.isNetResolved()).count()
-			+ violations.stream().filter(v -> v.isNetResolved()).count()
-			+ weaknesses.stream().filter(w -> w.isNetResolved()).count());
-		
-		log.debug("Org-level finding comparison complete - {} vulnerabilities, {} violations, {} weaknesses", 
-			vulnerabilities.size(), violations.size(), weaknesses.size());
-		
-		return new FindingChangesWithAttribution(
-			vulnerabilities, violations, weaknesses, 
-			totalAppeared, totalResolved);
-	}
-	
-	/**
-	 * Get branch name from UUID
-	 */
-	private String getBranchName(UUID branchUuid) {
-		if (branchUuid == null) return null;
-		return branchService.getBranchData(branchUuid)
-			.map(BranchData::getName)
-			.orElse(null);
+		// Build attributed findings using org-level flag computation
+		int totalComponents = componentReleases.size();
+		return buildAttributedFindings(maps,
+			(key, fa) -> computeOrgFindingFlags(key, fa, inheritedInComponents, totalComponents));
 	}
 	
 }
