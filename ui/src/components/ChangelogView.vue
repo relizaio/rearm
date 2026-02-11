@@ -66,6 +66,12 @@
             />
         </div>
         
+        <!-- ===== EMPTY STATE: no releases in date range ===== -->
+        <div v-if="!changelog" style="padding: 40px; text-align: center; color: #999;">
+            <p style="font-size: 16px; margin-bottom: 10px;">No changelog data available{{ isDateBased ? ' for the selected date range' : '' }}</p>
+            <p v-if="isDateBased" style="font-size: 14px;">Try selecting a different date range or check if there are any releases in this period</p>
+        </div>
+        
         <!-- ===== UNIFIED TABS: shared across all view modes ===== -->
         
         <n-tabs v-if="changelog" type="line" animated style="margin-top: 20px;">
