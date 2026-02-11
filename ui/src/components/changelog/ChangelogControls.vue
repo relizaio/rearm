@@ -74,13 +74,6 @@ const selectedPreset = ref('last7days')
 
 const presetOptions = [
 
-    { label: 'Last 5 minutes', value: 'last5minutes' },
-    { label: 'Last 10 minutes', value: 'last10minutes' },
-    { label: 'Last 15 minutes', value: 'last15minutes' },
-    { label: 'Last 1 hours', value: 'last1hour' },
-    { label: 'Last 3 hours', value: 'last3hours' },
-    { label: 'Last 6 hours', value: 'last6hours' },
-    { label: 'Last 12 hours', value: 'last12hours' },
     { label: 'Last 24 hours', value: 'last24hours' },
     { label: 'Last 3 days', value: 'last3days' },
     { label: 'Last 7 days', value: 'last7days' },
