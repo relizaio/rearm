@@ -343,8 +343,7 @@ public class ChangeLogService {
 		}
 		
 		if (releasesByBranch.isEmpty()) {
-			throw new RelizaException("No releases found for component " + componentUuid + 
-				" in date range " + dateFrom + " to " + dateTo);
+			return null;
 		}
 		
 		// For PRODUCT type, flatten releases and delegate to product-specific method
@@ -610,7 +609,7 @@ public class ChangeLogService {
 	 * Converts a DiffComponent to a structured ReleaseSbomArtifact.
 	 */
 	private static ReleaseSbomArtifact toReleaseSbomArtifact(AcollectionData.DiffComponent dc) {
-		return new ReleaseSbomArtifact(dc.purl(), nameFromPurl(dc.purl()), dc.version());
+		return new ReleaseSbomArtifact(dc.purl(), nameFromPurl(dc.purl()), dc.version() != null ? dc.version() : "");
 	}
 	
 	private static List<ReleaseVulnerabilityInfo> toReleaseVulnInfoList(

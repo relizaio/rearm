@@ -770,8 +770,21 @@ public class FindingComparisonService {
 			log.debug("ORG-COMPARE: Component {} has {} branches", componentName, releasesByBranch.size());
 			
 			// PHASES 0-1: Fork point comparisons + pairwise consecutive comparisons (uses cache from component-level)
+			Set<String> forkPointHandledFindings = new HashSet<>();
 			processForkPointAndPairwise(releasesByBranch, componentUuid, componentName,
-				DIRECT_METRICS_COMPARATOR, maps, new HashSet<>(), branchNameCache, forkPointCache);
+				DIRECT_METRICS_COMPARATOR, maps, forkPointHandledFindings, branchNameCache, forkPointCache);
+			
+			// PHASE 2: Track inherited findings from oldest release in each branch
+			// Without this, findings that existed before the date range never enter the maps,
+			// causing trackPresentFindings to silently skip them (resulting in 0 "Still Present")
+			for (List<ReleaseData> branchReleases : releasesByBranch.values()) {
+				if (branchReleases.isEmpty()) continue;
+				ReleaseData oldestRelease = branchReleases.get(branchReleases.size() - 1);
+				ReleaseMetricsDto oldestMetrics = oldestRelease.getMetrics();
+				if (oldestMetrics != null) {
+					trackAllInheritedFindings(oldestMetrics, maps, forkPointHandledFindings);
+				}
+			}
 			
 			// Track inherited findings per branch: existed in BOTH oldest AND newest release
 			for (List<ReleaseData> branchReleases : releasesByBranch.values()) {

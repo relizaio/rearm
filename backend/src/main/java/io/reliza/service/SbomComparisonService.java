@@ -40,6 +40,10 @@ public class SbomComparisonService {
 	
 	private static final String PURL_VERSION_DELIMITER = "@";
 	
+	private static String safeVersion(String version) {
+		return version != null ? version : "";
+	}
+	
 	/**
 	 * Aggregates SBOM changes from a list of acollections.
 	 * Pure function - no side effects, no data extraction.
@@ -94,7 +98,7 @@ public class SbomComparisonService {
 			// Process added components
 			if (changelog.added() != null) {
 				for (DiffComponent comp : changelog.added()) {
-					String key = comp.purl() + PURL_VERSION_DELIMITER + comp.version();
+					String key = comp.purl() + PURL_VERSION_DELIMITER + safeVersion(comp.version());
 					if (netRemoved.containsKey(key)) {
 						netRemoved.remove(key);
 					} else {
@@ -106,7 +110,7 @@ public class SbomComparisonService {
 			// Process removed components
 			if (changelog.removed() != null) {
 				for (DiffComponent comp : changelog.removed()) {
-					String key = comp.purl() + PURL_VERSION_DELIMITER + comp.version();
+					String key = comp.purl() + PURL_VERSION_DELIMITER + safeVersion(comp.version());
 					if (netAdded.containsKey(key)) {
 						netAdded.remove(key);
 					} else {
@@ -140,7 +144,7 @@ public class SbomComparisonService {
 			boolean isAdded) {
 		if (diffs == null) return;
 		for (DiffComponent artifact : diffs) {
-			String key = artifact.purl() + PURL_VERSION_DELIMITER + artifact.version();
+			String key = artifact.purl() + PURL_VERSION_DELIMITER + safeVersion(artifact.version());
 			ArtifactAttribution attr = artifactMap.computeIfAbsent(key, k -> new ArtifactAttribution(artifact));
 			if (isAdded) {
 				attr.addedIn.add(componentAttr);
@@ -191,7 +195,7 @@ public class SbomComparisonService {
 		
 		ArtifactAttribution(DiffComponent component) {
 			this.purl = component.purl();
-			this.version = component.version();
+			this.version = component.version() != null ? component.version() : "";
 			
 			// Extract name from purl
 			try {
