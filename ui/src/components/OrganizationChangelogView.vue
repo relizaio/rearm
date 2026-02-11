@@ -28,7 +28,7 @@
                                             :version="release.version"
                                             :lifecycle="release.lifecycle"
                                         />
-                                        <SbomChangesDisplay :sbom-changes="component.sbomChanges.find(s => s.releaseUuid === release.releaseUuid)" />
+                                        <SbomChangesDisplay :sbom-changes="release.sbomChanges" />
                                     </div>
                                 </div>
                             </div>
@@ -56,7 +56,7 @@
                                             :version="release.version"
                                             :lifecycle="release.lifecycle"
                                         />
-                                        <FindingChangesDisplay :finding-changes="component.findingChanges.find(f => f.releaseUuid === release.releaseUuid)" />
+                                        <FindingChangesDisplay :finding-changes="release.findingChanges" />
                                     </div>
                                 </div>
                             </div>
@@ -101,7 +101,8 @@ import {
     ComponentHeader,
     ReleaseHeader
 } from './changelog'
-import commonFunctions from '../utils/commonFunctions'
+import { fetchOrganizationChangelogByDate } from '../utils/changelogQueries'
+import type { OrganizationChangelog } from '../types/changelog-sealed'
 
 interface Props {
     orgUuid: string
@@ -115,9 +116,9 @@ const dateRange: Ref<[number, number]> = ref([
     Date.now()
 ])
 
-const aggregationType: Ref<string> = ref('AGGREGATED')
+const aggregationType: Ref<'NONE' | 'AGGREGATED'> = ref('AGGREGATED')
 const loading: Ref<boolean> = ref(false)
-const changelog: Ref<any> = ref(null)
+const changelog: Ref<OrganizationChangelog | null> = ref(null)
 
 const fetchChangelog = async () => {
     loading.value = true
@@ -130,11 +131,11 @@ const fetchChangelog = async () => {
             perspectiveUuid: props.perspectiveUuid,
             dateFrom,
             dateTo,
-            aggregated: aggregationType.value,
+            aggregated: aggregationType.value as 'NONE' | 'AGGREGATED',
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
         }
                 
-        const result = await commonFunctions.fetchOrganizationChangelog(params)
+        const result = await fetchOrganizationChangelogByDate(params)
         changelog.value = result
         
     } catch (error) {

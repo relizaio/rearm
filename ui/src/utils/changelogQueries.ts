@@ -4,11 +4,10 @@
 
 import { gql } from '@apollo/client/core'
 import graphqlClient from './graphql'
-import { ComponentChangelog, OrganizationChangelog, convertToLegacyFormat } from '../types/changelog-sealed'
+import { ComponentChangelog, OrganizationChangelog } from '../types/changelog-sealed'
 
-/**
- * GraphQL fragments for reusable field selections
- */
+// ========== GraphQL Field Fragments ==========
+
 const RELEASE_INFO_FRAGMENT = `
     __typename
     uuid
@@ -25,12 +24,72 @@ const CODE_COMMIT_FRAGMENT = `
     changeType
 `
 
-const RELEASE_CODE_CHANGES_FRAGMENT = `
+const RELEASE_SBOM_CHANGES_FRAGMENT = `
+    addedArtifacts {
+        purl
+        name
+        version
+    }
+    removedArtifacts {
+        purl
+        name
+        version
+    }
+`
+
+const RELEASE_FINDING_CHANGES_FRAGMENT = `
+    appearedCount
+    resolvedCount
+    appearedVulnerabilities {
+        vulnId
+        purl
+        severity
+        aliases {
+            aliasId
+        }
+    }
+    resolvedVulnerabilities {
+        vulnId
+        purl
+        severity
+        aliases {
+            aliasId
+        }
+    }
+    appearedViolations {
+        type
+        purl
+    }
+    resolvedViolations {
+        type
+        purl
+    }
+    appearedWeaknesses {
+        cweId
+        severity
+        ruleId
+        location
+    }
+    resolvedWeaknesses {
+        cweId
+        severity
+        ruleId
+        location
+    }
+`
+
+const NONE_RELEASE_CHANGES_FRAGMENT = `
     releaseUuid
     version
     lifecycle
     commits {
         ${CODE_COMMIT_FRAGMENT}
+    }
+    sbomChanges {
+        ${RELEASE_SBOM_CHANGES_FRAGMENT}
+    }
+    findingChanges {
+        ${RELEASE_FINDING_CHANGES_FRAGMENT}
     }
 `
 
@@ -39,20 +98,6 @@ const COMMITS_BY_TYPE_FRAGMENT = `
     commits {
         ${CODE_COMMIT_FRAGMENT}
     }
-`
-
-const RELEASE_SBOM_CHANGES_FRAGMENT = `
-    releaseUuid
-    addedArtifacts
-    removedArtifacts
-`
-
-const RELEASE_FINDING_CHANGES_FRAGMENT = `
-    releaseUuid
-    appearedCount
-    resolvedCount
-    appearedVulnerabilities
-    resolvedVulnerabilities
 `
 
 const COMPONENT_ATTRIBUTION_FRAGMENT = `
@@ -99,6 +144,9 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         vulnId
         purl
         severity
+        aliases {
+            aliasId
+        }
         isNetAppeared
         isNetResolved
         isStillPresent
@@ -136,6 +184,7 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
     }
     weaknesses {
         cweId
+        severity
         ruleId
         location
         isNetAppeared
@@ -156,9 +205,56 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
     }
 `
 
+// ========== Shared Component Changelog Fragments ==========
+
+const NONE_CHANGELOG_FIELDS = `
+    componentUuid
+    componentName
+    orgUuid
+    firstRelease {
+        ${RELEASE_INFO_FRAGMENT}
+    }
+    lastRelease {
+        ${RELEASE_INFO_FRAGMENT}
+    }
+    branches {
+        branchUuid
+        branchName
+        releases {
+            ${NONE_RELEASE_CHANGES_FRAGMENT}
+        }
+    }
+`
+
+const AGGREGATED_CHANGELOG_FIELDS = `
+    componentUuid
+    componentName
+    orgUuid
+    firstRelease {
+        ${RELEASE_INFO_FRAGMENT}
+    }
+    lastRelease {
+        ${RELEASE_INFO_FRAGMENT}
+    }
+    branches {
+        branchUuid
+        branchName
+        commitsByType {
+            ${COMMITS_BY_TYPE_FRAGMENT}
+        }
+    }
+    sbomChanges {
+        ${SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
+    }
+    findingChanges {
+        ${FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
+    }
+`
+
+// ========== Query Functions ==========
+
 /**
- * Fetch component changelog using the new sealed interface API
- * Returns either NoneChangelog or AggregatedChangelog based on aggregation type
+ * Fetch component changelog between two releases
  */
 export async function fetchComponentChangelog(params: {
     release1: string
@@ -185,208 +281,10 @@ export async function fetchComponentChangelog(params: {
                 ) {
                     __typename
                     ... on NoneChangelog {
-                        componentUuid
-                        componentName
-                        orgUuid
-                        firstRelease {
-                            __typename
-                            uuid
-                            version
-                            lifecycle
-                        }
-                        lastRelease {
-                            __typename
-                            uuid
-                            version
-                            lifecycle
-                        }
-                        branches {
-                            branchUuid
-                            branchName
-                            releases {
-                                releaseUuid
-                                version
-                                lifecycle
-                                commits {
-                                    commitId
-                                    commitUri
-                                    message
-                                    author
-                                    email
-                                    changeType
-                                }
-                            }
-                        }
-                        sbomChanges {
-                            releaseUuid
-                            addedArtifacts
-                            removedArtifacts
-                        }
-                        findingChanges {
-                            releaseUuid
-                            appearedCount
-                            resolvedCount
-                            appearedVulnerabilities
-                            resolvedVulnerabilities
-                        }
+                        ${NONE_CHANGELOG_FIELDS}
                     }
                     ... on AggregatedChangelog {
-                        componentUuid
-                        componentName
-                        orgUuid
-                        firstRelease {
-                            __typename
-                            uuid
-                            version
-                            lifecycle
-                        }
-                        lastRelease {
-                            __typename
-                            uuid
-                            version
-                            lifecycle
-                        }
-                        branches {
-                            branchUuid
-                            branchName
-                            commitsByType {
-                                changeType
-                                commits {
-                                    commitId
-                                    commitUri
-                                    message
-                                    author
-                                    email
-                                    changeType
-                                }
-                            }
-                        }
-                        aggregatedSbomChanges: sbomChanges {
-                            totalAdded
-                            totalRemoved
-                            artifacts {
-                                purl
-                                name
-                                version
-                                isNetAdded
-                                isNetRemoved
-                                addedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                removedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                            }
-                        }
-                        aggregatedFindingChanges: findingChanges {
-                            totalAppeared
-                            totalResolved
-                            vulnerabilities {
-                                vulnId
-                                purl
-                                severity
-                                isNetAppeared
-                                isNetResolved
-                                isStillPresent
-                                appearedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                resolvedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                presentIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                            }
-                            violations {
-                                type
-                                purl
-                                isNetAppeared
-                                isNetResolved
-                                isStillPresent
-                                appearedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                resolvedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                presentIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                            }
-                            weaknesses {
-                                cweId
-                                ruleId
-                                location
-                                isNetAppeared
-                                isNetResolved
-                                isStillPresent
-                                appearedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                resolvedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                presentIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                            }
-                        }
+                        ${AGGREGATED_CHANGELOG_FIELDS}
                     }
                 }
             }
@@ -401,36 +299,11 @@ export async function fetchComponentChangelog(params: {
         fetchPolicy: 'no-cache'
     })
 
-    const changelog = (response.data as any).componentChangelog
-    
-    // Normalize aliased fields for AggregatedChangelog
-    if (changelog.__typename === 'AggregatedChangelog') {
-        changelog.sbomChanges = changelog.aggregatedSbomChanges
-        changelog.findingChanges = changelog.aggregatedFindingChanges
-        delete changelog.aggregatedSbomChanges
-        delete changelog.aggregatedFindingChanges
-    }
-    
-    return changelog as ComponentChangelog
+    return (response.data as any).componentChangelog as ComponentChangelog
 }
 
 /**
- * Fetch component changelog and convert to legacy format for backward compatibility
- * This allows existing UI components to work without changes
- */
-export async function fetchComponentChangelogLegacy(params: {
-    release1: string
-    release2: string
-    org: string
-    aggregated: 'NONE' | 'AGGREGATED'
-    timeZone?: string
-}): Promise<any> {
-    const changelog = await fetchComponentChangelog(params)
-    return convertToLegacyFormat(changelog)
-}
-
-/**
- * Fetch component changelog by date range using the new sealed interface API
+ * Fetch component changelog by date range
  */
 export async function fetchComponentChangelogByDate(params: {
     componentUuid: string
@@ -463,208 +336,10 @@ export async function fetchComponentChangelogByDate(params: {
                 ) {
                     __typename
                     ... on NoneChangelog {
-                        componentUuid
-                        componentName
-                        orgUuid
-                        firstRelease {
-                            __typename
-                            uuid
-                            version
-                            lifecycle
-                        }
-                        lastRelease {
-                            __typename
-                            uuid
-                            version
-                            lifecycle
-                        }
-                        branches {
-                            branchUuid
-                            branchName
-                            releases {
-                                releaseUuid
-                                version
-                                lifecycle
-                                commits {
-                                    commitId
-                                    commitUri
-                                    message
-                                    author
-                                    email
-                                    changeType
-                                }
-                            }
-                        }
-                        sbomChanges {
-                            releaseUuid
-                            addedArtifacts
-                            removedArtifacts
-                        }
-                        findingChanges {
-                            releaseUuid
-                            appearedCount
-                            resolvedCount
-                            appearedVulnerabilities
-                            resolvedVulnerabilities
-                        }
+                        ${NONE_CHANGELOG_FIELDS}
                     }
                     ... on AggregatedChangelog {
-                        componentUuid
-                        componentName
-                        orgUuid
-                        firstRelease {
-                            __typename
-                            uuid
-                            version
-                            lifecycle
-                        }
-                        lastRelease {
-                            __typename
-                            uuid
-                            version
-                            lifecycle
-                        }
-                        branches {
-                            branchUuid
-                            branchName
-                            commitsByType {
-                                changeType
-                                commits {
-                                    commitId
-                                    commitUri
-                                    message
-                                    author
-                                    email
-                                    changeType
-                                }
-                            }
-                        }
-                        aggregatedSbomChanges: sbomChanges {
-                            totalAdded
-                            totalRemoved
-                            artifacts {
-                                purl
-                                name
-                                version
-                                isNetAdded
-                                isNetRemoved
-                                addedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                removedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                            }
-                        }
-                        aggregatedFindingChanges: findingChanges {
-                            totalAppeared
-                            totalResolved
-                            vulnerabilities {
-                                vulnId
-                                purl
-                                severity
-                                isNetAppeared
-                                isNetResolved
-                                isStillPresent
-                                appearedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                resolvedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                presentIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                            }
-                            violations {
-                                type
-                                purl
-                                isNetAppeared
-                                isNetResolved
-                                isStillPresent
-                                appearedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                resolvedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                presentIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                            }
-                            weaknesses {
-                                cweId
-                                ruleId
-                                location
-                                isNetAppeared
-                                isNetResolved
-                                isStillPresent
-                                appearedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                resolvedIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                                presentIn {
-                                    componentUuid
-                                    componentName
-                                    releaseUuid
-                                    releaseVersion
-                                    branchUuid
-                                    branchName
-                                }
-                            }
-                        }
+                        ${AGGREGATED_CHANGELOG_FIELDS}
                     }
                 }
             }
@@ -681,21 +356,11 @@ export async function fetchComponentChangelogByDate(params: {
         fetchPolicy: 'no-cache'
     })
 
-    const changelog = (response.data as any).componentChangelogByDate
-    
-    // Normalize aliased fields for AggregatedChangelog
-    if (changelog.__typename === 'AggregatedChangelog') {
-        changelog.sbomChanges = changelog.aggregatedSbomChanges
-        changelog.findingChanges = changelog.aggregatedFindingChanges
-        delete changelog.aggregatedSbomChanges
-        delete changelog.aggregatedFindingChanges
-    }
-    
-    return changelog as ComponentChangelog
+    return (response.data as any).componentChangelogByDate as ComponentChangelog
 }
 
 /**
- * Fetch organization changelog by date range using the new sealed interface API
+ * Fetch organization changelog by date range
  */
 export async function fetchOrganizationChangelogByDate(params: {
     orgUuid: string
@@ -731,28 +396,7 @@ export async function fetchOrganizationChangelogByDate(params: {
                         components {
                             __typename
                             ... on NoneChangelog {
-                                componentUuid
-                                componentName
-                                orgUuid
-                                firstRelease {
-                                    ${RELEASE_INFO_FRAGMENT}
-                                }
-                                lastRelease {
-                                    ${RELEASE_INFO_FRAGMENT}
-                                }
-                                branches {
-                                    branchUuid
-                                    branchName
-                                    releases {
-                                        ${RELEASE_CODE_CHANGES_FRAGMENT}
-                                    }
-                                }
-                                sbomChanges {
-                                    ${RELEASE_SBOM_CHANGES_FRAGMENT}
-                                }
-                                findingChanges {
-                                    ${RELEASE_FINDING_CHANGES_FRAGMENT}
-                                }
+                                ${NONE_CHANGELOG_FIELDS}
                             }
                         }
                     }
@@ -763,28 +407,7 @@ export async function fetchOrganizationChangelogByDate(params: {
                         components {
                             __typename
                             ... on AggregatedChangelog {
-                                componentUuid
-                                componentName
-                                orgUuid
-                                firstRelease {
-                                    ${RELEASE_INFO_FRAGMENT}
-                                }
-                                lastRelease {
-                                    ${RELEASE_INFO_FRAGMENT}
-                                }
-                                branches {
-                                    branchUuid
-                                    branchName
-                                    commitsByType {
-                                        ${COMMITS_BY_TYPE_FRAGMENT}
-                                    }
-                                }
-                                aggregatedSbomChanges: sbomChanges {
-                                    ${SBOM_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
-                                }
-                                aggregatedFindingChanges: findingChanges {
-                                    ${FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT}
-                                }
+                                ${AGGREGATED_CHANGELOG_FIELDS}
                             }
                         }
                         sbomChanges {
@@ -808,31 +431,5 @@ export async function fetchOrganizationChangelogByDate(params: {
         fetchPolicy: 'no-cache'
     })
 
-    const orgChangelog = (response.data as any).organizationChangelogByDate
-    
-    // Normalize aliased fields in nested components for AggregatedOrganizationChangelog
-    if (orgChangelog.__typename === 'AggregatedOrganizationChangelog' && orgChangelog.components) {
-        orgChangelog.components.forEach((component: any) => {
-            if (component.__typename === 'AggregatedChangelog') {
-                if (component.aggregatedSbomChanges) {
-                    component.sbomChanges = component.aggregatedSbomChanges
-                    delete component.aggregatedSbomChanges
-                }
-                if (component.aggregatedFindingChanges) {
-                    component.findingChanges = component.aggregatedFindingChanges
-                    delete component.aggregatedFindingChanges
-                }
-            }
-        })
-    }
-    
-    return orgChangelog as OrganizationChangelog
-}
-
-/**
- * Type guard to check if response is from new API
- */
-export function isNewChangelogFormat(data: any): data is ComponentChangelog {
-    return data && typeof data.__typename === 'string' && 
-           (data.__typename === 'NoneChangelog' || data.__typename === 'AggregatedChangelog')
+    return (response.data as any).organizationChangelogByDate as OrganizationChangelog
 }

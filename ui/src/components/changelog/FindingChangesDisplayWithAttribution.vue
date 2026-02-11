@@ -13,150 +13,45 @@
                 </n-tag>
             </div>
             
-            <!-- New Findings -->
-            <div v-if="newFindings.length > 0">
-                <h5 class="finding-new">New Findings ({{ newFindings.length }})</h5>
-                <ul>
-                    <li v-for="finding in newFindings" :key="getFindingKey(finding)">
-                        <span class="finding-row">
-                            <n-tag :type="getSeverityTagType(finding.severity)" :bordered="false" size="small" :class="'severity-' + (finding.severity || 'UNASSIGNED').toLowerCase()">
-                                {{ finding.severity || 'UNASSIGNED' }}
-                            </n-tag>
-                            <n-tag :type="getFindingTypeTagType(finding.type)" size="small">
-                                {{ finding.typeLabel }}
-                            </n-tag>
-                            <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
-                            <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
-                                <template #trigger>
-                                    <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
-                                </template>
-                                Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId"><span v-if="idx > 0">, </span><a v-if="getFindingUrl(alias.aliasId)" :href="getFindingUrl(alias.aliasId)!" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click.prevent="openExternalLink(getFindingUrl(alias.aliasId)!)">{{ alias.aliasId }}</a><span v-else>{{ alias.aliasId }}</span></template>
-                            </n-tooltip>
-                            <span class="in-label">in</span>
-                            <code>{{ finding.affectedComponent }}</code>
-                        </span>
-                        <div v-if="showAttribution" class="attribution">
-                            <span v-for="(seg, i) in getAppearedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
-                        </div>
-                    </li>
-                </ul>
-            </div>
+            <FindingListSection title="New Findings" title-class="finding-new" key-prefix="new" :findings="newFindings" :rich-aliases="true">
+                <template #attribution="{ finding }">
+                    <div v-if="showAttribution" class="attribution">
+                        <span v-for="(seg, i) in getAppearedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                    </div>
+                </template>
+            </FindingListSection>
 
-            <!-- Partially Resolved Findings (Org-level only) -->
-            <div v-if="isOrgLevelView && partiallyResolvedFindings.length > 0">
-                <h5 class="finding-partial">Partially Resolved ({{ partiallyResolvedFindings.length }})</h5>
-                <ul>
-                    <li v-for="finding in partiallyResolvedFindings" :key="getFindingKey(finding)">
-                        <span class="finding-row">
-                            <n-tag :type="getSeverityTagType(finding.severity)" :bordered="false" size="small" :class="'severity-' + (finding.severity || 'UNASSIGNED').toLowerCase()">
-                                {{ finding.severity || 'UNASSIGNED' }}
-                            </n-tag>
-                            <n-tag :type="getFindingTypeTagType(finding.type)" size="small">
-                                {{ finding.typeLabel }}
-                            </n-tag>
-                            <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
-                            <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
-                                <template #trigger>
-                                    <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
-                                </template>
-                                Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId"><span v-if="idx > 0">, </span><a v-if="getFindingUrl(alias.aliasId)" :href="getFindingUrl(alias.aliasId)!" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click.prevent="openExternalLink(getFindingUrl(alias.aliasId)!)">{{ alias.aliasId }}</a><span v-else>{{ alias.aliasId }}</span></template>
-                            </n-tooltip>
-                            <span class="in-label">in</span>
-                            <code>{{ finding.affectedComponent }}</code>
-                        </span>
-                        <div v-if="showAttribution" class="attribution">
-                            <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
-                        </div>
-                    </li>
-                </ul>
-            </div>
+            <FindingListSection v-if="isOrgLevelView" title="Partially Resolved" title-class="finding-partial" key-prefix="partial" :findings="partiallyResolvedFindings" :rich-aliases="true">
+                <template #attribution="{ finding }">
+                    <div v-if="showAttribution" class="attribution">
+                        <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                    </div>
+                </template>
+            </FindingListSection>
 
-            <!-- Inherited Technical Debt (Org-level only, conditional display) -->
-            <div v-if="isOrgLevelView && inheritedTechnicalDebtFindings.length > 0">
-                <h5 class="finding-inherited">Inherited Technical Debt ({{ inheritedTechnicalDebtFindings.length }})</h5>
-                <ul>
-                    <li v-for="finding in inheritedTechnicalDebtFindings" :key="getFindingKey(finding)">
-                        <span class="finding-row">
-                            <n-tag :type="getSeverityTagType(finding.severity)" :bordered="false" size="small" :class="'severity-' + (finding.severity || 'UNASSIGNED').toLowerCase()">
-                                {{ finding.severity || 'UNASSIGNED' }}
-                            </n-tag>
-                            <n-tag :type="getFindingTypeTagType(finding.type)" size="small">
-                                {{ finding.typeLabel }}
-                            </n-tag>
-                            <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
-                            <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
-                                <template #trigger>
-                                    <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
-                                </template>
-                                Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId"><span v-if="idx > 0">, </span><a v-if="getFindingUrl(alias.aliasId)" :href="getFindingUrl(alias.aliasId)!" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click.prevent="openExternalLink(getFindingUrl(alias.aliasId)!)">{{ alias.aliasId }}</a><span v-else>{{ alias.aliasId }}</span></template>
-                            </n-tooltip>
-                            <span class="in-label">in</span>
-                            <code>{{ finding.affectedComponent }}</code>
-                        </span>
-                        <div v-if="showAttribution" class="attribution">
-                            <span v-for="(seg, i) in getInheritedDebtContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
-                        </div>
-                    </li>
-                </ul>
-            </div>
+            <FindingListSection v-if="isOrgLevelView" title="Inherited Technical Debt" title-class="finding-inherited" key-prefix="inherited" :findings="inheritedTechnicalDebtFindings" :rich-aliases="true">
+                <template #attribution="{ finding }">
+                    <div v-if="showAttribution" class="attribution">
+                        <span v-for="(seg, i) in getInheritedDebtContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                    </div>
+                </template>
+            </FindingListSection>
 
-            <!-- Still Present Findings (Component-level only) -->
-            <div v-if="!isOrgLevelView && stillPresentFindings.length > 0">
-                <h5 class="finding-present">Still Present ({{ stillPresentFindings.length }})</h5>
-                <ul>
-                    <li v-for="finding in stillPresentFindings" :key="getFindingKey(finding)">
-                        <span class="finding-row">
-                            <n-tag :type="getSeverityTagType(finding.severity)" :bordered="false" size="small" :class="'severity-' + (finding.severity || 'UNASSIGNED').toLowerCase()">
-                                {{ finding.severity || 'UNASSIGNED' }}
-                            </n-tag>
-                            <n-tag :type="getFindingTypeTagType(finding.type)" size="small">
-                                {{ finding.typeLabel }}
-                            </n-tag>
-                            <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
-                            <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
-                                <template #trigger>
-                                    <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
-                                </template>
-                                Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId"><span v-if="idx > 0">, </span><a v-if="getFindingUrl(alias.aliasId)" :href="getFindingUrl(alias.aliasId)!" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click.prevent="openExternalLink(getFindingUrl(alias.aliasId)!)">{{ alias.aliasId }}</a><span v-else>{{ alias.aliasId }}</span></template>
-                            </n-tooltip>
-                            <span class="in-label">in</span>
-                            <code>{{ finding.affectedComponent }}</code>
-                        </span>
-                        <div v-if="showAttribution" class="attribution">
-                            <span v-for="(seg, i) in getStillPresentContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
-                        </div>
-                    </li>
-                </ul>
-            </div>
+            <FindingListSection v-if="!isOrgLevelView" title="Still Present" title-class="finding-present" key-prefix="present" :findings="stillPresentFindings" :rich-aliases="true">
+                <template #attribution="{ finding }">
+                    <div v-if="showAttribution" class="attribution">
+                        <span v-for="(seg, i) in getStillPresentContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                    </div>
+                </template>
+            </FindingListSection>
 
-            <!-- Resolved Findings -->
-            <div v-if="fullyResolvedFindings.length > 0">
-                <h5 class="finding-resolved">{{ isOrgLevelView ? 'Fully Resolved' : 'Resolved' }} ({{ fullyResolvedFindings.length }})</h5>
-                <ul>
-                    <li v-for="finding in fullyResolvedFindings" :key="getFindingKey(finding)">
-                        <span class="finding-row">
-                            <n-tag :type="getSeverityTagType(finding.severity)" :bordered="false" size="small" :class="'severity-' + (finding.severity || 'UNASSIGNED').toLowerCase()">
-                                {{ finding.severity || 'UNASSIGNED' }}
-                            </n-tag>
-                            <n-tag :type="getFindingTypeTagType(finding.type)" size="small">
-                                {{ finding.typeLabel }}
-                            </n-tag>
-                            <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
-                            <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
-                                <template #trigger>
-                                    <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
-                                </template>
-                                Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId"><span v-if="idx > 0">, </span><a v-if="getFindingUrl(alias.aliasId)" :href="getFindingUrl(alias.aliasId)!" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click.prevent="openExternalLink(getFindingUrl(alias.aliasId)!)">{{ alias.aliasId }}</a><span v-else>{{ alias.aliasId }}</span></template>
-                            </n-tooltip>
-                            <span class="in-label">in</span>
-                            <code>{{ finding.affectedComponent }}</code>
-                        </span>
-                        <div v-if="showAttribution" class="attribution">
-                            <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
-                        </div>
-                    </li>
-                </ul>
-            </div>
+            <FindingListSection :title="isOrgLevelView ? 'Fully Resolved' : 'Resolved'" title-class="finding-resolved" key-prefix="resolved" :findings="fullyResolvedFindings" :rich-aliases="true">
+                <template #attribution="{ finding }">
+                    <div v-if="showAttribution" class="attribution">
+                        <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
+                    </div>
+                </template>
+            </FindingListSection>
         </div>
         <div v-else class="empty-state">
             <div class="summary-tags">
@@ -170,9 +65,9 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
-import { NTag, NTooltip, NIcon } from 'naive-ui'
-import { Info20Regular } from '@vicons/fluent'
-import Swal from 'sweetalert2'
+import { NTag } from 'naive-ui'
+import FindingListSection from './FindingListSection.vue'
+import { getSeverityIndex } from '../../utils/findingUtils'
 import type { 
     FindingChangesWithAttribution,
     VulnerabilityWithAttribution,
@@ -209,14 +104,6 @@ type NormalizedFinding = {
     isNetResolved: boolean
     isStillPresent: boolean
     orgContext?: OrgLevelContext
-}
-
-const severityOrder = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
-
-const getSeverityIndex = (severity?: string) => {
-    if (!severity) return severityOrder.length
-    const index = severityOrder.indexOf(severity)
-    return index === -1 ? severityOrder.length : index
 }
 
 const sortBySeverity = (findings: NormalizedFinding[]) => {
@@ -260,6 +147,7 @@ const normalizeViolation = (violation: ViolationWithAttribution): NormalizedFind
 const normalizeWeakness = (weakness: WeaknessWithAttribution): NormalizedFinding => ({
     findingId: weakness.cweId || weakness.ruleId || '',
     affectedComponent: weakness.location,
+    severity: weakness.severity || undefined,
     type: 'WEAKNESS',
     typeLabel: 'WEAKNESS',
     appearedIn: weakness.appearedIn,
@@ -353,80 +241,6 @@ function getFindingKey(finding: NormalizedFinding): string {
     return `${finding.type}-${finding.findingId}-${finding.affectedComponent}`
 }
 
-function getSeverityTagType(severity?: string): 'default' | 'error' | 'warning' | 'info' | 'success' | 'primary' {
-    switch (severity) {
-        case 'CRITICAL':
-        case 'HIGH':
-            return 'error'
-        case 'MEDIUM':
-            return 'warning'
-        case 'LOW':
-            return 'info'
-        case 'UNASSIGNED':
-            return 'default'
-        default:
-            return 'default'
-    }
-}
-
-function getFindingTypeTagType(type: string): 'default' | 'error' | 'warning' | 'info' | 'success' | 'primary' {
-    switch (type) {
-        case 'VULN':
-            return 'error'
-        case 'VIOLATION':
-            return 'warning'
-        case 'WEAKNESS':
-            return 'info'
-        default:
-            return 'default'
-    }
-}
-
-function getFindingUrl(id: string): string | null {
-    if (id.startsWith('ALPINE-CVE-') || id.startsWith('CVE-') || id.startsWith('GHSA-')) {
-        return `https://osv.dev/vulnerability/${id}`
-    }
-    if (id.startsWith('CWE-')) {
-        const raw = id.slice(4)
-        const num = String(parseInt(raw, 10))
-        if (num && num !== 'NaN') {
-            return `https://cwe.mitre.org/data/definitions/${num}.html`
-        }
-    }
-    return null
-}
-
-async function openExternalLink(href: string) {
-    try {
-        const LS_KEY = 'rearm_external_link_consent_until'
-        const now = Date.now()
-        const stored = localStorage.getItem(LS_KEY)
-        if (stored && Number(stored) > now) {
-            window.open(href, '_blank')
-            return
-        }
-        const result = await Swal.fire({
-            icon: 'info',
-            title: 'Open external link?\n',
-            text: 'This will open a vulnerability database resource external to ReARM. Please confirm that you want to proceed.',
-            showCancelButton: true,
-            confirmButtonText: 'Open',
-            cancelButtonText: 'Cancel',
-            input: 'checkbox',
-            inputValue: 0,
-            inputPlaceholder: "Don't ask me again for 15 days"
-        })
-        if (result.isConfirmed) {
-            if (result.value === 1) {
-                const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000
-                localStorage.setItem(LS_KEY, String(now + fifteenDaysMs))
-            }
-            window.open(href, '_blank')
-        }
-    } catch (err) {
-        window.open(href, '_blank')
-    }
-}
 
 // Helper to get earliest release from presentIn array
 function getEarliestRelease(finding: NormalizedFinding): { version: string, releaseUuid: string } | null {
@@ -560,144 +374,6 @@ function getInheritedDebtContextSegments(finding: NormalizedFinding): Attributio
 </script>
 
 <style scoped lang="scss">
-.finding-changes {
-    .summary-tags {
-        margin-bottom: 10px;
-    }
-    
-    .tag-spacing {
-        margin-left: 8px;
-    }
-    
-    .finding-new {
-        color: #d03050;
-        margin-top: 12px;
-        margin-bottom: 4px;
-        font-size: 0.9em;
-    }
-    
-    .finding-partial {
-        color: #f0a020;
-        margin-top: 12px;
-        margin-bottom: 4px;
-        font-size: 0.9em;
-    }
-    
-    .finding-inherited {
-        color: #c04080;
-        margin-top: 12px;
-        margin-bottom: 4px;
-        font-size: 0.9em;
-    }
-    
-    .finding-resolved {
-        color: #18a058;
-        margin-top: 12px;
-        margin-bottom: 4px;
-        font-size: 0.9em;
-    }
-    
-    .finding-present {
-        color: #2080f0;
-        margin-top: 12px;
-        margin-bottom: 4px;
-        font-size: 0.9em;
-    }
-    
-    .empty-state {
-        padding: 20px;
-        text-align: center;
-        color: #999;
-    }
-    
-    ul {
-        margin-top: 2px;
-        list-style: none;
-        padding-left: 0;
-    }
-    
-    li {
-        padding: 4px 0;
-        border-bottom: 1px solid #f0f0f0;
-        
-        &:last-child {
-            border-bottom: none;
-        }
-    }
-    
-    .finding-row {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-    }
-    
-    .in-label {
-        color: #999;
-        font-size: 0.85em;
-    }
-    
-    code {
-        background: #f5f5f5;
-        padding: 1px 5px;
-        border-radius: 3px;
-        font-size: 0.82em;
-        color: #666;
-    }
-    
-    .finding-link {
-        color: #2080f0;
-        text-decoration: none;
-        
-        &:hover {
-            text-decoration: underline;
-        }
-    }
-    
-    .alias-icon {
-        cursor: pointer;
-        color: #999;
-        vertical-align: middle;
-        
-        &:hover {
-            color: #2080f0;
-        }
-    }
-    
-    .alias-tooltip-link {
-        color: #70c0ff;
-        text-decoration: none;
-        
-        &:hover {
-            text-decoration: underline;
-        }
-    }
-    
-    .attribution {
-        padding-left: 16px;
-        font-size: 0.85em;
-        line-height: 1.4;
-    }
-    
-    .attribution-context {
-        color: #888;
-        font-style: italic;
-    }
-    
-    .release-link {
-        color: #2080f0;
-        text-decoration: none;
-        font-style: italic;
-        
-        &:hover {
-            text-decoration: underline;
-        }
-    }
+@import './finding-common';
 
-    // Severity color overrides for CRITICAL distinction
-    :deep(.severity-critical) {
-        background-color: #5c0011 !important;
-        color: #fff !important;
-    }
-}
 </style>

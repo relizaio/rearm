@@ -1,7 +1,6 @@
 import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
 import graphqlClient from './graphql'
-import graphqlQueries from './graphqlQueries'
 
 function getUserPermission (org : string, myUser: any) {
     let userPermission = {
@@ -51,68 +50,6 @@ function isAdmin (org : string, myUser : any ) : boolean {
     return isAdmin
 }
 
-
-/**
- * @deprecated Use fetchComponentChangelogLegacy from utils/changelogQueries.ts instead
- * This function uses the old GraphQL API and will be removed in a future version
- */
-async function fetchChangelogBetweenReleases (params : any) {
-    const response = await graphqlClient.query({
-        query: gql`
-            query FetchChangelogBetweenReleases($release1: ID!, $release2: ID!, $org: ID!, $aggregated: AggregationType, $timeZone: String) {
-                getChangelogBetweenReleases(release1: $release1, release2: $release2, orgUuid: $org, aggregated: $aggregated, timeZone: $timeZone) {
-                    ${graphqlQueries.ChangeLogGqlData}
-                }
-            }`,
-        variables: {
-            release1: params.release1,
-            release2: params.release2,
-            org: params.org,
-            aggregated: params.aggregated,
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-        }
-    })
-    return response.data.getChangelogBetweenReleases
-}
-
-/**
- * @deprecated Use fetchComponentChangelogByDate from utils/changelogQueries.ts instead
- * This function uses the old GraphQL API and will be removed in a future version
- */
-async function fetchComponentChangeLog (params : any) {
-    const response = await graphqlClient.query({
-        query: gql`
-            query FetchComponentChangelog($componentId: ID!, $branchId: ID, $orgId: ID!, $aggregated: AggregationType, $timeZone: String, $dateFrom: DateTime, $dateTo: DateTime) {
-                getComponentChangeLog(componentUuid: $componentId, branchUuid: $branchId, orgUuid: $orgId, aggregated: $aggregated, timeZone: $timeZone, dateFrom: $dateFrom, dateTo: $dateTo) {
-                    ${graphqlQueries.ChangeLogGqlData}
-                }
-            }`,
-        variables: {
-            componentId: params.componentId,
-            orgId: params.orgId,
-            branchId: params.branchId,
-            aggregated: params.aggregated,
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            dateFrom: params.dateFrom,
-            dateTo: params.dateTo
-        },
-        fetchPolicy: 'no-cache'
-    })
-    return response.data.getComponentChangeLog
-}
-
-async function fetchOrganizationChangelog (params : any) {
-    // Use the new sealed interface API from changelogQueries.ts
-    const { fetchOrganizationChangelogByDate } = await import('./changelogQueries')
-    return await fetchOrganizationChangelogByDate({
-        orgUuid: params.orgUuid,
-        perspectiveUuid: params.perspectiveUuid,
-        dateFrom: params.dateFrom,
-        dateTo: params.dateTo,
-        aggregated: params.aggregated,
-        timeZone: params.timeZone
-    })
-}
 
 function parseGraphQLError (err: string): string {
     return err.split(': ')[err.split(': ').length - 1]
@@ -311,9 +248,6 @@ export default {
     getGeneratedApiKeyHTML,
     getUserPermission,
     deepCopy,
-    fetchChangelogBetweenReleases,
-    fetchComponentChangeLog,
-    fetchOrganizationChangelog,
     isAdmin,
     isWritable,
     linkifyCommit,

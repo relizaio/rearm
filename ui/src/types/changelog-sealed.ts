@@ -27,33 +27,75 @@ export interface CodeCommit {
 }
 
 /**
- * Code changes for a single release (NONE mode)
+ * Structured SBOM artifact info for NONE mode display.
  */
-export interface ReleaseCodeChanges {
-    releaseUuid: string
-    version: string
-    lifecycle: string
-    commits: CodeCommit[]
+export interface ReleaseSbomArtifact {
+    purl: string
+    name?: string
+    version?: string
 }
 
 /**
  * SBOM changes for a single release (NONE mode)
  */
 export interface ReleaseSbomChanges {
-    releaseUuid: string
-    addedArtifacts: string[]
-    removedArtifacts: string[]
+    addedArtifacts: ReleaseSbomArtifact[]
+    removedArtifacts: ReleaseSbomArtifact[]
+}
+
+/**
+ * Lightweight vulnerability info for per-release NONE mode display.
+ */
+export interface ReleaseVulnerabilityInfo {
+    vulnId: string
+    purl?: string
+    severity?: string
+    aliases?: { aliasId: string }[]
+}
+
+/**
+ * Lightweight violation info for per-release NONE mode display.
+ */
+export interface ReleaseViolationInfo {
+    type: string
+    purl?: string
+}
+
+/**
+ * Lightweight weakness info for per-release NONE mode display.
+ */
+export interface ReleaseWeaknessInfo {
+    cweId: string
+    severity?: string
+    ruleId?: string
+    location?: string
 }
 
 /**
  * Finding changes for a single release (NONE mode)
  */
 export interface ReleaseFindingChanges {
-    releaseUuid: string
     appearedCount: number
     resolvedCount: number
-    appearedVulnerabilities: string[]
-    resolvedVulnerabilities: string[]
+    appearedVulnerabilities: ReleaseVulnerabilityInfo[]
+    resolvedVulnerabilities: ReleaseVulnerabilityInfo[]
+    appearedViolations: ReleaseViolationInfo[]
+    resolvedViolations: ReleaseViolationInfo[]
+    appearedWeaknesses: ReleaseWeaknessInfo[]
+    resolvedWeaknesses: ReleaseWeaknessInfo[]
+}
+
+/**
+ * All changes for a single release (NONE mode).
+ * Embeds code, SBOM, and finding changes in one self-contained record.
+ */
+export interface NoneReleaseChanges {
+    releaseUuid: string
+    version: string
+    lifecycle: string
+    commits: CodeCommit[]
+    sbomChanges: ReleaseSbomChanges
+    findingChanges: ReleaseFindingChanges
 }
 
 /**
@@ -62,7 +104,7 @@ export interface ReleaseFindingChanges {
 export interface NoneBranchChanges {
     branchUuid: string
     branchName: string
-    releases: ReleaseCodeChanges[]
+    releases: NoneReleaseChanges[]
 }
 
 /**
@@ -93,8 +135,6 @@ export interface NoneChangelog {
     firstRelease: ReleaseInfo
     lastRelease: ReleaseInfo
     branches: NoneBranchChanges[]
-    sbomChanges: ReleaseSbomChanges[]
-    findingChanges: ReleaseFindingChanges[]
 }
 
 /**
@@ -174,91 +214,3 @@ export function isAggregatedOrganizationChangelog(changelog: OrganizationChangel
     return changelog.__typename === 'AggregatedOrganizationChangelog'
 }
 
-/**
- * Helper to convert new sealed interface format to legacy format for backward compatibility
- * This allows existing UI components to work with the new API without changes
- */
-export function convertToLegacyFormat(changelog: ComponentChangelog): any {
-    if (isNoneChangelog(changelog)) {
-        // NONE mode: Convert to legacy per-release format
-        return {
-            uuid: changelog.componentUuid,
-            name: changelog.componentName,
-            org: changelog.orgUuid,
-            firstRelease: changelog.firstRelease,
-            lastRelease: changelog.lastRelease,
-            branches: changelog.branches.map(branch => ({
-                uuid: branch.branchUuid,
-                name: branch.branchName,
-                releases: branch.releases.map(release => {
-                    // Find SBOM changes for this release
-                    const sbom = changelog.sbomChanges.find(s => s.releaseUuid === release.releaseUuid)
-                    // Find finding changes for this release
-                    const finding = changelog.findingChanges.find(f => f.releaseUuid === release.releaseUuid)
-                    
-                    // Group commits by type for legacy format
-                    const changesByType = new Map<string, CodeCommit[]>()
-                    release.commits.forEach(commit => {
-                        const type = commit.changeType || 'other'
-                        if (!changesByType.has(type)) {
-                            changesByType.set(type, [])
-                        }
-                        changesByType.get(type)!.push(commit)
-                    })
-                    
-                    return {
-                        uuid: release.releaseUuid,
-                        version: release.version,
-                        lifecycle: release.lifecycle,
-                        changes: Array.from(changesByType.entries()).map(([type, commits]) => ({
-                            changeType: type,
-                            commitRecords: commits.map(c => ({
-                                linkifiedText: c.message,
-                                rawText: c.message,
-                                commitAuthor: c.author,
-                                commitEmail: c.email
-                            }))
-                        })),
-                        sbomChanges: sbom ? {
-                            added: sbom.addedArtifacts.map(purl => ({ purl, version: '' })),
-                            removed: sbom.removedArtifacts.map(purl => ({ purl, version: '' }))
-                        } : null,
-                        findingChanges: finding ? {
-                            summary: {
-                                totalAppearedCount: finding.appearedCount,
-                                totalResolvedCount: finding.resolvedCount,
-                                netChange: finding.appearedCount - finding.resolvedCount
-                            },
-                            appearedVulnerabilities: finding.appearedVulnerabilities.map(id => ({ vulnId: id })),
-                            resolvedVulnerabilities: finding.resolvedVulnerabilities.map(id => ({ vulnId: id }))
-                        } : null
-                    }
-                })
-            }))
-        }
-    } else {
-        // AGGREGATED mode: Convert to legacy aggregated format
-        return {
-            uuid: changelog.componentUuid,
-            name: changelog.componentName,
-            org: changelog.orgUuid,
-            firstRelease: changelog.firstRelease,
-            lastRelease: changelog.lastRelease,
-            branches: changelog.branches.map(branch => ({
-                uuid: branch.branchUuid,
-                name: branch.branchName,
-                changes: branch.commitsByType.map(group => ({
-                    changeType: group.changeType,
-                    commitRecords: group.commits.map(c => ({
-                        linkifiedText: c.message,
-                        rawText: c.message,
-                        commitAuthor: c.author,
-                        commitEmail: c.email
-                    }))
-                }))
-            })),
-            sbomChanges: changelog.sbomChanges,
-            findingChanges: changelog.findingChanges
-        }
-    }
-}

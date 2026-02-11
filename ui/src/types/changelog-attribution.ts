@@ -13,7 +13,6 @@ export interface ComponentAttribution {
     releaseVersion: string
     branchUuid: string
     branchName: string | null
-    comparedToVersion: string | null
 }
 
 /**
@@ -89,8 +88,9 @@ export interface ViolationWithAttribution {
  */
 export interface WeaknessWithAttribution {
     cweId: string
-    location: string
+    severity: string | null
     ruleId: string | null
+    location: string
     resolvedIn: ComponentAttribution[]
     appearedIn: ComponentAttribution[]
     presentIn: ComponentAttribution[]
@@ -111,98 +111,3 @@ export interface FindingChangesWithAttribution {
     totalResolved: number
 }
 
-/**
- * Legacy types for backward compatibility during migration
- */
-export interface LegacySbomComponent {
-    purl: string
-    version: string
-}
-
-export interface LegacySbomChanges {
-    added?: LegacySbomComponent[]
-    removed?: LegacySbomComponent[]
-}
-
-export interface LegacyFindingChanges {
-    summary?: {
-        totalAppearedCount: number
-        totalResolvedCount: number
-        netChange: number
-    }
-    appearedVulnerabilities?: any[]
-    resolvedVulnerabilities?: any[]
-    appearedViolations?: any[]
-    resolvedViolations?: any[]
-    appearedWeaknesses?: any[]
-    resolvedWeaknesses?: any[]
-    severityChangedVulnerabilities?: any[]
-    severityChangedWeaknesses?: any[]
-}
-
-/**
- * Helper to convert legacy SBOM format to attribution format
- * (for backward compatibility if needed)
- */
-export function convertLegacySbomToAttribution(legacy: LegacySbomChanges): SbomChangesWithAttribution {
-    const artifacts: ArtifactWithAttribution[] = []
-    
-    // Convert added items
-    if (legacy.added) {
-        legacy.added.forEach(item => {
-            artifacts.push({
-                purl: item.purl,
-                name: extractNameFromPurl(item.purl),
-                version: item.version,
-                addedIn: [],
-                removedIn: [],
-                isNetAdded: true,
-                isNetRemoved: false
-            })
-        })
-    }
-    
-    // Convert removed items
-    if (legacy.removed) {
-        legacy.removed.forEach(item => {
-            artifacts.push({
-                purl: item.purl,
-                name: extractNameFromPurl(item.purl),
-                version: item.version,
-                addedIn: [],
-                removedIn: [],
-                isNetAdded: false,
-                isNetRemoved: true
-            })
-        })
-    }
-    
-    return {
-        artifacts,
-        totalAdded: legacy.added?.length || 0,
-        totalRemoved: legacy.removed?.length || 0
-    }
-}
-
-/**
- * Extract package name from purl
- */
-function extractNameFromPurl(purl: string): string {
-    if (!purl) return ''
-    
-    try {
-        // Remove pkg: prefix
-        const withoutPrefix = purl.startsWith('pkg:') ? purl.substring(4) : purl
-        
-        // Split by / to get the name part
-        const parts = withoutPrefix.split('/')
-        const namePart = parts[parts.length - 1]
-        
-        // Split by @ to remove version
-        const name = namePart.split('@')[0]
-        
-        return name
-    } catch {
-        return purl
-    }
-}

@@ -1,0 +1,146 @@
+.finding-changes {
+    .summary-tags {
+        margin-bottom: 10px;
+    }
+    
+    .tag-spacing {
+        margin-left: 8px;
+    }
+    
+    .finding-new {
+        color: #d03050;
+        margin-top: 12px;
+        margin-bottom: 4px;
+        font-size: 0.9em;
+    }
+    
+    .finding-resolved {
+        color: #18a058;
+        margin-top: 12px;
+        margin-bottom: 4px;
+        font-size: 0.9em;
+    }
+    
+    .finding-changed {
+        color: #f0a020;
+        margin-top: 12px;
+        margin-bottom: 4px;
+        font-size: 0.9em;
+    }
+    
+    .finding-partial {
+        color: #f0a020;
+        margin-top: 12px;
+        margin-bottom: 4px;
+        font-size: 0.9em;
+    }
+    
+    .finding-inherited {
+        color: #c04080;
+        margin-top: 12px;
+        margin-bottom: 4px;
+        font-size: 0.9em;
+    }
+    
+    .finding-present {
+        color: #2080f0;
+        margin-top: 12px;
+        margin-bottom: 4px;
+        font-size: 0.9em;
+    }
+    
+    .empty-state {
+        padding: 20px;
+        text-align: center;
+        color: #999;
+    }
+    
+    ul {
+        margin-top: 2px;
+        list-style: none;
+        padding-left: 0;
+    }
+    
+    li {
+        padding: 4px 0;
+        border-bottom: 1px solid #f0f0f0;
+        
+        &:last-child {
+            border-bottom: none;
+        }
+    }
+    
+    .finding-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    
+    .in-label {
+        color: #999;
+        font-size: 0.85em;
+    }
+    
+    code {
+        background: #f5f5f5;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 0.82em;
+        color: #666;
+    }
+    
+    .finding-link {
+        color: #2080f0;
+        text-decoration: none;
+        
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+    
+    .alias-icon {
+        cursor: pointer;
+        color: #999;
+        vertical-align: middle;
+        
+        &:hover {
+            color: #2080f0;
+        }
+    }
+    
+    .alias-tooltip-link {
+        color: #70c0ff;
+        text-decoration: none;
+        
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+    
+    .attribution {
+        padding-left: 16px;
+        font-size: 0.85em;
+        line-height: 1.4;
+    }
+    
+    .attribution-context {
+        color: #888;
+        font-style: italic;
+    }
+    
+    .release-link {
+        color: #2080f0;
+        text-decoration: none;
+        font-style: italic;
+        
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+
+    :deep(.severity-critical) {
+        background-color: #5c0011 !important;
+        color: #fff !important;
+    }
+}
