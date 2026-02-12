@@ -113,7 +113,7 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
             rowData.push({ text: row.type || '', ...rowStyle })
         }
         rowData.push(
-            { text: row.id || '', ...rowStyle },
+            { text: (row.type === 'Violation' && row.id === 'LICENSE' && row.details) ? row.details : (row.id || ''), ...rowStyle },
             { text: row.purl || row.location || '', ...rowStyle },
             { text: row.severity || '', ...rowStyle, color: getSeverityColor(row.severity) }
         )
