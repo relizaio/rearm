@@ -74,7 +74,13 @@
         
         <!-- ===== UNIFIED TABS: shared across all view modes ===== -->
         
-        <n-tabs v-if="changelog" type="line" animated style="margin-top: 20px;">
+        <div v-if="changelog" style="display: flex; justify-content: flex-end; margin-top: 16px;">
+            <n-button type="success" @click="handleExportPdf">
+                📄 Export PDF
+            </n-button>
+        </div>
+        
+        <n-tabs v-if="changelog" v-model:value="activeTab" type="line" animated style="margin-top: 4px;">
             <!-- Code / Component Changes tab -->
             <n-tab-pane name="code" :tab="codeTabLabel">
                 <SeverityFilter v-model:selectedSeverity="selectedSeverity" />
@@ -181,7 +187,8 @@ export default {
 </script>
 <script lang="ts" setup>
 import { Ref, ref, watch, computed } from 'vue'
-import { NTabs, NTabPane } from 'naive-ui'
+import { NTabs, NTabPane, NButton, useNotification } from 'naive-ui'
+import { useStore } from 'vuex'
 import { 
     FindingChangesDisplay,
     FindingChangesDisplayWithAttribution,
@@ -196,6 +203,8 @@ import {
     fetchComponentChangelog 
 } from '../utils/changelogQueries'
 import type { ComponentChangelog, NoneReleaseChanges, CodeCommit } from '../types/changelog-sealed'
+import { exportChangelogToPdf } from '../utils/changelogPdfExport'
+import type { ChangelogTab } from '../utils/changelogPdfExport'
 
 async function getComponentChangelog (org: string, aggregationType: string, component?: string,
     branch?: string): Promise<ComponentChangelog | null> {
@@ -309,6 +318,45 @@ watch(aggregationType, async() => {
 })
 
 const selectedSeverity : Ref<string> = ref('ALL')
+
+const activeTab = ref<string>('code')
+const store = useStore()
+const notification = useNotification()
+const myorg = computed(() => store.getters.myorg)
+
+function handleExportPdf() {
+    if (!changelog.value) return
+    
+    let pdfTitle = ''
+    if (changelog.value.componentName) {
+        pdfTitle = `${changelog.value.componentName} - Changelog`
+    } else {
+        pdfTitle = 'Component Changelog'
+    }
+    
+    let dateRangeStr = ''
+    if (isDateBased.value) {
+        const from = new Date(dateRange.value[0]).toLocaleDateString('en-CA')
+        const to = new Date(dateRange.value[1]).toLocaleDateString('en-CA')
+        dateRangeStr = `${from} to ${to}`
+    } else if (changelog.value.firstRelease && changelog.value.lastRelease) {
+        dateRangeStr = `${changelog.value.firstRelease.version} \u2192 ${changelog.value.lastRelease.version}`
+    }
+    
+    const result = exportChangelogToPdf({
+        title: pdfTitle,
+        orgName: myorg.value?.name || 'Unknown',
+        dateRange: dateRangeStr,
+        aggregationType: aggregationType.value as 'NONE' | 'AGGREGATED',
+        activeTab: activeTab.value as ChangelogTab,
+        changelog: changelog.value,
+        filenamePrefix: `changelog-${(changelog.value.componentName || 'component').toLowerCase().replace(/\s+/g, '-')}`
+    })
+    
+    if (!result.success) {
+        notification.warning({ content: result.message || 'Export failed', duration: 3000 })
+    }
+}
 
 </script>
 

@@ -11,7 +11,13 @@
         
         <n-spin :show="loading">
             <div v-if="changelog">
-                <n-tabs type="line" animated style="margin-top: 20px;">
+                <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+                    <n-button type="success" @click="handleExportPdf">
+                        📄 Export PDF
+                    </n-button>
+                </div>
+                
+                <n-tabs v-model:value="activeTab" type="line" animated style="margin-top: 4px;">
                     <n-tab-pane name="sbom" tab="📦 SBOM Changes">
                         <div v-if="aggregationType === 'NONE' && changelog.__typename === 'NoneOrganizationChangelog'">
                             <div v-for="component in changelog.components" :key="component.componentUuid">
@@ -91,8 +97,9 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { ref, onMounted, watch, Ref } from 'vue'
-import { NTabs, NTabPane, NSpin } from 'naive-ui'
+import { ref, onMounted, watch, Ref, computed } from 'vue'
+import { NTabs, NTabPane, NSpin, NButton, useNotification } from 'naive-ui'
+import { useStore } from 'vuex'
 import {
     ChangelogControls,
     FindingChangesDisplay,
@@ -103,6 +110,8 @@ import {
 } from './changelog'
 import { fetchOrganizationChangelogByDate } from '../utils/changelogQueries'
 import type { OrganizationChangelog } from '../types/changelog-sealed'
+import { exportChangelogToPdf } from '../utils/changelogPdfExport'
+import type { ChangelogTab } from '../utils/changelogPdfExport'
 
 interface Props {
     orgUuid: string
@@ -153,6 +162,33 @@ onMounted(() => {
 watch(aggregationType, () => {
     fetchChangelog()
 })
+
+const activeTab = ref<string>('sbom')
+const store = useStore()
+const notification = useNotification()
+const myorg = computed(() => store.getters.myorg)
+
+function handleExportPdf() {
+    if (!changelog.value) return
+    
+    const from = new Date(dateRange.value[0]).toLocaleDateString('en-CA')
+    const to = new Date(dateRange.value[1]).toLocaleDateString('en-CA')
+    const dateRangeStr = `${from} to ${to}`
+    
+    const result = exportChangelogToPdf({
+        title: 'Organization Changelog',
+        orgName: myorg.value?.name || 'Unknown',
+        dateRange: dateRangeStr,
+        aggregationType: aggregationType.value as 'NONE' | 'AGGREGATED',
+        activeTab: activeTab.value as ChangelogTab,
+        changelog: changelog.value,
+        filenamePrefix: 'org-changelog'
+    })
+    
+    if (!result.success) {
+        notification.warning({ content: result.message || 'Export failed', duration: 3000 })
+    }
+}
 </script>
 
 <style scoped lang="scss">
