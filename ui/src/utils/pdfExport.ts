@@ -52,7 +52,7 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         // Filter by type
         if (!types.includes(row.type)) return false
         // Filter by severity
-        const severity = row.severity || 'UNASSIGNED'
+        const severity = (!row.severity || row.severity === '-') ? 'UNASSIGNED' : row.severity
         if (!severities.includes(severity)) return false
         // Filter suppressed
         if (!includeSuppressed) {
