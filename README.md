@@ -13,18 +13,20 @@
 [![Discord](https://img.shields.io/discord/757425726143201370.svg?color=%237289da&label=Discord&logo=discord&logoColor=%237289da)](https://discord.gg/UTxjBf9juQ)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-blue.svg?logo=LinkedIn)](https://www.linkedin.com/company/relizaio/)
 
-# ReARM - The Evidence Store for Your Entire Supply Chain (SBOMs, xBOMs, Security Artifacts) - Community Edition
+# ReARM - Release-Level Supply Chain Evidence Platform - Community Edition
+
+### ReARM stores and manages SBOMs, xBOMs, SAST / DAST scan results, Attestations, and other Security Artifacts
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
 View ReARM CE Demo made for SecTor 2025 Arsenal on [YouTube](https://www.youtube.com/watch?v=PNGxlvV-EsM) (23 minutes).
 
 ## About
-ReARM is an abbreviation for "Reliza's Artifact and Release Management". It is a DevSecOps and Supply Chain Security tool and SBOM/xBOM repository & evidence store to organize product releases with their metadata, including various Bills of Materials (SBOMs / xBOMs).
+ReARM is an abbreviation for "Reliza's Artifact and Release Management". It is a DevSecOps and Supply Chain Security tool and SBOM/xBOM repository & evidence store to organize product releases with their metadata, including various Bills of Materials (SBOMs / xBOMs) and security findings.
 
-ReARM maintains xBOM documents per each release. See [here](https://rearmhq.com/blog/rearm-comparison-with-traditional-sbom-tools) how ReARM's SBOM-related features compare with previous generation of tooling.
+ReARM maintains security documents and findings per each release. See [here](https://rearmhq.com/comparisons/) how ReARM compares with other tools
 
-ReARM stores xBOMs on OCI-compatible storage. ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
+ReARM stores xBOMs and other security artifacts on OCI-compatible storage. ReARM is developed by [Reliza](https://reliza.io). Read about project history on [our blog](https://rearmhq.com/blog/rearm-history).
 
 ReARM was the first project that introduced the principles of [Product-Component relationship within release metadata organization](https://worklifenotes.com/2024/10/08/release-metadata-organization-model/) which is seeing increasing market adoption.
 
@@ -45,7 +47,6 @@ ReARM was the first project that introduced the principles of [Product-Component
 ReARM is a xBOM management system that allows organizations to maintain compliance within various regulatory frameworks, including:
 - European [CRA regulations](https://eur-lex.europa.eu/eli/reg/2024/2847/oj), [BSI TR-03183](https://www.bsi.bund.de/EN/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/Technische-Richtlinien/TR-nach-Thema-sortiert/tr03183/tr-03183.html), implied use of xBOMs in [NIS2 Directive](https://eur-lex.europa.eu/eli/dir/2022/2555/oj/eng) and [DORA](https://eur-lex.europa.eu/eli/reg/2022/2554/oj/eng)
 - US executive order [14028](https://www.federalregister.gov/documents/2021/05/17/2021-10460/improving-the-nations-cybersecurity)
-- US OMB Memorandum [M-22-18](https://www.whitehouse.gov/wp-content/uploads/2022/09/M-22-18.pdf)
 - US Army [Memorandum](https://federalnewsnetwork.com/wp-content/uploads/2024/09/081624_Army_SBOM_Memo.pdf) on SBOMs
 - US executive order [14144](https://www.federalregister.gov/documents/2025/01/17/2025-01470/strengthening-and-promoting-innovation-in-the-nations-cybersecurity) (later [amended](https://rearmhq.com/blog/sbom-remains-attestations-out-amending-executive-order-14144))
 - Section 524B of the US [FD&C Act](https://www.govinfo.gov/content/pkg/COMPS-973/pdf/COMPS-973.pdf) and its [guidance](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/cybersecurity-medical-devices-quality-system-considerations-and-content-premarket-submissions)
@@ -66,6 +67,7 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 8. Release approval logic with triggers based on approvals and / or vulnerabilities or policy violations (Commercial Edition only)
 9. Marketing release workflow (Commercial Edition only)
 10. Component release-level alerts and changelog for changes in SBOM dependencies
+11. Finding audit (includes audit for vulnerabilities, weaknesses, policy violations)
 
 ## Future Capabilities (Medium-Term Roadmap)
 1. Improved VEX workflow
