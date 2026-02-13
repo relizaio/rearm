@@ -94,13 +94,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   const rawBom = bomInput.bomInput.bom;
   const processedBom = await processBomObj(rawBom);
 
-  const isValid = await validateBom(processedBom);
-  if (!isValid) {
-    throw new BomValidationError('BOM validation failed', {
-      field: 'bom',
-      constraint: 'must pass schema validation'
-    });
-  }
+  await validateBom(processedBom); // throws BomValidationError on failure
 
   // Step 2: Prepare metadata
   const rebomOptions: RebomOptions = bomInput.bomInput.rebomOptions ?? {};

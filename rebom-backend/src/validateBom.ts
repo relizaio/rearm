@@ -1,5 +1,6 @@
 import * as CDX from '@cyclonedx/cyclonedx-library'
 import { logger } from './logger';
+import { BomValidationError } from './types/errors';
 
 interface ValidatorMap {
     [key: string]: CDX.Validation.Types.Validator;
@@ -13,7 +14,11 @@ export default async function validateBom(data: any): Promise<boolean> {
     try {
         const validator: CDX.Validation.Types.Validator = validatorsMap[data.specVersion]
         if (!validator) {
-            throw new Error('Unsupported schema version: ' + data.specVersion)
+            throw new BomValidationError('Unsupported schema version: ' + data.specVersion, {
+                field: 'specVersion',
+                value: data.specVersion,
+                constraint: 'must be a supported CycloneDX spec version'
+            })
         }
         const validationErrors = await validator.validate(JSON.stringify(data))
         if (validationErrors === null) {
@@ -25,7 +30,11 @@ export default async function validateBom(data: any): Promise<boolean> {
             } catch {
                 // ignore parsing errors
             }
-            throw new Error('JSON Validation Error for BOM serialNumber=' + serialNumber + ':\n' + JSON.stringify(validationErrors))
+            throw new BomValidationError('JSON Validation Error for BOM serialNumber=' + serialNumber + ':\n' + JSON.stringify(validationErrors), {
+                field: 'bom',
+                constraint: 'must pass CycloneDX schema validation',
+                validationErrors: validationErrors
+            })
         }
     } catch (err) {
         if (err instanceof CDX.Validation.MissingOptionalDependencyError) {
