@@ -451,6 +451,43 @@ public class OrganizationService {
 		}
 	}
 
+	/**
+	 * Updates organization settings
+	 * @param orgUuid organization UUID
+	 * @param justificationMandatory whether justification is mandatory for vulnerability analysis
+	 * @param wu who updated
+	 * @return updated OrganizationData
+	 */
+	@Transactional
+	public OrganizationData updateSettings(@NonNull UUID orgUuid, Boolean justificationMandatory, @NonNull WhoUpdated wu) {
+		try {
+			OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
+					.orElseThrow(() -> new IllegalArgumentException("Organization not found: " + orgUuid));
+			
+			// Get or create settings object
+			OrganizationData.Settings settings = od.getSettings();
+			if (settings == null) {
+				settings = new OrganizationData.Settings();
+			}
+			
+			if (justificationMandatory != null) {
+				settings.setJustificationMandatory(justificationMandatory);
+			}
+			
+			od.setSettings(settings);
+			
+			Organization org = getOrganizationService.getOrganization(orgUuid)
+					.orElseThrow(() -> new IllegalStateException("Organization entity not found: " + orgUuid));
+			Organization savedOrg = saveOrganization(org, Utils.dataToRecord(od), wu);
+			return OrganizationData.orgDataFromDbRecord(savedOrg);
+		} catch (IllegalArgumentException e) {
+			throw e;
+		} catch (Exception e) {
+			log.error("Exception when updating organization settings", e);
+			throw new RuntimeException("Could not update organization settings");
+		}
+	}
+
 	private void validateRegexPatterns(List<String> patterns, String fieldName) {
 		if (patterns == null) {
 			return;

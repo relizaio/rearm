@@ -209,6 +209,12 @@ public class VulnAnalysisDataFetcher {
 		
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
 		
+		// Validate justification is provided when org setting requires it
+		if (ood.isPresent() && ood.get().getSettingsWithDefaults().isJustificationMandatory()
+				&& createDto.getJustification() == null) {
+			throw new RelizaException("Justification is required by organization settings");
+		}
+		
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		VulnAnalysisData vad = vulnAnalysisService.createVulnAnalysis(createDto, wu);
@@ -218,7 +224,7 @@ public class VulnAnalysisDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateVulnAnalysis")
-	public VulnAnalysisWebDto updateVulnAnalysis(DgsDataFetchingEnvironment dfe) {
+	public VulnAnalysisWebDto updateVulnAnalysis(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -235,6 +241,12 @@ public class VulnAnalysisDataFetcher {
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(existing.getOrg());
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		
+		// Validate justification is provided when org setting requires it
+		if (ood.isPresent() && ood.get().getSettingsWithDefaults().isJustificationMandatory()
+				&& updateDto.getJustification() == null) {
+			throw new RelizaException("Justification is required by organization settings");
+		}
 		
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		

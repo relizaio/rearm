@@ -49,6 +49,17 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 
 	@Data
 	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class Settings {
+		@JsonProperty
+		private boolean justificationMandatory = false;
+		
+		public static Settings getDefault() {
+			return new Settings();
+		}
+	}
+
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class IgnoreViolation {
 		@JsonProperty
 		private List<String> licenseViolationRegexIgnore = new LinkedList<>();
@@ -102,6 +113,8 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	private Terminology terminology;
 	@JsonProperty
 	private IgnoreViolation ignoreViolation;
+	@JsonProperty
+	private Settings settings;
 
 
 	public void removeInvitee(String email, UUID whoInvited){
@@ -194,6 +207,14 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	@JsonIgnore
 	public Terminology getTerminologyWithDefaults() {
 		return terminology != null ? terminology : Terminology.getDefault();
+	}
+	
+	/**
+	 * Returns settings with defaults if not set
+	 */
+	@JsonIgnore
+	public Settings getSettingsWithDefaults() {
+		return settings != null ? settings : Settings.getDefault();
 	}
 	
 	/**

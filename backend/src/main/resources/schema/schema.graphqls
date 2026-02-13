@@ -164,6 +164,7 @@ type Mutation {
 	deleteApprovalRole(orgUuid: ID!, approvalRoleId: String!): Organization
 	updateOrganizationTerminology(orgUuid: ID!, terminology: TerminologyInput!): Organization
 	updateOrganizationIgnoreViolation(orgUuid: ID!, ignoreViolation: IgnoreViolationInput!): Organization
+	updateOrganizationSettings(orgUuid: ID!, settings: SettingsInput!): Organization
 	createApprovalEntry(approvalEntry: ApprovalEntryInput!): ApprovalEntry
 	archiveApprovalEntry(approvalEntryUuid: ID!): ApprovalEntry
 	createApprovalPolicy(approvalPolicy: ApprovalPolicyInput!): ApprovalPolicy
@@ -321,6 +322,7 @@ type Organization {
 	approvalRoles: [ApprovalRole]
 	terminology: Terminology
 	ignoreViolation: IgnoreViolation
+	settings: Settings
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
@@ -334,6 +336,10 @@ type IgnoreViolation {
 	licenseViolationRegexIgnore: [String]
 	securityViolationRegexIgnore: [String]
 	operationalViolationRegexIgnore: [String]
+}
+
+type Settings {
+	justificationMandatory: Boolean
 }
 
 type AdminOrganization {
@@ -1371,6 +1377,10 @@ input IgnoreViolationInput {
 	licenseViolationRegexIgnore: [String]
 	securityViolationRegexIgnore: [String]
 	operationalViolationRegexIgnore: [String]
+}
+
+input SettingsInput {
+	justificationMandatory: Boolean
 }
 
 input PermissionInput {

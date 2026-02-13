@@ -241,6 +241,22 @@ public class OrganizationDataFetcher {
 				securityViolationRegexIgnore, operationalViolationRegexIgnore, wu);
 	}
 	
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "updateOrganizationSettings")
+	public OrganizationData updateOrganizationSettings(
+			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("settings") Map<String, Object> settings) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		
+		Boolean justificationMandatory = settings != null ? (Boolean) settings.get("justificationMandatory") : null;
+		return organizationService.updateSettings(orgUuid, justificationMandatory, wu);
+	}
+	
 	private void validateRegexPatterns(List<String> patterns, String fieldName) throws RelizaException {
 		if (patterns == null) {
 			return;
