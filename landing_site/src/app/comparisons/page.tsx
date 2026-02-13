@@ -104,6 +104,47 @@ const sections: ComparisonSection[] = [
     ],
   },
   {
+    id: "rearm-vs-guac",
+    title: "ReARM vs GUAC",
+    intro: "GUAC (Graph for Understanding Artifact Composition) is an open-source project by OpenSSF that aggregates software security metadata into a graph database for querying. While both tools deal with supply chain data, they serve different purposes.",
+    leftLabel: "ReARM",
+    rightLabel: "GUAC",
+    points: [
+      {
+        left: "Release-centric evidence store: artifacts are stored per versioned release with full provenance, audit trail, and lifecycle management.",
+        right: "Graph-based aggregation engine: ingests metadata from multiple sources into a queryable knowledge graph.",
+      },
+      {
+        left: "Stores raw artifacts (SBOMs, VEX, VDR, SARIF, attestations, signatures) compressed for 10+ years with full traceability.",
+        right: "Ingests and normalizes metadata but does not preserve original raw artifacts.",
+      },
+      {
+        left: "Product-Component model with multi-level nesting, automated bundling, and configurable auto-integration engine.",
+        right: "Flat graph structure linking artifacts, packages, and vulnerabilities without a product/release hierarchy.",
+      },
+      {
+        left: "Built-in finding audit engine with scoped auditing (organization, product, component, branch, release levels).",
+        right: "Provides graph queries to explore relationships between artifacts and vulnerabilities but no built-in audit workflow.",
+      },
+      {
+        left: "Production-ready platform with managed service option (ReARM Pro), UI, approval workflows, and premium support.",
+        right: "Research-oriented project primarily offering a CLI and API. No managed service or built-in UI for end users.",
+      },
+      {
+        left: "Integrates with Dependency-Track for continuous vulnerability monitoring with proprietary deduplication and changelog tracking.",
+        right: "No continuous monitoring workflow.",
+      },
+      {
+        left: "Supports OWASP Transparency Exchange API (TEA) and VDR export in CycloneDX and PDF formats.",
+        right: "Focuses on GUAC ontology and CertifyVuln/CertifyGood graph predicates. No TEA or VDR export support.",
+      },
+      {
+        left: "SBOM enrichment and augmentation via Reliza's BEAR integration, storing enriched SBOMs alongside originals.",
+        right: "Integrates with multiple data sources (deps.dev, OSV, SLSA) for graph enrichment. Enriches graph data by correlating multiple sources but does not produce enriched SBOMs.",
+      },
+    ],
+  },
+  {
     id: "rearm-vs-sca-tools",
     title: "ReARM vs Traditional SCA Tools",
     intro: "Traditional Software Composition Analysis (SCA) tools like Semgrep, Snyk, Black Duck (Synopsys), Checkmarx, Mend (WhiteSource), and Sonatype focus on scanning and finding vulnerabilities. ReARM is not an SCA tool - it is a Release-Level Supply Chain Evidence Platform that integrates with SCA tools.",
