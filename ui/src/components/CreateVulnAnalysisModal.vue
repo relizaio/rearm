@@ -67,8 +67,8 @@
                 <n-select
                     v-model:value="formData.justification"
                     :options="justificationOptions"
-                    placeholder="Select justification (optional)"
-                    clearable
+                    :placeholder="justificationMandatory ? 'Select justification' : 'Select justification (optional)'"
+                    :clearable="!justificationMandatory"
                 />
             </n-form-item>
 
@@ -231,14 +231,25 @@ const severityOptions = [
     { label: 'Unassigned', value: 'UNASSIGNED' }
 ]
 
-const rules: FormRules = {
-    findingId: [{ required: true, message: 'Finding ID is required', trigger: 'blur' }],
-    findingType: [{ required: true, message: 'Finding type is required', trigger: 'change' }],
-    location: [{ required: true, message: 'Location is required', trigger: 'blur' }],
-    locationType: [{ required: true, message: 'Location type is required', trigger: 'change' }],
-    scope: [{ required: true, message: 'Scope is required', trigger: 'change' }],
-    state: [{ required: true, message: 'Analysis state is required', trigger: 'change' }]
-}
+const justificationMandatory = computed(() => {
+    const org = store.getters.orgById(props.orgUuid)
+    return org?.settings?.justificationMandatory === true
+})
+
+const rules = computed<FormRules>(() => {
+    const baseRules: FormRules = {
+        findingId: [{ required: true, message: 'Finding ID is required', trigger: 'blur' }],
+        findingType: [{ required: true, message: 'Finding type is required', trigger: 'change' }],
+        location: [{ required: true, message: 'Location is required', trigger: 'blur' }],
+        locationType: [{ required: true, message: 'Location type is required', trigger: 'change' }],
+        scope: [{ required: true, message: 'Scope is required', trigger: 'change' }],
+        state: [{ required: true, message: 'Analysis state is required', trigger: 'change' }]
+    }
+    if (justificationMandatory.value) {
+        baseRules.justification = [{ required: true, message: 'Justification is required', trigger: 'change' }]
+    }
+    return baseRules
+})
 
 // Helper function to set default scope based on available options
 const setDefaultScope = () => {

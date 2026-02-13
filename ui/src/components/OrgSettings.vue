@@ -698,6 +698,23 @@
                         </n-space>
                     </n-form>
                 </div>
+                <div class="adminSettingsBlock mt-4">
+                    <h5>Finding Analysis Settings</h5>
+                    <p class="text-muted">Configure requirements for vulnerability finding analysis creation.</p>
+                    
+                    <n-form>
+                        <n-form-item label="Justification Mandatory">
+                            <n-switch v-model:value="orgSettings.justificationMandatory" />
+                            <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
+                        </n-form-item>
+                        
+                        <n-space>
+                            <n-button type="primary" @click="saveOrgSettings" :loading="savingOrgSettings">
+                                Save Settings
+                            </n-button>
+                        </n-space>
+                    </n-form>
+                </div>
             </n-tab-pane>
             <n-tab-pane name="registry" tab="Registry" v-if="globalRegistryEnabled">
                 <div class="mt-4">
@@ -779,7 +796,7 @@
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
@@ -844,6 +861,7 @@ async function loadTabSpecificData (tabName: string) {
         loadPerspectives()
     } else if (tabName === "adminSettings") {
         loadIgnoreViolation()
+        loadOrgSettings()
     }
 }
 
@@ -891,6 +909,12 @@ const ignoreViolation = reactive({
     operationalViolationRegexIgnore: [] as string[]
 })
 const savingIgnoreViolation = ref(false)
+
+// Admin Settings - Organization Settings
+const orgSettings = reactive({
+    justificationMandatory: false
+})
+const savingOrgSettings = ref(false)
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
 const isGlobalAdmin = computed(() => myUser.value?.isGlobalAdmin === true)
@@ -2240,6 +2264,47 @@ async function saveIgnoreViolation() {
         notify('error', 'Save Failed', err.message || 'Failed to save violation ignore patterns.')
     } finally {
         savingIgnoreViolation.value = false
+    }
+}
+
+async function loadOrgSettings() {
+    const s = myorg.value?.settings
+    orgSettings.justificationMandatory = s?.justificationMandatory || false
+}
+
+async function saveOrgSettings() {
+    savingOrgSettings.value = true
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateOrganizationSettings($orgUuid: ID!, $settings: SettingsInput!) {
+                    updateOrganizationSettings(orgUuid: $orgUuid, settings: $settings) {
+                        uuid
+                        settings {
+                            justificationMandatory
+                        }
+                    }
+                }`,
+            variables: {
+                orgUuid: orgResolved.value,
+                settings: {
+                    justificationMandatory: orgSettings.justificationMandatory
+                }
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        const result = (resp.data as any)?.updateOrganizationSettings
+        if (result) {
+            store.commit('UPDATE_ORGANIZATION', result)
+            notify('success', 'Settings Saved', 'Organization settings updated successfully.')
+        } else {
+            notify('warning', 'Save Warning', 'Save completed but no response received.')
+        }
+    } catch (err: any) {
+        notify('error', 'Save Failed', err.message || 'Failed to save organization settings.')
+    } finally {
+        savingOrgSettings.value = false
     }
 }
 

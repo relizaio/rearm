@@ -513,6 +513,9 @@ const storeObject : any = {
                                     securityViolationRegexIgnore
                                     operationalViolationRegexIgnore
                                 }
+                                settings {
+                                    justificationMandatory
+                                }
                             }
                         }`,
                     fetchPolicy: 'no-cache'
