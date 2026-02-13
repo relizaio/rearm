@@ -9,6 +9,8 @@ import java.time.ZonedDateTime;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.commons.lang3.StringUtils;
+
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationContext;
@@ -31,6 +33,9 @@ public class DateDeserializer extends StdDeserializer<ZonedDateTime> {
 	    throws IOException, JsonProcessingException {
 	ZonedDateTime retValue = null;
 	String dateString = p.readValueAs(String.class);
+	if (StringUtils.isBlank(dateString)) {
+	    return null;
+	}
 	Matcher m = NO_COLON_PATTERN.matcher(dateString);
 	if (m.find()) {
 	    // inject colon
