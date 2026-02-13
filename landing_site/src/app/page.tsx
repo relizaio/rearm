@@ -13,7 +13,7 @@ export default function Home() {
           </div>
           <div className="col-12">
             <p className="mx-auto C1_text">
-              SBOMs, xBOMs and every other artifact - stored per release for 10+ years, versioned and audit-ready
+              Per-release SBOMs, xBOMs and every other artifact - stored for 10+ years, versioned and audit-ready
             </p>
           </div>
         </div>
@@ -117,16 +117,16 @@ export default function Home() {
           },
           {
             image: "rearm_analytics.png",
-            title: "Track Vulnerabilities and Violations across your Supply Chain",
+            title: "Know exact security posture of each release and changes over time",
             texts: [
               { text: "ReARM aggregates findings from Dependency-Track and other security tools into a unified view. Track vulnerabilities and policy violations across releases with scoped auditing, deduplication, and rich changelogs showing how your security posture evolves over time." },
             ],
           },
           {
             image: "create_component.png",
-            title: "Automated Versioning and Change Logs for your Releases",
+            title: "Get Automated Versioning and Changelogs for your Releases",
             texts: [
-              { text: "ReARM automates version bumping and changelog generation for every release. Choose your versioning schema, connect your CI pipeline, and ReARM handles the rest — tracking every artifact and evidence entry per release." },
+              { text: "ReARM automates version bumping and changelog generation for every release. ReARM provides changelogs for source code changes, SBOM component changes and security finding changes. Choose your versioning schema, connect your CI pipeline, and ReARM handles the rest - tracking every artifact and evidence entry per release." },
             ],
           },
           {
