@@ -1552,7 +1552,7 @@ input ArtifactInput {
 	displayIdentifier: String
 	downloadLinks: [LinkInput]
 	inventoryTypes: [InventoryType]
-	bomFormat: String
+	bomFormat: String @deprecated(reason: "Deprecated: bomFormat is now auto-detected from file content. This field is optional and will be removed in a future version.")
 	storedIn: String
 	tags: [TagRecordInput]
 	status: String

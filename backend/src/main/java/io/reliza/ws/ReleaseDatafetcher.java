@@ -830,13 +830,14 @@ public class ReleaseDatafetcher {
 		if(null == artDto.getDisplayIdentifier()){
 			validationErrors.add("Display Identifier is required.");
 		}
-		// if(artDto.getBomFormat())
+		// bomFormat is auto-detected from file content when a file is uploaded;
+		// only require it when no file is present (externally stored artifacts)
 		if(ArtifactType.BOM.equals(artDto.getType())
 			|| ArtifactType.VEX.equals(artDto.getType())
 			|| ArtifactType.VDR.equals(artDto.getType())
 			|| ArtifactType.ATTESTATION.equals(artDto.getType())
 		){
-			if(null == artDto.getBomFormat())
+			if(null == artDto.getBomFormat() && multipartFile == null)
 			{
 				validationErrors.add("Bom Format must be specified");
 			}

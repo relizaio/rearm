@@ -404,6 +404,12 @@ public class ArtifactService {
 		if (formatResolution != null) {
 			artifactDto.setSerializationFormat(formatResolution.serializationFormat());
 			artifactDto.setSpecVersion(formatResolution.specVersion());
+			if (artifactDto.getBomFormat() == null && formatResolution.bomFormat() != null) {
+				artifactDto.setBomFormat(formatResolution.bomFormat());
+				log.info("Auto-detected bomFormat={} from specVersion={}", formatResolution.bomFormat(), formatResolution.specVersion());
+			} else if (artifactDto.getBomFormat() != null) {
+				log.info("bomFormat parameter is deprecated and will be removed in a future version - format is now auto-detected from file content");
+			}
 		}
 		
 		validateBomSpecVersion(artifactDto);
@@ -1161,7 +1167,7 @@ public class ArtifactService {
 	/**
 	 * Result of artifact format resolution containing serialization format and optional spec version
 	 */
-	public record ArtifactFormatResolution(SerializationFormat serializationFormat, SpecVersion specVersion) {}
+	public record ArtifactFormatResolution(SerializationFormat serializationFormat, SpecVersion specVersion, BomFormat bomFormat) {}
 	
 	private static final Set<ArtifactType> RESOLVABLE_ARTIFACT_TYPES = Set.of(
 		ArtifactType.BOM,
@@ -1247,7 +1253,8 @@ public class ArtifactService {
 			log.warn("Could not read artifact file for format resolution", e);
 		}
 		
-		return new ArtifactFormatResolution(serializationFormat, specVersion);
+		BomFormat bomFormat = deriveBomFormatFromSpecVersion(specVersion);
+		return new ArtifactFormatResolution(serializationFormat, specVersion, bomFormat);
 	}
 	
 	/**
@@ -1314,6 +1321,19 @@ public class ArtifactService {
 			log.warn("Could not parse JSON for spec version resolution", e);
 		}
 		
+		return null;
+	}
+	
+	/**
+	 * Derives BomFormat from a detected SpecVersion.
+	 * Returns null if the SpecVersion does not map to a known BOM format (e.g. SARIF, CSAF).
+	 */
+	private BomFormat deriveBomFormatFromSpecVersion(SpecVersion specVersion) {
+		if (CYCLONEDX_SPEC_VERSIONS.contains(specVersion)) {
+			return BomFormat.CYCLONEDX;
+		} else if (SPDX_SPEC_VERSIONS.contains(specVersion)) {
+			return BomFormat.SPDX;
+		}
 		return null;
 	}
 	
