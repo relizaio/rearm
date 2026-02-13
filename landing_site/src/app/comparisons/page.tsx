@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     description: "See how ReARM compares to Dependency-Track, traditional SCA tools, and the differences between ReARM Pro and CE.",
     url: `${baseUrl}/comparisons/`,
     type: "website",
-    siteName: "ReARM - Supply Chain Evidence Store by Reliza",
+    siteName: "ReARM - Release-Level Supply Chain Evidence Platform by Reliza",
   },
 };
 
@@ -28,7 +28,7 @@ const sections: ComparisonSection[] = [
   {
     id: "rearm-vs-dependency-track",
     title: "ReARM vs Dependency-Track 4",
-    intro: "Dependency-Track is a great open-source tool for vulnerability analysis of SBOMs. ReARM integrates with Dependency-Track and builds on top of it, providing a comprehensive supply chain evidence store.",
+    intro: "Dependency-Track is a great open-source tool for vulnerability analysis of SBOMs. ReARM integrates with Dependency-Track and builds on top of it, providing a comprehensive Release-Level Supply Chain Evidence Platform.",
     leftLabel: "ReARM",
     rightLabel: "Dependency-Track 4",
     points: [
@@ -106,7 +106,7 @@ const sections: ComparisonSection[] = [
   {
     id: "rearm-vs-sca-tools",
     title: "ReARM vs Traditional SCA Tools",
-    intro: "Traditional Software Composition Analysis (SCA) tools like Semgrep, Snyk, Black Duck (Synopsys), Checkmarx, Mend (WhiteSource), and Sonatype focus on scanning and finding vulnerabilities. ReARM is not an SCA tool - it is a supply chain evidence store that integrates with SCA tools.",
+    intro: "Traditional Software Composition Analysis (SCA) tools like Semgrep, Snyk, Black Duck (Synopsys), Checkmarx, Mend (WhiteSource), and Sonatype focus on scanning and finding vulnerabilities. ReARM is not an SCA tool - it is a Release-Level Supply Chain Evidence Platform that integrates with SCA tools.",
     leftLabel: "ReARM",
     rightLabel: "SCA Tools (Semgrep, Snyk, Black Duck, Checkmarx, Mend, Sonatype)",
     points: [

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     description: "Frequently asked questions about ReARM pricing, infrastructure, and plans.",
     url: `${baseUrl}/pricing-faq/`,
     type: "website",
-    siteName: "ReARM - Supply Chain Evidence Store by Reliza",
+    siteName: "ReARM - Release-Level Supply Chain Evidence Platform by Reliza",
   },
 };
 

@@ -8,7 +8,7 @@ export default function Home() {
       <div className="container-fluid container1">
         <div className="row mx-auto" style={{ maxWidth: "925px" }}>
           <div className="col-12 mb-4">
-            <h1 className="C1_title">ReARM - Supply Chain Evidence Store</h1>
+            <h1 className="C1_title">ReARM - Release-Level Supply Chain Evidence Platform</h1>
           </div>
           <div className="col-12">
             <p className="mx-auto C1_text" style={{ maxWidth: "600px" }}>
