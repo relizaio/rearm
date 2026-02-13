@@ -51,16 +51,7 @@
                         v-model:value="artifact.type"
                         :options="artifactTypes" />
             </n-form-item>
-            <n-form-item 
-                        v-if="bomRequiredTypes.includes(artifact.type)"
-                        path='bomFormat'
-                        label='Bom Format'>
-                        <n-select
-                            v-model:value="artifact.bomFormat"
-                            :options="bomFormats" />
-            </n-form-item>
             <n-form-item
-                        v-if="!commonFunctions.isCycloneDXBomArtifact(artifact)"
                         path="version"
                         label="Artifact Version">
                 <n-input
@@ -404,10 +395,6 @@ const artifactTypes = artTypesResp.data.artifactTypes.map((t: string) => {
     }
 }).sort((a: {label: string}, b: {label: string}) => a.label.localeCompare(b.label))
 
-const bomFormats = [
-    {value: 'CYCLONEDX', label: 'CYCLONEDX'},
-    {value: 'SPDX', label: 'SPDX'},
-]
 
 
 
