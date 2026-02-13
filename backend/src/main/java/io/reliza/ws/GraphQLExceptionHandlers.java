@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.graphql.data.method.annotation.GraphQlExceptionHandler;
 
+import graphql.ErrorClassification;
 import graphql.GraphqlErrorBuilder;
 import graphql.GraphQLError;
 
@@ -32,7 +33,10 @@ public class GraphQLExceptionHandlers {
     @GraphQlExceptionHandler
     public GraphQLError handleReliza(RelizaException ex) {
         // Business error messages are considered safe to expose
-        return safeError(ex.getMessage());
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
     }
 
     @GraphQlExceptionHandler

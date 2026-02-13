@@ -130,8 +130,7 @@ public class RebomService {
                 // Throw specific exception based on error code
                 switch (code) {
                     case BOM_VALIDATION_ERROR:
-                        throw new RelizaException("BOM validation failed: " + message + 
-                            (details != null ? " - " + details : ""));
+                        throw new RelizaException("BOM validation failed: " + message);
                     case BOM_STORAGE_ERROR:
                         throw new RelizaException("BOM storage failed: " + message);
                     case BOM_NOT_FOUND:

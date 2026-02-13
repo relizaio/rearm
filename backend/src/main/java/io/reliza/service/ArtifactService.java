@@ -548,7 +548,12 @@ public class ArtifactService {
 		} catch (Exception e) {
 			log.error("BOM lifecycle processing failed for artifact {}: {}", 
 				artifactDto.getUuid(), e.getMessage(), e);
-			throw new RelizaException("BOM processing failed: " + e.getMessage());
+			// Unwrap RuntimeException to get the actual cause message (e.g. from rebom GraphQL errors)
+			Throwable cause = e;
+			while (cause.getCause() != null && cause.getCause() != cause) {
+				cause = cause.getCause();
+			}
+			throw new RelizaException("BOM processing failed: " + cause.getMessage());
 		}
 		
 		RebomResponse rebomResponse = lifecycleResult.rebomResponse();
