@@ -3,10 +3,10 @@
         <div class="instanceDisplayWrapper">
             <div class="instanceListColumn">
                 <h4 v-if="organization">Instances of {{organization.name}}</h4>
-                <vue-feather v-if="isWritableGeneral || isWritableSpawn" @click="showCreateInstanceModal = true" class="icons clickable" type="plus-circle" title="Add Instance" />
+                <n-icon v-if="isWritableGeneral || isWritableSpawn" @click="showCreateInstanceModal = true" class="icons clickable" title="Add Instance" size="24"><CirclePlus /></n-icon>
                 <n-popover trigger="hover" style="width: 300px;">
                     <template #trigger>
-                        <vue-feather :style="isFilterActivated ? 'color: red;' : ''" size="20" class="icons" type="filter" title="Filter" />
+                        <n-icon :style="isFilterActivated ? 'color: red;' : ''" size="20" class="icons" title="Filter"><Filter /></n-icon>
                     </template>
                     <div>Environment: 
                         <n-select
@@ -37,7 +37,7 @@
                     size="small" />
 
                 <h4 v-if="organization">Clusters of {{organization.name}}</h4>
-                <vue-feather v-if="isWritableGeneral || isWritableSpawn" @click="showCreateClusterModal = true" class="icons clickable" type="plus-circle" title="Add Cluster" />
+                <n-icon v-if="isWritableGeneral || isWritableSpawn" @click="showCreateClusterModal = true" class="icons clickable" title="Add Cluster" size="24"><CirclePlus /></n-icon>
                 <n-data-table
                     :columns="clusetrFields"
                     :data="clusters"
@@ -92,7 +92,8 @@ export default {
 import { ComputedRef, ref, Ref, computed, h, reactive } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NDataTable, NModal, NPopover, NTooltip, NSelect, DataTableBaseColumn, DataTableColumns, useNotification, NotificationType } from 'naive-ui'
+import { NButton, NDataTable, NModal, NPopover, NTooltip, NSelect, NIcon, DataTableBaseColumn, DataTableColumns, useNotification, NotificationType } from 'naive-ui'
+import { CirclePlus, Filter } from '@vicons/tabler'
 import InstanceView from '@/components/InstanceView.vue'
 import CreateInstance from '@/components/CreateInstance.vue'
 import commonFunctions from '@/utils/commonFunctions'

@@ -1,7 +1,7 @@
 <template>
     <div>
         <div class="giveUsAStar">
-            <a href="https://github.com/relizaio/rebom"><vue-feather type="github"/></a>
+            <a href="https://github.com/relizaio/rebom"><n-icon size="24"><BrandGithub /></n-icon></a>
         </div>
         <h1>Rebom - Catalog of Software Bills of Materials</h1>
         <div>
@@ -55,10 +55,10 @@
                 <td class="text-left">{{ b.version }}</td>
                 <td class="text-left">
                     <a :href="'/restapi/bomById/' + b.uuid" target="_blank" rel="noopener noreferrer" title="Open Bom in New Tab">
-                        <vue-feather type="eye"/>
+                        <n-icon size="20"><Eye /></n-icon>
                     </a>
                     <a :href="'/restapi/bomById/' + b.uuid + '?download=true'" target="_blank" rel="noopener noreferrer" title="Download Bom">
-                        <vue-feather type="download"/>
+                        <n-icon size="20"><Download /></n-icon>
                     </a>
                 </td>
             </tr>
@@ -77,7 +77,8 @@ export default {
 </script>
 <script lang="ts" setup>
 
-import { NForm, NInput, NButton, NInputGroup, NTable, FormInst } from 'naive-ui'
+import { NForm, NInput, NButton, NInputGroup, NTable, NIcon, FormInst } from 'naive-ui'
+import { BrandGithub, Eye, Download } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { ref } from 'vue';

@@ -3,14 +3,14 @@
         <div class="instanceView">
             <h5 v-if="updatedInstance">Instance: {{ updatedInstance.uri }}, Revision: {{ (props.revision === -1) ? 'Live' : props.revision }}
                 <a :href="'/api/manual/v1/instanceRevision/cyclonedxExport/' + instanceUuid + '/' + props.revision" target="_blank" rel="noopener noreferrer">
-                    <vue-feather class="clickable icons" type="download" title="Show as CycloneDX JSON" />
+                    <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20"><Download /></n-icon>
                 </a>
             </h5>
             <div v-if="updatedInstance" class="settingsBlock">
                 <h6>Environment: {{ updatedInstance.environment }}</h6>
                 <h6>Deployment Type: {{ updatedInstance.deploymentType }}</h6>
             </div>
-            <div>Agent Data: <vue-feather class="ml-1 clickable" type="info" @click="showAgentDataModal = true" title="Show Agent Data" /></div>
+            <div>Agent Data: <n-icon class="ml-1 clickable" @click="showAgentDataModal = true" title="Show Agent Data" size="20"><InfoCircle /></n-icon></div>
             <n-modal
                 v-model:show="showAgentDataModal"
                 preset="dialog"
@@ -98,24 +98,24 @@
                                     <a v-if="linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit)"
                                     :href="linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit)"
                                     target="_blank" rel="noopener noreferrer">
-                                        <vue-feather :id="'sce' + drl.index" type="git-commit"/>
+                                        <n-icon :id="'sce' + drl.index" size="20"><GitCommit /></n-icon>
                                     </a>
                                 </template>
                                 <span>{{ linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit) }}</span>
                                 <a v-if="linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit)"
                                     :href="linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit)"
                                     target="_blank" rel="noopener noreferrer">
-                                    <vue-feather type="external-link" title="Open Commit In New Tab" class="clickable icons" />
+                                    <n-icon title="Open Commit In New Tab" class="clickable icons" size="20"><ExternalLink /></n-icon>
                                 </a>
                             </n-tooltip>
                         </span>
                         <span v-if="drl.artifact !== 'Not Set'">
                             <n-tooltip trigger="hover" class="artifactTooltip">
                                 <template #trigger>
-                                    <vue-feather
+                                    <n-icon
                                         class="clickable icons"
                                         @click="copyToClipboard(drl.artifact.identifier + (drl.artifact.digests.length ?  '@' + drl.artifact.digests[0] : ''))"
-                                        type="box"/>
+                                        size="20"><Box /></n-icon>
                                 </template>
                                 {{ drl.artifact.identifier + (drl.artifact.digests.length ?  '@' + drl.artifact.digests[0] : '') }}
                             </n-tooltip>
@@ -172,7 +172,8 @@ export default {
 <script lang="ts" setup>
 import { ref, Ref, ComputedRef, computed } from 'vue'
 import { useStore } from 'vuex'
-import { NDropdown, NModal, NTooltip, NEllipsis, useNotification, NotificationType } from 'naive-ui'
+import { NDropdown, NModal, NTooltip, NEllipsis, NIcon, useNotification, NotificationType } from 'naive-ui'
+import { Download, InfoCircle, GitCommit, ExternalLink, Box } from '@vicons/tabler'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import ReleaseView from '@/components/ReleaseView.vue'

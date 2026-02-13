@@ -11,7 +11,7 @@
                             :options="vcsRepos" />
             </n-form-item>
             <div v-if="submitted"><b>Repository to add: </b> {{ vcsRepositoryName }} <a :href="'http://' + vcsRepositoryName" target="_blank" rel="noopener noreferrer">
-                    <vue-feather type="external-link" title="Open repository In New Tab" class="clickable icons" />
+                    <n-icon title="Open repository In New Tab" class="clickable icons" size="20"><ExternalLink /></n-icon>
                 </a>
             </div>
             <n-form-item>
@@ -45,7 +45,8 @@ export default {
 <script lang="ts" setup>
 import { ref, ComputedRef, computed } from 'vue'
 import { useStore } from 'vuex'
-import { NForm, NFormItem, NInput, NButton, NSelect } from 'naive-ui'
+import { NForm, NFormItem, NInput, NButton, NSelect, NIcon } from 'naive-ui'
+import { ExternalLink } from '@vicons/tabler'
 import CreateVcsRepository from './CreateVcsRepository.vue'
 import commonFunctions from '@/utils/commonFunctions'
 const props = defineProps<{

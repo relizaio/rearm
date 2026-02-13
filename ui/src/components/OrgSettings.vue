@@ -8,7 +8,7 @@
                     <n-space vertical>
                         <div class="row">
                             <div v-if="configuredIntegrations.includes('SLACK')">Slack Integration Configured
-                                <vue-feather @click="deleteIntegration('SLACK')" class="clickable" type="trash-2" />
+                                <n-icon @click="deleteIntegration('SLACK')" class="clickable" size="20"><Trash /></n-icon>
                             </div>
                             <div v-else><n-button @click="showOrgSettingsSlackIntegrationModal = true">Add Slack Integration</n-button></div>
                             <n-modal 
@@ -34,7 +34,7 @@
                         </div>
                         <div class="row pt-2">
                             <div v-if="configuredIntegrations.includes('MSTEAMS')">MS Teams integration configured
-                                <vue-feather @click="deleteIntegration('MSTEAMS')" class="clickable" type="trash-2" />
+                                <n-icon @click="deleteIntegration('MSTEAMS')" class="clickable" size="20"><Trash /></n-icon>
                             </div>
                             <div v-else><n-button @click="showOrgSettingsMsteamsIntegrationModal = true">Add MS Teams Integration</n-button></div>
                             <n-modal
@@ -61,7 +61,7 @@
                             <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')">
                                 <div>
                                     Dependency-Track integration configured
-                                    <vue-feather v-if="isOrgAdmin" @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" type="trash-2" />
+                                    <n-icon v-if="isOrgAdmin" @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" size="20"><Trash /></n-icon>
                                     <n-icon v-if="isOrgAdmin" class="clickable" size="24" title="Synchronize D-Track Projects" @click="syncDtrackProjects" style="margin-left: 8px; ">
                                         <Refresh />
                                     </n-icon>
@@ -267,7 +267,7 @@
                                 <n-gi :span="6">
                                     <n-input round clearable @input="filterInstances" :style="{ 'max-width': '90%' }" placeholder="Search" >
                                         <template #suffix>
-                                            <vue-feather type="search"/>
+                                            <n-icon size="16"><Search /></n-icon>
                                         </template>
                                     </n-input>  
                                 </n-gi>
@@ -396,8 +396,8 @@
                     <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys"
                         class="table-hover">
                     </n-data-table>
-                    <vue-feather v-if="isOrgAdmin" class="clickable" type="plus-circle" @click="genApiKey"
-                        title="Create Api Key" />
+                    <n-icon v-if="isOrgAdmin" class="clickable" @click="genApiKey"
+                        title="Create Api Key" size="24"><CirclePlus /></n-icon>
                     <n-modal
                         preset="dialog"
                         :show-icon="false"
@@ -578,10 +578,10 @@
                             <template #header>
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <span>Components and Products of Perspective: {{ selectedPerspectiveName }}</span>
-                                    <vue-feather v-if="isOrgAdmin && selectedPerspectiveType !== 'PRODUCT'" class="clickable" type="plus-circle"
-                                        @click="showAddComponentToPerspectiveModal = true" title="Add Component" />
-                                    <vue-feather v-if="isOrgAdmin && selectedPerspectiveType !== 'PRODUCT'" class="clickable" type="folder-plus"
-                                        @click="showAddProductToPerspectiveModal = true" title="Add Product" />
+                                    <n-icon v-if="isOrgAdmin && selectedPerspectiveType !== 'PRODUCT'" class="clickable"
+                                        @click="showAddComponentToPerspectiveModal = true" title="Add Component" size="24"><CirclePlus /></n-icon>
+                                    <n-icon v-if="isOrgAdmin && selectedPerspectiveType !== 'PRODUCT'" class="clickable"
+                                        @click="showAddProductToPerspectiveModal = true" title="Add Product" size="24"><FolderPlus /></n-icon>
                                 </div>
                             </template>
                             <n-data-table
@@ -722,13 +722,13 @@
                     <div v-if="!orgRegistry">
                         <div v-if="isOrgAdmin">
                             Enable Organization Registry :
-                            <vue-feather @click="enableRegistry()" class="clickable icons" type="package"
-                                title="Enable Organization Registry" />
+                            <n-icon @click="enableRegistry()" class="clickable icons"
+                                title="Enable Organization Registry" size="24"><Package /></n-icon>
                         </div>
                     </div>
                     <div v-else>Organization Registry Commands:
-                        <vue-feather @click="showRegistryCommands()" class="clickable icons" type="package"
-                            title="Show Organization Registry Commands" />
+                        <n-icon @click="showRegistryCommands()" class="clickable icons"
+                            title="Show Organization Registry Commands" size="24"><Package /></n-icon>
                     </div>
                     <n-modal 
                         v-model:show="showComponentRegistryModal"
@@ -801,7 +801,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh, Search, FolderPlus, Package } from '@vicons/tabler'
 import { Clean } from '@vicons/carbon'
 import { Info20Regular, Edit24Regular, DeleteDismiss24Regular, ArrowUpload24Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'

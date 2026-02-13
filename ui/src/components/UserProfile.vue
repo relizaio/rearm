@@ -7,10 +7,10 @@
                 <n-input id="userName" class="w-25" v-model:value="userName" />
             </n-form-item>
 
-            <vue-feather class="clickable versionIcon reject" v-if="userName !== myUser.name" type="x"
-                @click="userName = myUser.name" title="Discard Name Change" />
-            <vue-feather class="clickable versionIcon accept" v-if="userName !== myUser.name" type="check"
-                @click="updateUserName" title="Save Name" />
+            <n-icon class="clickable versionIcon reject" v-if="userName !== myUser.name"
+                @click="userName = myUser.name" title="Discard Name Change" size="20"><X /></n-icon>
+            <n-icon class="clickable versionIcon accept" v-if="userName !== myUser.name"
+                @click="updateUserName" title="Save Name" size="20"><Check /></n-icon>
         </div>
         <div class="mt-3">
             <a href="/kauth/realms/Reliza/account" target="_blank" rel="noopener">
@@ -42,26 +42,26 @@
             </n-modal>
         </div>
         <h4>Your Organizations
-            <vue-feather v-if="!(myUser.installationType === 'OSS' || (myUser.installationType === 'MANAGED_SERVICE' && myUser.permissions.permissions[0].type !== 'ADMIN'))" @click="showCreateOrgModal = true" class="clickable icons" type="plus-circle"
-                title="Create New Organization" style="margin-left: 8px; vertical-align: middle;" />
+            <n-icon v-if="!(myUser.installationType === 'OSS' || (myUser.installationType === 'MANAGED_SERVICE' && myUser.permissions.permissions[0].type !== 'ADMIN'))" @click="showCreateOrgModal = true" class="clickable icons"
+                title="Create New Organization" style="margin-left: 8px; vertical-align: middle;" size="24"><CirclePlus /></n-icon>
         </h4>
         <ul>
             <li v-for="organization in organizations" :key="organization.uuid">
                 {{ organization.name }}
                 &nbsp;
-                <vue-feather v-if="false" @click="genUserApiKey(organization.uuid)" class="clickable icons" type="unlock"
-                    title="Generate User API Key" />
-                <vue-feather v-if="false" @click="archiveOrganization(organization.uuid)" class="clickable icons" type="trash-2"
-                    title="Archive Organiztion" />
+                <n-icon v-if="false" @click="genUserApiKey(organization.uuid)" class="clickable icons"
+                    title="Generate User API Key" size="20"><LockOpen /></n-icon>
+                <n-icon v-if="false" @click="archiveOrganization(organization.uuid)" class="clickable icons"
+                    title="Archive Organiztion" size="20"><Trash /></n-icon>
                 <a v-if="false" :href="'/api/manual/v1/backup/' + organization.uuid" target="_blank"
-                    rel="noopener noreferrer"><vue-feather class="clickable icons" type="arrow-down"
-                        title="Backup Organiztion" /></a>
+                    rel="noopener noreferrer"><n-icon class="clickable icons"
+                        title="Backup Organiztion" size="20"><ArrowDown /></n-icon></a>
             </li>
         </ul>
         <div v-if="false" class="createOrg">
             Resotre Organization
-            <vue-feather @click="showRestoreOrgModal = true" class="clickable icons" type="arrow-up"
-                title="Restore Organiztion" />
+            <n-icon @click="showRestoreOrgModal = true" class="clickable icons"
+                title="Restore Organiztion" size="20"><ArrowUp /></n-icon>
         </div>
 
         <div v-if="false" style="margin-top: 4%;">
@@ -71,7 +71,7 @@
                 </NIcon>
             </h4>
             <span v-if="myUser.publicSshKeys && myUser.publicSshKeys.length">
-                SSH Key is set. <vue-feather class="clickable" type="trash" title="Delete SSH Key" @click="deleteSshKey" />
+                SSH Key is set. <n-icon class="clickable" title="Delete SSH Key" @click="deleteSshKey" size="20"><Trash /></n-icon>
             </span>
             <span v-else>
                 <n-button type="success" @click="showAddSshKeyModal = true">Add Public SSH Key</n-button>
@@ -113,7 +113,7 @@ import { NIcon, NCheckbox, NInput, NModal, NDataTable, NForm, NFormItem, NInputG
 import { ComputedRef, h, ref, Ref, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { Edit as EditIcon, Key } from '@vicons/tabler'
+import { Edit as EditIcon, Key, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
 import axios from '../utils/axios'
 import Swal from 'sweetalert2'
@@ -176,7 +176,7 @@ const emailFields: Ref<any> = ref([
     },
     // {
     //     // <template v-slot:cell(controls)="data">
-    //     //             <vue-feather @click="updateEmailModal(data.item.email)" class="clickable" title="Update Email" type="edit" />
+    //     //             <n-icon @click="updateEmailModal(data.item.email)" class="clickable" title="Update Email" size="20"><EditIcon /></n-icon>
     //     //         </template>
     //     key: 'controls',
     //     title: 'Manage',

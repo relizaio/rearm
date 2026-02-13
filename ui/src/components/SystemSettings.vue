@@ -9,7 +9,7 @@
                 <h4 class="mt-4">AWS Credentials: </h4>
                 
                 <div v-if="systemInfoIsSet && systemInfoIsSet.awsCredentialsIsSet">Aws Credentials Configured
-                    <vue-feather @click="showAwsCredentialsModal  = true" class="clickable" type="edit" title="Change AWS Credentials"/>
+                    <n-icon @click="showAwsCredentialsModal  = true" class="clickable" title="Change AWS Credentials" size="20"><Edit /></n-icon>
                 </div>
                 <div v-else><n-button @click="showAwsCredentialsModal = true">Add Aws Credentials</n-button></div>
                 
@@ -33,7 +33,7 @@
                 <h4 class="mt-4">Azure Credentials: </h4>
                 
                 <div v-if="systemInfoIsSet && systemInfoIsSet.azureCredentialsIsSet">Azure Credentials Configured
-                    <vue-feather @click="showAzureCredentialsModal  = true" class="clickable" type="edit" title="Change AWS Credentials"/>
+                    <n-icon @click="showAzureCredentialsModal  = true" class="clickable" title="Change AWS Credentials" size="20"><Edit /></n-icon>
                 </div>
                 <div v-else><n-button @click="showAzureCredentialsModal = true">Add Azure Credentials</n-button></div>
                 
@@ -65,7 +65,7 @@
                 <h4 class="mt-4">Email Sending Configuration: </h4>
                 
                 <div v-if="systemInfoIsSet && systemInfoIsSet.emailDetailsSet">Email Sending Configured
-                    <vue-feather @click="showEmailPropsModal = true" class="clickable" type="edit" title="Change Email Sending Configuration"/>
+                    <n-icon @click="showEmailPropsModal = true" class="clickable" title="Change Email Sending Configuration" size="20"><Edit /></n-icon>
                 </div>
                 <div v-else><n-button @click="showEmailPropsModal = true">Configure Sending Emails</n-button></div>
                 
@@ -120,7 +120,7 @@
                 <h4 class="mt-4">Default Organization: </h4>
                 
                 <div v-if="systemInfoIsSet && systemInfoIsSet.defaultOrgDetails && systemInfoIsSet.defaultOrgDetails.name"> {{ systemInfoIsSet.defaultOrgDetails.name }}
-                    <vue-feather @click="fetchAllOrganizations(); showDefaultOrgModal = true" class="clickable" type="edit" title="Change Default Organization"/>
+                    <n-icon @click="fetchAllOrganizations(); showDefaultOrgModal = true" class="clickable" title="Change Default Organization" size="20"><Edit /></n-icon>
                 </div>
                 <div v-else><n-button @click="fetchAllOrganizations(); showDefaultOrgModal = true">Set Default Organization</n-button></div>
                 
@@ -138,7 +138,7 @@
                 <h4 class="mt-4">Reef Details: </h4>
                 
                 <div v-if="systemInfoIsSet && systemInfoIsSet.reefTemplateId && systemInfoIsSet.reefSiloId">Reef Details Configured
-                    <vue-feather @click="showReefModal = true" class="clickable" type="edit" title="Change Reef Details"/>
+                    <n-icon @click="showReefModal = true" class="clickable" title="Change Reef Details" size="20"><Edit /></n-icon>
                 </div>
                 <div v-else><n-button @click="showReefModal = true">Add Reef Details</n-button></div>
                 
@@ -165,7 +165,8 @@
 
 <script lang="ts" setup>
 // @ is an alias to /src
-import { NInput, NSelect, NModal, NForm, NFormItem, NButton } from 'naive-ui'
+import { NInput, NSelect, NModal, NForm, NFormItem, NButton, NIcon } from 'naive-ui'
+import { Edit } from '@vicons/tabler'
 import { ComputedRef, ref, Ref, computed, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import commonFunctions from '@/utils/commonFunctions'

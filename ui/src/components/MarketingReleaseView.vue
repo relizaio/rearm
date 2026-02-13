@@ -93,7 +93,7 @@
                                 {{ updatedMarketingRelease.devReleaseDetails.version }}
                             </router-link>
                             <span v-else>Not Set</span>
-                            <vue-feather v-if="isWritable && updatedMarketingRelease.integrateType === 'TARGET' && updatedMarketingRelease.integrateBranch" type="edit" class="clickable versionIcon" @click="showSelectTargetIntegrateModal = true" title="Set Target Integration" />
+                            <n-icon v-if="isWritable && updatedMarketingRelease.integrateType === 'TARGET' && updatedMarketingRelease.integrateBranch" class="clickable versionIcon" @click="showSelectTargetIntegrateModal = true" title="Set Target Integration" size="20"><Edit /></n-icon>
                         </div>
                         <div class="versionSchemaBlock" v-if="isWritable">
                             <label>
@@ -184,7 +184,7 @@ import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { Info20Regular, Copy20Regular } from '@vicons/fluent'
-import { Box, CirclePlus, ClipboardCheck, Download, FileInvoice, GitCompare, Link, Trash, Upload } from '@vicons/tabler'
+import { Box, CirclePlus, ClipboardCheck, Download, Edit, FileInvoice, GitCompare, Link, Trash, Upload } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import type { SelectOption } from 'naive-ui'
 import { NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, DataTableColumns, NDropdown, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputGroup, NModal, NRadioButton, NRadioGroup, NSelect, NSpin, NSwitch, NTabPane, NTabs, NTag, NTooltip, NotificationType, useNotification } from 'naive-ui'

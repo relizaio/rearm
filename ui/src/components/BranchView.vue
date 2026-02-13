@@ -3,12 +3,20 @@
         <h5>{{ words.branchFirstUpper }}: {{ branchData.name }}</h5>
         <div class="branchControls">
             <div class="mainControls">
-                <vue-feather v-if="isWritable" @click="showCreateReleaseModal = true" class="clickable" type="plus-circle" title="Add Release" />
-                <vue-feather type="tool" @click="openBranchSettings" class="icons clickable" :title="words.branchFirstUpper + ' Settings'" />
-                <vue-feather type="arrow-right-circle" @click="openNextVersionModal" class="icons clickable" title='Set Next Version' />
+                <n-icon v-if="isWritable" @click="showCreateReleaseModal = true" class="clickable" title="Add Release" size="24" style="margin-left: 4px;">
+                    <CirclePlus />
+                </n-icon>
+                <n-icon @click="openBranchSettings" class="clickable" :title="words.branchFirstUpper + ' Settings'" size="24" style="margin-left: 4px;">
+                    <Tool />
+                </n-icon>
+                <n-icon @click="openNextVersionModal" class="clickable" title='Set Next Version' size="24" style="margin-left: 4px;">
+                    <ArrowForward />
+                </n-icon>
             </div>
             <div class="dangerControls">
-                <vue-feather v-if="isWritable && branchData.type !== 'BASE'" @click="archiveBranch" class="clickable" type="trash-2" :title="'Archive ' + words.branchFirstUpper" />
+                <n-icon v-if="isWritable && branchData.type !== 'BASE'" @click="archiveBranch" class="clickable" :title="'Archive ' + words.branchFirstUpper" size="24">
+                    <Trash />
+                </n-icon>
             </div>
         </div>
         <n-modal
@@ -130,8 +138,10 @@
                         </template>
                         Java regex patterns to automatically match components as dependencies. E.g., ^myapp-.* matches all components starting with "myapp-"
                     </n-tooltip>
-                    <vue-feather v-if="isWritable" class="clickable" type="plus-circle"
-                        @click="addDependencyPattern" title="Add Dependency Pattern" />
+                    <n-icon v-if="isWritable" class="clickable"
+                        @click="addDependencyPattern" title="Add Dependency Pattern" size="20" style="margin-left: 4px; vertical-align: middle;">
+                        <CirclePlus />
+                    </n-icon>
                 </p>
 
                 <div v-if="modifiedBranch.dependencyPatterns && modifiedBranch.dependencyPatterns.length">
@@ -152,17 +162,23 @@
                         </template>
                         Shows all dependencies including pattern-matched and manual ones. Use the buttons below to add dependencies or configure patterns above.
                     </n-tooltip>
-                    <vue-feather v-if="isWritable" class="clickable" type="plus-circle"
-                        @click="showAddComponentModal = true" title="Add Dependency" />
-                    <vue-feather v-if="isWritable && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable" type="trending-up"
-                        @click="triggerAutoIntegrate" title="Trigger Auto Integrate" />
+                    <n-icon v-if="isWritable" class="clickable"
+                        @click="showAddComponentModal = true" title="Add Dependency" size="20" style="margin-left: 4px; vertical-align: middle;">
+                        <CirclePlus />
+                    </n-icon>
+                    <n-icon v-if="isWritable && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable"
+                        @click="triggerAutoIntegrate" title="Trigger Auto Integrate" size="20" style="margin-left: 4px; vertical-align: middle;">
+                        <TrendingUp />
+                    </n-icon>
                 </p>
                 <div v-if="modifiedBranch.effectiveDependencies && modifiedBranch.effectiveDependencies.length">
                     <n-data-table :data="modifiedBranch.effectiveDependencies" :columns="effectiveDepTableFields" :row-key="(row: any) => row.component?.uuid" :row-class-name="getRowClassName" />
                 </div>
                 <div v-else class="empty-state">
                     <p style="text-align: center; padding: 40px; color: #999;">
-                        <vue-feather type="package" size="48" style="opacity: 0.3; margin-bottom: 10px;" />
+                        <n-icon size="48" style="opacity: 0.3; margin-bottom: 10px;">
+                            <Package />
+                        </n-icon>
                         <br />
                         <strong>No dependencies configured</strong>
                         <br />
@@ -221,13 +237,13 @@
                 <n-space>
                     <n-button type="success" @click="saveModifiedBranch">
                         <template #icon>
-                            <vue-feather type="check" />
+                            <n-icon><Check /></n-icon>
                         </template>
                         Save Changes
                     </n-button>
                     <n-button type="warning" @click="resetBranchSettings">
                         <template #icon>
-                            <vue-feather type="x" />
+                            <n-icon><X /></n-icon>
                         </template>
                         Reset Changes
                     </n-button>
@@ -354,13 +370,12 @@ import LinkVcs from './LinkVcs.vue'
 import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
-import { Edit, Eye, X, QuestionMark } from '@vicons/tabler'
+import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import { LayoutColumns, Filter, Copy, Trash, Check } from '@vicons/tabler'
 
 async function loadApprovalMatrix (org: string, resourceGroup: string) {
     let amxResponse = await graphqlClient.query({

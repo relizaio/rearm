@@ -297,14 +297,13 @@
                         <router-link :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }">
                             <Icon class="clickable" style="margin-left:10px;" size="16" title="Permanent Link"><Link/></Icon>
                         </router-link>
-                        <vue-feather v-if="isWritable && release.componentDetails.type === 'PRODUCT'"
-                            size="16px"
+                        <n-icon v-if="isWritable && release.componentDetails.type === 'PRODUCT'"
+                            size="16"
                             class="clickable icons versionIcon"
-                            type="copy"
                             :title="'Create ' + words.branchFirstUpper + ' From Release'"
                             @click="cloneReleaseToFs(releaseUuid, release.version)"
                             style="margin-left:10px;"
-                        />
+                        ><Copy /></n-icon>
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                     </n-gi>
                     <n-gi span="2">
@@ -686,7 +685,7 @@ import graphqlClient from '../utils/graphql'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { CirclePlus, ClipboardCheck, Download, Edit, GitCompare, Link, Trash, Refresh } from '@vicons/tabler'
+import { CirclePlus, ClipboardCheck, Copy, Download, Edit, GitCompare, Link, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'

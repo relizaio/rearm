@@ -4,7 +4,7 @@
         <!-- <div class="historyHeader historyList">
             <div>
                 Revision
-                <vue-feather @click="compareMode = !compareMode" size="20" class="icons clickable" type="columns" title="Compare Instances" />
+                <n-icon @click="compareMode = !compareMode" size="20" class="icons clickable" title="Compare Instances"><LayoutColumns /></n-icon>
             </div>
             <div>Date</div>
             <div>Updated By</div>
@@ -26,9 +26,9 @@
             <div>{{ h.type }}</div>
             <div>
                 <a :href="'/api/manual/v1/instanceRevision/cyclonedxExport/' + h.instance + '/' + h.revision" target="_blank" rel="noopener noreferrer">
-                    <vue-feather class="clickable icons" type="download" title="Show as CycloneDX JSON" />
+                    <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20"><Download /></n-icon>
                 </a>
-                <vue-feather v-if="h.revision !== parsedHistory[parsedHistory.length - 1].revision" type="eye" @click="showRevisionModal(h)" class="ml-2 clickable" title="View Side-by-Side Comparison With Previous Revision" />
+                <n-icon v-if="h.revision !== parsedHistory[parsedHistory.length - 1].revision" @click="showRevisionModal(h)" class="ml-2 clickable" title="View Side-by-Side Comparison With Previous Revision" size="20"><Eye /></n-icon>
             </div>
         </div> -->
         <n-modal

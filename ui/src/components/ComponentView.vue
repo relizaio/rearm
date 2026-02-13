@@ -35,30 +35,30 @@
                         <h5 v-if="componentData">{{ words.componentFirstUpper }}: {{componentData.name}}</h5>
                         <div class="componentIconsAndSettings">
                             <n-space v-cloak>
-                                <vue-feather v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" type="unlock" title="Generate Component API Key" />
-                                <vue-feather v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="openComponentSettings" type="tool" />
-                                <vue-feather v-if="words.componentFirstUpper" type="list" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" />
+                                <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
+                                <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="openComponentSettings" size="24"><Tool /></n-icon>
+                                <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" size="24"><List /></n-icon>
                                 <n-tooltip trigger="hover" v-if="componentData && componentData.uuid">
                                     <template #trigger>
-                                        <vue-feather class="icons" type="info" />
+                                        <n-icon class="icons" size="24"><InfoCircle /></n-icon>
                                     </template>
                                     <strong>{{ words.componentFirstUpper }} UUID:</strong> {{ componentData.uuid }}
-                                    <vue-feather class="clickable icons" @click="copyToClipboard(componentData.uuid)" type="clipboard"/>
+                                    <n-icon class="clickable icons" @click="copyToClipboard(componentData.uuid)" size="24"><Clipboard /></n-icon>
                                 </n-tooltip>
                                 <n-tooltip trigger="hover" v-if="updatedComponent && updatedComponent.vcsRepositoryDetails && updatedComponent.vcsRepositoryDetails.uri">
                                     <template #trigger>
-                                        <vue-feather class="icons" type="git-merge" />
+                                        <n-icon class="icons" size="24"><GitMerge /></n-icon>
                                     </template>
                                     <strong>VCS Repository:</strong>
                                     {{ updatedComponent.vcsRepositoryDetails.uri }}
                                     <a :href="'https://' + updatedComponent.vcsRepositoryDetails.uri" rel="noopener noreferrer"
-                                    target="_blank"><vue-feather type="external-link" class="clickable icons" title="Open VCS Repository URI in New Window" /></a>
+                                    target="_blank"><n-icon class="clickable icons" title="Open VCS Repository URI in New Window" size="24"><ExternalLink /></n-icon></a>
                                 </n-tooltip>
 
                                 <n-icon v-if="componentData" @click="navigateToVulnAnalysis" class="clickable icons" size="24" :title="'Open ' + words.componentFirstUpper + ' Finding Analysis'">
                                     <bug-outlined />
                                 </n-icon>
-                                <vue-feather v-if="isWritable" @click="archiveComponent" class="clickable" type="trash-2" :title="'Archive ' + words.componentFirstUpper" />
+                                <n-icon v-if="isWritable" @click="archiveComponent" class="clickable" :title="'Archive ' + words.componentFirstUpper" size="24"><Trash /></n-icon>
                             </n-space>
                             <n-modal
                                 v-model:show="showComponentAnalyticsModal"
@@ -236,13 +236,13 @@
                                             <n-space>
                                                 <n-button type="success" @click="save">
                                                     <template #icon>
-                                                        <vue-feather type="check" />
+                                                        <n-icon><Check /></n-icon>
                                                     </template>
                                                     Save Changes
                                                 </n-button>
                                                 <n-button type="warning" @click="resetCoreSettings">
                                                     <template #icon>
-                                                        <vue-feather type="x" />
+                                                        <n-icon><X /></n-icon>
                                                     </template>
                                                     Reset Changes
                                                 </n-button>
@@ -296,7 +296,7 @@
                                                         <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>
                                                         <span v-if="!selectNewIntegrationRepo && !outputTrigger.vcs">Not Set</span>
                                                         <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
-                                                        <vue-feather v-if="!selectNewIntegrationRepo" type="edit" class="clickable" @click="async () => {selectNewIntegrationRepo = true;}" title="Select New Integration Repository" />
+                                                        <n-icon v-if="!selectNewIntegrationRepo" class="clickable" @click="async () => {selectNewIntegrationRepo = true;}" title="Select New Integration Repository" size="20"><Edit /></n-icon>
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
                                                         <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
@@ -434,13 +434,13 @@
                                             <n-space>
                                                 <n-button type="success" @click="savePerspectives">
                                                     <template #icon>
-                                                        <vue-feather type="check" />
+                                                        <n-icon><Check /></n-icon>
                                                     </template>
                                                     Save Changes
                                                 </n-button>
                                                 <n-button type="warning" @click="resetPerspectives">
                                                     <template #icon>
-                                                        <vue-feather type="x" />
+                                                        <n-icon><X /></n-icon>
                                                     </template>
                                                     Reset Changes
                                                 </n-button>
@@ -534,7 +534,7 @@ import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 import axios from '../utils/axios'
-import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit } from '@vicons/tabler'
+import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'

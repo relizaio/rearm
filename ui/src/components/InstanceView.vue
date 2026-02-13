@@ -6,23 +6,23 @@
                     <h4 v-if="updatedInstance">
                         <span v-if="updatedInstance.instanceType !== InstanceType.CLUSTER"> Instance: <a v-bind:href="'https://'+updatedInstance.uri" target="_blank" rel="noopener noreferrer">{{updatedInstance.uri}}</a></span>
                         <span v-else> Cluster: <a v-bind:href="'https://'+updatedInstance.uri" target="_blank" rel="noopener noreferrer">{{updatedInstance.name}}</a></span>
-                        <vue-feather v-if="isWritable && updatedInstance.instanceType !== InstanceType.CLUSTER_INSTANCE" @click="genApiKey" class="clickable icons" type="unlock" :title="'Generate ' + instanceWord + ' API Key'" />
+                        <n-icon v-if="isWritable && updatedInstance.instanceType !== InstanceType.CLUSTER_INSTANCE" @click="genApiKey" class="clickable icons" :title="'Generate ' + instanceWord + ' API Key'" size="20"><LockOpen /></n-icon>
                         <a :href="'/api/manual/v1/instance/cyclonedxExport/' + instanceUuid" target="_blank" rel="noopener noreferrer">
-                            <vue-feather class="clickable icons" type="download" title="Show as CycloneDX JSON" />
+                            <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20"><Download /></n-icon>
                         </a>
-                        <vue-feather type ="tool" class="clickable icons" :title="instanceWord + ' Settings'" @click="showInstSettingsModal = true" />
-                        <vue-feather type ="refresh-cw" class="clickable icons" title="Refresh Instance Data" @click="onCreate" />
+                        <n-icon class="clickable icons" :title="instanceWord + ' Settings'" @click="showInstSettingsModal = true" size="20"><Tool /></n-icon>
+                        <n-icon class="clickable icons" title="Refresh Instance Data" @click="onCreate" size="20"><Refresh /></n-icon>
                     </h4>
                     <span v-if="updatedInstance.instanceType === InstanceType.CLUSTER_INSTANCE"> Part of Cluster: <router-link :to="{ name: 'Instance', params: {orguuid: orguuid, instuuid: cluster.uuid }}">{{ cluster.name }}</router-link></span>
                     <span v-if="updatedInstance.instanceType === InstanceType.CLUSTER_INSTANCE"> Namespace: {{updatedInstance.namespace}}</span>
                 </div>
                 <div class="dangerControls">
-                    <vue-feather v-if="isWritable" @click="archiveInstance" class="clickable" type="trash-2" title="Archive Instance" />
+                    <n-icon v-if="isWritable" @click="archiveInstance" class="clickable" title="Archive Instance" size="20"><Trash /></n-icon>
                 </div>
             </div>
             <div v-if="updatedInstance && updatedInstance.instanceType === InstanceType.CLUSTER" class="listHeaderText">
                 Cluster Instances:
-                <vue-feather v-if="isWritable" class="clickable" type="plus-circle" @click="showCreateInstanceModal = true" title="Add New Instance on Cluster" />
+                <n-icon v-if="isWritable" class="clickable" @click="showCreateInstanceModal = true" title="Add New Instance on Cluster" size="24"><CirclePlus /></n-icon>
             </div>
 
             <n-data-table v-if="updatedInstance && updatedInstance.instanceType === InstanceType.CLUSTER"
@@ -34,8 +34,8 @@
             />
             <div class="instanceBody">
                 <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER" class="listHeaderText">Product Releases:
-                    <vue-feather v-if="isWritable" class="clickable" type="plus-circle" @click="isUpdateLinkedFeatureSet = false; showLinkFeatureSetModal = true" :title="'Link ' + featureSetLabel" />
-                    <vue-feather @click="genProductRelease" class="clickable" type="trending-up" title="Generate Integration Product Releases" />
+                    <n-icon v-if="isWritable" class="clickable" @click="isUpdateLinkedFeatureSet = false; showLinkFeatureSetModal = true" :title="'Link ' + featureSetLabel" size="24"><CirclePlus /></n-icon>
+                    <n-icon @click="genProductRelease" class="clickable" title="Generate Integration Product Releases" size="20"><TrendingUp /></n-icon>
                 </div>
                 <n-data-table v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER"
                     :data="updatedInstance.products"
@@ -51,7 +51,7 @@
                                 <Icon><CaretDownFilled/></Icon>
                             </span>
                         </n-dropdown>
-                        <vue-feather v-if="isWritable" class="clickable" type="plus-circle" @click="showAddComponentTargetReleaseModal = true" title="Add Component Target Release" />
+                        <n-icon v-if="isWritable" class="clickable" @click="showAddComponentTargetReleaseModal = true" title="Add Component Target Release" size="24"><CirclePlus /></n-icon>
                     </div>
                     <n-data-table :data="targetIndividualReleases" :columns="targetReleaseFeilds" />
                     
@@ -64,14 +64,14 @@
                                 <Icon><CaretDownFilled/></Icon>
                             </span>
                         </n-dropdown>
-                        <vue-feather class="ml-1 clickable" type="info" @click="showAgentDataModal = true" title="Show Agent Data" />
-                        <vue-feather v-if="isWritable" class="ml-1 clickable" type="x-circle" @click="clearAgentData" title="Clear Agent Data" />
+                        <n-icon class="ml-1 clickable" @click="showAgentDataModal = true" title="Show Agent Data" size="20"><InfoCircle /></n-icon>
+                        <n-icon v-if="isWritable" class="ml-1 clickable" @click="clearAgentData" title="Clear Agent Data" size="20"><CircleX /></n-icon>
                     </div>
                     <n-data-table :data="deployedReleases" :columns="deployedReleaseFeilds"></n-data-table>
                 </div>
                 <div v-if="updatedInstance" class="instancePropertiesBlock">
                     <div class="listHeaderText">{{ instanceWord }} Properties:
-                        <vue-feather v-if="isWritable" class="clickable" type="plus-circle" @click="showAddInstancePropertyModal = true" title="Add New Property Manually" />
+                        <n-icon v-if="isWritable" class="clickable" @click="showAddInstancePropertyModal = true" title="Add New Property Manually" size="24"><CirclePlus /></n-icon>
                     </div>
                     <n-data-table :data="updatedInstance.properties" :columns="instPropFeilds"></n-data-table>
                 </div>
@@ -148,15 +148,15 @@
                 </strong>
                 &nbsp;
                 <span>
-                    <vue-feather class="clickable icons" @click="copyToClipboard(selectedInstanceProductVersionIdentifier)" type="clipboard"/>
+                    <n-icon class="clickable icons" @click="copyToClipboard(selectedInstanceProductVersionIdentifier)" size="20"><Clipboard /></n-icon>
                 </span>
                 &nbsp;
                 <span>
-                    <vue-feather type="refresh-cw" class="clickable icons" @click="refreshSharableLink(selectedPrl)" title="Refresh sharable link" />
+                    <n-icon class="clickable icons" @click="refreshSharableLink(selectedPrl)" title="Refresh sharable link" size="20"><Refresh /></n-icon>
                 </span>
                 &nbsp;
                 <span>
-                    <vue-feather type="trash-2" class="clickable icons" @click="deleteSharableLink(selectedPrl)" title="Delete sharable link" />
+                    <n-icon class="clickable icons" @click="deleteSharableLink(selectedPrl)" title="Delete sharable link" size="20"><Trash /></n-icon>
                 </span>
                 <n-input type="textarea" disabled v-model:value="selectedInstanceProductVersionIdentifier"/>
             </div>
@@ -172,8 +172,8 @@
                 <h6>URI:</h6>
                 <span v-if="isWritable" class="settingsValue">
                     <n-input v-model:value="updatedInstance.uri" placeholder="URI without http or https" />
-                    <vue-feather class="clickable versionIcon reject" v-if="updatedInstance.uri !== instanceData.uri" @click="updatedInstance.uri = instanceData.uri" type="x" title="Discard URI Changes" />
-                    <vue-feather class="clickable versionIcon accept" v-if="updatedInstance.uri !== instanceData.uri" @click="save" type="check" title="Save URI" />
+                    <n-icon class="clickable versionIcon reject" v-if="updatedInstance.uri !== instanceData.uri" @click="updatedInstance.uri = instanceData.uri" title="Discard URI Changes" size="20"><X /></n-icon>
+                    <n-icon class="clickable versionIcon accept" v-if="updatedInstance.uri !== instanceData.uri" @click="save" title="Save URI" size="20"><Check /></n-icon>
                 </span>
                 <span v-else>{{ updatedInstance.uri }} </span>
             </div>
@@ -188,8 +188,8 @@
                             <Icon><CaretDownFilled/></Icon>
                         </span>
                     </n-dropdown>
-                    <vue-feather class="clickable versionIcon reject" v-if="updatedInstance.environment !== instanceData.environment" @click="updatedInstance.environment = instanceData.environment" type="x" title="Discard Environment Changes" />
-                    <vue-feather class="clickable versionIcon accept" v-if="updatedInstance.environment !== instanceData.environment" @click="save" type="check" title="Save New Environment" />
+                    <n-icon class="clickable versionIcon reject" v-if="updatedInstance.environment !== instanceData.environment" @click="updatedInstance.environment = instanceData.environment" title="Discard Environment Changes" size="20"><X /></n-icon>
+                    <n-icon class="clickable versionIcon accept" v-if="updatedInstance.environment !== instanceData.environment" @click="save" title="Save New Environment" size="20"><Check /></n-icon>
                 </span>
             </div>
             <div class="settingsBox" v-if="updatedInstance.instanceType !== InstanceType.CLUSTER">
@@ -202,16 +202,16 @@
                             <Icon><CaretDownFilled/></Icon>
                         </span>
                     </n-dropdown>
-                    <vue-feather class="clickable versionIcon reject" v-if="updatedInstance.deploymentType !== instanceData.deploymentType" @click="updatedInstance.deploymentType = instanceData.deploymentType" type="x" title="Discard Deployment Type Changes" />
-                    <vue-feather class="clickable versionIcon accept" v-if="updatedInstance.deploymentType !== instanceData.deploymentType" @click="save" type="check" title="Save New Deployment Type" />
+                    <n-icon class="clickable versionIcon reject" v-if="updatedInstance.deploymentType !== instanceData.deploymentType" @click="updatedInstance.deploymentType = instanceData.deploymentType" title="Discard Deployment Type Changes" size="20"><X /></n-icon>
+                    <n-icon class="clickable versionIcon accept" v-if="updatedInstance.deploymentType !== instanceData.deploymentType" @click="save" title="Save New Deployment Type" size="20"><Check /></n-icon>
                 </span>
             </div>
             <div class="settingsBox" v-if="updatedInstance.instanceType === InstanceType.CLUSTER">
                 <h6>Name:</h6>                    
                 <span v-if="isWritable" class="settingsValue">
                     <n-input v-model:value="updatedInstance.name" placeholder="Name for the cluster" />
-                    <vue-feather class="clickable versionIcon reject" v-if="updatedInstance.name !== instanceData.name" @click="updatedInstance.name = instanceData.name" type="x" title="Discard Name Changes" />
-                    <vue-feather class="clickable versionIcon accept" v-if="updatedInstance.name !== instanceData.name" @click="save" type="check" title="Save Name" />
+                    <n-icon class="clickable versionIcon reject" v-if="updatedInstance.name !== instanceData.name" @click="updatedInstance.name = instanceData.name" title="Discard Name Changes" size="20"><X /></n-icon>
+                    <n-icon class="clickable versionIcon accept" v-if="updatedInstance.name !== instanceData.name" @click="save" title="Save Name" size="20"><Check /></n-icon>
                 </span>
                 <span v-else>{{ updatedInstance.name }} </span>
             </div>
@@ -219,8 +219,8 @@
                 <h6>Notes:</h6  >
                 <n-input type="textarea" v-if="isWritable" v-model:value="updatedInstance.notes" rows="4" />
                 <n-input type="textarea" v-else :value="updatedInstance.notes" rows="4" readonly/>
-                <vue-feather class="clickable versionIcon reject" v-if="updatedInstance.notes !== instanceData.notes" @click="updatedInstance.notes = instanceData.notes" type="x" title="Discard Notes Changes" />
-                <vue-feather class="clickable versionIcon accept" v-if="updatedInstance.notes !== instanceData.notes" @click="save" type="check" title="Save Notes" />
+                <n-icon class="clickable versionIcon reject" v-if="updatedInstance.notes !== instanceData.notes" @click="updatedInstance.notes = instanceData.notes" title="Discard Notes Changes" size="20"><X /></n-icon>
+                <n-icon class="clickable versionIcon accept" v-if="updatedInstance.notes !== instanceData.notes" @click="save" title="Save Notes" size="20"><Check /></n-icon>
             </div>
         </n-modal>
         <n-modal
@@ -374,7 +374,7 @@ import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism-tomorrow.css';
 import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular} from '@vicons/fluent'
-import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink } from '@vicons/tabler'
+import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, Clipboard, X, Check } from '@vicons/tabler'
 import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
 import CreateInstance from '@/components/CreateInstance.vue'

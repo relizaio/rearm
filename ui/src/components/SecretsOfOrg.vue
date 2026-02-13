@@ -1,8 +1,10 @@
 <template>
     <div>
         <h4>Secrets</h4>
-        <vue-feather id="addSecret" v-if="userPermission === 'ADMIN' || userPermission === 'READ_WRITE'"
-            @click="showCreateSecretModal = true" class="clickable" type="plus-circle" title="Add New Secret" />
+        <n-icon id="addSecret" v-if="userPermission === 'ADMIN' || userPermission === 'READ_WRITE'"
+            @click="showCreateSecretModal = true" class="clickable" title="Add New Secret" size="24">
+            <CirclePlus />
+        </n-icon>
         <n-data-table 
             :data="secrets"
             :columns="secretsFields"
@@ -101,7 +103,7 @@ import { NInput, NModal, NCard, NForm, NButton, NFormItem, NSelect, Notification
 import { ComputedRef, h, ref, Ref, computed } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { VectorBezier, Edit as EditIcon, Trash } from '@vicons/tabler'
+import { VectorBezier, Edit as EditIcon, Trash, CirclePlus } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import commonFunctions from '@/utils/commonFunctions'
 import constants from '../utils/constants'

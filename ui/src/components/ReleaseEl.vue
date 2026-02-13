@@ -7,7 +7,7 @@
             <span class="icon" v-if="release.sourceCodeEntryDetails">
                 <n-tooltip trigger="hover" class="artifactTooltip">
                     <template #trigger>
-                        <vue-feather type="git-commit" :id="'sce' + release.sourceCodeEntry + release.uuid" />
+                        <n-icon :id="'sce' + release.sourceCodeEntry + release.uuid" size="20"><GitCommit /></n-icon>
                     </template>
                     Repository: {{ release.sourceCodeEntryDetails.vcsRepository.uri }}, branch: {{ release.sourceCodeEntryDetails.vcsBranch }}, commit: {{ release.sourceCodeEntryDetails.commit }}
                 </n-tooltip>
@@ -15,16 +15,16 @@
             <span class="icon" v-if="release.artifactDetails && release.artifactDetails.length">
                 <n-tooltip class="artifactTooltip" trigger="hover">
                     <template #trigger>
-                        <vue-feather type="box" :id="'artifacts' + release.uuid" />
+                        <n-icon :id="'artifacts' + release.uuid" size="20"><Box /></n-icon>
                     </template>
                     <p v-for="art in release.artifactDetails" :key=art.uuid>
                         {{ art.displayIdentifier + (art.digestRecords.length ?  '@' + art.digestRecords[0].value : '') }}
                     </p>
                 </n-tooltip>
             </span>
-            <vue-feather type="eye" @click="openRelease(release.uuid)" class="clickable icon" title="Open Release" />
-            <vue-feather v-if="props.updatable" @click="showEditReleaseModal=true" type="edit" class="icon clickable" title="Update Release" />
-            <vue-feather v-if="props.deletable" @click="removeRelease" type="trash-2" class="icon clickable" title="Remove Release" />
+            <n-icon @click="openRelease(release.uuid)" class="clickable icon" title="Open Release" size="20"><Eye /></n-icon>
+            <n-icon v-if="props.updatable" @click="showEditReleaseModal=true" class="icon clickable" title="Update Release" size="20"><Edit /></n-icon>
+            <n-icon v-if="props.deletable" @click="removeRelease" class="icon clickable" title="Remove Release" size="20"><Trash /></n-icon>
             <ul v-if="showParents">
                 <div  v-for="cr in release.parentReleases" :key="'parRel' + cr.release">
                     <release-el :uuid="cr.release" 
@@ -64,7 +64,8 @@ export default {
 <script lang="ts" setup>
 import { ref, Ref } from 'vue'
 import { useStore } from 'vuex'
-import { NTooltip, NModal } from 'naive-ui'
+import { NTooltip, NModal, NIcon } from 'naive-ui'
+import { GitCommit, Box, Eye, Edit, Trash } from '@vicons/tabler'
 import { useRouter } from 'vue-router'
 import CreateRelease from './CreateRelease.vue'
 

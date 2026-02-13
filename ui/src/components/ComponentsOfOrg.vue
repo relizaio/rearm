@@ -3,24 +3,24 @@
         <div class="componentDisplayWrapper">
             <div class="componentListColumn">
                 <h4 v-if="organization">{{ componentProductWords.componentsFirstUpper }} of {{organization.name}}</h4>
-                <vue-feather
+                <n-icon
                     :style="{visibility: isWritable ? 'visible' : 'hidden'}"
                     class="clickable"
-                    type="plus-circle"
                     @click="showAddComponentModal = true"
                     :title="'Add ' + componentProductWords.componentFirstUpper"
-                />
-                <vue-feather
+                    size="24"
+                ><CirclePlus /></n-icon>
+                <n-icon
                     class="clickable"
-                    type="search"
                     @click="showSearchInput= !showSearchInput"
                     :title="'Search ' + componentProductWords.componentFirstUpper"
-                />
+                    size="24"
+                ><Search /></n-icon>
             
                 <n-collapse-transition :show="showSearchInput">
                     <n-input round clearable @clear="showSearchInput=false" autofocus @input="filterComponents" :style="{ 'max-width': '90%' }" :placeholder="'Search ' + componentProductWords.componentsFirstUpper" >
                             <template #suffix>
-                                <vue-feather type="search"/>
+                                <n-icon size="16"><Search /></n-icon>
                             </template>
                     </n-input>
                 </n-collapse-transition>
@@ -67,7 +67,8 @@ export default {
 <script lang="ts" setup>import { ComputedRef, ref, Ref, computed, reactive, h, watch, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NModal, NDataTable, DataTableBaseColumn, DataTableColumns, DataTableFilterState, NCollapseTransition, NInput } from 'naive-ui'
+import { NModal, NDataTable, NIcon, DataTableBaseColumn, DataTableColumns, DataTableFilterState, NCollapseTransition, NInput } from 'naive-ui'
+import { CirclePlus, Search } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
 import CreateComponent from './CreateComponent.vue'
 import ComponentView from './ComponentView.vue'

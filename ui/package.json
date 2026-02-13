@@ -22,7 +22,6 @@
     "vega-embed": "^7.1.0",
     "vega-lite": "^6.4.1",
     "vue": "^3.5.24",
-    "vue-feather": "^2.0.0",
     "vue-prism-editor": "^2.0.0-alpha.2",
     "vue-router": "^4.6.3",
     "vuex": "^4.1.0"

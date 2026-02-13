@@ -35,13 +35,13 @@
             </div>
             <div class="horizontalNavIcons" v-if="myorg && !isPlayground" >
                 <span>
-                    <router-link :to="{ name: 'profile'}"><vue-feather class="clickable" type="user" title="Profile" /></router-link>
+                    <router-link :to="{ name: 'profile'}"><n-icon class="clickable" title="Profile" size="20"><User /></n-icon></router-link>
                 </span>
                 <span v-if="myUser.isGlobalAdmin && myUser.installationType !== 'OSS'">
-                    <router-link :to="{ name: 'systemSettings'}"><vue-feather class="clickable" type="settings" title="Global Admin Settings" /></router-link>
+                    <router-link :to="{ name: 'systemSettings'}"><n-icon class="clickable" title="Global Admin Settings" size="20"><Settings /></n-icon></router-link>
                 </span>
                 <span>
-                    <span v-if="myUser"><vue-feather class="clickable" @click="logout" type="log-out" title="Sign Out" /></span>
+                    <span v-if="myUser"><n-icon class="clickable" @click="logout" title="Sign Out" size="20"><Logout /></n-icon></span>
                 </span>
             </div>
         </div>
@@ -55,7 +55,8 @@ export default {
 </script>
 <script lang="ts" setup>
 import axios from '../utils/axios'
-import { NDropdown } from 'naive-ui'
+import { NDropdown, NIcon } from 'naive-ui'
+import { User, Settings, Logout } from '@vicons/tabler'
 import { useStore } from 'vuex'
 import { ComputedRef, computed, h } from 'vue'
 import { useRouter } from 'vue-router'

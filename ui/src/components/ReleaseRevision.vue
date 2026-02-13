@@ -3,7 +3,7 @@
         <div class="instanceView" v-if="release && release.version">
             <h5 v-if="release">Release: {{release.componentDetails.name}}, version {{release.version}}
                 <a :href="'/api/manual/v1/release/exportAsBom/' + releaseUuid" target="_blank" rel="noopener noreferrer">
-                    <vue-feather class="clickable icons" type="download" title="Show as CycloneDX JSON" />
+                    <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20"><Download /></n-icon>
                 </a>
             </h5>
             <div v-if="release" class="mb-3 settingsBlock">
@@ -59,24 +59,24 @@
                                     <a v-if="linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit)"
                                     :href="linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit)"
                                     target="_blank" rel="noopener noreferrer">
-                                        <vue-feather :id="'sce' + drl.index" type="git-commit"/>
+                                        <n-icon :id="'sce' + drl.index" size="20"><GitCommit /></n-icon>
                                     </a>
                                 </template>
                                 <span>{{ linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit) }}</span>
                                 <a v-if="linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit)"
                                     :href="linkifyCommit(drl.release.sourceCodeEntryDetails.vcsRepository.uri, drl.release.sourceCodeEntryDetails.commit)"
                                     target="_blank" rel="noopener noreferrer">
-                                    <vue-feather type="external-link" title="Open Commit In New Tab" class="clickable icons" />
+                                    <n-icon title="Open Commit In New Tab" class="clickable icons" size="20"><ExternalLink /></n-icon>
                                 </a>
                             </n-tooltip>
                         </span>
                         <span v-if="drl.artifact !== 'Not Set'">
                             <n-tooltip trigger="hover" class="artifactTooltip">
                                 <template #trigger>
-                                    <vue-feather
+                                    <n-icon
                                         class="clickable icons"
                                         @click="copyToClipboard(drl.artifact.displayIdentifier + (drl.artifact.digests.length ?  '@' + drl.artifact.digests[0] : ''))"
-                                        type="box"/>
+                                        size="20"><Box /></n-icon>
                                 </template>
                                 {{ drl.artifact.displayIdentifier + (drl.artifact.digests.length ?  '@' + drl.artifact.digests[0] : '') }}
                             </n-tooltip>
@@ -108,7 +108,8 @@ export default {
 
 import { ref, Ref, ComputedRef, computed } from 'vue'
 import { useStore } from 'vuex'
-import { NModal, NTooltip, useNotification, NotificationType } from 'naive-ui'
+import { NModal, NTooltip, NIcon, useNotification, NotificationType } from 'naive-ui'
+import { Download, GitCommit, ExternalLink, Box } from '@vicons/tabler'
 import ReleaseView from '@/components/ReleaseView.vue'
 
 import commonFunctions from '@/utils/commonFunctions'
