@@ -6,12 +6,13 @@ export default function Home() {
     <main className="mainPaddingContainer">
       {/* Hero */}
       <div className="container-fluid container1">
-        <div className="row mx-auto" style={{ maxWidth: "925px" }}>
+        <div className="row mx-auto" style={{ maxWidth: "1100px" }}>
           <div className="col-12 mb-4">
-            <h1 className="C1_title">ReARM - Release-Level Supply Chain Evidence Platform</h1>
+            <h1 className="C1_title">ReARM</h1>
+            <h1 style={{ textAlign: "center" }}>Release-Level Supply Chain Evidence Platform</h1>
           </div>
           <div className="col-12">
-            <p className="mx-auto C1_text" style={{ maxWidth: "600px" }}>
+            <p className="mx-auto C1_text">
               SBOMs, xBOMs and every other artifact - stored per release for 10+ years, versioned and audit-ready
             </p>
           </div>
