@@ -28,7 +28,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
       description, 
       url, 
       type: "article", 
-      siteName: "ReARM - SBOM, xBOM, Security Artifacts, Release Management - by Reliza",
+      siteName: "ReARM - Release-Level Supply Chain Evidence Platform by Reliza",
       images: [
         {
           url: ogImageUrl,

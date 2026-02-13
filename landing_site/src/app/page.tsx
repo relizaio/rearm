@@ -103,7 +103,7 @@ export default function Home() {
         {[
           {
             image: "rearm_release.png",
-            title: "Asset Management & Evidence Store",
+            title: "Asset Management & Evidence Platform",
             texts: [
               { text: "ReARM is a system of record that collects, stores for 10+ years, versions, and traces all digital artifacts required to prove the integrity, safety, and compliance of software, firmware, and hardware throughout their lifecycle. This includes SBOMs, HBOMs, other xBOMs, VEX, VDR, BOV, SARIF, attestations, build metadata, and more." },
             ],
@@ -112,28 +112,28 @@ export default function Home() {
             image: "compliance.png",
             title: "Regulatory Compliance",
             texts: [
-              { text: "ReARM acts as a central SBOM/xBOM and security artifact repository and digital evidence store for all your releases and ensures supply chain security compliance with various regulations, including EU CRA, NIS2, DORA, US Executive Orders 14028, 14144, Section 524B of the FD&C Act, India's RBI and SEBI." },
+              { text: "ReARM provides a central repository for SBOMs, xBOMs, and security artifacts across all your releases. It ensures supply chain compliance with EU CRA, NIS2, DORA, US Executive Orders 14028 and 14144, Section 524B of the FD&C Act, and India's RBI and SEBI regulations." },
             ],
           },
           {
             image: "rearm_analytics.png",
             title: "Track Vulnerabilities and Violations across your Supply Chain",
             texts: [
-              { text: "ReARM integrates with various cyber security tools to present real-time security posture of your component and product releases." },
+              { text: "ReARM aggregates findings from Dependency-Track and other security tools into a unified view. Track vulnerabilities and policy violations across releases with scoped auditing, deduplication, and rich changelogs showing how your security posture evolves over time." },
             ],
           },
           {
             image: "create_component.png",
             title: "Automated Versioning and Change Logs for your Releases",
             texts: [
-              { text: "Choose desired versioning schema, connect to your CI and let ReARM do the rest!" },
+              { text: "ReARM automates version bumping and changelog generation for every release. Choose your versioning schema, connect your CI pipeline, and ReARM handles the rest — tracking every artifact and evidence entry per release." },
             ],
           },
           {
             image: "auto_integrate.png",
             title: "Automated Bundling into Products",
             texts: [
-              { text: "ReARM automatically bundles your Components into Products and supports multi-level nesting." },
+              { text: "ReARM automatically bundles your Components into Products and supports multi-level nesting. Evidence and findings from component releases propagate to product level, giving you a unified view across your entire supply chain." },
             ],
           },
           {
