@@ -295,7 +295,7 @@ watch(() => props.findingRow, (newRow) => {
         formData.value.locationType = location.startsWith('pkg:') ? 'PURL' : 'CODE_POINT'
         
         // Set severity from vulnerability data if available
-        formData.value.severity = newRow.severity || null
+        formData.value.severity = (!newRow.severity || newRow.severity === '-') ? 'UNASSIGNED' : newRow.severity
         
         setDefaultScope()
     }
@@ -354,7 +354,7 @@ const handleSubmit = async () => {
         }
         
         if (formData.value.severity) {
-            input.severity = formData.value.severity
+            input.severity = formData.value.severity === '-' ? 'UNASSIGNED' : formData.value.severity
         }
         
         const response = await graphqlClient.mutate({
