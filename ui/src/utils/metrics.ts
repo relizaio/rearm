@@ -161,6 +161,7 @@ export function buildVulnerabilityColumns(
     onViewAnalysis?: (row: any) => void
     initialSeverityFilter?: string
     initialTypeFilter?: string
+    data?: any[]
   }
 ): DataTableColumns<any> {
   function makePurlRenderer() {
@@ -208,6 +209,21 @@ export function buildVulnerabilityColumns(
       }, purlText)
     }
   }
+  // Calculate counts for filter options
+  const data = options?.data || []
+  const typeCounts: Record<string, number> = {
+    'Vulnerability': data.filter(r => r.type === 'Vulnerability').length,
+    'Violation': data.filter(r => r.type === 'Violation').length,
+    'Weakness': data.filter(r => r.type === 'Weakness').length
+  }
+  const severityCounts: Record<string, number> = {
+    'CRITICAL': data.filter(r => r.severity === 'CRITICAL').length,
+    'HIGH': data.filter(r => r.severity === 'HIGH').length,
+    'MEDIUM': data.filter(r => r.severity === 'MEDIUM').length,
+    'LOW': data.filter(r => r.severity === 'LOW').length,
+    'UNASSIGNED': data.filter(r => r.severity === 'UNASSIGNED' || r.severity === '-' || !r.severity).length
+  }
+
   return [
     {
       title: 'Type',
@@ -215,9 +231,9 @@ export function buildVulnerabilityColumns(
       width: 124,
       sorter: 'default',
       filterOptions: [
-        { label: 'Vulnerability', value: 'Vulnerability' },
-        { label: 'Violation', value: 'Violation' },
-        { label: 'Weakness', value: 'Weakness' }
+        { label: `Vulnerability (${typeCounts['Vulnerability']})`, value: 'Vulnerability' },
+        { label: `Violation (${typeCounts['Violation']})`, value: 'Violation' },
+        { label: `Weakness (${typeCounts['Weakness']})`, value: 'Weakness' }
       ],
       defaultFilterOptionValues: options?.initialTypeFilter ? [options.initialTypeFilter] : [],
       filter: (value: any, row: any) => row.type === value,
@@ -278,11 +294,11 @@ export function buildVulnerabilityColumns(
       width: 140,
       defaultSortOrder: 'ascend',
       filterOptions: [
-        { label: 'CRITICAL', value: 'CRITICAL' },
-        { label: 'HIGH', value: 'HIGH' },
-        { label: 'MEDIUM', value: 'MEDIUM' },
-        { label: 'LOW', value: 'LOW' },
-        { label: 'UNASSIGNED', value: 'UNASSIGNED' }
+        { label: `CRITICAL (${severityCounts['CRITICAL']})`, value: 'CRITICAL' },
+        { label: `HIGH (${severityCounts['HIGH']})`, value: 'HIGH' },
+        { label: `MEDIUM (${severityCounts['MEDIUM']})`, value: 'MEDIUM' },
+        { label: `LOW (${severityCounts['LOW']})`, value: 'LOW' },
+        { label: `UNASSIGNED (${severityCounts['UNASSIGNED']})`, value: 'UNASSIGNED' }
       ],
       defaultFilterOptionValues: options?.initialSeverityFilter ? [options.initialSeverityFilter] : [],
       filter: (value: any, row: any) => row.severity === value,
