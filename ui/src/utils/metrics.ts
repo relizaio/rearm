@@ -301,7 +301,10 @@ export function buildVulnerabilityColumns(
         { label: `UNASSIGNED (${severityCounts['UNASSIGNED']})`, value: 'UNASSIGNED' }
       ],
       defaultFilterOptionValues: options?.initialSeverityFilter ? [options.initialSeverityFilter] : [],
-      filter: (value: any, row: any) => row.severity === value,
+      filter: (value: any, row: any) => {
+        const severity = (!row.severity || row.severity === '-') ? 'UNASSIGNED' : row.severity
+        return severity === value
+      },
       sorter: (rowA: any, rowB: any) => {
         const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
         const idx = (v: string) => {
