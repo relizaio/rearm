@@ -70,8 +70,8 @@ async function mergeBomsForDiff(ids:[string], org: string){
         '--to-format', 'json',
         '--output-format', 'json',
         '--component-versions',
-        toBomPath,
-        fromBomPath
+        fromBomPath,
+        toBomPath
       )
 
       const diffResultString: string = await shellExec('cyclonedx-cli',command)
