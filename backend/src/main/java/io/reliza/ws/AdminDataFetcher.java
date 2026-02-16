@@ -21,6 +21,7 @@ import io.reliza.model.UserData;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.IntegrationService;
 import io.reliza.service.OrganizationService;
+import io.reliza.service.ReleaseFinalizerService;
 import io.reliza.service.UserService;
 import io.reliza.service.SystemInfoService.SystemInfoDto;
 import io.reliza.service.SystemInfoService;
@@ -45,6 +46,9 @@ public class AdminDataFetcher {
 	@Autowired
 	SystemInfoService systemInfoService;
 
+	@Autowired
+	ReleaseFinalizerService releaseFinalizerService;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getSystemInfoIsSet")
 	public SystemInfoDto getSystemInfoIsSet() {
@@ -54,6 +58,16 @@ public class AdminDataFetcher {
 		return systemInfoService.getSystemInfoIsSet();
 	}
 	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "finalizeAllReleases")
+	public Boolean finalizeAllReleases() {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);
+		releaseFinalizerService.finalizeAllReleases();
+		return true;
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "unSealSystem")
 	public Boolean unSealSystem(DgsDataFetchingEnvironment dfe,

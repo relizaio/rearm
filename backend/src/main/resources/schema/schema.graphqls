@@ -120,6 +120,7 @@ type Mutation {
 		
 	# system global
 	unSealSystem(secret: String): Boolean
+	finalizeAllReleases: Boolean
 	createOrganization(name: String!): Organization
 	setEmailProperties(emailProperties: EmailPropertiesInput!): Boolean
 	setDefaultOrganization(organization: ID!): Boolean

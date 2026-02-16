@@ -216,41 +216,41 @@ public class AcollectionService {
 	}
 
 	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate){
-		log.info("SBOM_DIFF_DEBUG: Starting resolveBomDiff for release {} vs prev {}, forceRecalculate={}", releaseId, prevReleaseId, forceRecalculate);
+		log.debug("SBOM_DIFF_DEBUG: Starting resolveBomDiff for release {} vs prev {}, forceRecalculate={}", releaseId, prevReleaseId, forceRecalculate);
 		
 		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
 		AcollectionData prevAcollectionData = getLatestCollectionDataOfRelease(prevReleaseId);
 		
-		log.info("SBOM_DIFF_DEBUG: Current acollection: uuid={}, artifacts={}", 
+		log.debug("SBOM_DIFF_DEBUG: Current acollection: uuid={}, artifacts={}", 
 			currAcollectionData != null ? currAcollectionData.getUuid() : "null",
 			currAcollectionData != null && currAcollectionData.getArtifacts() != null ? currAcollectionData.getArtifacts().size() : "null");
-		log.info("SBOM_DIFF_DEBUG: Previous acollection: uuid={}, artifacts={}", 
+		log.debug("SBOM_DIFF_DEBUG: Previous acollection: uuid={}, artifacts={}", 
 			prevAcollectionData != null ? prevAcollectionData.getUuid() : "null",
 			prevAcollectionData != null && prevAcollectionData.getArtifacts() != null ? prevAcollectionData.getArtifacts().size() : "null");
 		
-		if(null != currAcollectionData.getArtifacts() 
+		if(null != currAcollectionData && null != currAcollectionData.getArtifacts() 
 			&& currAcollectionData.getArtifacts().size() > 0 
 			&& null != prevAcollectionData 
 			&& prevAcollectionData.getArtifacts().size() > 0
 			&& ! prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts())
 		){
-			log.info("SBOM_DIFF_DEBUG: Conditions met, proceeding with BOM diff calculation");
+			log.debug("SBOM_DIFF_DEBUG: Conditions met, proceeding with BOM diff calculation");
 			
             List<UUID> currArtifacts = getInternalBomIdsFromACollection(currAcollectionData);
 			List<UUID> prevArtifacts = getInternalBomIdsFromACollection(prevAcollectionData);
 			
-			log.info("SBOM_DIFF_DEBUG: Current internal BOM IDs: {}", currArtifacts);
-			log.info("SBOM_DIFF_DEBUG: Previous internal BOM IDs: {}", prevArtifacts);
+			log.debug("SBOM_DIFF_DEBUG: Current internal BOM IDs: {}", currArtifacts);
+			log.debug("SBOM_DIFF_DEBUG: Previous internal BOM IDs: {}", prevArtifacts);
 			
 			if (currArtifacts.isEmpty() && prevArtifacts.isEmpty()) {
 				log.warn("SBOM_CHANGELOG: Both current and previous releases have NO internal BOM IDs - cannot calculate changelog");
 				return;
 			}
 			
-			log.info("SBOM_DIFF_DEBUG: Calling rebomService.getArtifactChangelog");
+			log.debug("SBOM_DIFF_DEBUG: Calling rebomService.getArtifactChangelog");
 			// Call with prevArtifacts (old/baseline) first, then currArtifacts (new/current)
 			ArtifactChangelog artifactChangelog = rebomService.getArtifactChangelog(prevArtifacts, currArtifacts, org);
-			log.info("SBOM_DIFF_DEBUG: Changelog result - added: {}, removed: {}", 
+			log.debug("SBOM_DIFF_DEBUG: Changelog result - added: {}, removed: {}", 
 				artifactChangelog != null && artifactChangelog.added() != null ? artifactChangelog.added().size() : "null",
 				artifactChangelog != null && artifactChangelog.removed() != null ? artifactChangelog.removed().size() : "null");
 
