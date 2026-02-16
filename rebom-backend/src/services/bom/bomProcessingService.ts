@@ -162,7 +162,20 @@ export function establishPurl(origPurl: string | undefined, rebomOverride: Rebom
     }
     
     let origPurlParsed: PackageURL | undefined = undefined
-    if (origPurl) origPurlParsed = PackageURL.fromString(origPurl)
+    if (origPurl) {
+      try {
+        origPurlParsed = PackageURL.fromString(origPurl)
+      } catch (e: any) {
+        throw new BomValidationError(
+          e.message,
+          {
+            field: 'purl',
+            value: origPurl,
+            constraint: 'must be a valid Package URL'
+          }
+        );
+      }
+    }
     const type = (origPurlParsed && origPurlParsed.type && origPurlParsed.type !== "container" && origPurlParsed.type !== "application") ? origPurlParsed.type : 'generic'
     const namespace = (origPurlParsed && (origPurlParsed.namespace || type === 'oci')) ? origPurlParsed.namespace : encodeURIComponent(rebomOverride.group)
     const name = (origPurlParsed && origPurlParsed.name && origPurlParsed.name !== 'app' && origPurlParsed.name !== '.') ? origPurlParsed.name : encodeURIComponent(rebomOverride.name)
@@ -173,15 +186,26 @@ export function establishPurl(origPurl: string | undefined, rebomOverride: Rebom
     if (rebomOverride.hash) qualifiers.hash = rebomOverride.hash
     if (rebomOverride.tldOnly) qualifiers.tldOnly = 'true'
     if (rebomOverride.structure && rebomOverride.structure.toLowerCase() === HIERARCHICHAL.toLowerCase()) qualifiers.structure = HIERARCHICHAL
-    const purl = new PackageURL(
-      type,
-      namespace,
-      name,
-      version,
-      qualifiers,
-      undefined
-    )
-    purlStr = purl.toString()
+    try {
+      const purl = new PackageURL(
+        type,
+        namespace,
+        name,
+        version,
+        qualifiers,
+        undefined
+      )
+      purlStr = purl.toString()
+    } catch (e: any) {
+      throw new BomValidationError(
+        e.message,
+        {
+          field: 'purl',
+          constraint: 'must be a valid Package URL',
+          value: { type, namespace, name, version }
+        }
+      );
+    }
   }
   return purlStr || ''
 }
