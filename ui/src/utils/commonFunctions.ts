@@ -52,7 +52,14 @@ function isAdmin (org : string, myUser : any ) : boolean {
 
 
 function parseGraphQLError (err: string): string {
-    return err.split(': ')[err.split(': ').length - 1]
+    const knownPrefixes = ['BOM processing failed: ', 'BOM validation failed: ', 'Rebom error: ']
+    let cleaned = err
+    for (const prefix of knownPrefixes) {
+        if (cleaned.startsWith(prefix)) {
+            cleaned = cleaned.substring(prefix.length)
+        }
+    }
+    return cleaned
 }
 
 function deepCopy (obj: any) {
