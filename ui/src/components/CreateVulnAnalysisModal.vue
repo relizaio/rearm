@@ -331,9 +331,9 @@ const handleCancel = () => {
 
 const handleSubmit = async () => {
     if (!formRef.value) return
+    await formRef.value.validate()
     
     try {
-        await formRef.value.validate()
         submitting.value = true
         
         const input: any = {
@@ -388,9 +388,10 @@ const handleSubmit = async () => {
         isVisible.value = false
     } catch (error: any) {
         console.error('Error creating finding analysis:', error)
+        const errorMsg = error.graphQLErrors?.[0]?.message || error.message || 'Unknown error'
         notification.error({
             content: 'Failed to create finding analysis',
-            meta: error.message || 'Unknown error',
+            meta: errorMsg,
             duration: 5000
         })
     } finally {

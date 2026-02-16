@@ -2280,6 +2280,15 @@ async function saveOrgSettings() {
                 mutation updateOrganizationSettings($orgUuid: ID!, $settings: SettingsInput!) {
                     updateOrganizationSettings(orgUuid: $orgUuid, settings: $settings) {
                         uuid
+                        name
+                        terminology {
+                            featureSetLabel
+                        }
+                        ignoreViolation {
+                            licenseViolationRegexIgnore
+                            securityViolationRegexIgnore
+                            operationalViolationRegexIgnore
+                        }
                         settings {
                             justificationMandatory
                         }
