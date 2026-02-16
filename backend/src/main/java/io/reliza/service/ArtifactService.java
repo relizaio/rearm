@@ -1329,10 +1329,12 @@ public class ArtifactService {
 	 * Returns null if the SpecVersion does not map to a known BOM format (e.g. SARIF, CSAF).
 	 */
 	private BomFormat deriveBomFormatFromSpecVersion(SpecVersion specVersion) {
-		if (CYCLONEDX_SPEC_VERSIONS.contains(specVersion)) {
-			return BomFormat.CYCLONEDX;
-		} else if (SPDX_SPEC_VERSIONS.contains(specVersion)) {
-			return BomFormat.SPDX;
+		if (null != specVersion) {
+			if (CYCLONEDX_SPEC_VERSIONS.contains(specVersion)) {
+				return BomFormat.CYCLONEDX;
+			} else if (SPDX_SPEC_VERSIONS.contains(specVersion)) {
+				return BomFormat.SPDX;
+			}
 		}
 		return null;
 	}
