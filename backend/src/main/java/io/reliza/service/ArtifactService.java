@@ -552,8 +552,8 @@ public class ArtifactService {
 				existingSerialNumberForSpdx
 			);
 		} catch (Exception e) {
-			log.error("BOM lifecycle processing failed for artifact {}: {}", 
-				artifactDto.getUuid(), e.getMessage(), e);
+			log.warn("BOM lifecycle processing failed for artifact {}: {}", 
+				artifactDto.getUuid(), e.getMessage());
 			// Unwrap RuntimeException to get the actual cause message (e.g. from rebom GraphQL errors)
 			Throwable cause = e;
 			while (cause.getCause() != null && cause.getCause() != cause) {

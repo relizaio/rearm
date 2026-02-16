@@ -125,7 +125,7 @@ public class RebomService {
                 RebomErrorCode code = parseErrorCode(codeStr);
                 
                 // Log structured error with details
-                log.error("Rebom error [{}]: {} - Details: {}", code, message, details);
+                log.warn("Rebom error [{}]: {} - Details: {}", code, message, details);
                 
                 // Throw specific exception based on error code
                 switch (code) {
@@ -148,7 +148,7 @@ public class RebomService {
                 }
             } else {
                 // Fallback for errors without extensions
-                log.error("Rebom error (no extensions): {}", message);
+                log.warn("Rebom error (no extensions): {}", message);
                 throw new RelizaException("Rebom error: " + message);
             }
         }

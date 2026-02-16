@@ -136,7 +136,8 @@ public class ReleaseFinalizerService {
                                 if (computed) { pairCount++; } else { skipCount++; }
                             } catch (Exception e) {
                                 errorCount++;
-                                log.error("FINALIZE_ALL: Error on fork-point diff {} -> {} (branch {})", prevForFirst, firstRelease.getUuid(), bd.getUuid(), e);
+                                log.warn("FINALIZE_ALL: Error on fork-point diff {} -> {} (branch {}): {}", prevForFirst, firstRelease.getVersion(), bd.getName(), extractCause(e));
+                                log.debug("FINALIZE_ALL: Full error on fork-point diff {} -> {}", prevForFirst, firstRelease.getUuid(), e);
                             }
                         }
                     }
@@ -151,16 +152,35 @@ public class ReleaseFinalizerService {
                             if (computed) { pairCount++; } else { skipCount++; }
                         } catch (Exception e) {
                             errorCount++;
-                            log.error("FINALIZE_ALL: Error on diff {} -> {} (branch {})", prev.getVersion(), curr.getVersion(), bd.getUuid(), e);
+                            log.warn("FINALIZE_ALL: Error on diff {} -> {} (branch {}): {}", prev.getVersion(), curr.getVersion(), bd.getName(), extractCause(e));
+                            log.debug("FINALIZE_ALL: Full error on diff {} -> {}", prev.getVersion(), curr.getVersion(), e);
                         }
                     }
                 } catch (Exception e) {
                     errorCount++;
-                    log.error("FINALIZE_ALL: Error processing branch {} of component {}", bd.getUuid(), cd.getUuid(), e);
+                    log.warn("FINALIZE_ALL: Error processing branch {} of component {}: {}", bd.getName(), cd.getName(), extractCause(e));
+                    log.debug("FINALIZE_ALL: Full error on branch {} of component {}", bd.getUuid(), cd.getUuid(), e);
                 }
             }
         }
         log.info("FINALIZE_ALL: Completed. {} components, {} branches, {} pairs processed, {} skipped (no BOMs), {} errors",
                 componentCount, branchCount, pairCount, skipCount, errorCount);
+    }
+
+    private String extractCause(Exception e) {
+        Throwable root = e;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        String msg = root.getMessage();
+        if (msg == null) {
+            return root.getClass().getSimpleName();
+        }
+        // Truncate verbose messages (e.g. JSON validation errors with full SPDX list)
+        int idx = msg.indexOf('[');
+        if (idx > 0 && msg.length() > 200) {
+            return msg.substring(0, idx).trim();
+        }
+        return msg.length() > 200 ? msg.substring(0, 200) + "..." : msg;
     }
 }
