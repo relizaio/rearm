@@ -87,6 +87,7 @@ public class ReleaseFinalizerService {
         int componentCount = 0;
         int branchCount = 0;
         int pairCount = 0;
+        int skipCount = 0;
         int errorCount = 0;
         Map<UUID, Optional<UUID>> baseBranchCache = new HashMap<>();
 
@@ -129,9 +130,14 @@ public class ReleaseFinalizerService {
                         UUID prevForFirst = sharedReleaseService.findPreviousReleasesOfBranchForRelease(
                                 bd.getUuid(), firstRelease.getUuid(), firstRelease, cd, baseBranchCache);
                         if (prevForFirst != null) {
-                            log.debug("FINALIZE_ALL:     Diff: fork-point {} -> {}", prevForFirst, firstRelease.getVersion());
-                            acollectionService.resolveBomDiff(firstRelease.getUuid(), prevForFirst, firstRelease.getOrg(), true);
-                            pairCount++;
+                            try {
+                                log.debug("FINALIZE_ALL:     Diff: fork-point {} -> {}", prevForFirst, firstRelease.getVersion());
+                                boolean computed = acollectionService.resolveBomDiff(firstRelease.getUuid(), prevForFirst, firstRelease.getOrg(), true);
+                                if (computed) { pairCount++; } else { skipCount++; }
+                            } catch (Exception e) {
+                                errorCount++;
+                                log.error("FINALIZE_ALL: Error on fork-point diff {} -> {} (branch {})", prevForFirst, firstRelease.getUuid(), bd.getUuid(), e);
+                            }
                         }
                     }
 
@@ -139,9 +145,14 @@ public class ReleaseFinalizerService {
                     for (int i = 0; i < releases.size() - 1; i++) {
                         ReleaseData prev = releases.get(i);
                         ReleaseData curr = releases.get(i + 1);
-                        log.debug("FINALIZE_ALL:     Diff: {} -> {}", prev.getVersion(), curr.getVersion());
-                        acollectionService.resolveBomDiff(curr.getUuid(), prev.getUuid(), curr.getOrg(), true);
-                        pairCount++;
+                        try {
+                            log.debug("FINALIZE_ALL:     Diff: {} -> {}", prev.getVersion(), curr.getVersion());
+                            boolean computed = acollectionService.resolveBomDiff(curr.getUuid(), prev.getUuid(), curr.getOrg(), true);
+                            if (computed) { pairCount++; } else { skipCount++; }
+                        } catch (Exception e) {
+                            errorCount++;
+                            log.error("FINALIZE_ALL: Error on diff {} -> {} (branch {})", prev.getVersion(), curr.getVersion(), bd.getUuid(), e);
+                        }
                     }
                 } catch (Exception e) {
                     errorCount++;
@@ -149,7 +160,7 @@ public class ReleaseFinalizerService {
                 }
             }
         }
-        log.info("FINALIZE_ALL: Completed. {} components, {} branches, {} release pairs processed, {} errors",
-                componentCount, branchCount, pairCount, errorCount);
+        log.info("FINALIZE_ALL: Completed. {} components, {} branches, {} pairs processed, {} skipped (no BOMs), {} errors",
+                componentCount, branchCount, pairCount, skipCount, errorCount);
     }
 }

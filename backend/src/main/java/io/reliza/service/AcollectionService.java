@@ -215,7 +215,7 @@ public class AcollectionService {
 		resolveBomDiff(releaseId, prevReleaseId, org, false);
 	}
 
-	public void resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate){
+	public boolean resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate){
 		log.debug("SBOM_DIFF_DEBUG: Starting resolveBomDiff for release {} vs prev {}, forceRecalculate={}", releaseId, prevReleaseId, forceRecalculate);
 		
 		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
@@ -243,8 +243,8 @@ public class AcollectionService {
 			log.debug("SBOM_DIFF_DEBUG: Previous internal BOM IDs: {}", prevArtifacts);
 			
 			if (currArtifacts.isEmpty() && prevArtifacts.isEmpty()) {
-				log.warn("SBOM_CHANGELOG: Both current and previous releases have NO internal BOM IDs - cannot calculate changelog");
-				return;
+				log.debug("SBOM_CHANGELOG: Both current and previous releases have NO internal BOM IDs - cannot calculate changelog");
+				return false;
 			}
 			
 			log.debug("SBOM_DIFF_DEBUG: Calling rebomService.getArtifactChangelog");
@@ -263,11 +263,13 @@ public class AcollectionService {
 			}else{
 				log.debug("SBOM_CHANGELOG: Duplicate trigger for release {}, not persisting changelog", releaseId);
 			}
+			return true;
 		} else {
-			log.warn("SBOM_CHANGELOG: Skipping resolveBomDiff - conditions not met. Current artifacts null/empty: {}, Previous artifacts null/empty: {}, Artifacts equal: {}",
+			log.debug("SBOM_CHANGELOG: Skipping resolveBomDiff - conditions not met. Current artifacts null/empty: {}, Previous artifacts null/empty: {}, Artifacts equal: {}",
 				currAcollectionData.getArtifacts() == null || currAcollectionData.getArtifacts().isEmpty(),
 				prevAcollectionData == null || prevAcollectionData.getArtifacts() == null || prevAcollectionData.getArtifacts().isEmpty(),
 				prevAcollectionData != null && prevAcollectionData.getArtifacts() != null && currAcollectionData.getArtifacts() != null && prevAcollectionData.getArtifacts().equals(currAcollectionData.getArtifacts()));
+			return false;
 		}
 	}
 
