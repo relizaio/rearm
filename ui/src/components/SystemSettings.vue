@@ -134,6 +134,11 @@
                     </n-form>
                 </n-modal>
             </div>
+            <div class="finalizeAllReleasesBlock">
+                <h4 class="mt-4">Finalize All Releases: </h4>
+                <p>Recalculate BOM changelogs for all active component releases.</p>
+                <n-button type="warning" @click="finalizeAllReleases" :loading="finalizingAllReleases">Finalize All Releases</n-button>
+            </div>
             <div v-if="false" class="reefBlock">
                 <h4 class="mt-4">Reef Details: </h4>
                 
@@ -405,6 +410,32 @@ async function setDefaultOrganization(){
     }
     await initLoad()
     showDefaultOrgModal.value = false
+}
+
+const finalizingAllReleases: Ref<boolean> = ref(false)
+async function finalizeAllReleases() {
+    const confirmResult = await Swal.fire({
+        title: 'Finalize All Releases?',
+        text: 'This will recalculate BOM changelogs for all active component releases. This operation runs asynchronously in the background.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, proceed'
+    })
+    if (!confirmResult.isConfirmed) return
+    finalizingAllReleases.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation finalizeAllReleases {
+                    finalizeAllReleases
+                }`
+        })
+        Swal.fire('Submitted!', 'Finalize all releases has been triggered. Check server logs for progress.', 'success')
+    } catch (err: any) {
+        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+    } finally {
+        finalizingAllReleases.value = false
+    }
 }
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
