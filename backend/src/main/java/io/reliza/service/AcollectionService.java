@@ -216,6 +216,11 @@ public class AcollectionService {
 	}
 
 	public boolean resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate){
+		return resolveBomDiff(releaseId, prevReleaseId, org, forceRecalculate, false);
+	}
+
+	public boolean resolveBomDiff(UUID releaseId, UUID prevReleaseId, UUID org, boolean forceRecalculate,
+			boolean suppressNotification){
 		log.debug("SBOM_DIFF_DEBUG: Starting resolveBomDiff for release {} vs prev {}, forceRecalculate={}", releaseId, prevReleaseId, forceRecalculate);
 		
 		AcollectionData currAcollectionData = getLatestCollectionDataOfRelease(releaseId);
@@ -258,7 +263,7 @@ public class AcollectionService {
 			// This handles the race condition where initial Acollection had incomplete artifacts
 			if (forceRecalculate || null == currAcollectionData.getArtifactComparison() || null == currAcollectionData.getArtifactComparison().changelog()  || !currAcollectionData.getArtifactComparison().changelog().equals(artifactChangelog)) {
 				
-				persistArtifactChangelogForCollection(artifactChangelog, prevReleaseId, currAcollectionData.getUuid());
+				persistArtifactChangelogForCollection(artifactChangelog, prevReleaseId, currAcollectionData.getUuid(), suppressNotification);
 
 			}else{
 				log.debug("SBOM_CHANGELOG: Duplicate trigger for release {}, not persisting changelog", releaseId);
@@ -274,7 +279,8 @@ public class AcollectionService {
 	}
 
 	@Transactional
-	private void persistArtifactChangelogForCollection(ArtifactChangelog artifactChangelog, UUID comparedReleaseUuid, UUID acollection){
+	private void persistArtifactChangelogForCollection(ArtifactChangelog artifactChangelog, UUID comparedReleaseUuid,
+			UUID acollection, boolean suppressNotification){
 		Acollection ac = getAcollectionWriteLocked(acollection).get();
 		AcollectionData acd = AcollectionData.dataFromRecord(ac);
 		AcollectionData.ArtifactComparison artifactComparison = new AcollectionData.ArtifactComparison(artifactChangelog, comparedReleaseUuid);
@@ -288,7 +294,7 @@ public class AcollectionService {
 		UUID org = updatedAcd.getOrg();
 		UUID releaseUuid = updatedAcd.getRelease();
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
-		if (ord.isPresent()) {
+		if (!suppressNotification && ord.isPresent()) {
 			notificationService.sendBomDiffAlert(org, ord.get(), artifactChangelog);
 		}
 	}

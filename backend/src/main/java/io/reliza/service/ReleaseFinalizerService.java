@@ -132,7 +132,8 @@ public class ReleaseFinalizerService {
                         if (prevForFirst != null) {
                             try {
                                 log.debug("FINALIZE_ALL:     Diff: fork-point {} -> {}", prevForFirst, firstRelease.getVersion());
-                                boolean computed = acollectionService.resolveBomDiff(firstRelease.getUuid(), prevForFirst, firstRelease.getOrg(), true);
+                                boolean computed = acollectionService.resolveBomDiff(firstRelease.getUuid(), prevForFirst,
+                                        firstRelease.getOrg(), true, true);
                                 if (computed) { pairCount++; } else { skipCount++; }
                             } catch (Exception e) {
                                 errorCount++;
@@ -148,7 +149,8 @@ public class ReleaseFinalizerService {
                         ReleaseData curr = releases.get(i + 1);
                         try {
                             log.debug("FINALIZE_ALL:     Diff: {} -> {}", prev.getVersion(), curr.getVersion());
-                            boolean computed = acollectionService.resolveBomDiff(curr.getUuid(), prev.getUuid(), curr.getOrg(), true);
+                            boolean computed = acollectionService.resolveBomDiff(curr.getUuid(), prev.getUuid(),
+                                    curr.getOrg(), true, true);
                             if (computed) { pairCount++; } else { skipCount++; }
                         } catch (Exception e) {
                             errorCount++;
