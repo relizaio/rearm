@@ -975,7 +975,8 @@ class VariableQueries {
 	 */
 	protected static final String GET_NUMERIC_ANALYTICS_FOR_ORG = """
 			select component_count.components, product_count.products, release_count.releases,
-			vcs_count.vcs, artifact_count.artifacts, sce_count.commits, branch_count.branches, deliverable_count.deliverables, feature_set_count.feature_sets
+			vcs_count.vcs, artifact_count.artifacts, sce_count.commits, branch_count.branches, deliverable_count.deliverables, feature_set_count.feature_sets,
+			admin_write_user_count.admin_and_write_users, read_only_user_count.read_only_users
 			from
 			(select count(*) as components from rearm.components where record_data->>'org' = :orgUuidAsString 
 			   and record_data->>'type' = 'COMPONENT' and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as component_count,
@@ -995,7 +996,15 @@ class VariableQueries {
 				(b.record_data->>'status' is null or b.record_data->>'status' = 'ACTIVE') and 
 				'PRODUCT' = (select rc.record_data->>'type' from rearm.components rc where rc.record_data->>'uuid' = b.record_data->>'component')) as feature_set_count,
 			(select count(*) as deliverables from rearm.deliverables where record_data->>'org' = :orgUuidAsString and
-				(record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as deliverable_count
+				(record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as deliverable_count,
+			(select count(*) as admin_and_write_users from rearm.users u where record_data->>'status' = 'ACTIVE'
+				and exists (select 1 from jsonb_array_elements(u.record_data->'permissions'->'permissions') p
+				where p->>'org' = :orgUuidAsString and p->>'scope' = 'ORGANIZATION'
+				and p->>'type' in ('ADMIN', 'READ_WRITE'))) as admin_write_user_count,
+			(select count(*) as read_only_users from rearm.users u where record_data->>'status' = 'ACTIVE'
+				and exists (select 1 from jsonb_array_elements(u.record_data->'permissions'->'permissions') p
+				where p->>'org' = :orgUuidAsString and p->>'scope' = 'ORGANIZATION'
+				and p->>'type' = 'READ_ONLY')) as read_only_user_count
 		""";
 
 	/*
