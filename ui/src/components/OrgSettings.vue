@@ -291,8 +291,12 @@
 
             <n-tab-pane v-if="isOrgAdmin" name="userGroups" tab="User Groups">
                 <div class="userGroupBlock mt-4">
-                    <h5>User Groups ({{ userGroups.length }})</h5>
-                    <n-data-table :columns="userGroupFields" :data="userGroups" class="table-hover">
+                    <h5>User Groups ({{ filteredUserGroups.length }})</h5>
+                    <n-space align="center" style="margin-bottom: 12px;">
+                        <n-switch v-model:value="showInactiveGroups" />
+                        <span>Show Inactive Groups</span>
+                    </n-space>
+                    <n-data-table :columns="userGroupFields" :data="filteredUserGroups" :row-class-name="userGroupRowClassName" class="table-hover">
                     </n-data-table>
                     <n-form v-if="isOrgAdmin" class="createUserGroupForm" @submit="createUserGroup">
                         <n-input-group class="mt-3">
@@ -1259,7 +1263,14 @@ async function loadUsers() {
 }
 
 // User Groups
+const showInactiveGroups = ref(false)
 const userGroups: Ref<any[]> = ref([])
+const filteredUserGroups = computed(() => {
+    if (showInactiveGroups.value) {
+        return userGroups.value
+    }
+    return userGroups.value.filter((g: any) => g.status === 'ACTIVE')
+})
 const selectedUserGroup: Ref<any> = ref({})
 const newUserGroup: Ref<any> = ref({
     name: '',
@@ -1316,6 +1327,10 @@ async function loadUserGroups() {
         console.error('Error loading user groups:', error)
         notify('error', 'Error', 'Failed to load user groups')
     }
+}
+
+function userGroupRowClassName(row: any) {
+    return row.status === 'INACTIVE' ? 'inactive-row' : ''
 }
 
 // Perspectives
@@ -2052,31 +2067,54 @@ const userGroupFields = [
         }
     },
     {
+        key: 'status',
+        title: 'Status',
+        render(row: any) {
+            if (row.status === 'INACTIVE') {
+                return h('span', { style: 'color: #999; font-style: italic;' }, 'Inactive')
+            }
+            return h('span', { style: 'color: #18a058;' }, 'Active')
+        }
+    },
+    {
         key: 'controls',
         title: 'Manage',
         render(row: any) {
             let els: any[] = []
             if (isOrgAdmin.value) {
-                els = [
-                    h(
-                        NIcon,
-                        {
-                            title: 'Edit User Group',
-                            class: 'icons clickable',
-                            size: 25,
-                            onClick: () => editUserGroup(row.uuid)
-                        }, { default: () => h(EditIcon) }
-                    ),
-                    h(
-                        NIcon,
-                        {
-                            title: 'Delete User Group',
-                            class: 'icons clickable',
-                            size: 25,
-                            onClick: () => deleteUserGroup(row.uuid)
-                        }, { default: () => h(Trash) }
-                    )
-                ]
+                if (row.status === 'INACTIVE') {
+                    els = [
+                        h(
+                            NButton,
+                            {
+                                type: 'success',
+                                size: 'small',
+                                onClick: () => restoreUserGroup(row.uuid)
+                            }, { default: () => 'Restore' }
+                        )
+                    ]
+                } else {
+                    els = [
+                        h(
+                            NIcon,
+                            {
+                                title: 'Edit User Group',
+                                class: 'icons clickable',
+                                size: 25,
+                                onClick: () => editUserGroup(row.uuid)
+                            }, { default: () => h(EditIcon) }
+                        ),
+                        h(
+                            NIcon,
+                            {
+                                title: 'Delete User Group',
+                                class: 'icons clickable',
+                                size: 25,
+                                onClick: () => deleteUserGroup(row.uuid)
+                            }, { default: () => h(Trash) }
+                        )
+                    ]
+                }
             }
             return h('div', els)
         }
@@ -2910,9 +2948,17 @@ async function deleteUserGroup(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (!group) return
     
-    const onSwalConfirm = async function () {
+    const swalResp = await Swal.fire({
+        title: 'Are you sure?',
+        text: `Are you sure you want to deactivate the user group "${group.name}"?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes!',
+        cancelButtonText: 'No!'
+    })
+    
+    if (swalResp.value) {
         try {
-            // Note: The GraphQL schema doesn't show a delete mutation, so we'll update status to INACTIVE
             const response = await graphqlClient.mutate({
                 mutation: gql`
                     mutation updateUserGroup($userGroup: UpdateUserGroupInput!) {
@@ -2931,22 +2977,61 @@ async function deleteUserGroup(groupUuid: string) {
             })
             
             if (response.data && response.data.updateUserGroup) {
-                notify('success', 'Deactivated', `Successfully deactivated user group "${group.name}"`)
+                notify('success', 'Deactivated!', `The user group "${group.name}" has been deactivated.`)
                 loadUserGroups()
             }
         } catch (error: any) {
             console.error('Error deactivating user group:', error)
             notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
         }
+    } else if (swalResp.dismiss === Swal.DismissReason.cancel) {
+        notify('error', 'Cancelled', 'The user group remains active.')
     }
+}
+
+async function restoreUserGroup(groupUuid: string) {
+    const group = userGroups.value.find(g => g.uuid === groupUuid)
+    if (!group) return
     
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to deactivate the user group "${group.name}"?`,
-        successTitle: 'Deactivated!',
-        successText: `The user group "${group.name}" has been deactivated.`,
-        dismissText: 'The user group remains active.'
+    const swalResp = await Swal.fire({
+        title: 'Are you sure?',
+        text: `Are you sure you want to restore the user group "${group.name}"?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes!',
+        cancelButtonText: 'No!'
+    })
+    
+    if (swalResp.value) {
+        try {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateUserGroup($userGroup: UpdateUserGroupInput!) {
+                        updateUserGroup(userGroup: $userGroup) {
+                            uuid
+                            name
+                            status
+                        }
+                    }`,
+                variables: {
+                    userGroup: {
+                        groupId: groupUuid,
+                        status: 'ACTIVE'
+                    }
+                }
+            })
+            
+            if (response.data && response.data.updateUserGroup) {
+                notify('success', 'Restored!', `The user group "${group.name}" has been restored.`)
+                loadUserGroups()
+            }
+        } catch (error: any) {
+            console.error('Error restoring user group:', error)
+            notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
+        }
+    } else if (swalResp.dismiss === Swal.DismissReason.cancel) {
+        notify('error', 'Cancelled', 'The user group remains inactive.')
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 function initializeResourceGroup() {
@@ -3748,6 +3833,11 @@ async function fetchApprovalPolicies () {
 
 .createUserGroupForm {
     margin-bottom: 10px;
+}
+
+:deep(.inactive-row td) {
+    opacity: 0.55;
+    background-color: #f5f5f5 !important;
 }
 </style>
   
