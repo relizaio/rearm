@@ -23,6 +23,8 @@ import io.reliza.model.AcollectionData.VersionedArtifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
@@ -56,7 +58,7 @@ public class AcollectionDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
 		return acollectionService.getAcollectionDatasOfRelease(releaseUuid);
 	}
 	

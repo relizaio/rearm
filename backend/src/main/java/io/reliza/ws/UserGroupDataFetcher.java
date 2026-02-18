@@ -22,6 +22,8 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.UserData;
@@ -60,7 +62,7 @@ public class UserGroupDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.ADMIN);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, org, List.of(ro), CallType.ADMIN);
 		List<UserGroupData> userGroups = userGroupService.getAllUserGroupsByOrganization(org);
 		return userGroups.stream()
 				.map(UserGroupData::toWebDto)
@@ -78,7 +80,7 @@ public class UserGroupDataFetcher {
 
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(createDto.getOrg());
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.ADMIN);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, createDto.getOrg(), List.of(ro), CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		return UserGroupData.toWebDto(userGroupService.createUserGroup(createDto, wu));
 	}
@@ -96,7 +98,7 @@ public class UserGroupDataFetcher {
 		Optional<UserGroupData> ugd = userGroupService.getUserGroupData(groupUuid);
 		RelizaObject ro = ugd.isPresent() ? ugd.get() : null;
 
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.ADMIN);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
 
 		if (userGroupInput.getUsers() != null) {
 			for (UUID userUuid : userGroupInput.getUsers()) {

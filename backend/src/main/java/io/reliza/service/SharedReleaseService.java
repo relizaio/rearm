@@ -100,7 +100,7 @@ public class SharedReleaseService {
 		return ord;
 	}
 	
-	public Optional<ReleaseData> getReleaseData (UUID uuid, UUID myOrgUuid) throws RelizaException {
+	public Optional<ReleaseData> getReleaseData (UUID uuid, UUID myOrgUuid) {
 		Optional<ReleaseData> orData = Optional.empty();
 		Optional<Release> r = getRelease(uuid, myOrgUuid);
 		if (r.isPresent()) {
@@ -164,11 +164,7 @@ public class SharedReleaseService {
 		List<GenericReleaseData> brReleaseData = listReleaseDataOfBranch(branchUuid, orgUuid, lifecycle, DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE, upToDate);
 		if (!brReleaseData.isEmpty()) {
 			Collections.sort(brReleaseData, new ReleaseVersionComparator(pd.getVersionSchema(), bd.getVersionSchema()));
-			try {
-				ord = getReleaseData(brReleaseData.get(0).getUuid(), orgUuid);
-			} catch (RelizaException e) {
-				log.error("Exception on getting release data in latest of branch", e);
-			}
+			ord = getReleaseData(brReleaseData.get(0).getUuid(), orgUuid);
 		}
 		return ord;
 	}
@@ -366,15 +362,11 @@ public class SharedReleaseService {
 	public List<ReleaseData> getReleaseDataList (Collection<UUID> uuidList, UUID org) {
 		var rlzList = new LinkedList<ReleaseData>();
 		uuidList.forEach(uuid -> {
-			try {
-				var rlzO = getReleaseData(uuid, org);
-				if (rlzO.isPresent()) {
-					rlzList.add(rlzO.get());
-				} else {
-					log.warn("Could not locate releaze with UUID = " + uuid + " from org = " + org);
-				}
-			} catch (RelizaException re) {
-				log.error("exception on get release data", re);
+			var rlzO = getReleaseData(uuid, org);
+			if (rlzO.isPresent()) {
+				rlzList.add(rlzO.get());
+			} else {
+				log.warn("Could not locate releaze with UUID = " + uuid + " from org = " + org);
 			}
 		});
 		return rlzList;
@@ -430,12 +422,8 @@ public class SharedReleaseService {
 	public Set<ReleaseData> greedylocateProductsOfRelease (ReleaseData rd, UUID myOrg, boolean sorted) {
 		ReleaseData processingRd = null;
 		if (null != myOrg) {
-			try {
-				var ord = getReleaseData(rd.getUuid(), myOrg);
-				if (ord.isPresent()) processingRd = ord.get();
-			} catch (RelizaException re) {
-				log.error("Exception on getting releaxe on locate product", re);
-			}
+			var ord = getReleaseData(rd.getUuid(), myOrg);
+			if (ord.isPresent()) processingRd = ord.get();
 		} else {
 			// legacy callers not supplying myorg or auth
 			processingRd = rd;

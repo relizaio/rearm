@@ -3,8 +3,10 @@
 */
 package io.reliza.ws;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -23,10 +25,13 @@ import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedArtifactService;
+import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -43,14 +48,16 @@ public class ArtifactWs {
     private SharedArtifactService sharedArtifactService;
     
 	@Autowired
-	GetComponentService getComponentService;
+	private GetComponentService getComponentService;
 
-    
     @Autowired
     private AuthorizationService authorizationService;
 
     @Autowired
     private UserService userService;
+    
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
 
     @GetMapping("api/manual/v1/artifact/{uuid}/download")
     public Mono<ResponseEntity<byte[]>> downloadArtifact(
@@ -67,7 +74,9 @@ public class ArtifactWs {
         log.debug("latestOad is present? {}", latestOad.isPresent());
         log.debug("latestOad is  {}", latestOad.get());
 		RelizaObject ro = latestOad.isPresent() ? latestOad.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ro.getOrg());
+		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
 		if (response.isCommitted()) return null;
         Optional<ArtifactData> oad = (version == null)
             ? latestOad
@@ -94,7 +103,9 @@ public class ArtifactWs {
         log.debug("latestOad is present? {}", latestOad.isPresent());
         log.debug("latestOad is  {}", latestOad.get());
 		RelizaObject ro = latestOad.isPresent() ? latestOad.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ro.getOrg());
+		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
         if (response.isCommitted()) return null;
 		Optional<ArtifactData> oad = (version == null)
             ? latestOad

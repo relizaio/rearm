@@ -10,6 +10,7 @@ import java.util.UUID;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import lombok.Builder;
@@ -24,6 +25,8 @@ public class UserGroupPermissionDto {
 	private UUID objectId;
 	@JsonProperty(CommonVariables.TYPE_FIELD)
 	private PermissionType type;
+	@JsonProperty("functions")
+	private Collection<PermissionFunction> functions;
 	@JsonProperty(CommonVariables.APPROVALS_FIELD)
 	private Collection<String> approvals;
 }

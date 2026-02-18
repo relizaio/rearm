@@ -21,20 +21,19 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.ArtifactData.ArtifactType;
-import io.reliza.model.SourceCodeEntryData.SCEArtifact;
-import io.reliza.model.dto.ArtifactWebDto;
 import io.reliza.model.dto.SyncDtrackStatusResponseDto;
 import io.reliza.model.RelizaObject;
-import io.reliza.model.SourceCodeEntryData;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
-import io.reliza.service.BranchService;
-import io.reliza.service.GetComponentService;
-import io.reliza.service.OrganizationService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.RebomService;
 import io.reliza.service.RebomService.EnrichmentTriggerResult;
+import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -44,28 +43,25 @@ import lombok.extern.slf4j.Slf4j;
 public class ArtifactDataFetcher {
 	
 	@Autowired
-	AuthorizationService authorizationService;
+	private AuthorizationService authorizationService;
 	
 	@Autowired
-	ArtifactService artifactService;
+	private ArtifactService artifactService;
 	
 	@Autowired
-	UserService userService;
-	
-	@Autowired
-	GetComponentService getComponentService;
-	
-	@Autowired
-	BranchService branchService;
-	
-	@Autowired
-	OrganizationService organizationService;
+	private UserService userService;
 
 	@Autowired
-	SharedReleaseService sharedReleaseService;
+	private GetOrganizationService getOrganizationService;
+
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
+
+	@Autowired
+	private SharedArtifactService sharedArtifactService;
 	
 	@Autowired
-	RebomService rebomService;
+	private RebomService rebomService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifact")
@@ -75,7 +71,9 @@ public class ArtifactDataFetcher {
 		UUID artifactUuid = UUID.fromString(artifactUuidStr);
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, oad.get().getOrg());
+		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
 		return oad.get();
 	}
 	
@@ -87,7 +85,9 @@ public class ArtifactDataFetcher {
 		UUID artifactUuid = UUID.fromString(artifactUuidStr);
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, oad.get().getOrg());
+		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
 		
 		ArtifactData currentArtifact = oad.get();
 		List<ArtifactData> versionHistory = new LinkedList<>();
@@ -125,7 +125,9 @@ public class ArtifactDataFetcher {
 		UUID artifactUuid = UUID.fromString(artifactUuidStr);
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, oad.get().getOrg());
+		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
 		return artifactService.getArtifactBomLatestVersion(oad.get().getInternalBom().id(), oad.get().getOrg());
 	}
 	
@@ -232,8 +234,9 @@ public class ArtifactDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		
-		// Verify user has admin access to the organization
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
 		
 		log.info("User {} initiated DTrack status sync for organization {}", oud.get().getUuid(), orgUuid);
 		
@@ -254,8 +257,7 @@ public class ArtifactDataFetcher {
 		
 		ArtifactData ad = oad.get();
 		
-		// Require ADMIN permission
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), ad.getOrg(), CallType.ADMIN);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ad.getOrg(), List.of(ad), CallType.ADMIN);
 		
 		// Check if artifact has internal BOM
 		if (ad.getInternalBom() == null || ad.getInternalBom().id() == null) {
@@ -263,6 +265,22 @@ public class ArtifactDataFetcher {
 		}
 		
 		return rebomService.triggerEnrichment(ad.getInternalBom().id(), ad.getOrg());
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "refetchDependencyTrackMetrics")
+	public boolean refetchDependencyTrackMetrics (
+			@InputArgument("artifact") UUID art) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<Artifact> oa = sharedArtifactService.getArtifact(art);
+		
+		RelizaObject ro = oa.isPresent() ? ArtifactData.dataFromRecord(oa.get()) : null;
+		var releases = sharedReleaseService.gatherReleasesForArtifact(art, ro.getOrg());
+		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ro), CallType.WRITE);
+
+		return artifactService.fetchDependencyTrackDataForArtifact(oa.get());
 	}
 
 }

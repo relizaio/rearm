@@ -5,6 +5,7 @@
 package io.reliza.model;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Optional;
@@ -15,6 +16,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.CallType;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.Setter;
@@ -23,10 +25,13 @@ import lombok.Setter;
 public class UserPermission {
 	
 	public enum PermissionScope {
-		ORGANIZATION,
-		COMPONENT,
+		// N.B. Enum order matters here! - P.S. 2026-02-17
+		RELEASE,
 		BRANCH,
-		INSTANCE
+		COMPONENT,
+		PERSPECTIVE,
+		INSTANCE,
+		ORGANIZATION
 		;
 		
 		private PermissionScope () {}
@@ -40,10 +45,42 @@ public class UserPermission {
 		ADMIN
 		;
 		
+		public static PermissionType mapFromCallType (CallType ct) {
+			PermissionType pt = NONE;
+			switch(ct) {
+				case ADMIN:
+					pt = ADMIN;
+					break;
+				case READ:
+					pt = READ_ONLY;
+				case WRITE:
+					pt = READ_WRITE;
+				case GLOBAL_ADMIN:
+				case INIT:
+				default:
+					pt = null;
+					break;
+			}
+			return pt;
+				
+		}
+		
 		private PermissionType () {}
 	}
+
+	/**
+	 * Permission function - vertical slice of permission
+	 * If omitted, permission applies to all functions
+	 */
+	public enum PermissionFunction {
+		RESOURCE, // self, includes functionality otherwise not covered by other functions
+		VULN_ANALYSIS,
+		ARTIFACT_DOWNLOAD;
+		
+		private PermissionFunction () {}
+	}
 	
-	public record PermissionDto(UUID org, PermissionScope scope, UUID object, PermissionType type) {}
+	public record PermissionDto(UUID org, PermissionScope scope, UUID object, PermissionType type, Set<PermissionFunction> functions) {}
 	
 	@Setter(AccessLevel.PRIVATE)
 	private UUID org;
@@ -53,6 +90,8 @@ public class UserPermission {
 	private UUID object; // object to which permission applies
 	@Setter(AccessLevel.PRIVATE)
 	private PermissionType type; // admin, read-only, write-only, read-write, none
+	@Setter(AccessLevel.PRIVATE)
+	private Set<PermissionFunction> functions = new LinkedHashSet<>();
 	@JsonProperty(CommonVariables.APPROVALS_FIELD)
 	private Set<String> approvals = new LinkedHashSet<>(); 
 	@Setter(AccessLevel.PRIVATE)
@@ -65,12 +104,16 @@ public class UserPermission {
 	}
 
 
-	private static UserPermission permissionFactory (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type, Collection<String> approvals) {
+	private static UserPermission permissionFactory (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type,
+			Collection<PermissionFunction> functions, Collection<String> approvals) {
 		UserPermission up = new UserPermission();
 		up.setOrg(orgUuid);
 		up.setScope(scope);
 		up.setObject(objectUuid);
 		up.setType(type);
+		if (null != functions) {
+			up.setFunctions(new LinkedHashSet<>(functions));
+		}
 		if (null != approvals) {
 			up.setApprovals(new LinkedHashSet<>(approvals));
 		}
@@ -86,8 +129,6 @@ public class UserPermission {
 		}
 		
 		public Optional<UserPermission> getPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid) {
-			// every user with a write permission on at least one org has read permissions on global
-			boolean foundWritePermission = false;
 			// for now, just do simple scan, later we may optimize this via hash map or bloom filter
 			Optional<UserPermission> oup = Optional.empty();
 			Iterator<UserPermission> upIter = permissions.iterator();
@@ -95,15 +136,7 @@ public class UserPermission {
 				UserPermission upCur = upIter.next();
 				if (orgUuid.equals(upCur.getOrg()) && scope == upCur.getScope() && objectUuid.equals(upCur.getObject())) {
 					oup = Optional.of(upCur);
-				} else if (upCur.getScope() == PermissionScope.ORGANIZATION && (upCur.getType() == PermissionType.ADMIN || upCur.getType() == PermissionType.READ_WRITE)) {
-					foundWritePermission = true;
 				}
-			}
-			if (oup.isEmpty() && CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(orgUuid) && foundWritePermission) {
-				// grant read only access to external org
-				UserPermission externalUp = UserPermission.permissionFactory(CommonVariables.EXTERNAL_PROJ_ORG_UUID, PermissionScope.ORGANIZATION, 
-						CommonVariables.EXTERNAL_PROJ_ORG_UUID, PermissionType.READ_ONLY, null);
-				oup = Optional.of(externalUp);
 			}
 			return oup;
 		}
@@ -124,6 +157,24 @@ public class UserPermission {
 			}
 			return orgPermissions;
 		}
+		
+		/**
+		 * Returns all permissions filtered by org UUID as a set of permissions rather than Permissions object
+		 * @param orgUuid
+		 * @return
+		 */
+		public Set<UserPermission> getOrgPermissionsAsSet (UUID orgUuid) {
+			Set<UserPermission> orgPermissions = new HashSet<>();
+			Iterator<UserPermission> upIter = permissions.iterator();
+			while (upIter.hasNext()) {
+				UserPermission upCur = upIter.next();
+				if (orgUuid.equals(upCur.getOrg())) {
+					orgPermissions.add(upCur);
+				}
+			}
+			return orgPermissions;
+		}
+		
 		
 		public Permissions cloneOrgPermissions (UUID orgUuid) {
 			Permissions orgPermissions = new Permissions();
@@ -164,6 +215,11 @@ public class UserPermission {
 		}
 		
 		public void setPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type, Collection<String> approvals) {
+			setPermission(orgUuid, scope, objectUuid, type, null, approvals);
+		}
+
+		public void setPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type,
+				Collection<PermissionFunction> functions, Collection<String> approvals) {
 			// if permission exists, update it accordingly
 			// for now, just do simple scan, later we may optimize this via hash map or bloom filter
 			Iterator<UserPermission> upIter = permissions.iterator();
@@ -172,13 +228,14 @@ public class UserPermission {
 				UserPermission upCur = upIter.next();
 				if (orgUuid.equals(upCur.getOrg()) && scope == upCur.getScope() && objectUuid.equals(upCur.getObject())) {
 					upCur.setType(type);
+					if (null != functions) upCur.setFunctions(new LinkedHashSet<>(functions));
 					if (null != approvals) upCur.setApprovals(new LinkedHashSet<>(approvals));
 					found = true;
 				}
 			}
 			// if permission doesn't exist, create it
 			if (!found) {
-				UserPermission upNew = permissionFactory(orgUuid, scope, objectUuid, type, approvals);
+				UserPermission upNew = permissionFactory(orgUuid, scope, objectUuid, type, functions, approvals);
 				addPermission(upNew);
 			}
 		}

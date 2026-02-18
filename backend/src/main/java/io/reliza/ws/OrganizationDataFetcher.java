@@ -28,6 +28,8 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
@@ -86,12 +88,13 @@ public class OrganizationDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roUsers = od.isPresent() ? od.get() : null;
 		InstallationType systemInstallationType = userService.getInstallationType();
 		CallType ct = CallType.READ;
 		if (InstallationType.DEMO == systemInstallationType) {
 			ct = CallType.ADMIN;
 		}
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, ct);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUsers), ct);
 		return userService.listOrgUserDataByOrg(od.get().getUuid());
 	}
 	
@@ -101,7 +104,9 @@ public class OrganizationDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var odRg = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roRg = odRg.isPresent() ? odRg.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roRg), CallType.READ);
 		return resourceGroupService.listResourceGroupDataOfOrg(orgUuid);
 	}
 	
@@ -111,7 +116,9 @@ public class OrganizationDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var odTotals = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roTotals = odTotals.isPresent() ? odTotals.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roTotals), CallType.READ);
 		return organizationService.getNumericAnalytics(orgUuid);
 	}
 	
@@ -121,8 +128,9 @@ public class OrganizationDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roApiKeys = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roApiKeys), CallType.ADMIN);
 		return apiKeyService.listApiKeyDtoByOrgWithLastAccessDate(od.get().getUuid());
 	}
 	
@@ -137,9 +145,10 @@ public class OrganizationDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roSetKey = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roSetKey), CallType.ADMIN);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		String apiKey = null;
 		String keyId = null;
 		if (keyType == ApiTypeEnum.APPROVAL) {
@@ -171,7 +180,7 @@ public class OrganizationDataFetcher {
 		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
 		var oakd = apiKeyService.getApiKeyData(apiKeyUuid);
 		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.ADMIN);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		apiKeyService.deleteApiKey(apiKeyUuid, wu);
 		return true;
@@ -185,7 +194,9 @@ public class OrganizationDataFetcher {
 		try {
 			JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 			oud = userService.getUserDataByAuth(auth);
-			authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), org, CallType.ADMIN);
+			var odRemove = getOrganizationService.getOrganizationData(org);
+			RelizaObject roRemove = odRemove.isPresent() ? odRemove.get() : null;
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, org, List.of(roRemove), CallType.ADMIN);
 			WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 			userService.removeUserFromOrg(org, user, wu);
 		} catch (Exception e) {
@@ -198,12 +209,13 @@ public class OrganizationDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateOrganizationTerminology")
 	public OrganizationData updateOrganizationTerminology(
-			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("terminology") Map<String, Object> terminology) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = UUID.fromString(orgUuidStr);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		var odTerm = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roTerm = odTerm.isPresent() ? odTerm.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roTerm), CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		String featureSetLabel = terminology != null ? (String) terminology.get("featureSetLabel") : null;
@@ -214,12 +226,13 @@ public class OrganizationDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateOrganizationIgnoreViolation")
 	public OrganizationData updateOrganizationIgnoreViolation(
-			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("ignoreViolation") Map<String, Object> ignoreViolation) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = UUID.fromString(orgUuidStr);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		var odIgnore = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roIgnore = odIgnore.isPresent() ? odIgnore.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roIgnore), CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		@SuppressWarnings("unchecked")
@@ -250,7 +263,9 @@ public class OrganizationDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		var odSettings = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roSettings = odSettings.isPresent() ? odSettings.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roSettings), CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		Boolean justificationMandatory = settings != null ? (Boolean) settings.get("justificationMandatory") : null;

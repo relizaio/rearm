@@ -24,6 +24,8 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.VcsType;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.VcsRepository;
@@ -60,7 +62,7 @@ public class VcsRepositoryDataFetcher {
 		
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsRepositoryUuid);
 		RelizaObject ro = ovrd.isPresent() ? ovrd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
 		return ovrd.get();
 	}
 	
@@ -72,7 +74,7 @@ public class VcsRepositoryDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		return vcsRepositoryService.listVcsRepoDataByOrg(orgUuid);
 	}
 	
@@ -92,7 +94,7 @@ public class VcsRepositoryDataFetcher {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		String name = (String) vcsRepositoryInput.get(CommonVariables.NAME_FIELD);
 		String uri = (String) vcsRepositoryInput.get(CommonVariables.URI_FIELD);
@@ -109,16 +111,14 @@ public class VcsRepositoryDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateVcsRepository")
 	public VcsRepositoryData updateBranch(
-			@InputArgument("vcsUuid") String vcsUuidStr,
+			@InputArgument("vcsUuid") UUID vcsUuid,
 			@InputArgument("name") String name,
 			@InputArgument("uri") String uri) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		
-		UUID vcsUuid = UUID.fromString(vcsUuidStr);
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsUuid);
 		RelizaObject ro = ovrd.isPresent() ? ovrd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		try {
 			return VcsRepositoryData.dataFromRecord(vcsRepositoryService.updateVcsRepository(vcsUuid, name, uri, wu));
@@ -137,7 +137,7 @@ public class VcsRepositoryDataFetcher {
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsUuid);
 		RelizaObject ro = ovrd.isPresent() ? ovrd.get() : null;
 		// Use ADMIN authorization - only admins can archive VCS repositories
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.ADMIN);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		return vcsRepositoryService.archiveVcsRepository(vcsUuid, wu);
 	}

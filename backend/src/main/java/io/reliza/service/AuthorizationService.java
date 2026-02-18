@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -12,6 +13,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -26,19 +28,27 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.RequestType;
 import io.reliza.model.ApiKey.ApiTypeEnum;
+import io.reliza.model.ApiKeyData;
 import io.reliza.model.AuthPrincipal;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.UserData;
+import io.reliza.model.UserPermission;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.AuthorizationResponse.AllowType;
 import io.reliza.model.dto.AuthorizationResponse.ForbidType;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
+import io.reliza.service.oss.OssPerspectiveService;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -52,7 +62,7 @@ public class AuthorizationService {
 	private GetOrganizationService getOrganizationService;
 	
 	@Autowired 
-	private ResourceGroupService resourceGroupService;
+	private ApiKeyAccessService apiKeyAccessService;
 	
 	@Autowired
 	private GetComponentService getComponentService;
@@ -62,6 +72,15 @@ public class AuthorizationService {
 	
 	@Autowired
 	private UserService userService;
+	
+	@Autowired
+	private OssPerspectiveService ossPerspectiveService;
+	
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
+	
+	@Autowired
+	private BranchService branchService;
 	
 	public AuthHeaderParse authenticateProgrammatic (HttpHeaders headers, ServletWebRequest servletWebRequest) {
 		AuthHeaderParse ahp = null;
@@ -102,20 +121,6 @@ public class AuthorizationService {
 		return ar;
 	}
 	
-	public AuthorizationResponse isUserAuthorizedOrgWideGraphQL(UserData ud, UUID org, CallType ct) {
-		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
-		AuthorizationStatus as = organizationService.isUserAuthorizedOrgWide(ud, org, ct);
-		if (as == AuthorizationStatus.AUTHORIZED) AuthorizationResponse.allow(ar);
-		gqlValidateAuthorizationResponse(ar);
-		return ar;
-	}
-
-	public AuthorizationResponse isUserAuthorizedOrgWideGraphQLWithObject(UserData ud, RelizaObject ro, CallType ct) {
-		List<RelizaObject> ros = new LinkedList<>();
-		if (null != ro) ros.add(ro);
-		return isUserAuthorizedOrgWideGraphQLWithObjects(ud, ros, ct);
-	}
-	
 	public AuthorizationResponse doUsersBelongToOrg (Collection<UUID> users, final UUID org) {
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.ALLOW);
 		if (null != users && !users.isEmpty()) {
@@ -137,13 +142,263 @@ public class AuthorizationService {
 		UUID org = getMatchingOrg(ros);
 
 		if (null != org) {
-			AuthorizationStatus as = organizationService.isUserAuthorizedOrgWide(ud, org, ct);
+			AuthorizationStatus as = isUserAuthorizedOrgWide(ud, org, ct);
 			if (as == AuthorizationStatus.AUTHORIZED) AuthorizationResponse.allow(ar);
 		}
 		
 		gqlValidateAuthorizationResponse(ar);
 		return ar;
 	}
+
+	/**
+	 * New authorization call with RBAC
+	 * @param ud
+	 * @param function
+	 * @param releaseData
+	 * @param ros - Must contain original object 
+	 * @param ct
+	 * @return
+	 */
+	public AuthorizationResponse isUserAuthorizedForObjectGraphQL(final UserData ud, @NonNull final PermissionFunction function,
+			final PermissionScope objectType, final UUID objectUuid, Collection<RelizaObject> ros, CallType ct) {
+		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
+		if (ud.isGlobalAdmin()) {
+			AuthorizationResponse.allow(ar);
+		}
+		
+		if (!AuthorizationResponse.isAllowed(ar)) {
+			final UUID org = getMatchingOrg(ros);
+	
+			if (null != org) {
+				var permissions = ud.getOrgPermissions(org);
+				boolean authorized = permissions.stream().anyMatch(x -> 
+					doesPermissionAuthorize(x, org, function, objectType, objectUuid, ct));
+				if (authorized) {
+					AuthorizationResponse.allow(ar);
+				}
+			}
+		}
+		
+		gqlValidateAuthorizationResponse(ar);
+		return ar;
+	}
+	
+	public AuthorizationResponse isUserAuthorizedForAnyObjectGraphQL(final UserData ud, @NonNull final PermissionFunction function,
+			final PermissionScope objectType, final Set<UUID> objectUuids, Collection<RelizaObject> ros, CallType ct) {
+		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
+		if (ud.isGlobalAdmin()) {
+			AuthorizationResponse.allow(ar);
+		}
+		
+		if (!AuthorizationResponse.isAllowed(ar) && null != objectUuids && !objectUuids.isEmpty()) {
+			final UUID org = getMatchingOrg(ros);
+			if (null != org) {
+				boolean authorized = false;
+				Iterator<UUID> objectIter = objectUuids.iterator();
+				while (!authorized && objectIter.hasNext()) {
+					UUID objectUuid = objectIter.next();
+					var permissions = ud.getOrgPermissions(org);
+					authorized = permissions.stream().anyMatch(x -> 
+						doesPermissionAuthorize(x, org, function, objectType, objectUuid, ct));
+				}
+				if (authorized) {
+					AuthorizationResponse.allow(ar);
+				}
+			}
+		}
+		
+		gqlValidateAuthorizationResponse(ar);
+		return ar;
+	}
+	
+	private boolean hasUserAcceptedAndVerified (UserData ud) {
+		return (null != ud && ud.isPoliciesAccepted() && ud.isPrimaryEmailVerified() &&
+				(StringUtils.isNotEmpty(ud.getGithubId()) || StringUtils.isNotEmpty(ud.getOauthId())));
+	}
+	
+	private boolean doesPermissionAuthorize(UserPermission permission, UUID org, @NonNull PermissionFunction function, PermissionScope objectType, UUID objectUuid, CallType ct) {
+		if (!permission.getOrg().equals(org)) {
+			return false;
+		}
+		if (ct == CallType.GLOBAL_ADMIN) {
+			return false;
+		}
+
+		if (null == objectUuid) {
+			return false;
+		}
+		
+		if (permission.getScope() == PermissionScope.ORGANIZATION && permission.getType() == PermissionType.ADMIN) {
+			return true;
+		}
+		
+		if (null != permission.getFunctions() && !permission.getFunctions().isEmpty() && !permission.getFunctions().contains(function)) {
+			return false;
+		}
+		
+		PermissionType resolvedPt = PermissionType.mapFromCallType(ct);
+		if (null == resolvedPt) {
+			return false;
+		}
+		
+		if (permission.getType().ordinal() < resolvedPt.ordinal()) {
+			return false;
+		}
+		
+		if (permission.getScope() == PermissionScope.ORGANIZATION) {
+			return true;
+		}
+		
+		if (objectType.ordinal() > permission.getScope().ordinal()) {
+			return false;
+		}
+		
+		if (objectType == permission.getScope() && permission.getObject().equals(objectUuid)) {
+			return true;
+		}
+		
+		return doesPermissionScopeContainObject(permission, org, objectType, objectUuid);
+		
+	}
+	
+	/**
+	 * We currently consider only COMPONENT and PERSPECTIVE as permission scopes
+	 * @param permission
+	 * @param objectType
+	 * @param objectUuid
+	 * @return
+	 */
+	private boolean doesPermissionScopeContainObject (UserPermission permission, UUID org, PermissionScope objectType, UUID objectUuid) {
+		List<ComponentData> authorizedComponents = new LinkedList<>();
+		if (permission.getScope() == PermissionScope.PERSPECTIVE) {
+			var opd = ossPerspectiveService.getPerspectiveData(permission.getObject());
+			if (opd.isEmpty() || !org.equals(opd.get().getOrg())) {
+				log.error("Empty or wrong match for user permission with org = {}, requested under org = {} with permission object = {}",
+						permission.getOrg(), org, permission.getObject());
+				return false;
+			}
+			authorizedComponents = getComponentService.listComponentsByPerspective(permission.getObject());
+		} else if (permission.getScope() == PermissionScope.COMPONENT) {
+			var ocd = getComponentService.getComponentData(permission.getObject());
+			if (ocd.isEmpty() || !org.equals(ocd.get().getOrg())) {
+				log.error("Empty or wrong match for user permission with org = {}, requested under org = {} with permission object = {}",
+						permission.getOrg(), org, permission.getObject());
+				return false;
+			}
+			authorizedComponents.add(ocd.get());
+			var childCompList = getComponentService.listComponentsByProduct(permission.getObject());
+			authorizedComponents.addAll(childCompList);
+		}
+		return doComponentsContainObject(authorizedComponents, org, objectType, objectUuid);
+	}
+	
+	private boolean doComponentsContainObject (List<ComponentData> authorizedComponents, UUID org, PermissionScope objectType, UUID objectUuid) {
+		if (null == authorizedComponents || authorizedComponents.isEmpty()) {
+			return false;
+		}
+		switch (objectType) {
+		case RELEASE:
+			return doComponentsContainRelease(authorizedComponents, org, objectUuid);
+		case BRANCH:
+			return doComponentsContainBranch(authorizedComponents, objectUuid);
+		case COMPONENT:
+			return doComponentsContainComponent(authorizedComponents, objectUuid);
+		default:
+			return false;
+		}
+	}
+	
+	private boolean doComponentsContainRelease (List<ComponentData> authorizedComponents, @NonNull UUID org, @NonNull UUID releaseUuid) {
+		var ord = sharedReleaseService.getReleaseData(releaseUuid, org);
+		if (ord.isEmpty()) {
+			return false;
+		}
+		UUID releaseComponent = ord.get().getComponent();
+		return authorizedComponents.stream().anyMatch(x -> x.getUuid().equals(releaseComponent));
+	}
+	
+	private boolean doComponentsContainBranch (List<ComponentData> authorizedComponents, @NonNull UUID branchUuid) {
+		var obd = branchService.getBranchData(branchUuid);
+		if (obd.isEmpty()) {
+			return false;
+		}
+		UUID branchComponent = obd.get().getComponent();
+		return authorizedComponents.stream().anyMatch(x -> x.getUuid().equals(branchComponent));
+	}
+	
+	private boolean doComponentsContainComponent (List<ComponentData> authorizedComponents, @NonNull UUID componentUuid) {
+		var ocd = getComponentService.getComponentData(componentUuid);
+		if (ocd.isEmpty()) {
+			return false;
+		}
+		return authorizedComponents.stream().anyMatch(x -> x.getUuid().equals(componentUuid));
+	}
+	
+	public AuthorizationStatus isUserAuthorizedOrgWide(UserData ud, UUID org, CallType ct) {
+		AuthorizationStatus as = AuthorizationStatus.AUTHORIZED;
+		boolean authorized = false;
+		try {
+			Optional<OrganizationData> od = Optional.empty();
+			if (null != org) od = getOrganizationService.getOrganizationData(org);
+			
+			authorized = (od.isPresent() && null != ud && ud.isGlobalAdmin());
+			boolean acceptedAndVerified = hasUserAcceptedAndVerified(ud);
+			// special case for init call
+			if (!authorized && od.isPresent() && ct == CallType.INIT && acceptedAndVerified) {
+					authorized = true;
+			}
+			if (!authorized && od.isPresent() && acceptedAndVerified) {
+				// for now, all permissions are only resolved on org level - TODO - allow by resource group
+				Optional<UserPermission> oup = organizationService.obtainUserOrgPermission(ud, org);
+				switch (ct) {
+				case ADMIN:
+					if (oup.isPresent() && oup.get().getType() == PermissionType.ADMIN) {
+						authorized = true;
+					}
+					break;
+				case WRITE:
+					if (oup.isPresent() && oup.get().getType().ordinal() >= PermissionType.READ_WRITE.ordinal()) {
+						authorized = true;
+					}
+					break;
+				case READ:
+					if (CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(org) ||
+							(oup.isPresent() && oup.get().getType().ordinal() >= PermissionType.READ_ONLY.ordinal())) {
+						authorized = true;
+					}
+					break;
+				case GLOBAL_ADMIN:
+				case INIT:
+					authorized = true;
+					break;
+				}
+			}
+		} catch (Exception e) {
+			log.warn("Exception when trying to authorize user, deem as not authorized", e);
+			authorized = false;
+		}
+		if (!authorized) {
+			as = AuthorizationStatus.FORBIDDEN;
+		}
+		return as;
+	}
+	
+	private boolean isUserAuthorizedOrgWide(UserData ud, UUID org, HttpServletResponse response, CallType ct) {
+		AuthorizationStatus as = isUserAuthorizedOrgWide(ud, org, ct);
+		boolean authorized = (as == AuthorizationStatus.AUTHORIZED);
+		if (!authorized) {
+			try {
+				if (!response.isCommitted()) response.sendError(HttpStatus.FORBIDDEN.value(), "You do not have permissions to this resource");
+			} catch (IOException e) {
+				log.error("IO error when sending response", e);
+				// re-throw
+				throw new IllegalStateException("IO error when sending error response");
+			}
+		}
+		return authorized;
+	}
+
+
 	
 	public UUID getMatchingOrg (Collection<RelizaObject> ros) {
 		UUID org = null;
@@ -198,7 +453,7 @@ public class AuthorizationService {
 		}
 		
 		if (AuthorizationResponse.isAllowed(ar)) {
-			matchingKey = apiKeyService.isProgrammaticAccessAuthorized(ahp, ct);
+			matchingKey = isProgrammaticAccessAuthorized(ahp, ct);
 			if (null == matchingKey) {
 				AuthorizationResponse.forbid(ar, "Key unauthorized");
 			}
@@ -255,5 +510,74 @@ public class AuthorizationService {
 		}
 	}
 
+	public UUID isProgrammaticAccessAuthorized(AuthHeaderParse ahp, CallType ct) {
+		return isProgrammaticAccessAuthorized(ahp, null, RequestType.GRAPHQL, ct);
+	}
+	
+	public UUID isProgrammaticAccessAuthorized(AuthHeaderParse ahp, HttpServletResponse response, CallType ct) {
+		return isProgrammaticAccessAuthorized(ahp, response, RequestType.REST, ct);
+	}
+	
+	/**
+	 * 
+	 * @param ahp
+	 * @param response
+	 * @param rt
+	 * @return if authorized, returns matching key UUID, otherwise returns null
+	 */
+	public UUID isProgrammaticAccessAuthorized(AuthHeaderParse ahp, HttpServletResponse response, RequestType rt, CallType ct) {
+		UUID matchingKeyId = null;;
+		String apiKey = ahp.getApiKey();
+		if (StringUtils.isNotEmpty(apiKey)) matchingKeyId = apiKeyService.isMatchingApiKey(ahp);
+		if (null == matchingKeyId) {
+			try {
+				if (rt == RequestType.REST) {
+					response.sendError(HttpStatus.FORBIDDEN.value(), "You do not have permissions to this resource");
+				}
+			} catch (IOException e) {
+				log.error("IO error when sending response", e);
+				// re-throw
+				throw new RuntimeException("IO error when sending error response");
+			}
+		}
+
+		//check if user has access to the organization
+		if(null != matchingKeyId && ahp.getType() == ApiTypeEnum.USER){
+			UserData ud = userService.getUserData(ahp.getObjUuid()).get();
+			log.debug("is User authorized in checking for programmatic access");
+			boolean authorized = isUserAuthorizedOrgWide(ud, ahp.getOrgUuid(), response, ct);
+			log.debug("completed is User authorized for programmatic access");
+			if (!authorized) matchingKeyId = null;
+		}
+
+		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(matchingKeyId);
+		if(oakd.isPresent()){
+			ApiKeyData akd = oakd.get();
+			apiKeyAccessService.recordApiKeyAccess(matchingKeyId, ahp.getRemoteIp(), akd.getOrg(), ahp.getApiKeyId());
+
+		}
+		return matchingKeyId;
+	}
+	
+	public AuthHeaderParse isProgrammaticAccessAuthorized(HttpHeaders headers,
+			HttpServletResponse response, String remoteIp, CallType ct) {
+		AuthHeaderParse ahp = null;
+		try {
+			ahp = AuthHeaderParse.parseAuthHeader(headers, remoteIp);
+			log.debug("PSDEBUG: ahp org = " + ahp.getOrgUuid() + ", type = " + ahp.getType() + 
+					", obj = " + ahp.getObjUuid());
+			isProgrammaticAccessAuthorized(ahp, response, ct);
+		} catch (Exception e) {
+			try {
+				log.warn("Exception when authorizing programmatic access", e);
+				if (!response.isCommitted()) {
+					response.sendError(HttpStatus.FORBIDDEN.value(), "You do not have permissions to this resource");
+				}
+			} catch (IOException ioe) {
+				throw new IllegalStateException("No permissions");
+			}
+		}
+		return ahp;
+	}
 	
 }

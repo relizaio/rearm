@@ -27,6 +27,7 @@ import io.reliza.common.CommonVariables.AuthPrincipalType;
 import io.reliza.common.CommonVariables.OauthType;
 import io.reliza.common.CommonVariables.UserStatus;
 import io.reliza.common.Utils;
+import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserPermission.Permissions;
@@ -285,6 +286,11 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	public void setPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type, Collection<String> approvals) {
 		permissions.setPermission(orgUuid, scope, objectUuid, type, approvals);
 	}
+
+	public void setPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type,
+			Collection<PermissionFunction> functions, Collection<String> approvals) {
+		permissions.setPermission(orgUuid, scope, objectUuid, type, functions, approvals);
+	}
 	
 	public boolean revokePermission (UUID orgUuid, PermissionScope scope, UUID objectUuid) {
 		return permissions.revokePermission(orgUuid, scope, objectUuid);
@@ -296,6 +302,10 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	
 	public Optional<UserPermission> getPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid) {
 		return permissions.getPermission(orgUuid, scope, objectUuid);
+	}
+	
+	public Set<UserPermission> getOrgPermissions (UUID orgUuid) {
+		return permissions.getOrgPermissionsAsSet(orgUuid);
 	}
 	
 	private Permissions getPermissions() {

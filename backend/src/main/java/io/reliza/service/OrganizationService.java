@@ -179,69 +179,20 @@ public class OrganizationService {
 		return oup;
 	}
 	
-	public AuthorizationStatus isUserAuthorizedOrgWide(UserData ud, UUID org, CallType ct) {
-		AuthorizationStatus as = AuthorizationStatus.AUTHORIZED;
-		boolean authorized = false;
-		try {
-			Optional<OrganizationData> od = Optional.empty();
-			if (null != org) od = getOrganizationService.getOrganizationData(org);
-			
-			authorized = (od.isPresent() && null != ud && ud.isGlobalAdmin());
-			boolean acceptedAndVerified = (null != ud && ud.isPoliciesAccepted() && ud.isPrimaryEmailVerified() &&
-					(StringUtils.isNotEmpty(ud.getGithubId()) || StringUtils.isNotEmpty(ud.getOauthId())));
-			// special case for init call
-			if (!authorized && od.isPresent() && ct == CallType.INIT && acceptedAndVerified) {
-					authorized = true;
-			}
-			if (!authorized && od.isPresent() && acceptedAndVerified) {
-				// for now, all permissions are only resolved on org level - TODO - allow by resource group
-				Optional<UserPermission> oup = obtainUserOrgPermission(ud, org);
-				switch (ct) {
-				case ADMIN:
-					if (oup.isPresent() && oup.get().getType() == PermissionType.ADMIN) {
-						authorized = true;
-					}
-					break;
-				case WRITE:
-					if (oup.isPresent() && oup.get().getType().ordinal() >= PermissionType.READ_WRITE.ordinal()) {
-						authorized = true;
-					}
-					break;
-				case READ:
-					if (CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(org) ||
-							(oup.isPresent() && oup.get().getType().ordinal() >= PermissionType.READ_ONLY.ordinal())) {
-						authorized = true;
-					}
-					break;
-				case GLOBAL_ADMIN:
-				case INIT:
-					authorized = true;
-					break;
-				}
-			}
-		} catch (Exception e) {
-			log.warn("Exception when trying to authorize user, deem as not authorized", e);
-			authorized = false;
-		}
-		if (!authorized) {
-			as = AuthorizationStatus.FORBIDDEN;
-		}
-		return as;
-	}
-	
-	public boolean isUserAuthorizedOrgWide(UserData ud, UUID org, HttpServletResponse response, CallType ct) {
-		AuthorizationStatus as = isUserAuthorizedOrgWide(ud, org, ct);
-		boolean authorized = (as == AuthorizationStatus.AUTHORIZED);
-		if (!authorized) {
-			try {
-				if (!response.isCommitted()) response.sendError(HttpStatus.FORBIDDEN.value(), "You do not have permissions to this resource");
-			} catch (IOException e) {
-				log.error("IO error when sending response", e);
-				// re-throw
-				throw new IllegalStateException("IO error when sending error response");
+	public Set<UserPermission> obtainUserOrgPermissions(UserData ud, UUID org) {
+		Set<UserPermission> allUserOrgPermissions = new HashSet<>();
+		Set<UserPermission> userOwnPermissions = ud.getOrgPermissions(org);
+		allUserOrgPermissions.addAll(userOwnPermissions);
+		// TODO optimize - if user is org wide admin, stop checking
+		var userGroups = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), org);
+		if (null != userGroups && !userGroups.isEmpty()) {
+			var ugIter = userGroups.iterator();
+			while (ugIter.hasNext()) {
+				var ugd = ugIter.next();
+				allUserOrgPermissions.addAll(ugd.getOrgPermissions(org));
 			}
 		}
-		return authorized;
+		return allUserOrgPermissions;
 	}
 	
 	/**

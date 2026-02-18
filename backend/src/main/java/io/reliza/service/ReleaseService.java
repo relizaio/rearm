@@ -125,9 +125,6 @@ public class ReleaseService {
 	private VcsRepositoryService vcsRepositoryService;
 	
 	@Autowired
-	private ChangeLogService changeLogService;
-	
-	@Autowired
 	private GetOrganizationService getOrganizationService;
 	
 	@Autowired

@@ -120,16 +120,12 @@ public class ReleaseMetricsComputeService {
 	private ReleaseMetricsDto rollUpProductReleaseMetrics(ReleaseData rd) {
 		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
 		rd.getParentReleases().forEach(r -> {
-			try {
-				ReleaseData parentRd = sharedReleaseService
-						.getReleaseData(r.getRelease(), rd.getOrg()).get();
-				ReleaseMetricsDto parentReleaseMetrics = parentRd.getMetrics();
-				parentReleaseMetrics.enrichSourcesWithRelease(r.getRelease());
-				rmd.mergeWithByContent(parentReleaseMetrics);
-				rmd.computeMetricsFromFacts();
-			} catch (RelizaException e) {
-				log.error("Error on getting parent release", e);
-			}
+			ReleaseData parentRd = sharedReleaseService
+					.getReleaseData(r.getRelease(), rd.getOrg()).get();
+			ReleaseMetricsDto parentReleaseMetrics = parentRd.getMetrics();
+			parentReleaseMetrics.enrichSourcesWithRelease(r.getRelease());
+			rmd.mergeWithByContent(parentReleaseMetrics);
+			rmd.computeMetricsFromFacts();
 		});
 		vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), rd.getUuid(), AnalysisScope.RELEASE, rmd);
 		return rmd;

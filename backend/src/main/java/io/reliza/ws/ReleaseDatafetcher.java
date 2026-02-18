@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
@@ -73,6 +74,8 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.changelog.entry.AggregationType;
@@ -107,6 +110,7 @@ import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
+import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
@@ -177,51 +181,43 @@ public class ReleaseDatafetcher {
 	@Autowired
 	private ChangeLogService changelogService;
 	
+	@Autowired
+	private OssPerspectiveService ossPerspectiveService;
+	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "release")
 	public ReleaseData getRelease(
-			@InputArgument("releaseUuid") String releaseUuidStr,
-			@InputArgument("orgUuid") String orgUuidStr
+			@InputArgument("releaseUuid") UUID releaseUuid,
+			@InputArgument("orgUuid") UUID org
 			) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
-		boolean useOrg = false;
-		UUID org = null;
-		
 		RelizaObject ro = null;
-		if (StringUtils.isNoneEmpty(releaseUuidStr)) {
-			var rlzOpt = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
+		if (null != releaseUuid) {
+			var rlzOpt = sharedReleaseService.getReleaseData(releaseUuid);
 			if (rlzOpt.isPresent()) {
 				ro = rlzOpt.get();
 				org = rlzOpt.get().getOrg();
 			}
 		}
 		
-		if (StringUtils.isNotEmpty(orgUuidStr)) {
-			org = UUID.fromString(orgUuidStr);
-			useOrg = true;
+		List<RelizaObject> ros = new LinkedList<>();
+		ros.add(ro);
+		
+		if (null != org) {
+			var oopt = getOrganizationService.getOrganizationData(org);
+			ros.add(oopt.get());
 		}
 		
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
-		ReleaseData rd = null;
-		if (useOrg) {
-			try {
-				rd = releaseService.getReleaseData(UUID.fromString(releaseUuidStr), org).get();
-			} catch (RelizaException e) {
-				log.error("Reliza Exception on getting release data with org", e);
-				throw new RuntimeException(e);
-			}
-		} else {
-			rd = (ReleaseData) ro; 
-		}
-		return rd;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseUuid, ros, CallType.READ);
+		return (ReleaseData) ro;
 	}
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "releaseSbomExport")
 	public String releaseSbomExport(
-			@InputArgument("release") String releaseUuidStr,
+			@InputArgument("release") UUID releaseUuid,
 			@InputArgument("tldOnly") Boolean tldOnly,
 			@InputArgument("ignoreDev") Boolean ignoreDev,
 			@InputArgument("structure") BomStructureType structure,
@@ -232,85 +228,96 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		
 		RelizaObject ro = null;
-		if (StringUtils.isNoneEmpty(releaseUuidStr)) {
-			var rlzOpt = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
+		if (null != releaseUuid) {
+			var rlzOpt = sharedReleaseService.getReleaseData(releaseUuid);
 			if (rlzOpt.isPresent()) {
 				ro = rlzOpt.get();
 			}
 		}
 		
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
 		ReleaseData rd = (ReleaseData) ro;
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		if (null == mediaType) {
 			mediaType = BomMediaType.JSON;
 		}
-		log.info("mediaType: {}", mediaType);
+		log.debug("mediaType: {}", mediaType);
 		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu);
 	}
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "releaseVdrExport")
 	public String releaseVdrExport(
-			@InputArgument("release") String releaseUuidStr,
+			@InputArgument("release") UUID releaseUuid,
 			@InputArgument("includeSuppressed") Boolean includeSuppressed) throws Exception {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
 		RelizaObject ro = null;
-		if (StringUtils.isNoneEmpty(releaseUuidStr)) {
-			var rlzOpt = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
+		if (null != releaseUuid) {
+			var rlzOpt = sharedReleaseService.getReleaseData(releaseUuid);
 			if (rlzOpt.isPresent()) {
 				ro = rlzOpt.get();
 			}
 		}
 		
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
 		ReleaseData rd = (ReleaseData) ro;
 		return releaseService.generateVdr(rd, includeSuppressed);
 	}
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "releaseTagKeys")
-	public Set<String> getReleaseTagKeys(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
-		UUID orgUuid = UUID.fromString(orgUuidStr);
+	public Set<String> getReleaseTagKeys(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		return releaseService.findDistinctReleaseTagKeysOfOrg(orgUuid);
 	}
 	
+	/**
+	 * Filters for now are mutually exclusive
+	 * @param branchFilter
+	 * @param orgFilter
+	 * @param releaseFilter
+	 * @param numRecords
+	 * @param pullRequest
+	 * @return
+	 */
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "releases")
 	public List<ReleaseData> getReleases(
-			@InputArgument("branchFilter") String branchFilterStr,
-			@InputArgument("orgFilter") String orgFilterStr,
-			@InputArgument("releaseFilter") List<String> releaseFilterStr,
+			@InputArgument("branchFilter") UUID branchFilter,
+			@InputArgument("orgFilter") UUID orgFilter,
+			@InputArgument("releaseFilter") List<UUID> releaseFilter,
 			@InputArgument("numRecords") Integer numRecords, 
 			@InputArgument("pullRequestFilter") Integer pullRequest)
 	{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
-		UUID branchFilter = null;
-		UUID orgFilter = null;
-		
-		if (StringUtils.isNotEmpty(branchFilterStr)) branchFilter = UUID.fromString(branchFilterStr);
-		if (StringUtils.isNotEmpty(orgFilterStr)) orgFilter = UUID.fromString(orgFilterStr);
-		Set<UUID> releaseFilter = null;
-		if (null != releaseFilterStr && !releaseFilterStr.isEmpty()) {
-			releaseFilter = releaseFilterStr.stream().map(r -> UUID.fromString(r)).collect(Collectors.toSet());
-		}
-		
 		RelizaObject ro = null;
 		if (null != branchFilter) {
 			var obd = branchService.getBranchData(branchFilter);
 			ro = obd.isPresent() ? obd.get() : null;
-		} else if (null != orgFilter && ro == null) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchFilter, List.of(ro), CallType.READ);
+		} else if (null != orgFilter && (null == releaseFilter || releaseFilter.isEmpty())) {
 			var od = getOrganizationService.getOrganizationData(orgFilter);
 			ro = od.isPresent() ? od.get() : null;
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgFilter, List.of(ro), CallType.READ);
+		} else if (null != orgFilter) {
+			var od = getOrganizationService.getOrganizationData(orgFilter);
+			ro = od.isPresent() ? od.get() : null;
+			Set<UUID> releaseFilterSet = new HashSet<>(releaseFilter);
+			List<RelizaObject> rosCandidates = releaseFilterSet.stream().map(x -> (RelizaObject) sharedReleaseService.getReleaseData(x).get()).toList();
+			List<RelizaObject> ros = new LinkedList<>(rosCandidates);
+			ros.add(ro);
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgFilter, ros, CallType.READ);
+		} else {
+			throw new AccessDeniedException("Illegal input");
 		}
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
 		
 		List<ReleaseData> retRel = new LinkedList<>();
 		if (null != branchFilter) {
@@ -344,8 +351,11 @@ public class ReleaseDatafetcher {
 
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var rd1 = sharedReleaseService.getReleaseData(uuid1, orgUuid).get();
+		var rd2 = sharedReleaseService.getReleaseData(uuid2, orgUuid).get();
+		List<RelizaObject> ros = List.of(rd1, rd2);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, uuid1, ros, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, uuid2, ros, CallType.READ);
 		
 		return changelogService.getComponentChangelog(uuid1, uuid2, orgUuid, aggregated, timeZone);
 	}
@@ -369,7 +379,15 @@ public class ReleaseDatafetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		List<RelizaObject> ros = new LinkedList<>();
+		ComponentData cd = getComponentService.getComponentData(componentUuid).get();
+		ros.add(cd);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, ros, CallType.READ);
+		if (null != branchUuid) {
+			BranchData bd = branchService.getBranchData(branchUuid).get();
+			ros.add(bd);
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, ros, CallType.READ);
+		}
 		
 		return changelogService.getComponentChangelogByDate(
 			componentUuid, branchUuid, orgUuid, aggregated, timeZone, dateFrom, dateTo);
@@ -394,7 +412,14 @@ public class ReleaseDatafetcher {
 
 		var oud = userService.getUserDataByAuth(auth);
 		
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+		}
 		OrganizationChangelog oc = changelogService.getOrganizationChangelogByDate(
 			orgUuid, perspectiveUuid, dateFrom, dateTo, aggregated, timeZone);
 
@@ -415,7 +440,7 @@ public class ReleaseDatafetcher {
 		UUID orgUuid = releaseDto.getOrg();
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject roorg = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), List.of(robranch, roorg), CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(robranch, roorg), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		return ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDto, wu));
 	}
@@ -434,7 +459,7 @@ public class ReleaseDatafetcher {
 		ReleaseLifecycle oldLifecycle = ord.get().getLifecycle();
 		if (newLifecycle.ordinal() - oldLifecycle.ordinal() == 1) ct = CallType.WRITE;
 		RelizaObject ro = ord.get();
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, ct);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseId, List.of(ro), ct);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		var r = ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu);
 		return ReleaseData.dataFromRecord(r);
@@ -450,7 +475,7 @@ public class ReleaseDatafetcher {
 		ReleaseDto releaseDto = Utils.OM.convertValue(updateReleaseInput, ReleaseDto.class);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseDto.getUuid());
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseDto.getUuid(), List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		try {
 			ossReleaseService.updateRelease(releaseDto, wu);
@@ -471,7 +496,7 @@ public class ReleaseDatafetcher {
 		ReleaseDto releaseDto = Utils.OM.convertValue(updateReleaseInput, ReleaseDto.class);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseDto.getUuid());
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseDto.getUuid(), List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		try {
 			ossReleaseService.updateReleaseTagsMeta(releaseDto, wu);
@@ -792,7 +817,7 @@ public class ReleaseDatafetcher {
 			ros.add(getSourceCodeEntryService.getSourceCodeEntryData(createArtifactInput.sce()).orElseThrow());
 		}
 
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, createArtifactInput.release(), ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		ReleaseData rd = ord.get();
@@ -1029,16 +1054,10 @@ public class ReleaseDatafetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
-		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
-		
 		if (ord.isEmpty()) throw new RuntimeException("Wrong release");
-
-		ReleaseData rd = ord.get();
-	
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
-
-		releaseFinalizerService.finalizeRelease(rd.getUuid());
+		RelizaObject ro = ord.get();
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseId, List.of(ro), CallType.WRITE);
+		releaseFinalizerService.finalizeRelease(ord.get().getUuid());
 		return true;
 	}
 	
@@ -1052,7 +1071,7 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
 		return releaseService.exportReleaseAsObom(releaseUuid).toString();
 	}
 	
@@ -1064,7 +1083,9 @@ public class ReleaseDatafetcher {
 
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		
 		List<ReleaseData> retList = new LinkedList<>();
 		
@@ -1132,7 +1153,9 @@ public class ReleaseDatafetcher {
 			@InputArgument("tagValue") String tagValue) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		
 		return releaseService.findReleasesByTags(orgUuid, branchUuid, tagKey, tagValue);
 	}
@@ -1144,7 +1167,9 @@ public class ReleaseDatafetcher {
 			@InputArgument("dtrackProjects") List<UUID> dtrackProjects) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		return sharedReleaseService.findReleaseDatasByDtrackProjects(dtrackProjects, orgUuid);
 	}
 	
@@ -1155,7 +1180,9 @@ public class ReleaseDatafetcher {
 			@InputArgument("queries") List<Map<String, String>> queries) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		List<IntegrationService.SbomComponentSearchQuery> searchQueries = queries.stream()
 			.map(q -> new IntegrationService.SbomComponentSearchQuery(q.get("name"), q.get("version")))
 			.toList();
@@ -1170,7 +1197,7 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(compUuid);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, compUuid, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		ossReleaseService.updateComponentReleasesWithIdentifiers(compUuid, wu);
 		return true;
@@ -1187,7 +1214,7 @@ public class ReleaseDatafetcher {
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ord.get().getOrg(), List.of(ro), CallType.WRITE);
 		
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
@@ -1360,8 +1387,8 @@ public class ReleaseDatafetcher {
 		UUID artifactUuid = UUID.fromString(artifactUuidStr);
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
-		return sharedReleaseService.gatherReleasesForArtifact(artifactUuid, ro.getOrg());
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, oad.get().getOrg(), List.of(ro), CallType.READ);
+		return sharedReleaseService.gatherReleasesForArtifact(artifactUuid, oad.get().getOrg());
 	}
 
 	@DgsData(parentType = "Release", field = "releaseCollection")
@@ -1483,7 +1510,14 @@ public class ReleaseDatafetcher {
 			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+		}
 		return sharedReleaseService.findReleasesByCveId(orgUuid, cveId, perspectiveUuid);
 	}
 	
@@ -1496,7 +1530,14 @@ public class ReleaseDatafetcher {
 			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+		}
 		return sharedReleaseService.findReleasesByTimeFrame(orgUuid, startDate, endDate, perspectiveUuid);
 	}
 	
@@ -1510,7 +1551,7 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.READ);
 		return sharedReleaseService.findReleasesByTimeFrameAndComponent(componentUuid, startDate, endDate);
 	}
 	
@@ -1524,7 +1565,7 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
 		return sharedReleaseService.findReleasesByTimeFrameAndBranch(branchUuid, startDate, endDate);
 	}
 }

@@ -10,7 +10,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -22,17 +21,15 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
-import io.reliza.exceptions.RelizaException;
-import io.reliza.model.ArtifactData;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.BranchData;
-import io.reliza.model.ReleaseData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ArtifactWebDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.service.ArtifactService;
@@ -75,14 +72,13 @@ public class SourceCodeEntryDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "sourceCodeEntry")
-	public SourceCodeEntryData getSourceCodeEntry(@InputArgument("sceUuid") String sceUuidStr) {
+	public SourceCodeEntryData getSourceCodeEntry(@InputArgument("sceUuid") UUID sceUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID sceUuid = UUID.fromString(sceUuidStr);
 		
 		Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(sceUuid);
 		RelizaObject ro = osced.isPresent() ? osced.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, osced.isPresent() ? osced.get().getBranch() : null, List.of(ro), CallType.READ);
 		return osced.get();
 	}
 	
@@ -97,7 +93,7 @@ public class SourceCodeEntryDataFetcher {
 		RelizaObject branchRo = obd.isPresent() ? obd.get() : null;
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(sceDto.getVcs());
 		RelizaObject vcsRo = ovrd.isPresent() ? ovrd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), List.of(branchRo, vcsRo), CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, sceDto.getBranch(), List.of(branchRo, vcsRo), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		SourceCodeEntry sce = sourceCodeEntryService.createSourceCodeEntry(sceDto, wu);
 		return SourceCodeEntryData.dataFromRecord(sce);

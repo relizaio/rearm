@@ -3,7 +3,6 @@
 */
 package io.reliza.service;
 
-import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.LinkedList;
@@ -14,15 +13,11 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.keygen.KeyGenerators;
@@ -30,8 +25,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.AuthHeaderParse;
-import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.CommonVariables.RequestType;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
 import io.reliza.model.ApiKey;
@@ -39,8 +32,6 @@ import io.reliza.model.ApiKeyAccess;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.ComponentData;
-import io.reliza.model.OrganizationData;
-import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
@@ -59,19 +50,13 @@ public class ApiKeyService {
 	@Autowired 
 	private ApiKeyAccessService apiKeyAccessService;
 	
-	@Autowired 
-	private OrganizationService organizationService;
-	
 	private static final Logger log = LoggerFactory.getLogger(ApiKeyService.class);
 	
 	private final ApiKeyRepository repository;
-
-	private UserService userService;
 	
     @Autowired
-	public ApiKeyService(ApiKeyRepository repository, @Lazy UserService userService) {
+	public ApiKeyService(ApiKeyRepository repository) {
 	    this.repository = repository;
-	    this.userService = userService;
 	}
 	
 	public void deleteApiKey(UUID uuid, WhoUpdated wu){
@@ -271,27 +256,6 @@ public class ApiKeyService {
 		return matchingKeyId;
 	}
 	
-	public AuthHeaderParse isProgrammaticAccessAuthorized(HttpHeaders headers,
-			HttpServletResponse response, String remoteIp, CallType ct) {
-		AuthHeaderParse ahp = null;
-		try {
-			ahp = AuthHeaderParse.parseAuthHeader(headers, remoteIp);
-			log.debug("PSDEBUG: ahp org = " + ahp.getOrgUuid() + ", type = " + ahp.getType() + 
-					", obj = " + ahp.getObjUuid());
-			isProgrammaticAccessAuthorized(ahp, response, ct);
-		} catch (Exception e) {
-			try {
-				log.warn("Exception when authorizing programmatic access", e);
-				if (!response.isCommitted()) {
-					response.sendError(HttpStatus.FORBIDDEN.value(), "You do not have permissions to this resource");
-				}
-			} catch (IOException ioe) {
-				throw new IllegalStateException("No permissions");
-			}
-		}
-		return ahp;
-	}
-	
 	public UUID getOrgUuidFromKey (AuthHeaderParse ahp) {
 		UUID orgUuid = null;
 		var key = getApiKeyDataByObjUuidTypeOrder(ahp.getObjUuid(), ahp.getType(), ahp.getKeyOrder(), ahp.getOrgUuid());
@@ -299,55 +263,6 @@ public class ApiKeyService {
 			orgUuid = key.get().getOrg();
 		}
 		return orgUuid;
-	}
-
-	public UUID isProgrammaticAccessAuthorized(AuthHeaderParse ahp, CallType ct) {
-		return isProgrammaticAccessAuthorized(ahp, null, RequestType.GRAPHQL, ct);
-	}
-	
-	public UUID isProgrammaticAccessAuthorized(AuthHeaderParse ahp, HttpServletResponse response, CallType ct) {
-		return isProgrammaticAccessAuthorized(ahp, response, RequestType.REST, ct);
-	}
-	
-	/**
-	 * 
-	 * @param ahp
-	 * @param response
-	 * @param rt
-	 * @return if authorized, returns matching key UUID, otherwise returns null
-	 */
-	public UUID isProgrammaticAccessAuthorized(AuthHeaderParse ahp, HttpServletResponse response, RequestType rt, CallType ct) {
-		UUID matchingKeyId = null;;
-		String apiKey = ahp.getApiKey();
-		if (StringUtils.isNotEmpty(apiKey)) matchingKeyId = isMatchingApiKey(ahp);
-		if (null == matchingKeyId) {
-			try {
-				if (rt == RequestType.REST) {
-					response.sendError(HttpStatus.FORBIDDEN.value(), "You do not have permissions to this resource");
-				}
-			} catch (IOException e) {
-				log.error("IO error when sending response", e);
-				// re-throw
-				throw new RuntimeException("IO error when sending error response");
-			}
-		}
-
-		//check if user has access to the organization
-		if(null != matchingKeyId && ahp.getType() == ApiTypeEnum.USER){
-			UserData ud = userService.getUserData(ahp.getObjUuid()).get();
-			log.debug("is User authorized in checking for programmatic access");
-			boolean authorized = organizationService.isUserAuthorizedOrgWide(ud, ahp.getOrgUuid(), response, ct);
-			log.debug("completed is User authorized for programmatic access");
-			if (!authorized) matchingKeyId = null;
-		}
-
-		Optional<ApiKeyData> oakd = getApiKeyData(matchingKeyId);
-		if(oakd.isPresent()){
-			ApiKeyData akd = oakd.get();
-			apiKeyAccessService.recordApiKeyAccess(matchingKeyId, ahp.getRemoteIp(), akd.getOrg(), ahp.getApiKeyId());
-
-		}
-		return matchingKeyId;
 	}
 	
 	@Transactional

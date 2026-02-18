@@ -19,6 +19,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserPermission.Permissions;
@@ -117,6 +118,11 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 	public void setPermission(PermissionScope scope, UUID objectUuid, PermissionType type, Collection<String> approvals) {
 		permissions.setPermission(this.org, scope, objectUuid, type, approvals);
 	}
+
+	public void setPermission(PermissionScope scope, UUID objectUuid, PermissionType type,
+			Collection<PermissionFunction> functions, Collection<String> approvals) {
+		permissions.setPermission(this.org, scope, objectUuid, type, functions, approvals);
+	}
 	
 	public boolean revokePermission(PermissionScope scope, UUID objectUuid) {
 		return permissions.revokePermission(this.org, scope, objectUuid);
@@ -132,6 +138,10 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 	
 	private Permissions getPermissions() {
 		return permissions;
+	}
+	
+	public Set<UserPermission> getOrgPermissions (UUID orgUuid) {
+		return permissions.getOrgPermissionsAsSet(orgUuid);
 	}
 	
 	private void setPermissions(Permissions permissions) {
@@ -176,6 +186,7 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 					permission.getScope(),
 					permission.getObjectId(),
 					permission.getType(),
+					permission.getFunctions(),
 					new LinkedList<>()
 				);
 			}

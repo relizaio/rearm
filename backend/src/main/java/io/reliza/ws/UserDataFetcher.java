@@ -5,6 +5,7 @@ package io.reliza.ws;
 
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,6 +28,7 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
+import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ApiKey.ApiTypeEnum;
@@ -105,7 +107,7 @@ public class UserDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		String apiKey = apiKeyService.setObjectApiKey(oud.get().getUuid(), ApiTypeEnum.USER, ood.get().getUuid(), null, null, wu);

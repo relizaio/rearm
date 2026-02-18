@@ -20,6 +20,11 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
+import io.reliza.model.BranchData;
+import io.reliza.model.ComponentData;
+import io.reliza.model.RelizaObject;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.dto.AnalyticsDtos.ActiveComponentsInput;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerBranch;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerComponent;
@@ -32,6 +37,7 @@ import io.reliza.service.AnalyticsMetricsService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.oss.OssAnalyticsMetricsService;
@@ -61,6 +67,9 @@ public class AnalyticsDataFetcher {
 	
 	@Autowired
 	private GetComponentService getComponentService;
+
+	@Autowired
+	private GetOrganizationService getOrganizationService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "mostActiveComponentsOverTime")
@@ -69,7 +78,9 @@ public class AnalyticsDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> aciInput = dfe.getArgument("activeComponentsInput");
 		ActiveComponentsInput aci = Utils.OM.convertValue(aciInput, ActiveComponentsInput.class);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), aci.organization(), CallType.READ);
+		var od = getOrganizationService.getOrganizationData(aci.organization());
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, aci.organization(), List.of(ro), CallType.READ);
 		return analyticsMetricsService.analyticsComponentsWithMostRecentReleases(aci.cutOffDate(),
 				aci.componentType(), aci.maxComponents(), aci.organization());
 	}
@@ -81,7 +92,9 @@ public class AnalyticsDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> aciInput = dfe.getArgument("activeComponentsInput");
 		ActiveComponentsInput aci = Utils.OM.convertValue(aciInput, ActiveComponentsInput.class);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), aci.organization(), CallType.READ);
+		var od = getOrganizationService.getOrganizationData(aci.organization());
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, aci.organization(), List.of(ro), CallType.READ);
 		return analyticsMetricsService.analyticsBranchesWithMostRecentReleases(aci.cutOffDate(),
 				aci.componentType(), aci.maxComponents(), aci.organization());
 	}
@@ -92,7 +105,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("cutOffDate") ZonedDateTime cutOffDate) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		return releaseService.getReleaseCreateOverTimeAnalytics(orgUuid, cutOffDate);
 	}
 	
@@ -102,10 +117,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("cutOffDate") ZonedDateTime cutOffDate) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = getComponentService.getComponentData(componentUuid)
-				.orElseThrow(() -> new RelizaException("Component not found"))
-				.getOrg();
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		ComponentData cd = getComponentService.getComponentData(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(cd), CallType.READ);
 		return releaseService.getReleaseCreateOverTimeAnalyticsByComponent(componentUuid, cutOffDate);
 	}
 	
@@ -115,10 +129,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("cutOffDate") ZonedDateTime cutOffDate) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = branchService.getBranchData(branchUuid)
-				.orElseThrow(() -> new RelizaException("Branch not found"))
-				.getOrg();
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		BranchData bd = branchService.getBranchData(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(bd), CallType.READ);
 		return releaseService.getReleaseCreateOverTimeAnalyticsByBranch(branchUuid, cutOffDate);
 	}
 	
@@ -130,7 +143,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("dateTo") ZonedDateTime dateTo) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		return analyticsMetricsService.getVulnViolationByOrgChartData(orgUuid, dateFrom, dateTo);
 	}
 	
@@ -142,10 +157,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("dateTo") ZonedDateTime dateTo) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = getComponentService.getComponentData(componentUuid)
-				.orElseThrow(() -> new RelizaException("Component not found"))
-				.getOrg();
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		ComponentData cd = getComponentService.getComponentData(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(cd), CallType.READ);
 		return analyticsMetricsService.getVulnViolationByComponentChartData(componentUuid, dateFrom, dateTo);
 	}
 	
@@ -157,10 +171,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("dateTo") ZonedDateTime dateTo) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = branchService.getBranchData(branchUuid)
-				.orElseThrow(() -> new RelizaException("Branch not found"))
-				.getOrg();
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		BranchData bd = branchService.getBranchData(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(bd), CallType.READ);
 		return analyticsMetricsService.getVulnViolationByBranchChartData(branchUuid, dateFrom, dateTo);
 	}
 	
@@ -171,7 +184,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("date") String date) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		return analyticsMetricsService.getFindingsPerDay(orgUuid, date).orElse(null);
 	}
 	
@@ -182,10 +197,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("date") String date) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = getComponentService.getComponentData(componentUuid)
-				.orElseThrow(() -> new RelizaException("Component not found"))
-				.getOrg();
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		ComponentData cd = getComponentService.getComponentData(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(cd), CallType.READ);
 		return analyticsMetricsService.getFindingsPerDayForComponent(componentUuid, date).orElse(null);
 	}
 	
@@ -196,10 +210,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("date") String date) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = branchService.getBranchData(branchUuid)
-				.orElseThrow(() -> new RelizaException("Branch not found"))
-				.getOrg();
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		BranchData bd = branchService.getBranchData(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(bd), CallType.READ);
 		return analyticsMetricsService.getFindingsPerDayForBranch(branchUuid, date).orElse(null);
 	}
 	
@@ -210,7 +223,9 @@ public class AnalyticsDataFetcher {
 			@InputArgument("date") String date) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.WRITE);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		return ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForOrgAndDate(orgUuid, date, wu);
 	}

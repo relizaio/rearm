@@ -37,6 +37,8 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.VersionResponse;
 import io.reliza.common.Utils;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.common.VcsType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
@@ -54,7 +56,6 @@ import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.changelog.entry.AggregationType;
 import io.reliza.model.dto.ApiKeyForUserDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CreateComponentDto;
@@ -65,25 +66,21 @@ import io.reliza.model.dto.ComponentDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
-import io.reliza.service.ChangeLogService;
 import io.reliza.service.IntegrationService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
-import io.reliza.service.ReleaseService;
 import io.reliza.service.ReleaseVersionService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
 import io.reliza.service.VersionAssignmentService.GetNewVersionDto;
+import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.service.saas.ApprovalPolicyService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @DgsComponent
 public class ComponentDataFetcher {
-	
-	@Autowired
-	private ReleaseService releaseService;
 	
 	@Autowired
 	private UserService userService;
@@ -119,7 +116,7 @@ public class ComponentDataFetcher {
 	private ApprovalPolicyService approvalPolicyService;
 
 	@Autowired
-	private ChangeLogService changeLogService;
+	private OssPerspectiveService ossPerspectiveService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "component")
@@ -128,9 +125,8 @@ public class ComponentDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
-		UUID org = null;
-		if (opd.isPresent()) org = opd.get().getOrg();
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), org, CallType.READ);
+		RelizaObject ro = opd.isPresent() ? opd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.READ);
 		return opd.get();
 	}
 	
@@ -143,14 +139,16 @@ public class ComponentDataFetcher {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
-		
-		// If perspective is provided, filter by perspective
-		if (null != perspectiveUuid) {
+		var odComps = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roOrg = odComps.isPresent() ? odComps.get() : null;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roOrg), CallType.READ);
+			return componentService.listComponentDataByOrganization(orgUuid, componentType);
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(roOrg, pd), CallType.READ);
 			return componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType);
 		}
-		
-		return componentService.listComponentDataByOrganization(orgUuid, componentType);
 	}
 	
 	@PreAuthorize("isAuthenticated()")
@@ -166,7 +164,8 @@ public class ComponentDataFetcher {
 		if (null != cpd.getApprovalPolicy() && !cpd.getApprovalPolicy().toString().isEmpty()) {
 			ros.add(approvalPolicyService.getApprovalPolicyData(cpd.getApprovalPolicy()).orElseThrow());
 		}
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
+		UUID createCompOrg = cpd.getOrganization();
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, createCompOrg, ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
 		return ComponentData.dataFromRecord(componentService
@@ -180,7 +179,7 @@ public class ComponentDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
 		RelizaObject ro = opd.isPresent() ? opd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		String apiKey = apiKeyService.setObjectApiKey(opd.get().getUuid(), ApiTypeEnum.COMPONENT, null, null, null, wu);
@@ -212,7 +211,7 @@ public class ComponentDataFetcher {
 		if (null != ucdto.getVcs()) ros.add(vcsRepositoryService.getVcsRepositoryData(ucdto.getVcs()).orElseThrow());
 		if (null != ucdto.getApprovalPolicy()) ros.add(approvalPolicyService.getApprovalPolicyData(ucdto.getApprovalPolicy()).orElseThrow());
 
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), ros, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		List<RelizaObject> orgCheckList = new LinkedList<>();
@@ -236,7 +235,7 @@ public class ComponentDataFetcher {
 				}
 			}
 		}
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), orgCheckList, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, orgCheckList, CallType.WRITE);
 		
 		try {
 			List<ReleaseOutputEvent> processedOutputTriggers = new LinkedList<>();
@@ -454,7 +453,7 @@ public class ComponentDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);		
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		Boolean archived = false;
 		try {
@@ -474,7 +473,7 @@ public class ComponentDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);		
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		Boolean archived = false;
 		try {

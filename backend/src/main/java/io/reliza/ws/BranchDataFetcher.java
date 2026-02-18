@@ -40,6 +40,8 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.VersionAssignment;
 import io.reliza.model.WhoUpdated;
@@ -52,6 +54,7 @@ import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.DependencyPatternService;
 import io.reliza.service.GetComponentService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -93,6 +96,9 @@ public class BranchDataFetcher {
 	
 	@Autowired
 	DependencyPatternService dependencyPatternService;
+
+	@Autowired
+	GetOrganizationService getOrganizationService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "branch")
@@ -103,7 +109,7 @@ public class BranchDataFetcher {
 		
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
 		return obd.get();
 	}
 	
@@ -116,7 +122,7 @@ public class BranchDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ComponentData> opd = getComponentService.getComponentData(compUuid);
 		RelizaObject ro = opd.isPresent() ? opd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, compUuid, List.of(ro), CallType.READ);
 		
 		return branchService.listBranchDataOfComponent(compUuid, null);
 	}
@@ -138,7 +144,7 @@ public class BranchDataFetcher {
 		
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
 		return versionAssignmentService.getCurrentNextVersion(branchUuid, versionType);
 	}
 	
@@ -153,7 +159,7 @@ public class BranchDataFetcher {
 		UUID compUuid = UUID.fromString(compUuidStr);
 		Optional<ComponentData> opd = getComponentService.getComponentData(compUuid);
 		RelizaObject ro = opd.isPresent() ? opd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, compUuid, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		try {
@@ -210,7 +216,7 @@ public class BranchDataFetcher {
 			});
 		}
 		
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), roList, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, updateBranchInput.getUuid(), roList, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
 		
@@ -228,7 +234,7 @@ public class BranchDataFetcher {
 		UUID branchUuid = UUID.fromString(branchUuidStr);
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.WRITE);
 		// TODO add WhoUpdated wu = null;
 		
 		// Check for missing version schema before attempting version generation
@@ -255,7 +261,7 @@ public class BranchDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.WRITE);
 		releaseService.autoIntegrateFeatureSetOnDemand(obd.get());
 		return true;
 	}
@@ -271,7 +277,7 @@ public class BranchDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.WRITE);
 		VersionTypeEnum versionType = VersionTypeEnum.DEV;
 		if(StringUtils.isNotEmpty(versionTypeStr)){
 			versionType = VersionTypeEnum.valueOf(versionTypeStr);
@@ -398,7 +404,9 @@ public class BranchDataFetcher {
 			DgsDataFetchingEnvironment dfe) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.READ);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roOrg = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roOrg), CallType.READ);
 		
 		// Create a temporary pattern
 		BranchData.DependencyPattern tempPattern = BranchData.DependencyPattern.builder()

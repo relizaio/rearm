@@ -300,7 +300,7 @@ public class UserService {
 			// resolve individual permissions
 			if (null != permissions && !permissions.isEmpty()) {
 				permissions.forEach(p -> {
-					uData.setPermission(orgUuid, p.scope(), p.object(), p.type(), null);
+					uData.setPermission(orgUuid, p.scope(), p.object(), p.type(), p.functions(), null);
 				});
 			}
 			

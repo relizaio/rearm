@@ -24,9 +24,12 @@ import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.RelizaObject;
 import io.reliza.model.UserData;
 import io.reliza.model.UserData.OrgUserData;
 import io.reliza.model.UserPermission.PermissionDto;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ApiKeyDto;
@@ -34,6 +37,7 @@ import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ResourceGroupService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -41,24 +45,15 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @DgsComponent
 public class OssOrganizationDataFetcher {
-	
+		
 	@Autowired
-	ApiKeyService apiKeyService;
+	private AuthorizationService authorizationService;
 
 	@Autowired
-	ApiKeyAccessService apiKeyAccessService;
+	private UserService userService;
 	
 	@Autowired
-	AuthorizationService authorizationService;
-	
-	@Autowired
-	OrganizationService organizationService;
-	
-	@Autowired
-	UserService userService;
-	
-	@Autowired
-	ResourceGroupService resourceGroupService;
+	private GetOrganizationService getOrganizationService;
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "defaultApprovalRoles")
@@ -96,7 +91,9 @@ public class OssOrganizationDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		authorizationService.isUserAuthorizedOrgWideGraphQL(oud.get(), orgUuid, CallType.ADMIN);
+		var odPerm = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roPerm = odPerm.isPresent() ? odPerm.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roPerm), CallType.ADMIN);
 		
 
 		UUID userUuid = UUID.fromString(userUuidStr);

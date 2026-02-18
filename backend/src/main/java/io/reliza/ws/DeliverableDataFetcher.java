@@ -30,6 +30,8 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.Deliverable;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.ApiKey.ApiTypeEnum;
@@ -102,7 +104,7 @@ public class DeliverableDataFetcher {
 		UUID deliverable = UUID.fromString(deliverableUuidStr);
 		Optional<DeliverableData> oad = getDeliverableService.getDeliverableData(deliverable);
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro.getOrg(), List.of(ro), CallType.READ);
 		return oad.get();
 	}
 	
@@ -114,7 +116,7 @@ public class DeliverableDataFetcher {
 		UUID componentUuid = UUID.fromString(componentUuidStr);
 		Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
 		RelizaObject ro = opd.isPresent() ? opd.get() : null;
-        authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.READ);
 		return getDeliverableService.listDeliverableDataByComponent(componentUuid);
 	}
 	
@@ -162,7 +164,7 @@ public class DeliverableDataFetcher {
 		}
 		if (!branchMatch) throw new RuntimeException("Branch mismatch");
 		
-		authorizationService.isUserAuthorizedOrgWideGraphQLWithObjects(oud.get(), List.of(ord.get(), ovd.get()), CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, ord.get().getUuid(), List.of(ord.get(), ovd.get()), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		List<UUID> createdDeliverables = new LinkedList<>();
