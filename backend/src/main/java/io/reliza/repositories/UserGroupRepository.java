@@ -25,14 +25,9 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
 	public Optional<UserGroup> findByIdWriteLocked(UUID uuid);
 	
 	@Query(
-			value = VariableQueries.FIND_USER_GROUPS_BY_ORGANIZATION,
+			value = VariableQueries.FIND_ALL_USER_GROUPS_BY_ORGANIZATION,
 			nativeQuery = true)
-	List<UserGroup> findByOrganization(@Param("orgUuidAsString") String orgUuidAsString);
-	
-	@Query(
-			value = VariableQueries.FIND_USER_GROUP_BY_NAME_AND_ORGANIZATION,
-			nativeQuery = true)
-	Optional<UserGroup> findByNameAndOrganization(@Param("name") String name, @Param("orgUuidAsString") String orgUuidAsString);
+	List<UserGroup> findAllByOrganization(@Param("orgUuidAsString") String orgUuidAsString);
 	
 	@Query(
 			value = VariableQueries.FIND_USER_GROUPS_BY_USER_AND_ORGANIZATION,

@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.type.TypeReference;
 
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.common.Utils;
 import io.reliza.model.UserGroup;
 import io.reliza.model.UserGroupData;
@@ -71,9 +72,27 @@ public class UserGroupService {
 	}
 	
 	/**
-	 * Creates a new user group
+	 * Creates a new user group.
+	 * Validates name uniqueness across all groups (active and inactive) in the org.
 	 */
 	public UserGroupData createUserGroup(CreateUserGroupDto createDto, WhoUpdated wu) {
+		List<UserGroupData> allGroups = getAllUserGroupsByOrganization(createDto.getOrg());
+		
+		// Check name uniqueness across all groups
+		Optional<UserGroupData> nameConflict = allGroups.stream()
+				.filter(g -> g.getName().equals(createDto.getName()))
+				.findFirst();
+		if (nameConflict.isPresent()) {
+			if (nameConflict.get().getStatus() == UserGroupStatus.INACTIVE) {
+				throw new IllegalArgumentException(
+					"An inactive group with the name '" + createDto.getName() + "' already exists. "
+					+ "Please restore it from the inactive groups list instead of creating a new one.");
+			} else {
+				throw new IllegalArgumentException(
+					"A group with the name '" + createDto.getName() + "' already exists.");
+			}
+		}
+		
 		UserGroupData ugd = UserGroupData.userGroupDataFactory(createDto);
 		UserGroup ug = new UserGroup();
 		Map<String, Object> recordData = Utils.OM.convertValue(ugd, new TypeReference<Map<String, Object>>() {});
@@ -82,7 +101,8 @@ public class UserGroupService {
 	}
 	
 	/**
-	 * Comprehensive update method that handles all user group fields including permissions replacement
+	 * Comprehensive update method that handles all user group fields including permissions replacement.
+	 * Validates name uniqueness on rename and name conflicts on restore.
 	 */
 	public UserGroupData updateUserGroupComprehensive(UpdateUserGroupDto updateUserGroupDto, WhoUpdated wu) {
 		Optional<UserGroup> existingGroup = userGroupRepository.findById(updateUserGroupDto.getGroupId());
@@ -92,6 +112,22 @@ public class UserGroupService {
 		
 		UserGroup ug = existingGroup.get();
 		UserGroupData ugd = UserGroupData.dataFromRecord(ug);
+		// Check name uniqueness on rename or restore
+		String effectiveName = updateUserGroupDto.getName() != null ? updateUserGroupDto.getName() : ugd.getName();
+		boolean nameChanging = !effectiveName.equals(ugd.getName());
+		boolean restoring = updateUserGroupDto.getStatus() == UserGroupStatus.ACTIVE 
+				&& ugd.getStatus() == UserGroupStatus.INACTIVE;
+		if (nameChanging || restoring) {
+			List<UserGroupData> allGroups = getAllUserGroupsByOrganization(ugd.getOrg());
+			Optional<UserGroupData> nameConflict = allGroups.stream()
+					.filter(g -> !g.getUuid().equals(ugd.getUuid()))
+					.filter(g -> g.getName().equals(effectiveName))
+					.findFirst();
+			if (nameConflict.isPresent()) {
+				throw new IllegalArgumentException(
+					"A group with the name '" + effectiveName + "' already exists.");
+			}
+		}
 		
 		UserGroupData updatedUgd = UserGroupData.updateUserGroupData(ugd, updateUserGroupDto);
 		
@@ -101,22 +137,23 @@ public class UserGroupService {
 	}
 	
 	/**
-	 * Gets all user groups for an organization
+	 * Gets all user groups for an organization (active only, used by SSO sync)
 	 */
 	@Transactional(readOnly = true)
 	public List<UserGroupData> getUserGroupsByOrganization(UUID orgUuid) {
-		List<UserGroup> groups = userGroupRepository.findByOrganization(orgUuid.toString());
+		List<UserGroup> groups = userGroupRepository.findAllByOrganization(orgUuid.toString());
 		return groups.stream()
 				.map(UserGroupData::dataFromRecord)
+				.filter(g -> g.getStatus() == UserGroupStatus.ACTIVE)
 				.collect(Collectors.toList());
 	}
 	
 	/**
-	 * Gets all active user groups for an organization
+	 * Gets all user groups for an organization, including inactive ones
 	 */
 	@Transactional(readOnly = true)
-	public List<UserGroupData> getActiveUserGroupsByOrganization(UUID orgUuid) {
-		List<UserGroup> groups = userGroupRepository.findByOrganization(orgUuid.toString());
+	public List<UserGroupData> getAllUserGroupsByOrganization(UUID orgUuid) {
+		List<UserGroup> groups = userGroupRepository.findAllByOrganization(orgUuid.toString());
 		return groups.stream()
 				.map(UserGroupData::dataFromRecord)
 				.collect(Collectors.toList());

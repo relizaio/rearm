@@ -3,12 +3,10 @@
 */
 package io.reliza.ws;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +33,6 @@ import io.reliza.model.dto.UpdateUserGroupDto;
 import io.reliza.model.dto.UserGroupWebDto;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
-import io.reliza.service.OrganizationService;
 import io.reliza.service.UserGroupService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -64,7 +61,7 @@ public class UserGroupDataFetcher {
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedOrgWideGraphQLWithObject(oud.get(), ro, CallType.ADMIN);
-		List<UserGroupData> userGroups = userGroupService.getActiveUserGroupsByOrganization(org);
+		List<UserGroupData> userGroups = userGroupService.getAllUserGroupsByOrganization(org);
 		return userGroups.stream()
 				.map(UserGroupData::toWebDto)
 				.toList();

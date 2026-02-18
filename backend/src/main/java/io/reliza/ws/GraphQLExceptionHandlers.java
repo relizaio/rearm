@@ -75,6 +75,15 @@ public class GraphQLExceptionHandlers {
     }
 
     @GraphQlExceptionHandler
+    public GraphQLError handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("Validation error: {}", ex.getMessage());
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    @GraphQlExceptionHandler
     public GraphQLError handleGeneric(Exception ex) {
         log.error("Unhandled server error", ex);
         return safeError("Internal server error");
