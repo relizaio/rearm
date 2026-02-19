@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -113,6 +114,8 @@ public class UserGroupTest {
 	public void testCreateUserGroupNameIsolatedByOrg() throws Exception {
 		Organization org1 = testInitializer.obtainOrganization();
 		Organization org2 = testInitializer.obtainOrganization();
+		Assumptions.assumeTrue(!org1.getUuid().equals(org2.getUuid()),
+				"Skipping: requires two distinct organizations (not available in CE)");
 		String groupName = "cross-org-" + UUID.randomUUID();
 
 		CreateUserGroupDto dto1 = CreateUserGroupDto.builder()
