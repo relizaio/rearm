@@ -312,7 +312,7 @@
                         :show-icon="false"
                         style="width: 90%;" 
                         v-model:show="showUserGroupPermissionsModal" 
-                        :title="'User Group Settings for ' + selectedUserGroup.name"
+                        :title="(restoreMode ? 'Restore User Group: ' : 'User Group Settings for ') + selectedUserGroup.name"
                     >
                         <n-flex vertical>
                             <n-space style="margin-top: 20px; margin-bottom: 20px;">
@@ -336,7 +336,7 @@
                                     </n-text>
                                 </n-h5>
                                 <n-select
-                                    v-model:value="selectedUserGroup.users"
+                                    v-model:value="selectedUserGroup.manualUsers"
                                     multiple
                                     :options="userOptions"
                                     placeholder="Select users to add to group"
@@ -387,7 +387,8 @@
                             </n-space>
                         </n-flex>
                         <n-space>
-                            <n-button type="success" @click="updateUserGroup">Save Changes</n-button>
+                            <n-button v-if="restoreMode" type="success" @click="confirmRestoreUserGroup">Restore Group</n-button>
+                            <n-button v-else type="success" @click="updateUserGroup">Save Changes</n-button>
                             <n-button type="warning" @click="editUserGroup(selectedUserGroup.uuid)">Reset Changes</n-button>
                         </n-space>
                     </n-modal>
@@ -1272,6 +1273,7 @@ const filteredUserGroups = computed(() => {
     return userGroups.value.filter((g: any) => g.status === 'ACTIVE')
 })
 const selectedUserGroup: Ref<any> = ref({})
+const restoreMode = ref(false)
 const newUserGroup: Ref<any> = ref({
     name: '',
     description: '',
@@ -1297,6 +1299,7 @@ async function loadUserGroups() {
                         description
                         status
                         users
+                        manualUsers
                         userDetails {
                             uuid
                             name
@@ -2089,7 +2092,7 @@ const userGroupFields = [
                             {
                                 type: 'success',
                                 size: 'small',
-                                onClick: () => restoreUserGroup(row.uuid)
+                                onClick: () => openRestoreModal(row.uuid)
                             }, { default: () => 'Restore' }
                         )
                     ]
@@ -2877,7 +2880,7 @@ async function updateUserGroup() {
             groupId: selectedUserGroup.value.uuid,
             name: selectedUserGroup.value.name,
             description: selectedUserGroup.value.description,
-            users: selectedUserGroup.value.users || [],
+            manualUsers: selectedUserGroup.value.manualUsers || [],
             status: selectedUserGroup.value.status,
             connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
             permissions,
@@ -2939,7 +2942,9 @@ function editUserGroup(groupUuid: string) {
         
         // Ensure arrays are initialized
         selectedUserGroup.value.users = selectedUserGroup.value.users || []
+        selectedUserGroup.value.manualUsers = selectedUserGroup.value.manualUsers || []
         selectedUserGroup.value.connectedSsoGroups = selectedUserGroup.value.connectedSsoGroups || []
+        restoreMode.value = false
         showUserGroupPermissionsModal.value = true
     }
 }
@@ -2989,48 +2994,66 @@ async function deleteUserGroup(groupUuid: string) {
     }
 }
 
-async function restoreUserGroup(groupUuid: string) {
+function openRestoreModal(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (!group) return
+    editUserGroup(groupUuid)
+    restoreMode.value = true
+}
+
+async function confirmRestoreUserGroup() {
+    if (!selectedUserGroup.value.uuid) return
     
-    const swalResp = await Swal.fire({
-        title: 'Are you sure?',
-        text: `Are you sure you want to restore the user group "${group.name}"?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes!',
-        cancelButtonText: 'No!'
-    })
-    
-    if (swalResp.value) {
-        try {
-            const response = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation updateUserGroup($userGroup: UpdateUserGroupInput!) {
-                        updateUserGroup(userGroup: $userGroup) {
-                            uuid
-                            name
-                            status
-                        }
-                    }`,
-                variables: {
-                    userGroup: {
-                        groupId: groupUuid,
-                        status: 'ACTIVE'
-                    }
-                }
+    try {
+        const permissions = []
+        
+        if (selectedUserGroup.value.orgPermissionType && selectedUserGroup.value.orgPermissionType !== 'NONE') {
+            permissions.push({
+                scope: 'ORGANIZATION',
+                objectId: orgResolved.value,
+                type: selectedUserGroup.value.orgPermissionType,
+                approvals: []
             })
-            
-            if (response.data && response.data.updateUserGroup) {
-                notify('success', 'Restored!', `The user group "${group.name}" has been restored.`)
-                loadUserGroups()
-            }
-        } catch (error: any) {
-            console.error('Error restoring user group:', error)
-            notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
         }
-    } else if (swalResp.dismiss === Swal.DismissReason.cancel) {
-        notify('error', 'Cancelled', 'The user group remains inactive.')
+        
+        const updateInput = {
+            groupId: selectedUserGroup.value.uuid,
+            name: selectedUserGroup.value.name,
+            description: selectedUserGroup.value.description,
+            manualUsers: selectedUserGroup.value.manualUsers || [],
+            status: 'ACTIVE',
+            connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
+            permissions,
+            approvals: selectedUserGroup.value.orgPermissionType !== 'ADMIN' ? 
+                (selectedUserGroup.value.approvals || []) : []
+        }
+        
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation updateUserGroup($userGroup: UpdateUserGroupInput!) {
+                    updateUserGroup(userGroup: $userGroup) {
+                        uuid
+                        name
+                        description
+                        status
+                        users
+                        connectedSsoGroups
+                    }
+                }`,
+            variables: {
+                userGroup: updateInput
+            }
+        })
+        
+        if (response.data && response.data.updateUserGroup) {
+            notify('success', 'Restored!', `The user group "${selectedUserGroup.value.name}" has been restored.`)
+            restoreMode.value = false
+            showUserGroupPermissionsModal.value = false
+            loadUserGroups()
+        }
+    } catch (error: any) {
+        console.error('Error restoring user group:', error)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(error.message))
     }
 }
 
