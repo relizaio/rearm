@@ -20,6 +20,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserGroup;
 import io.reliza.model.UserGroupData;
 import io.reliza.model.dto.CreateUserGroupDto;
@@ -75,7 +76,7 @@ public class UserGroupService {
 	 * Creates a new user group.
 	 * Validates name uniqueness across all groups (active and inactive) in the org.
 	 */
-	public UserGroupData createUserGroup(CreateUserGroupDto createDto, WhoUpdated wu) {
+	public UserGroupData createUserGroup(CreateUserGroupDto createDto, WhoUpdated wu) throws RelizaException {
 		List<UserGroupData> allGroups = getAllUserGroupsByOrganization(createDto.getOrg());
 		
 		// Check name uniqueness across all groups
@@ -84,11 +85,11 @@ public class UserGroupService {
 				.findFirst();
 		if (nameConflict.isPresent()) {
 			if (nameConflict.get().getStatus() == UserGroupStatus.INACTIVE) {
-				throw new IllegalArgumentException(
+				throw new RelizaException(
 					"An inactive group with the name '" + createDto.getName() + "' already exists. "
 					+ "Please restore it from the inactive groups list instead of creating a new one.");
 			} else {
-				throw new IllegalArgumentException(
+				throw new RelizaException(
 					"A group with the name '" + createDto.getName() + "' already exists.");
 			}
 		}
@@ -104,10 +105,10 @@ public class UserGroupService {
 	 * Comprehensive update method that handles all user group fields including permissions replacement.
 	 * Validates name uniqueness on rename and name conflicts on restore.
 	 */
-	public UserGroupData updateUserGroupComprehensive(UpdateUserGroupDto updateUserGroupDto, WhoUpdated wu) {
+	public UserGroupData updateUserGroupComprehensive(UpdateUserGroupDto updateUserGroupDto, WhoUpdated wu) throws RelizaException {
 		Optional<UserGroup> existingGroup = userGroupRepository.findById(updateUserGroupDto.getGroupId());
 		if (existingGroup.isEmpty()) {
-			throw new IllegalArgumentException("User group not found: " + updateUserGroupDto.getGroupId());
+			throw new RelizaException("User group not found: " + updateUserGroupDto.getGroupId());
 		}
 		
 		UserGroup ug = existingGroup.get();
@@ -124,7 +125,7 @@ public class UserGroupService {
 					.filter(g -> g.getName().equals(effectiveName))
 					.findFirst();
 			if (nameConflict.isPresent()) {
-				throw new IllegalArgumentException(
+				throw new RelizaException(
 					"A group with the name '" + effectiveName + "' already exists.");
 			}
 		}

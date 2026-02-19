@@ -22,6 +22,7 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.OrganizationData;
@@ -71,7 +72,7 @@ public class UserGroupDataFetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "createUserGroup")
-	public UserGroupWebDto createUserGroup(DgsDataFetchingEnvironment dfe) {
+	public UserGroupWebDto createUserGroup(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 
@@ -87,7 +88,7 @@ public class UserGroupDataFetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateUserGroup")
-	public UserGroupWebDto updateUserGroup(DgsDataFetchingEnvironment dfe) {
+	public UserGroupWebDto updateUserGroup(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		

@@ -56,7 +56,7 @@ public class UserGroupTest {
 	// ==================== CREATE ====================
 
 	@Test
-	public void testCreateUserGroup() {
+	public void testCreateUserGroup() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("test-group")
@@ -72,7 +72,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testCreateUserGroupBlockedByInactiveSameName() {
+	public void testCreateUserGroupBlockedByInactiveSameName() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String groupName = "duplicate-name-" + UUID.randomUUID();
 
@@ -86,14 +86,14 @@ public class UserGroupTest {
 
 		CreateUserGroupDto dto2 = CreateUserGroupDto.builder()
 				.name(groupName).description("").org(org.getUuid()).build();
-		IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> {
+		RelizaException ex = Assertions.assertThrows(RelizaException.class, () -> {
 			userGroupService.createUserGroup(dto2, WhoUpdated.getTestWhoUpdated());
 		});
 		Assertions.assertTrue(ex.getMessage().contains("inactive group"));
 	}
 
 	@Test
-	public void testCreateUserGroupBlockedByActiveSameName() {
+	public void testCreateUserGroupBlockedByActiveSameName() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String groupName = "active-dup-" + UUID.randomUUID();
 
@@ -103,14 +103,14 @@ public class UserGroupTest {
 
 		CreateUserGroupDto dto2 = CreateUserGroupDto.builder()
 				.name(groupName).description("").org(org.getUuid()).build();
-		IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> {
+		RelizaException ex = Assertions.assertThrows(RelizaException.class, () -> {
 			userGroupService.createUserGroup(dto2, WhoUpdated.getTestWhoUpdated());
 		});
 		Assertions.assertTrue(ex.getMessage().contains("already exists"));
 	}
 
 	@Test
-	public void testCreateUserGroupNameIsolatedByOrg() {
+	public void testCreateUserGroupNameIsolatedByOrg() throws Exception {
 		Organization org1 = testInitializer.obtainOrganization();
 		Organization org2 = testInitializer.obtainOrganization();
 		String groupName = "cross-org-" + UUID.randomUUID();
@@ -129,7 +129,7 @@ public class UserGroupTest {
 	// ==================== READ ====================
 
 	@Test
-	public void testGetUserGroupData() {
+	public void testGetUserGroupData() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("read-test-group").description("desc").org(org.getUuid()).build();
@@ -141,13 +141,13 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testGetUserGroupDataNotFound() {
+	public void testGetUserGroupDataNotFound() throws Exception {
 		Optional<UserGroupData> fetched = userGroupService.getUserGroupData(UUID.randomUUID());
 		Assertions.assertFalse(fetched.isPresent());
 	}
 
 	@Test
-	public void testGetUserGroupsByOrganizationReturnsActiveOnly() {
+	public void testGetUserGroupsByOrganizationReturnsActiveOnly() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
 
@@ -169,7 +169,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testGetAllUserGroupsByOrganizationIncludesInactive() {
+	public void testGetAllUserGroupsByOrganizationIncludesInactive() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
@@ -189,7 +189,7 @@ public class UserGroupTest {
 	// ==================== UPDATE ====================
 
 	@Test
-	public void testUpdateUserGroupName() {
+	public void testUpdateUserGroupName() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("original-name").description("").org(org.getUuid()).build();
@@ -202,7 +202,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testUpdateUserGroupDescription() {
+	public void testUpdateUserGroupDescription() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("desc-update-test").description("old desc").org(org.getUuid()).build();
@@ -216,7 +216,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testUpdateUserGroupUsers() {
+	public void testUpdateUserGroupUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("users-update-test").description("").org(org.getUuid()).build();
@@ -237,7 +237,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testUpdateUserGroupConnectedSsoGroups() {
+	public void testUpdateUserGroupConnectedSsoGroups() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("sso-update-test").description("").org(org.getUuid()).build();
@@ -254,16 +254,16 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testUpdateNonExistentGroupThrows() {
+	public void testUpdateNonExistentGroupThrows() throws Exception {
 		UpdateUserGroupDto updateDto = UpdateUserGroupDto.builder()
 				.groupId(UUID.randomUUID()).name("no-such-group").build();
-		Assertions.assertThrows(IllegalArgumentException.class, () -> {
+		Assertions.assertThrows(RelizaException.class, () -> {
 			userGroupService.updateUserGroupComprehensive(updateDto, WhoUpdated.getTestWhoUpdated());
 		});
 	}
 
 	@Test
-	public void testUpdatePreservesUnchangedFields() {
+	public void testUpdatePreservesUnchangedFields() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto createDto = CreateUserGroupDto.builder()
 				.name("preserve-fields").description("original desc").org(org.getUuid()).build();
@@ -281,7 +281,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testUpdateMultipleFieldsAtOnce() {
+	public void testUpdateMultipleFieldsAtOnce() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto createDto = CreateUserGroupDto.builder()
 				.name("multi-update").description("").org(org.getUuid()).build();
@@ -305,7 +305,7 @@ public class UserGroupTest {
 	// ==================== DEACTIVATE / RESTORE ====================
 
 	@Test
-	public void testDeactivateUserGroup() {
+	public void testDeactivateUserGroup() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("deactivate-test").description("").org(org.getUuid()).build();
@@ -318,7 +318,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testRestoreUserGroup() {
+	public void testRestoreUserGroup() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("restore-test").description("").org(org.getUuid()).build();
@@ -337,7 +337,7 @@ public class UserGroupTest {
 	// ==================== T5: RENAME CONFLICT ====================
 
 	@Test
-	public void testRenameActiveGroupNameConflictThrows() {
+	public void testRenameActiveGroupNameConflictThrows() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
 
@@ -352,14 +352,14 @@ public class UserGroupTest {
 		// Rename "abc" to "fenda" should throw
 		UpdateUserGroupDto renameDto = UpdateUserGroupDto.builder()
 				.groupId(group1.getUuid()).name("fenda-" + suffix).build();
-		IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> {
+		RelizaException ex = Assertions.assertThrows(RelizaException.class, () -> {
 			userGroupService.updateUserGroupComprehensive(renameDto, WhoUpdated.getTestWhoUpdated());
 		});
 		Assertions.assertTrue(ex.getMessage().contains("already exists"));
 	}
 
 	@Test
-	public void testRenameActiveGroupSucceedsWhenNameIsFree() {
+	public void testRenameActiveGroupSucceedsWhenNameIsFree() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
 
@@ -377,7 +377,7 @@ public class UserGroupTest {
 	// ==================== T6: RESTORE AND RENAME-TO-INACTIVE ====================
 
 	@Test
-	public void testRestoreSucceedsWhenNoConflict() {
+	public void testRestoreSucceedsWhenNoConflict() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
 
@@ -396,7 +396,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testRenameToInactiveGroupNameBlocked() {
+	public void testRenameToInactiveGroupNameBlocked() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
 
@@ -415,7 +415,7 @@ public class UserGroupTest {
 
 		UpdateUserGroupDto renameDto = UpdateUserGroupDto.builder()
 				.groupId(group2.getUuid()).name("taken-" + suffix).build();
-		IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> {
+		RelizaException ex = Assertions.assertThrows(RelizaException.class, () -> {
 			userGroupService.updateUserGroupComprehensive(renameDto, WhoUpdated.getTestWhoUpdated());
 		});
 		Assertions.assertTrue(ex.getMessage().contains("already exists"));
@@ -424,7 +424,7 @@ public class UserGroupTest {
 	// ==================== SSO GROUP MAPPING (MANY-TO-MANY) ====================
 
 	@Test
-	public void testSameSsoGroupAllowedOnMultipleRearmGroups() {
+	public void testSameSsoGroupAllowedOnMultipleRearmGroups() throws Exception {
 		// SSO groups are many-to-many: multiple REARM groups can share the same SSO group
 		Organization org = testInitializer.obtainOrganization();
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
@@ -450,7 +450,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testRestoreGroupWithSharedSsoGroupSucceeds() {
+	public void testRestoreGroupWithSharedSsoGroupSucceeds() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
 
@@ -484,7 +484,7 @@ public class UserGroupTest {
 	// ==================== T7: FULL LIFECYCLE ====================
 
 	@Test
-	public void testFullLifecyclePreservesAllData() {
+	public void testFullLifecyclePreservesAllData() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
 
@@ -523,7 +523,7 @@ public class UserGroupTest {
 	// ==================== T8: CREATE-AFTER-RESTORE CYCLE ====================
 
 	@Test
-	public void testCreateAfterRestoreCycle() {
+	public void testCreateAfterRestoreCycle() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		String groupName = "cycle-" + UUID.randomUUID().toString().substring(0, 8);
 
@@ -545,7 +545,7 @@ public class UserGroupTest {
 		// Create same name should fail
 		CreateUserGroupDto createDto2 = CreateUserGroupDto.builder()
 				.name(groupName).description("").org(org.getUuid()).build();
-		Assertions.assertThrows(IllegalArgumentException.class, () -> {
+		Assertions.assertThrows(RelizaException.class, () -> {
 			userGroupService.createUserGroup(createDto2, WhoUpdated.getTestWhoUpdated());
 		});
 
@@ -558,7 +558,7 @@ public class UserGroupTest {
 	// ==================== USER MANAGEMENT ====================
 
 	@Test
-	public void testGetUserGroupsByUserAndOrg() {
+	public void testGetUserGroupsByUserAndOrg() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID testUser = UUID.randomUUID();
 
@@ -576,14 +576,14 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testGetUserGroupsByUserAndOrgEmpty() {
+	public void testGetUserGroupsByUserAndOrgEmpty() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		List<UserGroupData> userGroups = userGroupService.getUserGroupsByUserAndOrg(UUID.randomUUID(), org.getUuid());
 		Assertions.assertTrue(userGroups.isEmpty());
 	}
 
 	@Test
-	public void testClearUsersFromGroup() {
+	public void testClearUsersFromGroup() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID testUser = UUID.randomUUID();
 
@@ -605,7 +605,7 @@ public class UserGroupTest {
 	// ==================== MANUAL USERS ====================
 
 	@Test
-	public void testAddManualUsers() {
+	public void testAddManualUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID manualUser = UUID.randomUUID();
 
@@ -622,7 +622,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testGetAllUsersReturnsUnion() {
+	public void testGetAllUsersReturnsUnion() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID ssoUser = UUID.randomUUID();
 		UUID manualUser = UUID.randomUUID();
@@ -647,7 +647,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testHasUserChecksBothSets() {
+	public void testHasUserChecksBothSets() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID ssoUser = UUID.randomUUID();
 		UUID manualUser = UUID.randomUUID();
@@ -670,7 +670,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testManualUsersIndependentOfSsoUsers() {
+	public void testManualUsersIndependentOfSsoUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID ssoUser = UUID.randomUUID();
 		UUID manualUser = UUID.randomUUID();
@@ -699,7 +699,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testFindByUserAndOrgFindsManualUsers() {
+	public void testFindByUserAndOrgFindsManualUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID manualUser = UUID.randomUUID();
 
@@ -718,7 +718,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testFindByUserAndOrgFindsBothSsoAndManualUsers() {
+	public void testFindByUserAndOrgFindsBothSsoAndManualUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID ssoUser = UUID.randomUUID();
 		UUID manualUser = UUID.randomUUID();
@@ -743,7 +743,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testManualUsersPersistence() {
+	public void testManualUsersPersistence() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID manualUser1 = UUID.randomUUID();
 		UUID manualUser2 = UUID.randomUUID();
@@ -764,7 +764,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testClearManualUsers() {
+	public void testClearManualUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID manualUser = UUID.randomUUID();
 
@@ -784,7 +784,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testDeactivateRestorePreservesManualUsers() {
+	public void testDeactivateRestorePreservesManualUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID manualUser = UUID.randomUUID();
 		UUID ssoUser = UUID.randomUUID();
@@ -818,7 +818,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testDuplicateUserInBothSetsDeduplicatedInGetAllUsers() {
+	public void testDuplicateUserInBothSetsDeduplicatedInGetAllUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID sharedUser = UUID.randomUUID();
 
@@ -841,7 +841,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testWebDtoUsersContainsUnion() {
+	public void testWebDtoUsersContainsUnion() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID ssoUser = UUID.randomUUID();
 		UUID manualUser = UUID.randomUUID();
@@ -868,7 +868,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testNewGroupHasEmptyManualUsers() {
+	public void testNewGroupHasEmptyManualUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		CreateUserGroupDto dto = CreateUserGroupDto.builder()
 				.name("empty-manual-test").description("").org(org.getUuid()).build();
@@ -892,7 +892,7 @@ public class UserGroupTest {
 	/**
 	 * Helper: create a group and set its connectedSsoGroups (CreateUserGroupDto doesn't have that field).
 	 */
-	private UserGroupData createGroupWithSso(UUID orgUuid, String name, Set<String> ssoGroups) {
+	private UserGroupData createGroupWithSso(UUID orgUuid, String name, Set<String> ssoGroups) throws RelizaException {
 		CreateUserGroupDto createDto = CreateUserGroupDto.builder()
 				.name(name).description("").org(orgUuid).build();
 		UserGroupData created = userGroupService.createUserGroup(createDto, WhoUpdated.getTestWhoUpdated());
