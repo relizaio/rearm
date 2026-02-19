@@ -1147,7 +1147,10 @@ class VariableQueries {
 	protected static final String FIND_USER_GROUPS_BY_USER_AND_ORGANIZATION = """
 			SELECT * FROM rearm.user_groups
 				WHERE record_data->>'org' = :orgUuidAsString
-				AND jsonb_contains(record_data, jsonb_build_object('users', jsonb_build_array(:userUuidAsString)))
+				AND (
+					jsonb_contains(record_data, jsonb_build_object('users', jsonb_build_array(:userUuidAsString)))
+					OR jsonb_contains(record_data, jsonb_build_object('manualUsers', jsonb_build_array(:userUuidAsString)))
+				)
 				AND record_data->>'status' = 'ACTIVE'
 			""";
 	

@@ -12,14 +12,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.common.Utils;
-import io.reliza.exceptions.RelizaException;
-import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserPermission.Permissions;
@@ -42,7 +41,9 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty(CommonVariables.STATUS_FIELD)
 	private UserGroupStatus status = UserGroupStatus.ACTIVE;
 	@JsonProperty(CommonVariables.USERS_FIELD)
-	private Set<UUID> users = new LinkedHashSet<>(); // users that belong to this group
+	private Set<UUID> users = new LinkedHashSet<>(); // SSO-managed users
+	@JsonProperty("manualUsers")
+	private Set<UUID> manualUsers = new LinkedHashSet<>(); // manually added users (not managed by SSO sync)
 	@JsonProperty("connectedSsoGroups")
 	private Set<String> connectedSsoGroups = new LinkedHashSet<>(); // SSO groups connected to this user group
 	@JsonProperty
@@ -100,7 +101,30 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 	}
 	
 	public boolean hasUser(UUID userUuid) {
-		return this.users.contains(userUuid);
+		return this.users.contains(userUuid) || this.manualUsers.contains(userUuid);
+	}
+	
+	public Set<UUID> getManualUsers() {
+		return new LinkedHashSet<>(manualUsers);
+	}
+	
+	private void setManualUsers(Collection<UUID> manualUsers) {
+		this.manualUsers = new LinkedHashSet<>(manualUsers);
+	}
+	
+	public void addManualUser(UUID userUuid) {
+		this.manualUsers.add(userUuid);
+	}
+	
+	public boolean removeManualUser(UUID userUuid) {
+		return this.manualUsers.remove(userUuid);
+	}
+	
+	@JsonIgnore
+	public Set<UUID> getAllUsers() {
+		Set<UUID> allUsers = new LinkedHashSet<>(users);
+		allUsers.addAll(manualUsers);
+		return allUsers;
 	}
 	
 	public Set<String> getConnectedSsoGroups() {
@@ -180,6 +204,12 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 			updatedUserGroupData.setUsers(ugd.getUsers());
 		}
 		
+		if (null != updateUgd.getManualUsers()) {
+			updatedUserGroupData.setManualUsers(updateUgd.getManualUsers());
+		} else {
+			updatedUserGroupData.setManualUsers(ugd.getManualUsers());
+		}
+		
 		if (null != updateUgd.getPermissions()) {
 			for (UserGroupPermissionDto permission : updateUgd.getPermissions()) {
 				updatedUserGroupData.setPermission(
@@ -246,7 +276,8 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 				.org(ugd.getOrg())
 				.permissions(ugd.getPermissions())
 				.status(ugd.getStatus())
-				.users(ugd.getUsers())
+				.users(ugd.getAllUsers())
+				.manualUsers(ugd.getManualUsers())
 				.connectedSsoGroups(ugd.getConnectedSsoGroups())
 				.build();
 	}

@@ -26,6 +26,8 @@ public class UpdateUserGroupDto {
 	private String description;
 	@JsonProperty(CommonVariables.USERS_FIELD)
 	private Set<UUID> users;
+	@JsonProperty("manualUsers")
+	private Set<UUID> manualUsers;
 	@JsonProperty("permissions")
 	private Collection<UserGroupPermissionDto> permissions;
 	@JsonProperty(CommonVariables.APPROVALS_FIELD)

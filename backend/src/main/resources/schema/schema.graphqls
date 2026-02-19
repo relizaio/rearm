@@ -395,6 +395,7 @@ type UserGroupWebDto {
 	description: String
 	org: ID
 	users: [ID]
+	manualUsers: [ID]
 	userDetails: [OrgUserData]
 	permissions: Permissions
 	status: UserGroupStatus
@@ -1719,6 +1720,7 @@ input UpdateUserGroupInput {
 	name: String
 	description: String
 	users: [ID]
+	manualUsers: [ID]
 	permissions: [UserGroupPermissionInput]
 	approvals: [String]
 	status: UserGroupStatus

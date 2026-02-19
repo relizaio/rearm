@@ -423,23 +423,28 @@ public class UserService {
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	private void synchronizeUserWithGroupsPerOrg (UserData ud, Set<String> presentSsoGroups, UUID uOrg) {
-		Set<UserGroupData> orgGroups = userGroupService.getUserGroupsByOrganization(uOrg)
-		.stream().filter(x -> {
-			return null != x.getConnectedSsoGroups() && !x.getConnectedSsoGroups().isEmpty() 
-					&& !Collections.disjoint(x.getConnectedSsoGroups(), presentSsoGroups);
-			})
-		.collect(Collectors.toSet());
-
-		List<UserGroupData> userGroups = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), uOrg);
-
-		// check equality - extract UUID sets from each and compare
-		Set<UUID> expectedGroupUuids = orgGroups.stream()
+	public void synchronizeUserWithGroupsPerOrg (UserData ud, Set<String> presentSsoGroups, UUID uOrg) {
+		List<UserGroupData> allOrgGroups = userGroupService.getUserGroupsByOrganization(uOrg);
+		
+		// All SSO-connected group UUIDs (for filtering current memberships)
+		Set<UUID> ssoConnectedGroupUuids = allOrgGroups.stream()
+			.filter(x -> null != x.getConnectedSsoGroups() && !x.getConnectedSsoGroups().isEmpty())
 			.map(UserGroupData::getUuid)
 			.collect(Collectors.toSet());
 		
+		// SSO groups that match the user's present SSO groups
+		Set<UUID> expectedGroupUuids = allOrgGroups.stream()
+			.filter(x -> null != x.getConnectedSsoGroups() && !x.getConnectedSsoGroups().isEmpty() 
+					&& !Collections.disjoint(x.getConnectedSsoGroups(), presentSsoGroups))
+			.map(UserGroupData::getUuid)
+			.collect(Collectors.toSet());
+
+		List<UserGroupData> userGroups = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), uOrg);
+
+		// Only consider SSO-connected groups; manual group memberships are not managed by SSO sync
 		Set<UUID> currentGroupUuids = userGroups.stream()
 			.map(UserGroupData::getUuid)
+			.filter(ssoConnectedGroupUuids::contains)
 			.collect(Collectors.toSet());
 		
 		boolean areEqual = expectedGroupUuids.equals(currentGroupUuids);
@@ -447,26 +452,30 @@ public class UserService {
 			// write lock user
 			Optional<User> ou = repository.findByIdWriteLocked(ud.getUuid());
 			if (ou.isPresent()) {
-				// double check equality
-				Set<UserGroupData> orgGroups2 = userGroupService.getUserGroupsByOrganization(uOrg)
-				.stream().filter(x -> null != x.getConnectedSsoGroups() && !x.getConnectedSsoGroups().isEmpty() 
-					&& !Collections.disjoint(x.getConnectedSsoGroups(), presentSsoGroups))
-				.collect(Collectors.toSet());
-		
-				List<UserGroupData> userGroups2 = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), uOrg);
-		
-				// check equality - extract UUID sets from each and compare
-				Set<UUID> expectedGroupUuids2 = orgGroups2.stream()
+				// double check equality after acquiring lock
+				List<UserGroupData> allOrgGroups2 = userGroupService.getUserGroupsByOrganization(uOrg);
+				
+				Set<UUID> ssoConnectedGroupUuids2 = allOrgGroups2.stream()
+					.filter(x -> null != x.getConnectedSsoGroups() && !x.getConnectedSsoGroups().isEmpty())
 					.map(UserGroupData::getUuid)
 					.collect(Collectors.toSet());
 				
+				Set<UUID> expectedGroupUuids2 = allOrgGroups2.stream()
+					.filter(x -> null != x.getConnectedSsoGroups() && !x.getConnectedSsoGroups().isEmpty() 
+						&& !Collections.disjoint(x.getConnectedSsoGroups(), presentSsoGroups))
+					.map(UserGroupData::getUuid)
+					.collect(Collectors.toSet());
+		
+				List<UserGroupData> userGroups2 = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), uOrg);
+		
 				Set<UUID> currentGroupUuids2 = userGroups2.stream()
 					.map(UserGroupData::getUuid)
+					.filter(ssoConnectedGroupUuids2::contains)
 					.collect(Collectors.toSet());
 				
 				boolean areEqual2 = expectedGroupUuids2.equals(currentGroupUuids2);
 				if (!areEqual2) {
-					// update user groups
+					// update user groups - only add/remove from SSO-connected groups
 					for (var orgGroup : expectedGroupUuids2) {
 						if (!currentGroupUuids2.contains(orgGroup)) {
 							userGroupService.addUserToGroup(orgGroup, ud.getUuid(), WhoUpdated.getAutoWhoUpdated());
@@ -474,7 +483,7 @@ public class UserService {
 					}
 					for (var orgGroup : currentGroupUuids2) {
 						if (!expectedGroupUuids2.contains(orgGroup)) {
-							userGroupService.removeUserFromGroup(orgGroup, ud.getUuid(), WhoUpdated.getAutoWhoUpdated());
+							userGroupService.removeSsoUserFromGroup(orgGroup, ud.getUuid(), WhoUpdated.getAutoWhoUpdated());
 						}
 					}
 				}

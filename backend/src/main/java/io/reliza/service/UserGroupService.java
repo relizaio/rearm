@@ -191,7 +191,8 @@ public class UserGroupService {
 	}
 	
 	/**
-	 * Removes a user from all user groups in an organization
+	 * Removes a user from all user groups in an organization (both SSO and manual).
+	 * Used when a user is removed from an organization entirely.
 	 */
 	protected void removeUserFromAllGroupsInOrg(UUID userUuid, UUID orgUuid, WhoUpdated wu) {
 		List<UserGroupData> userGroups = getUserGroupsByUserAndOrg(userUuid, orgUuid);
@@ -201,9 +202,22 @@ public class UserGroupService {
 	}
 	
 	/**
-	 * Removes a user from a user group
+	 * Removes a user from a user group's SSO users only.
+	 * Used by SSO sync — does not touch manualUsers.
+	 */
+	public UserGroupData removeSsoUserFromGroup(UUID groupUuid, UUID userUuid, WhoUpdated wu) {
+		return removeUserFromGroupInternal(groupUuid, userUuid, wu, false);
+	}
+	
+	/**
+	 * Removes a user from a user group (both SSO users and manualUsers).
+	 * Used when a user is removed from the organization entirely.
 	 */
 	protected UserGroupData removeUserFromGroup(UUID groupUuid, UUID userUuid, WhoUpdated wu) {
+		return removeUserFromGroupInternal(groupUuid, userUuid, wu, true);
+	}
+	
+	private UserGroupData removeUserFromGroupInternal(UUID groupUuid, UUID userUuid, WhoUpdated wu, boolean includeManual) {
 		Optional<UserGroup> existingGroup = userGroupRepository.findById(groupUuid);
 		if (existingGroup.isEmpty()) {
 			throw new IllegalArgumentException("User group not found: " + groupUuid);
@@ -212,10 +226,11 @@ public class UserGroupService {
 		UserGroup ug = existingGroup.get();
 		UserGroupData ugd = UserGroupData.dataFromRecord(ug);
 		
-		// Remove user from the group
 		boolean wasRemoved = ugd.removeUser(userUuid);
+		if (includeManual) {
+			wasRemoved |= ugd.removeManualUser(userUuid);
+		}
 		if (!wasRemoved) {
-			// User was not in the group, but this is not an error condition
 			return ugd;
 		}
 		

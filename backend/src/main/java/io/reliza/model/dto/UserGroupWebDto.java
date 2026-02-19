@@ -32,6 +32,8 @@ public class UserGroupWebDto {
 	private UserGroupStatus status;
 	@JsonProperty(CommonVariables.USERS_FIELD)
 	private Set<UUID> users;
+	@JsonProperty("manualUsers")
+	private Set<UUID> manualUsers;
 	@JsonProperty("connectedSsoGroups")
 	private Set<String> connectedSsoGroups;
 }

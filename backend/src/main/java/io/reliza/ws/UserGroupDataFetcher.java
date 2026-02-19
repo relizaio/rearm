@@ -100,15 +100,8 @@ public class UserGroupDataFetcher {
 
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
 
-		if (userGroupInput.getUsers() != null) {
-			for (UUID userUuid : userGroupInput.getUsers()) {
-				var optUserInGroup = userService.getUserData(userUuid);
-				if (optUserInGroup.isEmpty() || !optUserInGroup.get().isInOrganization(ugd.get().getOrg())) {
-					log.error("SECURITY: User " + userUuid + " is not in organization " + ugd.get().getOrg() + " - attempted to be included in the group " + groupUuid);
-					throw new AccessDeniedException("You're trying to include unknown user to the group");
-				}
-			}
-		}
+		validateUsersInOrganization(userGroupInput.getUsers(), ugd.get().getOrg(), groupUuid);
+		validateUsersInOrganization(userGroupInput.getManualUsers(), ugd.get().getOrg(), groupUuid);
 		
 		var approvals = userGroupInput.getApprovals();
 		OrganizationData od = getOrganizationService.getOrganizationData(ugd.get().getOrg()).get();
@@ -147,5 +140,16 @@ public class UserGroupDataFetcher {
 		}
 		
 		return userDetails;
+	}
+
+	private void validateUsersInOrganization(java.util.Collection<UUID> userUuids, UUID orgUuid, UUID groupUuid) {
+		if (userUuids == null) return;
+		for (UUID userUuid : userUuids) {
+			var optUserInGroup = userService.getUserData(userUuid);
+			if (optUserInGroup.isEmpty() || !optUserInGroup.get().isInOrganization(orgUuid)) {
+				log.error("SECURITY: User " + userUuid + " is not in organization " + orgUuid + " - attempted to be included in the group " + groupUuid);
+				throw new AccessDeniedException("You're trying to include unknown user to the group");
+			}
+		}
 	}
 }
