@@ -15,6 +15,7 @@
     "apollo-upload-client": "^19.0.0",
     "axios": "^1.13.2",
     "keycloak-js": "^26.2.1",
+    "packageurl-js": "^2.0.1",
     "pdfmake": "^0.3.3",
     "prismjs": "^1.30.0",
     "sweetalert2": "^11.26.3",

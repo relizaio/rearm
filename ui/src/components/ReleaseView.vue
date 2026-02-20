@@ -701,6 +701,7 @@ import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService
 import { searchDtrackComponentByPurl as searchDtrackComponentByPurlUtil } from '@/utils/dtrack'
 import { processMetricsData } from '@/utils/metrics'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
+import { PackageURL } from 'packageurl-js'
 
 const route = useRoute()    
 const router = useRouter()
@@ -3610,6 +3611,16 @@ const changelogTableFields: DataTableColumns<any> = [
     }
 ]
 
+function purlBaseName(purl: string): string | null {
+    try {
+        const parsed = PackageURL.fromString(purl)
+        // Reconstruct without version: type + namespace + name
+        return new PackageURL(parsed.type, parsed.namespace, parsed.name, null, null, null).toString()
+    } catch {
+        return null
+    }
+}
+
 function mergeUpdatedComponents(addedItems: any[], removedItems: any[]): any[] {
     const mergedData: any[] = []
     const usedAddedIndices = new Set<number>()
@@ -3620,13 +3631,15 @@ function mergeUpdatedComponents(addedItems: any[], removedItems: any[]): any[] {
         if (usedAddedIndices.has(addedIndex)) return
         
         const addedPurl = addedItem.purl || 'PURL unknown'
-        const addedBaseName = addedPurl.split('@')[0]
+        const addedBaseName = purlBaseName(addedPurl)
+        if (!addedBaseName) return
         
         removedItems.forEach((removedItem, removedIndex) => {
             if (usedRemovedIndices.has(removedIndex)) return
             
             const removedPurl = removedItem.purl || 'PURL unknown'
-            const removedBaseName = removedPurl.split('@')[0]
+            const removedBaseName = purlBaseName(removedPurl)
+            if (!removedBaseName) return
             
             // If base names match, merge into an "Updated" entry
             if (addedBaseName === removedBaseName) {
