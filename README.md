@@ -1,5 +1,5 @@
  **Releases:**
- [![Release Version](https://img.shields.io/github/v/release/relizaio/rearm?label=ReARM)](https://github.com/relizaio/rearm/releases/latest)
+ [![Release Version](https://img.shields.io/github/v/release/relizaio/rearm)](https://github.com/relizaio/rearm/releases/latest)
  [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
  [![Website](https://img.shields.io/badge/https://-demo.rearmhq.com-blue.svg)](https://demo.rearmhq.com)
  [![Website](https://img.shields.io/badge/https://-rearmhq.com-blue.svg)](https://rearmhq.com)
