@@ -275,15 +275,18 @@
                             <n-space style="margin-top: 20px; margin-bottom: 20px;">
                                 <n-h5>
                                     <n-text depth="1">
-                                        Basic Information:
+                                        User Group Name
                                     </n-text>
                                 </n-h5>
-                                <n-form-item label="Name">
-                                    <n-input v-model:value="selectedUserGroup.name" placeholder="User Group Name" />
-                                </n-form-item>
-                                <n-form-item label="Description">
-                                    <n-input v-model:value="selectedUserGroup.description" placeholder="Description" />
-                                </n-form-item>
+                                <n-input style="width: 500px;" v-model:value="selectedUserGroup.name" placeholder="" />
+                            </n-space>
+                            <n-space style="margin-bottom: 20px;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        User Group Description
+                                    </n-text>
+                                </n-h5>
+                                <n-input style="width: 400px;" v-model:value="selectedUserGroup.description" placeholder="Description" />
                             </n-space>
                             
                             <n-space style="margin-bottom: 20px;">
@@ -1255,14 +1258,32 @@ const userGroupScopedPermissions: Ref<any> = ref({
     scopedPermissions: []
 })
 const userGroupScopedPermissionsOriginal: Ref<any> = ref(null)
+const selectedUserGroupOriginal: Ref<any> = ref(null)
 
 const userPermissionsDirty = computed(() => {
     if (!userScopedPermissionsOriginal.value) return false
     return commonFunctions.stableStringify(userScopedPermissions.value) !== commonFunctions.stableStringify(userScopedPermissionsOriginal.value)
 })
+
+function getUserGroupEditableState(group: any) {
+    return {
+        name: group?.name || '',
+        description: group?.description || '',
+        manualUsers: group?.manualUsers || [],
+        connectedSsoGroups: group?.connectedSsoGroups || []
+    }
+}
+
 const userGroupPermissionsDirty = computed(() => {
-    if (!userGroupScopedPermissionsOriginal.value) return false
-    return commonFunctions.stableStringify(userGroupScopedPermissions.value) !== commonFunctions.stableStringify(userGroupScopedPermissionsOriginal.value)
+    const scopedDirty = userGroupScopedPermissionsOriginal.value
+        ? commonFunctions.stableStringify(userGroupScopedPermissions.value) !== commonFunctions.stableStringify(userGroupScopedPermissionsOriginal.value)
+        : false
+
+    const detailsDirty = selectedUserGroupOriginal.value
+        ? commonFunctions.stableStringify(getUserGroupEditableState(selectedUserGroup.value)) !== commonFunctions.stableStringify(selectedUserGroupOriginal.value)
+        : false
+
+    return scopedDirty || detailsDirty
 })
 
 const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
@@ -3004,6 +3025,7 @@ async function editUserGroup(groupUuid: string) {
         selectedUserGroup.value.users = selectedUserGroup.value.users || []
         selectedUserGroup.value.manualUsers = selectedUserGroup.value.manualUsers || []
         selectedUserGroup.value.connectedSsoGroups = selectedUserGroup.value.connectedSsoGroups || []
+        selectedUserGroupOriginal.value = commonFunctions.deepCopy(getUserGroupEditableState(selectedUserGroup.value))
         restoreMode.value = false
         showUserGroupPermissionsModal.value = true
     }
