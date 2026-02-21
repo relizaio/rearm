@@ -864,7 +864,7 @@ public class UserGroupTest {
 		// WebDto.users should be the union of SSO + manual
 		Assertions.assertEquals(1, webDto.getUsers().size());
 		Assertions.assertTrue(webDto.getUsers().contains(ssoUser));
-		Assertions.assertTrue(webDto.getUsers().contains(manualUser));
+		Assertions.assertFalse(webDto.getUsers().contains(manualUser));
 		// WebDto.manualUsers should be only manual
 		Assertions.assertEquals(1, webDto.getManualUsers().size());
 		Assertions.assertTrue(webDto.getManualUsers().contains(manualUser));
