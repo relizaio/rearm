@@ -31,7 +31,7 @@
                         </span>
                     </n-dropdown>
                 </span>
-                <span v-else><strong>Perspective: </strong><span style="font-size: 16px;">Default</span></span>
+                <span v-else><strong>Perspective: </strong><span style="font-size: 16px;">{{ currentPerspectiveName }}</span></span>
             </div>
             <div class="horizontalNavIcons" v-if="myorg && !isPlayground" >
                 <span>
@@ -58,7 +58,7 @@ import axios from '../utils/axios'
 import { NDropdown, NIcon } from 'naive-ui'
 import { User, Settings, Logout } from '@vicons/tabler'
 import { useStore } from 'vuex'
-import { ComputedRef, computed, h } from 'vue'
+import { ComputedRef, computed, h, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
@@ -71,21 +71,41 @@ const store = useStore()
 const router = useRouter()
 const myUser = store.getters.myuser
 
+const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+
 // Perspectives
 const perspectives: ComputedRef<any[]> = computed((): any => store.getters.perspectivesOfOrg(myorg.value?.uuid || ''))
 const myperspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
 
+// True when user has ESSENTIAL_READ org-wide but has explicit scoped PERSPECTIVE permissions
+// In this case they should not see the Default perspective
+const hasOnlyPerspectiveAccess: ComputedRef<boolean> = computed((): boolean => {
+    const user = store.getters.myuser
+    if (!user?.permissions?.permissions) return false
+    const orgUuid = myorg.value?.uuid
+    if (!orgUuid) return false
+    const orgWidePerm = user.permissions.permissions.find((p: any) =>
+        p.scope === 'ORGANIZATION' && p.org === orgUuid
+    )
+    if (!orgWidePerm || orgWidePerm.type !== 'ESSENTIAL_READ') return false
+    return user.permissions.permissions.some((p: any) =>
+        p.scope === 'PERSPECTIVE' && p.org === orgUuid && (p.type === 'READ_ONLY' || p.type === 'READ_WRITE' || p.type === 'ADMIN')
+    )
+})
+
 const perspectiveOptions: ComputedRef<any[]> = computed((): any => {
-    const options: any[] = [{
+    const options: any[] = hasOnlyPerspectiveAccess.value ? [] : [{
         label: () => h('b', 'Default'),
         key: 'default'
     }]
-    
-    if (perspectives.value && perspectives.value.length > 0) {
-        options.push({
-            type: 'divider',
-            key: 'd1'
-        })
+
+    if (perspectives.value.length > 0) {
+        if (!hasOnlyPerspectiveAccess.value) {
+            options.push({
+                type: 'divider',
+                key: 'd1'
+            })
+        }
         // Sort perspectives: PERSPECTIVE type first, then by name
         const sortedPerspectives = [...perspectives.value].sort((a: any, b: any) => {
             const typeA = a.type || ''
@@ -122,16 +142,24 @@ const perspectiveOptions: ComputedRef<any[]> = computed((): any => {
 })
 
 const currentPerspectiveName: ComputedRef<string> = computed((): string => {
-    if (myperspective.value === 'default') {
-        return 'Default'
-    }
     const perspective = perspectives.value.find((p: any) => p.uuid === myperspective.value)
-    return perspective ? perspective.name : 'Default'
+    if (perspective) return perspective.name
+    if (hasOnlyPerspectiveAccess.value && perspectives.value.length > 0) {
+        return perspectives.value[0].name
+    }
+    return 'Default'
 })
 
 const setMyPerspective = function (perspectiveUuid: string) {
     store.dispatch('updateMyPerspective', perspectiveUuid)
 }
+
+// Auto-select first available perspective when user has only perspective-scoped access
+watch([hasOnlyPerspectiveAccess, perspectives, myorg], () => {
+    if (hasOnlyPerspectiveAccess.value && perspectives.value.length > 0 && myperspective.value === 'default') {
+        store.dispatch('updateMyPerspective', perspectives.value[0].uuid)
+    }
+}, { immediate: true })
 
 const getVersion : any = async function () {
     let versionUri
@@ -162,8 +190,6 @@ const setMyOrg : any = async function (orgUuid : string) {
         name: 'home'
     })
 }
-
-const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 
 function logout () {
     window.location.href = window.location.origin + '/kauth/realms/Reliza/protocol/openid-connect/logout'
