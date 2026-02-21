@@ -221,18 +221,20 @@
                         :title="'User Permissions for ' + selectedUser.email"
                         @after-enter="blurActiveElement"
                     >
-                        <ScopedPermissions
-                            v-model="userScopedPermissions"
-                            :org-uuid="orgResolved"
-                            :approval-roles="myorg.approvalRoles || []"
-                            :perspectives="perspectives"
-                            :products="orgProducts"
-                            :components="orgComponents"
-                        />
-                        <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
-                            <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
-                            <n-button type="warning" @click="editUser(selectedUser.email)">Reset Changes</n-button>
-                        </n-space>
+                        <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
+                            <ScopedPermissions
+                                v-model="userScopedPermissions"
+                                :org-uuid="orgResolved"
+                                :approval-roles="myorg.approvalRoles || []"
+                                :perspectives="perspectives"
+                                :products="orgProducts"
+                                :components="orgComponents"
+                            />
+                            <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
+                                <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
+                                <n-button type="warning" @click="editUser(selectedUser.email)">Reset Changes</n-button>
+                            </n-space>
+                        </div>
                     </n-modal>
                     <h6>Pending Invites</h6>
                     <n-data-table :columns="inviteeFields" :data="invitees" class="table-hover">
@@ -266,6 +268,7 @@
                         :title="(restoreMode ? 'Restore User Group: ' : 'User Group Settings for ') + selectedUserGroup.name"
                         @after-enter="blurActiveElement"
                     >
+                        <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
                         <n-flex vertical>
                             <n-space style="margin-top: 20px; margin-bottom: 20px;">
                                 <n-h5>
@@ -325,6 +328,7 @@
                                 <n-button type="warning" @click="editUserGroup(selectedUserGroup.uuid)">Reset Changes</n-button>
                             </template>
                         </n-space>
+                        </div>
                     </n-modal>
                 </div>
             </n-tab-pane>
