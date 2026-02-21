@@ -1336,6 +1336,11 @@ async function loadUserGroups() {
                             name
                             email
                         }
+                        manualUserDetails {
+                            uuid
+                            name
+                            email
+                        }
                         permissions {
                             permissions {
                                 org
@@ -2000,9 +2005,19 @@ const userGroupFields = [
         key: 'userCount',
         title: 'Users',
         render(row: any) {
-            const userCount = row.userDetails ? row.userDetails.length : 0
-            if (userCount > 0 && row.userDetails) {
-                const userList = row.userDetails.map((u: any) => `${u.name} (${u.email})`).join('\n')
+            const mergedUserDetails = new Map<string, any>()
+            const allUserDetails = [...(row.userDetails || []), ...(row.manualUserDetails || [])]
+            for (const userDetail of allUserDetails) {
+                const userId = userDetail?.uuid || userDetail?.email
+                if (userId && !mergedUserDetails.has(userId)) {
+                    mergedUserDetails.set(userId, userDetail)
+                }
+            }
+
+            const uniqueUserDetails = Array.from(mergedUserDetails.values())
+            const userCount = uniqueUserDetails.length
+            if (userCount > 0) {
+                const userList = uniqueUserDetails.map((u: any) => `${u.name} (${u.email})`).join('\n')
                 return h('div', [
                     h('span', `${userCount} ${userCount === 1 ? 'user' : 'users'}`),
                     h(
