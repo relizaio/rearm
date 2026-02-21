@@ -2601,6 +2601,39 @@ const cloneReleaseToFs = async function(uuid: string, version: string) {
     cloneReleaseToFsObj.value.version = version
     cloneReleaseToFsObj.value.showModal = true
 }
+function canUserApproveForRelease(approvalId: string): boolean {
+    const permissions = myUser?.permissions?.permissions || []
+    const orgId = release.value?.org
+
+    if (!orgId) return false
+
+    // 1) Org admin or org-wide approval permission
+    const orgPerm = permissions.find((p: any) =>
+        p.scope === 'ORGANIZATION' && p.org === orgId && p.object === orgId
+    )
+    if (orgPerm?.type === 'ADMIN') return true
+    if (orgPerm?.approvals?.includes(approvalId)) return true
+
+    // 2) Perspective-scoped approval permission for current perspective
+    const currentPerspective = store.getters.myperspective
+    if (currentPerspective && currentPerspective !== 'default') {
+        const perspectivePerm = permissions.find((p: any) =>
+            p.scope === 'PERSPECTIVE' && p.org === orgId && p.object === currentPerspective
+        )
+        if (perspectivePerm?.approvals?.includes(approvalId)) return true
+    }
+
+    // 3) Component-scoped approval permission for this release's component
+    const componentId = updatedRelease.value?.componentDetails?.uuid || release.value?.componentDetails?.uuid
+    if (componentId) {
+        const componentPerm = permissions.find((p: any) =>
+            p.scope === 'COMPONENT' && p.org === orgId && p.object === componentId
+        )
+        if (componentPerm?.approvals?.includes(approvalId)) return true
+    }
+
+    return false
+}
 const createFsFromRelease = async function(){
     const gqlResp: any = await graphqlClient.mutate({
         mutation: gql`
@@ -2647,9 +2680,7 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
             title: availableApprovalIds.value[aid],
             render: (row: any) => {
                 if (row[aid]) {
-                    let isDisabled = false
-                    const orgPerm = myUser.permissions.permissions.find((p: any) => p.scope === 'ORGANIZATION' && p.org === release.value.org)
-                    if (!orgPerm || ((orgPerm.type !== 'ADMIN') && !orgPerm.approvals) || ((orgPerm.type !== 'ADMIN') && !orgPerm.approvals.includes(aid))) isDisabled = true
+                    let isDisabled = !canUserApproveForRelease(aid)
                     if (!isDisabled && givenApprovals.value[row.uuid]) isDisabled = (givenApprovals.value[row.uuid][aid].length > 0)
                     const isDisapproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'DISAPPROVED' : false
                     const isApproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'APPROVED' : false
