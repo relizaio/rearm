@@ -3091,10 +3091,10 @@ async function deleteUserGroup(groupUuid: string) {
     }
 }
 
-function openRestoreModal(groupUuid: string) {
+async function openRestoreModal(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (!group) return
-    editUserGroup(groupUuid)
+    await editUserGroup(groupUuid)
     restoreMode.value = true
 }
 
