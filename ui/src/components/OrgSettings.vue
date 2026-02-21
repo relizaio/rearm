@@ -229,7 +229,7 @@
                             :products="orgProducts"
                             :components="orgComponents"
                         />
-                        <n-space style="margin-top: 20px;">
+                        <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
                             <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
                             <n-button type="warning" @click="editUser(selectedUser.email)">Reset Changes</n-button>
                         </n-space>
@@ -320,8 +320,10 @@
                         </n-flex>
                         <n-space style="margin-top: 20px;">
                             <n-button v-if="restoreMode" type="success" @click="confirmRestoreUserGroup">Restore Group</n-button>
-                            <n-button v-else type="success" @click="updateUserGroup">Save Changes</n-button>
-                            <n-button type="warning" @click="editUserGroup(selectedUserGroup.uuid)">Reset Changes</n-button>
+                            <template v-else-if="userGroupPermissionsDirty">
+                                <n-button type="success" @click="updateUserGroup">Save Changes</n-button>
+                                <n-button type="warning" @click="editUserGroup(selectedUserGroup.uuid)">Reset Changes</n-button>
+                            </template>
                         </n-space>
                     </n-modal>
                 </div>
@@ -1219,9 +1221,20 @@ const userScopedPermissions: Ref<any> = ref({
     orgPermission: { type: 'NONE', functions: ['RESOURCE'], approvals: [] },
     scopedPermissions: []
 })
+const userScopedPermissionsOriginal: Ref<any> = ref(null)
 const userGroupScopedPermissions: Ref<any> = ref({
     orgPermission: { type: 'NONE', functions: ['RESOURCE'], approvals: [] },
     scopedPermissions: []
+})
+const userGroupScopedPermissionsOriginal: Ref<any> = ref(null)
+
+const userPermissionsDirty = computed(() => {
+    if (!userScopedPermissionsOriginal.value) return false
+    return commonFunctions.stableStringify(userScopedPermissions.value) !== commonFunctions.stableStringify(userScopedPermissionsOriginal.value)
+})
+const userGroupPermissionsDirty = computed(() => {
+    if (!userGroupScopedPermissionsOriginal.value) return false
+    return commonFunctions.stableStringify(userGroupScopedPermissions.value) !== commonFunctions.stableStringify(userGroupScopedPermissionsOriginal.value)
 })
 
 const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
@@ -2579,6 +2592,7 @@ async function editUser(email: string) {
         },
         scopedPermissions: scopedPerms
     }
+    userScopedPermissionsOriginal.value = commonFunctions.deepCopy(userScopedPermissions.value)
 
     showOrgSettingsUserPermissionsModal.value = true
 }
@@ -2974,6 +2988,7 @@ async function editUserGroup(groupUuid: string) {
             orgPermission: commonFunctions.deepCopy(orgPerm),
             scopedPermissions: scopedPerms
         }
+        userGroupScopedPermissionsOriginal.value = commonFunctions.deepCopy(userGroupScopedPermissions.value)
         
         // Ensure arrays are initialized
         selectedUserGroup.value.users = selectedUserGroup.value.users || []
