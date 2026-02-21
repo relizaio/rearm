@@ -42,14 +42,14 @@
         </n-space>
 
         <!-- Per-Perspective Permissions -->
-        <n-space style="margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && perspectives.length">
+        <n-space style="margin-bottom: 10px;" v-if="installationType !== 'OSS' && orgPermission.type !== 'ADMIN' && perspectives.length">
             <n-h5>
                 <n-text depth="1">
                     Per-Perspective Permissions:
                 </n-text>
             </n-h5>
         </n-space>
-        <div v-if="orgPermission.type !== 'ADMIN' && perspectives.length">
+        <div v-if="installationType !== 'OSS' && orgPermission.type !== 'ADMIN' && perspectives.length">
             <n-space vertical>
                 <n-card v-for="sp in scopedPerspectivePermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
                     <n-space align="center" justify="space-between" style="width: 100%;">
@@ -194,6 +194,7 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue'
+import { useStore } from 'vuex'
 import { NFlex, NSpace, NH5, NText, NRadioGroup, NRadioButton, NCheckboxGroup, NCheckbox, NSelect, NButton, NCard, NIcon, useNotification } from 'naive-ui'
 import { X as CloseIcon } from '@vicons/tabler'
 import constants from '@/utils/constants'
@@ -233,6 +234,8 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits(['update:modelValue'])
 const notification = useNotification()
+const store = useStore()
+const installationType = computed(() => store.getters.myuser?.installationType)
 
 const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
