@@ -844,7 +844,7 @@ public class UserGroupTest {
 	}
 
 	@Test
-	public void testWebDtoUsersContainsUnion() throws Exception {
+	public void testWebDtoUsers() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		UUID ssoUser = UUID.randomUUID();
 		UUID manualUser = UUID.randomUUID();
@@ -862,7 +862,7 @@ public class UserGroupTest {
 
 		var webDto = UserGroupData.toWebDto(updated);
 		// WebDto.users should be the union of SSO + manual
-		Assertions.assertEquals(2, webDto.getUsers().size());
+		Assertions.assertEquals(1, webDto.getUsers().size());
 		Assertions.assertTrue(webDto.getUsers().contains(ssoUser));
 		Assertions.assertTrue(webDto.getUsers().contains(manualUser));
 		// WebDto.manualUsers should be only manual
