@@ -1368,6 +1368,7 @@ const storeObject : any = {
                                     type
                                     meta
                                     approvals
+                                    functions
                                 }
                             }
                         }

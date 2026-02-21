@@ -220,68 +220,17 @@
                         v-model:show="showOrgSettingsUserPermissionsModal" 
                         :title="'User Permissions for ' + selectedUser.email"
                     >
-                        <n-flex vertical>
-                            <n-space style="margin-top: 20px; margin-bottom: 20px;">
-                                <n-h5>
-                                    <n-text depth="1">
-                                        Organization-Wide Permissions:
-                                    </n-text>
-                                </n-h5>
-                                <n-radio-group v-model:value="selectedUser.type" :onUpdate:value ="(value: string) => {selectedUser.type = value}">
-                                    <n-radio-button
-                                        v-for="pt in permissionTypeswAdmin"
-                                        :key="pt"
-                                        :value="pt"
-                                        :disabled="false"
-                                        :label="translatePermissionName(pt)"
-                                    />
-                                </n-radio-group>
-                                
-                            </n-space>
-                            <n-space style="margin-bottom: 20px;" v-if="selectedUserType !== 'ADMIN' && myorg.approvalRoles && myorg.approvalRoles.length">
-                                <n-h5>
-                                    <n-text depth="1">
-                                        Approval Permissions:
-                                    </n-text>
-                                </n-h5>
-                                <n-checkbox-group id="modal-org-settings-user-permissions-approval-checkboxes"
-                                    v-model:value="selectedUser.approvals"
-                                    :onUpdate:value ="(value: string) => {selectedUser.approvals = value}"
-                                >
-                                    <n-checkbox v-for="a in myorg.approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" ></n-checkbox>
-                                </n-checkbox-group>
-
-                            </n-space>
-                        </n-flex>
-                        <n-space>
+                        <ScopedPermissions
+                            v-model="userScopedPermissions"
+                            :org-uuid="orgResolved"
+                            :approval-roles="myorg.approvalRoles || []"
+                            :perspectives="perspectives"
+                            :components="allComponents"
+                        />
+                        <n-space style="margin-top: 20px;">
                             <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
                             <n-button type="warning" @click="editUser(selectedUser.email)">Reset Changes</n-button>
                         </n-space>
-                        <n-flex v-if="false" v-show="selectedUserType !== 'ADMIN'"  >
-                            <n-h5>
-                                <n-text depth="1">
-                                    Instance Permissions:
-                                </n-text>
-                            </n-h5>
-                            <n-grid cols="12" item-responsive>
-                                <n-gi :span="6">
-                                    <n-input round clearable @input="filterInstances" :style="{ 'max-width': '90%' }" placeholder="Search" >
-                                        <template #suffix>
-                                            <n-icon size="16"><Search /></n-icon>
-                                        </template>
-                                    </n-input>  
-                                </n-gi>
-                            </n-grid>
-                                
-                            <n-space vertical>
-                                <n-data-table :columns="userInstancePermissionColumns" :data="instances"/>
-                            </n-space>
-
-                            <n-space vertical>
-                                <n-data-table :columns="userClusterPermissionColumns" :data="clusters" children-key="instanceChildren" :default-expand-all="true"/>
-                            </n-space>
-
-                        </n-flex>
                     </n-modal>
                     <h6>Pending Invites</h6>
                     <n-data-table :columns="inviteeFields" :data="invitees" class="table-hover">
@@ -357,36 +306,15 @@
                                 />
                             </n-space>
 
-                            <n-space style="margin-bottom: 20px;">
-                                <n-h5>
-                                    <n-text depth="1">
-                                        Organization-Wide Permissions:
-                                    </n-text>
-                                </n-h5>
-                                <n-radio-group v-model:value="selectedUserGroup.orgPermissionType">
-                                    <n-radio-button
-                                        v-for="pt in permissionTypeswAdmin"
-                                        :key="pt"
-                                        :value="pt"
-                                        :label="translatePermissionName(pt)"
-                                    />
-                                </n-radio-group>
-                            </n-space>
-
-                            <n-space style="margin-bottom: 20px;" v-if="selectedUserGroup.orgPermissionType !== 'ADMIN' && myorg.approvalRoles && myorg.approvalRoles.length">
-                                <n-h5>
-                                    <n-text depth="1">
-                                        Approval Permissions:
-                                    </n-text>
-                                </n-h5>
-                                <n-checkbox-group id="modal-org-settings-user-group-permissions-approval-checkboxes"
-                                    v-model:value="selectedUserGroup.approvals"
-                                >
-                                    <n-checkbox v-for="a in myorg.approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" ></n-checkbox>
-                                </n-checkbox-group>
-                            </n-space>
+                            <ScopedPermissions
+                                v-model="userGroupScopedPermissions"
+                                :org-uuid="orgResolved"
+                                :approval-roles="myorg.approvalRoles || []"
+                                :perspectives="perspectives"
+                                :components="allComponents"
+                            />
                         </n-flex>
-                        <n-space>
+                        <n-space style="margin-top: 20px;">
                             <n-button v-if="restoreMode" type="success" @click="confirmRestoreUserGroup">Restore Group</n-button>
                             <n-button v-else type="success" @click="updateUserGroup">Save Changes</n-button>
                             <n-button type="warning" @click="editUserGroup(selectedUserGroup.uuid)">Reset Changes</n-button>
@@ -819,6 +747,7 @@ import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
+import ScopedPermissions from './ScopedPermissions.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 
@@ -1078,7 +1007,7 @@ function selectResourceGroup(key: string) {
 }
 
 const newappname: Ref<string> = ref('')
-const permissionTypes: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE']
+const permissionTypes: string[] = constants.PermissionTypes
 const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
 
     if (permissionTypes.length) {
@@ -1095,7 +1024,7 @@ const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
         return []
     }
 })
-const permissionTypeswAdmin: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
+const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 
 const programmaticAccessFields: Ref<any> = ref([
     {
@@ -1274,6 +1203,22 @@ const filteredUserGroups = computed(() => {
 })
 const selectedUserGroup: Ref<any> = ref({})
 const restoreMode = ref(false)
+
+// Scoped permissions state (shared model for ScopedPermissions component)
+const userScopedPermissions: Ref<any> = ref({
+    orgPermission: { type: 'NONE', functions: ['RESOURCE'], approvals: [] },
+    scopedPermissions: []
+})
+const userGroupScopedPermissions: Ref<any> = ref({
+    orgPermission: { type: 'NONE', functions: ['RESOURCE'], approvals: [] },
+    scopedPermissions: []
+})
+
+const allComponents = computed(() => {
+    const comps = store.getters.componentsOfOrg(orgResolved.value) || []
+    const prods = store.getters.productsOfOrg(orgResolved.value) || []
+    return [...comps, ...prods]
+})
 const newUserGroup: Ref<any> = ref({
     name: '',
     description: '',
@@ -1313,6 +1258,7 @@ async function loadUserGroups() {
                                 type
                                 meta
                                 approvals
+                                functions
                             }
                         }
                         connectedSsoGroups
@@ -2588,21 +2534,40 @@ function editUser(email: string) {
     // locate permission for approvals and instance permissions
     let perm: any
     instancePermissions.value = {}
+    const scopedPerms: any[] = []
     selectedUser.value.permissions.permissions.forEach((up: any) => {
         if (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value) {
             perm = up
         } else if (up.scope === 'INSTANCE' && up.org === orgResolved.value) {
             instancePermissions.value[up.object] = up.type
+        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT') && up.org === orgResolved.value) {
+            const source = up.scope === 'PERSPECTIVE' ? perspectives.value : allComponents.value
+            const obj = source.find((o: any) => o.uuid === up.object)
+            scopedPerms.push({
+                scope: up.scope,
+                objectId: up.object,
+                objectName: obj ? obj.name : up.object,
+                type: up.type,
+                functions: readResourceFunction(up.functions),
+                approvals: up.approvals || []
+            })
         }
     })
 
-    selectedUser.value.permissions.permissions.filter((up: any) =>
-        (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
-    )
     selectedUser.value.approvals = commonFunctions.deepCopy(perm.approvals)
     selectedUser.value.type = perm.type
     selectedUserType.value = perm.type
 
+    userScopedPermissions.value = {
+        orgPermission: {
+            type: perm.type || 'NONE',
+            functions: readResourceFunction(perm.functions),
+            approvals: commonFunctions.deepCopy(perm.approvals) || []
+        },
+        scopedPermissions: scopedPerms
+    }
+
+    loadPerspectives()
     showOrgSettingsUserPermissionsModal.value = true
 }
 function enableRegistry() {
@@ -2613,9 +2578,24 @@ function enableRegistry() {
         })
     }
 }
+function readResourceFunction(fns: string[] | null | undefined): string[] {
+    if (!fns || !fns.length) return ['RESOURCE']
+    if (!fns.includes('RESOURCE')) return ['RESOURCE', ...fns]
+    return fns
+}
+
+function writeResourceFunction(fns: string[] | null | undefined): string[] | null {
+    if (!fns || !fns.length || !fns.includes('RESOURCE')) {
+        notify('error', 'Error', 'RESOURCE function is required and cannot be removed.')
+        return null
+    }
+    return fns
+}
+
 function translatePermissionName(type: string) {
     switch (type) {
         case 'NONE': return 'None'
+        case 'ESSENTIAL_READ': return 'Essential Read'
         case 'READ_ONLY': return 'Read Only'
         case 'READ_WRITE': return 'Read & Write'
         case 'ADMIN': return 'Administrator'
@@ -2864,16 +2844,40 @@ async function updateUserGroup() {
     if (!selectedUserGroup.value.uuid) return
     
     try {
-        const permissions = []
+        const scopedData = userGroupScopedPermissions.value
+        const orgPermType = scopedData.orgPermission.type
+        const orgApprovals = scopedData.orgPermission.approvals || []
+        const orgFunctions = writeResourceFunction(scopedData.orgPermission.functions)
+        if (!orgFunctions) return
         
-        // Add organization-wide permission with approvals
-        if (selectedUserGroup.value.orgPermissionType && selectedUserGroup.value.orgPermissionType !== 'NONE') {
+        const permissions: any[] = []
+        
+        // Add organization-wide permission
+        if (orgPermType && orgPermType !== 'NONE') {
             permissions.push({
                 scope: 'ORGANIZATION',
                 objectId: orgResolved.value,
-                type: selectedUserGroup.value.orgPermissionType,
-                approvals: []
+                type: orgPermType,
+                functions: orgFunctions,
+                approvals: orgApprovals
             })
+        }
+        
+        // Add per-scope permissions
+        if (scopedData.scopedPermissions && scopedData.scopedPermissions.length) {
+            for (const sp of scopedData.scopedPermissions) {
+                if (sp.type && sp.type !== 'NONE') {
+                    const spFunctions = writeResourceFunction(sp.functions)
+                    if (!spFunctions) return
+                    permissions.push({
+                        scope: sp.scope,
+                        objectId: sp.objectId,
+                        type: sp.type,
+                        functions: spFunctions,
+                        approvals: sp.approvals || []
+                    })
+                }
+            }
         }
         
         const updateInput = {
@@ -2883,9 +2887,7 @@ async function updateUserGroup() {
             manualUsers: selectedUserGroup.value.manualUsers || [],
             status: selectedUserGroup.value.status,
             connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
-            permissions,
-            approvals: selectedUserGroup.value.orgPermissionType !== 'ADMIN' ? 
-                (selectedUserGroup.value.approvals || []) : []
+            permissions
         }
         
         const response = await graphqlClient.mutate({
@@ -2921,23 +2923,39 @@ function editUserGroup(groupUuid: string) {
     if (group) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
         
-        // Extract organization-wide permission type and approvals from permissions (handle nested structure)
+        let orgPerm: any = { type: 'NONE', functions: ['RESOURCE'], approvals: [] }
+        const scopedPerms: any[] = []
+        
+        // Extract all permissions from the nested structure
         if (group.permissions && group.permissions.permissions && group.permissions.permissions.length) {
-            const orgPermissions = group.permissions.permissions.filter((p: any) => 
-                p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value
-            )
-            
-            if (orgPermissions.length > 0) {
-                const orgPerm = orgPermissions[0]
-                selectedUserGroup.value.orgPermissionType = orgPerm.type || 'NONE'
-                selectedUserGroup.value.approvals = orgPerm.approvals || []
-            } else {
-                selectedUserGroup.value.orgPermissionType = 'NONE'
-                selectedUserGroup.value.approvals = []
-            }
-        } else {
-            selectedUserGroup.value.orgPermissionType = 'NONE'
-            selectedUserGroup.value.approvals = []
+            group.permissions.permissions.forEach((p: any) => {
+                if (p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value) {
+                    orgPerm = {
+                        type: p.type || 'NONE',
+                        functions: readResourceFunction(p.functions),
+                        approvals: p.approvals || []
+                    }
+                } else if ((p.scope === 'PERSPECTIVE' || p.scope === 'COMPONENT') && p.org === orgResolved.value) {
+                    const source = p.scope === 'PERSPECTIVE' ? perspectives.value : allComponents.value
+                    const obj = source.find((o: any) => o.uuid === p.object)
+                    scopedPerms.push({
+                        scope: p.scope,
+                        objectId: p.object,
+                        objectName: obj ? obj.name : p.object,
+                        type: p.type,
+                        functions: readResourceFunction(p.functions),
+                        approvals: p.approvals || []
+                    })
+                }
+            })
+        }
+        
+        selectedUserGroup.value.orgPermissionType = orgPerm.type
+        selectedUserGroup.value.approvals = orgPerm.approvals
+        
+        userGroupScopedPermissions.value = {
+            orgPermission: commonFunctions.deepCopy(orgPerm),
+            scopedPermissions: scopedPerms
         }
         
         // Ensure arrays are initialized
@@ -2945,6 +2963,7 @@ function editUserGroup(groupUuid: string) {
         selectedUserGroup.value.manualUsers = selectedUserGroup.value.manualUsers || []
         selectedUserGroup.value.connectedSsoGroups = selectedUserGroup.value.connectedSsoGroups || []
         restoreMode.value = false
+        loadPerspectives()
         showUserGroupPermissionsModal.value = true
     }
 }
@@ -3005,15 +3024,39 @@ async function confirmRestoreUserGroup() {
     if (!selectedUserGroup.value.uuid) return
     
     try {
-        const permissions = []
+        const scopedData = userGroupScopedPermissions.value
+        const orgPermType = scopedData.orgPermission.type
+        const orgApprovals = scopedData.orgPermission.approvals || []
+        const orgFunctions = writeResourceFunction(scopedData.orgPermission.functions)
+        if (!orgFunctions) return
         
-        if (selectedUserGroup.value.orgPermissionType && selectedUserGroup.value.orgPermissionType !== 'NONE') {
+        const permissions: any[] = []
+        
+        if (orgPermType && orgPermType !== 'NONE') {
             permissions.push({
                 scope: 'ORGANIZATION',
                 objectId: orgResolved.value,
-                type: selectedUserGroup.value.orgPermissionType,
-                approvals: []
+                type: orgPermType,
+                functions: orgFunctions,
+                approvals: orgApprovals
             })
+        }
+        
+        // Add per-scope permissions
+        if (scopedData.scopedPermissions && scopedData.scopedPermissions.length) {
+            for (const sp of scopedData.scopedPermissions) {
+                if (sp.type && sp.type !== 'NONE') {
+                    const spFunctions = writeResourceFunction(sp.functions)
+                    if (!spFunctions) return
+                    permissions.push({
+                        scope: sp.scope,
+                        objectId: sp.objectId,
+                        type: sp.type,
+                        functions: spFunctions,
+                        approvals: sp.approvals || []
+                    })
+                }
+            }
         }
         
         const updateInput = {
@@ -3023,9 +3066,7 @@ async function confirmRestoreUserGroup() {
             manualUsers: selectedUserGroup.value.manualUsers || [],
             status: 'ACTIVE',
             connectedSsoGroups: selectedUserGroup.value.connectedSsoGroups || [],
-            permissions,
-            approvals: selectedUserGroup.value.orgPermissionType !== 'ADMIN' ? 
-                (selectedUserGroup.value.approvals || []) : []
+            permissions
         }
         
         const response = await graphqlClient.mutate({
@@ -3387,6 +3428,8 @@ async function updateKeyPermissions() {
 
 async function updateUserPermissions() {
     const permissions: any[] = []
+    
+    // Add instance permissions (legacy)
     if (instancePermissions.value && Object.keys(instancePermissions.value).length) {
         Object.keys(instancePermissions.value).forEach(inst => {
             const perm = {
@@ -3398,21 +3441,57 @@ async function updateUserPermissions() {
             permissions.push(perm)
         })
     }
+    
+    // Add scoped permissions (perspective, component) from ScopedPermissions component
+    const scopedData = userScopedPermissions.value
+    const orgPermType = scopedData.orgPermission.type
+    const orgApprovals = scopedData.orgPermission.approvals || []
+    const orgFunctions = writeResourceFunction(scopedData.orgPermission.functions)
+    if (!orgFunctions) return
+    
+    // Add org-level permission with functions and approvals
+    if (orgPermType && orgPermType !== 'NONE') {
+        permissions.push({
+            org: orgResolved.value,
+            scope: 'ORGANIZATION',
+            type: orgPermType,
+            object: orgResolved.value,
+            functions: orgFunctions,
+            approvals: orgApprovals
+        })
+    }
+    
+    // Add per-scope permissions
+    if (scopedData.scopedPermissions && scopedData.scopedPermissions.length) {
+        for (const sp of scopedData.scopedPermissions) {
+            if (sp.type && sp.type !== 'NONE') {
+                const spFunctions = writeResourceFunction(sp.functions)
+                if (!spFunctions) return
+                permissions.push({
+                    org: orgResolved.value,
+                    scope: sp.scope,
+                    type: sp.type,
+                    object: sp.objectId,
+                    functions: spFunctions,
+                    approvals: sp.approvals || []
+                })
+            }
+        }
+    }
 
     let isSuccess = true
 
     try {
         const resp = await graphqlClient.mutate({
             mutation: gql`
-                    mutation updateUserPermissions($permissions: [PermissionInput], $approvals: [String]) {
+                    mutation updateUserPermissions($permissions: [PermissionInput]) {
                         updateUserPermissions(orgUuid: "${orgResolved.value}", userUuid: "${selectedUser.value.uuid}",
-                            permissionType: ${selectedUser.value.type}, permissions: $permissions, approvals: $approvals) {
+                            permissionType: ${orgPermType}, permissions: $permissions) {
                             uuid
                         }
                     }`,
             variables: {
-                'permissions': permissions,
-                'approvals': selectedUser.value.approvals
+                'permissions': permissions
             }
         })
         if (!resp.data.updateUserPermissions || !resp.data.updateUserPermissions.uuid) isSuccess = false

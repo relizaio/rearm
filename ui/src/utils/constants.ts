@@ -138,6 +138,10 @@ const CONTENT_TYPES = [
     {value: 'PLAIN_XML', label: 'Plain XML'},
 ]
 
+const PERMISSION_TYPES: string[] = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE']
+const PERMISSION_TYPES_WITH_ADMIN: string[] = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
+const PERMISSION_FUNCTIONS: string[] = ['RESOURCE', 'VULN_ANALYSIS', 'ARTIFACT_DOWNLOAD']
+
 const BATCH_MODE_HELP = {
     description: 'Batch mode allows you to search for multiple components at once.',
     formatInfo: 'Accepts plain text (one package per line, optionally with version separated by tab) or JSON array format.',
@@ -171,5 +175,8 @@ export default {
     BatchModeHelp: BATCH_MODE_HELP,
     VulnerabilityColors: VULNERABILITY_COLORS,
     ViolationColors: VIOLATION_COLORS,
-    FindingsChartColors: FINDINGS_CHART_COLORS
+    FindingsChartColors: FINDINGS_CHART_COLORS,
+    PermissionTypes: PERMISSION_TYPES,
+    PermissionTypesWithAdmin: PERMISSION_TYPES_WITH_ADMIN,
+    PermissionFunctions: PERMISSION_FUNCTIONS
 }
