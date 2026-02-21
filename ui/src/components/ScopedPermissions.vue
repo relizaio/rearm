@@ -33,7 +33,7 @@
         </n-space>
 
         <!-- Organization-Wide Functions -->
-        <n-space style="margin-bottom: 20px;" v-if="orgPermission.type !== 'ADMIN' && orgPermission.type !== 'NONE'">
+        <n-space style="margin-bottom: 20px;" v-if="orgPermission.type !== 'ADMIN' && orgPermission.type !== 'NONE' && orgPermission.type !== 'ESSENTIAL_READ'">
             <n-h5>
                 <n-text depth="1">
                     Organization-Wide Functions:
@@ -49,7 +49,7 @@
                                     <QuestionCircle20Regular />
                                 </n-icon>
                             </template>
-                            Requires Read Only organization wide permissions, and if checked allows to create or update Finding Analysis records
+                            Allows to create or update Finding Analysis records across the organization
                         </n-tooltip>
                     </span>
                     <span v-else>
