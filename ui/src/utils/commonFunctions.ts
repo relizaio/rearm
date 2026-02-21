@@ -62,6 +62,31 @@ function parseGraphQLError (err: string): string {
     return cleaned
 }
 
+function extractGraphQLErrorMessage (error: any): string {
+    if (!error) return 'Unknown error'
+
+    const messages: string[] = []
+    const graphQlErrors = error?.graphQLErrors || error?.networkError?.result?.errors || error?.errors
+
+    if (Array.isArray(graphQlErrors)) {
+        graphQlErrors.forEach((e: any) => {
+            if (e?.message) messages.push(e.message)
+        })
+    }
+
+    if (messages.length === 0 && typeof error?.message === 'string') {
+        messages.push(error.message)
+    }
+
+    if (messages.length === 0) return 'Unknown error'
+
+    const cleaned = messages
+        .map((m: string) => m.replace(/^GraphQL error:\s*/i, '').trim())
+        .filter((m: string) => m.length > 0)
+
+    return cleaned.length ? Array.from(new Set(cleaned)).join('; ') : 'Unknown error'
+}
+
 function deepCopy (obj: any) {
     return JSON.parse(JSON.stringify(obj))
 }
@@ -271,6 +296,7 @@ export default {
     isWritable,
     linkifyCommit,
     parseGraphQLError,
+    extractGraphQLErrorMessage,
     genUuid,
     dateDisplay,
     swalWrapper,

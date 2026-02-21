@@ -61,6 +61,7 @@ import UpdateVulnAnalysisModal from './UpdateVulnAnalysisModal.vue'
 import { Edit } from '@vicons/tabler'
 import { useStore } from 'vuex'
 import { Info20Regular } from '@vicons/fluent'
+import commonFunctions from '@/utils/commonFunctions'
 
 interface Props {
     show: boolean
@@ -460,9 +461,10 @@ const fetchAnalysisRecords = async () => {
         analysisRecords.value = response.data.getVulnAnalysisByLocationAndFinding || []
     } catch (error: any) {
         console.error('Error fetching vulnerability analysis records:', error)
+        const errorMessage = commonFunctions.extractGraphQLErrorMessage(error)
         notification.error({
-            content: 'Failed to fetch vulnerability analysis records',
-            meta: error.message || 'Unknown error',
+            content: `Failed to fetch vulnerability analysis records: ${errorMessage}`,
+            meta: 'Error',
             duration: 5000
         })
         analysisRecords.value = []
