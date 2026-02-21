@@ -12,8 +12,23 @@
                     v-for="pt in permissionTypesWithAdmin"
                     :key="pt"
                     :value="pt"
-                    :label="translatePermissionName(pt)"
-                />
+                >
+                    <span v-if="pt === 'ESSENTIAL_READ'" style="display: inline-flex; align-items: center;">
+                        {{ translatePermissionName(pt) }}
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-icon size="16" style="margin-left: 4px;">
+                                    <QuestionCircle20Regular />
+                                </n-icon>
+                            </template>
+                            Essential Read grants minimal read access to core organization data (e.g., VCS repository listing/details, release tag keys, defined approval policies and entries).
+                            <br /> Unlike "Read Only", Essential Read does not grant access to components or products.
+                        </n-tooltip>
+                    </span>
+                    <span v-else>
+                        {{ translatePermissionName(pt) }}
+                    </span>
+                </n-radio-button>
             </n-radio-group>
         </n-space>
 
@@ -195,8 +210,9 @@ export default {
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue'
 import { useStore } from 'vuex'
-import { NFlex, NSpace, NH5, NText, NRadioGroup, NRadioButton, NCheckboxGroup, NCheckbox, NSelect, NButton, NCard, NIcon, useNotification } from 'naive-ui'
+import { NFlex, NSpace, NH5, NText, NRadioGroup, NRadioButton, NCheckboxGroup, NCheckbox, NSelect, NButton, NCard, NIcon, NTooltip, useNotification } from 'naive-ui'
 import { X as CloseIcon } from '@vicons/tabler'
+import { QuestionCircle20Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
 
 interface ApprovalRole {
