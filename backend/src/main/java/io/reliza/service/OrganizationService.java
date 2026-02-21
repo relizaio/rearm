@@ -10,7 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,8 +47,10 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.InvitedObject;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission;
+import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
+import io.reliza.model.UserGroupData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.OrganizationRepository;
 import io.reliza.ws.RelizaConfigProps;
@@ -156,7 +160,45 @@ public class OrganizationService {
 	}
 	
 	public Map<String,BigInteger> getNumericAnalytics(UUID orgUuid) {
-		return repository.getNumericAnalytics(orgUuid.toString());
+		Map<String, BigInteger> analytics = new HashMap<>(repository.getNumericAnalytics(orgUuid.toString()));
+
+		List<UserData> orgUsers = userService.listUserDataByOrg(orgUuid);
+		int totalUsers = orgUsers.size();
+
+		List<UserGroupData> orgUserGroups = userGroupService.getUserGroupsByOrganization(orgUuid);
+		Map<UUID, List<UserGroupData>> userGroupsByUserUuid = new HashMap<>();
+		for (UserGroupData ugd : orgUserGroups) {
+			for (UUID userUuid : ugd.getAllUsers()) {
+				userGroupsByUserUuid.computeIfAbsent(userUuid, k -> new ArrayList<>()).add(ugd);
+			}
+		}
+
+		long adminAndWriteUsers = orgUsers.stream()
+				.filter(ud -> isWriteUser(ud, orgUuid, userGroupsByUserUuid.getOrDefault(ud.getUuid(), List.of())))
+				.count();
+		long readOnlyUsers = Math.max(0, totalUsers - adminAndWriteUsers);
+
+		analytics.put("admin_and_write_users", BigInteger.valueOf(adminAndWriteUsers));
+		analytics.put("read_only_users", BigInteger.valueOf(readOnlyUsers));
+		return analytics;
+	}
+
+	private boolean isWriteUser(UserData ud, UUID orgUuid, List<UserGroupData> preloadedUserGroups) {
+		Set<UserPermission> effectivePermissions = obtainCombinedUserOrgPermissions(ud, orgUuid, preloadedUserGroups)
+				.getOrgPermissionsAsSet(orgUuid);
+		for (UserPermission permission : effectivePermissions) {
+			if (permission.getType() == PermissionType.ADMIN || permission.getType() == PermissionType.READ_WRITE) {
+				return true;
+			}
+			if (null != permission.getFunctions()
+					&& permission.getFunctions().contains(PermissionFunction.FINDING_ANALYSIS_WRITE)) {
+				return true;
+			}
+			if (null != permission.getApprovals() && !permission.getApprovals().isEmpty()) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	public Optional<UserPermission> obtainUserOrgPermission(UserData ud, UUID org) {
@@ -179,20 +221,55 @@ public class OrganizationService {
 		return oup;
 	}
 	
-	public Set<UserPermission> obtainUserOrgPermissions(UserData ud, UUID org) {
-		Set<UserPermission> allUserOrgPermissions = new HashSet<>();
-		Set<UserPermission> userOwnPermissions = ud.getOrgPermissions(org);
-		allUserOrgPermissions.addAll(userOwnPermissions);
-		// TODO optimize - if user is org wide admin, stop checking
+	/**
+	 * Returns combined permissions for a user in an org, merging user's own permissions
+	 * with permissions inherited from user groups.
+	 * When the same scope/object exists in multiple sources, the higher permission type wins
+	 * and functions/approvals are merged (union).
+	 * @param ud user data
+	 * @param org organization UUID
+	 * @return merged Permissions object
+	 */
+	public UserPermission.Permissions obtainCombinedUserOrgPermissions(UserData ud, UUID org) {
 		var userGroups = userGroupService.getUserGroupsByUserAndOrg(ud.getUuid(), org);
+		return obtainCombinedUserOrgPermissions(ud, org, userGroups);
+	}
+
+	private UserPermission.Permissions obtainCombinedUserOrgPermissions(UserData ud, UUID org,
+			Collection<UserGroupData> preloadedUserGroups) {
+		UserPermission.Permissions combined = new UserPermission.Permissions();
+		// seed with user's own permissions for this org
+		for (UserPermission up : ud.getOrgPermissions(org)) {
+			combined.setPermission(up.getOrg(), up.getScope(), up.getObject(), up.getType(), up.getFunctions(), up.getApprovals());
+		}
+		// merge in permissions from user groups
+		var userGroups = preloadedUserGroups;
 		if (null != userGroups && !userGroups.isEmpty()) {
-			var ugIter = userGroups.iterator();
-			while (ugIter.hasNext()) {
-				var ugd = ugIter.next();
-				allUserOrgPermissions.addAll(ugd.getOrgPermissions(org));
+			for (var ugd : userGroups) {
+				Set<UserPermission> groupPermissions = ugd.getOrgPermissions(org);
+				for (UserPermission gp : groupPermissions) {
+					var existing = combined.getPermission(gp.getOrg(), gp.getScope(), gp.getObject());
+					if (existing.isPresent()) {
+						var ex = existing.get();
+						// take the higher permission type
+						var higherType = ex.getType().ordinal() >= gp.getType().ordinal()
+								? ex.getType() : gp.getType();
+						// merge functions
+						Set<UserPermission.PermissionFunction> mergedFunctions = new LinkedHashSet<>();
+						if (null != ex.getFunctions()) mergedFunctions.addAll(ex.getFunctions());
+						if (null != gp.getFunctions()) mergedFunctions.addAll(gp.getFunctions());
+						// merge approvals
+						Set<String> mergedApprovals = new LinkedHashSet<>();
+						if (null != ex.getApprovals()) mergedApprovals.addAll(ex.getApprovals());
+						if (null != gp.getApprovals()) mergedApprovals.addAll(gp.getApprovals());
+						combined.setPermission(gp.getOrg(), gp.getScope(), gp.getObject(), higherType, mergedFunctions, mergedApprovals);
+					} else {
+						combined.setPermission(gp.getOrg(), gp.getScope(), gp.getObject(), gp.getType(), gp.getFunctions(), gp.getApprovals());
+					}
+				}
 			}
 		}
-		return allUserOrgPermissions;
+		return combined;
 	}
 	
 	/**

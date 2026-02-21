@@ -29,7 +29,6 @@ import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
-import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -46,9 +45,6 @@ public class ArtifactWs {
 
     @Autowired
     private SharedArtifactService sharedArtifactService;
-    
-	@Autowired
-	private GetComponentService getComponentService;
 
     @Autowired
     private AuthorizationService authorizationService;

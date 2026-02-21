@@ -40,6 +40,7 @@ public class UserPermission {
 	public enum PermissionType {
 		// N.B. Enum order matters here! - P.S. 2025-03-01
 		NONE,
+		ESSENTIAL_READ,
 		READ_ONLY,
 		READ_WRITE,
 		ADMIN
@@ -51,10 +52,15 @@ public class UserPermission {
 				case ADMIN:
 					pt = ADMIN;
 					break;
+				case ESSENTIAL_READ:
+					pt = ESSENTIAL_READ;
+					break;
 				case READ:
 					pt = READ_ONLY;
+					break;
 				case WRITE:
 					pt = READ_WRITE;
+					break;
 				case GLOBAL_ADMIN:
 				case INIT:
 				default:
@@ -73,14 +79,15 @@ public class UserPermission {
 	 * If omitted, permission applies to all functions
 	 */
 	public enum PermissionFunction {
-		RESOURCE, // self, includes functionality otherwise not covered by other functions
-		VULN_ANALYSIS,
+		RESOURCE, // self, includes functionality otherwise not covered by other functions, always granted implicitly
+		FINDING_ANALYSIS_READ,
+		FINDING_ANALYSIS_WRITE,
 		ARTIFACT_DOWNLOAD;
 		
 		private PermissionFunction () {}
 	}
 	
-	public record PermissionDto(UUID org, PermissionScope scope, UUID object, PermissionType type, Set<PermissionFunction> functions) {}
+	public record PermissionDto(UUID org, PermissionScope scope, UUID object, PermissionType type, Set<PermissionFunction> functions, Collection<String> approvals) {}
 	
 	@Setter(AccessLevel.PRIVATE)
 	private UUID org;
@@ -104,7 +111,7 @@ public class UserPermission {
 	}
 
 
-	private static UserPermission permissionFactory (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type,
+	public static UserPermission permissionFactory (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type,
 			Collection<PermissionFunction> functions, Collection<String> approvals) {
 		UserPermission up = new UserPermission();
 		up.setOrg(orgUuid);

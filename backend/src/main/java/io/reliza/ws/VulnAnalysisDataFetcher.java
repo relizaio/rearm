@@ -83,7 +83,7 @@ public class VulnAnalysisDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.VULN_ANALYSIS, PermissionScope.ORGANIZATION, org, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.ORGANIZATION, org, List.of(ro), CallType.READ);
 		
 		List<VulnAnalysisData> analyses = vulnAnalysisService.findByOrg(org);
 		
@@ -101,7 +101,7 @@ public class VulnAnalysisDataFetcher {
 		var ocd = getComponentService.getComponentData(componentUuid);
 
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.VULN_ANALYSIS, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.READ);
 		
 		List<VulnAnalysisData> analyses = vulnAnalysisService.findAllVulnAnalysisAffectingComponent(componentUuid);
 		
@@ -119,7 +119,7 @@ public class VulnAnalysisDataFetcher {
 		var obd = branchService.getBranchData(branchUuid);
 		
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.VULN_ANALYSIS, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
 		
 		List<VulnAnalysisData> analyses = vulnAnalysisService.findAllVulnAnalysisAffectingBranch(branchUuid);
 		
@@ -137,7 +137,7 @@ public class VulnAnalysisDataFetcher {
 		var ord = sharedReleaseService.getReleaseData(releaseUuid);
 		
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.VULN_ANALYSIS, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
 		
 		List<VulnAnalysisData> analyses = vulnAnalysisService.findAllVulnAnalysisAffectingRelease(releaseUuid);
 		
@@ -158,7 +158,7 @@ public class VulnAnalysisDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.VULN_ANALYSIS, PermissionScope.ORGANIZATION, org, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.ORGANIZATION, org, List.of(ro), CallType.READ);
 		
 		List<VulnAnalysisData> analyses = vulnAnalysisService.findByOrgAndLocationAndFindingIdAndType(
 				org, location, findingId, findingType);
@@ -209,7 +209,7 @@ public class VulnAnalysisDataFetcher {
 			}
 		}
 		
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.VULN_ANALYSIS, PermissionScope.ORGANIZATION, createDto.getOrg(), ros, CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, createDto.getOrg(), ros, CallType.READ);
 		
 		// Validate justification is provided when org setting requires it
 		if (ood.isPresent() && ood.get().getSettingsWithDefaults().isJustificationMandatory()
@@ -242,7 +242,7 @@ public class VulnAnalysisDataFetcher {
 		VulnAnalysisData existing = existingAnalysis.get();
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(existing.getOrg());
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.VULN_ANALYSIS, PermissionScope.ORGANIZATION, existing.getOrg(), List.of(ro), CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, existing.getOrg(), List.of(ro), CallType.READ);
 		
 		// Validate justification is provided when org setting requires it
 		if (ood.isPresent() && ood.get().getSettingsWithDefaults().isJustificationMandatory()

@@ -267,16 +267,17 @@ public class UserService {
 	}
 	
 	/**
-	 * Updates org wide permission with supplied set of approvals
+	 * Updates user permissions for an organization
 	 * @param userUuid
 	 * @param orgUuid
-	 * @param approvals
+	 * @param permissionType
+	 * @param permissions
 	 * @param wu
 	 * @return updated user data if user is present, otherwise null
 	 * @throws RelizaException 
 	 */
 	@Transactional
-	public UserData setUserPermissions (UUID userUuid, UUID orgUuid, Collection<String> approvals, 
+	public UserData setUserPermissions (UUID userUuid, UUID orgUuid,
 			Optional<PermissionType> permissionType,
 			List<PermissionDto> permissions, WhoUpdated wu) throws RelizaException {
 		User u = null;
@@ -292,16 +293,27 @@ public class UserService {
 			Optional<UserPermission> orgWidePermission = uData.getPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid);
 			if (orgWidePermission.isPresent()) {
 				PermissionType pt = permissionType.isPresent() ? permissionType.get() : orgWidePermission.get().getType();
-				uData.setPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid, pt, approvals);
+				uData.setPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid, pt, orgWidePermission.get().getApprovals());
 				update = true;
 			} else {
-				throw new RelizaException("Cannot set approvals as User is not added to organization.");
+				throw new RelizaException("Cannot set permissions as User is not added to organization.");
 			}
 			// resolve individual permissions
-			if (null != permissions && !permissions.isEmpty()) {
-				permissions.forEach(p -> {
-					uData.setPermission(orgUuid, p.scope(), p.object(), p.type(), p.functions(), null);
-				});
+			if (null != permissions) {
+				// remove existing individual permissions for this org
+				Set<UserPermission> existingPermissions = uData.getOrgPermissions(orgUuid);
+				for (UserPermission p : existingPermissions) {
+					if (p.getScope() != PermissionScope.ORGANIZATION) {
+						uData.revokePermission(orgUuid, p.getScope(), p.getObject());
+					}
+				}
+				
+				if (!permissions.isEmpty()) {
+					permissions.forEach(p -> {
+						uData.setPermission(orgUuid, p.scope(), p.object(), p.type(), p.functions(), p.approvals());
+					});
+				}
+				update = true;
 			}
 			
 			if (update) {

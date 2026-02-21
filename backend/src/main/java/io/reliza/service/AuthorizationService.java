@@ -170,7 +170,8 @@ public class AuthorizationService {
 			final UUID org = getMatchingOrg(ros);
 	
 			if (null != org) {
-				var permissions = ud.getOrgPermissions(org);
+				var permissions = organizationService.obtainCombinedUserOrgPermissions(ud, org)
+						.getOrgPermissionsAsSet(org);
 				boolean authorized = permissions.stream().anyMatch(x -> 
 					doesPermissionAuthorize(x, org, function, objectType, objectUuid, ct));
 				if (authorized) {
@@ -193,11 +194,12 @@ public class AuthorizationService {
 		if (!AuthorizationResponse.isAllowed(ar) && null != objectUuids && !objectUuids.isEmpty()) {
 			final UUID org = getMatchingOrg(ros);
 			if (null != org) {
+				var permissions = organizationService.obtainCombinedUserOrgPermissions(ud, org)
+						.getOrgPermissionsAsSet(org);
 				boolean authorized = false;
 				Iterator<UUID> objectIter = objectUuids.iterator();
 				while (!authorized && objectIter.hasNext()) {
 					UUID objectUuid = objectIter.next();
-					var permissions = ud.getOrgPermissions(org);
 					authorized = permissions.stream().anyMatch(x -> 
 						doesPermissionAuthorize(x, org, function, objectType, objectUuid, ct));
 				}
@@ -231,8 +233,8 @@ public class AuthorizationService {
 		if (permission.getScope() == PermissionScope.ORGANIZATION && permission.getType() == PermissionType.ADMIN) {
 			return true;
 		}
-		
-		if (null != permission.getFunctions() && !permission.getFunctions().isEmpty() && !permission.getFunctions().contains(function)) {
+
+		if (function != PermissionFunction.RESOURCE && (null == permission.getFunctions() || !permission.getFunctions().contains(function))) {
 			return false;
 		}
 		
@@ -259,6 +261,30 @@ public class AuthorizationService {
 		
 		return doesPermissionScopeContainObject(permission, org, objectType, objectUuid);
 		
+	}
+	
+	/**
+	 * Checks if a permission's scope covers a given release, ignoring functions and permission type.
+	 * Org-wide permissions always cover any release in that org.
+	 * Perspective/component-scoped permissions cover the release if the release's component
+	 * is contained within the permission's scope hierarchy.
+	 * Release-scoped permissions cover the release if the object UUID matches.
+	 * @param permission the user permission to check
+	 * @param org the organization UUID
+	 * @param releaseUuid the release UUID to check coverage for
+	 * @return true if the permission covers the release
+	 */
+	public boolean doesPermissionCoverRelease(UserPermission permission, UUID org, UUID releaseUuid) {
+		if (!permission.getOrg().equals(org)) {
+			return false;
+		}
+		if (permission.getScope() == PermissionScope.ORGANIZATION) {
+			return true;
+		}
+		if (permission.getScope() == PermissionScope.RELEASE && permission.getObject().equals(releaseUuid)) {
+			return true;
+		}
+		return doesPermissionScopeContainObject(permission, org, PermissionScope.RELEASE, releaseUuid);
 	}
 	
 	/**
@@ -362,8 +388,12 @@ public class AuthorizationService {
 					}
 					break;
 				case READ:
-					if (CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(org) ||
-							(oup.isPresent() && oup.get().getType().ordinal() >= PermissionType.READ_ONLY.ordinal())) {
+					if ((oup.isPresent() && oup.get().getType().ordinal() >= PermissionType.READ_ONLY.ordinal())) {
+						authorized = true;
+					}
+					break;
+				case ESSENTIAL_READ:
+					if ((oup.isPresent() && oup.get().getType().ordinal() >= PermissionType.ESSENTIAL_READ.ordinal())) {
 						authorized = true;
 					}
 					break;

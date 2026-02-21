@@ -28,6 +28,7 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
+import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.WhoUpdated;
@@ -107,7 +108,7 @@ public class UserDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ESSENTIAL_READ);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		String apiKey = apiKeyService.setObjectApiKey(oud.get().getUuid(), ApiTypeEnum.USER, ood.get().getUuid(), null, null, wu);
@@ -141,12 +142,15 @@ public class UserDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		try {
 			UserData ud = userService.resolveUser(auth);
-			ud.getOrganizations().forEach(org -> {
-				var oup = organizationService.obtainUserOrgPermission(ud, org);
-				if (oup.isPresent()) ud.setPermission(oup.get().getOrg(), PermissionScope.ORGANIZATION, oup.get().getOrg(), oup.get().getType(), oup.get().getApprovals());
-			});
-			
 			var udWebDto = UserData.toWebDto(ud);
+			var combinedPermissions = new UserPermission.Permissions();
+			ud.getOrganizations().forEach(org -> {
+				var orgPermissions = organizationService.obtainCombinedUserOrgPermissions(ud, org);
+				orgPermissions.getOrgPermissionsAsSet(org).forEach(p ->
+					combinedPermissions.setPermission(p.getOrg(), p.getScope(), p.getObject(), p.getType(), p.getFunctions(), p.getApprovals())
+				);
+			});
+			udWebDto.setPermissions(combinedPermissions);
 			InstallationType systemInstallationType = userService.getInstallationType();
 			if(systemInfoService.isSystemSealed()){
 				udWebDto.setSystemSealed(true);

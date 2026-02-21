@@ -115,7 +115,7 @@ type Mutation {
 	inviteUser(invitationProperties: InviteUserInput!): AdminOrganization
 	joinUserToOrganization(secret: String!): User
 	cancelInvite(org: ID!, userEmail: String!): AdminOrganization
-	updateUserPermissions(orgUuid: ID!, userUuid: ID!, permissionType: PermissionType, permissions: [PermissionInput], approvals: [String]): User
+	updateUserPermissions(orgUuid: ID!, userUuid: ID!, permissionType: PermissionType, permissions: [PermissionInput]): OrgUserData
 	updateUserName(name: String!): User
 		
 	# system global
@@ -397,6 +397,7 @@ type UserGroupWebDto {
 	users: [ID]
 	manualUsers: [ID]
 	userDetails: [OrgUserData]
+	manualUserDetails: [OrgUserData]
 	permissions: Permissions
 	status: UserGroupStatus
 	connectedSsoGroups: [String]
@@ -433,6 +434,7 @@ type UserPermission {
 	scope: PermissionScope
 	object: ID
 	type: PermissionType
+	functions: [PermissionFunction]
 	meta: String
 	approvals: [String]
 }
@@ -1390,6 +1392,8 @@ input PermissionInput {
 	object: ID
 	type: PermissionType
 	scope: PermissionScope
+	functions: [PermissionFunction]
+	approvals: [String]
 }
 
 input CreateComponentInput {
@@ -1731,6 +1735,7 @@ input UserGroupPermissionInput {
 	scope: PermissionScope!
 	objectId: ID!
 	type: PermissionType!
+	functions: [PermissionFunction]
 	approvals: [String]
 }
 
@@ -1898,16 +1903,25 @@ enum OAuthType {
 enum PermissionType {
 	ADMIN
 	READ_ONLY
-	WRITE_ONLY
 	READ_WRITE
+	ESSENTIAL_READ
 	NONE
+}
+
+enum PermissionFunction {
+	RESOURCE
+	FINDING_ANALYSIS_READ
+	FINDING_ANALYSIS_WRITE
+	ARTIFACT_DOWNLOAD
 }
 
 enum PermissionScope {
 	ORGANIZATION
-	PROJECT
-	BRANCH
 	INSTANCE
+	PERSPECTIVE
+	COMPONENT
+	BRANCH
+	RELEASE
 }
 
 enum ProgrammaticType {

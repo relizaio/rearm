@@ -62,7 +62,7 @@ public class VcsRepositoryDataFetcher {
 		
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsRepositoryUuid);
 		RelizaObject ro = ovrd.isPresent() ? ovrd.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ESSENTIAL_READ);
 		return ovrd.get();
 	}
 	
@@ -74,7 +74,7 @@ public class VcsRepositoryDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ESSENTIAL_READ);
 		return vcsRepositoryService.listVcsRepoDataByOrg(orgUuid);
 	}
 	

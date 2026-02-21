@@ -500,6 +500,7 @@ public class CommonVariables {
 		ADMIN,
 		GLOBAL_ADMIN,
 		INIT, // initial actions - i.e. create 1st org
+		ESSENTIAL_READ, // read access to essential data only (e.g. org info, tag keys)
 		READ,
 		WRITE;
 		

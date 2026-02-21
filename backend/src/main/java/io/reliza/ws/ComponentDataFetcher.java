@@ -70,6 +70,7 @@ import io.reliza.service.IntegrationService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.OrganizationService;
 import io.reliza.service.ReleaseVersionService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
@@ -116,6 +117,9 @@ public class ComponentDataFetcher {
 	private ApprovalPolicyService approvalPolicyService;
 
 	@Autowired
+	private OrganizationService organizationService;
+
+	@Autowired
 	private OssPerspectiveService ossPerspectiveService;
 	
 	@PreAuthorize("isAuthenticated()")
@@ -141,14 +145,37 @@ public class ComponentDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		var odComps = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject roOrg = odComps.isPresent() ? odComps.get() : null;
-		if (null == perspectiveUuid) {
-			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roOrg), CallType.READ);
-			return componentService.listComponentDataByOrganization(orgUuid, componentType);
-		} else {
+
+		if (null != perspectiveUuid) {
 			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
 			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(roOrg, pd), CallType.READ);
 			return componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType);
 		}
+
+		var combinedPermissions = organizationService.obtainCombinedUserOrgPermissions(oud.get(), orgUuid);
+		var orgPerm = combinedPermissions.getPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid);
+		boolean hasOrgReadOrHigher = orgPerm.isPresent()
+				&& orgPerm.get().getType().ordinal() >= io.reliza.model.UserPermission.PermissionType.READ_ONLY.ordinal();
+
+		Collection<ComponentData> resolvedComponents = componentService.listComponentDataByOrganization(orgUuid, componentType);
+
+		if (hasOrgReadOrHigher) {
+			return resolvedComponents;
+		}
+
+		Set<UUID> allowedComponentUuids = combinedPermissions.getOrgPermissionsAsSet(orgUuid).stream()
+				.filter(p -> p.getScope() == PermissionScope.COMPONENT
+						&& p.getType().ordinal() >= io.reliza.model.UserPermission.PermissionType.READ_ONLY.ordinal())
+				.map(p -> p.getObject())
+				.collect(java.util.stream.Collectors.toSet());
+
+		if (allowedComponentUuids.isEmpty()) {
+			return List.of();
+		}
+
+		return resolvedComponents.stream()
+				.filter(c -> allowedComponentUuids.contains(c.getUuid()))
+				.toList();
 	}
 	
 	@PreAuthorize("isAuthenticated()")

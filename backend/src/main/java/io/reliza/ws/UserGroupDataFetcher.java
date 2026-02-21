@@ -143,6 +143,30 @@ public class UserGroupDataFetcher {
 		return userDetails;
 	}
 
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "UserGroupWebDto", field = "manualUserDetails")
+	public List<OrgUserData> getManualUserDetails(DgsDataFetchingEnvironment dfe) {
+		UserGroupWebDto userGroup = dfe.getSource();
+		
+		if (userGroup.getManualUsers() == null || userGroup.getManualUsers().isEmpty()) {
+			return new LinkedList<>();
+		}
+		
+		List<OrgUserData> userDetails = new LinkedList<>();
+		
+		for (UUID userUuid : userGroup.getManualUsers()) {
+			Optional<UserData> userData = userService.getUserData(userUuid);
+			if (userData.isPresent()) {
+				OrgUserData orgUserData = UserData.convertUserDataToOrgUserData(userData.get(), userGroup.getOrg());
+				if (orgUserData != null) {
+					userDetails.add(orgUserData);
+				}
+			}
+		}
+		
+		return userDetails;
+	}
+
 	private void validateUsersInOrganization(java.util.Collection<UUID> userUuids, UUID orgUuid, UUID groupUuid) {
 		if (userUuids == null) return;
 		for (UUID userUuid : userUuids) {

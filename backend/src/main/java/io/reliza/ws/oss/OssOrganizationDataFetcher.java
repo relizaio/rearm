@@ -85,8 +85,7 @@ public class OssOrganizationDataFetcher {
 			@InputArgument("orgUuid") String orgUuidStr,
 			@InputArgument("userUuid") String userUuidStr,
 			@InputArgument("permissionType") PermissionType permissionType,
-			@InputArgument("permissions") List<LinkedHashMap<String, Object>> permissions,
-			@InputArgument("approvals") List<String> approvals) {
+			@InputArgument("permissions") List<LinkedHashMap<String, Object>> permissions) {
 		
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -98,16 +97,12 @@ public class OssOrganizationDataFetcher {
 
 		UUID userUuid = UUID.fromString(userUuidStr);
 
-		if (null != approvals && !approvals.isEmpty()) {
-			throw new RuntimeException("Currently not part of ReARM CE");
-		}
-
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());		
 		OrgUserData retUserData = null;
 		try {
 			List<PermissionDto> convertedPermissions = permissions.stream()
 					.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
-			UserData ud = userService.setUserPermissions(userUuid, orgUuid, approvals, Optional.of(permissionType), convertedPermissions, wu);
+			UserData ud = userService.setUserPermissions(userUuid, orgUuid, Optional.of(permissionType), convertedPermissions, wu);
 			retUserData = UserData.convertUserDataToOrgUserData(ud, orgUuid);
 		} catch (RelizaException re) {
 			throw new RuntimeException(re.getMessage());

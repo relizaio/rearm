@@ -273,7 +273,7 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ESSENTIAL_READ);
 		return releaseService.findDistinctReleaseTagKeysOfOrg(orgUuid);
 	}
 	
@@ -1075,6 +1075,7 @@ public class ReleaseDatafetcher {
 		return releaseService.exportReleaseAsObom(releaseUuid).toString();
 	}
 	
+	// TODO: needs to support Perspective authz scope - PS - 2026-02-20
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchDigestVersion")
 	public SearchDigestVersionResponse searchDigestVersion(
@@ -1212,9 +1213,9 @@ public class ReleaseDatafetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
-
-		RelizaObject ro = ord.isPresent() ? ord.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ord.get().getOrg(), List.of(ro), CallType.WRITE);
+		Optional<ComponentData> ocd = getComponentService.getComponentData(ord.get().getComponent());
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, ord.get().getOrg(), List.of(ro, ord.get()), CallType.WRITE);
 		
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 

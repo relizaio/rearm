@@ -212,13 +212,21 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 		}
 		
 		if (null != updateUgd.getPermissions()) {
+			// remove existing individual permissions for this org
+			Set<UserPermission> existingPermissions = updatedUserGroupData.getOrgPermissions(updatedUserGroupData.getOrg());
+			for (UserPermission p : existingPermissions) {
+				if (p.getScope() != PermissionScope.ORGANIZATION) {
+					updatedUserGroupData.revokePermission(p.getScope(), p.getObject());
+				}
+			}
+			
 			for (UserGroupPermissionDto permission : updateUgd.getPermissions()) {
 				updatedUserGroupData.setPermission(
 					permission.getScope(),
 					permission.getObjectId(),
 					permission.getType(),
 					permission.getFunctions(),
-					new LinkedList<>()
+					permission.getApprovals()
 				);
 			}
 		} else {
@@ -277,7 +285,7 @@ public class UserGroupData extends RelizaDataParent implements RelizaObject {
 				.org(ugd.getOrg())
 				.permissions(ugd.getPermissions())
 				.status(ugd.getStatus())
-				.users(ugd.getAllUsers())
+				.users(ugd.getUsers())
 				.manualUsers(ugd.getManualUsers())
 				.connectedSsoGroups(ugd.getConnectedSsoGroups())
 				.build();

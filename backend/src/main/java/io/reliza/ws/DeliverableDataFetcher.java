@@ -96,6 +96,7 @@ public class DeliverableDataFetcher {
 	@Autowired
 	SharedReleaseService sharedReleaseService;
 	
+	// TODO this should be put under RBAC but left as org wide only as currently this endpoint is not used by UI; PS - 2026-02-20
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "deliverable")
 	public DeliverableData getDeliverable(@InputArgument("deliverable") String deliverableUuidStr) {

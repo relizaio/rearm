@@ -128,11 +128,12 @@ public class IntegrationDataFetcher {
 		
 		RelizaObject ro = oad.isPresent() ? oad.get() : null;
 		
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro.getOrg(), List.of(ro), CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro.getOrg(), List.of(ro), CallType.ADMIN);
 		
 		return integrationService.requestMetricsRefreshOnDependencyTrack(oad.get());
 	}
 	
+	// TODO handle perspective scope; PS - 2026-02-20
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchDtrackComponentByPurlAndProjects")
 	public UUID searchDtrackComponentByPurlAndProjects(
