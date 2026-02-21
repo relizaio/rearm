@@ -541,7 +541,9 @@ const storeObject : any = {
                     
                     // Load stored perspective
                     const storedPerspective = window.localStorage.getItem('relizaPerspectiveUuid')
-                    if (storedPerspective) {
+                    const availablePerspectives = context.state.perspectives || []
+                    const hasStoredPerspective = !!storedPerspective && availablePerspectives.some((p: any) => p.uuid === storedPerspective)
+                    if (storedPerspective === 'default' || hasStoredPerspective) {
                         context.commit('UPDATE_MY_PERSPECTIVE', storedPerspective)
                     } else {
                         context.commit('UPDATE_MY_PERSPECTIVE', 'default')
