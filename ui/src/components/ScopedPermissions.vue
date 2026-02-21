@@ -49,7 +49,7 @@
                                     <QuestionCircle20Regular />
                                 </n-icon>
                             </template>
-                            Allows to create or update Finding Analysis records across the organization
+                            Requires "Finding Analysis Read" function to be able to view existing finding records.
                         </n-tooltip>
                     </span>
                     <span v-else>
