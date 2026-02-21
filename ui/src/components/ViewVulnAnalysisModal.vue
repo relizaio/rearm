@@ -14,7 +14,7 @@
                     :pagination="{ pageSize: 10 }"
                     :row-key="(row: any) => row.uuid"
                 />
-                <n-button v-if="hasAvailableScopes" type="primary" @click="handleAddScope">
+                <n-button v-if="hasAvailableScopes && isWritable" type="primary" @click="handleAddScope">
                     Add Scope
                 </n-button>
             </n-space>
@@ -103,6 +103,7 @@ const store = useStore()
 const notification = useNotification()
 
 const myorg = computed(() => store.state.org)
+const myuser = computed(() => store.getters.myuser)
 const featureSetLabel = computed(() => myorg.value?.featureSetLabel || 'Feature Set')
 const loading = ref(false)
 const analysisRecords = ref<any[]>([])
@@ -155,6 +156,21 @@ const availableScopes = computed(() => {
 
 const hasAvailableScopes = computed(() => {
     return availableScopes.value.length > 0
+})
+
+const isWritable = computed(() => {
+    const orgUuid = props.orgUuid || myorg.value?.uuid
+    if (!orgUuid || !myuser.value) {
+        return false
+    }
+
+    const orgPermission = myuser.value?.permissions?.permissions?.find((p: any) =>
+        p.scope === 'ORGANIZATION' &&
+        p.org === orgUuid &&
+        p.object === orgUuid
+    )
+
+    return !!(orgPermission?.type === 'ADMIN' || orgPermission?.functions?.includes('FINDING_ANALYSIS_WRITE'))
 })
 
 // Create finding row data for the CreateVulnAnalysisModal

@@ -889,6 +889,7 @@ const USER_GQL_DATA = `
             type
             meta
             approvals
+            functions
         }
     }
     publicSshKeys {
