@@ -2536,9 +2536,14 @@ function editKey(uuid: string) {
     }
     showOrgSettingsProgPermissionsModal.value = true
 }
-function editUser(email: string) {
+async function editUser(email: string) {
     const user = users.value.filter(u => (u.email === email))
     selectedUser.value = commonFunctions.deepCopy(user[0])
+    await Promise.all([
+        loadPerspectives(),
+        store.dispatch('fetchComponents', orgResolved.value),
+        store.dispatch('fetchProducts', orgResolved.value)
+    ])
     // locate permission for approvals and instance permissions
     let perm: any
     instancePermissions.value = {}
@@ -2575,7 +2580,6 @@ function editUser(email: string) {
         scopedPermissions: scopedPerms
     }
 
-    loadPerspectives()
     showOrgSettingsUserPermissionsModal.value = true
 }
 function enableRegistry() {
@@ -2926,10 +2930,15 @@ async function updateUserGroup() {
     }
 }
 
-function editUserGroup(groupUuid: string) {
+async function editUserGroup(groupUuid: string) {
     const group = userGroups.value.find(g => g.uuid === groupUuid)
     if (group) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
+        await Promise.all([
+            loadPerspectives(),
+            store.dispatch('fetchComponents', orgResolved.value),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
         
         let orgPerm: any = { type: 'NONE', functions: ['RESOURCE'], approvals: [] }
         const scopedPerms: any[] = []
@@ -2971,7 +2980,6 @@ function editUserGroup(groupUuid: string) {
         selectedUserGroup.value.manualUsers = selectedUserGroup.value.manualUsers || []
         selectedUserGroup.value.connectedSsoGroups = selectedUserGroup.value.connectedSsoGroups || []
         restoreMode.value = false
-        loadPerspectives()
         showUserGroupPermissionsModal.value = true
     }
 }
