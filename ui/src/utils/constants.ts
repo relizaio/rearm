@@ -140,7 +140,7 @@ const CONTENT_TYPES = [
 
 const PERMISSION_TYPES: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE']
 const PERMISSION_TYPES_WITH_ADMIN: string[] = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
-const PERMISSION_FUNCTIONS: string[] = ['RESOURCE', 'VULN_ANALYSIS', 'ARTIFACT_DOWNLOAD']
+const PERMISSION_FUNCTIONS: string[] = ['RESOURCE', 'FINDING_ANALYSIS_READ', 'FINDING_ANALYSIS_WRITE', 'ARTIFACT_DOWNLOAD']
 
 const BATCH_MODE_HELP = {
     description: 'Batch mode allows you to search for multiple components at once.',

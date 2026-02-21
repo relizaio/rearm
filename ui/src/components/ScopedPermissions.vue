@@ -40,7 +40,22 @@
                 </n-text>
             </n-h5>
             <n-checkbox-group v-model:value="orgPermission.functions" @update:value="onOrgFunctionsUpdate">
-                <n-checkbox v-for="f in permissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" />
+                <n-checkbox v-for="f in orgPermissionFunctions" :key="f" :value="f" :disabled="f === 'RESOURCE'" :title="translateFunctionName(f)">
+                    <span v-if="f === 'FINDING_ANALYSIS_WRITE'" style="display: inline-flex; align-items: center;">
+                        {{ translateFunctionName(f) }}
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-icon size="16" style="margin-left: 4px;">
+                                    <QuestionCircle20Regular />
+                                </n-icon>
+                            </template>
+                            Requires Read Only organization wide permissions, and if checked allows to create or update Finding Analysis records
+                        </n-tooltip>
+                    </span>
+                    <span v-else>
+                        {{ translateFunctionName(f) }}
+                    </span>
+                </n-checkbox>
             </n-checkbox-group>
         </n-space>
 
@@ -52,7 +67,7 @@
                 </n-text>
             </n-h5>
             <n-checkbox-group v-model:value="orgPermission.approvals" @update:value="emitUpdate">
-                <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" />
+                <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" :title="a.displayView" />
             </n-checkbox-group>
         </n-space>
 
@@ -80,13 +95,13 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in permissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" :title="translateFunctionName(f)" />
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
                         <n-text depth="3" style="font-size: 12px;">Approvals:</n-text>
                         <n-checkbox-group v-model:value="sp.approvals" @update:value="emitUpdate">
-                            <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" />
+                            <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" :title="a.displayView" />
                         </n-checkbox-group>
                     </n-space>
                 </n-card>
@@ -127,13 +142,13 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in permissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" :title="translateFunctionName(f)" />
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
                         <n-text depth="3" style="font-size: 12px;">Approvals:</n-text>
                         <n-checkbox-group v-model:value="sp.approvals" @update:value="emitUpdate">
-                            <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" />
+                            <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" :title="a.displayView" />
                         </n-checkbox-group>
                     </n-space>
                 </n-card>
@@ -175,13 +190,13 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in permissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" :title="translateFunctionName(f)" />
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
                         <n-text depth="3" style="font-size: 12px;">Approvals:</n-text>
                         <n-checkbox-group v-model:value="sp.approvals" @update:value="emitUpdate">
-                            <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" />
+                            <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" :title="a.displayView" />
                         </n-checkbox-group>
                     </n-space>
                 </n-card>
@@ -256,6 +271,8 @@ const installationType = computed(() => store.getters.myuser?.installationType)
 const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
 const permissionFunctions: string[] = constants.PermissionFunctions
+const orgPermissionFunctions = computed(() => permissionFunctions)
+const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'FINDING_ANALYSIS_WRITE'))
 
 const newPerspectiveId = ref<string | null>(null)
 const newProductId = ref<string | null>(null)
@@ -273,7 +290,7 @@ const scopedPermissions = ref<ScopedPermission[]>([])
 let isUpdatingFromParent = false
 
 // Initialize from modelValue
-watch(() => props.modelValue, (val) => {
+watch(() => props.modelValue, (val: Props['modelValue']) => {
     if (val && !isUpdatingFromParent) {
         isUpdatingFromParent = true
         orgPermission.value = { ...val.orgPermission }
@@ -331,7 +348,9 @@ function translatePermissionName(type: string): string {
 function translateFunctionName(fn: string): string {
     switch (fn) {
         case 'RESOURCE': return 'Resource'
-        case 'VULN_ANALYSIS': return 'Vulnerability Analysis'
+        case 'VULN_ANALYSIS': return 'Finding Analysis Read'
+        case 'FINDING_ANALYSIS_READ': return 'Finding Analysis Read'
+        case 'FINDING_ANALYSIS_WRITE': return 'Finding Analysis Write'
         case 'ARTIFACT_DOWNLOAD': return 'Artifact Download'
         default: return fn
     }
