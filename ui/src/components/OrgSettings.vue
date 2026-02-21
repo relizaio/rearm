@@ -225,7 +225,8 @@
                             :org-uuid="orgResolved"
                             :approval-roles="myorg.approvalRoles || []"
                             :perspectives="perspectives"
-                            :components="allComponents"
+                            :products="orgProducts"
+                            :components="orgComponents"
                         />
                         <n-space style="margin-top: 20px;">
                             <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
@@ -311,7 +312,8 @@
                                 :org-uuid="orgResolved"
                                 :approval-roles="myorg.approvalRoles || []"
                                 :perspectives="perspectives"
-                                :components="allComponents"
+                                :products="orgProducts"
+                                :components="orgComponents"
                             />
                         </n-flex>
                         <n-space style="margin-top: 20px;">
@@ -1214,11 +1216,9 @@ const userGroupScopedPermissions: Ref<any> = ref({
     scopedPermissions: []
 })
 
-const allComponents = computed(() => {
-    const comps = store.getters.componentsOfOrg(orgResolved.value) || []
-    const prods = store.getters.productsOfOrg(orgResolved.value) || []
-    return [...comps, ...prods]
-})
+const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
+const orgProducts = computed(() => store.getters.productsOfOrg(orgResolved.value) || [])
+const allComponents = computed(() => [...orgComponents.value, ...orgProducts.value])
 const newUserGroup: Ref<any> = ref({
     name: '',
     description: '',

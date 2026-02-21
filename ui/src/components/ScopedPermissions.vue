@@ -88,6 +88,54 @@
             </n-space>
         </div>
 
+        <!-- Per-Product Permissions -->
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && products.length">
+            <n-h5>
+                <n-text depth="1">
+                    Per-Product Permissions:
+                </n-text>
+            </n-h5>
+        </n-space>
+        <div v-if="orgPermission.type !== 'ADMIN' && products.length">
+            <n-space vertical>
+                <n-card v-for="sp in scopedProductPermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
+                    <n-space align="center" justify="space-between" style="width: 100%;">
+                        <n-text strong>{{ sp.objectName }}</n-text>
+                        <n-icon class="clickable" size="18" @click="removeScopedPermission('COMPONENT', sp.objectId)"><CloseIcon /></n-icon>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center">
+                        <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
+                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                            <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
+                        </n-radio-group>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
+                        <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
+                        <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
+                            <n-checkbox v-for="f in permissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" />
+                        </n-checkbox-group>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
+                        <n-text depth="3" style="font-size: 12px;">Approvals:</n-text>
+                        <n-checkbox-group v-model:value="sp.approvals" @update:value="emitUpdate">
+                            <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" />
+                        </n-checkbox-group>
+                    </n-space>
+                </n-card>
+                <n-space align="center">
+                    <n-select
+                        v-model:value="newProductId"
+                        :options="availableProductOptions"
+                        placeholder="Add product..."
+                        style="min-width: 250px;"
+                        filterable
+                        clearable
+                    />
+                    <n-button size="small" type="primary" :disabled="!newProductId" @click="addScopedPermission('PRODUCT')">Add</n-button>
+                </n-space>
+            </n-space>
+        </div>
+
         <!-- Per-Component Permissions -->
         <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && components.length">
             <n-h5>
@@ -174,6 +222,7 @@ interface Props {
     orgUuid: string
     approvalRoles: ApprovalRole[]
     perspectives: any[]
+    products: any[]
     components: any[]
     modelValue: {
         orgPermission: OrgPermission
@@ -190,6 +239,7 @@ const permissionTypes: string[] = constants.PermissionTypes
 const permissionFunctions: string[] = constants.PermissionFunctions
 
 const newPerspectiveId = ref<string | null>(null)
+const newProductId = ref<string | null>(null)
 const newComponentId = ref<string | null>(null)
 
 const orgPermission = ref<OrgPermission>({
@@ -217,13 +267,26 @@ const scopedPerspectivePermissions = computed(() =>
     scopedPermissions.value.filter(sp => sp.scope === 'PERSPECTIVE')
 )
 
+const productIds = computed(() => new Set(props.products.map((p: any) => p.uuid)))
+
+const scopedProductPermissions = computed(() =>
+    scopedPermissions.value.filter(sp => sp.scope === 'COMPONENT' && productIds.value.has(sp.objectId))
+)
+
 const scopedComponentPermissions = computed(() =>
-    scopedPermissions.value.filter(sp => sp.scope === 'COMPONENT')
+    scopedPermissions.value.filter(sp => sp.scope === 'COMPONENT' && !productIds.value.has(sp.objectId))
 )
 
 const availablePerspectiveOptions = computed(() => {
     const usedIds = new Set(scopedPerspectivePermissions.value.map(sp => sp.objectId))
     return props.perspectives
+        .filter(p => !usedIds.has(p.uuid))
+        .map(p => ({ label: p.name, value: p.uuid }))
+})
+
+const availableProductOptions = computed(() => {
+    const usedIds = new Set(scopedProductPermissions.value.map(sp => sp.objectId))
+    return props.products
         .filter(p => !usedIds.has(p.uuid))
         .map(p => ({ label: p.name, value: p.uuid }))
 })
@@ -274,15 +337,25 @@ function onFunctionsUpdate(val: string[], sp: ScopedPermission) {
 }
 
 function addScopedPermission(scope: string) {
-    const id = scope === 'PERSPECTIVE' ? newPerspectiveId.value : newComponentId.value
+    let id: string | null = null
+    let source: any[] = []
+    if (scope === 'PERSPECTIVE') {
+        id = newPerspectiveId.value
+        source = props.perspectives
+    } else if (scope === 'PRODUCT') {
+        id = newProductId.value
+        source = props.products
+    } else {
+        id = newComponentId.value
+        source = props.components
+    }
     if (!id) return
 
-    const source = scope === 'PERSPECTIVE' ? props.perspectives : props.components
     const obj = source.find((o: any) => o.uuid === id)
     if (!obj) return
 
     scopedPermissions.value.push({
-        scope,
+        scope: scope === 'PRODUCT' ? 'COMPONENT' : scope,
         objectId: id,
         objectName: obj.name,
         type: 'READ_ONLY',
@@ -292,6 +365,8 @@ function addScopedPermission(scope: string) {
 
     if (scope === 'PERSPECTIVE') {
         newPerspectiveId.value = null
+    } else if (scope === 'PRODUCT') {
+        newProductId.value = null
     } else {
         newComponentId.value = null
     }
