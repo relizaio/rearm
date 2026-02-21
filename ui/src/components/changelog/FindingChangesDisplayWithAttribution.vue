@@ -374,6 +374,6 @@ function getInheritedDebtContextSegments(finding: NormalizedFinding): Attributio
 </script>
 
 <style scoped lang="scss">
-@import './finding-common';
+@use './finding-common';
 
 </style>

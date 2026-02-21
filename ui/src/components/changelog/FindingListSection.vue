@@ -53,5 +53,5 @@ withDefaults(defineProps<Props>(), {
 </script>
 
 <style scoped lang="scss">
-@import './finding-common';
+@use './finding-common';
 </style>
