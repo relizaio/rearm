@@ -217,7 +217,8 @@
                         preset="dialog"
                         :show-icon="false"
                         style="width: 90%;" 
-                        v-model:show="showOrgSettingsUserPermissionsModal" 
+                        :show="showOrgSettingsUserPermissionsModal"
+                        @update:show="handleUserPermissionsModalClose"
                         :title="'User Permissions for ' + selectedUser.email"
                         @after-enter="blurActiveElement"
                     >
@@ -264,7 +265,8 @@
                         preset="dialog"
                         :show-icon="false"
                         style="width: 90%;" 
-                        v-model:show="showUserGroupPermissionsModal" 
+                        :show="showUserGroupPermissionsModal"
+                        @update:show="handleUserGroupPermissionsModalClose"
                         :title="(restoreMode ? 'Restore User Group: ' : 'User Group Settings for ') + selectedUserGroup.name"
                         @after-enter="blurActiveElement"
                     >
@@ -821,6 +823,28 @@ function blurActiveElement() {
     if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur()
     }
+}
+
+async function handleUserPermissionsModalClose(show: boolean) {
+    if (!show && userPermissionsDirty.value) {
+        const confirmed = await commonFunctions.confirmUnsavedChanges()
+        if (!confirmed) {
+            showOrgSettingsUserPermissionsModal.value = true
+            return
+        }
+    }
+    showOrgSettingsUserPermissionsModal.value = show
+}
+
+async function handleUserGroupPermissionsModalClose(show: boolean) {
+    if (!show && userGroupPermissionsDirty.value) {
+        const confirmed = await commonFunctions.confirmUnsavedChanges()
+        if (!confirmed) {
+            showUserGroupPermissionsModal.value = true
+            return
+        }
+    }
+    showUserGroupPermissionsModal.value = show
 }
 
 const showUserApiKeyModal = ref(false)

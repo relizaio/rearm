@@ -135,6 +135,18 @@ export type SwalData = {
     dismissText: string
 }
 
+async function confirmUnsavedChanges(): Promise<boolean> {
+    const result = await Swal.fire({
+        title: 'Unsaved Changes',
+        text: 'You have unsaved changes. Are you sure you want to close?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, close',
+        cancelButtonText: 'No, stay'
+    })
+    return result.isConfirmed
+}
+
 async function swalWrapper (wrappedFunction: Function, swalData: SwalData, notifyFunction: Function) {
     const swalResp = await Swal.fire({
         title: 'Are you sure?',
@@ -265,5 +277,6 @@ export default {
     resolveWords,
     isCycloneDXBomArtifact,
     formatSpecVersion,
-    stableStringify
+    stableStringify,
+    confirmUnsavedChanges
 }

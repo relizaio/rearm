@@ -639,17 +639,8 @@ const hasBranchChanges = computed(() => {
 
 const handleBranchSettingsClose = async function(show: boolean) {
     if (!show && hasBranchChanges()) {
-        // User is trying to close, check for unsaved changes
-        const result = await Swal.fire({
-            title: 'Unsaved Changes',
-            text: 'You have unsaved changes. Are you sure you want to close?',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Yes, close',
-            cancelButtonText: 'No, stay'
-        })
-        
-        if (!result.isConfirmed) {
+        const confirmed = await commonFunctions.confirmUnsavedChanges()
+        if (!confirmed) {
             // Prevent closing by setting it back to true
             showBranchSettingsModal.value = true
             return
