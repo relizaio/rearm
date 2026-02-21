@@ -292,7 +292,7 @@
                             <n-space style="margin-bottom: 20px;">
                                 <n-h5>
                                     <n-text depth="1">
-                                        Users in Group:
+                                        Users Manually Added To Group:
                                     </n-text>
                                 </n-h5>
                                 <n-select
@@ -314,6 +314,22 @@
                                     v-model:value="selectedUserGroup.connectedSsoGroups"
                                     :on-create="onCreateSsoGroup"
                                     placeholder="Add SSO group name"
+                                />
+                            </n-space>
+
+                            <n-space style="margin-bottom: 20px;">
+                                <n-h5>
+                                    <n-text depth="1">
+                                        Users inherited from SSO:
+                                    </n-text>
+                                </n-h5>
+                                <n-select
+                                    :value="selectedUserGroup.users || []"
+                                    multiple
+                                    :options="userOptions"
+                                    placeholder="No inherited users"
+                                    style="width: 100%; min-width: 400px;"
+                                    disabled
                                 />
                             </n-space>
 
