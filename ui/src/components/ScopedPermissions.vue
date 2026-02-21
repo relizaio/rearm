@@ -7,7 +7,7 @@
                     Organization-Wide Permissions:
                 </n-text>
             </n-h5>
-            <n-radio-group v-model:value="orgPermission.type" @update:value="emitUpdate">
+            <n-radio-group v-model:value="orgPermission.type" @update:value="onOrgPermissionTypeUpdate">
                 <n-radio-button
                     v-for="pt in permissionTypesWithAdmin"
                     :key="pt"
@@ -282,6 +282,8 @@ const orgPermission = ref<OrgPermission>({
     functions: [],
     approvals: []
 })
+const orgFunctionPermissionTypes = ['READ_ONLY', 'READ_WRITE']
+const previousOrgPermissionType = ref<string>(orgPermission.value.type)
 
 const scopedPermissions = ref<ScopedPermission[]>([])
 
@@ -293,6 +295,7 @@ watch(() => props.modelValue, (val: Props['modelValue']) => {
     if (val && !isUpdatingFromParent) {
         isUpdatingFromParent = true
         orgPermission.value = { ...val.orgPermission }
+        previousOrgPermissionType.value = orgPermission.value.type
         scopedPermissions.value = val.scopedPermissions.map(sp => ({ ...sp }))
         isUpdatingFromParent = false
     }
@@ -357,6 +360,19 @@ function translateFunctionName(fn: string): string {
 
 function onOrgFunctionsUpdate(val: string[]) {
     orgPermission.value.functions = val
+    emitUpdate()
+}
+
+function onOrgPermissionTypeUpdate(type: string) {
+    const wasFunctionType = orgFunctionPermissionTypes.includes(previousOrgPermissionType.value)
+    const isFunctionType = orgFunctionPermissionTypes.includes(type)
+
+    orgPermission.value.type = type
+    if (wasFunctionType && !isFunctionType) {
+        orgPermission.value.functions = []
+    }
+
+    previousOrgPermissionType.value = type
     emitUpdate()
 }
 
