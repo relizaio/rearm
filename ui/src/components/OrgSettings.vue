@@ -219,6 +219,7 @@
                         style="width: 90%;" 
                         v-model:show="showOrgSettingsUserPermissionsModal" 
                         :title="'User Permissions for ' + selectedUser.email"
+                        @after-enter="blurActiveElement"
                     >
                         <ScopedPermissions
                             v-model="userScopedPermissions"
@@ -263,6 +264,7 @@
                         style="width: 90%;" 
                         v-model:show="showUserGroupPermissionsModal" 
                         :title="(restoreMode ? 'Restore User Group: ' : 'User Group Settings for ') + selectedUserGroup.name"
+                        @after-enter="blurActiveElement"
                     >
                         <n-flex vertical>
                             <n-space style="margin-top: 20px; margin-bottom: 20px;">
@@ -808,6 +810,12 @@ const showOrgSettingsProgPermissionsModal = ref(false)
 const showOrgSettingsUserPermissionsModal = ref(false)
 
 const showUserGroupPermissionsModal = ref(false)
+
+function blurActiveElement() {
+    if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur()
+    }
+}
 
 const showUserApiKeyModal = ref(false)
 
