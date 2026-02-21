@@ -155,8 +155,11 @@ const setMyPerspective = function (perspectiveUuid: string) {
 }
 
 // Auto-select first available perspective when user has only perspective-scoped access
-watch([hasOnlyPerspectiveAccess, perspectives, myorg], () => {
-    if (hasOnlyPerspectiveAccess.value && perspectives.value.length > 0 && myperspective.value === 'default') {
+watch([hasOnlyPerspectiveAccess, perspectives, myorg, myperspective], () => {
+    if (!hasOnlyPerspectiveAccess.value || perspectives.value.length === 0) return
+
+    const hasCurrentPerspective = perspectives.value.some((p: any) => p.uuid === myperspective.value)
+    if (myperspective.value === 'default' || !hasCurrentPerspective) {
         store.dispatch('updateMyPerspective', perspectives.value[0].uuid)
     }
 }, { immediate: true })
