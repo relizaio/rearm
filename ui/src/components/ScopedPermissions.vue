@@ -40,7 +40,7 @@
                 </n-text>
             </n-h5>
             <n-checkbox-group v-model:value="orgPermission.functions" @update:value="onOrgFunctionsUpdate">
-                <n-checkbox v-for="f in orgPermissionFunctions" :key="f" :value="f" :disabled="f === 'RESOURCE'" :title="translateFunctionName(f)">
+                <n-checkbox v-for="f in orgPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
                     <span v-if="f === 'FINDING_ANALYSIS_WRITE'" style="display: inline-flex; align-items: center;">
                         {{ translateFunctionName(f) }}
                         <n-tooltip trigger="hover">
@@ -95,7 +95,7 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" :title="translateFunctionName(f)" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :title="translateFunctionName(f)" />
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
@@ -142,7 +142,7 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" :title="translateFunctionName(f)" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :title="translateFunctionName(f)" />
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
@@ -190,7 +190,7 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :disabled="f === 'RESOURCE'" :title="translateFunctionName(f)" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :title="translateFunctionName(f)" />
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
@@ -225,7 +225,7 @@ export default {
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue'
 import { useStore } from 'vuex'
-import { NFlex, NSpace, NH5, NText, NRadioGroup, NRadioButton, NCheckboxGroup, NCheckbox, NSelect, NButton, NCard, NIcon, NTooltip, useNotification } from 'naive-ui'
+import { NFlex, NSpace, NH5, NText, NRadioGroup, NRadioButton, NCheckboxGroup, NCheckbox, NSelect, NButton, NCard, NIcon, NTooltip } from 'naive-ui'
 import { X as CloseIcon } from '@vicons/tabler'
 import { QuestionCircle20Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
@@ -264,15 +264,14 @@ interface Props {
 
 const props = defineProps<Props>()
 const emit = defineEmits(['update:modelValue'])
-const notification = useNotification()
 const store = useStore()
 const installationType = computed(() => store.getters.myuser?.installationType)
 
 const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
 const permissionFunctions: string[] = constants.PermissionFunctions
-const orgPermissionFunctions = computed(() => permissionFunctions)
-const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'FINDING_ANALYSIS_WRITE'))
+const orgPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'RESOURCE'))
+const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'RESOURCE' && f !== 'FINDING_ANALYSIS_WRITE'))
 
 const newPerspectiveId = ref<string | null>(null)
 const newProductId = ref<string | null>(null)
@@ -280,7 +279,7 @@ const newComponentId = ref<string | null>(null)
 
 const orgPermission = ref<OrgPermission>({
     type: 'NONE',
-    functions: ['RESOURCE'],
+    functions: [],
     approvals: []
 })
 
@@ -357,19 +356,11 @@ function translateFunctionName(fn: string): string {
 }
 
 function onOrgFunctionsUpdate(val: string[]) {
-    if (!val.includes('RESOURCE')) {
-        notification.error({ title: 'Error', content: 'RESOURCE function is required and cannot be removed.', duration: 3000 })
-        return
-    }
     orgPermission.value.functions = val
     emitUpdate()
 }
 
 function onFunctionsUpdate(val: string[], sp: ScopedPermission) {
-    if (!val.includes('RESOURCE')) {
-        notification.error({ title: 'Error', content: 'RESOURCE function is required and cannot be removed.', duration: 3000 })
-        return
-    }
     sp.functions = val
     emitUpdate()
 }
@@ -397,7 +388,7 @@ function addScopedPermission(scope: string) {
         objectId: id,
         objectName: obj.name,
         type: 'READ_ONLY',
-        functions: ['RESOURCE'],
+        functions: [],
         approvals: []
     })
 

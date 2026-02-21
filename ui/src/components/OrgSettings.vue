@@ -1265,12 +1265,12 @@ const restoreMode = ref(false)
 
 // Scoped permissions state (shared model for ScopedPermissions component)
 const userScopedPermissions: Ref<any> = ref({
-    orgPermission: { type: 'NONE', functions: ['RESOURCE'], approvals: [] },
+    orgPermission: { type: 'NONE', functions: [], approvals: [] },
     scopedPermissions: []
 })
 const userScopedPermissionsOriginal: Ref<any> = ref(null)
 const userGroupScopedPermissions: Ref<any> = ref({
-    orgPermission: { type: 'NONE', functions: ['RESOURCE'], approvals: [] },
+    orgPermission: { type: 'NONE', functions: [], approvals: [] },
     scopedPermissions: []
 })
 const userGroupScopedPermissionsOriginal: Ref<any> = ref(null)
@@ -2637,7 +2637,7 @@ async function editUser(email: string) {
                 objectId: up.object,
                 objectName,
                 type: up.type,
-                functions: readResourceFunction(up.functions),
+                functions: up.functions || [],
                 approvals: up.approvals || []
             })
         }
@@ -2650,7 +2650,7 @@ async function editUser(email: string) {
     userScopedPermissions.value = {
         orgPermission: {
             type: perm.type || 'NONE',
-            functions: readResourceFunction(perm.functions),
+            functions: perm.functions || [],
             approvals: commonFunctions.deepCopy(perm.approvals) || []
         },
         scopedPermissions: scopedPerms
@@ -2667,20 +2667,6 @@ function enableRegistry() {
         })
     }
 }
-function readResourceFunction(fns: string[] | null | undefined): string[] {
-    if (!fns || !fns.length) return ['RESOURCE']
-    if (!fns.includes('RESOURCE')) return ['RESOURCE', ...fns]
-    return fns
-}
-
-function writeResourceFunction(fns: string[] | null | undefined): string[] | null {
-    if (!fns || !fns.length || !fns.includes('RESOURCE')) {
-        notify('error', 'Error', 'RESOURCE function is required and cannot be removed.')
-        return null
-    }
-    return fns
-}
-
 function translatePermissionName(type: string) {
     switch (type) {
         case 'NONE': return 'None'
@@ -2936,8 +2922,7 @@ async function updateUserGroup() {
         const scopedData = userGroupScopedPermissions.value
         const orgPermType = scopedData.orgPermission.type
         const orgApprovals = scopedData.orgPermission.approvals || []
-        const orgFunctions = writeResourceFunction(scopedData.orgPermission.functions)
-        if (!orgFunctions) return
+        const orgFunctions = scopedData.orgPermission.functions || []
         
         const permissions: any[] = []
         
@@ -2956,8 +2941,7 @@ async function updateUserGroup() {
         if (scopedData.scopedPermissions && scopedData.scopedPermissions.length) {
             for (const sp of scopedData.scopedPermissions) {
                 if (sp.type && sp.type !== 'NONE') {
-                    const spFunctions = writeResourceFunction(sp.functions)
-                    if (!spFunctions) return
+                    const spFunctions = sp.functions || []
                     permissions.push({
                         scope: sp.scope,
                         objectId: sp.objectId,
@@ -3017,7 +3001,7 @@ async function editUserGroup(groupUuid: string) {
             store.dispatch('fetchProducts', orgResolved.value)
         ])
         
-        let orgPerm: any = { type: 'NONE', functions: ['RESOURCE'], approvals: [] }
+        let orgPerm: any = { type: 'NONE', functions: [], approvals: [] }
         const scopedPerms: any[] = []
         
         // Extract all permissions from the nested structure
@@ -3026,7 +3010,7 @@ async function editUserGroup(groupUuid: string) {
                 if (p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value) {
                     orgPerm = {
                         type: p.type || 'NONE',
-                        functions: readResourceFunction(p.functions),
+                        functions: p.functions || [],
                         approvals: p.approvals || []
                     }
                 } else if ((p.scope === 'PERSPECTIVE' || p.scope === 'COMPONENT') && p.org === orgResolved.value) {
@@ -3036,7 +3020,7 @@ async function editUserGroup(groupUuid: string) {
                         objectId: p.object,
                         objectName,
                         type: p.type,
-                        functions: readResourceFunction(p.functions),
+                        functions: p.functions || [],
                         approvals: p.approvals || []
                     })
                 }
@@ -3121,8 +3105,7 @@ async function confirmRestoreUserGroup() {
         const scopedData = userGroupScopedPermissions.value
         const orgPermType = scopedData.orgPermission.type
         const orgApprovals = scopedData.orgPermission.approvals || []
-        const orgFunctions = writeResourceFunction(scopedData.orgPermission.functions)
-        if (!orgFunctions) return
+        const orgFunctions = scopedData.orgPermission.functions || []
         
         const permissions: any[] = []
         
@@ -3140,8 +3123,7 @@ async function confirmRestoreUserGroup() {
         if (scopedData.scopedPermissions && scopedData.scopedPermissions.length) {
             for (const sp of scopedData.scopedPermissions) {
                 if (sp.type && sp.type !== 'NONE') {
-                    const spFunctions = writeResourceFunction(sp.functions)
-                    if (!spFunctions) return
+                    const spFunctions = sp.functions || []
                     permissions.push({
                         scope: sp.scope,
                         objectId: sp.objectId,
@@ -3540,8 +3522,7 @@ async function updateUserPermissions() {
     const scopedData = userScopedPermissions.value
     const orgPermType = scopedData.orgPermission.type
     const orgApprovals = scopedData.orgPermission.approvals || []
-    const orgFunctions = writeResourceFunction(scopedData.orgPermission.functions)
-    if (!orgFunctions) return
+    const orgFunctions = scopedData.orgPermission.functions || []
     
     // Add org-level permission with functions and approvals
     if (orgPermType && orgPermType !== 'NONE') {
@@ -3559,8 +3540,7 @@ async function updateUserPermissions() {
     if (scopedData.scopedPermissions && scopedData.scopedPermissions.length) {
         for (const sp of scopedData.scopedPermissions) {
             if (sp.type && sp.type !== 'NONE') {
-                const spFunctions = writeResourceFunction(sp.functions)
-                if (!spFunctions) return
+                const spFunctions = sp.functions || []
                 permissions.push({
                     org: orgResolved.value,
                     scope: sp.scope,
