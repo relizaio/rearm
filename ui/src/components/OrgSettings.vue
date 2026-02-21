@@ -1835,32 +1835,11 @@ const userFields = [
     },
     {
         key: 'permission',
-        title: 'Org Wide Permissions',
+        title: 'Org-Wide Permissions',
         render(row: any) {
             return h('div',
                 extractOrgWidePermission(row)
             )
-        }
-    },
-    {
-        key: 'approvals',
-        title: 'Approvals',
-        render(row: any) {
-            let approvalContent = ''
-            const permArray = row.permissions.permissions.filter((up: any) =>
-                (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
-            )
-            if (permArray && permArray.length) {
-                const orgWidePerm = permArray[0]
-                if (orgWidePerm.type === 'ADMIN') {
-                    approvalContent = 'Any (as Admin)'
-                } else if (orgWidePerm.approvals && orgWidePerm.approvals.length) {
-                    approvalContent = orgWidePerm.approvals.toString()
-                } else {
-                    approvalContent = 'Not Granted'
-                }
-            }
-            return h('div', approvalContent)
         }
     },
     {
@@ -1921,7 +1900,7 @@ const inviteeFields = [
     },
     {
         key: 'type',
-        title: 'Org Wide Permissions'
+        title: 'Org-Wide Permissions'
     },
     {
         key: 'challengeExpiry',
@@ -2016,7 +1995,7 @@ const userGroupFields = [
     },
     {
         key: 'permission',
-        title: 'Org Wide Permissions',
+        title: 'Org-Wide Permissions',
         render(row: any) {
             if (row.permissions && row.permissions.permissions && row.permissions.permissions.length) {
                 const orgPermissions = row.permissions.permissions.filter((p: any) => 
@@ -2027,33 +2006,6 @@ const userGroupFields = [
                 }
             }
             return h('div', 'None')
-        }
-    },
-    {
-        key: 'approvals',
-        title: 'Approvals',
-        render(row: any) {
-            let approvalContent = ''
-            if (row.permissions && row.permissions.permissions && row.permissions.permissions.length) {
-                const orgPermissions = row.permissions.permissions.filter((p: any) => 
-                    p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value
-                )
-                if (orgPermissions.length > 0) {
-                    const orgPerm = orgPermissions[0]
-                    if (orgPerm.type === 'ADMIN') {
-                        approvalContent = 'Any (as Admin)'
-                    } else if (orgPerm.approvals && orgPerm.approvals.length) {
-                        approvalContent = orgPerm.approvals.toString()
-                    } else {
-                        approvalContent = 'Not Granted'
-                    }
-                } else {
-                    approvalContent = 'Not Granted'
-                }
-            } else {
-                approvalContent = 'Not Granted'
-            }
-            return h('div', approvalContent)
         }
     },
     {
