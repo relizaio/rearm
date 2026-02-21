@@ -2529,6 +2529,38 @@ function editKey(uuid: string) {
     }
     showOrgSettingsProgPermissionsModal.value = true
 }
+
+const scopedObjectNameCache = new Map<string, string>()
+
+async function resolveScopedObjectName(scope: string, objectId: string): Promise<string> {
+    const cacheKey = `${scope}:${objectId}`
+    const cached = scopedObjectNameCache.get(cacheKey)
+    if (cached) return cached
+
+    if (scope === 'PERSPECTIVE') {
+        const perspective = perspectives.value.find((p: any) => p.uuid === objectId)
+        const resolved = perspective ? perspective.name : objectId
+        scopedObjectNameCache.set(cacheKey, resolved)
+        return resolved
+    }
+
+    const knownComponent = allComponents.value.find((c: any) => c.uuid === objectId)
+    if (knownComponent) {
+        scopedObjectNameCache.set(cacheKey, knownComponent.name)
+        return knownComponent.name
+    }
+
+    try {
+        const fetchedComponent = await store.dispatch('fetchComponent', objectId)
+        const resolved = fetchedComponent?.name || objectId
+        scopedObjectNameCache.set(cacheKey, resolved)
+        return resolved
+    } catch {
+        scopedObjectNameCache.set(cacheKey, objectId)
+        return objectId
+    }
+}
+
 async function editUser(email: string) {
     const user = users.value.filter(u => (u.email === email))
     selectedUser.value = commonFunctions.deepCopy(user[0])
@@ -2541,24 +2573,23 @@ async function editUser(email: string) {
     let perm: any
     instancePermissions.value = {}
     const scopedPerms: any[] = []
-    selectedUser.value.permissions.permissions.forEach((up: any) => {
+    for (const up of selectedUser.value.permissions.permissions) {
         if (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value) {
             perm = up
         } else if (up.scope === 'INSTANCE' && up.org === orgResolved.value) {
             instancePermissions.value[up.object] = up.type
         } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT') && up.org === orgResolved.value) {
-            const source = up.scope === 'PERSPECTIVE' ? perspectives.value : allComponents.value
-            const obj = source.find((o: any) => o.uuid === up.object)
+            const objectName = await resolveScopedObjectName(up.scope, up.object)
             scopedPerms.push({
                 scope: up.scope,
                 objectId: up.object,
-                objectName: obj ? obj.name : up.object,
+                objectName,
                 type: up.type,
                 functions: readResourceFunction(up.functions),
                 approvals: up.approvals || []
             })
         }
-    })
+    }
 
     selectedUser.value.approvals = commonFunctions.deepCopy(perm.approvals)
     selectedUser.value.type = perm.type
@@ -2939,7 +2970,7 @@ async function editUserGroup(groupUuid: string) {
         
         // Extract all permissions from the nested structure
         if (group.permissions && group.permissions.permissions && group.permissions.permissions.length) {
-            group.permissions.permissions.forEach((p: any) => {
+            for (const p of group.permissions.permissions) {
                 if (p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value) {
                     orgPerm = {
                         type: p.type || 'NONE',
@@ -2947,18 +2978,17 @@ async function editUserGroup(groupUuid: string) {
                         approvals: p.approvals || []
                     }
                 } else if ((p.scope === 'PERSPECTIVE' || p.scope === 'COMPONENT') && p.org === orgResolved.value) {
-                    const source = p.scope === 'PERSPECTIVE' ? perspectives.value : allComponents.value
-                    const obj = source.find((o: any) => o.uuid === p.object)
+                    const objectName = await resolveScopedObjectName(p.scope, p.object)
                     scopedPerms.push({
                         scope: p.scope,
                         objectId: p.object,
-                        objectName: obj ? obj.name : p.object,
+                        objectName,
                         type: p.type,
                         functions: readResourceFunction(p.functions),
                         approvals: p.approvals || []
                     })
                 }
-            })
+            }
         }
         
         selectedUserGroup.value.orgPermissionType = orgPerm.type
