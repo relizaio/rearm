@@ -25,6 +25,7 @@ type Query {
 	artifactTypes: [String]
 	release(releaseUuid: ID!, orgUuid: ID): Release
 	users(orgUuid: ID!): [OrgUserData]
+	combinedUserOrgPermissions(orgUuid: ID!, userUuid: ID!): Permissions
 	resourceGroups(orgUuid: ID!): [ResourceGroup]
 	releaseAnalytics(orgUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
 	releaseAnalyticsByComponent(componentUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]

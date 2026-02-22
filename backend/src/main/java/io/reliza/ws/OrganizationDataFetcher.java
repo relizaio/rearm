@@ -30,6 +30,7 @@ import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.UserPermission.Permissions;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
@@ -96,6 +97,21 @@ public class OrganizationDataFetcher {
 		}
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUsers), ct);
 		return userService.listOrgUserDataByOrg(od.get().getUuid());
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "combinedUserOrgPermissions")
+	public Permissions getCombinedUserOrgPermissions(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("userUuid") UUID userUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roUsers = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUsers), CallType.ADMIN);
+		var targetUser = userService.getUserDataWithOrg(userUuid, orgUuid)
+				.orElseThrow(() -> new AccessDeniedException("User is not in organization"));
+		return organizationService.obtainCombinedUserOrgPermissions(targetUser, orgUuid);
 	}
 	
 	@PreAuthorize("isAuthenticated()")
