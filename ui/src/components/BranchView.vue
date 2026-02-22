@@ -488,7 +488,31 @@ const modifiedBranch: Ref<any> = ref({})
 const originalBranch: Ref<any> = ref({})
 const customBranchVersionSchema = ref('')
 
-const isWritable : boolean = commonFunctions.isWritable(orguuid, myUser, 'BRANCH')
+const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
+
+const isWritable : ComputedRef<boolean> = computed((): boolean => {
+    if (commonFunctions.isWritable(orguuid, myUser, 'COMPONENT')) return true
+
+    const userPermissions = myUser?.permissions?.permissions || []
+
+    // Fallback 1: perspective-scoped write for current perspective
+    if (myPerspective.value && myPerspective.value !== 'default') {
+        const perspectivePermission = userPermissions.find((p: any) =>
+            p.scope === 'PERSPECTIVE' &&
+            p.org === orguuid &&
+            p.object === myPerspective.value
+        )
+        if (perspectivePermission?.type === 'READ_WRITE') return true
+    }
+
+    // Fallback 2: component-scoped write for current component
+    const componentPermission = userPermissions.find((p: any) =>
+        p.scope === 'COMPONENT' &&
+        p.org === orguuid &&
+        p.object === branchData.value.component
+    )
+    return componentPermission?.type === 'READ_WRITE'
+})
 
 const archiveBranch = async function() {
     const componentUuid = modifiedBranch.value.component
