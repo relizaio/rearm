@@ -17,7 +17,7 @@
                         <span>Most Active </span>
                         <n-dropdown title="Select Type" trigger="hover"
                             :options="[{label: 'Components', key: 'COMPONENT'}, {label: 'Products', key: 'PRODUCT'}, {label: 'Branches', key: 'BRANCH'}, {label: featureSetLabelPlural, key: 'FEATURE_SET'}]"
-                            @select="$key => {activeComponentsInput.componentType = $key ? $key: 'COMPONENT';}">
+                            @select="handleActiveTypeSelect">
                             <span>
                                 <span>{{ displayActiveComponentType() }}</span>
                                 <Icon><CaretDownFilled/></Icon>
@@ -474,7 +474,30 @@
                         />
                     </div>
                 </n-gi>
-                <n-gi>
+                <n-gi span="2"><n-divider /></n-gi>
+                <n-gi span="2">
+                    <div>
+                        <n-input-number style="display:inline-block; width:80px;" 
+                            v-model:value="vulnerableComponentsInput.maxComponents" :min="1" />
+                        <span>Most Vulnerable </span>
+                        <n-dropdown title="Select Type" trigger="hover"
+                            :options="[{label: 'Components', key: 'COMPONENT'}, {label: 'Products', key: 'PRODUCT'}]"
+                            @select="handleVulnerableTypeSelect">
+                            <span>
+                                <span>{{ displayVulnerableComponentType() }}</span>
+                                <Icon><CaretDownFilled/></Icon>
+                            </span>
+                        </n-dropdown>
+                    </div>
+                    <h3 style="margin-top: 10px;">Most Vulnerable {{ displayVulnerableComponentType() }}</h3>
+                    <n-spin :show="vulnerableComponentsLoading" style="min-height: 150px;">
+                        <ol v-if="mostVulnerableComponents.length">
+                            <li v-for="item in mostVulnerableComponents" :key="item.id" style="margin-bottom: 6px;">
+                                <router-link :to="{ name: item.routeName, params: { orguuid: myorg?.uuid, compuuid: item.uuid } }">{{ item.name }}</router-link>
+                            </li>
+                        </ol>
+                        <div v-else>No vulnerable {{ displayVulnerableComponentType().toLowerCase() }} found.</div>
+                    </n-spin>
                 </n-gi>
             </n-grid>
 
@@ -601,12 +624,15 @@ const searchFailed = ref(false)
 const selectedPurl = ref('')
 
 onMounted(() => {
-    if (myorg.value) 
+    if (myorg.value) {
         initLoad()
+    }
+    fetchMostVulnerableComponents()
 })
 watch(myorg, (currentValue, oldValue) => {
     activeComponentsInput.value.organization = myorg.value.uuid
     initLoad()
+    fetchMostVulnerableComponents()
 });
 
 
@@ -1160,6 +1186,60 @@ const activeComponentsInput = ref({
     maxComponents: 3
 })
 
+function handleActiveTypeSelect (key: string | number) {
+    activeComponentsInput.value.componentType = (key || 'COMPONENT') as any
+}
+
+const vulnerableComponentsInput = ref({
+    componentType: 'COMPONENT' as 'COMPONENT' | 'PRODUCT',
+    maxComponents: 5
+})
+
+function handleVulnerableTypeSelect (key: string | number) {
+    vulnerableComponentsInput.value.componentType = (key || 'COMPONENT') as 'COMPONENT' | 'PRODUCT'
+}
+const vulnerableComponentsLoading = ref(false)
+const mostVulnerableComponents: Ref<any[]> = ref([])
+
+async function fetchMostVulnerableComponents () {
+    if (!myorg.value?.uuid) return
+    vulnerableComponentsLoading.value = true
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query mostVulnerableComponentsPerOrg($orgUuid: ID!, $createdDate: DateTime!, $componentType: ComponentType!, $maxComponents: Int!) {
+                    mostVulnerableComponentsPerOrg(orgUuid: $orgUuid, createdDate: $createdDate, componentType: $componentType, maxComponents: $maxComponents) {
+                        componentuuid
+                        componentname
+                    }
+                }`,
+            variables: {
+                orgUuid: myorg.value.uuid,
+                createdDate: new Date().toISOString(),
+                componentType: vulnerableComponentsInput.value.componentType,
+                maxComponents: vulnerableComponentsInput.value.maxComponents
+            },
+            fetchPolicy: 'no-cache'
+        })
+
+        mostVulnerableComponents.value = ((response.data as any)?.mostVulnerableComponentsPerOrg || []).slice(0, vulnerableComponentsInput.value.maxComponents).map((x: any, idx: number) => ({
+            id: `${x.componentuuid || x.uuid || idx}`,
+            uuid: x.componentuuid || x.uuid,
+            name: x.componentname || x.name || 'Unknown',
+            routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+        }))
+    } catch (err: any) {
+        mostVulnerableComponents.value = []
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        vulnerableComponentsLoading.value = false
+    }
+}
+
+watch(() => [vulnerableComponentsInput.value.componentType, vulnerableComponentsInput.value.maxComponents], () => {
+    fetchMostVulnerableComponents()
+})
+
 function displayActiveComponentType () {
     let displayComp
     switch (activeComponentsInput.value.componentType) {
@@ -1177,6 +1257,10 @@ function displayActiveComponentType () {
             break
     }
     return displayComp
+}
+
+function displayVulnerableComponentType () {
+    return vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'Products' : 'Components'
 }
 
 </script>
