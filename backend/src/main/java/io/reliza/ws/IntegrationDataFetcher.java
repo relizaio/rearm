@@ -132,8 +132,7 @@ public class IntegrationDataFetcher {
 		
 		return integrationService.requestMetricsRefreshOnDependencyTrack(oad.get());
 	}
-	
-	// TODO handle perspective scope; PS - 2026-02-20
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchDtrackComponentByPurlAndProjects")
 	public UUID searchDtrackComponentByPurlAndProjects(
@@ -145,7 +144,7 @@ public class IntegrationDataFetcher {
 		
 		var odSearch = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject roSearch = odSearch.isPresent() ? odSearch.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roSearch), CallType.READ);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roSearch), CallType.ESSENTIAL_READ);
 		
 		return integrationService.searchDtrackComponentByPurlAndProjects(orgUuid, purl, dtrackProjects);
 	}
