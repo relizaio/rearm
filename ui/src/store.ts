@@ -1442,14 +1442,22 @@ const storeObject : any = {
             })
         },
         async searchReleasesByTags (context: any, params: any) {
+            const variables: any = {
+                orgUuid: params.org,
+                tagKey: params.tagKey,
+                tagValue: params.tagValue
+            }
+            if (params.perspectiveUuid && params.perspectiveUuid !== 'default') {
+                variables.perspectiveUuid = params.perspectiveUuid
+            }
             const response = await graphqlClient.query({
                 query: gql`
-                    query releasesByTags($orgUuid: ID!, $tagKey: String!, $tagValue: String) {
-                        releasesByTags(orgUuid: $orgUuid, tagKey: $tagKey, tagValue: $tagValue) {
+                    query releasesByTags($orgUuid: ID!, $tagKey: String!, $tagValue: String, $perspectiveUuid: ID) {
+                        releasesByTags(orgUuid: $orgUuid, tagKey: $tagKey, tagValue: $tagValue, perspectiveUuid: $perspectiveUuid) {
                             ${graphqlQueries.MultiReleaseGqlData}
                         }
                     }`,
-                variables: { orgUuid: params.org, tagKey: params.tagKey, tagValue: params.tagValue },
+                variables,
                 fetchPolicy: 'no-cache'
             })
             context.commit('SET_RELEASES', response.data.releasesByTags)

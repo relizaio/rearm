@@ -229,7 +229,7 @@
                             style="width: 90%"
                         >
                             <div style="height: 710px; overflow: auto;">
-                                <h3>{{ searchResultsModalMode === 'hash' ? 'Search by Version, Digest, Commit' : 'Search by Tags' }}</h3>
+                                <h3>{{ (searchResultsModalMode === 'hash' ? 'Search by Version, Digest, Commit' : 'Search by Tags') + perspectiveModalSuffix }}</h3>
                                 <n-form
                                     v-if="searchResultsModalMode === 'hash'"
                                     style="margin-bottom:20px;"
@@ -292,7 +292,7 @@
                             style="width: 100%"
                         >
                             <div style="height: 710px; overflow: auto;">
-                                <h3 style="margin-top:0px;">Search by SBOM Components</h3>
+                                <h3 style="margin-top:0px;">{{ 'Search by SBOM Components' + perspectiveModalSuffix }}</h3>
                                 <n-radio-group v-model:value="sbomSearchMode" style="margin-bottom: 10px;">
                                     <n-radio-button value="simple">Simple</n-radio-button>
                                     <n-radio-button value="json">Batch</n-radio-button>
@@ -566,6 +566,10 @@ const currentPerspectiveName = computed(() => {
     return perspective ? perspective.name : undefined
 })
 
+const perspectiveModalSuffix = computed(() => {
+    return currentPerspectiveName.value ? `, Perspective: ${currentPerspectiveName.value}` : ''
+})
+
 const hashSearchQuery = ref('')
 const findingSearchQuery = ref('')
 const showReleasesByCveModal = ref(false)
@@ -737,16 +741,20 @@ const dtrackSearchLoading : Ref<boolean> = ref(false)
 const dtrackReleasesLoading : Ref<boolean> = ref(false)
 
 const executeGqlSearchHashVersion = async function (params : any) {
+    const variables: any = { orgUuid: params.org, query: params.query }
+    if (params.perspectiveUuid && params.perspectiveUuid !== 'default') {
+        variables.perspectiveUuid = params.perspectiveUuid
+    }
     const response = await graphqlClient.query({
         query: gql`
-            query searchDigestVersion($orgUuid: ID!, $query: String!) {
-                searchDigestVersion(orgUuid: $orgUuid, query: $query) {
+            query searchDigestVersion($orgUuid: ID!, $query: String!, $perspectiveUuid: ID) {
+                searchDigestVersion(orgUuid: $orgUuid, query: $query, perspectiveUuid: $perspectiveUuid) {
                     commitReleases {
                         ${GqlQueries.MultiReleaseGqlData}
                     }
                 }
             }`,
-        variables: { orgUuid: params.org, query: params.query },
+        variables,
         fetchPolicy: 'no-cache'
     })
     return response.data.searchDigestVersion
@@ -758,7 +766,8 @@ async function searchHashVersion (e: Event) {
     try {
         const params = {
             org: myorg.value.uuid,
-            query: hashSearchQuery.value
+            query: hashSearchQuery.value,
+            perspectiveUuid: currentPerspectiveUuid.value
         }
         hashSearchResults.value = await executeGqlSearchHashVersion(params)
         searchResultsModalMode.value = 'hash'
@@ -856,18 +865,22 @@ function parseSbomSearchQueries(): { name: string; version?: string }[] | null {
 const BATCH_SIZE = 100
 
 async function executeSbomSearchBatch(queries: { name: string; version?: string }[]): Promise<any[]> {
+    const variables: any = {
+        orgUuid: myorg.value.uuid,
+        queries
+    }
+    if (currentPerspectiveUuid.value && currentPerspectiveUuid.value !== 'default') {
+        variables.perspectiveUuid = currentPerspectiveUuid.value
+    }
     const response = await graphqlClient.query({
         query: gql`
-            query sbomComponentSearch($orgUuid: ID!, $queries: [SbomComponentSearchInput!]!) {
-                sbomComponentSearch(orgUuid: $orgUuid, queries: $queries) {
+            query sbomComponentSearch($orgUuid: ID!, $queries: [SbomComponentSearchInput!]!, $perspectiveUuid: ID) {
+                sbomComponentSearch(orgUuid: $orgUuid, queries: $queries, perspectiveUuid: $perspectiveUuid) {
                     purl
                     projects
                 }
             }`,
-        variables: { 
-            orgUuid: myorg.value.uuid, 
-            queries
-        },
+        variables,
         fetchPolicy: 'no-cache'
     })
     return response.data.sbomComponentSearch
@@ -927,10 +940,17 @@ async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
     document.body.style.cursor = 'wait'
     dtrackReleasesLoading.value = true
     try {
+        const variables: any = {
+            orgUuid: myorg.value.uuid,
+            dtrackProjects
+        }
+        if (currentPerspectiveUuid.value && currentPerspectiveUuid.value !== 'default') {
+            variables.perspectiveUuid = currentPerspectiveUuid.value
+        }
         const response = await graphqlClient.query({
             query: gql`
-                query releasesByDtrackProjects($orgUuid: ID!, $dtrackProjects: [ID]) {
-                    releasesByDtrackProjects(orgUuid: $orgUuid, dtrackProjects: $dtrackProjects) {
+                query releasesByDtrackProjects($orgUuid: ID!, $dtrackProjects: [ID], $perspectiveUuid: ID) {
+                    releasesByDtrackProjects(orgUuid: $orgUuid, dtrackProjects: $dtrackProjects, perspectiveUuid: $perspectiveUuid) {
                         uuid
                         name
                         type
@@ -951,10 +971,7 @@ async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
                     }
                 }
             `,
-            variables: { 
-                orgUuid: myorg.value.uuid, 
-                dtrackProjects 
-            },
+            variables,
             fetchPolicy: 'no-cache'
         })
         dtrackSearchReleases.value = (response.data as any).releasesByDtrackProjects || []
@@ -999,10 +1016,13 @@ async function searchReleasesByTags (e: Event) {
     e.preventDefault()
     document.body.style.cursor = 'wait'
     try {
-        const cleanedSearchObj = {
+        const cleanedSearchObj: any = {
             org: myorg.value.uuid,
             tagKey: releaseKeySearchObj.value.key,
             tagValue: releaseKeySearchObj.value.value
+        }
+        if (currentPerspectiveUuid.value && currentPerspectiveUuid.value !== 'default') {
+            cleanedSearchObj.perspectiveUuid = currentPerspectiveUuid.value
         }
         const releases = await store.dispatch('searchReleasesByTags', cleanedSearchObj)
         hashSearchResults.value = {commitReleases: releases, releaseInstances: []}
