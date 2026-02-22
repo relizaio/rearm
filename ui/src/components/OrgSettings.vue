@@ -237,6 +237,22 @@
                             </n-space>
                         </div>
                     </n-modal>
+                    <n-modal
+                        v-model:show="showCombinedUserPermissionsModal"
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;"
+                        :title="'Combined Permissions for ' + (selectedCombinedPermissionsUser?.email || '')"
+                    >
+                        <div style="max-height: 700px; overflow-y: auto; padding-right: 8px;">
+                            <n-data-table
+                                :columns="combinedUserPermissionsFields"
+                                :data="combinedUserPermissionsRows"
+                                :loading="combinedUserPermissionsLoading"
+                                :row-key="combinedUserPermissionsRowKey"
+                            />
+                        </div>
+                    </n-modal>
                     <h6>Pending Invites</h6>
                     <n-data-table :columns="inviteeFields" :data="invitees" class="table-hover">
                     </n-data-table>
@@ -836,6 +852,11 @@ const showOrgSettingsProgPermissionsModal = ref(false)
 
 const showOrgSettingsUserPermissionsModal = ref(false)
 
+const showCombinedUserPermissionsModal = ref(false)
+const combinedUserPermissionsLoading = ref(false)
+const combinedUserPermissionsRows: Ref<any[]> = ref([])
+const selectedCombinedPermissionsUser: Ref<any> = ref(null)
+
 const showUserGroupPermissionsModal = ref(false)
 
 function blurActiveElement() {
@@ -1073,7 +1094,7 @@ const permissionTypeSelections: ComputedRef<any[]> = computed((): any => {
         let retSelection: any[] = []
         permissionTypes.forEach((el: string) => {
             const retObj = {
-                label: translatePermissionName(el),
+                label: commonFunctions.translatePermissionName(el),
                 value: el
             }
             retSelection.push(retObj)
@@ -1896,6 +1917,15 @@ const userFields = [
                         h(
                             NIcon,
                             {
+                                title: 'View combined user permissions',
+                                class: 'icons clickable',
+                                size: 25,
+                                onClick: () => showCombinedPermissions(row)
+                            }, { default: () => h(Eye) }
+                        ),
+                        h(
+                            NIcon,
+                            {
                                 title: 'Modify user permissions',
                                 class: 'icons clickable',
                                 size: 25,
@@ -2054,7 +2084,7 @@ const userGroupFields = [
                     p.scope === 'ORGANIZATION' && p.org === orgResolved.value && p.object === orgResolved.value
                 )
                 if (orgPermissions.length > 0) {
-                    return h('div', translatePermissionName(orgPermissions[0].type))
+                    return h('div', commonFunctions.translatePermissionName(orgPermissions[0].type))
                 }
             }
             return h('div', 'None')
@@ -2667,21 +2697,83 @@ function enableRegistry() {
         })
     }
 }
-function translatePermissionName(type: string) {
-    switch (type) {
-        case 'NONE': return 'None'
-        case 'ESSENTIAL_READ': return 'Essential Read'
-        case 'READ_ONLY': return 'Read Only'
-        case 'READ_WRITE': return 'Read & Write'
-        case 'ADMIN': return 'Administrator'
-        default: return type
-    }
-}
 function extractOrgWidePermission(user: any) {
     const perm = user.permissions.permissions.filter((up: any) =>
         (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
     )
-    return translatePermissionName(perm[0].type)
+    return commonFunctions.translatePermissionName(perm[0].type)
+}
+
+function translatePermissionScopeName(scope: string) {
+    switch (scope) {
+        case 'ORGANIZATION': return 'Organization'
+        case 'PERSPECTIVE': return 'Perspective'
+        case 'COMPONENT': return 'Component'
+        case 'INSTANCE': return 'Instance'
+        default: return scope
+    }
+}
+
+async function showCombinedPermissions(userRow: any) {
+    selectedCombinedPermissionsUser.value = userRow
+    showCombinedUserPermissionsModal.value = true
+    combinedUserPermissionsLoading.value = true
+    combinedUserPermissionsRows.value = []
+
+    try {
+        await Promise.all([
+            loadPerspectives(),
+            store.dispatch('fetchComponents', orgResolved.value),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
+
+        const response = await graphqlClient.query({
+            query: gql`
+                query combinedUserOrgPermissions($orgUuid: ID!, $userUuid: ID!) {
+                    combinedUserOrgPermissions(orgUuid: $orgUuid, userUuid: $userUuid) {
+                        permissions {
+                            org
+                            scope
+                            object
+                            type
+                            functions
+                            approvals
+                        }
+                    }
+                }`,
+            variables: {
+                orgUuid: orgResolved.value,
+                userUuid: userRow.uuid
+            },
+            fetchPolicy: 'no-cache'
+        })
+
+        const permissions = response?.data?.combinedUserOrgPermissions?.permissions || []
+        const rows = await Promise.all(permissions.map(async (p: any, idx: number) => {
+            let objectName = p.object
+            if (p.scope === 'ORGANIZATION' && p.object === orgResolved.value) {
+                objectName = myorg.value?.name || p.object
+            } else if ((p.scope === 'PERSPECTIVE' || p.scope === 'COMPONENT') && p.object) {
+                objectName = await resolveScopedObjectName(p.scope, p.object)
+            }
+
+            return {
+                rowId: `${p.scope || 'UNKNOWN'}:${p.object || ''}:${idx}`,
+                scope: translatePermissionScopeName(p.scope),
+                objectName,
+                type: commonFunctions.translatePermissionName(p.type || 'NONE'),
+                functions: (p.functions || []).map((fn: string) => commonFunctions.translateFunctionName(fn)).join(', '),
+                approvals: (p.approvals || []).join(', ')
+            }
+        }))
+
+        combinedUserPermissionsRows.value = rows
+    } catch (error: any) {
+        notify('error', 'Failed to Load Combined Permissions', commonFunctions.parseGraphQLError(error.message || error.toString()))
+        combinedUserPermissionsRows.value = []
+    } finally {
+        combinedUserPermissionsLoading.value = false
+    }
 }
 async function genApiKey() {
     let swalObject: SweetAlertOptions = {
@@ -3822,6 +3914,30 @@ async function saveProtectedEnvironments() {
 }
 
 const dataTableRowKey = (row: any) => row.uuid
+const combinedUserPermissionsRowKey = (row: any) => row.rowId
+
+const combinedUserPermissionsFields: DataTableColumns<any> = [
+    {
+        key: 'scope',
+        title: 'Scope'
+    },
+    {
+        key: 'objectName',
+        title: 'Object'
+    },
+    {
+        key: 'type',
+        title: 'Permission Type'
+    },
+    {
+        key: 'functions',
+        title: 'Functions'
+    },
+    {
+        key: 'approvals',
+        title: 'Approvals'
+    }
+]
 
 const approvalEntryFields: DataTableColumns<any> = [
     {

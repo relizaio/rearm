@@ -2,6 +2,28 @@ import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
 import graphqlClient from './graphql'
 
+function translatePermissionName(type: string): string {
+    switch (type) {
+        case 'NONE': return 'None'
+        case 'ESSENTIAL_READ': return 'Essential Read'
+        case 'READ_ONLY': return 'Read Only'
+        case 'READ_WRITE': return 'Read & Write'
+        case 'ADMIN': return 'Administrator'
+        default: return type
+    }
+}
+
+function translateFunctionName(fn: string): string {
+    switch (fn) {
+        case 'RESOURCE': return 'Resource'
+        case 'VULN_ANALYSIS': return 'Finding Analysis Read'
+        case 'FINDING_ANALYSIS_READ': return 'Finding Analysis Read'
+        case 'FINDING_ANALYSIS_WRITE': return 'Finding Analysis Write'
+        case 'ARTIFACT_DOWNLOAD': return 'Artifact Download'
+        default: return fn
+    }
+}
+
 function getUserPermission (org : string, myUser: any) {
     let userPermission = {
         org: '',
@@ -291,6 +313,8 @@ function formatSpecVersion(specVersion: string): string {
 export default {
     getGeneratedApiKeyHTML,
     getUserPermission,
+    translatePermissionName,
+    translateFunctionName,
     deepCopy,
     isAdmin,
     isWritable,

@@ -229,6 +229,7 @@ import { NFlex, NSpace, NH5, NText, NRadioGroup, NRadioButton, NCheckboxGroup, N
 import { X as CloseIcon } from '@vicons/tabler'
 import { QuestionCircle20Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
+import commonFunctions from '@/utils/commonFunctions'
 
 interface ApprovalRole {
     id: string
@@ -337,25 +338,11 @@ const availableComponentOptions = computed(() => {
 })
 
 function translatePermissionName(type: string): string {
-    switch (type) {
-        case 'NONE': return 'None'
-        case 'ESSENTIAL_READ': return 'Essential Read'
-        case 'READ_ONLY': return 'Read Only'
-        case 'READ_WRITE': return 'Read & Write'
-        case 'ADMIN': return 'Administrator'
-        default: return type
-    }
+    return commonFunctions.translatePermissionName(type)
 }
 
 function translateFunctionName(fn: string): string {
-    switch (fn) {
-        case 'RESOURCE': return 'Resource'
-        case 'VULN_ANALYSIS': return 'Finding Analysis Read'
-        case 'FINDING_ANALYSIS_READ': return 'Finding Analysis Read'
-        case 'FINDING_ANALYSIS_WRITE': return 'Finding Analysis Write'
-        case 'ARTIFACT_DOWNLOAD': return 'Artifact Download'
-        default: return fn
-    }
+    return commonFunctions.translateFunctionName(fn)
 }
 
 function onOrgFunctionsUpdate(val: string[]) {
