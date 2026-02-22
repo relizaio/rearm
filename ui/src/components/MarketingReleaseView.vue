@@ -208,7 +208,33 @@ const notify = async function (type: NotificationType, title: string, content: s
 }
 
 const myUser = store.getters.myuser
-const isWritable = ref(false)
+const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
+
+const isWritable : ComputedRef<boolean> = computed((): boolean => {
+    const orguuid = marketingRelease.value.orgDetails.uuid
+    if (commonFunctions.isWritable(orguuid, myUser, 'COMPONENT')) return true
+
+    const userPermissions = myUser?.permissions?.permissions || []
+
+    // Fallback 1: perspective-scoped write for current perspective
+    if (myPerspective.value && myPerspective.value !== 'default') {
+        const perspectivePermission = userPermissions.find((p: any) =>
+            p.scope === 'PERSPECTIVE' &&
+            p.org === orguuid &&
+            p.object === myPerspective.value
+        )
+        if (perspectivePermission?.type === 'READ_WRITE') return true
+    }
+
+    // Fallback 2: component-scoped write for current component
+    const componentPermission = userPermissions.find((p: any) =>
+        p.scope === 'COMPONENT' &&
+        p.org === orguuid &&
+        p.object === marketingRelease.value.componentDetails.uuid
+    )
+    return componentPermission?.type === 'READ_WRITE'
+})
+
 const isAdmin = ref(false)
 const isComponent: Ref<boolean> = ref(true)
 
@@ -373,7 +399,6 @@ async function fetchMarketingRelease () {
     marketingRelease.value = mrResponse.data.marketingRelease
     updatedMarketingRelease.value = deepCopyRelease(marketingRelease.value)
     words.value = commonFunctions.resolveWords(marketingRelease.value.componentDetails.type === 'COMPONENT')
-    isWritable.value = commonFunctions.isWritable(marketingRelease.value.orgDetails.uuid, myUser, 'COMPONENT')
     isAdmin.value = commonFunctions.isAdmin(marketingRelease.value.orgDetails.uuid, myUser)
     isComponent.value = (updatedMarketingRelease.value.componentDetails.type === 'COMPONENT')
 }
