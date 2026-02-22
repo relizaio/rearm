@@ -493,13 +493,39 @@
                     <n-spin :show="vulnerableComponentsLoading" style="min-height: 150px;">
                         <ol v-if="mostVulnerableComponents.length">
                             <li v-for="item in mostVulnerableComponents" :key="item.id" style="margin-bottom: 6px;">
-                                <router-link :to="{ name: item.routeName, params: { orguuid: myorg?.uuid, compuuid: item.uuid } }">{{ item.name }}</router-link>
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                                    <router-link :to="{ name: item.routeName, params: { orguuid: myorg?.uuid, compuuid: item.uuid } }">{{ item.name }}</router-link>
+                                    <n-space :size="1">
+                                        <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'CRITICAL', 'Vulnerability')">{{ item.metrics.critical }}</span>
+                                        <span title="High Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.HIGH, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'HIGH', 'Vulnerability')">{{ item.metrics.high }}</span>
+                                        <span title="Medium Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'MEDIUM', 'Vulnerability')">{{ item.metrics.medium }}</span>
+                                        <span title="Low Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.LOW, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'LOW', 'Vulnerability')">{{ item.metrics.low }}</span>
+                                        <span title="Vulnerabilities with Unassigned Severity" class="circle" :style="{background: constants.VulnerabilityColors.UNASSIGNED, cursor: 'pointer'}" @click="openVulnModalForComponent(item, 'UNASSIGNED', 'Vulnerability')">{{ item.metrics.unassigned }}</span>
+                                        <div style="width: 12px;"></div>
+                                        <span title="Licensing Policy Violations" class="circle" :style="{background: constants.ViolationColors.LICENSE, cursor: 'pointer'}" @click="openVulnModalForComponent(item, '', 'Violation')">{{ item.metrics.policyViolationsLicenseTotal }}</span>
+                                        <span title="Security Policy Violations" class="circle" :style="{background: constants.ViolationColors.SECURITY, cursor: 'pointer'}" @click="openVulnModalForComponent(item, '', 'Violation')">{{ item.metrics.policyViolationsSecurityTotal }}</span>
+                                        <span title="Operational Policy Violations" class="circle" :style="{background: constants.ViolationColors.OPERATIONAL, cursor: 'pointer'}" @click="openVulnModalForComponent(item, '', 'Violation')">{{ item.metrics.policyViolationsOperationalTotal }}</span>
+                                    </n-space>
+                                </div>
                             </li>
                         </ol>
                         <div v-else>No vulnerable {{ displayVulnerableComponentType().toLowerCase() }} found.</div>
                     </n-spin>
                 </n-gi>
             </n-grid>
+
+            <vulnerability-modal
+                v-model:show="showVulnModalForComponent"
+                :component-name="vulnModalComponentName"
+                :data="vulnModalData"
+                :loading="vulnModalLoading"
+                :org-uuid="myorg?.uuid || ''"
+                :component-uuid="vulnModalComponentUuid"
+                :component-type="vulnModalComponentType"
+                :artifact-view-only="true"
+                :initial-severity-filter="vulnModalSeverityFilter"
+                :initial-type-filter="vulnModalTypeFilter"
+            />
 
         </div>
     </div>
@@ -533,6 +559,8 @@ import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import MostActiveChart from './MostActiveChart.vue'
 import ReleasesByCve from './ReleasesByCve.vue'
 import ComponentBranchesTable from './ComponentBranchesTable.vue'
+import VulnerabilityModal from './VulnerabilityModal.vue'
+import { processMetricsData } from '@/utils/metrics'
 
 const store = useStore()
 const router = useRouter()
@@ -1211,6 +1239,66 @@ async function fetchMostVulnerableComponents () {
                     mostVulnerableComponentsPerOrg(orgUuid: $orgUuid, createdDate: $createdDate, componentType: $componentType, maxComponents: $maxComponents) {
                         componentuuid
                         componentname
+                        metrics {
+                            critical
+                            high
+                            medium
+                            low
+                            unassigned
+                            policyViolationsLicenseTotal
+                            policyViolationsSecurityTotal
+                            policyViolationsOperationalTotal
+                            vulnerabilityDetails {
+                                purl
+                                vulnId
+                                severity
+                                analysisState
+                                analysisDate
+                                attributedAt
+                                aliases { type aliasId }
+                                sources {
+                                    artifact
+                                    release
+                                    variant
+                                    releaseDetails { version componentDetails { name } }
+                                    artifactDetails { type }
+                                }
+                                severities { source severity }
+                            }
+                            violationDetails {
+                                purl
+                                type
+                                license
+                                violationDetails
+                                analysisState
+                                analysisDate
+                                attributedAt
+                                sources {
+                                    artifact
+                                    release
+                                    variant
+                                    releaseDetails { version componentDetails { name } }
+                                    artifactDetails { type }
+                                }
+                            }
+                            weaknessDetails {
+                                cweId
+                                ruleId
+                                location
+                                fingerprint
+                                severity
+                                analysisState
+                                analysisDate
+                                attributedAt
+                                sources {
+                                    artifact
+                                    release
+                                    variant
+                                    releaseDetails { version componentDetails { name } }
+                                    artifactDetails { type }
+                                }
+                            }
+                        }
                     }
                 }`,
             variables: {
@@ -1222,12 +1310,28 @@ async function fetchMostVulnerableComponents () {
             fetchPolicy: 'no-cache'
         })
 
-        mostVulnerableComponents.value = ((response.data as any)?.mostVulnerableComponentsPerOrg || []).slice(0, vulnerableComponentsInput.value.maxComponents).map((x: any, idx: number) => ({
+        mostVulnerableComponents.value = ((response.data as any)?.mostVulnerableComponentsPerOrg || []).slice(0, vulnerableComponentsInput.value.maxComponents).map((x: any, idx: number) => {
+            const sourceMetrics = x.metrics || x
+            const metrics = {
+                critical: Number(sourceMetrics?.critical || 0),
+                high: Number(sourceMetrics?.high || 0),
+                medium: Number(sourceMetrics?.medium || 0),
+                low: Number(sourceMetrics?.low || 0),
+                unassigned: Number(sourceMetrics?.unassigned || 0),
+                policyViolationsLicenseTotal: Number(sourceMetrics?.policyViolationsLicenseTotal || 0),
+                policyViolationsSecurityTotal: Number(sourceMetrics?.policyViolationsSecurityTotal || 0),
+                policyViolationsOperationalTotal: Number(sourceMetrics?.policyViolationsOperationalTotal || 0)
+            }
+
+            return {
             id: `${x.componentuuid || x.uuid || idx}`,
             uuid: x.componentuuid || x.uuid,
             name: x.componentname || x.name || 'Unknown',
-            routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
-        }))
+            routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg',
+            metrics,
+            rawMetrics: x.metrics
+            }
+        })
     } catch (err: any) {
         mostVulnerableComponents.value = []
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
@@ -1239,6 +1343,26 @@ async function fetchMostVulnerableComponents () {
 watch(() => [vulnerableComponentsInput.value.componentType, vulnerableComponentsInput.value.maxComponents], () => {
     fetchMostVulnerableComponents()
 })
+
+const showVulnModalForComponent = ref(false)
+const vulnModalComponentName = ref('')
+const vulnModalData: Ref<any[]> = ref([])
+const vulnModalLoading = ref(false)
+const vulnModalSeverityFilter = ref('')
+const vulnModalTypeFilter = ref('')
+const vulnModalComponentUuid = ref('')
+const vulnModalComponentType = ref('')
+
+function openVulnModalForComponent (item: any, severityFilter: string = '', typeFilter: string = '') {
+    const typeLabel = vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'product' : 'component'
+    vulnModalComponentName.value = `Findings for ${typeLabel}: ${item.name}`
+    vulnModalComponentUuid.value = item.uuid
+    vulnModalComponentType.value = vulnerableComponentsInput.value.componentType
+    vulnModalSeverityFilter.value = severityFilter
+    vulnModalTypeFilter.value = typeFilter
+    vulnModalData.value = item.rawMetrics ? processMetricsData(item.rawMetrics) : []
+    showVulnModalForComponent.value = true
+}
 
 function displayActiveComponentType () {
     let displayComp

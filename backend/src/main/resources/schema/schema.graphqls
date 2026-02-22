@@ -60,6 +60,7 @@ type Query {
 	vulnerabilitiesViolationsOverTimeByComponent(componentUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	vulnerabilitiesViolationsOverTimeByBranch(branchUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
 	vulnerabilitiesViolationsOverTimeByPerspective(perspectiveUuid: ID!, dateFrom: DateTime!, dateTo: DateTime!): [VulnerabilityViolationChart]
+	mostVulnerableComponentsPerOrg(orgUuid: ID!, createdDate: DateTime!, componentType: ComponentType!, maxComponents: Int!): [MostVulnerableComponent]
 	findingsPerDay(orgUuid: ID!, date: String!): DependencyTrackMetrics
 	findingsPerDayForComponent(componentUuid: ID!, date: String!): DependencyTrackMetrics
 	findingsPerDayForBranch(branchUuid: ID!, date: String!): DependencyTrackMetrics
@@ -1205,6 +1206,13 @@ type ReleasesPerBranch {
 	branchuuid: ID
 	branchname: String
 	rlzcount: Int
+}
+
+type MostVulnerableComponent {
+	componentuuid: ID
+	componentname: String
+	componenttype: ComponentType
+	metrics: DependencyTrackMetrics
 }
 
 type VegaDateValue {
