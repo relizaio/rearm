@@ -859,7 +859,7 @@ public class ArtifactService {
 		
 		if (enrichmentStatus == RebomService.EnrichmentStatus.FAILED) {
 			log.error("Artifact {} enrichment failed: {}", ad.getUuid(), bomMeta.enrichmentError());
-			// Still proceed with submission using non-enriched BOM
+			return;
 		}
 		
 		// Check for deduplication - if another artifact with same digest already has DTrack project
