@@ -17,7 +17,9 @@ function sidebar() {
         {text: 'Installation', link: '/installation/'},
         {text: 'Concepts', link: '/concepts/'},        
         {text: 'Bundling', link: '/bundling/'},
-        {text: 'Configure', link: '/configure/'},
+        {text: 'Configure', link: '/configure/', items: [
+          {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'}
+        ]},
         {text: 'Transparency Exchange API', link: '/tea/' },
         {text: 'Integrations', link: '/integrations/',
           items: [
