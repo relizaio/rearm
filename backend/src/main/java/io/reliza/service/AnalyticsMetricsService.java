@@ -7,6 +7,7 @@ package io.reliza.service;
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -34,6 +35,7 @@ import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerBranch;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerComponent;
 import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
+import io.reliza.model.dto.AnalyticsDtos.MostVulnerableComponent;
 import io.reliza.model.dto.AnalyticsDtos;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -52,6 +54,9 @@ public class AnalyticsMetricsService {
 
 	@Autowired
 	private VulnAnalysisService vulnAnalysisService;
+
+	@Autowired
+	private GetComponentService getComponentService;
 	
 	private final AnalyticsMetricsRepository repository;
 
@@ -348,6 +353,90 @@ public class AnalyticsMetricsService {
 			rmd.mergeWithByContent(rmd2);
 		});
 		return AnalyticsMetricsData.analyticsMetricsDataFactory(org, null, rmd, createdDate);
+	}
+
+	public List<MostVulnerableComponent> mostVulnerableComponentsPerOrg(UUID org, ZonedDateTime createdDate,
+			ComponentType componentType, Integer maxComponents, Set<UUID> perspectiveComponentUuids) {
+		if (maxComponents == null || maxComponents <= 0) return List.of();
+
+		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
+
+		var activeBranches = branchService.listBranchesOfOrg(org).stream()
+				.map(BranchData::branchDataFromDbRecord)
+				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
+				.collect(Collectors.toList());
+
+		Set<UUID> allBranchComponentUuids = activeBranches.stream()
+				.map(BranchData::getComponent)
+				.collect(Collectors.toSet());
+		Map<UUID, io.reliza.model.ComponentData> componentByUuid = getComponentService
+				.getListOfComponentData(allBranchComponentUuids).stream()
+				.collect(Collectors.toMap(io.reliza.model.ComponentData::getUuid, c -> c));
+
+		final List<BranchData> filteredActiveBranches;
+		{
+			var stream = activeBranches.stream();
+			if (perspectiveComponentUuids != null) {
+				stream = stream.filter(b -> perspectiveComponentUuids.contains(b.getComponent()));
+			}
+			if (componentType != null && componentType != ComponentType.ANY) {
+				stream = stream.filter(b -> {
+					var cd = componentByUuid.get(b.getComponent());
+					return cd != null && cd.getType() == componentType;
+				});
+			}
+			filteredActiveBranches = stream.collect(Collectors.toList());
+		}
+
+		List<ReleaseData> latestReleasesOfBranches;
+		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
+			latestReleasesOfBranches = customPool.submit(() ->
+					filteredActiveBranches.parallelStream()
+						.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab.getUuid(), ReleaseLifecycle.ASSEMBLED, upToDate))
+						.filter(Optional::isPresent)
+						.map(Optional::get)
+						.collect(Collectors.toList())
+			).get();
+		} catch (Exception e) {
+			log.error("Error in parallel release fetch", e);
+			latestReleasesOfBranches = new LinkedList<>();
+		}
+
+		Map<UUID, ReleaseMetricsDto> metricsByComponent = new HashMap<>();
+		for (ReleaseData rd : latestReleasesOfBranches) {
+			if (rd.getMetrics() == null) continue;
+			ReleaseMetricsDto rdMetrics = rd.getMetrics().clone();
+			rdMetrics.enrichSourcesWithRelease(rd.getUuid());
+			metricsByComponent
+					.computeIfAbsent(rd.getComponent(), k -> new ReleaseMetricsDto())
+					.mergeWithByContent(rdMetrics);
+		}
+
+		return metricsByComponent.entrySet().stream()
+				.map(e -> {
+					var cd = componentByUuid.get(e.getKey());
+					if (cd == null) return null;
+					ReleaseMetricsDto metrics = e.getValue();
+					metrics.computeMetricsFromFacts();
+					return new MostVulnerableComponent(cd.getUuid(), cd.getName(), cd.getType(), metrics);
+				})
+				.filter(java.util.Objects::nonNull)
+				.sorted(Comparator
+						.comparing((MostVulnerableComponent c) -> metricInt(c.metrics().getCritical())).reversed()
+						.thenComparing(c -> metricInt(c.metrics().getHigh()), Comparator.reverseOrder())
+						.thenComparing(c -> metricInt(c.metrics().getMedium()), Comparator.reverseOrder())
+						.thenComparing(c -> metricInt(c.metrics().getLow()), Comparator.reverseOrder())
+						.thenComparing(c -> metricInt(c.metrics().getUnassigned()), Comparator.reverseOrder())
+						.thenComparing(c -> metricInt(c.metrics().getWeaknesses()), Comparator.reverseOrder())
+						.thenComparing(c -> metricInt(c.metrics().getPolicyViolationsTotal()), Comparator.reverseOrder())
+						.thenComparing(c -> c.componentname() == null ? "" : c.componentname(), String.CASE_INSENSITIVE_ORDER)
+				)
+				.limit(maxComponents)
+				.toList();
+	}
+
+	private int metricInt(Integer value) {
+		return value == null ? 0 : value;
 	}
 	
 	@Transactional

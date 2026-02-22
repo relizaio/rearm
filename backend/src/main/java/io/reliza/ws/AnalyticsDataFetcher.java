@@ -6,7 +6,9 @@ package io.reliza.ws;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,6 +28,7 @@ import io.reliza.model.RelizaObject;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.dto.AnalyticsDtos.ActiveComponentsInput;
+import io.reliza.model.dto.AnalyticsDtos.MostVulnerableComponent;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerBranch;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerComponent;
 import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
@@ -41,6 +44,7 @@ import io.reliza.service.GetOrganizationService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.oss.OssAnalyticsMetricsService;
+import io.reliza.service.oss.OssPerspectiveService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -70,6 +74,9 @@ public class AnalyticsDataFetcher {
 
 	@Autowired
 	private GetOrganizationService getOrganizationService;
+
+	@Autowired
+	private OssPerspectiveService ossPerspectiveService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "mostActiveComponentsOverTime")
@@ -147,6 +154,32 @@ public class AnalyticsDataFetcher {
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
 		return analyticsMetricsService.getVulnViolationByOrgChartData(orgUuid, dateFrom, dateTo);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "mostVulnerableComponentsPerOrg")
+	public List<MostVulnerableComponent> mostVulnerableComponentsPerOrg(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("createdDate") ZonedDateTime createdDate,
+			@InputArgument("componentType") io.reliza.model.ComponentData.ComponentType componentType,
+			@InputArgument("maxComponents") Integer maxComponents,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		final Set<UUID> perspectiveComponentUuids;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+			perspectiveComponentUuids = null;
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).orElseThrow();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+			perspectiveComponentUuids = getComponentService.listComponentsByPerspective(perspectiveUuid).stream()
+					.map(ComponentData::getUuid)
+					.collect(Collectors.toSet());
+		}
+		return analyticsMetricsService.mostVulnerableComponentsPerOrg(orgUuid, createdDate, componentType, maxComponents, perspectiveComponentUuids);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

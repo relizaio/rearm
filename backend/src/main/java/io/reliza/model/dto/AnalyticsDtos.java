@@ -16,6 +16,9 @@ public class AnalyticsDtos {
 	
 	public static record ReleasesPerBranch(UUID componentuuid, String componentname, UUID branchuuid,
 			String branchname, ComponentType componenttype, Long rlzcount) {}
+
+	public static record MostVulnerableComponent(UUID componentuuid, String componentname,
+			ComponentType componenttype, ReleaseMetricsDto metrics) {}
 	
 	public static record ActiveComponentsInput(UUID organization, ZonedDateTime cutOffDate,
 			ComponentType componentType, Integer maxComponents) {}
