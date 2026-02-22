@@ -50,6 +50,7 @@ import io.reliza.model.UserData.OrgUserData;
 import io.reliza.model.UserGroupData;
 import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionDto;
+import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
@@ -234,10 +235,10 @@ public class UserService {
 		}
 		return u;
 	}
-	
+
 	@Transactional
-	public User setUserPermission(UUID userUuid, UUID orgUuid, PermissionScope scope, UUID permissionObject, 
-			PermissionType type, Collection<String> approvals, WhoUpdated wu) {
+	public User setUserPermission(UUID userUuid, UUID orgUuid, PermissionScope scope, UUID permissionObject,
+			PermissionType type, Collection<PermissionFunction> functions, Collection<String> approvals, WhoUpdated wu) {
 		User u = null;
 		// locate user in db
 		Optional<User> uOpt = getUser(userUuid);
@@ -257,7 +258,7 @@ public class UserService {
 				}
 			}
 			if (!skip) {
-				uData.setPermission(orgUuid, scope, permissionObject, type, approvals);
+				uData.setPermission(orgUuid, scope, permissionObject, type, functions, approvals);
 				// save user
 				Map<String,Object> recordData = Utils.dataToRecord(uData);
 				u = saveUser(u, recordData, wu);
@@ -837,14 +838,16 @@ public class UserService {
 					boolean isFirstUser = !repository.findAll().iterator().hasNext();
 					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.NONE;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
-					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
+					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, Set.of(), null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 					OrganizationData od = getOrganizationService.getOrganizationData(USER_ORG).get();
 					sendEmailToOrgAdminsOnUserJoined(od, email, pt);
 				} else if (InstallationType.DEMO == getInstallationType()) {
 					boolean isFirstUser = !repository.findAll().iterator().hasNext();
 					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.READ_ONLY;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
-					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
+					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt,
+							Set.of(PermissionFunction.FINDING_ANALYSIS_READ, PermissionFunction.ARTIFACT_DOWNLOAD),
+							null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 					OrganizationData od = getOrganizationService.getOrganizationData(USER_ORG).get();
 					sendEmailToOrgAdminsOnUserJoined(od, email, pt);
 				} else if (InstallationType.MANAGED_SERVICE == getInstallationType()) {
@@ -856,7 +859,7 @@ public class UserService {
 						throw new RelizaException("Your organization is not set, ask your administrator to set it");
 					} else {
 						u = createUser(name, email, true, List.of(defaultOrg), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
-						u = setUserPermission(u.getUuid(), defaultOrg, PermissionScope.ORGANIZATION, defaultOrg, PermissionType.NONE, null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
+						u = setUserPermission(u.getUuid(), defaultOrg, PermissionScope.ORGANIZATION, defaultOrg, PermissionType.NONE, Set.of(), null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 						OrganizationData od = getOrganizationService.getOrganizationData(defaultOrg).get();
 						sendEmailToOrgAdminsOnUserJoined(od, email, PermissionType.NONE);
 					}
