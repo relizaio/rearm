@@ -681,7 +681,7 @@ public class ComponentService {
 		// Find VCS repository within organization
 		Optional<VcsRepositoryData> vcsRepoData = vcsRepositoryService.getVcsRepositoryDataByUri(orgUuid, cleanVcsUri);
 		if (!vcsRepoData.isPresent()) {
-			log.error("VCS repository not found : vcsUri={}, orgUuid={}", vcsUri, orgUuid);
+			log.warn("VCS repository not found : vcsUri={}, orgUuid={}", vcsUri, orgUuid);
 			throw new RelizaException("VCS repository " + cleanVcsUri + " not found in this organization");
 		}
 		
