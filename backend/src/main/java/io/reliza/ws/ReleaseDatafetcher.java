@@ -1075,18 +1075,28 @@ public class ReleaseDatafetcher {
 		return releaseService.exportReleaseAsObom(releaseUuid).toString();
 	}
 	
-	// TODO: needs to support Perspective authz scope - PS - 2026-02-20
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "searchDigestVersion")
 	public SearchDigestVersionResponse searchDigestVersion(
 			@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("query") String query) {
+			@InputArgument("query") String query,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
 
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		final Set<UUID> perspectiveComponentUuids;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+			perspectiveComponentUuids = null;
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).orElseThrow();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+			perspectiveComponentUuids = getComponentService.listComponentsByPerspective(perspectiveUuid).stream()
+					.map(ComponentData::getUuid)
+					.collect(Collectors.toSet());
+		}
 		
 		List<ReleaseData> retList = new LinkedList<>();
 		
@@ -1141,6 +1151,11 @@ public class ReleaseDatafetcher {
 				retList.addAll(dedupBundles);
 			}
 		}
+		if (null != perspectiveComponentUuids) {
+			retList = retList.stream()
+					.filter(rd -> perspectiveComponentUuids.contains(rd.getComponent()))
+					.toList();
+		}
 		retList = new LinkedList<>(new LinkedHashSet<>(retList));
 		return new SearchDigestVersionResponse(retList);
 	}
@@ -1151,27 +1166,62 @@ public class ReleaseDatafetcher {
 			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("branchUuid") UUID branchUuid,
 			@InputArgument("tagKey") String tagKey,
-			@InputArgument("tagValue") String tagValue) {
+			@InputArgument("tagValue") String tagValue,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
-		
-		return releaseService.findReleasesByTags(orgUuid, branchUuid, tagKey, tagValue);
+		final Set<UUID> perspectiveComponentUuids;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+			perspectiveComponentUuids = null;
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).orElseThrow();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+			perspectiveComponentUuids = getComponentService.listComponentsByPerspective(perspectiveUuid).stream()
+					.map(ComponentData::getUuid)
+					.collect(Collectors.toSet());
+		}
+
+		List<ReleaseData> releases = releaseService.findReleasesByTags(orgUuid, branchUuid, tagKey, tagValue);
+		if (null != perspectiveComponentUuids) {
+			releases = releases.stream()
+					.filter(rd -> perspectiveComponentUuids.contains(rd.getComponent()))
+					.toList();
+		}
+		return releases;
 	}
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "releasesByDtrackProjects")
 	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByDtrackProjects(DgsDataFetchingEnvironment dfe,
 			@InputArgument("orgUuid") final UUID orgUuid,
-			@InputArgument("dtrackProjects") List<UUID> dtrackProjects) {
+			@InputArgument("dtrackProjects") List<UUID> dtrackProjects,
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
-		return sharedReleaseService.findReleaseDatasByDtrackProjects(dtrackProjects, orgUuid);
+		final Set<UUID> perspectiveComponentUuids;
+		if (null == perspectiveUuid) {
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+			perspectiveComponentUuids = null;
+		} else {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).orElseThrow();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
+			perspectiveComponentUuids = getComponentService.listComponentsByPerspective(perspectiveUuid).stream()
+					.map(ComponentData::getUuid)
+					.collect(Collectors.toSet());
+		}
+
+		List<CveSearchResultDto.ComponentWithBranches> ret = sharedReleaseService.findReleaseDatasByDtrackProjects(dtrackProjects, orgUuid);
+		if (null != perspectiveComponentUuids) {
+			ret = ret.stream()
+					.filter(cwb -> perspectiveComponentUuids.contains(cwb.uuid()))
+					.toList();
+		}
+		return ret;
 	}
 	
 	@PreAuthorize("isAuthenticated()")
@@ -1183,7 +1233,8 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ESSENTIAL_READ);
 		List<IntegrationService.SbomComponentSearchQuery> searchQueries = queries.stream()
 			.map(q -> new IntegrationService.SbomComponentSearchQuery(q.get("name"), q.get("version")))
 			.toList();

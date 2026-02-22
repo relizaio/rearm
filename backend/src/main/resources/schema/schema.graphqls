@@ -71,10 +71,10 @@ type Query {
 	organization(orgUuid: ID!): Organization
 	
 	healthCheck: String
-	searchDigestVersion(orgUuid: ID!, query: String!): SearchDigestVersionResponse
-	releasesByTags(orgUuid: ID!, branchUuid: ID, tagKey: String!, tagValue:String): [Release]
-	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID]): [ComponentWithBranches]
-	sbomComponentSearch(orgUuid: ID!, queries: [SbomComponentSearchInput!]!): [ComponentPurlToDtrack]
+	searchDigestVersion(orgUuid: ID!, query: String!, perspectiveUuid: ID): SearchDigestVersionResponse
+	releasesByTags(orgUuid: ID!, branchUuid: ID, tagKey: String!, tagValue:String, perspectiveUuid: ID): [Release]
+	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID], perspectiveUuid: ID): [ComponentWithBranches]
+	sbomComponentSearch(orgUuid: ID!, queries: [SbomComponentSearchInput!]!, perspectiveUuid: ID): [ComponentPurlToDtrack]
 	searchDtrackComponentByPurlAndProjects(orgUuid: ID!, purl: String!, dtrackProjects: [ID]!): ID
 	
 	getAllOrganizations: [Organization]
