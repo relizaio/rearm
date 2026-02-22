@@ -1268,7 +1268,10 @@ function resetCreateIntegrationObject() {
 
 const users: Ref<any[]> = ref([])
 async function loadUsers() {
-    users.value = await store.dispatch('fetchUsers', orgResolved.value)
+    const fetchedUsers = await store.dispatch('fetchUsers', orgResolved.value)
+    users.value = [...(fetchedUsers || [])].sort((a: any, b: any) =>
+        (a.email || '').localeCompare((b.email || ''), undefined, { sensitivity: 'base' })
+    )
     userEmailColumnReactive.sortOrder = 'ascend'
 }
 
@@ -1276,10 +1279,13 @@ async function loadUsers() {
 const showInactiveGroups = ref(false)
 const userGroups: Ref<any[]> = ref([])
 const filteredUserGroups = computed(() => {
-    if (showInactiveGroups.value) {
-        return userGroups.value
-    }
-    return userGroups.value.filter((g: any) => g.status === 'ACTIVE')
+    const groups = showInactiveGroups.value
+        ? userGroups.value
+        : userGroups.value.filter((g: any) => g.status === 'ACTIVE')
+
+    return [...groups].sort((a: any, b: any) =>
+        (a.name || '').localeCompare((b.name || ''), undefined, { sensitivity: 'base' })
+    )
 })
 const selectedUserGroup: Ref<any> = ref({})
 const restoreMode = ref(false)
