@@ -475,7 +475,7 @@
                     </div>
                 </n-gi>
                 <n-gi span="2"><n-divider /></n-gi>
-                <n-gi span="2">
+                <n-gi span="1">
                     <div>
                         <n-input-number style="display:inline-block; width:80px;" 
                             v-model:value="vulnerableComponentsInput.maxComponents" :min="1" />
@@ -1235,8 +1235,8 @@ async function fetchMostVulnerableComponents () {
     try {
         const response = await graphqlClient.query({
             query: gql`
-                query mostVulnerableComponentsPerOrg($orgUuid: ID!, $createdDate: DateTime!, $componentType: ComponentType!, $maxComponents: Int!) {
-                    mostVulnerableComponentsPerOrg(orgUuid: $orgUuid, createdDate: $createdDate, componentType: $componentType, maxComponents: $maxComponents) {
+                query mostVulnerableComponentsPerOrg($orgUuid: ID!, $createdDate: DateTime!, $componentType: ComponentType!, $maxComponents: Int!, $perspectiveUuid: ID) {
+                    mostVulnerableComponentsPerOrg(orgUuid: $orgUuid, createdDate: $createdDate, componentType: $componentType, maxComponents: $maxComponents, perspectiveUuid: $perspectiveUuid) {
                         componentuuid
                         componentname
                         metrics {
@@ -1305,7 +1305,8 @@ async function fetchMostVulnerableComponents () {
                 orgUuid: myorg.value.uuid,
                 createdDate: new Date().toISOString(),
                 componentType: vulnerableComponentsInput.value.componentType,
-                maxComponents: vulnerableComponentsInput.value.maxComponents
+                maxComponents: vulnerableComponentsInput.value.maxComponents,
+                ...(myperspective.value && myperspective.value !== 'default' ? { perspectiveUuid: myperspective.value } : {})
             },
             fetchPolicy: 'no-cache'
         })
