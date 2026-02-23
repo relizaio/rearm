@@ -190,7 +190,10 @@ const orgPartiallyResolvedFindings = computed(() =>
 )
 
 const orgInheritedTechnicalDebtFindings = computed(() => 
-    sortBySeverity(allFindings.value.filter(f => f.orgContext?.isInheritedInAllComponents))
+    sortBySeverity(allFindings.value.filter(f => f.orgContext && (
+        f.orgContext.isInheritedInAllComponents ||
+        (f.isStillPresent && !f.orgContext.isNewToOrganization && !f.orgContext.isPartiallyResolved && !f.orgContext.isFullyResolved)
+    )))
 )
 
 const orgFullyResolvedFindings = computed(() => 
@@ -356,12 +359,14 @@ function getStillPresentContextSegments(finding: NormalizedFinding): Attribution
 }
 
 function getInheritedDebtContextSegments(finding: NormalizedFinding): AttributionSegment[] {
-    if (finding.orgContext && finding.orgContext.isInheritedInAllComponents) {
+    if (finding.orgContext && finding.orgContext.componentCount > 0) {
         const presentAttrs = finding.presentIn
             .filter(p => finding.orgContext!.affectedComponentNames.includes(p.componentName))
-        const segments: AttributionSegment[] = [
-            { text: `Present in all ${finding.orgContext.componentCount} components since first release: ` }
-        ]
+        const totalComponents = finding.orgContext.componentCount
+        const prefix = finding.orgContext.isInheritedInAllComponents
+            ? `Present in all ${totalComponents} components since first release: `
+            : `Present in ${totalComponents} component${totalComponents > 1 ? 's' : ''} since first release: `
+        const segments: AttributionSegment[] = [{ text: prefix }]
         presentAttrs.forEach((p, i) => {
             if (i > 0) segments.push({ text: ', ' })
             segments.push({ text: `${p.componentName}@${p.releaseVersion}`, releaseUuid: p.releaseUuid })
