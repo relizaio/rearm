@@ -295,10 +295,28 @@ public class ArtifactService {
 		}
 		if(null == artifactDto.getType())
 			throw new RelizaException("Artifact must have type!");
+		validateCoverageTypeTags(artifactDto.getTags());
 		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto, a.getUuid());
 		Map<String,Object> recordData = Utils.dataToRecord(ad);
 		a = sharedArtifactService.saveArtifact(a, recordData, wu);
 		return a;
+	}
+
+	/**
+	 * Validates that any tags with key COVERAGE_TYPE have valid ArtifactCoverageType values.
+	 * @param tags list of tags to validate
+	 * @throws RelizaException if any COVERAGE_TYPE tag has an invalid value
+	 */
+	public void validateCoverageTypeTags(List<TagRecord> tags) throws RelizaException {
+		if (tags == null) return;
+		for (TagRecord tag : tags) {
+			if (CommonVariables.ARTIFACT_COVERAGE_TYPE_TAG_KEY.equals(tag.key())) {
+				if (CommonVariables.ArtifactCoverageType.get(tag.value()) == null) {
+					throw new RelizaException("Invalid artifact coverage type: " + tag.value() 
+						+ ". Valid values are: DEV, TEST, BUILD_TIME");
+				}
+			}
+		}
 	}
 
 	/**

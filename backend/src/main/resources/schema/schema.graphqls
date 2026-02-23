@@ -181,7 +181,7 @@ type Mutation {
 	addArtifactManual(artifactInput: CreateArtifactInput, artifactUuid: ID): Release
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
-	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType): String
+	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType]): String
 	releaseVdrExport(release: ID!, includeSuppressed: Boolean): String
 
 	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
@@ -2222,6 +2222,12 @@ enum DigestScope {
 	ORIGINAL_FILE
 	OCI_STORAGE
 	REARM
+}
+
+enum ArtifactCoverageType {
+	DEV
+	TEST
+	BUILD_TIME
 }
 
 enum ArtifactType {

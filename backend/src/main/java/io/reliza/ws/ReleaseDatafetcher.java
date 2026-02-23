@@ -222,7 +222,8 @@ public class ReleaseDatafetcher {
 			@InputArgument("ignoreDev") Boolean ignoreDev,
 			@InputArgument("structure") BomStructureType structure,
 			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
-			@InputArgument("mediaType") BomMediaType mediaType
+			@InputArgument("mediaType") BomMediaType mediaType,
+			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes
 			) throws RelizaException, JsonProcessingException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -242,7 +243,7 @@ public class ReleaseDatafetcher {
 			mediaType = BomMediaType.JSON;
 		}
 		log.debug("mediaType: {}", mediaType);
-		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu);
+		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

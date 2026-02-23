@@ -283,6 +283,25 @@ public class CommonVariables {
 	public static final String TAG_FIELD = "tag";
 	public static final String FILE_NAME_FIELD = "fileName";
 	public static final String DOWNLOADABLE_ARTIFACT = "downloadableArtifact";
+	public static final String ARTIFACT_COVERAGE_TYPE_TAG_KEY = "COVERAGE_TYPE";
+	
+	public enum ArtifactCoverageType {
+		DEV,
+		TEST,
+		BUILD_TIME;
+		
+		public static ArtifactCoverageType get(String typeString) {
+			ArtifactCoverageType retType = null;
+			for (ArtifactCoverageType ct : ArtifactCoverageType.values()) {
+				if (ct.toString().equalsIgnoreCase(typeString)) {
+					retType = ct;
+					break;
+				}
+			}
+			return retType;
+		}
+	}
+	
 	/*** Release Tags ***/
 	public static final String HELM_APP_VERSION = "HELM_APP_VERSION";
 	

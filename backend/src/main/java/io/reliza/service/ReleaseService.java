@@ -51,6 +51,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.AnalysisJustification;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.ArtifactData;
 import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
@@ -670,11 +671,11 @@ public class ReleaseService {
 		return getDeliverableService.getDeliverableDataList(deliverableUuids);
 	}
 
-	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu) throws RelizaException, JsonProcessingException{
+	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JsonProcessingException{
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElseThrow();
 		if (null == tldOnly) tldOnly = false;
 		final RebomOptions mergeOptions = new RebomOptions(belongsTo, tldOnly, ignoreDev, structure);
-		UUID releaseBomId = matchOrGenerateSingleBomForRelease(rd, mergeOptions, wu);
+		UUID releaseBomId = matchOrGenerateSingleBomForRelease(rd, mergeOptions, wu, excludeCoverageTypes);
 		if(null == releaseBomId){
 			throw new RelizaException("No SBOMs found!");
 		}
@@ -690,7 +691,14 @@ public class ReleaseService {
 		return mergedBom;
 	}
 	
-	private UUID generateComponentReleaseBomForConfig(ReleaseData rd, RebomOptions rebomMergeOptions, WhoUpdated wu) throws RelizaException{
+	private boolean isArtifactExcludedByCoverageType(ArtifactData ad, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
+		if (excludeCoverageTypes == null || excludeCoverageTypes.isEmpty() || ad.getTags() == null) return false;
+		Set<String> excludeValues = excludeCoverageTypes.stream().map(Enum::name).collect(Collectors.toSet());
+		return ad.getTags().stream()
+			.anyMatch(t -> CommonVariables.ARTIFACT_COVERAGE_TYPE_TAG_KEY.equals(t.key()) && excludeValues.contains(t.value()));
+	}
+
+	private UUID generateComponentReleaseBomForConfig(ReleaseData rd, RebomOptions rebomMergeOptions, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException{
 		UUID rebomId = null;
 		List<UUID> bomIds = new ArrayList<>();
 		final ArtifactBelongsTo typeFilter = rebomMergeOptions.belongsTo();
@@ -703,6 +711,7 @@ public class ReleaseService {
 				.flatMap(x -> x.stream())
 				.map(a -> artifactService.getArtifactData(a))
 				.filter(art -> art.isPresent() && null != art.get().getInternalBom())
+				.filter(art -> !isArtifactExcludedByCoverageType(art.get(), excludeCoverageTypes))
 				.map(a -> a.get().getInternalBom().id())
 				.distinct()
 				.toList()
@@ -716,6 +725,7 @@ public class ReleaseService {
 				.filter(scea -> rd.getComponent().equals(scea.componentUuid()))
 				.map(scea -> artifactService.getArtifactData(scea.artifactUuid()))
 				.filter(art -> art.isPresent() && null != art.get().getInternalBom())
+				.filter(art -> !isArtifactExcludedByCoverageType(art.get(), excludeCoverageTypes))
 				.map(a -> a.get().getInternalBom().id())
 				.distinct()
 				.toList();
@@ -726,6 +736,7 @@ public class ReleaseService {
 			List<UUID> releaseRebomIds  = null;
 			releaseRebomIds = rd.getArtifacts().stream().map(a -> artifactService.getArtifactData(a))
 			.filter(art -> art.isPresent() && null != art.get().getInternalBom())
+			.filter(art -> !isArtifactExcludedByCoverageType(art.get(), excludeCoverageTypes))
 			.map(a -> a.get().getInternalBom().id())
 			.distinct()
 			.toList();
@@ -756,16 +767,20 @@ public class ReleaseService {
 	
 	// TODO shouldn't be called as get as it may mutate data
 	// returns a single rebomId if present or recursively gather, merge and save as a single bom to return a single rebomId
-	private UUID matchOrGenerateSingleBomForRelease(ReleaseData rd, RebomOptions rebomMergeOptions, WhoUpdated wu) throws RelizaException {
-		return matchOrGenerateSingleBomForRelease(rd, rebomMergeOptions, false, null, wu);
+	private UUID matchOrGenerateSingleBomForRelease(ReleaseData rd, RebomOptions rebomMergeOptions, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException {
+		return matchOrGenerateSingleBomForRelease(rd, rebomMergeOptions, false, null, wu, excludeCoverageTypes);
 	}
 	private UUID matchOrGenerateSingleBomForRelease(ReleaseData rd, RebomOptions rebomMergeOptions, Boolean forced, UUID componentFilter, WhoUpdated wu) throws RelizaException {
+		return matchOrGenerateSingleBomForRelease(rd, rebomMergeOptions, forced, componentFilter, wu, null);
+	}
+	private UUID matchOrGenerateSingleBomForRelease(ReleaseData rd, RebomOptions rebomMergeOptions, Boolean forced, UUID componentFilter, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException {
 		// for component structure and 
 		UUID retRebomId = null;
+		boolean hasExcludeCoverageTypes = excludeCoverageTypes != null && !excludeCoverageTypes.isEmpty();
 		List<ReleaseBom> reboms = releaseRebomService.getReleaseBoms(rd);
 		// match with request
 		// log.info("rebomMergeOptions: {}",rebomMergeOptions);
-		ReleaseBom matchedBom = reboms.stream()
+		ReleaseBom matchedBom = hasExcludeCoverageTypes ? null : reboms.stream()
 			.filter(rb -> null != rb.rebomMergeOptions()
 			    && Objects.equals(rb.rebomMergeOptions().belongsTo(), rebomMergeOptions.belongsTo()) 
 			    && Objects.equals(rb.rebomMergeOptions().tldOnly(), rebomMergeOptions.tldOnly())
@@ -776,7 +791,7 @@ public class ReleaseService {
 		if(matchedBom == null || forced){
 			ComponentData pd = getComponentService.getComponentData(rd.getComponent()).get();
 			if(pd.getType().equals(ComponentType.COMPONENT)){
-				retRebomId = generateComponentReleaseBomForConfig(rd, rebomMergeOptions, wu);
+				retRebomId = generateComponentReleaseBomForConfig(rd, rebomMergeOptions, wu, excludeCoverageTypes);
 			} else {
 				// TODO:
 				// we don't need full unwind here, 
@@ -788,7 +803,7 @@ public class ReleaseService {
 				LinkedList<UUID> bomIds = morerds.stream().map(r -> {
 					try {
 						var forceComponent = forced && componentFilter != null ? r.getUuid().equals(componentFilter) : false;
-						return matchOrGenerateSingleBomForRelease(r, rebomMergeOptions, forceComponent, null, wu);
+						return matchOrGenerateSingleBomForRelease(r, rebomMergeOptions, forceComponent, null, wu, excludeCoverageTypes);
 					} catch (RelizaException e) {
 						log.error("error on getting release in matchOrGenerateSingleBomForRelease", e);
 						return new UUID(0,0);
