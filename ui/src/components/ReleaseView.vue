@@ -148,6 +148,41 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
                     </n-form-item>
+                    <n-form-item>
+                        <div style="width: 100%;">
+                            <div style="display: inline-flex; align-items: center;">
+                                <span style="display: inline-flex; align-items: center;">
+                                    Filter by Artifact Coverage Type:
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        When on, excludes entire artifacts tagged with specific coverage types (Dev, Test, Build Time) from the exported BOM.
+                                    </n-tooltip>
+                                </span>
+                                <n-switch style="margin-left: 5px;" v-model:value="filterCoverageType" :disabled="!hasCoverageTypeTaggedArtifacts"/>
+                            </div>
+                            <div v-if="!hasCoverageTypeTaggedArtifacts" style="color: #999; font-size: 12px; margin-top: 4px;">
+                                No artifacts with coverage type tags found on this release.
+                            </div>
+                            <div v-if="filterCoverageType && hasCoverageTypeTaggedArtifacts" style="margin-top: 8px; padding-left: 16px;">
+                                <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                                    <span style="width: 90px;">Exclude Dev:</span>
+                                    <n-switch v-model:value="excludeDev" size="small"/>
+                                </div>
+                                <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                                    <span style="width: 90px;">Exclude Test:</span>
+                                    <n-switch v-model:value="excludeTest" size="small"/>
+                                </div>
+                                <div style="display: flex; align-items: center;">
+                                    <span style="width: 90px;">Exclude Build:</span>
+                                    <n-switch v-model:value="excludeBuildTime" size="small"/>
+                                </div>
+                            </div>
+                        </div>
+                    </n-form-item>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
                             :disabled="bomExportPending"
@@ -1028,6 +1063,23 @@ const vdrIncludeSuppressed: Ref<boolean> = ref(false)
 const vdrExportFormat: Ref<string> = ref('JSON')
 const vdrPdfExportPending: Ref<boolean> = ref(false)
 const selectedBomStructureType: Ref<string> = ref('FLAT')
+const filterCoverageType: Ref<boolean> = ref(false)
+const excludeDev: Ref<boolean> = ref(true)
+const excludeTest: Ref<boolean> = ref(true)
+const excludeBuildTime: Ref<boolean> = ref(true)
+const hasCoverageTypeTaggedArtifacts: ComputedRef<boolean> = computed((): boolean => {
+    const hasDirect = artifacts.value.some((a: any) => a.tags && a.tags.some((t: any) => t.key === 'COVERAGE_TYPE'))
+    const hasUnderlying = underlyingReleaseArtifacts.value.some((a: any) => a.tags && a.tags.some((t: any) => t.key === 'COVERAGE_TYPE'))
+    return hasDirect || hasUnderlying
+})
+const computedExcludeCoverageTypes: ComputedRef<string[]> = computed((): string[] => {
+    if (!filterCoverageType.value) return []
+    const phases: string[] = []
+    if (excludeDev.value) phases.push('DEV')
+    if (excludeTest.value) phases.push('TEST')
+    if (excludeBuildTime.value) phases.push('BUILD_TIME')
+    return phases
+})
 const bomExportQuery: ComputedRef<string> = computed((): string => {
     let queryOptions = '?tldOnly=false'
     if(tldOnly.value){
@@ -2186,10 +2238,11 @@ async function uploadNewBomVersion (art: any) {
 async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selectedBomStructureType: string, selectedRebomType: string, mediaType: string) {
     try {
         bomExportPending.value = true
+        const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null
         const gqlResp: any = await graphqlClient.mutate({
             mutation: gql`
-                mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType) {
-                    releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType)
+                mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType]) {
+                    releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes)
                 }
             `,
             variables: {
@@ -2198,7 +2251,8 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
                 ignoreDev: ignoreDev,
                 structure: selectedBomStructureType,
                 belongsTo: selectedRebomType ? selectedRebomType : null,
-                mediaType: mediaType.toUpperCase()
+                mediaType: mediaType.toUpperCase(),
+                excludeCoverageTypes: excludeCoverageTypes
             },
             fetchPolicy: 'no-cache'
         })
@@ -2526,7 +2580,7 @@ const releaseHistoryFields = computed(() => [
                     else if (belongsToDisplay === 'DELIVERABLE') belongsToDisplay = 'Deliverable'
                     factContent.push(h('li', h('span', `Belongs To: ${belongsToDisplay}`)))
                 }
-                if (art.tags && art.tags.length) art.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
+                if (art.tags && art.tags.length) art.tags.filter((t: any) => t.key !== 'COVERAGE_TYPE').forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
                 if (art.displayIdentifier) factContent.push(h('li', `Display ID: ${art.displayIdentifier}`))
                 if (art.version) factContent.push(h('li', `Version: ${art.version}`))
                 if (art.digestRecords && art.digestRecords.length) art.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
@@ -2801,7 +2855,16 @@ const artifactsTableFields: DataTableColumns<any> = [
             } else if (row.type === 'BOM') {
                 content += ` - ${row.bomFormat}`
             }
-            return h('div', {}, content)
+            const els: any[] = [h('span', content)]
+            if (row.tags && row.tags.length) {
+                const coverageTypeTags = row.tags.filter((t: any) => t.key === 'COVERAGE_TYPE')
+                coverageTypeTags.forEach((t: any) => {
+                    const color = constants.ArtifactCoverageTypeColors[t.value] || '#999'
+                    const label = constants.ArtifactCoverageTypes.find((p: any) => p.value === t.value)?.label || t.value
+                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
+                })
+            }
+            return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
         }
     },
     {
@@ -2834,7 +2897,7 @@ const artifactsTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             const factContent: any[] = []
             factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
-            row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
+            row.tags.filter((t: any) => t.key !== 'COVERAGE_TYPE').forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
             if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
             if (row.version) factContent.push(h('li', `Version: ${row.version}`))
             if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
@@ -3004,7 +3067,16 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
             } else if (row.type === 'BOM') {
                 content += ` - ${row.bomFormat}`
             }
-            return h('div', {}, content)
+            const els: any[] = [h('span', content)]
+            if (row.tags && row.tags.length) {
+                const coverageTypeTags = row.tags.filter((t: any) => t.key === 'COVERAGE_TYPE')
+                coverageTypeTags.forEach((t: any) => {
+                    const color = constants.ArtifactCoverageTypeColors[t.value] || '#999'
+                    const label = constants.ArtifactCoverageTypes.find((p: any) => p.value === t.value)?.label || t.value
+                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
+                })
+            }
+            return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
         }
     },
     {
@@ -3037,7 +3109,7 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             const factContent: any[] = []
             factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
-            row.tags.forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
+            row.tags.filter((t: any) => t.key !== 'COVERAGE_TYPE').forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
             if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
             if (row.version) factContent.push(h('li', `Version: ${row.version}`))
             if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))

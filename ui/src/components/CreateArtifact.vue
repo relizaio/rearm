@@ -60,6 +60,14 @@
                         placeholder="Enter artifact version (Positive integer, optional, auto-generated otherwise)" />
             </n-form-item>
             <n-form-item
+                        label="Artifact Coverage Type">
+                <n-select
+                    v-model:value="selectedCoverageTypes"
+                    multiple
+                    :options="constants.ArtifactCoverageTypes"
+                    placeholder="Select coverage types (optional)" />
+            </n-form-item>
+            <n-form-item
                         label="Artifact Tags">
                 <n-dynamic-input
                     preset="pair"
@@ -138,6 +146,11 @@ const compuuid = ref('')
 const createArtifactForm = ref<FormInst | null>(null)
 
 const artifactTags: Ref<Tag[]> = ref([])
+const selectedCoverageTypes: Ref<string[]> = ref(
+    props.isUpdateExistingBom && props.updateArtifact?.tags
+        ? props.updateArtifact.tags.filter((t: Tag) => t.key === 'COVERAGE_TYPE').map((t: Tag) => t.value)
+        : []
+)
 
 type DigestRecord = {
     algo: string,
@@ -227,7 +240,8 @@ const onSubmit = async () => {
         artifact.value.bomFormat = null
     }
 
-    artifact.value.tags = artifactTags.value
+    const coverageTypeTags: Tag[] = selectedCoverageTypes.value.map((ct: string) => ({ key: 'COVERAGE_TYPE', value: ct }))
+    artifact.value.tags = [...coverageTypeTags, ...artifactTags.value]
     artifact.value.downloadLinks = downloadLinks.value
     artifact.value.file = fileList.value?.file?.file
     const createArtifactInput: any = {

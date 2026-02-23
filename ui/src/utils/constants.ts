@@ -141,6 +141,17 @@ const CONTENT_TYPES = [
 const PERMISSION_TYPES: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE']
 const PERMISSION_TYPES_WITH_ADMIN: string[] = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
 const PERMISSION_FUNCTIONS: string[] = ['FINDING_ANALYSIS_READ', 'FINDING_ANALYSIS_WRITE', 'ARTIFACT_DOWNLOAD']
+const ARTIFACT_COVERAGE_TYPES = [
+    {label: 'Dev', value: 'DEV'},
+    {label: 'Test', value: 'TEST'},
+    {label: 'Build Time', value: 'BUILD_TIME'}
+]
+
+const ARTIFACT_COVERAGE_TYPE_COLORS: Record<string, string> = {
+    DEV: '#2080f0',
+    TEST: '#18a058',
+    BUILD_TIME: '#f0a020'
+}
 
 const BATCH_MODE_HELP = {
     description: 'Batch mode allows you to search for multiple components at once.',
@@ -172,6 +183,8 @@ export default {
     TeaArtifactChecksumType,
     TeaArtifactChecksumTypes: TEA_ARTIFACT_CHECKSUM_TYPES,
     ContentTypes: CONTENT_TYPES,
+    ArtifactCoverageTypes: ARTIFACT_COVERAGE_TYPES,
+    ArtifactCoverageTypeColors: ARTIFACT_COVERAGE_TYPE_COLORS,
     BatchModeHelp: BATCH_MODE_HELP,
     VulnerabilityColors: VULNERABILITY_COLORS,
     ViolationColors: VIOLATION_COLORS,
