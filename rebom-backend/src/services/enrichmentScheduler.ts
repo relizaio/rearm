@@ -4,11 +4,13 @@ import { isEnrichmentConfigured, enrichBomAsync } from './bom/bomProcessingServi
 import { fetchFromOci } from './oci';
 import { EnrichmentStatus } from '../types';
 
-const SCHEDULER_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const SCHEDULER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const ENRICHMENT_BATCH_LIMIT = 50;
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 let isRunning = false;
+
+// TODO: implement retry counter and permanently failed status on bom enrichment 
 
 /**
  * Finds BOMs that need enrichment (status is null, FAILED, or SKIPPED).
