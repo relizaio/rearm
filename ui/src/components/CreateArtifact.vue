@@ -240,8 +240,13 @@ const onSubmit = async () => {
         artifact.value.bomFormat = null
     }
 
-    const coverageTypeTags: Tag[] = selectedCoverageTypes.value.map((ct: string) => ({ key: 'COVERAGE_TYPE', value: ct }))
-    artifact.value.tags = [...coverageTypeTags, ...artifactTags.value]
+    const manualCoverageValues = artifactTags.value
+        .filter((t: Tag) => t.key === 'COVERAGE_TYPE')
+        .map((t: Tag) => t.value)
+    const allCoverageValues = [...new Set([...selectedCoverageTypes.value, ...manualCoverageValues])]
+    const coverageTypeTags: Tag[] = allCoverageValues.map((ct: string) => ({ key: 'COVERAGE_TYPE', value: ct }))
+    const otherTags = artifactTags.value.filter((t: Tag) => t.key !== 'COVERAGE_TYPE')
+    artifact.value.tags = [...coverageTypeTags, ...otherTags]
     artifact.value.downloadLinks = downloadLinks.value
     artifact.value.file = fileList.value?.file?.file
     const createArtifactInput: any = {

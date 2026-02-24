@@ -2207,8 +2207,12 @@ async function uploadNewBomVersion (art: any) {
 
 
     }else {
-        const fileDigest = art.digestRecords.find((dr: any) => dr.scope === 'ORIGINAL_FILE').digest
-        questionText = `This Artifact has a file with digest \`${fileDigest}\` and version \`${art.version}\`. \nIf you upload a new file, the artifact reference will be switched to the file you are uploading.`
+        const fileDigestRecord = art.digestRecords?.find((dr: any) => dr.scope === 'ORIGINAL_FILE')
+        if (fileDigestRecord?.digest) {
+            questionText = `This Artifact has a file with digest \`${fileDigestRecord.digest}\` and version \`${art.version}\`. \nIf you upload a new file, the artifact reference will be switched to the file you are uploading.`
+        } else {
+            questionText = `This is an externally stored Artifact \`${art.displayIdentifier || art.uuid}\`. \nIf you upload a new file, the artifact will be replaced with the file you are uploading.`
+        }
     }
 
 
