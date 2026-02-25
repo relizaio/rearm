@@ -64,16 +64,16 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 5. Integration with [Dependency-Track](https://dependencytrack.org/) for analysis of vulnerabilities and policies, including license policy, while optimizing Dependency-Track performance via data deduplication
 6. Search for presence of dependencies in organization's software based on Dependency-Track data
 7. Integration with various CI systems (including GitHub Actions, Azure DevOps, Jenkins, GitLab CI and others) to produce BOMs and upload them with other release metadata to ReARM
-8. Release approval logic with triggers based on approvals and / or vulnerabilities or policy violations (Commercial Edition only)
+8. Release approval logic with triggers based on approvals and / or vulnerabilities or policy violations (ReARM Pro only)
 9. Marketing release workflow (Commercial Edition only)
 10. Component release-level alerts and changelog for changes in SBOM dependencies
 11. Finding audit (includes audit for vulnerabilities, weaknesses, policy violations)
+12. RBAC
 
 ## Future Capabilities (Medium-Term Roadmap)
 1. Improved VEX workflow
-2. Resource group authorization hierarchy 
-3. Better handling and prescribed workflows for Attestations
-4. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
+2. Better handling and prescribed workflows for Attestations
+3. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
 
 ## Releases
 ReARM follows [Trunk Based Development (TBD)](https://trunkbaseddevelopment.com/) methodology. This means that maintainers commit directly to the main branch where possible. Consumers should use releases marked as SHIPPED (or GENERAL_AVAILABILITY).
