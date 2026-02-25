@@ -44,8 +44,6 @@ spec:
           value: {{ .Values.rebom.backend.oci.enabled | quote }}
         - name: OCI_ARTIFACT_SERVICE_HOST
           value: {{ .Values.rebom.backend.oci.serviceHost }}
-        - name: OCIARTIFACTS_REGISTRY_HOST
-          value: {{ .Values.ociArtifactService.registryHost}}
         - name: OCIARTIFACTS_REGISTRY_NAMESPACE
           value: {{ .Values.rebom.backend.oci.registryNamespace }}
         {{- if .Values.rebom.backend.bearUri }}

@@ -73,7 +73,6 @@ relizaprops:
 #logging.level.org.hibernate.SQL=DEBUG
 #logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE
   ociArtifacts:
-    registry: ${RELIZAPROP_OCIARTIFACTS_REGISTRY_HOST:my.registry}
     namespace: ${RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE:mynamespace}
     serviceUrl: ${RELIZAPROP_OCIARTIFACTS_SERVICE_HOST:http://[::1]:8083/}
   enableDtrackCleanupScheduler: ${ENABLE_DTRACK_CLEANUP_SCHEDULER:false}

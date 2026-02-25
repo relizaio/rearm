@@ -46,7 +46,6 @@ public class SharedArtifactService {
 	@Autowired
     private AuditService auditService;
 
-    private final String registryHost;
     private final String url;
     private final WebClient webClient;
     private final String ociRepository;
@@ -56,12 +55,10 @@ public class SharedArtifactService {
 
     public SharedArtifactService(
     	ArtifactRepository repository,
-		@Value("${relizaprops.ociArtifacts.registry}") String registryHost,
 		@Value("${relizaprops.ociArtifacts.namespace}") String registryNamespace,
         @Value("${relizaprops.ociArtifacts.serviceUrl}") String url
 	) {
 		this.repository = repository;
-		this.registryHost = registryHost;
         this.url= url;
         this.ociRepository = registryNamespace + "/downloadable-artifacts";
 		// Configure WebClient with increased buffer size for large OCI artifacts
@@ -149,8 +146,7 @@ public class SharedArtifactService {
 		return this.webClient.get()
 					.uri(uriBuilder -> uriBuilder
 							.path("/pull")
-							.queryParam("registry", this.registryHost)
-							.queryParam("repo",this.ociRepository)
+									.queryParam("repo",this.ociRepository)
 							.queryParam("tag", "sha256:" + ociDigest)
 							.build()
 					)

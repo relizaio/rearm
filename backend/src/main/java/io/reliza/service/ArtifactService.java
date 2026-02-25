@@ -120,7 +120,6 @@ public class ArtifactService {
 	
 	private final ArtifactRepository repository;
 
-    private final String registryHost;
     private final String url;
     private final WebClient webClient;
     private final String ociRepository;
@@ -128,12 +127,10 @@ public class ArtifactService {
 
     public ArtifactService(
 		ArtifactRepository repository,
-		@Value("${relizaprops.ociArtifacts.registry}") String registryHost,
 		@Value("${relizaprops.ociArtifacts.namespace}") String registryNamespace,
         @Value("${relizaprops.ociArtifacts.serviceUrl}") String url
 	) {
 		this.repository = repository;
-		this.registryHost = registryHost;
         this.url= url;
         this.ociRepository = registryNamespace + "/downloadable-artifacts";
 		// Configure WebClient with increased buffer size for large OCI artifacts
@@ -486,7 +483,6 @@ public class ArtifactService {
 			}
 		}
 		
-		// artifactDto.setDisplayIdentifier(this.registryHost + "/" + this.ociRepository);
 		if(null!=artifactUploadResponse){
 			Set<DigestRecord> digestRecords = null != artifactDto.getDigestRecords() ? artifactDto.getDigestRecords() : new HashSet<>();
 			String ociDigest = artifactUploadResponse.getOciResponse().getDigest();
@@ -864,7 +860,6 @@ public class ArtifactService {
 		if(!tag.startsWith("rearm")){
 			tag = "rearm-" + tag;
 		}
-		formData.add("registry", this.registryHost);
         formData.add("repo", this.ociRepository);
         formData.add("file", file);
         formData.add("tag", tag);
