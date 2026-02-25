@@ -1,4 +1,4 @@
-FROM quay.io/keycloak/keycloak:26.5.2@sha256:fb31a59deb46f746f2aaa25adc5da39ceccac4fd22d36a519562b0bf02e8df20 AS builder
+FROM quay.io/keycloak/keycloak:26.5.4@sha256:ae8efb0d218d8921334b03a2dbee7069a0b868240691c50a3ffc9f42fabba8b4 AS builder
 
 ENV KC_HEALTH_ENABLED=true
 ENV KC_METRICS_ENABLED=true
@@ -7,7 +7,7 @@ ENV KC_DB=postgres
 
 RUN /opt/keycloak/bin/kc.sh build --health-enabled=true --metrics-enabled=true
 
-FROM quay.io/keycloak/keycloak:26.5.2@sha256:fb31a59deb46f746f2aaa25adc5da39ceccac4fd22d36a519562b0bf02e8df20 AS deliverable
+FROM quay.io/keycloak/keycloak:26.5.4@sha256:ae8efb0d218d8921334b03a2dbee7069a0b868240691c50a3ffc9f42fabba8b4 AS deliverable
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
