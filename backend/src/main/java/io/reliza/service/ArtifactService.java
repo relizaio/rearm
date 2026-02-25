@@ -303,6 +303,52 @@ public class ArtifactService {
 	}
 
 	/**
+	 * Updates user-defined (removable) tags on an artifact.
+	 * Non-removable (system) tags are preserved and cannot be modified.
+	 * @param artifactUuid UUID of the artifact to update
+	 * @param newTags list of new user-defined tags to set
+	 * @param wu who updated
+	 * @return updated Artifact
+	 * @throws RelizaException if artifact not found or validation fails
+	 */
+	@Transactional
+	public Artifact updateArtifactTags(UUID artifactUuid, List<TagRecord> newTags, WhoUpdated wu) throws RelizaException {
+		Optional<Artifact> oa = sharedArtifactService.getArtifact(artifactUuid);
+		if (oa.isEmpty()) {
+			throw new RelizaException("Artifact not found: " + artifactUuid);
+		}
+		Artifact a = oa.get();
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		
+		// Preserve non-removable (system) tags and collect their keys
+		List<TagRecord> preservedTags = new ArrayList<>();
+		Set<String> reservedKeys = new HashSet<>();
+		if (ad.getTags() != null) {
+			for (TagRecord tag : ad.getTags()) {
+				if (tag.removable() == Removable.NO) {
+					preservedTags.add(tag);
+					reservedKeys.add(tag.key());
+				}
+			}
+		}
+		
+		// Add new user-defined tags with Removable.YES, rejecting keys used by system tags
+		if (newTags != null) {
+			for (TagRecord tag : newTags) {
+				if (reservedKeys.contains(tag.key())) {
+					throw new RelizaException("Tag key '" + tag.key() + "' is reserved for system use and cannot be set by users");
+				}
+				preservedTags.add(new TagRecord(tag.key(), tag.value(), Removable.YES));
+			}
+		}
+		
+		validateCoverageTypeTags(preservedTags);
+		ad.setTags(preservedTags);
+		Map<String, Object> recordData = Utils.dataToRecord(ad);
+		return sharedArtifactService.saveArtifact(a, recordData, wu);
+	}
+
+	/**
 	 * Validates that any tags with key COVERAGE_TYPE have valid ArtifactCoverageType values.
 	 * @param tags list of tags to validate
 	 * @throws RelizaException if any COVERAGE_TYPE tag has an invalid value
@@ -548,11 +594,21 @@ public class ArtifactService {
 		
 		log.info("Starting BOM processing for artifact {}, format: {}", 
 			artifactDto.getUuid(), artifactDto.getBomFormat());
+
 		
 		// 2. Prepare for processing (format-specific validation/setup)
 		UUID existingSerialNumberForSpdx = null;
 		if(artifactDto.getBomFormat().equals(BomFormat.CYCLONEDX)){
 			validateCycloneDxUpdate(artifactDto, bomJson, existingAd);
+			// Extract lifecycle phases from CycloneDX metadata and add as document-declared tags
+			List<TagRecord> lifecycleTags = extractCycloneDxLifecycles(bomJson);
+			if (!lifecycleTags.isEmpty()) {
+				List<TagRecord> existingTags = artifactDto.getTags() != null ? new ArrayList<>(artifactDto.getTags()) : new ArrayList<>();
+				existingTags.addAll(lifecycleTags);
+				artifactDto.setTags(existingTags);
+				log.info("Extracted {} lifecycle phase(s) from CycloneDX metadata for artifact {}", 
+					lifecycleTags.size(), artifactDto.getUuid());
+			}
 		} else if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
 			existingSerialNumberForSpdx = prepareSpdxUpdate(existingAd);
 		}
@@ -664,6 +720,34 @@ public class ArtifactService {
 		} catch (Exception e) {
 			throw new RelizaException("Error parsing BOM serialNumber: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Extracts lifecycle phases from CycloneDX metadata.lifecycles.
+	 * Supports both standard phases (phase field) and custom phases (name field).
+	 * Returns a list of TagRecords with LIFECYCLE_DECLARED key and Removable.NO.
+	 * @param bomJson the parsed CycloneDX BOM JSON
+	 * @return list of lifecycle declared tags (may be empty)
+	 */
+	private List<TagRecord> extractCycloneDxLifecycles(JsonNode bomJson) {
+		List<TagRecord> lifecycleTags = new ArrayList<>();
+		JsonNode metadata = bomJson.get("metadata");
+		if (metadata == null) return lifecycleTags;
+		JsonNode lifecycles = metadata.get("lifecycles");
+		if (lifecycles == null || !lifecycles.isArray()) return lifecycleTags;
+		for (JsonNode lc : lifecycles) {
+			String phase = null;
+			if (lc.has("phase") && !lc.get("phase").isNull()) {
+				phase = lc.get("phase").asText();
+			} else if (lc.has("name") && !lc.get("name").isNull()) {
+				phase = lc.get("name").asText();
+			}
+			if (StringUtils.isNotEmpty(phase)) {
+				lifecycleTags.add(new TagRecord(
+					CommonVariables.ARTIFACT_LIFECYCLE_DECLARED_TAG_KEY, phase, Removable.NO));
+			}
+		}
+		return lifecycleTags;
 	}
 
 	/**

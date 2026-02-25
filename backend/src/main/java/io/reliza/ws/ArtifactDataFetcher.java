@@ -6,6 +6,7 @@ package io.reliza.ws;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -15,11 +16,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.transaction.annotation.Transactional;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
@@ -28,6 +31,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.dto.SyncDtrackStatusResponseDto;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.WhoUpdated;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
@@ -281,6 +285,38 @@ public class ArtifactDataFetcher {
 		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ro), CallType.WRITE);
 
 		return artifactService.fetchDependencyTrackDataForArtifact(oa.get());
+	}
+
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "updateArtifactTags")
+	public ArtifactData updateArtifactTags(
+			@InputArgument("artifact") UUID artifactUuid,
+			DgsDataFetchingEnvironment dfe) {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
+		if (oad.isEmpty()) {
+			throw new RuntimeException("Artifact not found: " + artifactUuid);
+		}
+		ArtifactData ad = oad.get();
+		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, ad.getOrg());
+		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ad), CallType.WRITE);
+		
+		List<Map<String, Object>> tagsInput = dfe.getArgument("tags");
+		List<TagRecord> newTags = tagsInput.stream()
+			.map(t -> new TagRecord((String) t.get("key"), (String) t.get("value")))
+			.collect(Collectors.toList());
+		
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		try {
+			artifactService.updateArtifactTags(artifactUuid, newTags, wu);
+		} catch (RelizaException e) {
+			log.error("Exception on updateArtifactTags", e);
+			throw new RuntimeException(e.getMessage());
+		}
+		return artifactService.getArtifactData(artifactUuid).get();
 	}
 
 }

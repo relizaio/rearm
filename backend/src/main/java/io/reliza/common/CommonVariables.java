@@ -284,6 +284,8 @@ public class CommonVariables {
 	public static final String FILE_NAME_FIELD = "fileName";
 	public static final String DOWNLOADABLE_ARTIFACT = "downloadableArtifact";
 	public static final String ARTIFACT_COVERAGE_TYPE_TAG_KEY = "COVERAGE_TYPE";
+	public static final String ARTIFACT_LIFECYCLE_DECLARED_TAG_KEY = "LIFECYCLE_DECLARED";
+	public static final String ARTIFACT_LIFECYCLE_TAG_KEY = "LIFECYCLE";
 	
 	public enum ArtifactCoverageType {
 		DEV,
@@ -539,6 +541,11 @@ public class CommonVariables {
 	}
 	
 	public record TagRecord (String key, String value, Removable removable) {
+		public TagRecord(String key, String value, Removable removable){
+			this.key = key;
+			this.value = value;
+			this.removable = (removable != null) ? removable : Removable.YES;
+		}
 		public TagRecord(String key, String value){
 			this(key, value, Removable.YES);
 		}

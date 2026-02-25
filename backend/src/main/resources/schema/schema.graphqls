@@ -178,6 +178,7 @@ type Mutation {
 	# Analytics
 	computeAnalyticsMetricsForDate(orgUuid: ID!, date: String!): DependencyTrackMetrics
 	
+	updateArtifactTags(artifact: ID!, tags: [TagRecordInput]!): Artifact
 	addArtifactManual(artifactInput: CreateArtifactInput, artifactUuid: ID): Release
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
