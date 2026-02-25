@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getAllSlugs } from "@/lib/posts";
+import { getAllSlugs, getAllNewsSlugs } from "@/lib/posts";
 import fs from "fs";
 import path from "path";
 
@@ -22,6 +22,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: `${baseUrl}/blog/`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    },
+    {
+      url: `${baseUrl}/news/`,
       lastModified: now,
       changeFrequency: "weekly",
       priority: 0.7,
@@ -60,5 +66,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     };
   });
 
-  return [...staticRoutes, ...blogRoutes];
+  const newsSlugs = getAllNewsSlugs();
+  const newsRoutes: MetadataRoute.Sitemap = newsSlugs.map((slug) => ({
+    url: `${baseUrl}/news/${slug}/`,
+    changeFrequency: "monthly",
+    priority: 0.6,
+  }));
+
+  return [...staticRoutes, ...blogRoutes, ...newsRoutes];
 }

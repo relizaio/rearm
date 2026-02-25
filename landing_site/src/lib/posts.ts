@@ -14,19 +14,21 @@ export type Post = PostFrontmatter & {
 };
 
 const postsDir = path.join(process.cwd(), "src", "content", "posts");
+const newsDir = path.join(process.cwd(), "src", "content", "news");
 
-export function getAllPosts(): Post[] {
-  if (!fs.existsSync(postsDir)) return [];
-  const files = fs.readdirSync(postsDir).filter((f) => f.endsWith(".md"));
+function readPostsFromDir(dir: string): Post[] {
+  if (!fs.existsSync(dir)) return [];
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
   const posts = files.map((file) => {
     const slug = file.replace(/\.md$/, "");
-    const fullPath = path.join(postsDir, file);
+    const fullPath = path.join(dir, file);
     const raw = fs.readFileSync(fullPath, "utf8");
     const { data, content } = matter(raw);
     return {
       slug,
       title: (data?.title as string) || slug,
       date: (data?.date as string) || "",
+      ogImage: (data?.ogImage as string) || undefined,
       content,
     };
   });
@@ -34,8 +36,16 @@ export function getAllPosts(): Post[] {
   return posts;
 }
 
-export function getPostBySlug(slug: string): Post | undefined {
-  const file = path.join(postsDir, `${slug}.md`);
+function getSlugsFromDir(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => f.replace(/\.md$/, ""));
+}
+
+function getPostFromDir(dir: string, slug: string): Post | undefined {
+  const file = path.join(dir, `${slug}.md`);
   if (!fs.existsSync(file)) return undefined;
   const raw = fs.readFileSync(file, "utf8");
   const { data, content } = matter(raw);
@@ -48,10 +58,28 @@ export function getPostBySlug(slug: string): Post | undefined {
   };
 }
 
+// Blog
+export function getAllPosts(): Post[] {
+  return readPostsFromDir(postsDir);
+}
+
+export function getPostBySlug(slug: string): Post | undefined {
+  return getPostFromDir(postsDir, slug);
+}
+
 export function getAllSlugs(): string[] {
-  if (!fs.existsSync(postsDir)) return [];
-  return fs
-    .readdirSync(postsDir)
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => f.replace(/\.md$/, ""));
+  return getSlugsFromDir(postsDir);
+}
+
+// News
+export function getAllNews(): Post[] {
+  return readPostsFromDir(newsDir);
+}
+
+export function getNewsBySlug(slug: string): Post | undefined {
+  return getPostFromDir(newsDir, slug);
+}
+
+export function getAllNewsSlugs(): string[] {
+  return getSlugsFromDir(newsDir);
 }

@@ -19,6 +19,9 @@ export default function Header() {
                 <Link className="nav-link fs-6 link-inactive" href="/blog">Blog</Link>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
+                <Link className="nav-link fs-6 link-inactive" href="/news">News</Link>
+              </li>
+              <li className="nav-item d-flex align-items-center p-3">
                 <a className="nav-link fs-6" href="https://docs.rearmhq.com" target="_blank" style={{ textDecoration: "none" }}>Documentation</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
