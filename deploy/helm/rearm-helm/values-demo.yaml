@@ -14,5 +14,4 @@ rebom:
     oci:
       enabled: true
       serviceHost: http://rearm-oci-artifact
-      registryHost: registry.test.relizahub.com
       registryNamespace: 14ee0338-b211-4b7e-8800-2393f1a9ae96-private

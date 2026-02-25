@@ -23,7 +23,6 @@ As discussed above, you need to have credentials ready for OCI storage. With tha
 
 1. core.env
 ```
-RELIZAPROP_OCIARTIFACTS_REGISTRY_HOST="registry.relizahub.com"
 RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE="430fcdde-d7bc-4542-ad5b-4f534f4942f0-private"
 ```
 
@@ -36,7 +35,6 @@ REGISTRY_TOKEN="mypassword"
 
 3. rebom.env
 ```
-OCIARTIFACTS_REGISTRY_HOST="https://registry.relizahub.com"
 OCIARTIFACTS_REGISTRY_NAMESPACE="430fcdde-d7bc-4542-ad5b-4f534f4942f0-private"
 ```
 

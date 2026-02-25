@@ -13,8 +13,6 @@ services:
      - KEYCLOAK_SET_URI=http://keycloak:9080
      - RELIZAPROP_REBOM_URI=http://rebom-backend:4000/
      - RELIZAPROP_OCIARTIFACTS_SERVICE_HOST=oci-artifact-service
-     # - RELIZAPROP_OCIARTIFACTS_REGISTRY_HOST=registry.relizahub.com
-     # - RELIZAPROP_OCIARTIFACTS_REGISTRY_NAMESPACE=430fcdde-d7bc-4542-ad5b-4f534f4942f0-private
      - MAX_UPLOAD_SIZE=50MB
     depends_on:
      - rearm-postgresql
@@ -124,8 +122,6 @@ services:
      - POSTGRES_HOST=rebom-postgresql
      - POSTGRES_PORT=5432
      - POSTGRES_PASSWORD=relizaPass
-    # - OCIARTIFACTS_REGISTRY_HOST=https://registry.relizahub.com
-    # - OCIARTIFACTS_REGISTRY_NAMESPACE=430fcdde-d7bc-4542-ad5b-4f534f4942f0-private
      - OCI_STORAGE_ENABLED=true
      - OCI_ARTIFACT_SERVICE_HOST=http://oci-artifact-service:8083
     depends_on:
