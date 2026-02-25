@@ -153,6 +153,26 @@ const ARTIFACT_COVERAGE_TYPE_COLORS: Record<string, string> = {
     BUILD_TIME: '#f0a020'
 }
 
+const ARTIFACT_LIFECYCLE_TYPES = [
+    {label: 'Design', value: 'DESIGN'},
+    {label: 'Source', value: 'SOURCE'},
+    {label: 'Build', value: 'BUILD'},
+    {label: 'Analyzed', value: 'ANALYZED'},
+    {label: 'Deployed', value: 'DEPLOYED'},
+    {label: 'Runtime', value: 'RUNTIME'},
+    {label: 'Test', value: 'TEST'}
+]
+
+const ARTIFACT_LIFECYCLE_TYPE_COLORS: Record<string, string> = {
+    DESIGN: '#8b5cf6',
+    SOURCE: '#6366f1',
+    BUILD: '#3b82f6',
+    ANALYZED: '#06b6d4',
+    DEPLOYED: '#10b981',
+    RUNTIME: '#f59e0b',
+    TEST: '#ef4444'
+}
+
 const BATCH_MODE_HELP = {
     description: 'Batch mode allows you to search for multiple components at once.',
     formatInfo: 'Accepts plain text (one package per line, optionally with version separated by tab) or JSON array format.',
@@ -185,6 +205,8 @@ export default {
     ContentTypes: CONTENT_TYPES,
     ArtifactCoverageTypes: ARTIFACT_COVERAGE_TYPES,
     ArtifactCoverageTypeColors: ARTIFACT_COVERAGE_TYPE_COLORS,
+    ArtifactLifecycleTypes: ARTIFACT_LIFECYCLE_TYPES,
+    ArtifactLifecycleTypeColors: ARTIFACT_LIFECYCLE_TYPE_COLORS,
     BatchModeHelp: BATCH_MODE_HELP,
     VulnerabilityColors: VULNERABILITY_COLORS,
     ViolationColors: VIOLATION_COLORS,

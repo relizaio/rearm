@@ -697,6 +697,24 @@
                 </n-space>
             </n-form>
         </n-modal>
+        <n-modal
+            v-model:show="showEditArtifactTagsModal"
+            title="Edit Artifact Tags"
+            preset="dialog"
+            style="width: 60%;"
+            :show-icon="false">
+            <div v-if="editingArtifactTags">
+                <p style="margin-bottom: 8px; color: #999;">System tags are read-only. User-defined tags can be added or removed.</p>
+                <n-data-table :columns="artifactTagsFields" :data="groupedArtifactTags" class="table-hover" style="margin-bottom: 12px;" />
+                <n-form v-if="isWritable">
+                    <n-input-group>
+                        <n-input v-model:value="newArtifactTagKey" placeholder="Enter tag key" style="width: 40%;" />
+                        <n-input v-model:value="newArtifactTagValue" placeholder="Enter tag value" />
+                        <n-button @click="addArtifactTag">Add Tag</n-button>
+                    </n-input-group>
+                </n-form>
+            </div>
+        </n-modal>
             </div>
     </div>
 
@@ -720,7 +738,7 @@ import graphqlClient from '../utils/graphql'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { CirclePlus, ClipboardCheck, Copy, Download, Edit, GitCompare, Link, Trash, Refresh } from '@vicons/tabler'
+import { CirclePlus, ClipboardCheck, Copy, Download, Edit, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
@@ -790,7 +808,7 @@ async function loadAcollections() {
                                 bomFormat
                                 displayIdentifier
                                 version
-                                tags { key value }
+                                tags { key value removable }
                                 digestRecords { algo digest scope }
                                 downloadLinks { uri content }
                                 notes
@@ -1606,7 +1624,7 @@ async function fetchArtifactVersionHistory(artifactUuid: string) {
             uuid
             version
             createdDate
-            tags { key value }
+            tags { key value removable }
           }
         }
       `,
@@ -2535,6 +2553,146 @@ const releaseTagsFields: any[] = [
     }
 ]
 
+// Artifact Tags editing
+const showEditArtifactTagsModal: Ref<boolean> = ref(false)
+const editingArtifactTags: Ref<any> = ref(null)
+const newArtifactTagKey: Ref<string> = ref('')
+const newArtifactTagValue: Ref<string> = ref('')
+
+function isTagRemovable (tag: any): boolean {
+    return tag.removable !== 'NO'
+}
+
+const LIFECYCLE_DECLARED_KEY = 'LIFECYCLE_DECLARED'
+const LIFECYCLE_KEY = 'LIFECYCLE'
+
+const groupedArtifactTags = computed(() => {
+    if (!editingArtifactTags.value || !editingArtifactTags.value.tags) return []
+    const grouped: Record<string, { key: string, values: { value: string, removable: boolean }[], removable: boolean }> = {}
+    for (const t of editingArtifactTags.value.tags) {
+        const rem = isTagRemovable(t)
+        if (!grouped[t.key]) {
+            grouped[t.key] = { key: t.key, values: [], removable: rem }
+        }
+        grouped[t.key].values.push({ value: t.value, removable: rem })
+        if (rem) grouped[t.key].removable = true
+    }
+    return Object.values(grouped)
+})
+
+const artifactTagsFields: any[] = [
+    {
+        key: 'key',
+        title: 'Key',
+        render(row: any) {
+            const label = row.key === LIFECYCLE_DECLARED_KEY ? 'Lifecycle (from document)' :
+                          row.key === LIFECYCLE_KEY ? 'Lifecycle (user)' : row.key
+            return label
+        }
+    },
+    {
+        key: 'values',
+        title: 'Values',
+        render(row: any) {
+            const chips = row.values.map((v: any) => {
+                const children: any[] = [h('span', v.value)]
+                if (v.removable && isWritable.value) {
+                    children.push(h(NIcon, {
+                        title: 'Remove this value',
+                        class: 'icons clickable',
+                        size: 16,
+                        style: 'margin-left: 4px; vertical-align: middle;',
+                        onClick: () => deleteArtifactTagValue(row.key, v.value)
+                    }, () => h(Trash)))
+                }
+                return h('span', { style: 'display: inline-flex; align-items: center; margin-right: 8px;' }, children)
+            })
+            return h('div', { style: 'display: flex; flex-wrap: wrap; gap: 4px;' }, chips)
+        }
+    }
+]
+
+function openEditArtifactTagsModal (artifact: any) {
+    editingArtifactTags.value = JSON.parse(JSON.stringify(artifact))
+    newArtifactTagKey.value = ''
+    newArtifactTagValue.value = ''
+    showEditArtifactTagsModal.value = true
+}
+
+function findArtifactInRelease (artifactUuid: string): any | null {
+    if (!updatedRelease.value) return null
+    const allDetails = [
+        ...(updatedRelease.value.artifactDetails || []),
+        ...(updatedRelease.value.sourceCodeEntryDetails?.artifactDetails || []),
+        ...(updatedRelease.value.variantDetails || []).flatMap((vd: any) =>
+            (vd.outboundDeliverableDetails || []).flatMap((odd: any) => odd.artifactDetails || [])
+        )
+    ]
+    return allDetails.find((a: any) => a.uuid === artifactUuid) || null
+}
+
+function resyncEditingArtifact () {
+    if (!editingArtifactTags.value) return
+    const fresh = findArtifactInRelease(editingArtifactTags.value.uuid)
+    if (fresh) {
+        editingArtifactTags.value = JSON.parse(JSON.stringify(fresh))
+    }
+}
+
+function getRemovableTags (): any[] {
+    if (!editingArtifactTags.value) return []
+    return editingArtifactTags.value.tags.filter((t: any) => isTagRemovable(t))
+}
+
+async function deleteArtifactTagValue (key: string, value: string) {
+    if (!editingArtifactTags.value) return
+    const remaining = getRemovableTags().filter((t: any) => !(t.key === key && t.value === value))
+    try {
+        await store.dispatch('updateArtifactTags', {
+            artifactUuid: editingArtifactTags.value.uuid,
+            tags: remaining
+        })
+        await fetchRelease()
+        resyncEditingArtifact()
+        notify('success', 'Saved', 'Tag value removed.')
+    } catch (err: any) {
+        notify('error', 'Failed', err.message || 'Failed to remove tag value')
+    }
+}
+
+async function addArtifactTag () {
+    if (!editingArtifactTags.value || !newArtifactTagKey.value || !newArtifactTagValue.value) return
+    const reservedKeys = new Set(
+        (editingArtifactTags.value.tags || [])
+            .filter((t: any) => t.removable === 'NO')
+            .map((t: any) => t.key)
+    )
+    if (reservedKeys.has(newArtifactTagKey.value)) {
+        notify('error', 'Failed', `Tag key '${newArtifactTagKey.value}' is reserved for system use and cannot be set manually.`)
+        return
+    }
+    const existing = getRemovableTags()
+    const duplicate = existing.find((t: any) => t.key === newArtifactTagKey.value && t.value === newArtifactTagValue.value)
+    if (duplicate) {
+        notify('error', 'Failed', 'This key-value pair already exists on the artifact')
+        return
+    }
+    const updatedTags = [...existing, { key: newArtifactTagKey.value, value: newArtifactTagValue.value }]
+    try {
+        await store.dispatch('updateArtifactTags', {
+            artifactUuid: editingArtifactTags.value.uuid,
+            tags: updatedTags
+        })
+        newArtifactTagKey.value = ''
+        newArtifactTagValue.value = ''
+        await fetchRelease()
+        resyncEditingArtifact()
+        notify('success', 'Saved', 'Tag added.')
+    } catch (err: any) {
+        notify('error', 'Failed', err.message || 'Failed to add tag')
+    }
+}
+
 const releaseHistoryFields = computed(() => [
     {
         key: 'date',
@@ -2867,6 +3025,16 @@ const artifactsTableFields: DataTableColumns<any> = [
                     const label = constants.ArtifactCoverageTypes.find((p: any) => p.value === t.value)?.label || t.value
                     els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
                 })
+                row.tags.filter((t: any) => t.key === 'LIFECYCLE_DECLARED').forEach((t: any) => {
+                    const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
+                    const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
+                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => `${lcLabel} (doc)`))
+                })
+                row.tags.filter((t: any) => t.key === 'LIFECYCLE').forEach((t: any) => {
+                    const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#8b5cf6'
+                    const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
+                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel))
+                })
             }
             return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
         }
@@ -2996,6 +3164,17 @@ const artifactsTableFields: DataTableColumns<any> = [
                 }, () => h(Edit))
             els.push(uploadEl)
 
+            if (isWritable.value) {
+                const editTagsEl = h(NIcon,
+                    {
+                        title: 'Edit Artifact Tags',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => openEditArtifactTagsModal(row)
+                    }, () => h(Tag))
+                els.push(editTagsEl)
+            }
+
             if (row.metrics && row.metrics.dependencyTrackFullUri) {
                 const dtrackElIcon = h(NIcon,
                     {
@@ -3078,6 +3257,16 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
                     const color = constants.ArtifactCoverageTypeColors[t.value] || '#999'
                     const label = constants.ArtifactCoverageTypes.find((p: any) => p.value === t.value)?.label || t.value
                     els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
+                })
+                row.tags.filter((t: any) => t.key === 'LIFECYCLE_DECLARED').forEach((t: any) => {
+                    const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
+                    const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
+                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => `${lcLabel} (doc)`))
+                })
+                row.tags.filter((t: any) => t.key === 'LIFECYCLE').forEach((t: any) => {
+                    const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#8b5cf6'
+                    const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
+                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel))
                 })
             }
             return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
@@ -3197,6 +3386,17 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
                         onClick: () => openDownloadArtifactModal(row)
                     }, () => h(Download))
                 els.push(downloadEl)
+            }
+
+            if (isWritable.value) {
+                const editTagsEl = h(NIcon,
+                    {
+                        title: 'Edit Artifact Tags',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => openEditArtifactTagsModal(row)
+                    }, () => h(Tag))
+                els.push(editTagsEl)
             }
 
             if (row.metrics && row.metrics.dependencyTrackFullUri) {

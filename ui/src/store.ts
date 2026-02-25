@@ -1333,6 +1333,20 @@ const storeObject : any = {
             }
             return data.data.updateReleaseTagsMeta
         },
+        async updateArtifactTags (context: any, payload: any) {
+            const tags = (payload.tags || []).map((x: any) => ({key: x.key, value: x.value}))
+            const data = await graphqlClient.mutate({
+                mutation: graphqlQueries.UpdateArtifactTagsGqlMutate,
+                variables: {
+                    'artifact': payload.artifactUuid,
+                    'tags': tags
+                }
+            })
+            if(data.errors){
+                throw new Error(data.errors[0]?.message || 'Failed to update artifact tags')
+            }
+            return data.data.updateArtifactTags
+        },
         async updateReleaseLifecycle (context: any, release: any) {
             const data = await graphqlClient.mutate({
                 mutation: gql`

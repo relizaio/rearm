@@ -163,6 +163,7 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
     tags{
         key
         value
+        removable
     }
     metrics {
         dependencyTrackFullUri
@@ -222,6 +223,7 @@ const ARTIFACT_DETAIL_DATA = `
     tags{
         key
         value
+        removable
     }
     metrics {
         dependencyTrackFullUri
@@ -540,6 +542,7 @@ const MULTI_RELEASE_GQL_DATA = `
         tags {
             key
             value
+            removable
         }
     }
     status
@@ -796,6 +799,18 @@ mutation updateReleaseTagsMeta($rel: ReleaseInput!) {
     }
 }`
 
+const UPDATE_ARTIFACT_TAGS_GQL_MUTATE = gql`
+mutation updateArtifactTags($artifact: ID!, $tags: [TagRecordInput]!) {
+    updateArtifactTags(artifact: $artifact, tags: $tags) {
+        uuid
+        tags {
+            key
+            value
+            removable
+        }
+    }
+}`
+
 const APPROVE_RELEASE_GQL_MUTATE = gql`
 mutation approveReleaseManual($release: ID!, $approvals: [ReleaseApprovalInput!]) {
     approveReleaseManual(release:$release, approvals: $approvals) {
@@ -915,6 +930,7 @@ export default {
     ComponentMutate: COMPONENT_MUTATE,
     ReleaseGqlMutate: RELEASE_GQL_MUTATE,
     ReleaseTagsMetaGqlMutate: RELEASE_TAGS_META_GQL_MUTATE,
+    UpdateArtifactTagsGqlMutate: UPDATE_ARTIFACT_TAGS_GQL_MUTATE,
     ApproveReleaseGqlMutate: APPROVE_RELEASE_GQL_MUTATE,
     ComponentShortData: COMPONENT_SHORT_DATA,
     MarketingRelease: MARKETING_RELEASE_GQL_DATA,

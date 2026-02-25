@@ -68,6 +68,16 @@
                     placeholder="Select coverage types (optional)" />
             </n-form-item>
             <n-form-item
+                        label="Artifact Lifecycle">
+                <n-select
+                    v-model:value="selectedLifecycleTypes"
+                    multiple
+                    filterable
+                    tag
+                    :options="constants.ArtifactLifecycleTypes"
+                    placeholder="Select lifecycle phases or type custom (optional)" />
+            </n-form-item>
+            <n-form-item
                         label="Artifact Tags">
                 <n-dynamic-input
                     preset="pair"
@@ -149,6 +159,11 @@ const artifactTags: Ref<Tag[]> = ref([])
 const selectedCoverageTypes: Ref<string[]> = ref(
     props.isUpdateExistingBom && props.updateArtifact?.tags
         ? props.updateArtifact.tags.filter((t: Tag) => t.key === 'COVERAGE_TYPE').map((t: Tag) => t.value)
+        : []
+)
+const selectedLifecycleTypes: Ref<string[]> = ref(
+    props.isUpdateExistingBom && props.updateArtifact?.tags
+        ? props.updateArtifact.tags.filter((t: Tag) => t.key === 'LIFECYCLE').map((t: Tag) => t.value)
         : []
 )
 
@@ -245,8 +260,13 @@ const onSubmit = async () => {
         .map((t: Tag) => t.value)
     const allCoverageValues = [...new Set([...selectedCoverageTypes.value, ...manualCoverageValues])]
     const coverageTypeTags: Tag[] = allCoverageValues.map((ct: string) => ({ key: 'COVERAGE_TYPE', value: ct }))
-    const otherTags = artifactTags.value.filter((t: Tag) => t.key !== 'COVERAGE_TYPE')
-    artifact.value.tags = [...coverageTypeTags, ...otherTags]
+    const manualLifecycleValues = artifactTags.value
+        .filter((t: Tag) => t.key === 'LIFECYCLE')
+        .map((t: Tag) => t.value)
+    const allLifecycleValues = [...new Set([...selectedLifecycleTypes.value, ...manualLifecycleValues])]
+    const lifecycleTags: Tag[] = allLifecycleValues.map((lc: string) => ({ key: 'LIFECYCLE', value: lc }))
+    const otherTags = artifactTags.value.filter((t: Tag) => t.key !== 'COVERAGE_TYPE' && t.key !== 'LIFECYCLE')
+    artifact.value.tags = [...coverageTypeTags, ...lifecycleTags, ...otherTags]
     artifact.value.downloadLinks = downloadLinks.value
     artifact.value.file = fileList.value?.file?.file
     const createArtifactInput: any = {
@@ -393,6 +413,8 @@ const onReset = function () {
         version: null,
         type:null,
     }
+    selectedCoverageTypes.value = []
+    selectedLifecycleTypes.value = []
 }
 
 
