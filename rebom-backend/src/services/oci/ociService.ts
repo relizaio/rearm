@@ -6,7 +6,6 @@ const client = axios.create({
     baseURL: process.env.OCI_ARTIFACT_SERVICE_HOST ? process.env.OCI_ARTIFACT_SERVICE_HOST : `http://[::1]:8083/`,
   });
 
-const registryHost = process.env.OCIARTIFACTS_REGISTRY_HOST 
 const repository = process.env.OCIARTIFACTS_REGISTRY_NAMESPACE + '/rebom-artifacts'
 
 export async function fetchFromOci(tag: string): Promise<Object>{
@@ -22,7 +21,6 @@ export async function fetchFromOci(tag: string): Promise<Object>{
     try {
         const resp: AxiosResponse = await client.get('/pull', { 
             params: {
-                registry: registryHost,
                 repo: repository,
                 tag: tag
             },
@@ -70,7 +68,6 @@ export async function pushToOci(tag: string, bom: any): Promise<OASResponse>{
     }
     let resp: OASResponse = {}
     const formData = new FormData();
-    formData.append('registry', registryHost)
     formData.append('repo', repository)
     formData.append('tag', tag)
     const jsonBuffer = Buffer.from(JSON.stringify(bom));
