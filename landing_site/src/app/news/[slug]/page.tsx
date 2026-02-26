@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
   const { slug } = resolved as { slug: string };
   const post = getNewsBySlug(slug);
   const title = post ? `${post.title} - ReARM by Reliza` : "News - ReARM by Reliza";
-  const description = post ? getDescription(post.content) : "News update on ReARM by Reliza.";
+  const description = post ? getDescription(post.content) : "News update on ReARM by Reliza";
   const url = `${baseUrl}/news/${slug}/`;
   const ogImageUrl = post?.ogImage ? `/blog_images/${post.ogImage}` : "/rearm.png";
   return {

@@ -5,11 +5,11 @@ const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com").repl
 
 export const metadata = {
   title: "ReARM News",
-  description: "News and updates about ReARM, SBOM/xBOM, TEA, and supply chain security.",
+  description: "News and updates about ReARM - Release-Level Supply Chain Evidence Platform",
   alternates: { canonical: `${baseUrl}/news/` },
   openGraph: {
     title: "ReARM News",
-    description: "News and updates about ReARM, SBOM/xBOM, TEA, and supply chain security.",
+    description: "News and updates about ReARM - Release-Level Supply Chain Evidence Platform",
     url: `${baseUrl}/news/`,
     type: "website",
     siteName: "ReARM - Release-Level Supply Chain Evidence Platform by Reliza",
