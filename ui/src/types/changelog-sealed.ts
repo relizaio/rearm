@@ -104,6 +104,8 @@ export interface NoneReleaseChanges {
 export interface NoneBranchChanges {
     branchUuid: string
     branchName: string
+    componentUuid?: string
+    componentName?: string
     releases: NoneReleaseChanges[]
 }
 
@@ -121,6 +123,8 @@ export interface CommitsByType {
 export interface AggregatedBranchChanges {
     branchUuid: string
     branchName: string
+    componentUuid?: string
+    componentName?: string
     commitsByType: CommitsByType[]
 }
 

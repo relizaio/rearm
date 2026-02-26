@@ -60,10 +60,11 @@ function buildCodeTable(changelog: any, aggregationType: string): { headers: str
 
     if (aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog') {
         for (const branch of branches) {
+            const branchLabel = branch.componentName ? `${branch.componentName} / ${branch.branchName || ''}` : (branch.branchName || '')
             for (const release of (branch.releases || [])) {
                 for (const commit of (release.commits || [])) {
                     rows.push({ cells: [
-                        { text: branch.branchName || '' },
+                        { text: branchLabel },
                         { text: release.version || '' },
                         { text: commit.changeType || '' },
                         { text: commit.message || '' },
@@ -74,10 +75,11 @@ function buildCodeTable(changelog: any, aggregationType: string): { headers: str
         }
     } else if (aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog') {
         for (const branch of branches) {
+            const branchLabel = branch.componentName ? `${branch.componentName} / ${branch.branchName || ''}` : (branch.branchName || '')
             for (const group of (branch.commitsByType || [])) {
                 for (const commit of (group.commits || [])) {
                     rows.push({ cells: [
-                        { text: branch.branchName || '' },
+                        { text: branchLabel },
                         { text: '' },
                         { text: group.changeType || '' },
                         { text: commit.message || '' },
@@ -107,12 +109,13 @@ function buildSbomNoneTable(changelog: any): { headers: string[]; rows: PdfRow[]
 
     // Component-level: branches > releases > sbomChanges
     for (const branch of (changelog.branches || [])) {
+        const branchLabel = branch.componentName ? `${branch.componentName} / ${branch.branchName || ''}` : (branch.branchName || '')
         for (const release of (branch.releases || [])) {
             const sbom = release.sbomChanges
             if (!sbom) continue
             for (const art of (sbom.addedArtifacts || [])) {
                 rows.push({ cells: [
-                    { text: branch.branchName || '' },
+                    { text: branchLabel },
                     { text: release.version || '' },
                     { text: 'Added', color: '#18a058' },
                     { text: art.purl || '' },
@@ -122,7 +125,7 @@ function buildSbomNoneTable(changelog: any): { headers: string[]; rows: PdfRow[]
             }
             for (const art of (sbom.removedArtifacts || [])) {
                 rows.push({ cells: [
-                    { text: branch.branchName || '' },
+                    { text: branchLabel },
                     { text: release.version || '' },
                     { text: 'Removed', color: '#d03050' },
                     { text: art.purl || '' },
@@ -215,10 +218,11 @@ function buildFindingNoneTable(changelog: any): { headers: string[]; rows: PdfRo
 
     // Component-level
     for (const branch of (changelog.branches || [])) {
+        const branchLabel = branch.componentName ? `${branch.componentName} / ${branch.branchName || ''}` : (branch.branchName || '')
         for (const release of (branch.releases || [])) {
             const fc = release.findingChanges
             if (!fc) continue
-            addNoneFindingRows(rows, branch.branchName, release.version, fc)
+            addNoneFindingRows(rows, branchLabel, release.version, fc)
         }
     }
 

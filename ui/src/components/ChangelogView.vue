@@ -94,7 +94,14 @@
                 <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                     <p v-if="isDateBased && displayBranches.length > 1" style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
                     <div v-for="branch in displayBranches" :key="branch.branchUuid">
-                        <h3 v-if="showBranchHeadings">{{ branch.branchName }}</h3>
+                        <h3 v-if="showBranchHeadings && branch.componentName && branch.componentUuid">
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid }}">{{ branch.componentName }}</router-link>
+                            <span> / </span>
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                        </h3>
+                        <h3 v-else-if="showBranchHeadings">
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                        </h3>
                         <CodeChangesDisplay 
                             v-if="!isProduct || (branch.commitsByType && branch.commitsByType.length > 0)"
                             :changes="branch.commitsByType" 
@@ -106,7 +113,14 @@
                 <!-- NONE aggregation: per-release view -->
                 <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
                     <div v-for="branch in displayBranches" :key="branch.branchUuid">
-                        <h3 v-if="showBranchHeadings">{{ branch.branchName }}</h3>
+                        <h3 v-if="showBranchHeadings && branch.componentName && branch.componentUuid">
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid }}">{{ branch.componentName }}</router-link>
+                            <span> / </span>
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                        </h3>
+                        <h3 v-else-if="showBranchHeadings">
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                        </h3>
                         <div v-for="release in branch.releases" :key="release.releaseUuid">
                             <ReleaseHeader 
                                 :uuid="release.releaseUuid"
@@ -131,7 +145,14 @@
                 <!-- NONE mode: Show per-release SBOM changes -->
                 <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
                     <div v-for="branch in displayBranches" :key="branch.branchUuid">
-                        <h3 v-if="showBranchHeadings">{{ branch.branchName }}</h3>
+                        <h3 v-if="showBranchHeadings && branch.componentName && branch.componentUuid">
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid }}">{{ branch.componentName }}</router-link>
+                            <span> / </span>
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                        </h3>
+                        <h3 v-else-if="showBranchHeadings">
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                        </h3>
                         <div v-for="release in branch.releases" :key="release.releaseUuid">
                             <ReleaseHeader
                                 :uuid="release.releaseUuid"
@@ -158,7 +179,14 @@
                 <!-- NONE mode: Show per-release Finding changes -->
                 <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog'">
                     <div v-for="branch in displayBranches" :key="branch.branchUuid">
-                        <h3 v-if="showBranchHeadings">{{ branch.branchName }}</h3>
+                        <h3 v-if="showBranchHeadings && branch.componentName && branch.componentUuid">
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid }}">{{ branch.componentName }}</router-link>
+                            <span> / </span>
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                        </h3>
+                        <h3 v-else-if="showBranchHeadings">
+                            <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                        </h3>
                         <div v-for="release in branch.releases" :key="release.releaseUuid">
                             <ReleaseHeader
                                 :uuid="release.releaseUuid"
