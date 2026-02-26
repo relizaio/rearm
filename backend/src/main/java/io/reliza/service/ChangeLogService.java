@@ -575,6 +575,8 @@ public class ChangeLogService {
 				branchChangesList.add(new NoneBranchChanges(
 					branchId,
 					branchName,
+					ctx.component().getUuid(),
+					ctx.component().getName(),
 					releaseChangesList
 				));
 			}
@@ -726,7 +728,7 @@ public class ChangeLogService {
 		
 		// 1. Compute CODE changes (aggregated by type)
 		List<AggregatedBranchChanges> branchChanges = computeAggregatedCodeChanges(
-			ctx.releasesByBranch(), ctx.branchNameMap(), ctx.org(), ctx.vcsRepoDataList());
+			ctx.releasesByBranch(), ctx.branchNameMap(), ctx.org(), ctx.vcsRepoDataList(), ctx.component());
 		
 		// 2. Compute component-level SBOM changes with accurate per-release attribution
 		SbomChangesWithAttribution sbomChanges = computeComponentSbomChanges(
@@ -756,7 +758,8 @@ public class ChangeLogService {
 			LinkedHashMap<UUID, List<ReleaseData>> releasesByBranch,
 			Map<UUID, String> branchNameMap,
 			UUID org,
-			List<VcsRepositoryData> vcsRepoDataList) {
+			List<VcsRepositoryData> vcsRepoDataList,
+			ComponentData component) {
 		List<AggregatedBranchChanges> branchChangesList = new ArrayList<>();
 		
 		for (Map.Entry<UUID, List<ReleaseData>> branchEntry : releasesByBranch.entrySet()) {
@@ -787,6 +790,8 @@ public class ChangeLogService {
 				branchChangesList.add(new AggregatedBranchChanges(
 					branchId,
 					branchName,
+					component.getUuid(),
+					component.getName(),
 					commitsByType
 				));
 			}

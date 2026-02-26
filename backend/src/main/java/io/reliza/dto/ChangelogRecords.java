@@ -109,6 +109,8 @@ public final class ChangelogRecords {
 	public record NoneBranchChanges(
 		UUID branchUuid,
 		String branchName,
+		UUID componentUuid,
+		String componentName,
 		List<NoneReleaseChanges> releases
 	) {}
 	
@@ -118,6 +120,8 @@ public final class ChangelogRecords {
 	public record AggregatedBranchChanges(
 		UUID branchUuid,
 		String branchName,
+		UUID componentUuid,
+		String componentName,
 		List<CommitsByType> commitsByType
 	) {}
 	

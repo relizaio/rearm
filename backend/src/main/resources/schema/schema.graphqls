@@ -504,12 +504,16 @@ type ReleaseInfo {
 type NoneBranchChanges {
 	branchUuid: ID!
 	branchName: String!
+	componentUuid: ID
+	componentName: String
 	releases: [NoneReleaseChanges!]!
 }
 
 type AggregatedBranchChanges {
 	branchUuid: ID!
 	branchName: String!
+	componentUuid: ID
+	componentName: String
 	commitsByType: [CommitsByType!]!
 }
 
