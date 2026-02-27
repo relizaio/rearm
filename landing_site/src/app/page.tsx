@@ -88,6 +88,8 @@ export default function Home() {
           <div className="d-flex justify-content-center integrationsFlexWrap">
             {[
               { file: "investottawa.png", url: "https://www.investottawa.ca/", title: "Invest Ottawa" },
+              { file: "tmu.png", url: "https://cybersecurecatalyst.ca", title: "Rogers Cybersecure Catalyst" },
+              { file: "catalyst.png", url: "https://cybersecurecatalyst.ca", title: "Rogers Cybersecure Catalyst" },
               { file: "kdm.png", url: "https://kdmanalytics.com", title: "KDM Analytics" },
               { file: "iq.png", url: "https://www.iqinnovationhub.com", title: "IQ Innovation Hub" },
               { file: "wysdom.png", url: "https://wysdom.ai", title: "Wysdom.AI" },
