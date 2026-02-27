@@ -361,7 +361,11 @@ public class IntegrationService {
 							.subscribe(
 								successValue -> {},
 								error -> {
-									log.error(error.getMessage());
+									if (error instanceof WebClientResponseException wcre) {
+										log.error("Teams webhook error: status={}, body={}", wcre.getStatusCode(), wcre.getResponseBodyAsString());
+									} else {
+										log.error("Teams webhook error: {}", error.getMessage(), error);
+									}
 								}
 							);
 					} catch (Exception e) {
