@@ -106,17 +106,6 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
       jsonObj.bomFormat = 'CycloneDX';
     }
     
-    // Fix dependencies structure - ensure dependsOn is always an array
-    if (jsonObj.dependencies && Array.isArray(jsonObj.dependencies)) {
-      jsonObj.dependencies = jsonObj.dependencies.map((dep: any) => {
-        if (dep.dependsOn && !Array.isArray(dep.dependsOn)) {
-          // Convert non-array dependsOn to array
-          dep.dependsOn = dep.dependsOn ? [dep.dependsOn] : [];
-        }
-        return dep;
-      });
-    }
-    
     // Fix metadata structure for CycloneDX 1.6+
     if (!jsonObj.metadata) {
       jsonObj.metadata = {};
@@ -133,6 +122,9 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     }
     
     const processedBom = await processBomObj(jsonObj)
+    if (!processedBom) {
+      throw new Error('BOM processing failed - processBomObj returned null')
+    }
     await validateBom(processedBom)
     
     // Attach rebom tool to the merged BOM (idempotent - won't duplicate if already present)
@@ -163,53 +155,43 @@ async function processBomObj(bom: any): Promise<any> {
     'git+https://github': 'ssh://git@github',
   })
 
-  // Fix dependencies structure BEFORE validation - ensure dependsOn is always an array and deduplicate
+  // NOTE: rearm-cli 26.01.12+ bomutils merge-boms now handles dependency deduplication.
+  // This is lightweight defensive validation for BOMs from other sources or legacy versions.
+  
+  // Ensure dependsOn is always an array (defensive validation)
   if (processedBom.dependencies && Array.isArray(processedBom.dependencies)) {
     let fixedCount = 0;
-    let dedupCount = 0;
-    processedBom.dependencies = processedBom.dependencies.map((dep: any) => {
-      if ('dependsOn' in dep) {
-        if (!Array.isArray(dep.dependsOn)) {
+    processedBom.dependencies = processedBom.dependencies
+      .filter((dep: any) => {
+        if (!dep.ref) {
+          logger.warn({ dep }, "Dependency missing ref field, skipping");
+          return false;
+        }
+        return true;
+      })
+      .map((dep: any) => {
+        if ('dependsOn' in dep && !Array.isArray(dep.dependsOn)) {
           fixedCount++;
           logger.debug({ ref: dep.ref, dependsOn: dep.dependsOn, type: typeof dep.dependsOn }, "Fixing non-array dependsOn");
           // Convert any non-array value to an array
-          if (dep.dependsOn === null || dep.dependsOn === undefined || dep.dependsOn === '') {
+          if (dep.dependsOn == null || dep.dependsOn === '') {
             return { ...dep, dependsOn: [] };
           } else {
             return { ...dep, dependsOn: [dep.dependsOn] };
           }
         }
-        // Deduplicate dependsOn array items
-        if (Array.isArray(dep.dependsOn)) {
-          const uniqueDependsOn = [...new Set(dep.dependsOn)];
-          if (uniqueDependsOn.length !== dep.dependsOn.length) {
-            dedupCount++;
-            logger.debug({ ref: dep.ref, original: dep.dependsOn.length, deduped: uniqueDependsOn.length }, "Deduplicating dependsOn array");
-          }
-          return { ...dep, dependsOn: uniqueDependsOn };
-        }
-      }
-      return dep;
-    });
+        return dep;
+      });
+    
     if (fixedCount > 0) {
       logger.info(`Fixed ${fixedCount} dependencies with non-array dependsOn`);
     }
-    if (dedupCount > 0) {
-      logger.info(`Deduplicated ${dedupCount} dependencies with duplicate dependsOn items`);
-    }
   }
 
-  let proceed: boolean = await validateBom(processedBom)
-
-  if (proceed)
-    processedBom = deduplicateBom(processedBom)
-
-  proceed = await validateBom(processedBom)
-
-  if (!proceed) {
-    return null
-  }
-
+  await validateBom(processedBom)
+  processedBom = deduplicateBom(processedBom)
+  await validateBom(processedBom)
+  
   return processedBom
 }
 
@@ -260,21 +242,29 @@ function deduplicateBom(bom: any): any {
   }
   outBom.components = out_components
   if ('dependencies' in bom) {
-    // Fix dependencies structure - ensure dependsOn is always an array and deduplicate items
-    outBom.dependencies = bom.dependencies.map((dep: any) => {
-      if (dep.dependsOn && !Array.isArray(dep.dependsOn)) {
-        return { ...dep, dependsOn: [dep.dependsOn] };
-      }
-      // Deduplicate dependsOn array items
-      if (dep.dependsOn && Array.isArray(dep.dependsOn)) {
-        const uniqueDependsOn = [...new Set(dep.dependsOn)];
-        if (uniqueDependsOn.length !== dep.dependsOn.length) {
-          logger.debug({ ref: dep.ref, original: dep.dependsOn.length, deduped: uniqueDependsOn.length }, "Deduplicating dependsOn array");
+    // NOTE: rearm-cli 26.01.12+ bomutils merge-boms now handles dependency deduplication.
+    // This is lightweight defensive validation for BOMs from other sources or legacy versions.
+    
+    // Filter out dependencies without ref and ensure dependsOn is always an array
+    outBom.dependencies = bom.dependencies
+      .filter((dep: any) => {
+        if (!dep.ref) {
+          logger.warn({ dep }, "Dependency missing ref field, skipping");
+          return false;
         }
-        return { ...dep, dependsOn: uniqueDependsOn };
-      }
-      return dep;
-    });
+        return true;
+      })
+      .map((dep: any) => {
+        if ('dependsOn' in dep && !Array.isArray(dep.dependsOn)) {
+          // Convert non-array dependsOn to array
+          if (dep.dependsOn == null || dep.dependsOn === '') {
+            return { ...dep, dependsOn: [] };
+          } else {
+            return { ...dep, dependsOn: [dep.dependsOn] };
+          }
+        }
+        return dep;
+      });
   }
 
   logger.info(`Dedup BOM ${bom.serialNumber} - reduced json from ${Object.keys(bom).length} to ${Object.keys(outBom).length}`)
