@@ -244,8 +244,8 @@ async function createSecret() {
         ptSecret: window.btoa(secretToCreate.value?.ptSecret ?? '')
     }
 
-    await graphqlClient.query({
-        query: gql`
+    await graphqlClient.mutate({
+        mutation: gql`
             mutation createSecret($secret: SecretInput!) {
                 createSecret(secret: $secret) {
                     uuid
