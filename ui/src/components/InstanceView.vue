@@ -970,8 +970,9 @@ const save = async function () {
 }
 
 const loadInstanceHistory = async function () {
-    const axiosResp = await axios.get('/v1/instance/history/' + instanceUuid)
-    history.value = axiosResp.data
+    // TODO: instance history
+    // const axiosResp = await axios.get('/v1/instance/history/' + instanceUuid)
+    // history.value = axiosResp.data
 }
 
 const setIntegrateType = async function (prl: any, t: string) {
