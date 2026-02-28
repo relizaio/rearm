@@ -262,7 +262,7 @@ const createInstanceFromDto =  async function (instanceProps: any) {
     try{
         const data = await graphqlClient.mutate({
             mutation: gql`
-                mutation createInstanceFromDto($inst: CreateInstanceInput) {
+                mutation createInstanceFromDto($inst: CreateInstanceInput!) {
                     createInstanceFromDto(instance: $inst) {
                         uuid
                         uri

@@ -678,9 +678,10 @@ const searchInstanceChanges = async function () {
         changeType = changeType.replace('Target Release', 'TARGET_RELEASE')
     }
     history.value = []
-    const axiosResp = await axios.get('/api/manual/v1/instance/historyByDate/' + instanceUuid + '/' + cleanedSearchObj.dateFrom
-            + '/' + cleanedSearchObj.dateTo + '/' + changeType)
-    history.value = axiosResp.data
+    // TODO: history
+    // const axiosResp = await axios.get('/api/manual/v1/instance/historyByDate/' + instanceUuid + '/' + cleanedSearchObj.dateFrom
+    //         + '/' + cleanedSearchObj.dateTo + '/' + changeType)
+    // history.value = axiosResp.data
 }
 
 const notify = async function (type: NotificationType, title: string, content: string) {
