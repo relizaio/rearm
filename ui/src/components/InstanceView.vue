@@ -397,7 +397,6 @@ if (route.params.orguuid) {
 
 const updatedInstance: Ref<any> = ref({})
 const history: Ref<any[]> = ref([])
-const mapping: Ref<any> = ref({})
 const envs: Ref<any[]> = ref([])
 const releaseForComparison = ref('')
 const namespaceForComparison = ref('default')
@@ -794,19 +793,17 @@ const parseDeployedReleases = function (releases: any) {
     releases.forEach((rl: any, index: number) => {
         if (!selectedNamespace.value || selectedNamespace.value === 'ALL' ||
             selectedNamespace.value === rl.namespace) {
-            let rlzId = rl.release
-            if (mapping.value[rl.release]) rlzId = mapping.value[rl.release]
-            let deployedRl = store.getters.releaseById(rlzId)
+            let deployedRl = rl.releaseDetails
             if (deployedRl) {
-                let deployedArt
-                if (deployedRl.artifactDetails && deployedRl.artifactDetails.length) {
-                    let artArr = deployedRl.artifactDetails.filter((ad: any) => (ad.uuid === rl.artifact))
-                    if (artArr && artArr.length) deployedArt = artArr[0]
+                let deployedDel
+                if (deployedRl.deliverableDetails && deployedRl.deliverableDetails.length) {
+                    let delArr = deployedRl.deliverableDetails.filter((ad: any) => (ad.uuid === rl.deliverable))
+                    if (delArr && delArr.length) deployedDel = delArr[0]
                 }
                 let dRlObj = {
                     originalReleaseId: rl.release,
                     release: deployedRl,
-                    artifact: deployedArt,
+                    deliverable: deployedDel,
                     type: rl.type,
                     component: deployedRl.componentDetails.name,
                     componentUuid: deployedRl.componentDetails.uuid,
@@ -814,11 +811,11 @@ const parseDeployedReleases = function (releases: any) {
                     index: index,
                     namespace: rl.namespace,
                     state: rl.state,
-                    branch: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails.name : undefined,
-                    branchUuid: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails.uuid : undefined
+                    branch: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails?.name : undefined,
+                    branchUuid: (deployedRl.type !== 'PLACEHOLDER') ? deployedRl.branchDetails?.uuid : undefined
                 }
-                if (!dRlObj.artifact) {
-                    dRlObj.artifact = 'Not Set'
+                if (!dRlObj.deliverable) {
+                    dRlObj.deliverable = 'Not Set'
                 }
                 deployedRls.push(dRlObj)
             }
@@ -1051,15 +1048,6 @@ const onCreate = async function () {
     if( instanceUuid === undefined || instanceUuid === null || instanceUuid === '')
         return
     await fetchInstance()
-    
-    // combine releases and target releases
-    const releasesToFetch = updatedInstance.value.releases.concat(updatedInstance.value.targetReleases)
-    const fetchRlzParams = {
-        org: updatedInstance.value.org,
-        releases: releasesToFetch.map((rl: any) => rl.release)
-    }
-    const rlzWithMapping = await store.dispatch('fetchReleasesByOrgUuids', fetchRlzParams)
-    mapping.value = rlzWithMapping.mapping
 
     graphqlClient.query({
         query: graphqlQueries.EnvironmentTypesGql,
@@ -1382,8 +1370,8 @@ const targetReleaseFeilds: any[] = [
         render: (row: any) => row.namespace
     },
     {
-        key: 'artifact',
-        title: 'Artifact',
+        key: 'deliverable',
+        title: 'Deliverable',
         render: (row: any) => {
             let commit
             if (row.release.sourceCodeEntryDetails) {
@@ -1432,8 +1420,8 @@ const targetReleaseFeilds: any[] = [
                 trigger: () => tooltipTrigger,
                 default: () => tooltipDefault
             }))
-            if(row.artifact !== 'Not Set'){
-                const artSha = row.artifact.identifier + (row.artifact.digests.length ?  '@' + row.artifact.digests[0] : '')
+            if(row.deliverable && row.deliverable !== 'Not Set'){
+                const artSha = row.deliverable.identifier + (row.deliverable.digests.length ?  '@' + row.deliverable.digests[0] : '')
                 els.push(h(NTooltip, {
                     trigger: 'hover'
                 }, {
@@ -1526,8 +1514,8 @@ const deployedReleaseFeilds: any[] = [
         render: (row: any) => row.state
     },
     {
-        key: 'artifact',
-        title: 'Artifact',
+        key: 'deliverable',
+        title: 'Deliverable',
         render: (row: any) => {
             let els = []
             if (row.release.sourceCodeEntryDetails) {
@@ -1551,8 +1539,8 @@ const deployedReleaseFeilds: any[] = [
                         })
                     ))
             }
-            if(row.artifact !== 'Not Set'){
-                const artSha = row.artifact.identifier + (row.artifact.digestRecords.length ?  '@' + row.artifact.digestRecords[0].value : '')
+            if(row.deliverable && row.deliverable !== 'Not Set'){
+                const artSha = row.deliverable.identifier + (row.deliverable.digestRecords.length ?  '@' + row.deliverable.digestRecords[0].value : '')
                 els.push(h(NTooltip, {
                     trigger: 'hover'
                 }, {

@@ -1,5 +1,87 @@
 import gql from 'graphql-tag'
 
+const MULTI_RELEASE_GQL_DATA = `
+    createdDate
+    org
+    artifacts
+    artifactDetails {
+        uuid
+        displayIdentifier
+        digestRecords{
+            algo
+            digest
+            scope
+        }
+        type
+        tags {
+            key
+            value
+            removable
+        }
+    }
+    status
+    lifecycle
+    uuid
+    version
+    marketingVersion
+    sourceCodeEntry
+    sourceCodeEntryDetails {
+        uuid
+        commit
+        commitMessage
+        commitAuthor
+        commitEmail
+        dateActual
+        vcsRepository {
+            uri
+        }
+        vcsBranch
+        vcsTag
+        reboms
+    }
+    branch
+    branchDetails {
+        uuid
+        name
+    }
+    componentDetails {
+        uuid
+        name
+        type
+        resourceGroup
+    }
+    ticketDetails {
+        uuid
+        identifier
+        status
+        org
+        summary
+        content
+        doneInRelease
+        dateDone
+        uri
+    }
+    tags {
+        key
+        value
+        removable
+    }
+    parentReleases {
+        release
+    }
+    metrics {
+        lastScanned
+        critical
+        high
+        medium
+        low
+        unassigned
+        policyViolationsSecurityTotal
+        policyViolationsLicenseTotal
+        policyViolationsOperationalTotal
+    }
+`
+
 const INSTANCE_GQL_DATA = `
     uuid
     name
@@ -26,7 +108,7 @@ const INSTANCE_GQL_DATA = `
     releases {
         timeSent
         release
-        artifact
+        deliverable
         namespace
         properties
         state
@@ -36,13 +118,19 @@ const INSTANCE_GQL_DATA = `
             state
         }
         isInError
+        releaseDetails {
+            ${MULTI_RELEASE_GQL_DATA}
+        }
     }
     targetReleases {
         timeSent
         release
-        artifact
+        deliverable
         namespace
         properties
+        releaseDetails {
+            ${MULTI_RELEASE_GQL_DATA}
+        }
     }
     agentData
     environment
@@ -542,88 +630,6 @@ const SINGLE_RELEASE_GQL_DATA_LIGHT = `
         resourceGroup
     }
     tags
-`
-
-const MULTI_RELEASE_GQL_DATA = `
-    createdDate
-    org
-    artifacts
-    artifactDetails {
-        uuid
-        displayIdentifier
-        digestRecords{
-            algo
-            digest
-            scope
-        }
-        type
-        tags {
-            key
-            value
-            removable
-        }
-    }
-    status
-    lifecycle
-    uuid
-    version
-    marketingVersion
-    sourceCodeEntry
-    sourceCodeEntryDetails {
-        uuid
-        commit
-        commitMessage
-        commitAuthor
-        commitEmail
-        dateActual
-        vcsRepository {
-            uri
-        }
-        vcsBranch
-        vcsTag
-        reboms
-    }
-    branch
-    branchDetails {
-        uuid
-        name
-    }
-    componentDetails {
-        uuid
-        name
-        type
-        resourceGroup
-    }
-    ticketDetails {
-        uuid
-        identifier
-        status
-        org
-        summary
-        content
-        doneInRelease
-        dateDone
-        uri
-    }
-    tags {
-        key
-        value
-        removable
-    }
-    parentReleases {
-        release
-    }
-    metrics {
-        lastScanned
-        critical
-        high
-        medium
-        low
-        unassigned
-        policyViolationsSecurityTotal
-        policyViolationsLicenseTotal
-        policyViolationsOperationalTotal
-    }
 `
 
 const COMPONENT_FULL_DATA = `
