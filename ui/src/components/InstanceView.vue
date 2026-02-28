@@ -908,7 +908,7 @@ const deleteSharableLink = async function (prl: any) {
         successText: 'Sharable version link has been deleted.',
         dismissText: 'Your shareable version link is safe.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const refreshSharableLink = async function (prl: any) {
@@ -922,7 +922,7 @@ const refreshSharableLink = async function (prl: any) {
         successText: 'Sharable version link has been refreshed.',
         dismissText: 'Your shareable version link is safe.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const removeProductLink = async function (fsUuid: string, namespace: string) {
@@ -936,7 +936,7 @@ const removeProductLink = async function (fsUuid: string, namespace: string) {
         successText: 'Selected product has been removed.',
         dismissText: 'Product removal was cancelled.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const toggleAlerts = async function (prl: any, value: boolean) {
@@ -954,7 +954,7 @@ const toggleAlerts = async function (prl: any, value: boolean) {
         successText: '',
         dismissText: 'Alert toggle was cancelled.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const save = async function () {
@@ -1019,7 +1019,7 @@ const clearAgentData = async function () {
         successText: 'Agent data has been deleted.',
         dismissText: 'Agent data is intact.'
     }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData)
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const componentTargetReleaseAdded = async function (rlz: any) {
