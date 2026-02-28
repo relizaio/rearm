@@ -140,6 +140,41 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
   }
 }
 
+/**
+ * Normalizes a single dependency object:
+ * - Ensures dependsOn is always an array
+ * - Deduplicates items in dependsOn array
+ * - Returns stats about transformations performed
+ */
+function normalizeDependency(dep: any): { dependency: any; fixed: boolean; deduped: boolean } {
+  let fixed = false;
+  let deduped = false;
+  let normalizedDep = dep;
+
+  // Handle non-array dependsOn
+  if ('dependsOn' in dep && !Array.isArray(dep.dependsOn)) {
+    fixed = true;
+    logger.debug({ ref: dep.ref, dependsOn: dep.dependsOn, type: typeof dep.dependsOn }, "Fixing non-array dependsOn");
+    if (dep.dependsOn == null || dep.dependsOn === '') {
+      normalizedDep = { ...dep, dependsOn: [] };
+    } else {
+      normalizedDep = { ...dep, dependsOn: [dep.dependsOn] };
+    }
+  }
+
+  // Deduplicate dependsOn array items
+  if (normalizedDep.dependsOn && Array.isArray(normalizedDep.dependsOn) && normalizedDep.dependsOn.length > 0) {
+    const uniqueDeps = Array.from(new Set(normalizedDep.dependsOn));
+    if (uniqueDeps.length !== normalizedDep.dependsOn.length) {
+      deduped = true;
+      logger.debug({ ref: normalizedDep.ref, before: normalizedDep.dependsOn.length, after: uniqueDeps.length }, "Deduplicated dependsOn array");
+      normalizedDep = { ...normalizedDep, dependsOn: uniqueDeps };
+    }
+  }
+
+  return { dependency: normalizedDep, fixed, deduped };
+}
+
 async function processBomObj(bom: any): Promise<any> {
   let processedBom: any = {}
 
@@ -161,6 +196,7 @@ async function processBomObj(bom: any): Promise<any> {
   // Ensure dependsOn is always an array (defensive validation)
   if (processedBom.dependencies && Array.isArray(processedBom.dependencies)) {
     let fixedCount = 0;
+    let dedupCount = 0;
     processedBom.dependencies = processedBom.dependencies
       .filter((dep: any) => {
         if (!dep.ref) {
@@ -170,21 +206,17 @@ async function processBomObj(bom: any): Promise<any> {
         return true;
       })
       .map((dep: any) => {
-        if ('dependsOn' in dep && !Array.isArray(dep.dependsOn)) {
-          fixedCount++;
-          logger.debug({ ref: dep.ref, dependsOn: dep.dependsOn, type: typeof dep.dependsOn }, "Fixing non-array dependsOn");
-          // Convert any non-array value to an array
-          if (dep.dependsOn == null || dep.dependsOn === '') {
-            return { ...dep, dependsOn: [] };
-          } else {
-            return { ...dep, dependsOn: [dep.dependsOn] };
-          }
-        }
-        return dep;
+        const { dependency, fixed, deduped } = normalizeDependency(dep);
+        if (fixed) fixedCount++;
+        if (deduped) dedupCount++;
+        return dependency;
       });
     
     if (fixedCount > 0) {
       logger.info(`Fixed ${fixedCount} dependencies with non-array dependsOn`);
+    }
+    if (dedupCount > 0) {
+      logger.info(`Deduplicated ${dedupCount} dependencies with duplicate dependsOn items`);
     }
   }
 
@@ -245,6 +277,9 @@ function deduplicateBom(bom: any): any {
     // NOTE: rearm-cli 26.01.12+ bomutils merge-boms now handles dependency deduplication.
     // This is lightweight defensive validation for BOMs from other sources or legacy versions.
     
+    let fixedCount = 0;
+    let dedupCount = 0;
+    
     // Filter out dependencies without ref and ensure dependsOn is always an array
     outBom.dependencies = bom.dependencies
       .filter((dep: any) => {
@@ -255,16 +290,18 @@ function deduplicateBom(bom: any): any {
         return true;
       })
       .map((dep: any) => {
-        if ('dependsOn' in dep && !Array.isArray(dep.dependsOn)) {
-          // Convert non-array dependsOn to array
-          if (dep.dependsOn == null || dep.dependsOn === '') {
-            return { ...dep, dependsOn: [] };
-          } else {
-            return { ...dep, dependsOn: [dep.dependsOn] };
-          }
-        }
-        return dep;
+        const { dependency, fixed, deduped } = normalizeDependency(dep);
+        if (fixed) fixedCount++;
+        if (deduped) dedupCount++;
+        return dependency;
       });
+    
+    if (fixedCount > 0) {
+      logger.info(`[deduplicateBom] Fixed ${fixedCount} dependencies with non-array dependsOn`);
+    }
+    if (dedupCount > 0) {
+      logger.info(`[deduplicateBom] Deduplicated ${dedupCount} dependencies with duplicate dependsOn items`);
+    }
   }
 
   logger.info(`Dedup BOM ${bom.serialNumber} - reduced json from ${Object.keys(bom).length} to ${Object.keys(outBom).length}`)
