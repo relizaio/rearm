@@ -175,7 +175,7 @@ const uriField = reactive<DataTableBaseColumn<any>>({
             }, 
             {
                 trigger: () => row.uri,
-                default: () => 'Environment: ' + row.environment + ', type: ' + ((row.spawnType !== 'MANUAL') ? 'Ephemeral' : 'Persistent') + ((row.owner) ? `, created by: ${displayUser(row.owner)}` : '')
+                default: () => 'Environment: ' + row.environment + ', type: ' + ((row.spawnType !== 'MANUAL') ? 'Ephemeral' : 'Persistent')
             }
         )
     },
@@ -186,9 +186,6 @@ const uriField = reactive<DataTableBaseColumn<any>>({
         }
         if (retVal && value.type) {
             retVal = row.spawnType === value.type
-        }
-        if (retVal && value.createdBy) {
-            retVal = row.owner === value.createdBy
         }
         return retVal
     }

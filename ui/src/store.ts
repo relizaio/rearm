@@ -801,15 +801,15 @@ const storeObject : any = {
         },
         async updateInstance (context: any, instanceProps: any) {
             let instProducts = []
-            if (instanceProps.products && instanceProps.products.length) {
-                instProducts = instanceProps.products.map((p: any) => {
+            if (instanceProps.productPlans && instanceProps.productPlans.length) {
+                instProducts = instanceProps.productPlans.map((p: any) => {
                     return {
                         featureSet: p.featureSet,
                         type: p.type,
                         release: p.matchedRelease,
                         namespace: p.namespace,
                         targetRelease: p.targetRelease,
-                        identifier: p.encryptedIdentifier,
+                        identifier: p.identifier,
                         configuration: p.configuration,
                         alertsEnabled: p.alertsEnabled
                     }
@@ -823,7 +823,7 @@ const storeObject : any = {
                         release: p.matchedRelease,
                         namespace: p.namespace,
                         targetRelease: p.targetRelease,
-                        identifier: p.encryptedIdentifier,
+                        identifier: p.identifier,
                         configuration: p.configuration,
                         alertsEnabled: p.alertsEnabled
                     }
@@ -877,7 +877,6 @@ const storeObject : any = {
                 targetReleases: instTargetReleases,
                 environment: instanceProps.environment,
                 products: instProducts,
-                deploymentType: instanceProps.deploymentType,
                 notes: instanceProps.notes,
                 name: instanceProps.name
             }
@@ -1082,15 +1081,14 @@ const storeObject : any = {
         async createInstance (context: any, instanceProps: any) {
             const data = await graphqlClient.mutate({
                 mutation: gql`
-                    mutation createInstance($orgUuid: ID!, $uri: String!, $name: String, $instanceType: InstanceType!, $namespace: String  $appUuid: ID, $environment: String, $clusterId: ID) {
-                        createInstance(orgUuid: $orgUuid, uri: $uri,name: $name, instanceType: $instanceType, namespace: $namespace, appUuid: $appUuid, environment: $environment, clusterId: $clusterId) {
+                    mutation createInstance($orgUuid: ID!, $uri: String!, $name: String, $instanceType: InstanceType!, $namespace: String, $environment: String, $clusterId: ID) {
+                        createInstance(orgUuid: $orgUuid, uri: $uri, name: $name, instanceType: $instanceType, namespace: $namespace, environment: $environment, clusterId: $clusterId) {
                             ${graphqlQueries.InstanceGqlData}
                         }
                     }`,
                 variables: {
                     orgUuid: instanceProps.org,
                     uri: instanceProps.uri,
-                    appUuid: instanceProps.resourceGroup,
                     environment: instanceProps.environment,
                     name: instanceProps.name,
                     instanceType: instanceProps.instanceType,

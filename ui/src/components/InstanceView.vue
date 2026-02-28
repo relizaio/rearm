@@ -38,7 +38,7 @@
                     <n-icon @click="genProductRelease" class="clickable" title="Generate Integration Product Releases" size="20"><TrendingUp /></n-icon>
                 </div>
                 <n-data-table v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER"
-                    :data="updatedInstance.products"
+                    :data="updatedInstance.productPlans"
                     :columns="matchedProductFields"
                 />
                 
@@ -190,20 +190,6 @@
                     </n-dropdown>
                     <n-icon class="clickable versionIcon reject" v-if="updatedInstance.environment !== instanceData.environment" @click="updatedInstance.environment = instanceData.environment" title="Discard Environment Changes" size="20"><X /></n-icon>
                     <n-icon class="clickable versionIcon accept" v-if="updatedInstance.environment !== instanceData.environment" @click="save" title="Save New Environment" size="20"><Check /></n-icon>
-                </span>
-            </div>
-            <div class="settingsBox" v-if="updatedInstance.instanceType !== InstanceType.CLUSTER">
-                <h6>Deployment Type:</h6>
-                <span v-if="!isWritable">{{ updatedInstance.deploymentType }}</span>
-                <span class="settingsValue" v-if="isWritable">
-                    <n-dropdown v-if="deploymentTypes && updatedInstance && isWritable" trigger="hover" :options="deploymentTypes" @select="handleDeploymentTypeChange">
-                        <span>
-                            <span>{{ updatedInstance.deploymentType }}</span>
-                            <Icon><CaretDownFilled/></Icon>
-                        </span>
-                    </n-dropdown>
-                    <n-icon class="clickable versionIcon reject" v-if="updatedInstance.deploymentType !== instanceData.deploymentType" @click="updatedInstance.deploymentType = instanceData.deploymentType" title="Discard Deployment Type Changes" size="20"><X /></n-icon>
-                    <n-icon class="clickable versionIcon accept" v-if="updatedInstance.deploymentType !== instanceData.deploymentType" @click="save" title="Save New Deployment Type" size="20"><Check /></n-icon>
                 </span>
             </div>
             <div class="settingsBox" v-if="updatedInstance.instanceType === InstanceType.CLUSTER">
@@ -412,7 +398,6 @@ const updatedInstance: Ref<any> = ref({})
 const history: Ref<any[]> = ref([])
 const mapping: Ref<any> = ref({})
 const envs: Ref<any[]> = ref([])
-const deploymentTypes: Ref<any[]> = ref([])
 const releaseForComparison = ref('')
 const namespaceForComparison = ref('default')
 
@@ -508,8 +493,8 @@ const namespacesForDropdown: ComputedRef<any[]> = computed((): any => {
 
 const knownProducts: ComputedRef<any[]> = computed((): any => {
     let knownProducts = []
-    if (updatedInstance.value && updatedInstance.value.products && updatedInstance.value.products.length) {
-        knownProducts = updatedInstance.value.products.map((p: any) => {
+    if (updatedInstance.value && updatedInstance.value.productPlans && updatedInstance.value.productPlans.length) {
+        knownProducts = updatedInstance.value.productPlans.map((p: any) => {
             return {
                 label: p.featureSetDetails.componentDetails.name,
                 value: p.featureSetDetails.componentDetails.uuid
@@ -523,8 +508,8 @@ const knownProducts: ComputedRef<any[]> = computed((): any => {
 const knownNamespaces: ComputedRef<any[]> = computed((): any => {
     let knownNamespaces = []
     let nsDedup: any = {}
-    if (updatedInstance.value && updatedInstance.value.products && updatedInstance.value.products.length) {
-        knownNamespaces = updatedInstance.value.products.map((p: any) => {
+    if (updatedInstance.value && updatedInstance.value.productPlans && updatedInstance.value.productPlans.length) {
+        knownNamespaces = updatedInstance.value.productPlans.map((p: any) => {
             let ns = p.namespace
             if (!nsDedup[ns]) {
                 nsDedup[ns] = true
@@ -666,7 +651,7 @@ const addedIntegrationFeatureSet = async function (fsObj: any) {
         }
         await save()
     } else if (focusedProduct.value.featureSet !== fsObj.featureSet) {
-        const prod = updatedInstance.value.products.find((p: any) => (
+        const prod = updatedInstance.value.productPlans.find((p: any) => (
             p.featureSet === focusedProduct.value.featureSet && p.namespace === focusedProduct.value.namespace))
         prod.featureSet = fsObj.featureSet
         prod.targetRelease = ''
@@ -720,10 +705,6 @@ const deleteProperty = function (uuid: string, namespace: string, product: strin
     save()
 }
 
-const handleDeploymentTypeChange = async function (newDt: string) {
-    updatedInstance.value.deploymentType = newDt
-}
-
 const handleEnvironmentChange = async function (newEnv: string) {
     updatedInstance.value.environment = newEnv
 }
@@ -737,8 +718,8 @@ const fetchInstance = async function() {
     const instResp = await store.dispatch('fetchInstance', { id: instanceUuid })
     const updatedInstancePrep = commonFunctions.deepCopy(instResp)
     // sort products
-    if (updatedInstancePrep.products && updatedInstancePrep.products.length) {
-        updatedInstancePrep.products.sort((a: any, b: any) => {
+    if (updatedInstancePrep.productPlans && updatedInstancePrep.productPlans.length) {
+        updatedInstancePrep.productPlans.sort((a: any, b: any) => {
             if (a.featureSetDetails.componentDetails.name < b.featureSetDetails.componentDetails.name) {
                 return -1
             } else if (a.featureSetDetails.componentDetails.name > b.featureSetDetails.componentDetails.name) {
@@ -755,6 +736,19 @@ const fetchInstance = async function() {
                 return 0
             }
         })
+        // merge productActuals data into productPlans for display
+        if (updatedInstancePrep.productActuals && updatedInstancePrep.productActuals.length) {
+            updatedInstancePrep.productPlans.forEach((plan: any) => {
+                const actual = updatedInstancePrep.productActuals.find((a: any) =>
+                    a.featureSet === plan.featureSet && a.namespace === plan.namespace)
+                if (actual) {
+                    plan.matchedRelease = actual.matchedRelease
+                    plan.matchedReleaseDetails = actual.matchedReleaseDetails
+                    plan.notMatchingSince = actual.notMatchingSince
+                    plan.identifier = actual.identifier || plan.identifier
+                }
+            })
+        }
     }
     updatedInstance.value = updatedInstancePrep
 }
@@ -931,7 +925,7 @@ const refreshSharableLink = async function (prl: any) {
 
 const removeProductLink = async function (fsUuid: string, namespace: string) {
     const onSwalConfirm = async function () {
-        updatedInstance.value.products = updatedInstance.value.products.filter((p: any) => !(p.featureSet === fsUuid && p.namespace === namespace))
+        updatedInstance.value.productPlans = updatedInstance.value.productPlans.filter((p: any) => !(p.featureSet === fsUuid && p.namespace === namespace))
         save()
     }
     const swalData: SwalData = {
@@ -944,7 +938,7 @@ const removeProductLink = async function (fsUuid: string, namespace: string) {
 }
 
 const toggleAlerts = async function (prl: any, value: boolean) {
-    const updatedProduct = updatedInstance.value.products.find((product: any) => 
+    const updatedProduct = updatedInstance.value.productPlans.find((product: any) => 
         product.featureSet === prl.featureSet && product.namespace === prl.namespace
     )
     updatedProduct.alertsEnabled = value
@@ -979,7 +973,7 @@ const loadInstanceHistory = async function () {
 }
 
 const setIntegrateType = async function (prl: any, t: string) {
-    const prod = updatedInstance.value.products.find((p:any) => (
+    const prod = updatedInstance.value.productPlans.find((p:any) => (
         p.featureSet === prl.featureSet && p.namespace === prl.namespace))
     if (prod.type !== t) {
         prod.type = t
@@ -991,7 +985,7 @@ const setIntegrateType = async function (prl: any, t: string) {
 }
 
 const targetReleaseSet = async function (rlz: any) {
-    const prod = updatedInstance.value.products.find((p: any) => (
+    const prod = updatedInstance.value.productPlans.find((p: any) => (
         p.featureSet === focusedProduct.value.featureSet && p.namespace === focusedProduct.value.namespace))
     if (prod.targetRelease !== rlz.uuid || prod.featureSet !== rlz.branch) {
         prod.featureSet = rlz.branch
@@ -1002,7 +996,7 @@ const targetReleaseSet = async function (rlz: any) {
 }
 
 const updateConfiguration = async function (e: any, prl: any) {
-    const updatedProduct = updatedInstance.value.products.find((product: any) => 
+    const updatedProduct = updatedInstance.value.productPlans.find((product: any) => 
         product.featureSet === prl.featureSet && product.namespace === prl.namespace
     )
     if (updatedProduct.configuration !== e.target.innerText) {
@@ -1059,14 +1053,16 @@ const onCreate = async function () {
     const rlzWithMapping = await store.dispatch('fetchReleasesByOrgUuids', fetchRlzParams)
     mapping.value = rlzWithMapping.mapping
 
-    axios.get('/api/manual/v1/instance/environmentTypes').then((envsResp: any) => {
-        envs.value = envsResp.data.map((e: any) => {return {label: e, key: e}})
+    graphqlClient.query({
+        query: gql`
+            query environmentTypes($orgUuid: ID!) {
+                environmentTypes(orgUuid: $orgUuid, includeBuiltIn: false)
+            }`,
+        variables: { orgUuid: updatedInstance.value.org }
+    }).then((envsResp: any) => {
+        envs.value = envsResp.data.environmentTypes.map((e: any) => {return {label: e, key: e}})
     })
     
-    axios.get('/api/manual/v1/instance/deploymentTypes').then((dtResp: any) => {
-        deploymentTypes.value = dtResp.data.map((dt: any) => {return {label: dt, key: dt}} )
-    })
-
     loadInstanceHistory()
     if(route.params.subinstuuid !== undefined && route.params.subinstuuid !== null && route.params.subinstuuid !== ''){
         selectedChildInstRowKey.value = [route.params.subinstuuid.toString()]
@@ -1184,23 +1180,6 @@ const matchedProductFields: any[] = [
                     )
                     
                 ]))
-                if(row.encryptedIdentifier){
-                    els.push(h(NIcon, {
-                        title: 'Copy Sharable Link',
-                        class: 'icons clickable',
-                        size: 16,
-                        onClick: () => copySharableLink(row)
-                    }, { default: () => h(LinkIcon) 
-                    }))
-                }else{
-                    els.push(h(NIcon, {
-                        title: 'Generate a sharable link',
-                        class: 'icons clickable',
-                        size: 16,
-                        onClick: () => generateSharableLink(row)
-                    }, { default: () => h(ShareIcon) 
-                    }))                            
-                }
             }else {
                 els.push(h('span', 'Not Matched'))
             }
@@ -1209,9 +1188,8 @@ const matchedProductFields: any[] = [
         }
     },
 ]
-if(updatedInstance.value.deploymentType !== 'INDIVIDUAL'){
-    matchedProductFields.push({
-        key: 'target',
+matchedProductFields.push({
+    key: 'target',
         title: 'Target',
         render: (row: any) => {
             let els = []
@@ -1267,23 +1245,22 @@ if(updatedInstance.value.deploymentType !== 'INDIVIDUAL'){
             return els
         }
     })
-    matchedProductFields.push({
-        key: 'config',
-        title: 'Config',
-        render: (row: any) => {
-            if(isWritable){
-                return h('span', {
-                    contenteditable: true,
-                    onblur: (e: Event) => {
-                        updateConfiguration(e, row)
-                    }
-                }, {default: () => row.configuration})
-            }else{
-                return h('span', row.configuration)
-            }
+matchedProductFields.push({
+    key: 'config',
+    title: 'Config',
+    render: (row: any) => {
+        if(isWritable){
+            return h('span', {
+                contenteditable: true,
+                onblur: (e: Event) => {
+                    updateConfiguration(e, row)
+                }
+            }, {default: () => row.configuration})
+        }else{
+            return h('span', row.configuration)
         }
-    })
-}
+    }
+})
 if(props.instanceType === InstanceType.STANDALONE_INSTANCE){
     matchedProductFields.push({
         key: 'namespace',
@@ -1297,34 +1274,19 @@ matchedProductFields.push({
         let els: any[] = []
 
         if(isWritable){
-            if(updatedInstance.value.deploymentType === 'PRODUCT'){
-                els.push(h(NDropdown, {
-                    trigger: 'hover',
-                    options: [
-                        {key: 'INTEGRATE', label: 'INTEGRATE'},
-                        {key: 'FOLLOW', label: 'FOLLOW'}, 
-                        {key: 'TARGET', label: 'TARGET'}, 
-                        {key: 'NONE', label: 'NONE'}
-                    ],
-                    value: row.type,
-                    'on-select': (key: any) => setIntegrateType(row, key)
-                },  {default: () => h('span', [row.type, h(NIcon, {}, {default: () => h(CaretDownFilled)})])
-                    
-                }))
-            }
-            if(updatedInstance.value.deploymentType === 'INDIVIDUAL'){
-                els.push(h(NDropdown, {
-                    trigger: 'hover',
-                    options: [
-                        {key: 'INTEGRATE', label: 'INTEGRATE'},
-                        {key: 'NONE', label: 'NONE'}
-                    ],
-                    value: row.type,
-                    'on-select': (key: any) => setIntegrateType(row, key)
-                },  {default: () => h('span', [row.type, h(NIcon, {}, {default: () => h(CaretDownFilled)})])
-                    
-                }))
-            }
+            els.push(h(NDropdown, {
+                trigger: 'hover',
+                options: [
+                    {key: 'INTEGRATE', label: 'INTEGRATE'},
+                    {key: 'FOLLOW', label: 'FOLLOW'}, 
+                    {key: 'TARGET', label: 'TARGET'}, 
+                    {key: 'NONE', label: 'NONE'}
+                ],
+                value: row.type,
+                'on-select': (key: any) => setIntegrateType(row, key)
+            },  {default: () => h('span', [row.type, h(NIcon, {}, {default: () => h(CaretDownFilled)})])
+                
+            }))
         }else{
             els.push(h('span', row.type))
         }

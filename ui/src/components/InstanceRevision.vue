@@ -8,7 +8,6 @@
             </h5>
             <div v-if="updatedInstance" class="settingsBlock">
                 <h6>Environment: {{ updatedInstance.environment }}</h6>
-                <h6>Deployment Type: {{ updatedInstance.deploymentType }}</h6>
             </div>
             <div>Agent Data: <n-icon class="ml-1 clickable" @click="showAgentDataModal = true" title="Show Agent Data" size="20"><InfoCircle /></n-icon></div>
             <n-modal
@@ -22,17 +21,17 @@
             </n-modal>
             <div v-if="updatedInstance" class="matchedProductBlock">
                 <h5 class="mt-2">Product Releases:</h5>
-                <div :class="[updatedInstance.deploymentType !== 'INDIVIDUAL' ? 'productHeader productList' : 'productHeader productListI']">
+                <div class="productHeader productList">
                     <div>Product</div>
                     <div>{{ featureSetLabel }}</div>
                     <div>Actual</div>
-                    <div v-if="updatedInstance.deploymentType !== 'INDIVIDUAL'">Target</div>
+                    <div>Target</div>
                     <div>Namespace</div>
                     <div>Integrate?</div>
                 </div>
-                <div v-if="updatedInstance && updatedInstance.products && !updatedInstance.products.length">No products mapped.</div>
+                <div v-if="updatedInstance && updatedInstance.productPlans && !updatedInstance.productPlans.length">No products mapped.</div>
                 <div v-for="prl in diffedProducts"
-                    :class="[updatedInstance.deploymentType !== 'INDIVIDUAL' ? 'productList' : 'productListI', (prl.diff) ? 'releaseDiff' : '']"
+                    :class="['productList', (prl.diff) ? 'releaseDiff' : '']"
                     :key="updatedInstance.uuid + revision + prl.uuid">
                     <div>
                         <router-link :to="{ name: 'ProductsOfOrg',
@@ -52,9 +51,9 @@
                         </span>
                         <span v-else>Not matched</span>
                     </div>
-                    <div v-if="updatedInstance.deploymentType !== 'INDIVIDUAL'">
+                    <div>
                         <span v-if="prl.type !== 'INTEGRATE'">
-                            <span v-if="prl.targetRelease && prl.targetReleaseDetails.version">
+                            <span v-if="prl.targetRelease && prl.targetReleaseDetails && prl.targetReleaseDetails.version">
                                 <a href="#" @click="$event => {$event.preventDefault(); selectedReleaseUuid = prl.targetRelease; showReleaseViewModal = true; }" class="clickable">{{ prl.targetReleaseDetails.version }}</a>
                             </span>
                             <span v-else>Not Set</span>
@@ -281,18 +280,18 @@ const deployedReleases: ComputedRef<any> = computed((): any => {
 
 const diffedProducts: ComputedRef<any[]> = computed((): any => {
     let diffedProducts = []
-    if (updatedInstance.value.products && updatedInstance.value.products.length) {
-        diffedProducts = updatedInstance.value.products.slice()
+    if (updatedInstance.value.productPlans && updatedInstance.value.productPlans.length) {
+        diffedProducts = updatedInstance.value.productPlans.slice()
         // add diff - check if other revision has this release
         const otherInstance = store.getters.instanceById(props.otherInstanceUuid, props.otherRevision)
         if (otherInstance && otherInstance.uuid) {
-            if (!otherInstance.products || !otherInstance.products.length) {
+            if (!otherInstance.productPlans || !otherInstance.productPlans.length) {
                 diffedProducts.forEach((pr: any) => {
                     pr.diff = true
                 })
             } else {
                 diffedProducts.forEach((pr: any) => {
-                    let matchingRelease = otherInstance.products.filter((x: any) => x.matchedRelease === pr.matchedRelease &&
+                    let matchingRelease = otherInstance.productPlans.filter((x: any) => x.matchedRelease === pr.matchedRelease &&
                         x.targetRelease === pr.targetRelease && x.namespace === pr.namespace)
                     if (!matchingRelease || !matchingRelease.length) pr.diff = true
                 })
@@ -344,6 +343,18 @@ const notify = async function (type: NotificationType, title: string, content: s
 const onCreate = async function () {
     const storeResp = await store.dispatch('fetchInstance', { id: props.instanceUuid, revision: props.revision })
     updatedInstance.value = commonFunctions.deepCopy(storeResp)
+    // merge productActuals data into productPlans for display
+    if (updatedInstance.value.productPlans && updatedInstance.value.productPlans.length && updatedInstance.value.productActuals && updatedInstance.value.productActuals.length) {
+        updatedInstance.value.productPlans.forEach((plan: any) => {
+            const actual = updatedInstance.value.productActuals.find((a: any) =>
+                a.featureSet === plan.featureSet && a.namespace === plan.namespace)
+            if (actual) {
+                plan.matchedRelease = actual.matchedRelease
+                plan.matchedReleaseDetails = actual.matchedReleaseDetails
+                plan.notMatchingSince = actual.notMatchingSince
+            }
+        })
+    }
     const fetchRlzParams = {
         org: updatedInstance.value.org,
         releases: updatedInstance.value.releases.map((rl: any) => rl.release)

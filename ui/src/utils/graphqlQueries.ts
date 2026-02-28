@@ -23,7 +23,6 @@ const INSTANCE_GQL_DATA = `
             defaultValue
         }
     }
-    resourceGroup
     releases {
         timeSent
         release
@@ -47,7 +46,7 @@ const INSTANCE_GQL_DATA = `
     }
     agentData
     environment
-    products {
+    productPlans {
         featureSet
         featureSetDetails {
             name
@@ -63,25 +62,35 @@ const INSTANCE_GQL_DATA = `
             }
         }
         type
-        matchedRelease
-        matchedReleaseDetails {
-            version
-        }
         namespace
         targetRelease
         targetReleaseDetails {
             version
         }
-        encryptedIdentifier
+        identifier
         configuration
-        notMatchingSince
         alertsEnabled
     }
-    deploymentType
+    productActuals {
+        featureSet
+        featureSetDetails {
+            name
+            componentDetails {
+                uuid
+                name
+            }
+        }
+        matchedRelease
+        matchedReleaseDetails {
+            version
+        }
+        namespace
+        identifier
+        notMatchingSince
+    }
     notes
     status
     spawnType
-    owner
 `
 
 const MULTI_INSTANCE_GQL_DATA = `
@@ -96,7 +105,7 @@ const MULTI_INSTANCE_GQL_DATA = `
         isInError
     }
     environment
-    products {
+    productPlans {
         featureSet
         featureSetDetails {
             name
@@ -112,23 +121,32 @@ const MULTI_INSTANCE_GQL_DATA = `
             }
         }
         type
-        matchedRelease
-        matchedReleaseDetails {
-            version
-        }
         namespace
         targetRelease
         targetReleaseDetails {
             version
         }
-        notMatchingSince
         alertsEnabled
     }
-    deploymentType
+    productActuals {
+        featureSet
+        featureSetDetails {
+            name
+            componentDetails {
+                uuid
+                name
+            }
+        }
+        matchedRelease
+        matchedReleaseDetails {
+            version
+        }
+        namespace
+        notMatchingSince
+    }
     notes
     status
     spawnType
-    owner
 `
 const INSTANCE_GQL = gql`
 query FetchInstance($instanceUuid: ID!, $revision:Int) {

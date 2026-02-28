@@ -214,13 +214,13 @@ const diffedProducts: ComputedRef<any[]> = computed((): any => {
         // add diff - check if other revision has this release
         const otherInstance = store.getters.instanceById(props.otherInstanceUuid, props.otherRevision)
         if (otherInstance && otherInstance.uuid) {
-            if (!otherInstance.products || !otherInstance.products.length) {
+            if (!otherInstance.productPlans || !otherInstance.productPlans.length) {
                 diffedProducts.forEach(pr => {
                     pr.diff = true
                 })
             } else {
                 diffedProducts.forEach(pr => {
-                    let matchingRelease = otherInstance.products.filter((x: any) => x.targetRelease === pr.uuid)
+                    let matchingRelease = otherInstance.productPlans.filter((x: any) => x.targetRelease === pr.uuid)
                     if (!matchingRelease || !matchingRelease.length) pr.diff = true
                 })
             }
