@@ -123,7 +123,7 @@ import { FormInst, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NTa
 import CreateRelease from '@/components/CreateRelease.vue'
 import ReleaseEl from '@/components/ReleaseEl.vue'
 import commonFunctions from '@/utils/commonFunctions'
-import axios from '../utils/axios'
+import graphqlQueries from '../utils/graphqlQueries'
 import Swal from 'sweetalert2'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
@@ -314,13 +314,12 @@ const onSubmitAuto = async function () {
 }
 
 const onCreate = async function () {
-    const axiosResp = await axios.get('/api/manual/v1/instance/environmentTypes/' + props.orgProp)
-    axiosResp.data.forEach((el: string) => {
-        let retObj = {
-            label: el,
-            value: el
-        }
-        envValues.value.push(retObj)
+    const envsResp: any = await graphqlClient.query({
+        query: graphqlQueries.EnvironmentTypesGql,
+        variables: { orgUuid: props.orgProp }
+    })
+    envsResp.data.environmentTypes.forEach((el: string) => {
+        envValues.value.push({ label: el, value: el })
     })
 }
 

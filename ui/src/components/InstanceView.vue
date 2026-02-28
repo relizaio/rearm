@@ -365,6 +365,7 @@ import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
 import CreateInstance from '@/components/CreateInstance.vue'
 import graphqlClient from '../utils/graphql'
+import graphqlQueries from '@/utils/graphqlQueries'
 import gql from 'graphql-tag'
 
 
@@ -1054,10 +1055,7 @@ const onCreate = async function () {
     mapping.value = rlzWithMapping.mapping
 
     graphqlClient.query({
-        query: gql`
-            query environmentTypes($orgUuid: ID!) {
-                environmentTypes(orgUuid: $orgUuid, includeBuiltIn: false)
-            }`,
+        query: graphqlQueries.EnvironmentTypesGql,
         variables: { orgUuid: updatedInstance.value.org }
     }).then((envsResp: any) => {
         envs.value = envsResp.data.environmentTypes.map((e: any) => {return {label: e, key: e}})

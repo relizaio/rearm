@@ -933,6 +933,11 @@ const USER_GQL_DATA = `
     isGlobalAdmin
 `
 
+const ENVIRONMENT_TYPES_GQL = gql`
+query EnvironmentTypes($orgUuid: ID!) {
+    environmentTypes(orgUuid: $orgUuid, includeBuiltIn: true)
+}`
+
 export default {
     BranchGql: BRANCH_GQL_DATA,
     BranchesGql: BRANCHES_GQL,
@@ -953,4 +958,5 @@ export default {
     ComponentShortData: COMPONENT_SHORT_DATA,
     MarketingRelease: MARKETING_RELEASE_GQL_DATA,
     UserData: USER_GQL_DATA,
+    EnvironmentTypesGql: ENVIRONMENT_TYPES_GQL,
 }

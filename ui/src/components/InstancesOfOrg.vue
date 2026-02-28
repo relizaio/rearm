@@ -98,20 +98,16 @@ import InstanceView from '@/components/InstanceView.vue'
 import CreateInstance from '@/components/CreateInstance.vue'
 import commonFunctions from '@/utils/commonFunctions'
 import constants from '@/utils/constants'
-import gql from 'graphql-tag'
+import graphqlQueries from '../utils/graphqlQueries'
 import graphqlClient from '../utils/graphql'
 
 async function loadEnvironmentTypes (org: string) {
-    let etypesResponse = await graphqlClient.query({
-        query: gql`
-            query environmentTypes($orgUuid: ID!) {
-                environmentTypes(orgUuid: $orgUuid, includeBuiltIn: false)
-            }
-            `,
+    const etypesResponse: any = await graphqlClient.query({
+        query: graphqlQueries.EnvironmentTypesGql,
         variables: { orgUuid: org }
     })
     const anyArrEntry = [{label: 'Any', value: ''}]
-    const nonAnyETypes = (etypesResponse.data.environmentTypes)
+    const nonAnyETypes = etypesResponse.data.environmentTypes
         .map((x: string) => {return {label: x, value: x}})
     return anyArrEntry.concat(nonAnyETypes)
 }
