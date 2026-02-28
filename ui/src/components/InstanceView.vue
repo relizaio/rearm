@@ -375,7 +375,7 @@ const props = defineProps<{
         default: () => []
     },
     instanceType: String,
-    clusterId: String
+    clusterId?: String
 }>()
 
 const route = useRoute()
