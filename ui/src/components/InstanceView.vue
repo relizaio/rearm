@@ -553,7 +553,11 @@ const genApiKey = async function () {
         const response = await graphqlClient.mutate({
             mutation: gql`
                 mutation setInstanceApiKey($instanceUuid: ID!) {
-                    setInstanceApiKey(instanceUuid: $instanceUuid)
+                    setInstanceApiKey(instanceUuid: $instanceUuid) {
+                        id
+                        apiKey
+                        authorizationHeader
+                    }
                 }`,
             variables: {
                 instanceUuid: instanceUuid
