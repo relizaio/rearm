@@ -169,12 +169,12 @@
                                             <n-input v-if="isWritable" v-model:value="updatedComponent.featureBranchVersioning" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.featureBranchVersioning" readonly/>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT')">
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && myUser.installationType === 'SAAS'">
                                             <label  id="componentKindLabel" for="componentKind">Component Kind</label>
                                             <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" clearable />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication)">
+                                        <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication  && myUser.installationType === 'SAAS')">
                                             <label id="componentAuthTypeLabel" for="componentAuthType">Component Auth Type</label>
                                             <n-select v-if="isWritable" :options="componentAuthTypes" v-model:value="updatedComponent.authentication.type" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.authentication.type" readonly/>
