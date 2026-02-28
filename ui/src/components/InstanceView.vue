@@ -959,7 +959,8 @@ const toggleAlerts = async function (prl: any, value: boolean) {
 
 const save = async function () {
     try {
-        updatedInstance.value = commonFunctions.deepCopy(await store.dispatch('updateInstance', updatedInstance.value))
+        await store.dispatch('updateInstance', updatedInstance.value)
+        await fetchInstance()
         history.value = []
         loadInstanceHistory()
         notify('info', 'SAVED', 'Instance changes saved successfully!')
