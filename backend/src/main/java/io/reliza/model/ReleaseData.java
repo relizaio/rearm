@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ApprovalState;
+import io.reliza.common.EnvironmentType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.common.ValidationResult;
@@ -198,6 +199,9 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	private List<TagRecord> tags = new LinkedList<>();
 	
 	private ReleaseLifecycle lifecycle = ReleaseLifecycle.PENDING;
+	
+	@JsonProperty
+	private Set<EnvironmentType> approvedEnvironments = new LinkedHashSet<>();
 	
 	private List<ReleaseApprovalEvent> approvalEvents = new LinkedList<>();
 	

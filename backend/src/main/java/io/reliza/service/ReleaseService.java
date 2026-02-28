@@ -833,7 +833,7 @@ public class ReleaseService {
 		
 	}
 	
-	protected Component parseProductReleaseIntoCycloneDxComponent (ReleaseDataExtended rd) {
+	public Component parseProductReleaseIntoCycloneDxComponent (ReleaseDataExtended rd) {
 		Component c = new Component();
 		String namespaceForGroup = (StringUtils.isEmpty(rd.namespace())) ? CommonVariables.DEFAULT_NAMESPACE : rd.namespace();
 		c.setGroup(namespaceForGroup + "---" + rd.productName());
@@ -950,15 +950,12 @@ public class ReleaseService {
 				if (!props.isEmpty()) c.setProperties(props);
 
 				List<Hash> hashes = new LinkedList<>();
-				if (null != dd.getSoftwareMetadata()) {
-					for (String digest : dd.getSoftwareMetadata().getDigests()) {
-						String[] hashArr = digest.split(":");
-						if (hashArr.length == 2) {
-							Algorithm ha = Utils.resolveHashAlgorithm(hashArr[0].toLowerCase());
-							if (null != ha) {
-								Hash h = new Hash(ha, hashArr[1]);
-								hashes.add(h);
-							}
+				if (null != dd.getSoftwareMetadata() && null != dd.getSoftwareMetadata().getDigestRecords()) {
+					for (var dr : dd.getSoftwareMetadata().getDigestRecords()) {
+						Algorithm ha = Utils.resolveHashAlgorithm(dr.algo().getValue().toLowerCase());
+						if (null != ha) {
+							Hash h = new Hash(ha, dr.digest());
+							hashes.add(h);
 						}
 					}
 				}

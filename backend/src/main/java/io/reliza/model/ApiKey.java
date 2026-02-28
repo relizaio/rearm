@@ -31,10 +31,7 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 		COMPONENT,
 		ORGANIZATION,
 		ORGANIZATION_RW,
-		USER,
-		VERSION_GEN,
-		REGISTRY_ORG,
-		REGISTRY_USER;
+		USER;
 	}
 	
 	private static final long serialVersionUID = 2347342;

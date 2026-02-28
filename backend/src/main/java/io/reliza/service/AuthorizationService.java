@@ -448,7 +448,7 @@ public class AuthorizationService {
 	public RelizaObject resolveRelizaObjectFromApiId (@NonNull AuthHeaderParse ahp, String classType) {
 		RelizaObject ro = null;
 		if (classType.equals(CommonVariables.COMPONENT_FIELD)
-				&& (ApiTypeEnum.COMPONENT == ahp.getType() || ApiTypeEnum.VERSION_GEN == ahp.getType())) {
+				&& ApiTypeEnum.COMPONENT == ahp.getType()) {
 			Optional<ComponentData> ocd = getComponentService.getComponentData(ahp.getObjUuid());
 			ro = ocd.isPresent() ? ocd.get() : null;
 		} else if (classType.equals(CommonVariables.ORGANIZATION_FIELD) && ApiTypeEnum.USER == ahp.getType()) {

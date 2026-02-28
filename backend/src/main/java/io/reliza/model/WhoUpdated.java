@@ -41,11 +41,15 @@ public final class WhoUpdated {
 	
 	public static RelizaEntity injectWhoUpdatedData(RelizaEntity re, WhoUpdated wu) {
 		Map<String, Object> recordData = re.getRecordData();
+		injectWhoUpdatedIntoMap(recordData, wu);
+		re.setRecordData(recordData);
+		return re;
+	}
+
+	public static void injectWhoUpdatedIntoMap(Map<String, Object> recordData, WhoUpdated wu) {
 		recordData.put(CommonVariables.LAST_UPDATED_BY_FIELD, wu.getLastUpdatedBy());
 		recordData.put(CommonVariables.CREATED_TYPE_FIELD, wu.getCreatedType());
 		recordData.put(CommonVariables.LAST_UPDATED_IP_ADDRESS_FIELD, wu.getLastUpdatedIp());
-		re.setRecordData(recordData);
-		return re;
 	}
 	
 	public static WhoUpdated getWhoUpdated(ProgrammaticType pt, UUID userId, String ipAddr) {

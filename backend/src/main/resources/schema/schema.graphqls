@@ -108,6 +108,32 @@ type Query {
 	searchReleasesByTimeFrameAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
 	# Pattern Preview
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
+
+	# Instances
+	instance(instanceUuid: ID!, revision: Int): Instance
+	instancesOfOrganization(orgUuid: ID!): [Instance]
+	instancesByProp(orgUuid: ID!, propKey: ID, propVal: String!): [Instance]
+	instanceHistoryPlan(instanceUuid: ID!): [InstanceHistoryPlan]
+	instanceHistoryActual(instanceUuid: ID!): [InstanceHistoryActual]
+	instanceHistoryPlanByDate(instanceUuid: ID!, fromDate: DateTime!, toDate: DateTime!, changeType: InstancePlanChangeType): [InstanceHistoryPlan]
+	instanceHistoryActualByDate(instanceUuid: ID!, fromDate: DateTime!, toDate: DateTime!, changeType: InstanceActualChangeType): [InstanceHistoryActual]
+	searchChangesOverTime(orgUuid: ID!, fromDate: DateTime!, toDate: DateTime!): [InstanceWithHistory]
+	environmentTypes(orgUuid: ID, includeBuiltIn: Boolean): [String]
+	getInstanceRevisionCycloneDxExportManual(instanceUuid: ID!, revision: Int, namespace: String): String
+	getInstanceRevisionCycloneDxExportProg(instanceUuid: ID, instanceUri: String, revision: Int!, namespace: String): String
+	isInstanceHasSealedSecretCert(instanceUuid: ID, instanceUri: String): Boolean
+	getInstancePropSecrets(instanceUuid: ID, instanceUri: String, namespace: String!, revision: Int!, properties: [String], secrets: [String], product: ID, productSpecificProps: Boolean): PropSecrets
+	deliverableDownloadSecrets(instanceUuid: ID, instanceUri: String, deliverableDigest: String!, namespace: String, releaseNs: String): ComponentAuthentication
+
+	# properties
+	property(propertyUuid: ID!): Property
+	propertyDataTypes: [PropertyDataType]
+	propertyConfigTypes: [PropertyConfigurableType]
+	propertiesOfOrg(orgUuid: ID!): [Property]
+
+	# secrets
+	secret(secretUuid:ID!, orgUuid:ID!): Secret
+	secrets(orgUuid:ID!): [Secret]
 }
 
 type Mutation {
@@ -233,6 +259,25 @@ type Mutation {
 	cleanupDtrackProjects(orgUuid: ID!): Boolean
 	recleanupDtrackProjects(orgUuid: ID!): Boolean
 	syncDtrackProjects(orgUuid: ID!): Boolean
+
+	# Instances
+	createInstance(orgUuid: ID!, name: String, instanceType: InstanceType, namespace: String, uri: String!, environment: String, clusterId: ID): Instance
+	createInstanceFromDto(instance: CreateInstanceInput!, plan: UpdateInstancePlanInput): Instance
+	updateInstance(instance: InstanceInput!): Instance
+	setInstanceApiKey(instanceUuid: ID!): ApiKeyForUser
+	generateProductRelease(instanceUuid: ID!): [InstanceProductMapActual]
+	instData(instance: InstanceDataInput!): Object
+	archiveInstance(instanceUuid: ID!): Boolean
+	setInstanceSealedSecretCert(sealedCert: String!): Boolean
+
+	# properties
+	createProperty(property: PropertyInput!): Property
+
+	# secrets
+	createSecret(secret: SecretInput!): Secret
+	updateSecretDistribution(orgUuid: ID!, secretUuid: ID!, permissions: [PermissionInput]): Secret
+	updateSecretDetails( secretUuid: ID!, secret: SecretUpdateInput!): Secret
+	deleteSecret(orgUuid: ID!, secretUuid: ID!): Boolean
 }
 
 type EnrichmentTriggerResult {
@@ -285,6 +330,7 @@ type Component {
 	org: ID
 	resourceGroup: ID
 	type: ComponentType
+	kind: ComponentKind
 	versionSchema: String
 	marketingVersionSchema: String
 	versionType: VersionType
@@ -306,7 +352,13 @@ type Component {
 	outputTriggers: [ReleaseOutputEvent]
 	identifiers: [Identifier]
 	repoPath: String
+	authentication: ComponentAuthentication
 	perspectiveDetails: [Perspective]
+}
+
+enum ComponentKind {
+	HELM
+	GENERIC
 }
 
 type Identifier {
@@ -1231,6 +1283,17 @@ type VulnerabilityViolationChart {
 	type: String
 }
 
+type Secret {
+	uuid: ID
+	name: String
+	org: ID
+	description: String
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+	permissions: Permissions
+}
+
 enum ViolationType {
 	LICENSE
 	SECURITY
@@ -1430,6 +1493,7 @@ input CreateComponentInput {
 input UpdateComponentInput {
 	uuid: ID
 	name: String!
+	kind: ComponentKind
 	versionSchema: String
 	marketingVersionSchema: String
 	versionType: VersionType
@@ -1440,6 +1504,7 @@ input UpdateComponentInput {
 	outputTriggers: [ReleaseOutputEventInput]
 	identifiers: [IdentifierInput]
 	repoPath: String
+	authentication: ComponentAuthenticationInput
 }
 
 input VcsRepositoryInput {
@@ -1860,6 +1925,19 @@ input IdentifierInput {
 	idValue: String
 }
 
+input SecretInput {
+	org: ID!
+	name: String!
+	description: String
+	ptSecret: String!
+}
+
+input SecretUpdateInput {
+	org: ID!
+	description: String
+	ptSecret: String
+}
+
 enum MatchOperator {
 	OR
 	AND
@@ -2102,7 +2180,9 @@ enum MarketingReleaseLifecycleEnum {
 
 enum IntegrateType {
 	FOLLOW
+	INTEGRATE
 	TARGET
+	NONE
 }
 
 
@@ -2263,6 +2343,295 @@ enum ArtifactType {
 	RISK_ASSESSMENT
 	OTHER
 }
+
+# ========== Instance Types ==========
+
+type Instance {
+	uuid: ID
+	uri: String
+	org: ID
+	name: String
+	namespace: String
+	instanceType: InstanceType
+	status: Status
+	notes: String
+	spawnType: SpawnType
+	instances: [ID]
+	environment: String
+	properties: [InstancePropertyRecord]
+	releases: [DeployedRelease]
+	targetReleases: [DeployedRelease]
+	agentData: String
+	productPlans: [InstanceProductMapPlan]
+	productActuals: [InstanceProductMapActual]
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+type DeployedRelease {
+	timeSent: DateTime
+	release: ID
+	deliverable: ID
+	type: ProgrammaticType
+	namespace: String
+	properties: Object
+	state: ServiceState
+	replicas: [DeployedReplica]
+	isInError: Boolean
+	partOf: String
+	releaseDetails: Release
+}
+
+type DeployedReplica {
+	id: String
+	state: ServiceState
+}
+
+type InstanceProductMapPlan {
+	featureSet: ID
+	featureSetDetails: Branch
+	type: IntegrateType
+	namespace: String
+	targetRelease: ID
+	targetReleaseDetails: Release
+	identifier: String
+	configuration: String
+	alertsEnabled: Boolean
+}
+
+type InstanceProductMapActual {
+	featureSet: ID
+	featureSetDetails: Branch
+	matchedRelease: ID
+	matchedReleaseDetails: Release
+	namespace: String
+	identifier: String
+	notMatchingSince: DateTime
+}
+
+type InstancePropertyRecord {
+	uuid: ID
+	type: PropertyConfigurableType
+	value: String
+	namespace: String
+	product: ID
+	property: Property
+	productDetails: Component
+}
+
+type InstanceWithHistory {
+	instanceData: Instance
+	instanceHistory: [InstanceHistoryPlan]
+}
+
+type InstanceHistoryPlan {
+	uuid: ID
+	instanceUuid: ID
+	revision: Int
+	date: DateTime
+	updateType: ProgrammaticType
+	updatedBy: ID
+	changeType: [InstancePlanChangeType]
+}
+
+type InstanceHistoryActual {
+	uuid: ID
+	instanceUuid: ID
+	revision: Int
+	date: DateTime
+	updateType: ProgrammaticType
+	updatedBy: ID
+	changeType: [InstanceActualChangeType]
+}
+
+type PropSecrets {
+	properties: [KeyValue]
+	secrets: [KeyValue]
+}
+
+type ComponentAuthentication {
+	login: String
+	password: String
+	type: String
+}
+
+input ComponentAuthenticationInput {
+	login: String
+	password: String
+	type: RearmCDAuthType
+}
+
+enum RearmCDAuthType {
+	NOCREDS
+	CREDS
+	ECR
+}
+
+type Property {
+	uuid: ID
+	name: String
+	org: ID
+	dataType: PropertyDataType
+	targetType: PropertyTargetType
+	defaultValue: String
+	createdType: ProgrammaticType
+	lastUpdatedBy: ID
+	createdDate: DateTime
+}
+
+input InstanceInput {
+	uuid: ID!
+	uri: String
+	org: String
+	properties: [InstancePropertyRecordInput]
+	agentData: String
+	releases: [DeployedReleaseInput]
+	targetReleases: [DeployedReleaseInput]
+	environment: String
+	products: [InstanceProductMapPlanInput]
+	notes: String
+	name: String
+	namespace: String
+}
+
+input CreateInstanceInput {
+	org: ID!
+	name: String
+	instanceType: InstanceType
+	namespace: String
+	uri: String
+	environment: String
+	clusterId: ID
+}
+
+input InstanceDataInput {
+	uuid: ID
+	namespace: String
+	senderId: String
+	timeSent: String
+	images: [Object]
+	type: String
+	labels: Object
+	annotations: Object
+}
+
+input DeployedReleaseInput {
+	timeSent: DateTime
+	release: ID
+	artifact: ID
+	type: ProgrammaticType
+	namespace: String
+	properties: Object
+	state: ServiceState
+	partOf: String
+	replicas: [DeployedReplicaInput]
+}
+
+input DeployedReplicaInput {
+	id: String
+	state: ServiceState
+}
+
+input InstanceProductMapPlanInput {
+	featureSet: ID
+	type: IntegrateType
+	release: ID
+	namespace: String
+	targetRelease: ID
+	identifier: String
+	configuration: String
+	alertsEnabled: Boolean
+}
+
+input InstancePropertyRecordInput {
+	uuid: ID!
+	type: PropertyConfigurableType!
+	value: String!
+	namespace: String
+	product: ID
+}
+
+input UpdateInstancePlanInput {
+	properties: [InstancePropertyRecordInput]
+	addProperties: [InstancePropertyRecordInput]
+	targetReleases: [DeployedReleaseInput]
+	environment: String
+	products: [InstanceProductMapPlanInput]
+}
+
+input PropertyInput {
+	org: ID!
+	name: String
+	dataType: PropertyDataType
+	targetType: PropertyTargetType
+	targetUuid: ID
+	defaultValue: String
+}
+
+
+
+
+
+enum InstanceType {
+	STANDALONE_INSTANCE
+	CLUSTER_INSTANCE
+	CLUSTER
+}
+
+enum SpawnType {
+	MANUAL
+	RELIZA_AUTO
+}
+
+enum ServiceState {
+	COMPLETED
+	CRASHLOOPBACKOFF
+	ERROR
+	IMAGEPULLBACKOFF
+	PENDING
+	WAITING
+	RUNNING
+	SUCCEEDED
+	FAILED
+	TERMINATING
+	TERMINATED
+	UNKNOWN
+	UNSET
+}
+
+enum InstancePlanChangeType {
+	PRODUCT_RELEASE
+	PROPERTY
+	ENVIRONMENT
+	TARGET_RELEASE
+}
+
+enum InstanceActualChangeType {
+	DEPLOYMENT
+	AGENT_DATA
+	PRODUCT_MATCH
+}
+
+enum PropertyDataType {
+	STRING
+	JSON
+	INTEGER
+	YAML
+	BOOLEAN
+}
+
+enum PropertyConfigurableType {
+	CONFIGURABLE
+	INFO
+}
+
+enum PropertyTargetType {
+	INSTANCE
+	COMPONENT
+}
+
+# ========== End Instance Types ==========
 
 scalar Object
 scalar DateTime

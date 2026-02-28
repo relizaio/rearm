@@ -12,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.ReleaseInputEvent;
@@ -67,4 +68,6 @@ public class ComponentDto {
 	private List<TeaIdentifier> identifiers;
 	@JsonProperty
 	private String repoPath;
+	@JsonProperty
+	private ComponentAuthentication authentication;
 }

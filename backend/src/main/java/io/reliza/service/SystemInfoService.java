@@ -18,6 +18,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.SystemInfo;
 import io.reliza.model.SystemInfoData;
 import io.reliza.model.SystemInfoData.SmtpProps;
+import io.reliza.model.SystemInfoData.AzureCreds;
 import io.reliza.model.SystemInfoData.EmailSendType;
 import io.reliza.model.SystemInfoData.SetEmailPropertiesDto;
 import io.reliza.model.UserData;
@@ -195,6 +196,22 @@ public class SystemInfoService {
 	public SystemInfoDto getSystemInfoIsSet(){
 		var sysInfo = findSystemInfo();
 		return new SystemInfoDto(sysInfo.getEmailSendType() != EmailSendType.UNSET, sysInfo.getDefaultOrg());
+	}
+	
+	public AzureCreds getAzureCredentials(){
+		var sysInfo = findSystemInfo();
+		AzureCreds encAzureCreds = sysInfo.getAzureCredentials();
+		AzureCreds decAzureCreds = null;
+		if(encAzureCreds != null)
+			decAzureCreds = new AzureCreds(
+				encryptionService.decrypt(encAzureCreds.getClientId()), 
+				encryptionService.decrypt(encAzureCreds.getClientSecret()), 
+				encryptionService.decrypt(encAzureCreds.getTenantId()), 
+				encryptionService.decrypt(encAzureCreds.getVaultName())
+			);
+		
+		
+		return decAzureCreds;
 	}
 
 }

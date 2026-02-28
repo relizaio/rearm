@@ -29,7 +29,7 @@ public class EncryptionService {
 				relizaConfigProps.getEncryption().oldSalt());
     }
 	
-	protected String encrypt (String plainText) {
+	public String encrypt (String plainText) {
 		return teNew.encrypt(plainText);
 	}
 	

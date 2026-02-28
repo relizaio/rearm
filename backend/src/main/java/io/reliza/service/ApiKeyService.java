@@ -11,12 +11,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -50,8 +47,6 @@ public class ApiKeyService {
 	@Autowired 
 	private ApiKeyAccessService apiKeyAccessService;
 	
-	private static final Logger log = LoggerFactory.getLogger(ApiKeyService.class);
-	
 	private final ApiKeyRepository repository;
 	
     @Autowired
@@ -67,18 +62,6 @@ public class ApiKeyService {
 		
 		Map<String,Object> recordData = Utils.dataToRecord(akd);
 		saveApiKey(ak, recordData, wu);
-	}
-
-	/**
-	 * Deletes all API keys of a user in org including registry keys
-	 * @param userId
-	 * @param org
-	 * @param wu
-	 */
-	public void deleteAllApiKeysByUserAndOrg(UUID userId, UUID org, WhoUpdated wu){
-		List<ApiKey> userAks = repository.findUserApiKeyByUserUuidAndOrgUuid(userId, org);
-		List<ApiKey> regAks = repository.findRegistryApiKey(userId, org, ApiTypeEnum.REGISTRY_USER.toString());
-		Stream.concat(userAks.stream(), regAks.stream()).forEach(ak -> deleteApiKey(ak.getUuid(), wu));
 	}
 
 	private Optional<ApiKey> getApiKey (UUID uuid) {
@@ -108,8 +91,6 @@ public class ApiKeyService {
 		// if type is user, org is required
 		if (ApiTypeEnum.USER == type) {
 			retList = repository.findUserApiKeyByUserUuidAndOrgUuid(uuid, org);
-		} else if (ApiTypeEnum.REGISTRY_ORG == type || ApiTypeEnum.REGISTRY_USER == type) {
-			retList = repository.findRegistryApiKey(uuid, org, type.toString());
 		} else {
 			retList = repository.findApiKeyByUuidAndType(uuid, type.toString()); 
 		}
@@ -193,15 +174,11 @@ public class ApiKeyService {
 			// figure out organization
 			UUID orgUuid = null;
 			switch (type) {
-//			case INSTANCE:
-//			case CLUSTER:
-//				Optional<InstanceData> oid = instanceService.getInstanceData(uuid);
-//				if (oid.isPresent()) {
-//					orgUuid = oid.get().getOrg();
-//				}
-//				break;
+			case INSTANCE:
+			case CLUSTER:
+				orgUuid = suppliedOrgUuid;
+				break;
 			case COMPONENT:
-			case VERSION_GEN:
 				Optional<ComponentData> ocd = getComponentService.getComponentData(uuid);
 				if (ocd.isPresent()) {
 					orgUuid = ocd.get().getOrg();

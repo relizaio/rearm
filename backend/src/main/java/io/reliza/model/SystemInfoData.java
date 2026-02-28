@@ -35,6 +35,14 @@ public class SystemInfoData extends RelizaDataParent{
 		private String fromName;
 	}
 	
+	@Data
+	public static class AzureCreds {		
+		private final String clientId;
+		private final String clientSecret;
+		private final String tenantId;
+		private final String vaultName;
+	}
+	
     private boolean systemSealed = true;
 	private EncProps encryption;
 	private String sendGridKey;
@@ -43,6 +51,7 @@ public class SystemInfoData extends RelizaDataParent{
 	private EmailSendType emailSendType = EmailSendType.UNSET;
 	private UUID defaultOrg;
 	private ZonedDateTime lastDtrackSync;
+	private AzureCreds azureCredentials;
 	
 	public static SystemInfoData dataFromRecord (SystemInfo t) {
 		Map<String,Object> recordData = t.getData();

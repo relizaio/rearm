@@ -33,6 +33,14 @@ import lombok.EqualsAndHashCode;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ComponentData extends RelizaDataParent implements RelizaObject {
 	
+	public record ComponentAuthentication (String login, String password, RearmCDAuthType type) {}
+	
+	public enum RearmCDAuthType {
+		NOCREDS,
+		CREDS,
+		ECR;
+	}
+	
 	public enum ComponentType {
 		COMPONENT,
 		PRODUCT,
@@ -190,6 +198,9 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	
 	@JsonProperty
 	private Set<UUID> perspectives;
+	
+	@JsonProperty
+	private ComponentAuthentication authentication;
 	
 	public List<TeaIdentifier> getIdentifiers () {
 		return new LinkedList<>(this.identifiers);

@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.EventType;
@@ -91,6 +92,8 @@ public class UpdateComponentDto {
 	private List<ReleaseOutputEventInput> outputTriggers;
 	@JsonProperty
 	private List<TeaIdentifier> identifiers;
+	@JsonProperty
+	private ComponentAuthentication authentication;
 	
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
 			IntegrationType it) throws JsonMappingException, JsonProcessingException {
@@ -138,6 +141,7 @@ public class UpdateComponentDto {
 								.releaseInputTriggers(ucd.getReleaseInputTriggers())
 								.outputTriggers(triggers)
 								.identifiers(ucd.getIdentifiers())
+								.authentication(ucd.getAuthentication())
 								.build();
 		return cdto;
 	}

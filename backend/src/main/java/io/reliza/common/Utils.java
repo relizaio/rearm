@@ -578,6 +578,15 @@ public class Utils {
     	if (foundTag.isPresent()) resolvedValue = foundTag.get().value();
     	return resolvedValue;
     }
+    
+    public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
+    public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
+    public static final String REARM_CD_HELM_DIGEST = "8bf5b6b5d6be5c066a8e27ef3e5b32bd8c802fe98f54253bc05d6788cd4ce666";
+    public static final String REARM_CD_CONTAINER_DIGEST = "d3cd78a28f802fe3d3da29497b415ea81e2537ae71a3598be6a5ca2c974f1daa";
+
+    public static boolean isRearmCdDigest(String digest) {
+    	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
+    }
 
     public static JsonNode readJsonFromResource(Resource resource) throws IOException {
         // Ensure the resource is readable
@@ -597,7 +606,7 @@ public class Utils {
 			suppliedComponentId = UUID.fromString(suppliedComponentIdStr);
 		}
 		
-		if (ApiTypeEnum.COMPONENT == ahp.getType() || ApiTypeEnum.VERSION_GEN == ahp.getType()) {
+		if (ApiTypeEnum.COMPONENT == ahp.getType()) {
 			componentId = ahp.getObjUuid();
 			if (null != suppliedComponentId && !componentId.equals(suppliedComponentId)) {
 				throw new AccessDeniedException("Component mismatch.");

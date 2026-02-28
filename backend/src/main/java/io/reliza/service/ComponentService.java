@@ -292,6 +292,9 @@ public class ComponentService {
 			if (null != cdto.getKind()) {
 				cd.setKind(cdto.getKind());
 			}
+			if (null != cdto.getAuthentication()) {
+				cd.setAuthentication(cdto.getAuthentication());
+			}
 			if (null != cdto.getDefaultConfig()) {
 				cd.setDefaultConfig(cdto.getDefaultConfig());
 			}

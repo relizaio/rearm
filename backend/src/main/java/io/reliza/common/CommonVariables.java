@@ -76,6 +76,7 @@ public class CommonVariables {
 	public static final String ARTIFACTS_FIELD = "artifacts";
 	public static final String ARTIFACT_DETAILS_FIELD = "artifactDetails";
 	public static final String ARTIFACT_FIELD = "artifact";
+	public static final String DELIVERABLE_FIELD = "deliverable";
 	public static final String VCS_TAG_FIELD = "vcsTag";
 	public static final String VCS_BRANCH_FIELD = "vcsBranch";
 	public static final String SOURCE_CODE_ENTRY_FIELD = "sourceCodeEntry";
@@ -257,10 +258,14 @@ public class CommonVariables {
 	public static final String EXTERNAL_PROJ_ORG_STRING = EXTERNAL_PROJ_ORG_UUID.toString();
 	
 	public static final String JOIN_SECRET_SEPARATOR = "-.-";
+	public static final String INSTANCE_URI_META = "instance___uri";
+
+	public static final UUID ALL_INSTANCES = new UUID(0,0); // 00000000-0000-0000-0000-000000000000
+	public static final UUID ALL_SPAWNED_INSTANCES = new UUID(0,1); // 00000000-0000-0000-0000-000000000001
+	public static final UUID PERMISSION_TO_SPAWN = new UUID(0,2); // 00000000-0000-0000-0000-000000000002
+	public static final UUID ALL_CLUSTERS = new UUID(0,3); // 00000000-0000-0000-0000-000000000003
 	
 	public static final String SPAWNED_INSTANCE_AUTH_CLASS = "spawnedInstance";
-	
-	public static final UUID PERMISSION_TO_SPAWN = new UUID(0,2); // 00000000-0000-0000-0000-000000000002
 	
 	public static final String DETAILS_UNAVAILABLE_MESSAGE = "Change details unavailable";
 	
@@ -286,6 +291,11 @@ public class CommonVariables {
 	public static final String ARTIFACT_COVERAGE_TYPE_TAG_KEY = "COVERAGE_TYPE";
 	public static final String ARTIFACT_LIFECYCLE_DECLARED_TAG_KEY = "LIFECYCLE_DECLARED";
 	public static final String ARTIFACT_LIFECYCLE_TAG_KEY = "LIFECYCLE";
+
+	/*** K8s Labels
+	 * refer to https://helm.sh/docs/chart_best_practices/labels/
+	 * ***/
+	public static final String HELM_NAME_LABEL = "app.kubernetes.io/instance";
 	
 	public enum ArtifactCoverageType {
 		DEV,
@@ -303,6 +313,14 @@ public class CommonVariables {
 			return retType;
 		}
 	}
+	
+	/*** Properties ***/
+	public static final String INSTANCE_PUBLIC_IP_PROPERTY = "PUBLIC_IP";
+	public static final String INSTANCE_BITNAMI_SEALED_SECRETS_CERT_PROPERTY = "SEALED_SECRETS_CERT";
+	public static final String FQDN_PROPERTY = "FQDN";
+
+	public static final String BUNDLE_CONFIGURATION_PROPERTY = "CONFIGURATION";
+	public static final String ARGOCD_NAMESPACE = "argocd";
 	
 	/*** Release Tags ***/
 	public static final String HELM_APP_VERSION = "HELM_APP_VERSION";
@@ -410,6 +428,9 @@ public class CommonVariables {
 		CHANGES("changes"),
 		COMPONENTS(CommonVariables.COMPONENTS_FIELD),
 		INSTANCES("instances"),
+		INSTANCE_DATA("instance_data"),
+		INSTANCE_DATA_PLAN("instance_data_plan"),
+		INSTANCE_DATA_ACTUAL("instance_data_actual"),
 		INSTANCE_UNITS("instances"),
 		INTEGRATIONS("integrations"),
 		MARKETING_RELEASES("marketing_releases"),
@@ -459,6 +480,43 @@ public class CommonVariables {
 		FORBIDDEN;
 		
 		private AuthorizationStatus() {}
+	}
+
+	public enum SpawnType {
+		MANUAL,
+		RELIZA_AUTO;
+		
+		private SpawnType () {}
+	}
+
+	public enum InstanceType {
+		STANDALONE_INSTANCE,
+		CLUSTER_INSTANCE,
+		CLUSTER;
+		
+		private InstanceType () {}
+	}
+
+	// this is currently based on the k8s pod lifecycle but may be extended later
+	// https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/
+	// also taking known values from the state.statetype.reason field (Error, CrashLoopBackOff, ImagePullBackOff, Completed)
+	public enum ServiceState {
+		COMPLETED,
+		CRASHLOOPBACKOFF,
+		ERROR,
+		IMAGEPULLBACKOFF,
+		PENDING,
+		WAITING,
+		RUNNING,
+		SUCCEEDED,
+		FAILED,
+		TERMINATING,
+		TERMINATED,
+		UNKNOWN,
+		UNSET
+		;
+		
+		private ServiceState() {}
 	}
 	
 	@Data
@@ -613,6 +671,11 @@ public class CommonVariables {
 	public enum PerspectiveType {
 		PERSPECTIVE,
 		PRODUCT;
+	}
+
+	public enum InstanceEventType {
+		DEPLOYMENT,
+		ARCHIVAL;
 	}
 	
 }

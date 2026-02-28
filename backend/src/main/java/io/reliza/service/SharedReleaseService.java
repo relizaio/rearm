@@ -29,6 +29,7 @@ import com.github.packageurl.PackageURL;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.common.EnvironmentType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
@@ -167,6 +168,30 @@ public class SharedReleaseService {
 			ord = getReleaseData(brReleaseData.get(0).getUuid(), orgUuid);
 		}
 		return ord;
+	}
+	
+	/**
+	 * Returns latest release of a branch that has the given EnvironmentType in its approvedEnvironments.
+	 * Falls back to the latest release if et is null.
+	 */
+	public Optional<ReleaseData> getReleaseDataOfBranchByEnvironment (UUID orgUuid, UUID branchUuid, EnvironmentType et) {
+		if (null == et) {
+			return getReleaseDataOfBranch(orgUuid, branchUuid);
+		}
+		BranchData bd = branchService.getBranchData(branchUuid).get();
+		if (null == orgUuid) orgUuid = bd.getOrg();
+		ComponentData pd = getComponentService.getComponentData(bd.getComponent()).get();
+		List<GenericReleaseData> brReleaseData = listReleaseDataOfBranch(branchUuid, orgUuid, ReleaseLifecycle.ASSEMBLED, DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE, null);
+		if (!brReleaseData.isEmpty()) {
+			Collections.sort(brReleaseData, new ReleaseVersionComparator(pd.getVersionSchema(), bd.getVersionSchema()));
+			for (GenericReleaseData grd : brReleaseData) {
+				Optional<ReleaseData> ord = getReleaseData(grd.getUuid(), bd.getOrg());
+				if (ord.isPresent() && ord.get().getApprovedEnvironments().contains(et)) {
+					return ord;
+				}
+			}
+		}
+		return Optional.empty();
 	}
 	
 	public List<ReleaseData> listReleaseDataOfBranch (UUID branchUuid) {
@@ -383,7 +408,7 @@ public class SharedReleaseService {
 	}
 	
 	
-	protected Set<ReleaseData> greedylocateProductsOfReleaseCollection (Collection<ReleaseData> inputRds, UUID myOrg) {
+	public Set<ReleaseData> greedylocateProductsOfReleaseCollection (Collection<ReleaseData> inputRds, UUID myOrg) {
 		var inputSet = inputRds.stream().map(x -> x.getUuid()).collect(Collectors.toSet());
 		// construct string for postgres query
 		String inputArrStr = constructGreedyProductLocateQueryFromReleaseSet(inputSet);
