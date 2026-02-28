@@ -632,6 +632,7 @@ const COMPONENT_FULL_DATA = `
     org
     resourceGroup
     type
+    kind
     versionSchema
     marketingVersionSchema
     versionType
@@ -690,6 +691,11 @@ const COMPONENT_FULL_DATA = `
     identifiers {
         idType
         idValue
+    }
+    authentication {
+        login
+        password
+        type
     }
     perspectiveDetails {
         uuid

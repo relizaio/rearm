@@ -904,6 +904,7 @@ const storeObject : any = {
             const compUpdObject = {
                 uuid: component.uuid,
                 name: component.name,
+                kind: component.kind,
                 versionSchema: component.versionSchema,
                 vcs: component.vcs,
                 repoPath: component.repoPath,
@@ -913,7 +914,8 @@ const storeObject : any = {
                 approvalPolicy: component.approvalPolicy,
                 outputTriggers: component.outputTriggers,
                 releaseInputTriggers: component.releaseInputTriggers,
-                identifiers: component.identifiers?.map(({ idType, idValue }: any) => ({ idType, idValue }))
+                identifiers: component.identifiers?.map(({ idType, idValue }: any) => ({ idType, idValue })),
+                authentication: component.authentication ? { login: component.authentication.login, password: component.authentication.password, type: component.authentication.type } : null
             }
             console.log(compUpdObject)
             const data = await graphqlClient.mutate({

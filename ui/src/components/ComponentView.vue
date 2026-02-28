@@ -169,9 +169,9 @@
                                             <n-input v-if="isWritable" v-model:value="updatedComponent.featureBranchVersioning" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.featureBranchVersioning" readonly/>
                                         </div>
-                                        <div class="versionSchemaBlock" v-if="false && updatedComponent && componentData && (componentData.type === 'COMPONENT')">
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT')">
                                             <label  id="componentKindLabel" for="componentKind">Component Kind</label>
-                                            <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" />
+                                            <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" clearable />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication)">
@@ -1383,12 +1383,16 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
     if (!updatedComponent.value || !componentData.value) return false
     
     // Check authentication changes
-    const authChanged = updatedComponent.value.authentication && componentData.value.authentication &&
-        (updatedComponent.value.authentication.type !== componentData.value.authentication.type ||
-         updatedComponent.value.authentication.login !== componentData.value.authentication.login ||
-         updatedComponent.value.authentication.password !== componentData.value.authentication.password)
+    const updAuth = updatedComponent.value.authentication
+    const origAuth = componentData.value.authentication
+    const authChanged = (!!updAuth !== !!origAuth) ||
+        (updAuth && origAuth &&
+        (updAuth.type !== origAuth.type ||
+         updAuth.login !== origAuth.login ||
+         updAuth.password !== origAuth.password))
     
     return updatedComponent.value.name !== componentData.value.name ||
+        updatedComponent.value.kind !== componentData.value.kind ||
         updatedComponent.value.versionSchema !== componentData.value.versionSchema ||
         updatedComponent.value.versionType !== componentData.value.versionType ||
         updatedComponent.value.marketingVersionSchema !== componentData.value.marketingVersionSchema ||
@@ -1404,6 +1408,7 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
 function resetCoreSettings() {
     if (!componentData.value) return
     updatedComponent.value.name = componentData.value.name
+    updatedComponent.value.kind = componentData.value.kind
     updatedComponent.value.versionSchema = componentData.value.versionSchema
     updatedComponent.value.versionType = componentData.value.versionType
     updatedComponent.value.marketingVersionSchema = componentData.value.marketingVersionSchema
@@ -1603,7 +1608,6 @@ const updateComponentKind = function (updKind: string) {
             password: ''
         }
     }
-    save()
 }
 
 const componentAuthTypes = [
