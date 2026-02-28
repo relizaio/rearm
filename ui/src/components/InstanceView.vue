@@ -1088,7 +1088,7 @@ const matchedProductFields: any[] = [
                 RouterLink,
                 {
                     to: {
-                        name: 'Product',
+                        name: 'ProductsOfOrg',
                         params: {
                             orguuid: updatedInstance.value.org,
                             compuuid: row.featureSetDetails.componentDetails.uuid
@@ -1109,7 +1109,7 @@ const matchedProductFields: any[] = [
                 RouterLink,
                 {
                     to: {
-                        name: 'FeatureSet',
+                        name: 'ProductsOfOrg',
                         params: {
                             orguuid: updatedInstance.value.org,
                             compuuid: row.featureSetDetails.componentDetails.uuid,
@@ -1336,7 +1336,7 @@ const targetReleaseFeilds: any[] = [
                     RouterLink,
                     {
                         to: {
-                            name: 'Component',
+                            name: 'ComponentsOfOrg',
                             params: {
                                 orguuid: updatedInstance.value.org,
                                 compuuid: row.componentUuid
@@ -1475,7 +1475,7 @@ const deployedReleaseFeilds: any[] = [
                     RouterLink,
                     {
                         to: {
-                            name: 'Component',
+                            name: 'ComponentsOfOrg',
                             params: {
                                 orguuid: updatedInstance.value.org,
                                 compuuid: row.componentUuid
