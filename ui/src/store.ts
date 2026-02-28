@@ -419,7 +419,7 @@ const storeObject : any = {
         async createProperty (context: any, propertyProps: any) {
             const data = await graphqlClient.mutate({
                 mutation: gql`
-                    mutation createProperty($prop: PropertyInput) {
+                    mutation createProperty($prop: PropertyInput!) {
                         createProperty(property: $prop) {
                             uuid
                             name
@@ -1221,9 +1221,27 @@ const storeObject : any = {
             }
         },
         async fetchProperties (context: any, uuid: string) {
-            const axiosResp = await axios.get('/v1/property/listPropertiesOfOrg/' + uuid)
-            context.commit('SET_PROPERTIES', axiosResp.data)
-            return axiosResp.data
+            const response = await graphqlClient.query({
+                query: gql`
+                    query propertiesOfOrg($orgUuid: ID!) {
+                        propertiesOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            name
+                            org
+                            dataType
+                            targetType
+                            defaultValue
+                            createdType
+                            lastUpdatedBy
+                            createdDate
+                        }
+                    }`,
+                variables: {
+                    orgUuid: uuid
+                }
+            })
+            context.commit('SET_PROPERTIES', response.data.propertiesOfOrg)
+            return response.data.propertiesOfOrg
         },
         async createResourceGroup (context: any, appObj: any) {
             const data = await graphqlClient.mutate({
