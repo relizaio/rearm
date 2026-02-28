@@ -841,7 +841,7 @@ const storeObject : any = {
                         namespace: r.namespace,
                         properties: r.properties,
                         state: r.state,
-                        replicas: r.replicas,
+                        replicas: r.replicas ? r.replicas.map((rep: any) => ({ id: rep.id, state: rep.state })) : r.replicas,
                         partOf: r.partOf
                     }
                 })
@@ -857,21 +857,27 @@ const storeObject : any = {
                         namespace: r.namespace,
                         properties: r.properties,
                         state: r.state,
-                        replicas: r.replicas
+                        replicas: r.replicas ? r.replicas.map((rep: any) => ({ id: rep.id, state: rep.state })) : r.replicas
                     }
                 })
             }
+            let instProperties: any[] = []
             if (instanceProps.properties && instanceProps.properties.length) {
-                instanceProps.properties.forEach((p: any) => {
-                    delete p.property
-                    delete p.productDetails
+                instProperties = instanceProps.properties.map((p: any) => {
+                    return {
+                        uuid: p.uuid,
+                        type: p.type,
+                        value: p.value,
+                        namespace: p.namespace,
+                        product: p.product
+                    }
                 })
             }
             let instUpdObject = {
                 uuid: instanceProps.uuid,
                 uri: instanceProps.uri,
                 org: instanceProps.org,
-                properties: instanceProps.properties,
+                properties: instProperties,
                 agentData: instanceProps.agentData,
                 releases: instComponents,
                 targetReleases: instTargetReleases,
