@@ -882,7 +882,7 @@ const storeObject : any = {
             }
             let data = await graphqlClient.mutate({
                 mutation: gql`
-                    mutation updateInstance($inst: InstanceInput) {
+                    mutation updateInstance($inst: InstanceInput!) {
                         updateInstance(instance:$inst) {
                             ${graphqlQueries.InstanceGqlData}
                         }
