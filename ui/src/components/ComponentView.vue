@@ -175,16 +175,16 @@
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication)">
-                                            <label id="componentAuthTypeLabel" for="componentAuthType">Component Authentication Type</label>
+                                            <label id="componentAuthTypeLabel" for="componentAuthType">Component Auth Type</label>
                                             <n-select v-if="isWritable" :options="componentAuthTypes" v-model:value="updatedComponent.authentication.type" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.authentication.type" readonly/>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication && updatedComponent.authentication.type !== 'NOCREDS' && isWritable)">
-                                            <label id="componentAuthLoginLabel" for="componentAuthLogin">Component Authentication Login Secret</label>
+                                            <label id="componentAuthLoginLabel" for="componentAuthLogin">Component Auth Login Secret</label>
                                             <n-select :options="secrets" v-model:value="updatedComponent.authentication.login" />
                                         </div>
                                         <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication && updatedComponent.authentication.type !== 'NOCREDS' && isWritable)">
-                                            <label id="componentAuthPasswordLabel" for="componentAuthPassword">Component Authentication Password Secret</label>
+                                            <label id="componentAuthPasswordLabel" for="componentAuthPassword">Component Auth Password Secret</label>
                                             <n-select :options="secrets" v-model:value="updatedComponent.authentication.password" />
                                         </div>
                                         <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && isWritable)">
@@ -1247,8 +1247,6 @@ function onConditionTypeUpdate (conditionGroup: ConditionGroup, index: number) {
     default:
         break
     }
-    console.log(newType)
-    console.log(index)
 }
 
 function onCreateInputTriggerConditionGroup () {
@@ -1601,12 +1599,15 @@ const archiveComponent = async function () {
 
 const updateComponentKind = function (updKind: string) {
     updatedComponent.value.kind = updKind
-    if (updatedComponent.value.kind === 'HELM' && !updatedComponent.value.authentication) {
-        updatedComponent.value.authentication = {
-            type: 'NOCREDS',
-            login: '',
-            password: ''
+    if (updatedComponent.value.kind === 'HELM') {
+        if (!updatedComponent.value.authentication) {
+            updatedComponent.value.authentication = {
+                type: 'NOCREDS',
+                login: '',
+                password: ''
+            }
         }
+        fetchSecretsIfAllowed()
     }
 }
 
@@ -1619,7 +1620,7 @@ const componentAuthTypes = [
 const secrets = ref([])
 
 const fetchSecretsIfAllowed = async function() {
-    if (isWritable) {
+    if (isWritable && myUser.installationType === 'SAAS') {
         secrets.value = await loadSecrets(componentData.value.org)
     }
 }
@@ -1947,7 +1948,6 @@ const inputTriggerTableFields: DataTableColumns<any> = [
         key: 'facts',
         title: 'Facts',
         render: (row: any) => {
-            console.log(row)
             const factContent: any[] = []
             factContent.push(h('div', `UUID: ${row.uuid}`))
             factContent.push(h('h5', `Condition Groups:`))
@@ -2092,6 +2092,9 @@ async function initLoad() {
         componentsFirstUpper: resolvedWords.componentsFirstUpper
     }
     fetchVcsRepos()
+    if (updatedComponent.value.kind === 'HELM') {
+        fetchSecretsIfAllowed()
+    }
     
     // Auto-select tab based on branch type if branchuuid is provided
     // Only run on initial load, not when closing settings modal
