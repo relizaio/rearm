@@ -9,6 +9,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -45,6 +46,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.github.packageurl.PackageURL;
 
 import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
@@ -671,7 +673,22 @@ public class ReleaseService {
 		return getDeliverableService.getDeliverableDataList(deliverableUuids);
 	}
 
-	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JsonProcessingException{
+	/**
+	 * Internal helper to get release BOM ID
+	 * @param releaseUuid Release UUID
+	 * @param tldOnly Top-level dependencies only
+	 * @param ignoreDev Ignore dev dependencies
+	 * @param belongsTo Artifact belongs to filter
+	 * @param structure BOM structure type
+	 * @param wu Who updated
+	 * @param excludeCoverageTypes Coverage types to exclude
+	 * @return UUID of the merged BOM
+	 * @throws RelizaException if no SBOMs found or merge fails
+	 * @throws JsonProcessingException if BOM JSON processing fails
+	 */
+	private UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
+			ArtifactBelongsTo belongsTo, BomStructureType structure, WhoUpdated wu, 
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JsonProcessingException {
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElseThrow();
 		if (null == tldOnly) tldOnly = false;
 		final RebomOptions mergeOptions = new RebomOptions(belongsTo, tldOnly, ignoreDev, structure);
@@ -679,13 +696,41 @@ public class ReleaseService {
 		if(null == releaseBomId){
 			throw new RelizaException("No SBOMs found!");
 		}
+		return releaseBomId;
+	}
+	
+	/**
+	 * Internal helper to get release SBOM as JsonNode
+	 * Note: This performs BOM merging which can be expensive (though DB-cached). Avoid calling multiple times for the same release.
+	 * @param releaseUuid Release UUID
+	 * @param tldOnly Top-level dependencies only
+	 * @param ignoreDev Ignore dev dependencies
+	 * @param belongsTo Artifact belongs to filter
+	 * @param structure BOM structure type
+	 * @param org Organization UUID
+	 * @param wu Who updated
+	 * @param excludeCoverageTypes Coverage types to exclude
+	 * @return JsonNode representation of the merged BOM
+	 * @throws RelizaException if no SBOMs found or merge fails
+	 * @throws JsonProcessingException if BOM JSON processing fails
+	 */
+	private JsonNode getReleaseSbomAsJsonNode(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
+			ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu, 
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JsonProcessingException {
+		UUID releaseBomId = getReleaseBomId(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, wu, excludeCoverageTypes);
+		return rebomService.findBomByIdJson(releaseBomId, org);
+	}
+	
+	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JsonProcessingException{
 		String mergedBom = "";
 		if (mediaType == BomMediaType.JSON){
-			JsonNode mergedBomJsonNode = rebomService.findBomByIdJson(releaseBomId, org);
+			JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, org, wu, excludeCoverageTypes);
 			mergedBom = mergedBomJsonNode.toString();
 		} else if (mediaType == BomMediaType.CSV) {
+			UUID releaseBomId = getReleaseBomId(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, wu, excludeCoverageTypes);
 			mergedBom = rebomService.findBomByIdCsv(releaseBomId, org);
 		} else if (mediaType == BomMediaType.EXCEL) {
+			UUID releaseBomId = getReleaseBomId(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, wu, excludeCoverageTypes);
 			mergedBom = rebomService.findBomByIdExcel(releaseBomId, org);
 		}
 		return mergedBom;
@@ -1569,19 +1614,71 @@ public class ReleaseService {
 			// Build components list: PURLs as library components + releases as application components
 			List<Component> components = new ArrayList<>();
 			
+			// Try to get enriched components from merged SBOM
+			Map<String, Component> purlComponentMap = new HashMap<>();
+			try {
+				JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(
+					releaseData.getUuid(), false, false, null, BomStructureType.FLAT, 
+					releaseData.getOrg(), WhoUpdated.getAutoWhoUpdated(), null
+				);
+				
+				// Extract components array from JsonNode and convert to Component objects
+				JsonNode componentsNode = mergedBomJsonNode.get("components");
+				if (componentsNode != null && componentsNode.isArray()) {
+					for (JsonNode compNode : componentsNode) {
+						// Convert JsonNode to Component using Jackson
+						Component comp = Utils.OM.treeToValue(compNode, Component.class);
+						if (comp != null && comp.getPurl() != null) {
+							// Normalize PURL for consistent lookups
+							String normalizedPurl = Utils.minimizePurl(comp.getPurl());
+							if (normalizedPurl != null) {
+								purlComponentMap.put(normalizedPurl, comp);
+							}
+						}
+					}
+				}
+				log.debug("Enriched {} components from merged SBOM for VDR", purlComponentMap.size());
+			} catch (RelizaException e) {
+				// No SBOMs available or merge failed - use minimal components
+				if (e.getMessage() != null && e.getMessage().contains("No SBOMs found")) {
+					log.debug("No SBOMs available for VDR component enrichment, using minimal components");
+				} else {
+					log.error("Failed to enrich VDR components from merged SBOM: {}", e.getMessage(), e);
+				}
+				// Continue with empty map - will use minimal components
+			} catch (JsonProcessingException e) {
+				log.error("JSON processing error while enriching VDR components: {}", e.getMessage(), e);
+				// Continue with empty map - will use minimal components
+			}
+			
 			// Add PURL components (type=library, bom-ref=purl)
+			// Use enriched components from merged SBOM if available, otherwise create minimal components
 			for (String purl : allPurls) {
-				Component purlComponent = new Component();
-				purlComponent.setType(Type.LIBRARY);
-				purlComponent.setName(purl);
-				purlComponent.setPurl(purl);
-				purlComponent.setBomRef(purl);
-				components.add(purlComponent);
+				// Normalize PURL for lookup
+				String normalizedPurl = Utils.minimizePurl(purl);
+				Component enrichedComponent = normalizedPurl != null ? purlComponentMap.get(normalizedPurl) : null;
+				
+				if (enrichedComponent != null) {
+					// Clone and ensure bom-ref is set to PURL
+					Component component = cloneComponent(enrichedComponent);
+					component.setBomRef(purl);
+					components.add(component);
+				} else {
+					// Fallback to minimal component
+					Component purlComponent = new Component();
+					purlComponent.setType(Type.LIBRARY);
+					// Extract name from PURL if possible, otherwise use full PURL
+					String componentName = extractNameFromPurl(purl);
+					purlComponent.setName(componentName != null ? componentName : purl);
+					purlComponent.setPurl(purl);
+					purlComponent.setBomRef(purl);
+					components.add(purlComponent);
+				}
 			}
 			
 			// Add release components (type=application) using OBOM logic
 			// Also build a map of releaseUuid -> bomRef for affects references
-			Map<UUID, String> releaseBomRefMap = new java.util.HashMap<>();
+			Map<UUID, String> releaseBomRefMap = new HashMap<>();
 			
 			for (UUID releaseUuid : allReleaseUuids) {
 				Optional<ReleaseData> relOpt = sharedReleaseService.getReleaseData(releaseUuid);
@@ -1613,9 +1710,8 @@ public class ReleaseService {
 					if (compOpt.isPresent()) {
 						releaseComponent.setName(compOpt.get().getName());
 					}
-					
-					// Set PURL if available
-					if (bomRef != null && bomRef.startsWith("pkg:")) {
+					// Set PURL if available (bomRef is guaranteed non-null at this point)
+					if (bomRef.startsWith("pkg:")) {
 						releaseComponent.setPurl(bomRef);
 					}
 					
@@ -1626,7 +1722,7 @@ public class ReleaseService {
 			bom.setComponents(components);
 			
 			// Fetch analysis records for this release (without dependencies)
-			Map<String, VulnAnalysisData> analysisMap = new java.util.HashMap<>();
+			Map<String, VulnAnalysisData> analysisMap = new HashMap<>();
 			try {
 				List<VulnAnalysisData> allAnalyses = vulnAnalysisService.findAllVulnAnalysisAffectingRelease(releaseData.getUuid());
 				for (VulnAnalysisData analysis : allAnalyses) {
@@ -1638,10 +1734,10 @@ public class ReleaseService {
 			}
 			
 			// Also fetch analysis records for each dependency release
-			Map<UUID, Map<String, VulnAnalysisData>> releaseAnalysisMaps = new java.util.HashMap<>();
+			Map<UUID, Map<String, VulnAnalysisData>> releaseAnalysisMaps = new HashMap<>();
 			for (UUID releaseUuid : allReleaseUuids) {
 				try {
-					Map<String, VulnAnalysisData> relAnalysisMap = new java.util.HashMap<>();
+					Map<String, VulnAnalysisData> relAnalysisMap = new HashMap<>();
 					List<VulnAnalysisData> relAnalyses = vulnAnalysisService.findAllVulnAnalysisAffectingRelease(releaseUuid);
 					for (VulnAnalysisData analysis : relAnalyses) {
 						String key = computeAnalysisKey(analysis.getLocation(), analysis.getFindingId());
@@ -1841,6 +1937,65 @@ public class ReleaseService {
 
 	private String computeAnalysisKey(String purl, String vulnId) {
 		return Utils.minimizePurl(purl) + "|" + vulnId;
+	}
+	
+	/**
+	 * Extract component name from PURL
+	 * @param purl Package URL
+	 * @return Component name or null if extraction fails
+	 */
+	private String extractNameFromPurl(String purl) {
+		if (purl == null || !purl.startsWith("pkg:")) {
+			return null;
+		}
+		try {
+			PackageURL packageUrl = new PackageURL(purl);
+			return packageUrl.getName();
+		} catch (Exception e) {
+			log.debug("Failed to extract name from PURL: {}", purl);
+			return null;
+		}
+	}
+	
+	/**
+	 * Clone a CycloneDX Component object (excluding bom-ref which must be set by caller)
+	 * 
+	 * Uses shallow copy for all fields since VDR context is read-only.
+	 * Not copied: Nested components (VDR uses flat structure), bom-ref (set by caller)
+	 * 
+	 * @param source The source component to clone (must not be null)
+	 * @return A cloned component without bom-ref set
+	 */
+	private Component cloneComponent(Component source) {
+		if (source == null) {
+			throw new IllegalArgumentException("Source component cannot be null");
+		}
+		
+		Component clone = new Component();
+		clone.setType(source.getType());
+		clone.setName(source.getName());
+		clone.setVersion(source.getVersion());
+		clone.setPurl(source.getPurl());
+		clone.setGroup(source.getGroup());
+		
+		// Shallow copy all fields - acceptable for read-only VDR context
+		clone.setHashes(source.getHashes());
+		clone.setProperties(source.getProperties());
+		clone.setExternalReferences(source.getExternalReferences());
+		clone.setLicenses(source.getLicenses());
+		clone.setSupplier(source.getSupplier());
+		clone.setPublisher(source.getPublisher());
+		clone.setDescription(source.getDescription());
+		clone.setScope(source.getScope());
+		clone.setCpe(source.getCpe());
+		clone.setSwid(source.getSwid());
+		clone.setPedigree(source.getPedigree());
+		clone.setEvidence(source.getEvidence());
+		clone.setReleaseNotes(source.getReleaseNotes());
+		
+		// Note: NOT copying nested components - VDR should have flat component list only
+		// Note: bom-ref is NOT copied, caller must set it
+		return clone;
 	}
 	
 	/**
