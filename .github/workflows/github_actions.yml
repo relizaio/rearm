@@ -92,7 +92,7 @@ jobs:
           image_namespace: registry.relizahub.com/library
           image_name: rearm-ui
           rearm_api_id: ${{ secrets.RELIZA_REARM_UI_API_ID }}
-          rearm_api_id: ${{ secrets.RELIZA_REARM_UI_API_KEY }}
+          rearm_api_key: ${{ secrets.RELIZA_REARM_UI_API_KEY }}
           rearm_api_url: https://reliza.rearmhq.com
           path: ui
           enable_sbom: true
