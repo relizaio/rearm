@@ -38,7 +38,7 @@ export default function Header() {
               </li>
               <li className="nav-item p-3">
                 <div className="d-flex">
-                  <a href="https://calendly.com/pavel_reliza/demo" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+                  <a href="https://calendly.com/pavel-reliza/30min" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
                     <button className="btn_getStarted">Get Private Demo</button>
                   </a>
                 </div>

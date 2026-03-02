@@ -176,7 +176,7 @@ export default function Home() {
           <div className="integration-getStarted text-center" style={{ marginTop: "60px" }}>
             <p className="mb-3 fw-semibold mb-4">Questions about product or pricing?</p>
             <h1 className="text-center mx-auto" style={{ maxWidth: "650px" }}>Book demo with us!</h1>
-            <a href="https://calendly.com/pavel_reliza/demo" target="_blank" rel="noopenernoreferrer" className="contactUs-btn_ContactUs fw-bold">
+            <a href="https://calendly.com/pavel-reliza/30min" target="_blank" rel="noopenernoreferrer" className="contactUs-btn_ContactUs fw-bold">
               Book Private Demo
             </a>
           </div>
