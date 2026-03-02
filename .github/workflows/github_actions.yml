@@ -136,7 +136,7 @@ jobs:
     name: Build And Push ReARM OCI Service
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit ReARM OCI Service Release
+      - name: ReARM Build And Submit ReARM OCI Service Release
         uses: relizaio/rearm-docker-action@bff513d319274655789d68c0af4b9a4dc53bddd4 # v1.8.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
@@ -202,22 +202,24 @@ jobs:
     name: Build And Push Rebom Backend
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit Backend Release
-        uses: relizaio/reliza-docker-action@a8ba201f314e111885f1ec036e8eeabcb02739be # v3.14
+      - name: ReARM Build And Submit Rebom Backend Release
+        uses: relizaio/rearm-docker-action@bff513d319274655789d68c0af4b9a4dc53bddd4 # v1.8.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
           registry_host: registry.relizahub.com
           image_namespace: registry.relizahub.com/library
           image_name: rebom-backend
-          reliza_api_id: ${{ secrets.RELIZA_REBOM_BACKEND_API_ID }}
-          reliza_api_key: ${{ secrets.RELIZA_REBOM_BACKEND_API_KEY }}
+          rearm_api_id: ${{ secrets.RELIZA_REBOM_BACKEND_API_ID }}
+          rearm_api_key: ${{ secrets.RELIZA_REBOM_BACKEND_API_KEY }}
+          rearm_api_url: https://reliza.rearmhq.com
           path: rebom-backend
-          enable_sbom: 'false'
-          push_to_rearm: 'true'
-          rearm_api_id: ${{ secrets.REARM_REBOM_BACKEND_API_ID }}
-          rearm_api_key: ${{ secrets.REARM_REBOM_BACKEND_API_KEY }}
+          enable_sbom: true
           source_code_sbom_type: 'npm'
-          rearm_enable_public_cosign_sigstore: 'true'
-          rearm_enable_codeql: 'true'
-          rearm_codeql_language: 'javascript'
+          enable_public_cosign_sigstore: 'true'
+          enable_codeql: 'true'
+          codeql_language: 'javascript'
+          rearm_mirror_api_id: ${{ secrets.REARM_REBOM_BACKEND_API_ID }}
+          rearm_mirror_api_key: ${{ secrets.REARM_REBOM_BACKEND_API_KEY }}
+          rearm_mirror_api_url: https://demo.rearmhq.com
+          
