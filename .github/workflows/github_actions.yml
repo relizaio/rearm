@@ -83,7 +83,7 @@ jobs:
     name: Build And Push ReARM UI
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit UI Release
+      - name: ReARM Build And Submit UI Release
         uses: relizaio/rearm-docker-action@b32ed15a7356c2d06d02196defb84c6f33995055 # v1.8.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
@@ -100,6 +100,7 @@ jobs:
           enable_public_cosign_sigstore: 'true'
           enable_codeql: 'true'
           codeql_language: 'javascript'
+          push_to_rearm_mirror: 'true'
           rearm_mirror_api_id: ${{ secrets.REARM_REARM_UI_API_ID }}
           rearm_mirror_api_key: ${{ secrets.REARM_REARM_UI_API_KEY }}
           rearm_mirror_api_url: https://demo.rearmhq.com
@@ -136,7 +137,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM OCI Service Release
-        uses: relizaio/reliza-docker-action@a8ba201f314e111885f1ec036e8eeabcb02739be # v3.14
+        uses: relizaio/rearm-docker-action@b32ed15a7356c2d06d02196defb84c6f33995055 # v1.8.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
