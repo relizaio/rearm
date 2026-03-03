@@ -4,6 +4,7 @@ import { pushToOci, fetchFromOci, clearMockOciStorage } from '../../src/services
 /**
  * Unit tests for OCI Service
  * Tests the mock OCI storage functionality used in tests
+ * Includes tests for monthly repository rotation feature
  */
 
 describe('OCI Service - Mock Mode', () => {
@@ -19,22 +20,23 @@ describe('OCI Service - Mock Mode', () => {
             const uuid = '123e4567-e89b-12d3-a456-426614174000';
             const bom = { serialNumber: 'urn:uuid:test', components: [] };
 
-            const response = await pushToOci(uuid, bom);
+            const result = await pushToOci(uuid, bom);
 
-            expect(response).toBeDefined();
-            expect(response.ociResponse).toBeDefined();
-            expect(response.ociResponse!.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
-            expect(response.fileSHA256Digest).toBe(response.ociResponse!.digest);
+            expect(result).toBeDefined();
+            expect(result.ociResponse).toBeDefined();
+            expect(result.ociResponse!.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+            expect(result.fileSHA256Digest).toBe(result.ociResponse!.digest);
+            expect(result.ociRepositoryName).toBeDefined();
         });
 
         it('should generate consistent digest for same content', async () => {
             const uuid = '123e4567-e89b-12d3-a456-426614174000';
             const bom = { serialNumber: 'urn:uuid:test', components: [] };
 
-            const response1 = await pushToOci(uuid, bom);
-            const response2 = await pushToOci(uuid, bom);
+            const result1 = await pushToOci(uuid, bom);
+            const result2 = await pushToOci(uuid, bom);
 
-            expect(response1.ociResponse!.digest).toBe(response2.ociResponse!.digest);
+            expect(result1.ociResponse!.digest).toBe(result2.ociResponse!.digest);
         });
 
         it('should generate different digests for different content', async () => {
@@ -43,21 +45,21 @@ describe('OCI Service - Mock Mode', () => {
             const bom1 = { serialNumber: 'urn:uuid:test1', components: [] };
             const bom2 = { serialNumber: 'urn:uuid:test2', components: ['comp1'] };
 
-            const response1 = await pushToOci(uuid1, bom1);
-            const response2 = await pushToOci(uuid2, bom2);
+            const result1 = await pushToOci(uuid1, bom1);
+            const result2 = await pushToOci(uuid2, bom2);
 
-            expect(response1.ociResponse!.digest).not.toBe(response2.ociResponse!.digest);
+            expect(result1.ociResponse!.digest).not.toBe(result2.ociResponse!.digest);
         });
 
         it('should include size in response', async () => {
             const uuid = '123e4567-e89b-12d3-a456-426614174000';
             const bom = { serialNumber: 'urn:uuid:test', components: [] };
 
-            const response = await pushToOci(uuid, bom);
+            const result = await pushToOci(uuid, bom);
 
-            expect(response.ociResponse).toBeDefined();
-            expect(response.ociResponse!.size).toBeDefined();
-            expect(parseInt(response.ociResponse!.size!)).toBeGreaterThan(0);
+            expect(result.ociResponse).toBeDefined();
+            expect(result.ociResponse!.size).toBeDefined();
+            expect(parseInt(result.ociResponse!.size!)).toBeGreaterThan(0);
         });
     });
 
@@ -86,8 +88,8 @@ describe('OCI Service - Mock Mode', () => {
             const uuid = '123e4567-e89b-12d3-a456-426614174000';
             const bom = { serialNumber: 'urn:uuid:test', components: [] };
 
-            const response = await pushToOci(uuid, bom);
-            const fetched = await fetchFromOci(response.ociResponse!.digest!);
+            const result = await pushToOci(uuid, bom);
+            const fetched = await fetchFromOci(result.ociResponse!.digest!);
 
             expect(fetched).toEqual(bom);
         });
@@ -114,14 +116,14 @@ describe('OCI Service - Mock Mode', () => {
             const uuid = '123e4567-e89b-12d3-a456-426614174000';
             const bom = { serialNumber: 'urn:uuid:test', components: [] };
 
-            const response = await pushToOci(uuid, bom);
+            const result = await pushToOci(uuid, bom);
             
             // Should be able to fetch by tag
             const fetchedByTag = await fetchFromOci(uuid);
             expect(fetchedByTag).toEqual(bom);
 
             // Should be able to fetch by digest
-            const fetchedByDigest = await fetchFromOci(response.ociResponse!.digest!);
+            const fetchedByDigest = await fetchFromOci(result.ociResponse!.digest!);
             expect(fetchedByDigest).toEqual(bom);
         });
 
@@ -130,11 +132,11 @@ describe('OCI Service - Mock Mode', () => {
             const uuid2 = '223e4567-e89b-12d3-a456-426614174000';
             const bom = { serialNumber: 'urn:uuid:test', components: [] };
 
-            const response1 = await pushToOci(uuid1, bom);
-            const response2 = await pushToOci(uuid2, bom);
+            const result1 = await pushToOci(uuid1, bom);
+            const result2 = await pushToOci(uuid2, bom);
 
             // Same content should have same digest
-            expect(response1.ociResponse!.digest).toBe(response2.ociResponse!.digest);
+            expect(result1.ociResponse!.digest).toBe(result2.ociResponse!.digest);
 
             // Both tags should retrieve the same content
             const fetched1 = await fetchFromOci(uuid1);

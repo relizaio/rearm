@@ -41,7 +41,7 @@ const resolvers = {
 			return bomToCsv(bom);
 		},
 		rawBomIdCsv: async (_:any, input: any): Promise<string> => {
-			const rawBom = await BomService.findRawBomObjectById(input.id, input.org);
+			const rawBom = await BomService.findRawBomObjectById(input.id, input.org, input.format);
 			return bomToCsv(rawBom);
 		},
 		bomBySerialNumberAndVersion: async (_:any, input: any): Promise<Object> => BomService.findBomBySerialNumberAndVersion(input.serialNumber, input.version, input.org, input.raw),
@@ -53,7 +53,7 @@ const resolvers = {
 			return await bomToExcel(bom);
 		},
 		rawBomIdExcel: async (_:any, input: any): Promise<string> => {
-			const rawBom = await BomService.findRawBomObjectById(input.id, input.org);
+			const rawBom = await BomService.findRawBomObjectById(input.id, input.org, input.format);
 			return await bomToExcel(rawBom);
 		},
 		parseSarifContent: async (_:any, input: { sarifContent: string }): Promise<WeaknessDto[]> => {

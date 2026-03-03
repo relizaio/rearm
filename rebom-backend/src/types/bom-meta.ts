@@ -15,6 +15,7 @@ export interface BomMetaNested {
         modification: 'RAW' | 'REBOM' | 'USER';
         bomDigest?: string;
         stripBom: boolean;
+        ociRepositoryName?: string;
     };
     relationship?: {
         belongsTo?: string;
@@ -56,6 +57,7 @@ export function toNestedMeta(opts: RebomOptions): BomMetaNested {
             modification: opts.mod?.toUpperCase() as any || 'RAW',
             bomDigest: opts.bomDigest,
             stripBom: opts.stripBom === 'true' || opts.stripBom === true as any
+            // Note: ociRepositoryName is stored separately in database, not via RebomOptions
         }
     };
 
@@ -124,5 +126,6 @@ export function fromNestedMeta(nested: BomMetaNested): RebomOptions {
         duplicateOf: nested.deduplication?.duplicateOf,
         deduplicationTimestamp: nested.deduplication?.deduplicationTimestamp,
         notes: nested.notes ?? ''
+        // Note: ociRepositoryName is NOT included - it's rebom's internal storage detail
     };
 }

@@ -68,12 +68,35 @@ export async function mockFetchFromOci(tag: string): Promise<Object> {
 
 /**
  * Mock implementation of pushToOci
+ * @param tag - UUID or identifier for the BOM
+ * @param bom - BOM content to store
+ * @param repositoryNameOrTimestamp - Either a repository name string OR a Date timestamp (for backward compatibility)
  */
-export async function mockPushToOci(tag: string, bom: any): Promise<OASResponse> {
+export async function mockPushToOci(tag: string, bom: any, repositoryNameOrTimestamp?: string | Date): Promise<OASResponse> {
     const transformedTag = transformTag(tag);
     const digest = `sha256:${generateMockDigest(bom)}`;
     
-    logger.debug({ tag: transformedTag, digest }, "Storing in mock OCI storage");
+    // Handle both repository name (string) and timestamp (Date) parameters
+    let repoName: string;
+    
+    if (repositoryNameOrTimestamp instanceof Date) {
+        // Timestamp provided - generate repository name from it
+        const timestamp = repositoryNameOrTimestamp;
+        const year = timestamp.getUTCFullYear();
+        const month = String(timestamp.getUTCMonth() + 1).padStart(2, '0');
+        repoName = `rebom-artifacts-${year}-${month}`;
+    } else if (typeof repositoryNameOrTimestamp === 'string') {
+        // Repository name provided directly
+        repoName = repositoryNameOrTimestamp;
+    } else {
+        // No parameter provided - use current month
+        const now = new Date();
+        const year = now.getUTCFullYear();
+        const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+        repoName = `rebom-artifacts-${year}-${month}`;
+    }
+    
+    logger.debug({ tag: transformedTag, digest, repositoryName: repoName }, "Storing in mock OCI storage");
     
     // Store by both tag and digest for proper retrieval
     mockStorage.set(transformedTag, bom);
@@ -86,7 +109,8 @@ export async function mockPushToOci(tag: string, bom: any): Promise<OASResponse>
             size: String(JSON.stringify(bom).length),
             mediaType: 'application/json'
         },
-        fileSHA256Digest: digest
+        fileSHA256Digest: digest,
+        ociRepositoryName: repoName
     };
 }
 

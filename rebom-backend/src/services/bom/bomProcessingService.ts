@@ -1,9 +1,16 @@
 import { logger } from '../../logger';
 import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord } from '../../types';
-import { BomValidationError, BomStorageError } from '../../types/errors';
+import { BomValidationError, BomStorageError, OciStorageError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
-import { pushToOci, fetchFromOci } from '../oci';
+import { 
+  fetchFromOci, 
+  pushToOci, 
+  getMonthlyRepositoryName,
+  extractRepositoryNameFromBom,
+  extractRepositoryNameFromSpdxOciResponse,
+  validateOciPushResult
+} from '../oci';
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { SpdxService } from '../spdx';
@@ -615,22 +622,46 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string): Pr
   
   if (wasEnriched) {
     // Push enriched BOM to OCI (overwrites existing)
+    // CRITICAL: Use the SAME repository as the original upload to keep BOMs together
+    // This prevents month boundary race conditions where enrichment happens in a different month
     try {
-      const oasResponse = await pushToOci(bomUuid, result.enrichedBom);
+      // Fetch BOM record to get original repository name from bom field
+      const bomRecords = await BomRepository.bomById(bomUuid);
+      const originalRepositoryName = bomRecords?.[0] ? extractRepositoryNameFromBom(bomRecords[0]) : undefined;
       
-      // Update database with new BOM reference and status
-      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, oasResponse);
+      if (!originalRepositoryName) {
+        // CRITICAL: For legacy BOMs without repository name, we MUST use current month
+        // This is a one-time migration - the enriched BOM will then have a repository name
+        logger.warn({ bomUuid }, 'No original repository name found (legacy BOM) - using current month for enrichment (one-time migration)');
+      }
       
-      logger.info({ bomUuid, serialNumber: bom.serialNumber }, 'Async BOM enrichment completed successfully');
+      // ALWAYS use original repository if available to prevent month boundary issues
+      // Only fall back to current month for legacy BOMs (which will then be migrated)
+      const repositoryName = originalRepositoryName || getMonthlyRepositoryName();
+      
+      const pushResult = await pushToOci(bomUuid, result.enrichedBom, repositoryName);
+      
+      // Validate repository name was set
+      validateOciPushResult(pushResult, 'enrichment', bomUuid);
+      
+      // Update database with new BOM reference, status, and repository name
+      await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult, pushResult.ociRepositoryName);
+      
+      logger.info({ 
+        bomUuid, 
+        serialNumber: bom.serialNumber, 
+        repositoryName: pushResult.ociRepositoryName, 
+        usedOriginalRepo: !!originalRepositoryName,
+        isLegacyMigration: !originalRepositoryName
+      }, 'Async BOM enrichment completed successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ bomUuid, error: errorMessage }, 'Failed to push enriched BOM to OCI');
       await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, errorMessage);
     }
   } else {
-    // Enrichment succeeded but no changes were made
+    logger.info({ bomUuid, serialNumber: bom.serialNumber }, 'BOM enrichment skipped - no enrichment needed');
     await updateEnrichmentStatus(bomUuid, EnrichmentStatus.COMPLETED);
-    logger.info({ bomUuid }, 'Async BOM enrichment completed (no changes)');
   }
 }
 
@@ -743,7 +774,8 @@ export async function triggerEnrichment(id: string, org: string, force: boolean 
     });
   } else {
     // Normal enrichment - just fetch current BOM and enrich
-    const bomContent = await fetchFromOci(bomRecord.uuid);
+    const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
+    const bomContent = await fetchFromOci(bomRecord.uuid, storedRepositoryName);
     enrichBomAsync(bomRecord.uuid, bomContent, org).catch(err => {
       logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
     });
@@ -790,8 +822,22 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string): Promi
     }
     
     // Push only the final enriched BOM
-    const oasResponse = await pushToOci(bomUuid, result.enrichedBom);
-    await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, oasResponse);
+    // Use original repository name from BOM record
+    const originalRepositoryName = extractRepositoryNameFromBom(bomRecord);
+    const repositoryName = originalRepositoryName || getMonthlyRepositoryName();
+    
+    if (!originalRepositoryName) {
+      logger.warn({ bomUuid }, 'No original repository name found for re-enrichment, using current month');
+    }
+    
+    const pushResult = await pushToOci(bomUuid, result.enrichedBom, repositoryName);
+    
+    // Validate repository name was set
+    if (!pushResult.ociRepositoryName) {
+      throw new OciStorageError('Re-enrichment OCI push succeeded but repository name is missing', 'push', bomUuid);
+    }
+    
+    await updateEnrichmentStatusWithBom(bomUuid, EnrichmentStatus.COMPLETED, pushResult, pushResult.ociRepositoryName);
     
     logger.info({ bomUuid }, 'Forced re-enrichment completed successfully');
     
@@ -811,7 +857,8 @@ async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> 
   
   try {
     logger.debug({ rawUuid, bomUuid: bomRecord.uuid }, 'Fetching raw CycloneDX BOM for reprocessing');
-    const rawBom = await fetchFromOci(rawUuid);
+    const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
+    const rawBom = await fetchFromOci(rawUuid, storedRepositoryName);
     
     // Re-augment the BOM with component context
     const rebomOptions = bomRecord.meta;
@@ -847,7 +894,8 @@ async function reprocessSpdxBom(bomRecord: BomRecord, spdxUuid: string, org: str
     
     // Fetch raw SPDX content from OCI
     const fetchId = spdxRecord.oci_response.ociResponse?.digest || spdxRecord.uuid;
-    const spdxContent = await fetchFromOci(fetchId);
+    const spdxRepositoryName = extractRepositoryNameFromSpdxOciResponse(spdxRecord.oci_response);
+    const spdxContent = await fetchFromOci(fetchId, spdxRepositoryName);
     
     // Re-convert SPDX to CycloneDX
     const conversionResult = await SpdxService.convertSpdxToCycloneDx(spdxContent);
@@ -872,9 +920,23 @@ async function reprocessSpdxBom(bomRecord: BomRecord, spdxUuid: string, org: str
 async function updateEnrichmentStatusWithBom(
   bomUuid: string,
   status: EnrichmentStatus,
-  oasResponse: any
+  oasResponse: any,
+  repositoryName?: string
 ): Promise<void> {
   try {
+    // Update enrichment status in meta and repository name in bom field
+    // Repository name is stored in bom.ociRepositoryName (OASResponse), not in meta
+    // This ensures extractRepositoryNameFromBom() can find it correctly
+    
+    // If repository name is provided, update it in the OASResponse
+    let updatedOasResponse = oasResponse;
+    if (repositoryName) {
+      updatedOasResponse = {
+        ...oasResponse,
+        ociRepositoryName: repositoryName
+      };
+    }
+    
     const queryText = `
       UPDATE rebom.boms 
       SET 
@@ -884,7 +946,7 @@ async function updateEnrichmentStatusWithBom(
             jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
             '{enrichmentTimestamp}', $4::jsonb
           ),
-          '{enrichmentError}', 'null'::jsonb
+          '{enrichmentError}', $5::jsonb
         ),
         last_updated_date = NOW()
       WHERE uuid = $1
@@ -892,10 +954,15 @@ async function updateEnrichmentStatusWithBom(
     
     await runQuery(queryText, [
       bomUuid,
-      oasResponse,
+      updatedOasResponse,
       JSON.stringify(status),
-      JSON.stringify(new Date().toISOString())
+      JSON.stringify(new Date().toISOString()),
+      JSON.stringify(null)
     ]);
+    
+    if (repositoryName) {
+      logger.debug({ bomUuid, repositoryName }, 'Updated OCI repository name in bom field during enrichment');
+    }
   } catch (error) {
     logger.error({ bomUuid, status, error }, 'Failed to update enrichment status with BOM');
   }

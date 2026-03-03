@@ -3,7 +3,7 @@ import { BomDto, BomMetaDto, BomRecord, BomSearch, SearchObject } from '../../ty
 import { BomNotFoundError, BomDataIntegrityError } from '../../types/errors';
 import { BomMapper } from './bomMapper';
 import { logger } from '../../logger';
-import { fetchFromOci } from '../oci';
+import { fetchFromOci, extractRepositoryNameFromBom, extractRepositoryNameFromSpdxOciResponse } from '../oci';
 
 export async function findAllBoms(): Promise<BomDto[]> {
     const bomRecords = await BomRepository.findAllBoms();
@@ -44,8 +44,12 @@ export async function findBomObjectById(id: string, org: string): Promise<Object
     
     const bomRecord = bomResults[0];
     
+    // Extract repository name from bom field (OASResponse)
+    const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
+    
     // Fetch the actual BOM content from OCI storage using the BOM's UUID
-    const bomContent = await fetchFromOci(bomRecord.uuid);
+    // Use stored repository name, or fall back to default 'rebom-artifacts' for legacy records
+    const bomContent = await fetchFromOci(bomRecord.uuid, storedRepositoryName);
     return bomContent;
 }
 
@@ -75,42 +79,19 @@ export async function findBomBySerialNumberAndVersion(serialNumber: string, vers
     if (!versionedBom || versionedBom.length === 0) {
         // Backward compatibility: If requesting version 1 and only one BOM exists without proper versioning,
         // assume it's the first/only version
-        if (version === 1 && allBoms.length === 1) {
-            logger.info({ 
-                serialNumber, 
-                version, 
-                bomUuid: allBoms[0].uuid,
-                actualBomVersion: allBoms[0].meta?.bomVersion 
-            }, "Legacy BOM without version tracking - treating as version 1");
-            const bomContent = await fetchFromOci(allBoms[0].uuid);
-            return bomContent;
-        }
-        
-        logger.warn({ 
-            serialNumber, 
-            version, 
-            org, 
-            availableVersions: allBoms.map(b => b.meta?.bomVersion) 
-        }, "No BOM found for version");
         throw new BomNotFoundError(
-            `BOM not found: ${serialNumber} version ${version}`,
+            `No BOM found with serial number ${serialNumber} and version ${version}`,
             serialNumber,
-            { version, org, searchType: 'serialNumber_and_version', availableVersions: allBoms.map(b => b.meta?.bomVersion) }
-        );
-    }
-    
-    // Validate that only one BOM was found for this version (data integrity check)
-    if (versionedBom.length > 1) {
-        logger.error({ serialNumber, version, org, count: versionedBom.length }, "Multiple BOMs found for same version - data integrity issue");
-        throw new BomDataIntegrityError(
-            `Multiple BOMs found for same version`,
-            serialNumber,
-            versionedBom.length,
-            { org, version, searchType: 'serialNumber_and_version' }
+            { searchType: 'serialNumber_and_version', org, version, availableVersions: allBoms.map(b => b.meta?.bomVersion) }
         );
     }
     
     const bomRecord = versionedBom[0];
+    
+    logger.debug({ uuid: bomRecord.uuid, version, serialNumber }, "Found BOM record");
+    
+    // Extract repository name from bom field (OASResponse)
+    const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
     
     // Fetch the actual BOM content from OCI storage
     if (raw) {
@@ -121,25 +102,27 @@ export async function findBomBySerialNumberAndVersion(serialNumber: string, vers
             const spdxBom = await SpdxRepository.findSpdxBomById(bomRecord.source_spdx_uuid, org);
             if (spdxBom?.oci_response) {
                 const fetchId = spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid;
-                logger.debug({ fetchId, version, serialNumber }, "Fetching raw SPDX BOM by version");
-                return await fetchFromOci(fetchId);
+                // Use SPDX BOM's repository name from oci_response, not the CycloneDX BOM's
+                const spdxRepositoryName = extractRepositoryNameFromSpdxOciResponse(spdxBom.oci_response);
+                logger.debug({ fetchId, version, serialNumber, spdxRepositoryName }, "Fetching raw SPDX BOM by version");
+                return await fetchFromOci(fetchId, spdxRepositoryName);
             }
         }
         // Native CycloneDX - fetch raw BOM
         const rawBomUuid = bomRecord.uuid + '-raw';
         logger.debug({ rawBomUuid, version, serialNumber }, "Fetching raw CycloneDX BOM by version");
         try {
-            return await fetchFromOci(rawBomUuid);
+            return await fetchFromOci(rawBomUuid, storedRepositoryName);
         } catch (error) {
             // Fallback for older BOMs without -raw suffix
             logger.warn({ rawBomUuid, bomUuid: bomRecord.uuid, error: error instanceof Error ? error.message : String(error) }, 
                 "Failed to fetch raw BOM with -raw suffix, retrying without suffix for legacy BOM");
-            return await fetchFromOci(bomRecord.uuid);
+            return await fetchFromOci(bomRecord.uuid, storedRepositoryName);
         }
     } else {
         // Augmented/processed BOM requested
         logger.debug({ uuid: bomRecord.uuid, version, serialNumber }, "Fetching augmented BOM by version");
-        return await fetchFromOci(bomRecord.uuid);
+        return await fetchFromOci(bomRecord.uuid, storedRepositoryName);
     }
 }
 
@@ -192,6 +175,9 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
         );
     }
 
+    // Extract repository name from bom field (OASResponse)
+    const storedRepositoryName = extractRepositoryNameFromBom(bomById);
+
     if (format === 'CYCLONEDX') {
         // Check if this is an SPDX-sourced BOM
         if (bomById.source_spdx_uuid) {
@@ -201,26 +187,28 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
                 bomUuid: bomById.uuid, 
                 sourceSpdxUuid: bomById.source_spdx_uuid 
             }, "Fetching converted CycloneDX from SPDX source");
-            return await fetchFromOci(bomById.uuid);
+            return await fetchFromOci(bomById.uuid, storedRepositoryName);
         }
         
         // Native CycloneDX - fetch raw BOM
         const rawBomUuid = bomById.uuid + '-raw';
         logger.debug({ rawBomUuid, bomUuid: bomById.uuid }, "Fetching raw CycloneDX BOM");
         try {
-            return await fetchFromOci(rawBomUuid);
+            return await fetchFromOci(rawBomUuid, storedRepositoryName);
         } catch (error) {
             // Fallback for older BOMs without -raw suffix
             logger.warn({ rawBomUuid, bomUuid: bomById.uuid, error: error instanceof Error ? error.message : String(error) }, 
                 "Failed to fetch raw BOM with -raw suffix, retrying without suffix for legacy BOM");
-            return await fetchFromOci(bomById.uuid);
+            return await fetchFromOci(bomById.uuid, storedRepositoryName);
         }
     } 
     else if (format === 'SPDX') {
         if (bomById.source_format === 'SPDX' && bomById.source_spdx_uuid) {
             const spdxBom = await SpdxRepository.findSpdxBomById(bomById.source_spdx_uuid, org);
             if (spdxBom?.oci_response) {
-                return await fetchFromOci(spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid);
+                // Use SPDX BOM's repository name from oci_response
+                const spdxRepositoryName = extractRepositoryNameFromSpdxOciResponse(spdxBom.oci_response);
+                return await fetchFromOci(spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid, spdxRepositoryName);
             }
         }
         throw new BomNotFoundError(
@@ -244,8 +232,10 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
             
             if (spdxBom?.oci_response) {
                 const fetchId = spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid;
-                logger.debug({ fetchId }, "Fetching SPDX content from OCI");
-                return await fetchFromOci(fetchId);
+                // Use SPDX BOM's repository name from oci_response
+                const spdxRepositoryName = extractRepositoryNameFromSpdxOciResponse(spdxBom.oci_response);
+                logger.debug({ fetchId, spdxRepositoryName }, "Fetching SPDX content from OCI");
+                return await fetchFromOci(fetchId, spdxRepositoryName);
             }
         }
         
@@ -255,17 +245,17 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
             logger.debug({ rawBomUuid, bomUuid: bomById.uuid, sourceFormat: bomById.source_format }, 
                 "Fetching raw CycloneDX BOM (no format specified)");
             try {
-                return await fetchFromOci(rawBomUuid);
+                return await fetchFromOci(rawBomUuid, storedRepositoryName);
             } catch (error) {
                 // Fallback for older BOMs without -raw suffix
                 logger.warn({ rawBomUuid, bomUuid: bomById.uuid, error: error instanceof Error ? error.message : String(error) }, 
                     "Failed to fetch raw BOM with -raw suffix, retrying without suffix for legacy BOM");
-                return await fetchFromOci(bomById.uuid);
+                return await fetchFromOci(bomById.uuid, storedRepositoryName);
             }
         }
         
         // Fallback to primary UUID (processed/augmented BOM)
         logger.debug({ uuid: bomById.uuid }, "Falling back to primary BOM UUID");
-        return await fetchFromOci(bomById.uuid);
+        return await fetchFromOci(bomById.uuid, storedRepositoryName);
     }
 }

@@ -1,5 +1,5 @@
-import { BomRecord, BomDto, BomMetaDto } from '../../types';
-import { fetchFromOci } from '../oci';
+import { BomDto, BomMetaDto, BomRecord } from '../../types';
+import { fetchFromOci, extractRepositoryNameFromBom } from '../oci';
 
 export class BomMapper {
     /**
@@ -26,13 +26,14 @@ export class BomMapper {
     }
 
     /**
-     * Convert BomRecord to BomDto WITH actual BOM content from OCI.
+     * Converts a BomRecord to BomDto with full BOM content.
      * This fetches the full BOM JSON from OCI storage.
      * Use this when you need the actual BOM content (components, dependencies, etc.).
      */
     static async toDtoWithContent(record: BomRecord): Promise<BomDto> {
         const dto = this.toDto(record);
-        dto.bom = await fetchFromOci(record.uuid);
+        const storedRepositoryName = extractRepositoryNameFromBom(record);
+        dto.bom = await fetchFromOci(record.uuid, storedRepositoryName);
         return dto;
     }
 

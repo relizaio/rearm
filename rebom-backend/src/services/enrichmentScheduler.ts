@@ -1,8 +1,9 @@
 import { logger } from '../logger';
-import { runQuery } from '../utils';
-import { isEnrichmentConfigured, enrichBomAsync } from './bom/bomProcessingService';
-import { fetchFromOci } from './oci';
 import { EnrichmentStatus } from '../types';
+import * as BomRepository from '../bomRepository';
+import { fetchFromOci, extractRepositoryNameFromBom } from './oci';
+import { enrichBomAsync, isEnrichmentConfigured } from './bom/bomProcessingService';
+import { runQuery } from '../utils';
 
 const SCHEDULER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const ENRICHMENT_BATCH_LIMIT = 50;
@@ -15,10 +16,11 @@ let isRunning = false;
 /**
  * Finds BOMs that need enrichment (status is null, FAILED, or SKIPPED).
  * Returns up to ENRICHMENT_BATCH_LIMIT records.
+ * IMPORTANT: Must include 'bom' field so extractRepositoryNameFromBom can find repository name.
  */
-async function findBomsNeedingEnrichment(): Promise<Array<{ uuid: string; organization: string; serialNumber: string }>> {
+async function findBomsNeedingEnrichment(): Promise<Array<{ uuid: string; organization: string; serialNumber: string; meta: any; bom: any }>> {
   const queryText = `
-    SELECT uuid, organization, meta->>'serialNumber' as "serialNumber"
+    SELECT uuid, organization, meta->>'serialNumber' as "serialNumber", bom
     FROM rebom.boms 
     WHERE meta->>'enrichmentStatus' IS NULL 
        OR meta->>'enrichmentStatus' = $1
@@ -70,7 +72,8 @@ async function runEnrichmentCycle(): Promise<void> {
         logger.info({ bomUuid: bom.uuid, serialNumber: bom.serialNumber }, 'Enrichment scheduler: Triggering enrichment');
         
         // Fetch BOM content from OCI
-        const bomContent = await fetchFromOci(bom.uuid);
+        const storedRepositoryName = extractRepositoryNameFromBom(bom);
+        const bomContent = await fetchFromOci(bom.uuid, storedRepositoryName);
         
         await enrichBomAsync(bom.uuid, bomContent, bom.organization).catch(err => {
           logger.error({ err, bomUuid: bom.uuid }, 'Enrichment scheduler: Async enrichment failed');

@@ -12,12 +12,12 @@ export async function createSpdxBom(spdxRecord: Partial<SpdxBomRecord>): Promise
         RETURNING *
     `;
     
-    const values: any[] = [
-        spdxRecord.uuid || null, // Use provided UUID or null
+    const params = [
+        spdxRecord.uuid,
         spdxRecord.spdx_metadata || {},
         spdxRecord.oci_response || null,
-        spdxRecord.organization || '',
-        spdxRecord.file_sha256 || '',
+        spdxRecord.organization || null,
+        spdxRecord.file_sha256 || null,
         spdxRecord.conversion_status || 'pending',
         spdxRecord.tags || null,
         spdxRecord.public || false,
@@ -25,7 +25,7 @@ export async function createSpdxBom(spdxRecord: Partial<SpdxBomRecord>): Promise
     ];
 
     try {
-        const result = await runQuery(query, values);
+        const result = await runQuery(query, params);
         const row = result.rows[0];
         
         return {

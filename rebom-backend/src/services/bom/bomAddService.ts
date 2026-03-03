@@ -4,7 +4,13 @@ import { BomValidationError, BomStorageError, BomConversionError, OciStorageErro
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { SpdxService } from '../spdx';
-import { pushToOci } from '../oci';
+import { 
+  pushToOci, 
+  getMonthlyRepositoryName,
+  validateDualBomPush,
+  validateOciPushResult,
+  extractRepositoryNameFromBom
+} from '../oci';
 import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync } from './bomProcessingService';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
@@ -119,14 +125,26 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   const rawUuid = newUuid + '-raw';
 
   // Step 4: Store artifacts in OCI
-  const rawOasResponse = await pushToOci(rawUuid, rawBom);  // Raw BOM (original, untouched)
-  const oasResponse = await pushToOci(newUuid, finalBom);  // Processed (and optionally augmented) BOM
+  // Calculate repository name ONCE to prevent month boundary race conditions
+  const uploadTimestamp = new Date();
+  const repositoryName = getMonthlyRepositoryName(uploadTimestamp);
+  
+  logger.debug({ repositoryName, uploadTimestamp: uploadTimestamp.toISOString() }, 'Calculated repository name for upload');
+  
+  const rawPushResult = await pushToOci(rawUuid, rawBom, repositoryName);  // Raw BOM (original, untouched)
+  const pushResult = await pushToOci(newUuid, finalBom, repositoryName);  // Processed (and optionally augmented) BOM
+  
+  // Validate both BOMs went to same repository and have repository names set
+  validateDualBomPush(rawPushResult, pushResult, 'upload', newUuid);
   
   // Track raw BOM metadata for rearm-saas (use actual file digest from OCI)
   // Note: rawBomUuid is always `uuid + '-raw'` so rearm-saas can reconstruct it
-  rebomOptions.originalFileDigest = rawOasResponse.fileSHA256Digest;  // Actual file digest from OCI
-  rebomOptions.originalFileSize = rawOasResponse.originalSize;
-  rebomOptions.originalMediaType = rawOasResponse.originalMediaType;
+  rebomOptions.originalFileDigest = rawPushResult.fileSHA256Digest;  // Actual file digest from OCI
+  rebomOptions.originalFileSize = rawPushResult.originalSize;
+  rebomOptions.originalMediaType = rawPushResult.originalMediaType;
+  
+  // Repository name is already stored in pushResult.ociRepositoryName (bom field)
+  // No need to duplicate it in meta
 
   // Step 5: Check for deduplication and determine INSERT vs UPDATE
   const serialNumber = rebomOptions.serialNumber;
@@ -170,7 +188,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
       }, "Inserting new version of existing BOM (version increment)");
       
       queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
-      queryParams = [newUuid, rebomOptions, oasResponse, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
+      queryParams = [newUuid, rebomOptions, pushResult, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
     } else {
       // Same or lower version - REPLACE/UPDATE existing record
       logger.info({ 
@@ -186,12 +204,41 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
       const existingUuid = latestBom.uuid;
       const existingRawUuid = existingUuid + '-raw';
       
+      // CRITICAL: Use existing BOM's repository name to prevent orphaned artifacts
+      // Extract repository name from existing BOM record
+      const existingRepositoryName = extractRepositoryNameFromBom(latestBom);
+      const replacementRepositoryName = existingRepositoryName || repositoryName;
+      
+      if (!existingRepositoryName) {
+        // Legacy BOM without repository name - this is a one-time migration scenario
+        // The replacement will go to the current month's repository, migrating the BOM
+        // The old artifact in the base repository will be orphaned (acceptable)
+        logger.warn({ 
+          existingUuid, 
+          currentMonthRepository: repositoryName,
+          operation: 'legacy_bom_migration'
+        }, "LEGACY BOM MIGRATION: Existing BOM has no repository name - migrating to current month repository. Old artifact in base repository will be orphaned.");
+      } else if (existingRepositoryName !== repositoryName) {
+        // Replacing a BOM that's in a different month's repository
+        // This is expected and correct - we keep the BOM in its original repository
+        logger.info({
+          existingUuid,
+          existingRepository: existingRepositoryName,
+          currentMonthRepository: repositoryName,
+          operation: 'cross_month_replacement'
+        }, "Replacing BOM in its original repository (different from current month) - this is correct behavior");
+      }
+      
       // Re-upload to existing UUIDs (overwrites old files in OCI)
-      await pushToOci(existingRawUuid, rawBom);
-      const replacementOasResponse = await pushToOci(existingUuid, finalBom);
+      // Use existing repository to keep all versions together
+      const rawReplacementResult = await pushToOci(existingRawUuid, rawBom, replacementRepositoryName);
+      const replacementPushResult = await pushToOci(existingUuid, finalBom, replacementRepositoryName);
+      
+      // Validate both BOMs went to same repository and have repository names set
+      validateDualBomPush(rawReplacementResult, replacementPushResult, 'replacement', existingUuid);
       
       queryText = 'UPDATE rebom.boms SET meta = $1, bom = $2, tags = $3, last_updated_date = NOW() WHERE uuid = $4 RETURNING *';
-      queryParams = [rebomOptions, replacementOasResponse, bomInput.bomInput.tags, existingUuid];
+      queryParams = [rebomOptions, replacementPushResult, bomInput.bomInput.tags, existingUuid];
     }
   } else {
     // No existing BOM - INSERT new record
@@ -202,7 +249,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     }, "Inserting new BOM (no existing record)");
     
     queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
-    queryParams = [newUuid, rebomOptions, oasResponse, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
+    queryParams = [newUuid, rebomOptions, pushResult, bomInput.bomInput.tags, bomInput.bomInput.org, 'CYCLONEDX'];
   }
   
   // Step 6: Execute database operation
@@ -304,12 +351,19 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     }
     
     const spdxUuid = uuidv4();
-    const spdxOciResponse = await pushToOci(spdxUuid, spdxContent);
+    const spdxTimestamp = new Date();
+    const spdxRepositoryName = getMonthlyRepositoryName(spdxTimestamp);
+    const spdxPushResult = await pushToOci(spdxUuid, spdxContent, spdxRepositoryName);
+    
+    // Validate that repository name was set
+    validateOciPushResult(spdxPushResult, 'SPDX push', spdxUuid);
 
+    // Repository name is already in spdxPushResult.ociRepositoryName (oci_response field)
+    // No need to duplicate it in spdx_metadata
     const spdxRecord = await SpdxRepository.createSpdxBom({
       uuid: spdxUuid,
       spdx_metadata: spdxMetadata,
-      oci_response: spdxOciResponse,
+      oci_response: spdxPushResult,
       organization: bomInput.bomInput.org,
       file_sha256: fileHash,
       conversion_status: 'pending',
@@ -366,13 +420,19 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     const convertedBomUuid = uuidv4();
     // Set enrichment status - enrichment will happen asynchronously
     mergedOptions.enrichmentStatus = getInitialEnrichmentStatus();
-    const cycloneDxOciResponse = await pushToOci(convertedBomUuid, convertedBom);
+    // Use same repository as SPDX upload to ensure consistency
+    const cycloneDxPushResult = await pushToOci(convertedBomUuid, convertedBom, spdxRepositoryName);
+    
+    // Validate that repository name was set
+    validateOciPushResult(cycloneDxPushResult, 'converted CycloneDX push', convertedBomUuid);
+    
+    // Repository name is already in cycloneDxPushResult.ociRepositoryName
 
     const queryText = 'INSERT INTO rebom.boms (uuid, meta, bom, tags, organization, source_format, source_spdx_uuid) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *';
     const queryParams = [
       convertedBomUuid,
       mergedOptions,
-      cycloneDxOciResponse,
+      cycloneDxPushResult,
       bomInput.bomInput.tags,
       bomInput.bomInput.org,
       'SPDX',

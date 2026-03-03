@@ -26,5 +26,18 @@ export const clearMockOciStorage = useMock
     ? async () => mockService.clearMockOciStorage()
     : async () => {}; // No-op in production
 
+// Re-export utility functions
+export const getMonthlyRepositoryName = realService.getMonthlyRepositoryName;
+
+// Re-export repository helper functions
+export { 
+  extractRepositoryNameFromBom,
+  extractRepositoryNameFromSpdxOciResponse,
+  validateOciPushResult,
+  validateRepositoryMatch,
+  validateDualBomPush,
+  getValidatedRepositoryName
+} from './ociRepositoryHelpers';
+
 // Re-export types
 export type { OASResponse, OciResponse } from './ociService';
