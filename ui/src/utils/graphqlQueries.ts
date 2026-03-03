@@ -943,6 +943,7 @@ const USER_GQL_DATA = `
     }
     policiesAccepted
     isGlobalAdmin
+    isLicenseValid
 `
 
 const ENVIRONMENT_TYPES_GQL = gql`

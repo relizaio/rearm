@@ -143,6 +143,73 @@ const onCreate = async function () {
             }
         })
     }
+    
+    // Check license validity
+    if (!myUser.value.isLicenseValid && !showSignUpFlow.value && myUser.value.installationType !== 'OSS') {
+        if (myUser.value.isGlobalAdmin) {
+            // Global admin: show upload license modal
+            Swal.fire({
+                title: 'License Invalid or Expired',
+                html: '<p>The software license is not valid. Please upload a new license to continue.</p><textarea id="license-input" placeholder="Paste license string here" rows="6" style="width: 100%; font-family: monospace;"></textarea>',
+                showCancelButton: false,
+                confirmButtonText: 'Upload License',
+                showLoaderOnConfirm: true,
+                allowOutsideClick: () => false,
+                allowEscapeKey: false,
+                scrollbarPadding: false,
+                preConfirm: async () => {
+                    const licenseInput = document.getElementById('license-input') as HTMLTextAreaElement
+                    const licenseString = licenseInput?.value
+                    if (!licenseString || !licenseString.trim()) {
+                        Swal.showValidationMessage('Please enter a license string')
+                        return false
+                    }
+                    try {
+                        await graphqlClient.mutate({
+                            mutation: gql`
+                                mutation uploadLicense($license: String!) {
+                                    uploadLicense(license: $license) {
+                                        baseUri
+                                        validFrom
+                                        validTo
+                                        maxWriteUsers
+                                        maxReadUsers
+                                    }
+                                }`,
+                            variables: { license: licenseString },
+                            fetchPolicy: 'no-cache'
+                        })
+                    } catch (err: any) {
+                        Swal.showValidationMessage(
+                            `Failed: ${commonFunctions.parseGraphQLError(err.message)}`
+                        )
+                        return false
+                    }
+                }
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    Swal.fire(
+                        'Success!',
+                        'License uploaded successfully',
+                        'success'
+                    ).then(() => {
+                        window.location.href = '/'
+                    })
+                }
+            })
+        } else {
+            // Non-admin: show contact admin message
+            Swal.fire({
+                title: 'License Invalid or Expired',
+                html: '<p>The software license is not valid.</p><p>Please contact your Global System Administrator or Reliza Support at <a href="mailto:info@reliza.io">info@reliza.io</a></p>',
+                icon: 'warning',
+                showCancelButton: false,
+                showConfirmButton: false,
+                allowOutsideClick: () => false,
+                allowEscapeKey: false
+            })
+        }
+    }
 }
 
 await onCreate()

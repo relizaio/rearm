@@ -62,10 +62,6 @@ import AppWrapper from '@/components/AppWrapper.vue'
     width: 90% !important;
 }
 
-.swal2-container {
-    z-index: 9999;
-}
-
 .n-tooltip a {
   color: #eee !important;
   text-decoration: underline;
