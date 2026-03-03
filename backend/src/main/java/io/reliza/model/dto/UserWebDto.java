@@ -43,4 +43,5 @@ public class UserWebDto {
 	private Boolean isGlobalAdmin;
 	private Boolean systemSealed;
 	private String installationType;
+	private Boolean isLicenseValid;
 }

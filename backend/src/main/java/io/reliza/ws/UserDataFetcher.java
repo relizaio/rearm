@@ -38,6 +38,7 @@ import io.reliza.model.dto.UserWebDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.LicenseStatus;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.SystemInfoService;
 import io.reliza.service.UserService;
@@ -64,6 +65,9 @@ public class UserDataFetcher {
 	
 	@Autowired
 	private SystemInfoService systemInfoService;
+
+	@Autowired
+	private LicenseStatus licenseStatus;
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "acceptUserPolicies")
@@ -156,6 +160,7 @@ public class UserDataFetcher {
 				udWebDto.setSystemSealed(true);
 			}
 			udWebDto.setInstallationType(systemInstallationType.toString());
+			udWebDto.setIsLicenseValid(licenseStatus.isLicenseValid());
 			return udWebDto;
 		} catch (RelizaException re) {
 			throw new AccessDeniedException(re.getMessage());

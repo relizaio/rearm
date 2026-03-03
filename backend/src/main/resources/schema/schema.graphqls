@@ -452,6 +452,7 @@ type User {
 	systemSealed: Boolean
 	installationType: String
 	isGlobalAdmin: Boolean
+	isLicenseValid: Boolean
 }
 
 type UserGroupWebDto {
