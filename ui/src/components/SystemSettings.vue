@@ -61,6 +61,34 @@
                     </n-form>
                 </n-modal>
             </div>
+            <div v-if="myUser && myUser.installationType !== 'OSS'" class="licenseBlock">
+                <h4 class="mt-4">License: </h4>
+                
+                <div v-if="licenseData">
+                    <p><strong>Base URI:</strong> {{ licenseData.baseUri }}</p>
+                    <p><strong>Valid From:</strong> {{ formatDate(licenseData.validFrom) }}</p>
+                    <p><strong>Valid To:</strong> {{ formatDate(licenseData.validTo) }}</p>
+                    <p><strong>Max Write Users:</strong> {{ licenseData.maxWriteUsers }}</p>
+                    <p><strong>Max Read Users:</strong> {{ licenseData.maxReadUsers }}</p>
+                    <n-icon @click="showLicenseModal = true" class="clickable" title="Update License" size="20"><Edit /></n-icon>
+                </div>
+                <div v-else>
+                    <p>No valid license found.</p>
+                    <n-button @click="showLicenseModal = true">Upload License</n-button>
+                </div>
+                
+                <n-modal v-model:show="showLicenseModal" preset="dialog" :show-icon="false" style="width: 90%"
+                    title='Upload License' :hide-footer="true">
+                    <n-form>
+                        <n-form-item label='License String:'>
+                            <n-input type="textarea" v-model:value="licenseString" required
+                                placeholder="Paste license string here" :rows="10" />
+                        </n-form-item>
+                        <n-button type="success" @click="uploadLicense">Submit</n-button>
+                        <n-button type="error" @click="showLicenseModal = false; licenseString = ''">Cancel</n-button>
+                    </n-form>
+                </n-modal>
+            </div>
             <div class="emailConfigurationBlock">
                 <h4 class="mt-4">Email Sending Configuration: </h4>
                 
@@ -188,6 +216,9 @@ onMounted(async () => {
 
 const systemInfoIsSet: Ref<any> = ref({})
 const defaultOrganization = ref('')
+const licenseData: Ref<any> = ref(null)
+const showLicenseModal: Ref<boolean> = ref(false)
+const licenseString: Ref<string> = ref('')
 
 async function initLoad() {
     // reload my user
@@ -209,6 +240,57 @@ async function initLoad() {
     })
     systemInfoIsSet.value = gqlResp.data.getSystemInfoIsSet
     defaultOrganization.value = gqlResp.data.getSystemInfoIsSet.defaultOrg
+    
+    // Fetch license only if not OSS
+    const myUserData = store.getters.myuser
+    if (myUserData && myUserData.installationType !== 'OSS') {
+        const licenseResp = await graphqlClient.query({
+            query: gql`
+                query getLicense {
+                    license {
+                        baseUri
+                        validFrom
+                        validTo
+                        maxWriteUsers
+                        maxReadUsers
+                    }
+                }
+                `,
+            fetchPolicy: 'no-cache'
+        })
+        licenseData.value = licenseResp.data.license
+    }
+}
+
+function formatDate(dateString: string) {
+    if (!dateString) return 'N/A'
+    return new Date(dateString).toLocaleDateString()
+}
+
+async function uploadLicense() {
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation uploadLicense($license: String!) {
+                    uploadLicense(license: $license) {
+                        baseUri
+                        validFrom
+                        validTo
+                        maxWriteUsers
+                        maxReadUsers
+                    }
+                }`,
+            variables: {
+                license: licenseString.value
+            }
+        })
+        licenseData.value = resp.data.uploadLicense
+        showLicenseModal.value = false
+        licenseString.value = ''
+        Swal.fire('Success!', 'License uploaded successfully.', 'success')
+    } catch (err: any) {
+        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+    }
 }
 
 const allOrganizations: Ref<any[]> = ref([])
