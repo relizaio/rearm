@@ -20,6 +20,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserData;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.IntegrationService;
+import io.reliza.service.LicenseStatus;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ReleaseFinalizerService;
 import io.reliza.service.UserService;
@@ -49,6 +50,9 @@ public class AdminDataFetcher {
 	@Autowired
 	ReleaseFinalizerService releaseFinalizerService;
 
+	@Autowired
+	LicenseStatus licenseStatus;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getSystemInfoIsSet")
 	public SystemInfoDto getSystemInfoIsSet() throws RelizaException {
@@ -76,6 +80,7 @@ public class AdminDataFetcher {
 		try {
 			UserData ud = userService.resolveUser(auth);
 			systemInfoService.unSealSystem(secret, ud);
+			licenseStatus.setSystemSealed(false);
 			return true;
 		} catch (RelizaException re) {
 			throw new AccessDeniedException(re.getMessage());
