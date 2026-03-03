@@ -55,7 +55,7 @@ public class VcsRepositoryDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "vcsRepository")
-	public VcsRepositoryData getVcsRepository(@InputArgument("vcs") String vcsStr) {
+	public VcsRepositoryData getVcsRepository(@InputArgument("vcs") String vcsStr) throws RelizaException {
 		UUID vcsRepositoryUuid = UUID.fromString(vcsStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -68,7 +68,7 @@ public class VcsRepositoryDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "listVcsReposOfOrganization")
-	public List<VcsRepositoryData> listVcsReposOfOrganization(@InputArgument("orgUuid") String orgUuidStr) {
+	public List<VcsRepositoryData> listVcsReposOfOrganization(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
 		UUID orgUuid = UUID.fromString(orgUuidStr);	
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -113,7 +113,7 @@ public class VcsRepositoryDataFetcher {
 	public VcsRepositoryData updateBranch(
 			@InputArgument("vcsUuid") UUID vcsUuid,
 			@InputArgument("name") String name,
-			@InputArgument("uri") String uri) {
+			@InputArgument("uri") String uri) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsUuid);

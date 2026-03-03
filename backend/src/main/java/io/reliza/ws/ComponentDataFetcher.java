@@ -124,7 +124,7 @@ public class ComponentDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "component")
-	public ComponentData getComponent(@InputArgument("componentUuid") String componentUuidStr) {
+	public ComponentData getComponent(@InputArgument("componentUuid") String componentUuidStr) throws RelizaException {
 		UUID componentUuid = UUID.fromString(componentUuidStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -139,7 +139,7 @@ public class ComponentDataFetcher {
 	public Collection<ComponentData> getComponentsOfType(
 			@InputArgument("orgUuid") String orgUuidStr,
 			@InputArgument("componentType") ComponentType componentType,
-			@InputArgument("perspective") UUID perspectiveUuid) {
+			@InputArgument("perspective") UUID perspectiveUuid) throws RelizaException {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -201,7 +201,7 @@ public class ComponentDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "setComponentApiKey")
-	public ApiKeyForUserDto setApiKey(@InputArgument("componentUuid") UUID componentUuid) {
+	public ApiKeyForUserDto setApiKey(@InputArgument("componentUuid") UUID componentUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ComponentData> opd = getComponentService.getComponentData(componentUuid);
@@ -224,7 +224,7 @@ public class ComponentDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@Transactional
 	@DgsData(parentType = "Mutation", field = "updateComponent")
-	public ComponentData updateComponent(DgsDataFetchingEnvironment dfe) {
+	public ComponentData updateComponent(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> componentUpdateData = dfe.getArgument("component");
@@ -475,7 +475,7 @@ public class ComponentDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@Transactional
 	@DgsData(parentType = "Mutation", field = "archiveBranch")
-	public Boolean archiveBranch(@InputArgument("branchUuid") UUID branchUuid) {
+	public Boolean archiveBranch(@InputArgument("branchUuid") UUID branchUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);		
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
@@ -495,7 +495,7 @@ public class ComponentDataFetcher {
 	@Transactional
 	@DgsData(parentType = "Mutation", field = "archiveComponent")
 	public Boolean archiveComponent(DgsDataFetchingEnvironment dfe,
-			@InputArgument("componentUuid") UUID componentUuid) {
+			@InputArgument("componentUuid") UUID componentUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);		
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);

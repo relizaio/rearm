@@ -23,6 +23,7 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -68,7 +69,7 @@ public class IntegrationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "configuredBaseIntegrations")
-	public Set<IntegrationType> getConfiguredBaseIntegrations (@InputArgument("org") UUID orgUuid) {
+	public Set<IntegrationType> getConfiguredBaseIntegrations (@InputArgument("org") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 
@@ -84,7 +85,7 @@ public class IntegrationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "createIntegration")
-	public IntegrationData createIntegration(DgsDataFetchingEnvironment dfe) {
+	public IntegrationData createIntegration(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -103,7 +104,7 @@ public class IntegrationDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "deleteBaseIntegration")
 	public boolean deleteIntegration(DgsDataFetchingEnvironment dfe,
-			@InputArgument("org") UUID org, @InputArgument("type") IntegrationType integrationType) {
+			@InputArgument("org") UUID org, @InputArgument("type") IntegrationType integrationType) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -121,7 +122,7 @@ public class IntegrationDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "requestRefreshDependencyTrackMetrics")
 	public boolean requestRefreshDependencyTrackMetrics(
-			@InputArgument("artifact") UUID art) {
+			@InputArgument("artifact") UUID art) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ArtifactData> oad = artifactService.getArtifactData(art);
@@ -138,7 +139,7 @@ public class IntegrationDataFetcher {
 	public UUID searchDtrackComponentByPurlAndProjects(
 			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("purl") String purl,
-			@InputArgument("dtrackProjects") Set<UUID> dtrackProjects) {
+			@InputArgument("dtrackProjects") Set<UUID> dtrackProjects) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -151,7 +152,7 @@ public class IntegrationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "refreshDtrackProjects")
-	public Boolean refreshDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+	public Boolean refreshDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -168,7 +169,7 @@ public class IntegrationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "cleanupDtrackProjects")
-	public Boolean cleanupDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+	public Boolean cleanupDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -185,7 +186,7 @@ public class IntegrationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "recleanupDtrackProjects")
-	public Boolean recleanupDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+	public Boolean recleanupDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -202,7 +203,7 @@ public class IntegrationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "syncDtrackProjects")
-	public Boolean syncDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) {
+	public Boolean syncDtrackProjects(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		

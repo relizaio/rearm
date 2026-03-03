@@ -103,7 +103,7 @@ public class UserDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "setUserOrgApiKey")
-	public ApiKeyForUserDto setUserOrgApiKey(@InputArgument("orgUuid") UUID orgUuid) {
+	public ApiKeyForUserDto setUserOrgApiKey(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);

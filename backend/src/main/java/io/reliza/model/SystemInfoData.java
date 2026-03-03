@@ -52,6 +52,11 @@ public class SystemInfoData extends RelizaDataParent{
 	private UUID defaultOrg;
 	private ZonedDateTime lastDtrackSync;
 	private AzureCreds azureCredentials;
+	private String license;
+	private ZonedDateTime licenseStartDate;
+	private ZonedDateTime licenseEndDate;
+	private Integer licensedMaxWriteUsers;
+	private Integer licensedMaxReadUsers;
 	
 	public static SystemInfoData dataFromRecord (SystemInfo t) {
 		Map<String,Object> recordData = t.getData();

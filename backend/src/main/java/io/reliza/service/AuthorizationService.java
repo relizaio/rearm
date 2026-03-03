@@ -29,6 +29,7 @@ import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.RequestType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.AuthPrincipal;
@@ -82,6 +83,9 @@ public class AuthorizationService {
 	@Autowired
 	private BranchService branchService;
 	
+	@Autowired
+	private LicenseStatus licenseStatus;
+	
 	public AuthHeaderParse authenticateProgrammatic (HttpHeaders headers, ServletWebRequest servletWebRequest) {
 		AuthHeaderParse ahp = null;
 		String remoteIp = servletWebRequest.getRequest().getRemoteAddr();
@@ -108,7 +112,8 @@ public class AuthorizationService {
 //		return ap;
 //	}
 
-	public AuthorizationResponse authorize(AuthPrincipal ap, CallType ct) {
+	public AuthorizationResponse authorize(AuthPrincipal ap, CallType ct) throws RelizaException {
+		validateSystemOperational(ct);
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
 		UserData ud = (UserData) ap;
 		if (ud.isGlobalAdmin() && ct == CallType.GLOBAL_ADMIN) {
@@ -136,7 +141,8 @@ public class AuthorizationService {
 		return ar;
 	}
 	
-	public AuthorizationResponse isUserAuthorizedOrgWideGraphQLWithObjects(UserData ud, Collection<RelizaObject> ros, CallType ct) {
+	public AuthorizationResponse isUserAuthorizedOrgWideGraphQLWithObjects(UserData ud, Collection<RelizaObject> ros, CallType ct) throws RelizaException {
+		validateSystemOperational(ct);
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
 		
 		UUID org = getMatchingOrg(ros);
@@ -158,9 +164,11 @@ public class AuthorizationService {
 	 * @param ros - Must contain original object 
 	 * @param ct
 	 * @return
+	 * @throws RelizaException 
 	 */
 	public AuthorizationResponse isUserAuthorizedForObjectGraphQL(final UserData ud, @NonNull final PermissionFunction function,
-			final PermissionScope objectType, final UUID objectUuid, Collection<RelizaObject> ros, CallType ct) {
+			final PermissionScope objectType, final UUID objectUuid, Collection<RelizaObject> ros, CallType ct) throws RelizaException {
+		validateSystemOperational(ct);
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
 		if (ud.isGlobalAdmin()) {
 			AuthorizationResponse.allow(ar);
@@ -185,7 +193,8 @@ public class AuthorizationService {
 	}
 	
 	public AuthorizationResponse isUserAuthorizedForAnyObjectGraphQL(final UserData ud, @NonNull final PermissionFunction function,
-			final PermissionScope objectType, final Set<UUID> objectUuids, Collection<RelizaObject> ros, CallType ct) {
+			final PermissionScope objectType, final Set<UUID> objectUuids, Collection<RelizaObject> ros, CallType ct) throws RelizaException {
+		validateSystemOperational(ct);
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
 		if (ud.isGlobalAdmin()) {
 			AuthorizationResponse.allow(ar);
@@ -462,7 +471,8 @@ public class AuthorizationService {
 	}
 	
 	public AuthorizationResponse isApiKeyAuthorized(AuthHeaderParse ahp, List<ApiTypeEnum> supportedApiTypes, UUID org, 
-			CallType ct, RelizaObject ro) {
+			CallType ct, RelizaObject ro) throws RelizaException {
+		validateSystemOperational(ct);
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.ALLOW);
 		UUID matchingKey = null;
 		
@@ -499,6 +509,24 @@ public class AuthorizationService {
 		return ar;
 	}
 	
+	/**
+	 * Checks in-memory license and sealed status before any authorization.
+	 * Global admin calls are always allowed (needed for unsealing and license upload).
+	 * @throws RelizaException 
+	 * @throws AccessDeniedException if system is sealed or license is invalid
+	 */
+	public void validateSystemOperational(CallType ct) throws RelizaException {
+		if (ct == CallType.GLOBAL_ADMIN) {
+			return;
+		}
+		if (licenseStatus.isSystemSealed()) {
+			throw new RelizaException("System is sealed. Please unseal the system first.");
+		}
+		if (!licenseStatus.isLicenseValid()) {
+			throw new RelizaException("License is invalid or expired. Please upload a valid license.");
+		}
+	}
+
 	public void gqlValidateAuthorizationResponse(AuthorizationResponse ar) {
 		if (!AuthorizationResponse.isAllowed(ar)) {
 			if (ar.getHttpStatus() == HttpStatus.FORBIDDEN || ar.getHttpStatus() == HttpStatus.EXPECTATION_FAILED) {

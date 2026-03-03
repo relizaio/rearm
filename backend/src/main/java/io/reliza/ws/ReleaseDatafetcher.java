@@ -189,7 +189,7 @@ public class ReleaseDatafetcher {
 	public ReleaseData getRelease(
 			@InputArgument("releaseUuid") UUID releaseUuid,
 			@InputArgument("orgUuid") UUID org
-			) {
+			) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -294,7 +294,7 @@ public class ReleaseDatafetcher {
 			@InputArgument("orgFilter") UUID orgFilter,
 			@InputArgument("releaseFilter") List<UUID> releaseFilter,
 			@InputArgument("numRecords") Integer numRecords, 
-			@InputArgument("pullRequestFilter") Integer pullRequest)
+			@InputArgument("pullRequestFilter") Integer pullRequest) throws RelizaException
 	{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -451,7 +451,7 @@ public class ReleaseDatafetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateReleaseLifecycle")
 	public ReleaseData updateReleaseLifecycle(@InputArgument("release") UUID releaseId,
-			@InputArgument("newLifecycle") ReleaseLifecycle newLifecycle) {
+			@InputArgument("newLifecycle") ReleaseLifecycle newLifecycle) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
@@ -469,7 +469,7 @@ public class ReleaseDatafetcher {
 	@Transactional
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateRelease")
-	public ReleaseData updateRelease(DgsDataFetchingEnvironment dfe) {
+	public ReleaseData updateRelease(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> updateReleaseInput = dfe.getArgument("release");
@@ -490,7 +490,7 @@ public class ReleaseDatafetcher {
 	@Transactional
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateReleaseTagsMeta")
-	public ReleaseData updateReleaseTagsMeta(DgsDataFetchingEnvironment dfe) {
+	public ReleaseData updateReleaseTagsMeta(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> updateReleaseInput = dfe.getArgument("release");
@@ -1051,7 +1051,7 @@ public class ReleaseDatafetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "triggerReleasecompletionfinalizer")
-	public Boolean triggerReleasecompletionfinalizer(@InputArgument("release") UUID releaseId, DgsDataFetchingEnvironment dfe) {
+	public Boolean triggerReleasecompletionfinalizer(@InputArgument("release") UUID releaseId, DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
@@ -1067,7 +1067,7 @@ public class ReleaseDatafetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "exportAsObomManual")
 	public String exportAsObomManual(DgsDataFetchingEnvironment dfe,
-			@InputArgument("releaseUuid") UUID releaseUuid) {
+			@InputArgument("releaseUuid") UUID releaseUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
@@ -1081,7 +1081,7 @@ public class ReleaseDatafetcher {
 	public SearchDigestVersionResponse searchDigestVersion(
 			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("query") String query,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
 
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -1168,7 +1168,7 @@ public class ReleaseDatafetcher {
 			@InputArgument("branchUuid") UUID branchUuid,
 			@InputArgument("tagKey") String tagKey,
 			@InputArgument("tagValue") String tagValue,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -1199,7 +1199,7 @@ public class ReleaseDatafetcher {
 	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByDtrackProjects(DgsDataFetchingEnvironment dfe,
 			@InputArgument("orgUuid") final UUID orgUuid,
 			@InputArgument("dtrackProjects") List<UUID> dtrackProjects,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -1245,7 +1245,7 @@ public class ReleaseDatafetcher {
 	@Transactional
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "updateComponentReleasesIdentifiers")
-	public Boolean updateComponentReleasesIdentifiers(@InputArgument("componentUuid") UUID compUuid) {
+	public Boolean updateComponentReleasesIdentifiers(@InputArgument("componentUuid") UUID compUuid) throws RelizaException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(compUuid);
@@ -1432,7 +1432,7 @@ public class ReleaseDatafetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifactReleases")
 	public List<ReleaseData> getArtifactReleases(
-			@InputArgument("artUuid") String artifactUuidStr)
+			@InputArgument("artUuid") String artifactUuidStr) throws RelizaException
 	{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -1560,7 +1560,7 @@ public class ReleaseDatafetcher {
 	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByCveId(
 			@InputArgument("org") UUID orgUuid,
 			@InputArgument("cveId") String cveId,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -1580,7 +1580,7 @@ public class ReleaseDatafetcher {
 			@InputArgument("org") UUID orgUuid,
 			@InputArgument("startDate") ZonedDateTime startDate,
 			@InputArgument("endDate") ZonedDateTime endDate,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -1599,7 +1599,7 @@ public class ReleaseDatafetcher {
 	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByTimeFrameAndComponent(
 			@InputArgument("componentUuid") UUID componentUuid,
 			@InputArgument("startDate") ZonedDateTime startDate,
-			@InputArgument("endDate") ZonedDateTime endDate) {
+			@InputArgument("endDate") ZonedDateTime endDate) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
@@ -1613,7 +1613,7 @@ public class ReleaseDatafetcher {
 	public List<CveSearchResultDto.ComponentWithBranches> searchReleasesByTimeFrameAndBranch(
 			@InputArgument("branchUuid") UUID branchUuid,
 			@InputArgument("startDate") ZonedDateTime startDate,
-			@InputArgument("endDate") ZonedDateTime endDate) {
+			@InputArgument("endDate") ZonedDateTime endDate) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);

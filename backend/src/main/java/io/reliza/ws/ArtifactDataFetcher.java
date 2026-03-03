@@ -69,7 +69,7 @@ public class ArtifactDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifact")
-	public ArtifactData getArtifact(@InputArgument("artifactUuid") String artifactUuidStr) {
+	public ArtifactData getArtifact(@InputArgument("artifactUuid") String artifactUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID artifactUuid = UUID.fromString(artifactUuidStr);
@@ -83,7 +83,7 @@ public class ArtifactDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifactVersionHistory")
-	public List<ArtifactData> getArtifactVersionHistory(@InputArgument("artifactUuid") String artifactUuidStr) {
+	public List<ArtifactData> getArtifactVersionHistory(@InputArgument("artifactUuid") String artifactUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID artifactUuid = UUID.fromString(artifactUuidStr);
@@ -233,7 +233,7 @@ public class ArtifactDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "syncDtrackStatus")
-	public SyncDtrackStatusResponseDto syncDtrackStatus(@InputArgument("orgUuid") String orgUuidStr) {
+	public SyncDtrackStatusResponseDto syncDtrackStatus(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
@@ -250,7 +250,7 @@ public class ArtifactDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "triggerEnrichment")
 	public EnrichmentTriggerResult triggerEnrichment(
-			@InputArgument("artifact") UUID artifactUuid) {
+			@InputArgument("artifact") UUID artifactUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
@@ -292,7 +292,7 @@ public class ArtifactDataFetcher {
 	@DgsData(parentType = "Mutation", field = "updateArtifactTags")
 	public ArtifactData updateArtifactTags(
 			@InputArgument("artifact") UUID artifactUuid,
-			DgsDataFetchingEnvironment dfe) {
+			DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);

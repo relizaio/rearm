@@ -198,6 +198,23 @@ public class SystemInfoService {
 		return new SystemInfoDto(sysInfo.getEmailSendType() != EmailSendType.UNSET, sysInfo.getDefaultOrg());
 	}
 	
+	public SystemInfoData getSystemInfoData() {
+		return findSystemInfo();
+	}
+
+	@Transactional
+	public void setLicenseData(String license, ZonedDateTime licenseStartDate, ZonedDateTime licenseEndDate,
+			int maxWriteUsers, int maxReadUsers) {
+		SystemInfo sysInfo = this.repository.findSystemInfo();
+		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
+		sd.setLicense(license);
+		sd.setLicenseStartDate(licenseStartDate);
+		sd.setLicenseEndDate(licenseEndDate);
+		sd.setLicensedMaxWriteUsers(maxWriteUsers);
+		sd.setLicensedMaxReadUsers(maxReadUsers);
+		saveSystemInfo(sysInfo, sd);
+	}
+
 	public AzureCreds getAzureCredentials(){
 		var sysInfo = findSystemInfo();
 		AzureCreds encAzureCreds = sysInfo.getAzureCredentials();

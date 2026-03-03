@@ -99,7 +99,7 @@ public class DeliverableDataFetcher {
 	// TODO this should be put under RBAC but left as org wide only as currently this endpoint is not used by UI; PS - 2026-02-20
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "deliverable")
-	public DeliverableData getDeliverable(@InputArgument("deliverable") String deliverableUuidStr) {
+	public DeliverableData getDeliverable(@InputArgument("deliverable") String deliverableUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID deliverable = UUID.fromString(deliverableUuidStr);
@@ -111,7 +111,7 @@ public class DeliverableDataFetcher {
 	
 	@DgsData(parentType = "Query", field = "listDeliverablesByComponent")
 	public List<DeliverableData> listDeliverablesByComponent(DgsDataFetchingEnvironment dfe,
-			@InputArgument("componentUuid") String componentUuidStr) {
+			@InputArgument("componentUuid") String componentUuidStr) throws RelizaException {
         JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID componentUuid = UUID.fromString(componentUuidStr);

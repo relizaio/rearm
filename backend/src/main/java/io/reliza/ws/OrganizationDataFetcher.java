@@ -84,7 +84,7 @@ public class OrganizationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "users")
-	public List<OrgUserData> getUsers(@InputArgument("orgUuid") String orgUuidStr) {
+	public List<OrgUserData> getUsers(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
@@ -103,7 +103,7 @@ public class OrganizationDataFetcher {
 	@DgsData(parentType = "Query", field = "combinedUserOrgPermissions")
 	public Permissions getCombinedUserOrgPermissions(
 			@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("userUuid") UUID userUuid) {
+			@InputArgument("userUuid") UUID userUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
@@ -116,7 +116,7 @@ public class OrganizationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "resourceGroups")
-	public List<ResourceGroupData> getApplications(@InputArgument("orgUuid") String orgUuidStr) {
+	public List<ResourceGroupData> getApplications(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
@@ -128,7 +128,7 @@ public class OrganizationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "totalsAnalytics")
-	public Map<String,BigInteger> getTotalsAnalytics(@InputArgument("orgUuid") String orgUuidStr) {
+	public Map<String,BigInteger> getTotalsAnalytics(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
@@ -140,7 +140,7 @@ public class OrganizationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "apiKeys")
-	public List<ApiKeyDto> getApiKeys(@InputArgument("orgUuid") String orgUuidStr) {
+	public List<ApiKeyDto> getApiKeys(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
@@ -157,7 +157,7 @@ public class OrganizationDataFetcher {
 			@InputArgument("apiType") ApiTypeEnum keyType,
 			@InputArgument("keyOrder") String keyOrder,
 			@InputArgument("notes") String notes
-		) {
+		) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
@@ -190,7 +190,7 @@ public class OrganizationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "deleteApiKey")
-	public Boolean setOrgApiKey(@InputArgument("apiKeyUuid") String apiKeyUuidStr) {
+	public Boolean setOrgApiKey(@InputArgument("apiKeyUuid") String apiKeyUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
@@ -226,7 +226,7 @@ public class OrganizationDataFetcher {
 	@DgsData(parentType = "Mutation", field = "updateOrganizationTerminology")
 	public OrganizationData updateOrganizationTerminology(
 			@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("terminology") Map<String, Object> terminology) {
+			@InputArgument("terminology") Map<String, Object> terminology) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var odTerm = getOrganizationService.getOrganizationData(orgUuid);
@@ -275,7 +275,7 @@ public class OrganizationDataFetcher {
 	@DgsData(parentType = "Mutation", field = "updateOrganizationSettings")
 	public OrganizationData updateOrganizationSettings(
 			@InputArgument("orgUuid") String orgUuidStr,
-			@InputArgument("settings") Map<String, Object> settings) {
+			@InputArgument("settings") Map<String, Object> settings) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);

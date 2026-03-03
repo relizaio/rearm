@@ -82,6 +82,7 @@ type Query {
 	getAllOrganizations: [Organization]
 	
 	getSystemInfoIsSet: SystemInfoIsSet
+	license: LicensePayload
 	
 	exportAsObomManual(releaseUuid: ID!): String
 	
@@ -148,6 +149,7 @@ type Mutation {
 		
 	# system global
 	unSealSystem(secret: String): Boolean
+	uploadLicense(license: String!): LicensePayload
 	finalizeAllReleases: Boolean
 	createOrganization(name: String!): Organization
 	setEmailProperties(emailProperties: EmailPropertiesInput!): Boolean
@@ -364,6 +366,14 @@ enum ComponentKind {
 type Identifier {
 	idType: IdentifierType
 	idValue: String
+}
+
+type LicensePayload {
+	baseUri: String
+	validFrom: DateTime
+	validTo: DateTime
+	maxWriteUsers: Int
+	maxReadUsers: Int
 }
 
 type SystemInfoIsSet {

@@ -51,7 +51,7 @@ public class AdminDataFetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getSystemInfoIsSet")
-	public SystemInfoDto getSystemInfoIsSet() {
+	public SystemInfoDto getSystemInfoIsSet() throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);
@@ -60,7 +60,7 @@ public class AdminDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "finalizeAllReleases")
-	public Boolean finalizeAllReleases() {
+	public Boolean finalizeAllReleases() throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);

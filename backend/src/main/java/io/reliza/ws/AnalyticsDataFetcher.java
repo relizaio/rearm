@@ -80,7 +80,7 @@ public class AnalyticsDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "mostActiveComponentsOverTime")
-	public List<ReleasesPerComponent> getMostActiveComponentsOverTime(DgsDataFetchingEnvironment dfe) {
+	public List<ReleasesPerComponent> getMostActiveComponentsOverTime(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> aciInput = dfe.getArgument("activeComponentsInput");
@@ -94,7 +94,7 @@ public class AnalyticsDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "mostActiveBranchesOverTime")
-	public List<ReleasesPerBranch> getMostActiveBranchessOverTime(DgsDataFetchingEnvironment dfe) {
+	public List<ReleasesPerBranch> getMostActiveBranchessOverTime(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> aciInput = dfe.getArgument("activeComponentsInput");
@@ -109,7 +109,7 @@ public class AnalyticsDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "releaseAnalytics")
 	public List<VegaDateValue> getReleaseAnalytics(@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("cutOffDate") ZonedDateTime cutOffDate) {
+			@InputArgument("cutOffDate") ZonedDateTime cutOffDate) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -147,7 +147,7 @@ public class AnalyticsDataFetcher {
 	public List<VulnViolationsChartDto> vulnerabilitiesViolationsOverTime (
 			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("dateFrom") ZonedDateTime dateFrom,
-			@InputArgument("dateTo") ZonedDateTime dateTo) {
+			@InputArgument("dateTo") ZonedDateTime dateTo) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -163,7 +163,7 @@ public class AnalyticsDataFetcher {
 			@InputArgument("createdDate") ZonedDateTime createdDate,
 			@InputArgument("componentType") io.reliza.model.ComponentData.ComponentType componentType,
 			@InputArgument("maxComponents") Integer maxComponents,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid) {
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -214,7 +214,7 @@ public class AnalyticsDataFetcher {
 	@DgsData(parentType = "Query", field = "findingsPerDay")
 	public ReleaseMetricsDto findingsPerDay(
 			@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("date") String date) {
+			@InputArgument("date") String date) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -253,7 +253,7 @@ public class AnalyticsDataFetcher {
 	@DgsData(parentType = "Mutation", field = "computeAnalyticsMetricsForDate")
 	public ReleaseMetricsDto computeAnalyticsMetricsForDate(
 			@InputArgument("orgUuid") UUID orgUuid,
-			@InputArgument("date") String date) {
+			@InputArgument("date") String date) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);

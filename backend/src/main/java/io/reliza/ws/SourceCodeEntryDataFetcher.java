@@ -20,6 +20,7 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -72,7 +73,7 @@ public class SourceCodeEntryDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "sourceCodeEntry")
-	public SourceCodeEntryData getSourceCodeEntry(@InputArgument("sceUuid") UUID sceUuid) {
+	public SourceCodeEntryData getSourceCodeEntry(@InputArgument("sceUuid") UUID sceUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -84,7 +85,7 @@ public class SourceCodeEntryDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "createSourceCodeEntry")
-	public SourceCodeEntryData createSourceCodeEntry(DgsDataFetchingEnvironment dfe) {
+	public SourceCodeEntryData createSourceCodeEntry(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> sourceCodeEntryInput = dfe.getArgument("sourceCodeEntry");

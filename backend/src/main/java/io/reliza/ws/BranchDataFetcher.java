@@ -102,7 +102,7 @@ public class BranchDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "branch")
-	public BranchData getBranch(@InputArgument("branchUuid") String branchUuidStr) {
+	public BranchData getBranch(@InputArgument("branchUuid") String branchUuidStr) throws RelizaException {
 		UUID branchUuid = UUID.fromString(branchUuidStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -116,7 +116,7 @@ public class BranchDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "branchesOfComponent")
 	public List<BranchData> getBranchesOfComponent(DgsDataFetchingEnvironment dfe,
-			@InputArgument("componentUuid") String compUuidStr) {
+			@InputArgument("componentUuid") String compUuidStr) throws RelizaException {
 		UUID compUuid = UUID.fromString(compUuidStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -132,7 +132,7 @@ public class BranchDataFetcher {
 	public String getNextVersion(
 			@InputArgument("branchUuid") String branchUuidStr,
 			@InputArgument("versionType") String versionTypeStr
-		){
+		) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID branchUuid = UUID.fromString(branchUuidStr);
@@ -153,7 +153,7 @@ public class BranchDataFetcher {
 	public BranchData createBranch(
 			@InputArgument("componentUuid") String compUuidStr,
 			@InputArgument("name") String name,
-			@InputArgument("versionSchema") String versionSchema) {
+			@InputArgument("versionSchema") String versionSchema) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID compUuid = UUID.fromString(compUuidStr);
@@ -256,7 +256,7 @@ public class BranchDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "autoIntegrateFeatureSet")
-	public Boolean autoIntegrateFeatureSet(@InputArgument("branchUuid") UUID branchUuid) {
+	public Boolean autoIntegrateFeatureSet(@InputArgument("branchUuid") UUID branchUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
@@ -271,7 +271,7 @@ public class BranchDataFetcher {
 			@InputArgument("branchUuid") UUID branchUuid,
 			@InputArgument("versionString") String versionString,
 			@InputArgument("versionType") String versionTypeStr
-		) {
+		) throws RelizaException {
 		
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -401,7 +401,7 @@ public class BranchDataFetcher {
 			@InputArgument("targetBranchName") String targetBranchName,
 			@InputArgument("defaultStatus") StatusEnum defaultStatus,
 			@InputArgument("fallbackToBase") BranchData.FallbackToBase fallbackToBase,
-			DgsDataFetchingEnvironment dfe) {
+			DgsDataFetchingEnvironment dfe) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);

@@ -18,6 +18,7 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AcollectionData;
 import io.reliza.model.AcollectionData.VersionedArtifact;
 import io.reliza.model.ArtifactData;
@@ -53,7 +54,7 @@ public class AcollectionDataFetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getAcollectionsOfRelease")
-	public List<AcollectionData> getAcollectionsOfRelease(@InputArgument("releaseUuid") UUID releaseUuid) {
+	public List<AcollectionData> getAcollectionsOfRelease(@InputArgument("releaseUuid") UUID releaseUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);

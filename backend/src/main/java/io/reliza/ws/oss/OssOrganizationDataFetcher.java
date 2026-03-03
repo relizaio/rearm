@@ -33,12 +33,8 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ApiKeyDto;
-import io.reliza.service.ApiKeyAccessService;
-import io.reliza.service.ApiKeyService;
-import io.reliza.service.ResourceGroupService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
-import io.reliza.service.OrganizationService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -85,7 +81,7 @@ public class OssOrganizationDataFetcher {
 			@InputArgument("orgUuid") String orgUuidStr,
 			@InputArgument("userUuid") String userUuidStr,
 			@InputArgument("permissionType") PermissionType permissionType,
-			@InputArgument("permissions") List<LinkedHashMap<String, Object>> permissions) {
+			@InputArgument("permissions") List<LinkedHashMap<String, Object>> permissions) throws RelizaException {
 		
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);

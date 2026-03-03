@@ -58,7 +58,7 @@ public class UserGroupDataFetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getUserGroups")
-	public List<UserGroupWebDto> getUserGroupsByOrganization(@InputArgument("org") UUID org) {
+	public List<UserGroupWebDto> getUserGroupsByOrganization(@InputArgument("org") UUID org) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);

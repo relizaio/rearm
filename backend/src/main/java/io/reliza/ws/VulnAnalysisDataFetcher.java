@@ -78,7 +78,7 @@ public class VulnAnalysisDataFetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getVulnAnalysis")
-	public List<VulnAnalysisWebDto> getVulnAnalysis(@InputArgument("org") UUID org) {
+	public List<VulnAnalysisWebDto> getVulnAnalysis(@InputArgument("org") UUID org) throws RelizaException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
@@ -152,7 +152,7 @@ public class VulnAnalysisDataFetcher {
 			@InputArgument("org") UUID org,
 			@InputArgument("location") String location,
 			@InputArgument("findingId") String findingId,
-			@InputArgument("findingType") FindingType findingType) {
+			@InputArgument("findingType") FindingType findingType) throws RelizaException {
 		
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
