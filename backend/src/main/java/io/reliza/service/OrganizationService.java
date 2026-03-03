@@ -40,8 +40,10 @@ import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
+import io.reliza.model.SystemInfoData;
 import io.reliza.model.Organization;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.InvitedObject;
@@ -76,6 +78,9 @@ public class OrganizationService {
 	
 	@Autowired
     private UserGroupService userGroupService;
+
+	@Autowired
+	private SystemInfoService systemInfoService;
 
 	private final OrganizationRepository repository;
 	
@@ -181,6 +186,88 @@ public class OrganizationService {
 		analytics.put("admin_and_write_users", BigInteger.valueOf(adminAndWriteUsers));
 		analytics.put("read_only_users", BigInteger.valueOf(readOnlyUsers));
 		return analytics;
+	}
+
+	public record GlobalUserCounts(long writeUsers, long readOnlyUsers, long totalUsers) {}
+
+	public GlobalUserCounts getGlobalUserCounts() {
+		List<OrganizationData> allOrgs = listAllOrganizationData();
+		Map<UUID, UserData> allUsersMap = new HashMap<>();
+		Map<UUID, List<UserGroupData>> globalUserGroupsByUser = new HashMap<>();
+		Map<UUID, Set<UUID>> userOrgMap = new HashMap<>();
+
+		for (OrganizationData od : allOrgs) {
+			UUID orgUuid = od.getUuid();
+			List<UserData> orgUsers = userService.listUserDataByOrg(orgUuid);
+			List<UserGroupData> orgUserGroups = userGroupService.getUserGroupsByOrganization(orgUuid);
+
+			for (UserData ud : orgUsers) {
+				allUsersMap.put(ud.getUuid(), ud);
+				userOrgMap.computeIfAbsent(ud.getUuid(), k -> new HashSet<>()).add(orgUuid);
+			}
+
+			for (UserGroupData ugd : orgUserGroups) {
+				for (UUID userUuid : ugd.getAllUsers()) {
+					globalUserGroupsByUser.computeIfAbsent(userUuid, k -> new ArrayList<>()).add(ugd);
+				}
+			}
+		}
+
+		long writeUsers = 0;
+		for (var entry : allUsersMap.entrySet()) {
+			UUID userUuid = entry.getKey();
+			UserData ud = entry.getValue();
+			Set<UUID> userOrgs = userOrgMap.getOrDefault(userUuid, Set.of());
+			boolean isWrite = false;
+			for (UUID orgUuid : userOrgs) {
+				List<UserGroupData> userGroups = globalUserGroupsByUser.getOrDefault(userUuid, List.of())
+						.stream().filter(ugd -> orgUuid.equals(ugd.getOrg())).collect(Collectors.toList());
+				if (isWriteUser(ud, orgUuid, userGroups)) {
+					isWrite = true;
+					break;
+				}
+			}
+			if (isWrite) writeUsers++;
+		}
+
+		long totalUsers = allUsersMap.size();
+		long readOnlyUsers = totalUsers - writeUsers;
+		return new GlobalUserCounts(writeUsers, readOnlyUsers, totalUsers);
+	}
+
+	public void validateNewUserAllowedByLicense(boolean isWriteUser) throws RelizaException {
+		if (LicensingConstants.isOssEdition()) return;
+		SystemInfoData sid = systemInfoService.getSystemInfoData();
+		if (sid.getLicensedMaxWriteUsers() == null && sid.getLicensedMaxReadUsers() == null) return;
+
+		GlobalUserCounts counts = getGlobalUserCounts();
+		int maxWrite = sid.getLicensedMaxWriteUsers() != null ? sid.getLicensedMaxWriteUsers() : Integer.MAX_VALUE;
+		int maxRead = sid.getLicensedMaxReadUsers() != null ? sid.getLicensedMaxReadUsers() : Integer.MAX_VALUE;
+
+		if (isWriteUser) {
+			if (counts.writeUsers() >= maxWrite) {
+				throw new RelizaException("License limit reached: maximum " + maxWrite + " write users allowed.");
+			}
+		} else {
+			if (counts.readOnlyUsers() >= maxRead) {
+				// read slots full - overflow into write slots
+				if (counts.writeUsers() >= maxWrite) {
+					throw new RelizaException("License limit reached: maximum " + maxRead + " read users and " + maxWrite + " write users allowed.");
+				}
+			}
+		}
+	}
+
+	public void validateWriteUserElevationAllowedByLicense(int newWriteUsers) throws RelizaException {
+		if (LicensingConstants.isOssEdition()) return;
+		SystemInfoData sid = systemInfoService.getSystemInfoData();
+		if (sid.getLicensedMaxWriteUsers() == null) return;
+
+		GlobalUserCounts counts = getGlobalUserCounts();
+		int maxWrite = sid.getLicensedMaxWriteUsers();
+		if (counts.writeUsers() + newWriteUsers > maxWrite) {
+			throw new RelizaException("License limit reached: maximum " + maxWrite + " write users allowed.");
+		}
 	}
 
 	private boolean isWriteUser(UserData ud, UUID orgUuid, List<UserGroupData> preloadedUserGroups) {

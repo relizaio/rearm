@@ -9,9 +9,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,8 +23,12 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.UserData;
 import io.reliza.model.UserGroup;
 import io.reliza.model.UserGroupData;
+import io.reliza.model.UserPermission;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.dto.CreateUserGroupDto;
 import io.reliza.model.dto.UpdateUserGroupDto;
 import io.reliza.model.WhoUpdated;
@@ -37,6 +43,14 @@ public class UserGroupService {
 	
 	@Autowired
 	private AuditService auditService;
+
+	@Autowired
+	@Lazy
+	private OrganizationService organizationService;
+
+	@Autowired
+	@Lazy
+	private UserService userService;
 	
 	
 	public Optional<UserGroup> getUserGroup(UUID groupUuid) {
@@ -131,12 +145,57 @@ public class UserGroupService {
 		}
 		
 		UserGroupData updatedUgd = UserGroupData.updateUserGroupData(ugd, updateUserGroupDto);
-		
+
+		// check if group permissions are being elevated from read to write
+		boolean wasWrite = hasWritePermissions(ugd);
+		boolean willBeWrite = hasWritePermissions(updatedUgd);
+		if (!wasWrite && willBeWrite) {
+			int newWriteUsers = countNewWriteUsersInGroup(updatedUgd);
+			if (newWriteUsers > 0) {
+				organizationService.validateWriteUserElevationAllowedByLicense(newWriteUsers);
+			}
+		}
+
 		Map<String, Object> recordData = Utils.OM.convertValue(updatedUgd, new TypeReference<Map<String, Object>>() {});
 		UserGroup savedUG = saveUserGroup(ug, recordData, wu);
 		return UserGroupData.dataFromRecord(savedUG);
 	}
 	
+	private int countNewWriteUsersInGroup(UserGroupData ugd) {
+		Set<UUID> userUuids = ugd.getAllUsers();
+		if (userUuids == null || userUuids.isEmpty()) return 0;
+		int count = 0;
+		for (UUID userUuid : userUuids) {
+			var oud = userService.getUserData(userUuid);
+			if (oud.isPresent()) {
+				UserData ud = oud.get();
+				boolean alreadyWrite = false;
+				for (UUID orgUuid : ud.getOrganizations()) {
+					var combined = organizationService.obtainCombinedUserOrgPermissions(ud, orgUuid);
+					for (UserPermission p : combined.getOrgPermissionsAsSet(orgUuid)) {
+						if (p.getType() == PermissionType.ADMIN || p.getType() == PermissionType.READ_WRITE) { alreadyWrite = true; break; }
+						if (null != p.getFunctions() && p.getFunctions().contains(PermissionFunction.FINDING_ANALYSIS_WRITE)) { alreadyWrite = true; break; }
+						if (null != p.getApprovals() && !p.getApprovals().isEmpty()) { alreadyWrite = true; break; }
+					}
+					if (alreadyWrite) break;
+				}
+				if (!alreadyWrite) count++;
+			}
+		}
+		return count;
+	}
+
+	private boolean hasWritePermissions(UserGroupData ugd) {
+		Set<UserPermission> perms = ugd.getOrgPermissions(ugd.getOrg());
+		for (UserPermission p : perms) {
+			if (p.getType() == PermissionType.ADMIN || p.getType() == PermissionType.READ_WRITE) return true;
+			if (null != p.getFunctions()
+					&& p.getFunctions().contains(PermissionFunction.FINDING_ANALYSIS_WRITE)) return true;
+			if (null != p.getApprovals() && !p.getApprovals().isEmpty()) return true;
+		}
+		return false;
+	}
+
 	/**
 	 * Gets all user groups for an organization (active only, used by SSO sync)
 	 */

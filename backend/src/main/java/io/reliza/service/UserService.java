@@ -27,6 +27,7 @@ import org.apache.commons.validator.routines.EmailValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -82,6 +83,10 @@ public class UserService {
 	
 	@Autowired
 	private UserGroupService userGroupService;
+
+	@Autowired
+	@Lazy
+	private OrganizationService organizationService;
 
 	private static final Logger log = LoggerFactory.getLogger(UserService.class);
 			
@@ -258,6 +263,17 @@ public class UserService {
 				}
 			}
 			if (!skip) {
+				// check if elevating from read to write - validate license limit before saving
+				if (scope == PermissionScope.ORGANIZATION && isWritePermissionType(type)) {
+					boolean wasWriteUser = isUserWriteGlobally(uData);
+					if (!wasWriteUser) {
+						try {
+							organizationService.validateWriteUserElevationAllowedByLicense(1);
+						} catch (RelizaException re) {
+							throw new RuntimeException(re.getMessage());
+						}
+					}
+				}
 				uData.setPermission(orgUuid, scope, permissionObject, type, functions, approvals);
 				// save user
 				Map<String,Object> recordData = Utils.dataToRecord(uData);
@@ -318,6 +334,12 @@ public class UserService {
 			}
 			
 			if (update) {
+				// check if elevating from read to write - validate license limit before saving
+				boolean wasWriteUser = isUserWriteGlobally(UserData.dataFromRecord(u));
+				boolean willBeWriteUser = isUserWriteForOrg(uData, orgUuid);
+				if (!wasWriteUser && willBeWriteUser) {
+					organizationService.validateWriteUserElevationAllowedByLicense(1);
+				}
 				// save user
 				Map<String,Object> recordData = Utils.dataToRecord(uData);
 				u = saveUser(u, recordData, wu);
@@ -810,6 +832,33 @@ public class UserService {
 		return uwd;
 	}
 
+	private boolean isWritePermissionType(PermissionType pt) {
+		return pt == PermissionType.ADMIN || pt == PermissionType.READ_WRITE;
+	}
+
+	private boolean isUserWriteForOrg(UserData ud, UUID orgUuid) {
+		for (UserPermission permission : ud.getOrgPermissions(orgUuid)) {
+			if (isWritePermissionType(permission.getType())) return true;
+			if (null != permission.getFunctions()
+					&& permission.getFunctions().contains(PermissionFunction.FINDING_ANALYSIS_WRITE)) return true;
+			if (null != permission.getApprovals() && !permission.getApprovals().isEmpty()) return true;
+		}
+		return false;
+	}
+
+	private boolean isUserWriteGlobally(UserData ud) {
+		for (UUID orgUuid : ud.getOrganizations()) {
+			var combinedPermissions = organizationService.obtainCombinedUserOrgPermissions(ud, orgUuid);
+			for (UserPermission permission : combinedPermissions.getOrgPermissionsAsSet(orgUuid)) {
+				if (isWritePermissionType(permission.getType())) return true;
+				if (null != permission.getFunctions()
+						&& permission.getFunctions().contains(PermissionFunction.FINDING_ANALYSIS_WRITE)) return true;
+				if (null != permission.getApprovals() && !permission.getApprovals().isEmpty()) return true;
+			}
+		}
+		return false;
+	}
+
 	public void markUserLogout(UUID userId) {
 		Optional<User> ou = getUser(userId);
 		if (ou.isEmpty()) {
@@ -834,15 +883,19 @@ public class UserService {
 				String name = creds.getClaimAsString("name");
 				String email = creds.getClaimAsString("email");
 				User u;
+				boolean isFirstUser = !repository.findAll().iterator().hasNext();
+				if (!isFirstUser) {
+					// validate license user limits before creating non-first user
+					// new users start as read-only (NONE or READ_ONLY permission)
+					organizationService.validateNewUserAllowedByLicense(false);
+				}
 				if (InstallationType.OSS == getInstallationType()) {
-					boolean isFirstUser = !repository.findAll().iterator().hasNext();
 					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.NONE;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, Set.of(), null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 					OrganizationData od = getOrganizationService.getOrganizationData(USER_ORG).get();
 					sendEmailToOrgAdminsOnUserJoined(od, email, pt);
 				} else if (InstallationType.DEMO == getInstallationType()) {
-					boolean isFirstUser = !repository.findAll().iterator().hasNext();
 					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.READ_ONLY;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt,
@@ -852,7 +905,7 @@ public class UserService {
 					sendEmailToOrgAdminsOnUserJoined(od, email, pt);
 				} else if (InstallationType.MANAGED_SERVICE == getInstallationType()) {
 					UUID defaultOrg = systemInfoService.getDefaultOrg();
-					if ( null == defaultOrg && !repository.findAll().iterator().hasNext() ) {
+					if ( null == defaultOrg && isFirstUser ) {
 						// first user is registered should be global admin
 						u = createUser(name, email, true, List.of(), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 					} else if (null == defaultOrg) {
