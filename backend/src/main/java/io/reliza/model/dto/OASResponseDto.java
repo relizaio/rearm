@@ -29,4 +29,7 @@ public class OASResponseDto {
 
     @JsonProperty("compressedSize")
     private Long compressedSize;
+
+    @JsonProperty("ociRepositoryName")
+    private String ociRepositoryName;  // For downloadable artifacts monthly rotation
 }

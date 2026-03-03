@@ -307,6 +307,19 @@ public class RebomService {
         return bomJson;
     }
 
+    /**
+     * Finds a raw BOM by its ID and organization.
+     * 
+     * Note: rebom-backend manages its own OCI storage internally, including monthly repository rotation.
+     * The ociRepositoryName is stored in the BOM's JSONB meta field and retrieved automatically by rebom-backend.
+     * This method does not need to know about repository names - it only needs the BOM UUID.
+     * 
+     * @param bomSerialNumber The UUID of the BOM
+     * @param org The organization UUID
+     * @param format Optional BomFormat (CYCLONEDX or SPDX) - used for SPDX to retrieve original format vs converted
+     * @return JsonNode containing the raw BOM data
+     * @throws JsonProcessingException if JSON processing fails
+     */
     public JsonNode findRawBomById(UUID bomSerialNumber, UUID org, BomFormat format) throws JsonProcessingException{
         String query;
         Map<String, Object> variables = new HashMap<>();

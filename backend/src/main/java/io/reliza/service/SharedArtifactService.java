@@ -34,7 +34,6 @@ import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
-import io.reliza.service.RebomService.BomMediaType;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
@@ -48,7 +47,7 @@ public class SharedArtifactService {
 
     private final String url;
     private final WebClient webClient;
-    private final String ociRepository;
+    private final String registryNamespace;
     
 	private final ArtifactRepository repository;
 
@@ -60,7 +59,8 @@ public class SharedArtifactService {
 	) {
 		this.repository = repository;
         this.url= url;
-        this.ociRepository = registryNamespace + "/downloadable-artifacts";
+        this.registryNamespace = registryNamespace;
+        
 		// Configure WebClient with increased buffer size for large OCI artifacts
 		ExchangeStrategies strategies = ExchangeStrategies.builder()
 			.codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(50 * 1024 * 1024)) // 50MB buffer
@@ -138,15 +138,27 @@ public class SharedArtifactService {
 		Boolean isDownloadable = tags.stream().anyMatch(t -> t.key().equals(CommonVariables.DOWNLOADABLE_ARTIFACT) && t.value().equalsIgnoreCase("true"));
 		if(!isDownloadable)
 			throw new RelizaException("No Downloadable object associated with artifact: " + ad.getUuid().toString());
-		String tagValue = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.TAG_FIELD)).findFirst().get().value();
-		String mediaType = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.MEDIA_TYPE_FIELD)).findFirst().get().value();
-		String fileName = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.FILE_NAME_FIELD)).findFirst().get().value();
+		String tagValue = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.TAG_FIELD)).findFirst().orElseThrow(() -> new RelizaException("Missing TAG_FIELD for artifact: " + ad.getUuid())).value();
+		String mediaType = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.MEDIA_TYPE_FIELD)).findFirst().orElseThrow(() -> new RelizaException("Missing MEDIA_TYPE_FIELD for artifact: " + ad.getUuid())).value();
+		String fileName = tags.stream().filter((TagRecord t) -> t.key().equals(CommonVariables.FILE_NAME_FIELD)).findFirst().orElseThrow(() -> new RelizaException("Missing FILE_NAME_FIELD for artifact: " + ad.getUuid())).value();
 		String resolvedFileName = StringUtils.isNotEmpty(fileName) ? fileName : tagValue;
 		String ociDigest = ad.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaChecksumType.SHA_256) && dr.scope().equals(DigestScope.OCI_STORAGE)).findFirst().orElseThrow().digest();
+		
+		// Reconstruct full repository path from stored name
+		// Stored name is just "downloadable-artifacts-2026-03", need to add namespace prefix
+		String repositoryName;
+		if (StringUtils.isNotEmpty(ad.getOciRepositoryName())) {
+			// Combine namespace with stored monthly repository name
+			repositoryName = io.reliza.util.OciRepositoryUtil.constructRepositoryPath(this.registryNamespace, ad.getOciRepositoryName());
+		} else {
+			// Legacy artifact - use default repository
+			repositoryName = io.reliza.util.OciRepositoryUtil.constructRepositoryPath(this.registryNamespace, "downloadable-artifacts");
+		}
+		
 		return this.webClient.get()
 					.uri(uriBuilder -> uriBuilder
 							.path("/pull")
-									.queryParam("repo",this.ociRepository)
+									.queryParam("repo", repositoryName)
 							.queryParam("tag", "sha256:" + ociDigest)
 							.build()
 					)

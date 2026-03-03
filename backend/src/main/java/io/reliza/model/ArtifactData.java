@@ -306,6 +306,20 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	 */
 	private List<UUID> artifacts = new ArrayList<>();
 	
+	/**
+	 * OCI repository name where this downloadable artifact is stored (e.g., "downloadable-artifacts-2026-03")
+	 * 
+	 * IMPORTANT: This field stores ONLY the repository name, NOT the full path.
+	 * The namespace is added during retrieval via OciRepositoryUtil.constructRepositoryPath().
+	 * 
+	 * Format: "downloadable-artifacts-YYYY-MM" (without namespace prefix)
+	 * Full path reconstruction: namespace + "/" + ociRepositoryName
+	 * 
+	 * For backwards compatibility, null means use default repository name ("downloadable-artifacts")
+	 * Note: This is ONLY for downloadable artifacts. BOM storage is managed by rebom-backend.
+	 */
+	private String ociRepositoryName;
+	
 	@Getter(AccessLevel.PUBLIC)
 	@Setter(AccessLevel.PRIVATE)
 	private List<ArtifactVersionSnapshot> previousVersions = new ArrayList<>();

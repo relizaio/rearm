@@ -28,6 +28,7 @@ import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.dto.ArtifactDto;
+import io.reliza.model.dto.OASResponseDto;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
@@ -330,7 +331,9 @@ public class ArtifactServiceBomProcessingTest {
             null, null, null, null, null, false, false, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), bomDigest, null, null, null, null, null, null
         );
-        RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
+        OASResponseDto bomDto = new OASResponseDto();
+        // Note: ociRepositoryName removed - rebom manages its own storage
+        RebomResponse rebomResponse = new RebomResponse(testBomUuid, bomDto, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
             new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
@@ -363,7 +366,9 @@ public class ArtifactServiceBomProcessingTest {
             null, null, null, null, null, false, false, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
         );
-        RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
+        OASResponseDto bomDto = new OASResponseDto();
+        // Note: ociRepositoryName removed - rebom manages its own storage
+        RebomResponse rebomResponse = new RebomResponse(testBomUuid, bomDto, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
             new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
@@ -392,7 +397,9 @@ public class ArtifactServiceBomProcessingTest {
             null, null, null, null, null, false, false, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
         );
-        RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
+        OASResponseDto bomDto = new OASResponseDto();
+        // Note: ociRepositoryName removed - rebom manages its own storage
+        RebomResponse rebomResponse = new RebomResponse(testBomUuid, bomDto, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
             new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
@@ -420,7 +427,9 @@ public class ArtifactServiceBomProcessingTest {
             null, null, null, null, null, false, false, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
         );
-        RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
+        OASResponseDto bomDto = new OASResponseDto();
+        // Note: ociRepositoryName removed - rebom manages its own storage
+        RebomResponse rebomResponse = new RebomResponse(testBomUuid, bomDto, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
             new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);

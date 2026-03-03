@@ -6,6 +6,7 @@ package io.reliza.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import java.time.ZonedDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -122,7 +123,7 @@ public class ArtifactService {
 
     private final String url;
     private final WebClient webClient;
-    private final String ociRepository;
+	private final String registryNamespace;
 
 
     public ArtifactService(
@@ -132,7 +133,7 @@ public class ArtifactService {
 	) {
 		this.repository = repository;
         this.url= url;
-        this.ociRepository = registryNamespace + "/downloadable-artifacts";
+		this.registryNamespace = registryNamespace;
 		// Configure WebClient with increased buffer size for large OCI artifacts
 		ExchangeStrategies strategies = ExchangeStrategies.builder()
 			.codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(50 * 1024 * 1024)) // 50MB buffer
@@ -142,6 +143,21 @@ public class ArtifactService {
 			.baseUrl(this.url)
 			.exchangeStrategies(strategies)
 			.build();
+	}
+	
+	/**
+	 * Generate monthly OCI repository name for artifact storage rotation.
+	 * Format: namespace/downloadable-artifacts-YYYY-MM (e.g., reliza/downloadable-artifacts-2026-03)
+	 * Uses UTC timezone to ensure consistency with rebom-backend TypeScript implementation.
+	 * 
+	 * @return Monthly repository name string with namespace prefix
+	 */
+	private String getMonthlyRepositoryName() {
+		ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+		return String.format("%s/downloadable-artifacts-%04d-%02d", 
+			this.registryNamespace,
+			now.getYear(), 
+			now.getMonthValue());
 	}
 	
 	public Optional<ArtifactData> getArtifactData (UUID uuid) {
@@ -494,6 +510,11 @@ public class ArtifactService {
 				digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
 			}
 			artifactDto.setDigestRecords(digestRecords);
+			
+			// Store OCI repository name for monthly rotation support (downloadable artifacts only)
+			if(StringUtils.isNotEmpty(artifactUploadResponse.getOciRepositoryName())){
+				artifactDto.setOciRepositoryName(artifactUploadResponse.getOciRepositoryName());
+			}
 
 			// Preserve existing tags and add system tags
 			List<TagRecord> allTags = new ArrayList<>();
@@ -838,10 +859,19 @@ public class ArtifactService {
 			artifactDto.setUuid(UUID.randomUUID());
 		}
 		
-		// Note: DTrack integration is now handled asynchronously via the scheduler
-		
-		// Update OASResponse with original SPDX file metadata
+		// For SPDX artifacts, we want to display original SPDX file metadata to users,
+		// not the converted CycloneDX metadata. The OCI response contains info about
+		// the converted BOM, but we override it with original file info for user display.
+		// This matches CycloneDX behavior where we show raw BOM metadata, not augmented.
 		OASResponseDto response = rebomResponse.bom();
+		if (response == null) {
+			log.error("rebomResponse.bom() is null for SPDX artifact UUID: {}", artifactDto.getUuid());
+			throw new RelizaException("BOM processing failed: rebom response missing OCI storage information. " +
+				"This may indicate a rebom-backend storage error.");
+		}
+		
+		// Override OCI response with original SPDX file metadata for user-facing display
+		// (The converted CycloneDX is stored internally, but users should see their original file info)
 		if (rebomResponse.meta().originalFileSize() != null) {
 			response.setOriginalSize(rebomResponse.meta().originalFileSize());
 		}
@@ -860,7 +890,11 @@ public class ArtifactService {
 		if(!tag.startsWith("rearm")){
 			tag = "rearm-" + tag;
 		}
-        formData.add("repo", this.ociRepository);
+		
+		// Generate monthly repository name for storage rotation
+		String monthlyRepoName = getMonthlyRepositoryName();
+		
+        formData.add("repo", monthlyRepoName);
         formData.add("file", file);
         formData.add("tag", tag);
 		
@@ -878,6 +912,15 @@ public class ArtifactService {
 			}
 		});
 		OASResponseDto artifactUploadResponse = resp.block();
+		
+		// Store just the repository name (without namespace) for downloadable artifact storage
+		// Extract repository name from full path (e.g., "reliza/downloadable-artifacts-2026-03" -> "downloadable-artifacts-2026-03")
+		// Since getMonthlyRepositoryName() always returns "namespace/repo-name" format, extract after first slash
+		String repoNameOnly = monthlyRepoName.contains("/") 
+			? monthlyRepoName.substring(monthlyRepoName.indexOf('/') + 1) 
+			: monthlyRepoName;
+		artifactUploadResponse.setOciRepositoryName(repoNameOnly);
+		
 		return artifactUploadResponse;
 	}
 	

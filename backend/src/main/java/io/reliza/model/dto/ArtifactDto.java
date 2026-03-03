@@ -102,4 +102,7 @@ public class ArtifactDto {
 	
 	@JsonProperty
 	private List<UUID> artifacts;
+	
+	@JsonProperty
+	private String ociRepositoryName;  // For downloadable artifacts monthly rotation
 }
