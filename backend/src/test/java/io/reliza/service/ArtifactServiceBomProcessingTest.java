@@ -461,7 +461,10 @@ public class ArtifactServiceBomProcessingTest {
             null, null, null, null, null, false, false, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, bomVersion
         );
-        RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
+        
+        // Mock OASResponseDto to prevent null bom() exception
+        io.reliza.model.dto.OASResponseDto mockOasResponse = mock(io.reliza.model.dto.OASResponseDto.class);
+        RebomResponse rebomResponse = new RebomResponse(testBomUuid, mockOasResponse, meta, false);
         
         BomLifecycleService.BomLifecycleResult lifecycleResult = 
             new BomLifecycleService.BomLifecycleResult(rebomResponse, Optional.empty(), false);
