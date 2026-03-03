@@ -766,9 +766,7 @@ const genProductRelease = async function () {
         await graphqlClient.mutate({
             mutation: gql`
                 mutation generateProductRelease($instanceUuid: ID!) {
-                    generateProductRelease(instanceUuid: $instanceUuid){
-                        type
-                    }
+                    generateProductRelease(instanceUuid: $instanceUuid)
                 }`,
             variables: {
                 instanceUuid: instanceUuid
