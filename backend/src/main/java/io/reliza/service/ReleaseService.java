@@ -582,8 +582,6 @@ public class ReleaseService {
 		List<Release> rlList = new LinkedList<>();
 		if (StringUtils.isNotEmpty(version)) {
 			rlList = repository.findReleasesOfOrgByVersion(orgUuid.toString(), version);
-			if (rlList.isEmpty()) rlList = repository
-					.findReleasesOfOrgByVersion(CommonVariables.EXTERNAL_PROJ_ORG_STRING, version);
 		}
 		return rlList;
 	}

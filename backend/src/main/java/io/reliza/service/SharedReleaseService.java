@@ -583,7 +583,7 @@ public class SharedReleaseService {
 		List<SourceCodeEntryData> sces = new ArrayList<>();
 		if(null!= commitIds && commitIds.size() > 0)
 		{
-			sces = getSourceCodeEntryService.getSceDataList(commitIds, List.of(org, CommonVariables.EXTERNAL_PROJ_ORG_UUID));
+			sces = getSourceCodeEntryService.getSceDataList(commitIds, List.of(org));
 		}
 		return sces;
 	}

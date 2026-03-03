@@ -132,9 +132,6 @@ public class OrganizationService {
 	
 	public Collection<OrganizationData> listMyOrganizationData(UserData ud) {
 		var orgList = ud.getOrganizations();
-		if (ud.isGlobalAdmin() && InstallationType.OSS != userService.getInstallationType()) {
-			orgList.add(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
-		}
 		return transformOrgToOrgData(listOrganizationsById(orgList));
 	}
 	

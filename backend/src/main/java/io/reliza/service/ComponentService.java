@@ -500,12 +500,6 @@ public class ComponentService {
 						.filter(prod -> {
 							return prod.getName().equalsIgnoreCase(inputProduct);
 						}).findAny().orElse(null);
-				if (null == product) {
-					product = listComponentDataByOrganization(CommonVariables.EXTERNAL_PROJ_ORG_UUID, ComponentType.PRODUCT).stream()
-							.filter(prod -> {
-								return prod.getName().equalsIgnoreCase(inputProduct);
-							}).findAny().orElse(null);
-				}
 				if (null != product) productId = product.getUuid();
 			}
 		}

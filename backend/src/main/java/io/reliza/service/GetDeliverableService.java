@@ -126,9 +126,6 @@ public class GetDeliverableService {
 		List<Deliverable> dbds = new LinkedList<>();
 		if (StringUtils.isNotEmpty(digest)) {
 			dbds = getDeliverablesByDigestString(digest, orgUuid);
-			
-			// if list is empty, try public orgs
-			if (dbds.isEmpty()) dbds = getDeliverablesByDigestString(digest, CommonVariables.EXTERNAL_PROJ_ORG_UUID);
 		}
 		if (!dbds.isEmpty()) {
 			List<DeliverableData> ddList = dbds.stream().map(DeliverableData::dataFromRecord).collect(Collectors.toList());
