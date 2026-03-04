@@ -592,13 +592,13 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.03.6";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.03.7";
     
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "5fc73bbe144f0c42476fe15cafe19d05dee1ac4330e547fad3f36366f75d124b";
-    private static final String REARM_CD_HELM_VERSION = "0.1.9";
-    private static final String REARM_CD_HELM_COMMIT = "fd47d4943191d5fa7513968a3928a5e0cfc9bba1";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.1.9 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "e1dd202a1e7ca44909965d81970625fc8d0924ac86b857b7b19060dae1f9f68d";
+    private static final String REARM_CD_HELM_VERSION = "0.1.10";
+    private static final String REARM_CD_HELM_COMMIT = "6af8ea8c00f423ec27cc8d9cc0fb8ea19dc69f2e";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.1.10 [skip ci]";
     
     public static final String REARM_CD_CONTAINER_DIGEST = "858b9a305c6b7056338f26b95d01b81a0d54f67d7fe91cf0ca4b8490cb915c67";
     public static final String REARM_CD_CONTAINER_VERSION = "26.03.17";
