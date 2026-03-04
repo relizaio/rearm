@@ -94,6 +94,7 @@ export default function Home() {
               { file: "iq.png", url: "https://www.iqinnovationhub.com", title: "IQ Innovation Hub" },
               { file: "wysdom.png", url: "https://wysdom.ai", title: "Wysdom.AI" },
               { file: "ovh.png", url: "https://ovhcloud.com", title: "OVHcloud" },
+              { file: "wicwac.png", url: "https://wicwac.com", title: "WicWac" },
             ].map((item) => (
               <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer" title={item.title}><img src={`/home/${item.file}`} alt={item.title} className="favAppIcons" /></a>
             ))}
