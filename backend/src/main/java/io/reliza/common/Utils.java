@@ -30,11 +30,15 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.cyclonedx.generators.BomGeneratorFactory;
+import org.cyclonedx.generators.json.BomJsonGenerator;
 import org.cyclonedx.model.Bom;
+import org.cyclonedx.model.Commit;
 import org.cyclonedx.model.Hash.Algorithm;
 import org.cyclonedx.model.Metadata;
 import org.cyclonedx.model.OrganizationalContact;
 import org.cyclonedx.model.OrganizationalEntity;
+import org.cyclonedx.model.Pedigree;
 import org.cyclonedx.model.Component.Type;
 import org.cyclonedx.model.ExternalReference;
 import org.cyclonedx.model.metadata.ToolInformation;
@@ -536,7 +540,13 @@ public class Utils {
         return linkifiedCommit;
 	}
 	
-	public static void setRearmBomMetadata (Bom bom, String orgName, org.cyclonedx.model.Component bomComponent) {
+	public static void augmentRootBomComponent (String orgName, org.cyclonedx.model.Component bomComponent) {
+		OrganizationalEntity oe = new OrganizationalEntity();
+		oe.setName(orgName);
+		bomComponent.setSupplier(oe);
+	}
+	
+	public static void setRearmBomMetadata (Bom bom, org.cyclonedx.model.Component bomComponent) {
 		Metadata bomMeta = new Metadata();
 		ToolInformation rearmTool = new ToolInformation();
 		org.cyclonedx.model.Component rearmComponent = new org.cyclonedx.model.Component();
@@ -580,12 +590,88 @@ public class Utils {
     }
     
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
+
+    private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.03.6";
+    
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "8bf5b6b5d6be5c066a8e27ef3e5b32bd8c802fe98f54253bc05d6788cd4ce666";
-    public static final String REARM_CD_CONTAINER_DIGEST = "d3cd78a28f802fe3d3da29497b415ea81e2537ae71a3598be6a5ca2c974f1daa";
+    public static final String REARM_CD_HELM_DIGEST = "5fc73bbe144f0c42476fe15cafe19d05dee1ac4330e547fad3f36366f75d124b";
+    private static final String REARM_CD_HELM_VERSION = "0.1.9";
+    private static final String REARM_CD_HELM_COMMIT = "fd47d4943191d5fa7513968a3928a5e0cfc9bba1";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.1.9 [skip ci]";
+    
+    public static final String REARM_CD_CONTAINER_DIGEST = "858b9a305c6b7056338f26b95d01b81a0d54f67d7fe91cf0ca4b8490cb915c67";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.03.17";
+    public static final String REARM_CD_CONTAINER_COMMIT = "beeeb2ce721d5a750330bd701bbb15f59310f7bf";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): correct broken helm reference on build";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
+    }
+
+    public static List<org.cyclonedx.model.Component> getHardCodedRearmCdComponents() {
+		// Hard-coded ReARM CD product component
+		org.cyclonedx.model.Component rearmCdProduct = new org.cyclonedx.model.Component();
+		rearmCdProduct.setGroup(REARM_CD_GROUP);
+		rearmCdProduct.setName(REARM_CD_PRODUCT_NAME);
+		rearmCdProduct.setVersion(REARM_CD_PRODUCT_VERSION);
+		rearmCdProduct.setType(org.cyclonedx.model.Component.Type.APPLICATION);
+		org.cyclonedx.model.Property configProp = new org.cyclonedx.model.Property();
+		configProp.setName("CONFIGURATION");
+		configProp.setValue("default");
+		rearmCdProduct.setProperties(List.of(configProp));
+
+		// Hard-coded Reliza CD Helm chart component
+		org.cyclonedx.model.Component rearmCdHelm = new org.cyclonedx.model.Component();
+		rearmCdHelm.setGroup(REARM_CD_GROUP);
+		rearmCdHelm.setName(REARM_CD_HELM_NAME);
+		rearmCdHelm.setVersion(REARM_CD_HELM_VERSION);
+		rearmCdHelm.setType(org.cyclonedx.model.Component.Type.FILE);
+		rearmCdHelm.setMimeType("application/vnd.cncf.helm.config.v1+json");
+		rearmCdHelm.setHashes(List.of(new org.cyclonedx.model.Hash(org.cyclonedx.model.Hash.Algorithm.SHA_256, REARM_CD_HELM_DIGEST)));
+		Pedigree helmPedigree = new Pedigree();
+		Commit helmCommit = new Commit();
+		helmCommit.setUid(REARM_CD_HELM_COMMIT);
+		helmCommit.setUrl("github.com/relizaio/rearm-cd");
+		helmCommit.setMessage(REARM_CD_HELM_COMMIT_MESSAGE);
+		helmPedigree.setCommits(List.of(helmCommit));
+		rearmCdHelm.setPedigree(helmPedigree);
+
+		// Hard-coded Reliza CD container component
+		org.cyclonedx.model.Component rearmCdContainer = new org.cyclonedx.model.Component();
+		rearmCdContainer.setGroup(REARM_CD_GROUP);
+		rearmCdContainer.setName("registry.relizahub.com/library/rearm-cd-app");
+		rearmCdContainer.setVersion(REARM_CD_CONTAINER_VERSION);
+		rearmCdContainer.setType(org.cyclonedx.model.Component.Type.CONTAINER);
+		rearmCdContainer.setHashes(List.of(new org.cyclonedx.model.Hash(org.cyclonedx.model.Hash.Algorithm.SHA_256, REARM_CD_CONTAINER_DIGEST)));
+		Pedigree containerPedigree = new Pedigree();
+		Commit containerCommit = new Commit();
+		containerCommit.setUid(REARM_CD_CONTAINER_COMMIT);
+		containerCommit.setUrl("github.com/relizaio/reliza-cd");
+		containerCommit.setMessage(REARM_CD_CONTAINER_COMMIT_MESSAGE);
+		containerPedigree.setCommits(List.of(containerCommit));
+		rearmCdContainer.setPedigree(containerPedigree);
+		org.cyclonedx.model.Property containerSafeVersionProp = new org.cyclonedx.model.Property();
+		containerSafeVersionProp.setName("reliza:containerSafeVersion");
+		containerSafeVersionProp.setValue(REARM_CD_CONTAINER_VERSION);
+		rearmCdContainer.setProperties(List.of(containerSafeVersionProp));
+
+		return List.of(rearmCdProduct, rearmCdHelm, rearmCdContainer);
+    }
+
+    public static String getHardCodedRearmCdBomJson() {
+		Bom bom = new Bom();
+		for (org.cyclonedx.model.Component c : getHardCodedRearmCdComponents()) {
+			bom.addComponent(c);
+		}
+		setRearmBomMetadata(bom, null);
+		BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
+		try {
+			return generator.toJsonNode().toString();
+		} catch (Exception e) {
+			log.error("error when generating hard-coded reliza-cd bom", e);
+			return "{}";
+		}
     }
 
     public static JsonNode readJsonFromResource(Resource resource) throws IOException {

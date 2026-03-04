@@ -639,7 +639,8 @@ public class ReleaseService {
 			bomComponent.setName(cData.getName());
 			bomComponent.setType(Type.APPLICATION);
 			bomComponent.setVersion(ord.get().getVersion());
-			Utils.setRearmBomMetadata(bom, orgData.getName(), bomComponent);
+			Utils.augmentRootBomComponent(orgData.getName(), bomComponent);
+			Utils.setRearmBomMetadata(bom, bomComponent);
 			BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
 			try {
 				output = generator.toJsonNode();
@@ -1585,9 +1586,8 @@ public class ReleaseService {
 		}
 		bomComponent.setType(Type.APPLICATION);
 		bomComponent.setVersion(releaseData.getVersion());
-		
-		String orgName = orgData != null ? orgData.getName() : "Unknown";
-		Utils.setRearmBomMetadata(bom, orgName, bomComponent);
+		Utils.augmentRootBomComponent(orgData.getName(), bomComponent);
+		Utils.setRearmBomMetadata(bom, bomComponent);
 		
 		// Transform vulnerabilities to CycloneDX format
 		ReleaseMetricsDto metrics = releaseData.getMetrics();
