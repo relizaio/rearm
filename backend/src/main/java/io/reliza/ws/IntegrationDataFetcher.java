@@ -33,11 +33,13 @@ import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.BearIntegrationDto;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.IntegrationService;
 import io.reliza.service.OrganizationService;
+import io.reliza.service.RebomService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -47,25 +49,22 @@ import lombok.extern.slf4j.Slf4j;
 public class IntegrationDataFetcher {
 	
 	@Autowired
-	AuthorizationService authorizationService;
+	private AuthorizationService authorizationService;
 	
 	@Autowired
-	IntegrationService integrationService;
+	private IntegrationService integrationService;
 	
 	@Autowired
-	OrganizationService organizationService;
+	private UserService userService;
 	
 	@Autowired
-	UserService userService;
+	private ArtifactService artifactService;
 	
 	@Autowired
-	ArtifactService artifactService;
-	
-	@Autowired
-	GetOrganizationService getOrganizationService;
+	private GetOrganizationService getOrganizationService;
 
 	@Autowired
-	SharedArtifactService sharedArtifactService;
+	private RebomService rebomService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "configuredBaseIntegrations")
@@ -216,5 +215,54 @@ public class IntegrationDataFetcher {
 		
 		artifactService.syncUnsyncedDependencyTrackDataAsync(orgUuid);
 		return true;
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "getBearIntegration")
+	public BearIntegrationDto getBearIntegration(@InputArgument("org") UUID orgUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		// Verify user has read access to the organization
+		var odGet = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roGet = odGet.isPresent() ? odGet.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roGet), CallType.READ);
+		
+		return rebomService.getBearIntegration(orgUuid);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setBearIntegration")
+	public BearIntegrationDto setBearIntegration(
+			@InputArgument("org") UUID orgUuid,
+			@InputArgument("uri") String uri,
+			@InputArgument("apiKey") String apiKey,
+			@InputArgument("skipPatterns") List<String> skipPatterns) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		// Verify user has admin access to the organization
+		var odSet = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roSet = odSet.isPresent() ? odSet.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roSet), CallType.ADMIN);
+		
+		log.info("User {} setting BEAR integration for organization {}", oud.get().getUuid(), orgUuid);
+		
+		return rebomService.setBearIntegration(orgUuid, uri, apiKey, skipPatterns);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "deleteBearIntegration")
+	public Boolean deleteBearIntegration(@InputArgument("org") UUID orgUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		var odDel = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roDel = odDel.isPresent() ? odDel.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roDel), CallType.ADMIN);
+		
+		log.info("User {} deleting BEAR integration for organization {}", oud.get().getUuid(), orgUuid);
+		
+		return rebomService.deleteBearIntegration(orgUuid);
 	}
 }

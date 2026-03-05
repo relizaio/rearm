@@ -135,6 +135,9 @@ type Query {
 	# secrets
 	secret(secretUuid:ID!, orgUuid:ID!): Secret
 	secrets(orgUuid:ID!): [Secret]
+	
+	# BEAR integration
+	getBearIntegration(org: ID!): BearIntegration
 }
 
 type Mutation {
@@ -280,6 +283,10 @@ type Mutation {
 	updateSecretDistribution(orgUuid: ID!, secretUuid: ID!, permissions: [PermissionInput]): Secret
 	updateSecretDetails( secretUuid: ID!, secret: SecretUpdateInput!): Secret
 	deleteSecret(orgUuid: ID!, secretUuid: ID!): Boolean
+	
+	# BEAR integration
+	setBearIntegration(org: ID!, uri: String!, apiKey: String!, skipPatterns: [String]): BearIntegration
+	deleteBearIntegration(org: ID!): Boolean!
 }
 
 type EnrichmentTriggerResult {
@@ -1232,6 +1239,12 @@ type CiIntegration {
 	isEnabled: Boolean
 	type: IntegrationType
 	note: String
+}
+
+type BearIntegration {
+	uri: String
+	configured: Boolean!
+	skipPatterns: [String]
 }
 
 type ReleaseInputEvent {

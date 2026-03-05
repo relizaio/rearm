@@ -26,6 +26,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.dto.BearIntegrationDto;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData.BomFormat;
@@ -609,6 +610,65 @@ public class RebomService {
             case "UNKNOWN" -> ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
             default -> ReleaseMetricsDto.VulnerabilitySeverity.UNASSIGNED;
         };
+    }
+    
+    public BearIntegrationDto getBearIntegration(UUID org) {
+        String query = """
+            query getBearIntegration($org: ID!) {
+                getBearIntegration(org: $org) {
+                    uri
+                    configured
+                    skipPatterns
+                }
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("org", org.toString());
+        
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        var result = response.get("getBearIntegration");
+        if (result == null) {
+            return BearIntegrationDto.builder().configured(false).build();
+        }
+        return Utils.OM.convertValue(result, BearIntegrationDto.class);
+    }
+    
+    public BearIntegrationDto setBearIntegration(UUID org, String uri, String apiKey, List<String> skipPatterns) {
+        String mutation = """
+            mutation setBearIntegration($org: ID!, $uri: String!, $apiKey: String!, $skipPatterns: [String]) {
+                setBearIntegration(org: $org, uri: $uri, apiKey: $apiKey, skipPatterns: $skipPatterns) {
+                    uri
+                    configured
+                    skipPatterns
+                }
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("org", org.toString());
+        variables.put("uri", uri);
+        variables.put("apiKey", apiKey);
+        variables.put("skipPatterns", skipPatterns);
+        
+        Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
+        var result = response.get("setBearIntegration");
+        if (result == null) {
+            return BearIntegrationDto.builder().configured(false).build();
+        }
+        return Utils.OM.convertValue(result, BearIntegrationDto.class);
+    }
+    
+    public Boolean deleteBearIntegration(UUID org) {
+        String mutation = """
+            mutation deleteBearIntegration($org: ID!) {
+                deleteBearIntegration(org: $org)
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("org", org.toString());
+        
+        Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
+        var result = response.get("deleteBearIntegration");
+        return result != null ? (Boolean) result : false;
     }
     
     public record EnrichmentTriggerResult(Boolean triggered, String message, UUID bomUuid) {}
