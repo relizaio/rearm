@@ -3,6 +3,7 @@ import { EnrichmentStatus } from '../types';
 import * as BomRepository from '../bomRepository';
 import { fetchFromOci, extractRepositoryNameFromBom } from './oci';
 import { enrichBomAsync } from './bom/bomProcessingService';
+import { getBearCredentials } from './integrationService';
 import { runQuery } from '../utils';
 
 const SCHEDULER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -62,18 +63,35 @@ async function runEnrichmentCycle(): Promise<void> {
     
     logger.info({ count: bomsToEnrich.length }, 'Enrichment scheduler: Found BOMs needing enrichment');
     
+    // Cache credential lookups per org to avoid redundant DB calls
+    const credentialsByOrg = new Map<string, Awaited<ReturnType<typeof getBearCredentials>>>();
+    let processed = 0;
+    let skippedNoCredentials = 0;
+    
     for (const bom of bomsToEnrich) {
       try {
+        // Check credentials before fetching BOM content
+        if (!credentialsByOrg.has(bom.organization)) {
+          credentialsByOrg.set(bom.organization, await getBearCredentials(bom.organization));
+        }
+        
+        if (!credentialsByOrg.get(bom.organization)) {
+          skippedNoCredentials++;
+          logger.debug({ bomUuid: bom.uuid, org: bom.organization }, 'Enrichment scheduler: No credentials for org, skipping');
+          continue;
+        }
+        
         logger.info({ bomUuid: bom.uuid, serialNumber: bom.serialNumber }, 'Enrichment scheduler: Triggering enrichment');
         
         // Fetch BOM content from OCI
         const storedRepositoryName = extractRepositoryNameFromBom(bom);
         const bomContent = await fetchFromOci(bom.uuid, storedRepositoryName);
         
-        await enrichBomAsync(bom.uuid, bomContent, bom.organization).catch(err => {
+        await enrichBomAsync(bom.uuid, bomContent, bom.organization, credentialsByOrg.get(bom.organization)).catch(err => {
           logger.error({ err, bomUuid: bom.uuid }, 'Enrichment scheduler: Async enrichment failed');
         });
         
+        processed++;
       } catch (error) {
         logger.error({ 
           error: error instanceof Error ? error.message : String(error),
@@ -82,7 +100,7 @@ async function runEnrichmentCycle(): Promise<void> {
       }
     }
     
-    logger.info({ processed: bomsToEnrich.length }, 'Enrichment scheduler: Cycle completed');
+    logger.info({ processed, skippedNoCredentials }, 'Enrichment scheduler: Cycle completed');
     
   } catch (error) {
     logger.error({ 

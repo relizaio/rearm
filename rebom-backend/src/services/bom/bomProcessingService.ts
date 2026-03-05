@@ -607,9 +607,10 @@ export interface EnrichmentResult {
  * @param bomUuid - UUID of the BOM record to enrich
  * @param bom - The BOM content to enrich
  * @param org - Organization ID
+ * @param existingCredentials - Pre-resolved credentials (skips DB lookup if provided)
  */
-export async function enrichBomAsync(bomUuid: string, bom: any, org: string): Promise<void> {
-  const credentials = await getBearCredentials(org);
+export async function enrichBomAsync(bomUuid: string, bom: any, org: string, existingCredentials?: { bearUri: string; bearApiKey: string; skipPatterns: string[] } | null): Promise<void> {
+  const credentials = existingCredentials ?? await getBearCredentials(org);
   if (!credentials) {
     logger.debug({ bomUuid }, 'Enrichment not configured, skipping async enrichment');
     return;
