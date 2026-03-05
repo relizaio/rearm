@@ -135,6 +135,5 @@ rebom:
       enabled: "true"
       serviceHost: http://rearm-oci-artifact
       registryNamespace: 123-placeholder
-    bearUri: ""
-    bearApiKeySecretName: ""
-    bearSkipPattern: ""
+    enrichmentPendingIfNotConfigured: false
+    rebomPropsSecretName: ""
