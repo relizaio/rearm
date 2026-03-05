@@ -70,4 +70,8 @@ import AppWrapper from '@/components/AppWrapper.vue'
 .n-tooltip a:hover {
   color: #ddd !important; /* slightly lighter on hover */
 }
+
+div:where(.swal2-container) {
+  z-index: 3000 !important;
+}
 </style>
