@@ -8,6 +8,7 @@ vi.mock('../../src/integrationRepository', () => ({
     findSecretById: vi.fn(),
     updateSecret: vi.fn(),
     deleteSecret: vi.fn(),
+    deleteIntegration: vi.fn(),
 }));
 
 import * as BomService from '../../src/bomService';

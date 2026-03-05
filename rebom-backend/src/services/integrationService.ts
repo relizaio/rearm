@@ -70,6 +70,28 @@ export async function getBearIntegration(org: string): Promise<BearIntegrationDt
 }
 
 /**
+ * Deletes the BEAR integration and its associated secret for an organization.
+ * Returns true if deleted, false if no integration existed.
+ */
+export async function deleteBearIntegration(org: string): Promise<boolean> {
+    const integration = await IntegrationRepository.findIntegrationByTypeAndOrg(IntegrationType.BEAR, org);
+
+    if (!integration) {
+        return false;
+    }
+
+    // Delete secret first (if exists)
+    if (integration.config.secretUuid) {
+        await IntegrationRepository.deleteSecret(integration.config.secretUuid);
+    }
+
+    await IntegrationRepository.deleteIntegration(integration.uuid);
+
+    logger.info({ org }, 'BEAR integration deleted');
+    return true;
+}
+
+/**
  * Retrieves the decrypted BEAR credentials from the DB for use by the enrichment service.
  * Falls back to environment variables if no DB integration is configured.
  * 

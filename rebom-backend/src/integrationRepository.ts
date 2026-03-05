@@ -74,6 +74,15 @@ export async function updateSecret(uuid: string, encryptedValue: string): Promis
     }
 }
 
+export async function deleteIntegration(uuid: string): Promise<void> {
+    try {
+        await runQuery(`DELETE FROM rebom.integrations WHERE uuid = $1`, [uuid]);
+    } catch (error) {
+        logger.error({ error, uuid }, 'Error deleting integration');
+        throw error;
+    }
+}
+
 export async function deleteSecret(uuid: string): Promise<void> {
     try {
         await runQuery(`DELETE FROM rebom.secrets WHERE uuid = $1`, [uuid]);
