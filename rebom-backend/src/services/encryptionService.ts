@@ -38,14 +38,16 @@ function deriveKey(password: string, saltHex: string): Buffer {
  *   ENCRYPTION_OLD_SALT     - previous salt (hex-encoded)
  */
 export function initEncryption(): void {
-  const password = process.env.ENCRYPTION_PASSWORD;
-  const salt = process.env.ENCRYPTION_SALT;
+  let initPassword = process.env.ENCRYPTION_PASSWORD;
+  let initSalt = process.env.ENCRYPTION_SALT;
 
-  if (!password || !salt) {
-    logger.warn('Encryption service: ENCRYPTION_PASSWORD or ENCRYPTION_SALT not set — encryption disabled');
-    initialized = false;
-    return;
+  if (!initPassword || !initSalt) {
+    logger.warn('Encryption service: ENCRYPTION_PASSWORD or ENCRYPTION_SALT not set — using default values. DO NOT USE IN PRODUCTION!!!');
+    initPassword = 'bPeC2NQ+4cldt3ehhB/u5JGlqwKVqrQm9VqxuXc83RY=';
+    initSalt = 'd33476046a4d76cfc97ca98d72d381da';
   }
+  const password = initPassword;
+  const salt = initSalt;
 
   if (salt.length < 32) {
     throw new Error('ENCRYPTION_SALT must be at least 16 bytes (32 hex characters)');

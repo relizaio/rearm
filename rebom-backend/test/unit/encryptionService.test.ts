@@ -35,20 +35,22 @@ describe('EncryptionService', () => {
             expect(isEncryptionConfigured()).toBe(true);
         });
 
-        it('should not initialize without password', () => {
+        it('should initialize with default password when not provided', () => {
             process.env.ENCRYPTION_SALT = TEST_SALT;
 
             initEncryption();
 
-            expect(isEncryptionConfigured()).toBe(false);
+            // Service uses default password and initializes successfully
+            expect(isEncryptionConfigured()).toBe(true);
         });
 
-        it('should not initialize without salt', () => {
+        it('should initialize with default salt when not provided', () => {
             process.env.ENCRYPTION_PASSWORD = TEST_PASSWORD;
 
             initEncryption();
 
-            expect(isEncryptionConfigured()).toBe(false);
+            // Service uses default salt and initializes successfully
+            expect(isEncryptionConfigured()).toBe(true);
         });
 
         it('should throw if salt is too short', () => {
@@ -206,24 +208,34 @@ describe('EncryptionService', () => {
         });
     });
 
-    describe('error handling', () => {
-        beforeEach(() => {
-            // Reset env vars to ensure uninitialized state
+    describe('default values', () => {
+        it('should initialize with defaults when no env vars are set', () => {
+            // Clean env
             delete process.env.ENCRYPTION_PASSWORD;
             delete process.env.ENCRYPTION_SALT;
             delete process.env.ENCRYPTION_OLD_PASSWORD;
             delete process.env.ENCRYPTION_OLD_SALT;
-            // Re-initialize to clear state
+
             initEncryption();
+
+            // Service should initialize with default values
+            expect(isEncryptionConfigured()).toBe(true);
         });
 
-        it('should throw on encrypt when not initialized', () => {
-            // Not calling initEncryption with valid credentials
-            expect(() => encrypt('test')).toThrow('Encryption service not initialized');
-        });
+        it('should encrypt and decrypt with default values', () => {
+            // Clean env
+            delete process.env.ENCRYPTION_PASSWORD;
+            delete process.env.ENCRYPTION_SALT;
+            delete process.env.ENCRYPTION_OLD_PASSWORD;
+            delete process.env.ENCRYPTION_OLD_SALT;
 
-        it('should throw on decrypt when not initialized', () => {
-            expect(() => decrypt('abcd')).toThrow('Encryption service not initialized');
+            initEncryption();
+
+            const plainText = 'test with defaults';
+            const encrypted = encrypt(plainText);
+            const decrypted = decrypt(encrypted);
+
+            expect(decrypted).toBe(plainText);
         });
     });
 });
