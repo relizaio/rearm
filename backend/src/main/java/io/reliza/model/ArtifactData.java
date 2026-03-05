@@ -371,6 +371,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		ad.setStatus(artifactDto.getStatus());
 		ad.setVersion(artifactDto.getVersion());
 		ad.setOrg(artifactDto.getOrg());
+		ad.setOciRepositoryName(artifactDto.getOciRepositoryName());
 		if (null != artifactDto.getDtur()) {
 			ad.metrics.dependencyTrackProject = artifactDto.getDtur().projectId();
 			ad.metrics.uploadToken = artifactDto.getDtur().token();
