@@ -8,7 +8,7 @@
                     <n-space vertical>
                         <div class="row">
                             <div v-if="configuredIntegrations.includes('SLACK')">Slack Integration Configured
-                                <n-icon @click="deleteIntegration('SLACK')" class="clickable" size="20"><Trash /></n-icon>
+                                <n-icon @click="deleteIntegration('SLACK')" class="clickable" title="Delete Slack Integration" size="20"><Trash /></n-icon>
                             </div>
                             <div v-else><n-button @click="showOrgSettingsSlackIntegrationModal = true">Add Slack Integration</n-button></div>
                             <n-modal 
@@ -34,7 +34,7 @@
                         </div>
                         <div class="row pt-2">
                             <div v-if="configuredIntegrations.includes('MSTEAMS')">MS Teams integration configured
-                                <n-icon @click="deleteIntegration('MSTEAMS')" class="clickable" size="20"><Trash /></n-icon>
+                                <n-icon @click="deleteIntegration('MSTEAMS')" class="clickable" title="Delete MS Teams Integration" size="20"><Trash /></n-icon>
                             </div>
                             <div v-else><n-button @click="showOrgSettingsMsteamsIntegrationModal = true">Add MS Teams Integration</n-button></div>
                             <n-modal
@@ -61,7 +61,7 @@
                             <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')">
                                 <div>
                                     Dependency-Track integration configured
-                                    <n-icon v-if="isOrgAdmin" @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" size="20"><Trash /></n-icon>
+                                    <n-icon v-if="isOrgAdmin" @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" title="Delete Dependency-Track Integration" size="20"><Trash /></n-icon>
                                     <n-icon v-if="isOrgAdmin" class="clickable" size="24" title="Synchronize D-Track Projects" @click="syncDtrackProjects" style="margin-left: 8px; ">
                                         <Refresh />
                                     </n-icon>
@@ -118,7 +118,8 @@
                         </div>
                         <div class="row pt-2">
                             <div v-if="bearIntegration && bearIntegration.configured">BEAR Integration Configured
-                                <n-icon @click="showBearIntegrationModal = true" class="clickable" title="Edit BEAR Integration" size="20"><Edit /></n-icon>
+                                <n-icon @click="showBearIntegrationModal = true" class="clickable" title="Edit BEAR Integration" size="20"><EditIcon /></n-icon>
+                                <n-icon @click="deleteBearIntegration" class="clickable" title="Delete BEAR Integration" size="20"><Trash /></n-icon>
                             </div>
                             <div v-else><n-button @click="showBearIntegrationModal = true">Add BEAR Integration</n-button></div>
                             <n-modal
@@ -3433,6 +3434,33 @@ function resetBearForm() {
         uri: bearIntegration.value?.uri || '',
         apiKey: '',
         skipPatterns: bearIntegration.value?.skipPatterns || []
+    }
+}
+
+async function deleteBearIntegration() {
+    const confirmResult = await Swal.fire({
+        title: 'Delete BEAR Integration?',
+        text: 'This will remove the BEAR integration configuration.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, delete it'
+    })
+    if (!confirmResult.isConfirmed) return
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation deleteBearIntegration($org: ID!) {
+                    deleteBearIntegration(org: $org)
+                }`,
+            variables: {
+                org: orgResolved.value
+            }
+        })
+        bearIntegration.value = null
+        bearForm.value = { uri: '', apiKey: '', skipPatterns: [] }
+        notify('success', 'Deleted', 'BEAR integration has been removed.')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
 }
 
