@@ -1,9 +1,44 @@
 import React from "react";
 import Link from "next/link";
+import Script from "next/script";
 import PricingPlan from "@/components/PricingPlan";
+
+const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com").replace(/\/$/, "");
+
+const homepageJsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://reliza.io",
+      name: "Reliza",
+      url: "https://reliza.io",
+      logo: {
+        "@type": "ImageObject",
+        url: `${baseUrl}/rearm.png`,
+      },
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": baseUrl,
+      name: "ReARM",
+      description: "Release-Level Supply Chain Evidence Platform",
+      applicationCategory: "DevSecOps",
+      url: baseUrl,
+      publisher: {
+        "@id": "https://reliza.io",
+      },
+    },
+  ],
+};
 export default function Home() {
   return (
     <main className="mainPaddingContainer">
+      <Script
+        id="homepage-jsonld"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(homepageJsonLd) }}
+      />
       {/* Hero */}
       <div className="container-fluid container1">
         <div className="row mx-auto" style={{ maxWidth: "1100px" }}>

@@ -65,7 +65,7 @@ export default async function NewsPostPage({ params }: { params: any }) {
   }
   const articleJsonLd = {
     "@context": "https://schema.org",
-    "@type": "Article",
+    "@type": "NewsArticle",
     headline: post.title,
     datePublished: post.date,
     dateModified: post.date,
@@ -76,8 +76,8 @@ export default async function NewsPostPage({ params }: { params: any }) {
     },
     publisher: {
       "@type": "Organization",
-      name: "ReARM by Reliza",
-      url: baseUrl,
+      name: "Reliza",
+      url: "https://reliza.io",
       logo: {
         "@type": "ImageObject",
         url: `${baseUrl}/rearm.png`,
