@@ -182,7 +182,7 @@ input RebomOptions {
   type BearIntegration {
     uri: String
     configured: Boolean!
-    hasSkipPatterns: Boolean!
+    skipPatterns: [String]
   }
 
   scalar Object

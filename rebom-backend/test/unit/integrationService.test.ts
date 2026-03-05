@@ -171,7 +171,7 @@ describe('integrationService', () => {
 
             expect(result.configured).toBe(true);
             expect(result.uri).toBe('https://bear.example.com');
-            expect(result.hasSkipPatterns).toBe(false);
+            expect(result.skipPatterns).toEqual([]);
 
             expect(IntegrationRepository.createSecret).toHaveBeenCalledWith('encrypted_my-api-key', TEST_ORG);
             expect(IntegrationRepository.upsertIntegration).toHaveBeenCalledWith(
@@ -223,7 +223,7 @@ describe('integrationService', () => {
 
             expect(result.configured).toBe(true);
             expect(result.uri).toBe('https://bear.example.com');
-            expect(result.hasSkipPatterns).toBe(true);
+            expect(result.skipPatterns).toEqual(['pkg:npm/*']);
 
             expect(IntegrationRepository.updateSecret).toHaveBeenCalledWith('existing-secret-uuid', 'encrypted_new-api-key');
             expect(IntegrationRepository.createSecret).not.toHaveBeenCalled();
@@ -250,7 +250,7 @@ describe('integrationService', () => {
 
             expect(result.configured).toBe(false);
             expect(result.uri).toBeNull();
-            expect(result.hasSkipPatterns).toBe(false);
+            expect(result.skipPatterns).toEqual([]);
         });
 
         it('should return uri and configured=true when integration exists', async () => {
@@ -273,7 +273,7 @@ describe('integrationService', () => {
 
             expect(result.configured).toBe(true);
             expect(result.uri).toBe('https://bear.example.com');
-            expect(result.hasSkipPatterns).toBe(true);
+            expect(result.skipPatterns).toEqual(['pkg:npm/*']);
         });
 
         it('should never expose the secret', async () => {

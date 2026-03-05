@@ -47,7 +47,7 @@ export async function setBearIntegration(
     return {
         uri,
         configured: true,
-        hasSkipPatterns: !!(skipPatterns && skipPatterns.length > 0)
+        skipPatterns: skipPatterns && skipPatterns.length > 0 ? skipPatterns : []
     };
 }
 
@@ -59,13 +59,13 @@ export async function getBearIntegration(org: string): Promise<BearIntegrationDt
     const integration = await IntegrationRepository.findIntegrationByTypeAndOrg(IntegrationType.BEAR, org);
 
     if (!integration) {
-        return { uri: null, configured: false, hasSkipPatterns: false };
+        return { uri: null, configured: false, skipPatterns: [] };
     }
 
     return {
         uri: integration.config.uri || null,
         configured: !!(integration.config.uri && integration.config.secretUuid),
-        hasSkipPatterns: !!(integration.config.skipPatterns && integration.config.skipPatterns.length > 0)
+        skipPatterns: integration.config.skipPatterns || []
     };
 }
 

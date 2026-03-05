@@ -28,5 +28,5 @@ export interface SecretRecord {
 export interface BearIntegrationDto {
     uri: string | null;
     configured: boolean;
-    hasSkipPatterns: boolean;
+    skipPatterns: string[];
 }
