@@ -110,7 +110,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
 
   // Step 3: Set enrichment status and optionally augment with component context
   // Enrichment will happen asynchronously after BOM is stored
-  rebomOptions.enrichmentStatus = getInitialEnrichmentStatus();
+  rebomOptions.enrichmentStatus = await getInitialEnrichmentStatus(bomInput.bomInput.org);
   
   let finalBom = processedBom;
   if (AUGMENT_ON_STORAGE) {
@@ -419,7 +419,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     
     const convertedBomUuid = uuidv4();
     // Set enrichment status - enrichment will happen asynchronously
-    mergedOptions.enrichmentStatus = getInitialEnrichmentStatus();
+    mergedOptions.enrichmentStatus = await getInitialEnrichmentStatus(bomInput.bomInput.org);
     // Use same repository as SPDX upload to ensure consistency
     const cycloneDxPushResult = await pushToOci(convertedBomUuid, convertedBom, spdxRepositoryName);
     

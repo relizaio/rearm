@@ -69,6 +69,22 @@ export ENCRYPTION_OLD_SALT="<previous-salt>"
 
 ---
 
+## Enrichment Configuration
+
+BEAR enrichment is configured via the `setBearIntegration` GraphQL mutation, which stores the BEAR URI and API key in the database.
+
+### Optional Environment Variable
+
+```bash
+ENRICHMENT_PENDING_IF_NOT_CONFIGURED=true
+```
+
+When set to `true`, incoming BOMs are marked with `PENDING` enrichment status even if no BEAR integration is configured yet. This is useful for new environments where BOMs are arriving before enrichment has been set up — once the BEAR integration is configured, the scheduler will pick up and enrich these BOMs automatically.
+
+Default: `false` (BOMs are marked `SKIPPED` if no BEAR integration is configured).
+
+---
+
 ## Database Migrations
 
 Flyway command:

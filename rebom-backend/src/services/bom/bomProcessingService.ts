@@ -13,6 +13,7 @@ import {
 } from '../oci';
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
+import { getBearCredentials, getBearIntegration } from '../integrationService';
 import { SpdxService } from '../spdx';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
@@ -489,22 +490,22 @@ function computeSha256Hash(obj: string): string {
 
 /**
  * Enriches a CycloneDX BOM using rearm-cli bomutils enrich command.
- * Requires BEAR_URI and BEAR_API_KEY environment variables to be set.
- * If either env var is missing, returns the original BOM unchanged.
+ * Credentials are passed as parameters — resolved by the caller from DB or env vars.
  * 
  * @param bom - CycloneDX BOM to enrich
+ * @param bearUri - BEAR service URI
+ * @param bearApiKey - BEAR API key
+ * @param skipPatterns - Optional skip patterns for enrichment
  * @param bomUuid - UUID of the BOM record (for logging)
  * @returns EnrichmentResult with success status and enriched BOM or error
  */
-export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<EnrichmentResult> {
-  const bearUri = process.env.BEAR_URI;
-  const bearApiKey = process.env.BEAR_API_KEY;
-
-  if (!bearUri || !bearApiKey) {
-    logger.info('BEAR_URI or BEAR_API_KEY not set, skipping BOM enrichment');
-    return { success: true, enrichedBom: bom };
-  }
-
+export async function enrichCycloneDxBom(
+  bom: any,
+  bearUri: string,
+  bearApiKey: string,
+  skipPatterns: string[] = [],
+  bomUuid?: string
+): Promise<EnrichmentResult> {
   let inputFile: string | null = null;
   let outputFile: string | null = null;
 
@@ -524,14 +525,12 @@ export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<En
       '-o', outputFile
     ];
     
-    // Add skip patterns from BEAR_SKIP_PATTERN env var (comma-separated)
-    const skipPatternEnv = process.env.BEAR_SKIP_PATTERN;
-    if (skipPatternEnv && skipPatternEnv.trim()) {
-      const patterns = skipPatternEnv.split(',').map(p => p.trim()).filter(p => p);
-      for (const pattern of patterns) {
-        args.push('--skipPattern', pattern);
-      }
-      logger.debug({ skipPatterns: patterns }, 'Added skip patterns to enrichment command');
+    // Add skip patterns
+    for (const pattern of skipPatterns) {
+      args.push('--skipPattern', pattern);
+    }
+    if (skipPatterns.length > 0) {
+      logger.debug({ skipPatterns }, 'Added skip patterns to enrichment command');
     }
 
     logger.info('Running enrichment: rearm-cli bomutils enrich');
@@ -573,19 +572,26 @@ export async function enrichCycloneDxBom(bom: any, bomUuid?: string): Promise<En
 }
 
 /**
- * Checks if BEAR enrichment is configured (env vars are set).
- * Used to determine initial enrichment status.
+ * Checks if BEAR enrichment is configured by looking up the integration in the DB.
  */
-export function isEnrichmentConfigured(): boolean {
-  return !!(process.env.BEAR_URI && process.env.BEAR_API_KEY);
+export async function isEnrichmentConfigured(org: string): Promise<boolean> {
+  const integration = await getBearIntegration(org);
+  return integration.configured;
 }
 
 /**
  * Gets the initial enrichment status based on configuration.
- * Returns PENDING if BEAR is configured, SKIPPED otherwise.
+ * Returns PENDING if BEAR is configured in DB.
+ * If not configured, returns PENDING when ENRICHMENT_PENDING_IF_NOT_CONFIGURED=true
+ * (useful for new environments where enrichment will be set up later).
+ * Otherwise returns SKIPPED.
  */
-export function getInitialEnrichmentStatus(): EnrichmentStatus {
-  return isEnrichmentConfigured() ? EnrichmentStatus.PENDING : EnrichmentStatus.SKIPPED;
+export async function getInitialEnrichmentStatus(org: string): Promise<EnrichmentStatus> {
+  const pendingIfNotConfigured = process.env.ENRICHMENT_PENDING_IF_NOT_CONFIGURED === 'true';
+  if (pendingIfNotConfigured) {
+    return EnrichmentStatus.PENDING;
+  }
+  return (await isEnrichmentConfigured(org)) ? EnrichmentStatus.PENDING : EnrichmentStatus.SKIPPED;
 }
 
 export interface EnrichmentResult {
@@ -603,13 +609,14 @@ export interface EnrichmentResult {
  * @param org - Organization ID
  */
 export async function enrichBomAsync(bomUuid: string, bom: any, org: string): Promise<void> {
-  if (!isEnrichmentConfigured()) {
+  const credentials = await getBearCredentials(org);
+  if (!credentials) {
     logger.debug({ bomUuid }, 'Enrichment not configured, skipping async enrichment');
     return;
   }
 
   // Perform enrichment
-  const result = await enrichCycloneDxBom(bom, bomUuid);
+  const result = await enrichCycloneDxBom(bom, credentials.bearUri, credentials.bearApiKey, credentials.skipPatterns, bomUuid);
   
   if (!result.success) {
     // Enrichment failed (timeout or other error)
@@ -715,8 +722,9 @@ export interface EnrichmentTriggerResult {
 export async function triggerEnrichment(id: string, org: string, force: boolean = false): Promise<EnrichmentTriggerResult> {
   logger.info({ id, org, force }, 'triggerEnrichment called');
   
-  if (!isEnrichmentConfigured()) {
-    return { triggered: false, message: 'Enrichment not configured (BEAR_URI or BEAR_API_KEY not set)' };
+  const credentials = await getBearCredentials(org);
+  if (!credentials) {
+    return { triggered: false, message: 'Enrichment not configured (no BEAR integration found in DB or env vars)' };
   }
   
   // Find BOM by UUID or serial number
@@ -769,7 +777,7 @@ export async function triggerEnrichment(id: string, org: string, force: boolean 
   
   // For forced re-enrichment, we need to re-process from raw artifacts
   if (force) {
-    reprocessAndEnrichAsync(bomRecord, org).catch(err => {
+    reprocessAndEnrichAsync(bomRecord, org, credentials).catch(err => {
       logger.error({ err, bomUuid: bomRecord.uuid }, 'Forced re-enrichment failed');
     });
   } else {
@@ -790,7 +798,7 @@ export async function triggerEnrichment(id: string, org: string, force: boolean 
  * For SPDX: pulls raw SPDX, re-converts, re-augments, then enriches.
  * Only pushes the final enriched artifact.
  */
-async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string): Promise<void> {
+async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, credentials?: { bearUri: string; bearApiKey: string; skipPatterns: string[] }): Promise<void> {
   const bomUuid = bomRecord.uuid;
   const sourceFormat = bomRecord.source_format;
   const sourceSpdxUuid = bomRecord.source_spdx_uuid;
@@ -813,8 +821,13 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string): Promi
       return;
     }
     
-    // Now perform enrichment
-    const result = await enrichCycloneDxBom(bomToEnrich, bomUuid);
+    // Now perform enrichment - resolve credentials if not passed
+    const creds = credentials || await getBearCredentials(org);
+    if (!creds) {
+      await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, 'No BEAR credentials available');
+      return;
+    }
+    const result = await enrichCycloneDxBom(bomToEnrich, creds.bearUri, creds.bearApiKey, creds.skipPatterns, bomUuid);
     
     if (!result.success) {
       await updateEnrichmentStatus(bomUuid, EnrichmentStatus.FAILED, result.error);

@@ -19,6 +19,7 @@ const typeDefs = gql`
     parseSarifContent(sarifContent: String!): [Weakness]
     parseCycloneDxContent(vdrContent: String!): [Vulnerability]
     health: HealthStatus!
+    getBearIntegration(org: ID!): BearIntegration
   }
 
   type Mutation {
@@ -27,6 +28,7 @@ const typeDefs = gql`
     mergeAndStoreBoms(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): Bom
     mergeAndStoreBomsCsv(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): String
     triggerEnrichment(id: ID!, org: ID!, force: Boolean): EnrichmentTriggerResult
+    setBearIntegration(org: ID!, uri: String!, apiKey: String!, skipPatterns: [String]): BearIntegration
   }
 
   type EnrichmentTriggerResult {
@@ -175,6 +177,12 @@ input RebomOptions {
   enum BomFormat {
     CYCLONEDX
     SPDX
+  }
+
+  type BearIntegration {
+    uri: String
+    configured: Boolean!
+    hasSkipPatterns: Boolean!
   }
 
   scalar Object

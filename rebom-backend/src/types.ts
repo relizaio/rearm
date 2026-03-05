@@ -7,4 +7,4 @@ export * from './types/common.types';
 export * from './types/enums';
 export * from './types/guards';
 export * from './types/bom-meta';
-
+export * from './types/integration.types';

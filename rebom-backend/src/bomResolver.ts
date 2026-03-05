@@ -2,7 +2,8 @@ import * as BomService from './bomService';
 import * as DiffService from './services/bom/bomDiffService';
 import { SarifService } from './services/sarif';
 import { CycloneDxService } from './services/cyclonedx';
-import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, WeaknessDto, VulnerabilityDto } from './types';
+import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, WeaknessDto, VulnerabilityDto, BearIntegrationDto } from './types';
+import * as IntegrationService from './services/integrationService';
 import { toGraphQLError } from './types/errors';
 import { bomToExcel, bomToCsv } from './services/bom/bomExportService';
 import { GraphQLError } from 'graphql';
@@ -61,7 +62,10 @@ const resolvers = {
 		},
 		parseCycloneDxContent: async (_:any, input: { vdrContent: string }): Promise<VulnerabilityDto[]> => {
 			return CycloneDxService.parseCycloneDxContent(input.vdrContent);
-		}
+		},
+		getBearIntegration: withErrorHandling(async (_:any, input: { org: string }): Promise<BearIntegrationDto> => {
+			return IntegrationService.getBearIntegration(input.org);
+		}, 'getBearIntegration')
 	},
 	Mutation: {
 		addBom: withErrorHandling(async (_:any, bomInput: BomInput): Promise<BomRecord> => BomService.addBom(bomInput), 'addBom'),
@@ -77,7 +81,10 @@ const resolvers = {
 		}, 'mergeAndStoreBomsExcel'),
 		triggerEnrichment: withErrorHandling(async (_:any, input: { id: string, org: string, force?: boolean }) => {
 			return BomService.triggerEnrichment(input.id, input.org, input.force ?? true);
-		}, 'triggerEnrichment')
+		}, 'triggerEnrichment'),
+		setBearIntegration: withErrorHandling(async (_:any, input: { org: string, uri: string, apiKey: string, skipPatterns?: string[] }): Promise<BearIntegrationDto> => {
+			return IntegrationService.setBearIntegration(input.org, input.uri, input.apiKey, input.skipPatterns ?? undefined);
+		}, 'setBearIntegration')
 	}
 }
 export default resolvers;

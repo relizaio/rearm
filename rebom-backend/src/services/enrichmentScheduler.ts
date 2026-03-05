@@ -2,7 +2,7 @@ import { logger } from '../logger';
 import { EnrichmentStatus } from '../types';
 import * as BomRepository from '../bomRepository';
 import { fetchFromOci, extractRepositoryNameFromBom } from './oci';
-import { enrichBomAsync, isEnrichmentConfigured } from './bom/bomProcessingService';
+import { enrichBomAsync } from './bom/bomProcessingService';
 import { runQuery } from '../utils';
 
 const SCHEDULER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -45,11 +45,6 @@ async function findBomsNeedingEnrichment(): Promise<Array<{ uuid: string; organi
 async function runEnrichmentCycle(): Promise<void> {
   if (isRunning) {
     logger.debug('Enrichment scheduler: Previous cycle still running, skipping');
-    return;
-  }
-  
-  if (!isEnrichmentConfigured()) {
-    logger.debug('Enrichment scheduler: BEAR not configured, skipping cycle');
     return;
   }
   
@@ -108,12 +103,7 @@ export function startEnrichmentScheduler(): void {
     return;
   }
   
-  if (!isEnrichmentConfigured()) {
-    logger.info('Enrichment scheduler: BEAR not configured, scheduler will not start');
-    return;
-  }
-  
-  logger.info({ intervalMs: SCHEDULER_INTERVAL_MS }, 'Starting enrichment scheduler');
+  logger.info({ intervalMs: SCHEDULER_INTERVAL_MS }, 'Starting enrichment scheduler (credentials resolved per-org from DB)');
   
   // Run immediately on startup
   runEnrichmentCycle().catch(err => {

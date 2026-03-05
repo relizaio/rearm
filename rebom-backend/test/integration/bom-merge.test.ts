@@ -1,4 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Mock integrationRepository before importing bomService (table may not exist in test DB)
+vi.mock('../../src/integrationRepository', () => ({
+    findIntegrationByTypeAndOrg: vi.fn().mockResolvedValue(null),
+    upsertIntegration: vi.fn(),
+    createSecret: vi.fn(),
+    findSecretById: vi.fn(),
+    updateSecret: vi.fn(),
+    deleteSecret: vi.fn(),
+}));
+
 import * as BomService from '../../src/bomService';
 import { pool } from '../../src/utils';
 import { clearMockOciStorage } from '../../src/services/oci';
