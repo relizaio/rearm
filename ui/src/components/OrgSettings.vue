@@ -116,6 +116,36 @@
                                 </n-card>
                             </n-modal>
                         </div>
+                        <div class="row pt-2">
+                            <div v-if="bearIntegration && bearIntegration.configured">BEAR Integration Configured
+                                <n-icon @click="showBearIntegrationModal = true" class="clickable" title="Edit BEAR Integration" size="20"><Edit /></n-icon>
+                            </div>
+                            <div v-else><n-button @click="showBearIntegrationModal = true">Add BEAR Integration</n-button></div>
+                            <n-modal
+                                v-model:show="showBearIntegrationModal"
+                                preset="dialog"
+                                :show-icon="false" >
+                                <n-card style="width: 600px" size="huge" :title="bearIntegration && bearIntegration.configured ? 'Edit BEAR Integration' : 'Add BEAR Integration'" :bordered="false"
+                                    role="dialog" aria-modal="true">
+                                    <n-form>
+                                        <n-form-item label="BEAR URI">
+                                            <n-input v-model:value="bearForm.uri" required
+                                                placeholder="Enter BEAR URI" />
+                                        </n-form-item>
+                                        <n-form-item label="API Key">
+                                            <n-input type="password" v-model:value="bearForm.apiKey" required
+                                                placeholder="Enter BEAR API Key" />
+                                        </n-form-item>
+                                        <n-form-item label="Skip Patterns">
+                                            <n-dynamic-input v-model:value="bearForm.skipPatterns"
+                                                placeholder="Enter skip pattern" />
+                                        </n-form-item>
+                                        <n-button @click="onSetBearIntegration" type="success">Submit</n-button>
+                                        <n-button type="error" @click="resetBearForm">Reset</n-button>
+                                    </n-form>
+                                </n-card>
+                            </n-modal>
+                        </div>
                     </n-space>
                     <h5>CI Integrations</h5>
                     <n-data-table :columns="ciIntegrationTableFields" :data="ciIntegrations" :row-key="dataTableRowKey"></n-data-table>
@@ -818,6 +848,7 @@ onMounted(async () => {
     if (false && myUser.value.installationType !== 'OSS') initializeResourceGroup()
     loadConfiguredIntegrations(true)
     loadCiIntegrations(true)
+    loadBearIntegration()
     isWritable.value = commonFunctions.isWritable(orgResolved.value, myUser.value, 'ORG')
     
     // Load data for the current tab (from URL or default) without router update
@@ -896,6 +927,14 @@ const showOrgSettingsSlackIntegrationModal = ref(false)
 const showOrgSettingsMsteamsIntegrationModal = ref(false)
 
 const showOrgSettingsDependencyTrackIntegrationModal = ref(false)
+
+const showBearIntegrationModal = ref(false)
+const bearIntegration: Ref<any> = ref(null)
+const bearForm = ref({
+    uri: '',
+    apiKey: '',
+    skipPatterns: [] as string[]
+})
 
 const showOrgSettingsGitHubIntegrationModal = ref(false)
 
@@ -3329,6 +3368,71 @@ async function loadCiIntegrations(useCache: boolean) {
         } catch (err) { 
             console.error(err)
         }
+    }
+}
+
+async function loadBearIntegration() {
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query getBearIntegration($org: ID!) {
+                    getBearIntegration(org: $org) {
+                        uri
+                        configured
+                        skipPatterns
+                    }
+                }`,
+            variables: {
+                org: orgResolved.value
+            },
+            fetchPolicy: 'network-only'
+        })
+        if (resp.data && resp.data.getBearIntegration) {
+            bearIntegration.value = resp.data.getBearIntegration
+            if (bearIntegration.value.configured) {
+                bearForm.value.uri = bearIntegration.value.uri || ''
+                bearForm.value.skipPatterns = bearIntegration.value.skipPatterns || []
+            }
+        }
+    } catch (err) {
+        console.error(err)
+    }
+}
+
+async function onSetBearIntegration() {
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setBearIntegration($org: ID!, $uri: String!, $apiKey: String!, $skipPatterns: [String]) {
+                    setBearIntegration(org: $org, uri: $uri, apiKey: $apiKey, skipPatterns: $skipPatterns) {
+                        uri
+                        configured
+                        skipPatterns
+                    }
+                }`,
+            variables: {
+                org: orgResolved.value,
+                uri: bearForm.value.uri,
+                apiKey: bearForm.value.apiKey,
+                skipPatterns: bearForm.value.skipPatterns
+            }
+        })
+        if (resp.data && resp.data.setBearIntegration) {
+            bearIntegration.value = resp.data.setBearIntegration
+        }
+        showBearIntegrationModal.value = false
+        bearForm.value.apiKey = ''
+        notify('success', 'Success', 'BEAR integration configured successfully.')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+function resetBearForm() {
+    bearForm.value = {
+        uri: bearIntegration.value?.uri || '',
+        apiKey: '',
+        skipPatterns: bearIntegration.value?.skipPatterns || []
     }
 }
 
