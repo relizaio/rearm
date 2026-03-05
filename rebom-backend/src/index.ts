@@ -3,6 +3,7 @@ import { startStandaloneServer } from '@apollo/server/standalone'
 import typeDefs from './schema.graphql'
 import resolvers from './bomResolver';
 import { logger } from './logger';
+import { initEncryption } from './services/encryptionService';
 import { startEnrichmentScheduler, stopEnrichmentScheduler } from './services/enrichmentScheduler';
 
 // Global error handlers to prevent process crashes (like Spring Boot)
@@ -37,6 +38,9 @@ process.on('SIGINT', () => {
 });
 
 async function startApolloServer(typeDefs: any, resolvers: any) {
+  // Initialize encryption service (uses defaults if env vars not set)
+  initEncryption();
+
   // Start GraphQL server separately
   const server = new ApolloServer({
     typeDefs,
