@@ -155,7 +155,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		List<TagRecord> tags,
 		StatusEnum status,
 		List<UUID> artifacts,
-		UUID org  // Organization UUID for rebom lookups
+		UUID org,  // Organization UUID for rebom lookups
+		String ociRepositoryName  // OCI repository name for downloadable artifacts (e.g., "downloadable-artifacts-2026-03")
 	) {
 		/**
 		 * Creates a version snapshot from current ArtifactData state
@@ -176,7 +177,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 				ad.getTags() != null ? new ArrayList<>(ad.getTags()) : new ArrayList<>(),
 				ad.getStatus(),
 				ad.getArtifacts() != null ? new ArrayList<>(ad.getArtifacts()) : new ArrayList<>(),
-				ad.getOrg()
+				ad.getOrg(),
+				ad.getOciRepositoryName()
 			);
 		}
 		
@@ -201,6 +203,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 			ad.setStatus(snapshot.status());
 			ad.setArtifacts(snapshot.artifacts());
 			ad.setOrg(snapshot.org());
+			ad.setOciRepositoryName(snapshot.ociRepositoryName());
 			// Note: previousVersions is intentionally not set to avoid infinite nesting
 			return ad;
 		}
