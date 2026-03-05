@@ -592,18 +592,18 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.03.7";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.03.12";
     
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "e1dd202a1e7ca44909965d81970625fc8d0924ac86b857b7b19060dae1f9f68d";
-    private static final String REARM_CD_HELM_VERSION = "0.1.10";
-    private static final String REARM_CD_HELM_COMMIT = "6af8ea8c00f423ec27cc8d9cc0fb8ea19dc69f2e";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.1.10 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "7a0517c339caca96d00ed03e2223e73f3979b8d513b8ec7cd5481963b6927667";
+    private static final String REARM_CD_HELM_VERSION = "0.1.12";
+    private static final String REARM_CD_HELM_COMMIT = "790bcbb47cec72abb57fc7d5f6c176cf9ef8c89b";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.1.12 [skip ci]";
     
-    public static final String REARM_CD_CONTAINER_DIGEST = "858b9a305c6b7056338f26b95d01b81a0d54f67d7fe91cf0ca4b8490cb915c67";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.17";
-    public static final String REARM_CD_CONTAINER_COMMIT = "beeeb2ce721d5a750330bd701bbb15f59310f7bf";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): correct broken helm reference on build";
+    public static final String REARM_CD_CONTAINER_DIGEST = "b0ed8b9505893fa92c67da49ee3f03ed39250f58e945f88014ae2be0c237f3fb";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.03.19";
+    public static final String REARM_CD_CONTAINER_COMMIT = "c9b3b6bd64d337d7f5a8c2a29b0ff0394e85dd48";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): stream helm hash on every deployment";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
