@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach } from 'vitest';
 import { encrypt, decrypt, initEncryption, isEncryptionConfigured } from '../../src/services/encryptionService';
 
 describe('EncryptionService', () => {
