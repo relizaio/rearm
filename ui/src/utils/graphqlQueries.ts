@@ -307,6 +307,7 @@ const RELEASE_COLLECTION_DATA = `
                 version
             }
         }
+        comparedReleaseUuid
     }
     
 `
