@@ -451,7 +451,7 @@
                 <n-tab-pane v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" name="approvals" tab="Approvals">
                     <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER'">
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
-                        <n-space style="margin-top: 5px;">
+                        <n-space v-if="hasApprovalChanges" style="margin-top: 5px;">
                             <n-spin :show="approvalPending" small>
                                 <n-button @click="triggerApproval" :disabled="approvalPending">
                                     <template #icon>
@@ -1313,6 +1313,20 @@ function computeGivenApprovalsFromRelease () {
     }
     return givenApprovals
 }
+
+const hasApprovalChanges: ComputedRef<boolean> = computed((): boolean => {
+    let hasChanges = false
+    Object.keys(approvalMatrixCheckboxes.value).forEach((entryId: string) => {
+        Object.keys(approvalMatrixCheckboxes.value[entryId]).forEach((roleId: string) => {
+            const checkboxValue = approvalMatrixCheckboxes.value[entryId][roleId]
+            const givenValue = givenApprovals.value[entryId]?.[roleId]
+            if (checkboxValue !== 'UNSET' && !givenValue || checkboxValue === 'UNSET' && givenValue) {
+                hasChanges = true
+            }
+        })
+    })
+    return hasChanges
+})
 
 function computeApprovals () : ApprovalInput[] {
     const approvals: ApprovalInput[] = []
