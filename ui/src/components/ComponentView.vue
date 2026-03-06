@@ -394,6 +394,55 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
+                                    <n-tab-pane name="globalTriggerEvents" tab="Global Trigger Events" v-if="myUser.installationType !== 'OSS' && updatedComponent.approvalPolicy">
+                                        <div v-if="policyGlobalInputEvents.length === 0" class="text-muted mt-2">
+                                            No global input events defined on the approval policy.
+                                        </div>
+                                        <div v-else>
+                                            <p class="text-muted">Select global input events from the approval policy to apply to this component. You can optionally override their output events.</p>
+                                            <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;">
+                                                <div style="display: flex; align-items: center; gap: 8px;">
+                                                    <n-checkbox
+                                                        :checked="isGlobalInputEventEnabled(gie.uuid)"
+                                                        @update:checked="(val: boolean) => toggleGlobalInputEventRef(gie.uuid, val)"
+                                                        :disabled="!isWritable"
+                                                    />
+                                                    <strong>{{ gie.name }}</strong>
+                                                    <span class="text-muted" style="font-size: 0.85em;">
+                                                        ({{ gie.outputEvents?.length || 0 }} default output event{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
+                                                    </span>
+                                                </div>
+                                                <div v-if="isGlobalInputEventEnabled(gie.uuid)" style="margin-left: 28px; margin-top: 8px;">
+                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                        <n-switch
+                                                            :value="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally || false"
+                                                            @update:value="(val: boolean) => toggleOverrideOutputEvents(gie.uuid, val)"
+                                                            :disabled="!isWritable"
+                                                        />
+                                                        <span>Override output events locally</span>
+                                                        <n-button v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally"
+                                                            size="tiny" quaternary type="warning"
+                                                            @click="resetGlobalInputEventOverride(gie.uuid)"
+                                                            :disabled="!isWritable">
+                                                            Reset to Default
+                                                        </n-button>
+                                                    </div>
+                                                    <div v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally" style="margin-top: 8px;">
+                                                        <span style="color: #f0a020; font-size: 0.85em; font-weight: bold;">⚠ Output events are overridden locally</span>
+                                                        <n-select
+                                                            :value="getGlobalInputEventRef(gie.uuid)?.outputEventsOverride || []"
+                                                            @update:value="(val: string[]) => updateOutputEventsOverride(gie.uuid, val)"
+                                                            :options="allOutputEventsForOverride"
+                                                            multiple
+                                                            placeholder="Select output events to use instead"
+                                                            :disabled="!isWritable"
+                                                            style="margin-top: 4px;"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
                                             <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
@@ -1279,6 +1328,88 @@ const outputTriggerTypeOptions = [
     {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'}
 ]
 
+// Global Input Event Refs management
+const policyGlobalInputEvents = computed((): any[] => {
+    if (!updatedComponent.value.approvalPolicyDetails) return []
+    return updatedComponent.value.approvalPolicyDetails.globalInputEvents || []
+})
+
+const policyGlobalOutputEvents = computed((): any[] => {
+    if (!updatedComponent.value.approvalPolicyDetails) return []
+    return updatedComponent.value.approvalPolicyDetails.globalOutputEvents || []
+})
+
+const allOutputEventsForOverride = computed((): any[] => {
+    const options: any[] = []
+    // Local output triggers
+    if (updatedComponent.value.outputTriggers) {
+        updatedComponent.value.outputTriggers.forEach((ot: any) => {
+            options.push({ label: ot.name + ' (Local)', value: ot.uuid })
+        })
+    }
+    // Global output events from the policy
+    policyGlobalOutputEvents.value.forEach((oe: any) => {
+        options.push({ label: oe.name + ' (Global)', value: oe.uuid })
+    })
+    return options
+})
+
+function isGlobalInputEventEnabled (uuid: string): boolean {
+    if (!updatedComponent.value.globalInputEventRefs) return false
+    return updatedComponent.value.globalInputEventRefs.some((ref: any) => ref.uuid === uuid)
+}
+
+function getGlobalInputEventRef (uuid: string): any {
+    if (!updatedComponent.value.globalInputEventRefs) return null
+    return updatedComponent.value.globalInputEventRefs.find((ref: any) => ref.uuid === uuid)
+}
+
+function toggleGlobalInputEventRef (uuid: string, enabled: boolean) {
+    if (!updatedComponent.value.globalInputEventRefs) {
+        updatedComponent.value.globalInputEventRefs = []
+    }
+    if (enabled) {
+        updatedComponent.value.globalInputEventRefs.push({
+            uuid,
+            overrideOutputEventsLocally: false,
+            outputEventsOverride: []
+        })
+    } else {
+        updatedComponent.value.globalInputEventRefs = updatedComponent.value.globalInputEventRefs.filter(
+            (ref: any) => ref.uuid !== uuid
+        )
+    }
+    save()
+}
+
+function toggleOverrideOutputEvents (uuid: string, override: boolean) {
+    const ref = getGlobalInputEventRef(uuid)
+    if (ref) {
+        ref.overrideOutputEventsLocally = override
+        if (!override) {
+            ref.outputEventsOverride = []
+        }
+        save()
+    }
+}
+
+function updateOutputEventsOverride (uuid: string, outputEvents: string[]) {
+    const ref = getGlobalInputEventRef(uuid)
+    if (ref) {
+        ref.outputEventsOverride = outputEvents
+        save()
+    }
+}
+
+function resetGlobalInputEventOverride (uuid: string) {
+    const ref = getGlobalInputEventRef(uuid)
+    if (ref) {
+        ref.overrideOutputEventsLocally = false
+        ref.outputEventsOverride = []
+        save()
+    }
+}
+
 const defaultCloneBrProps = {
     name: '',
     type: '',
@@ -1889,11 +2020,19 @@ const outputTriggerTableFields: DataTableColumns<any> = [
         }
     },
     {
+        key: 'scope',
+        title: 'Scope',
+        render: (row: any) => {
+            if (row.scope === 'GLOBAL') return h('span', { style: 'color: #2080f0; font-weight: bold;' }, 'Global')
+            return h('span', 'Local')
+        }
+    },
+    {
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
             let els: any[] = []
-            if (isWritable) {
+            if (isWritable && row.scope !== 'GLOBAL') {
                 const editEl = h(NIcon, {
                     title: 'Edit Trigger',
                     class: 'icons clickable',
@@ -1916,7 +2055,7 @@ const outputTriggerTableFields: DataTableColumns<any> = [
                 )
                 els.push(editEl, deleteEl)
             }
-            if (!els.length) els = [h('div'), 'N/A']
+            if (!els.length) els = [h('div'), row.scope === 'GLOBAL' ? 'Global' : 'N/A']
             return els
         }
     }
@@ -1979,11 +2118,19 @@ const inputTriggerTableFields: DataTableColumns<any> = [
         }
     },
     {
+        key: 'scope',
+        title: 'Scope',
+        render: (row: any) => {
+            if (row.scope === 'GLOBAL') return h('span', { style: 'color: #2080f0; font-weight: bold;' }, 'Global')
+            return h('span', 'Local')
+        }
+    },
+    {
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
             let els: any[] = []
-            if (isWritable) {
+            if (isWritable && row.scope !== 'GLOBAL') {
                 const editEl = h(NIcon, {
                     title: 'Edit Trigger',
                     class: 'icons clickable',
@@ -2006,7 +2153,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
                 )
                 els.push(editEl, deleteEl)
             }
-            if (!els.length) els = [h('div'), 'N/A']
+            if (!els.length) els = [h('div'), row.scope === 'GLOBAL' ? 'Global' : 'N/A']
             return els
         }
     }

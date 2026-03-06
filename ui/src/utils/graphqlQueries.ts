@@ -660,6 +660,42 @@ const COMPONENT_FULL_DATA = `
             uuid
             approvalName
         }
+        globalInputEvents {
+            uuid
+            name
+            conditionGroup {
+                matchOperator
+                conditionGroups {
+                    matchOperator
+                    conditions {
+                        type
+                        approvalEntry
+                        approvalState
+                        possibleLifecycles
+                        possibleBranchTypes
+                        metricsType
+                        comparisonSign
+                        metricsValue
+                    }
+                }
+            }
+            outputEvents
+            scope
+        }
+        globalOutputEvents {
+            uuid
+            name
+            type
+            toReleaseLifecycle
+            integration
+            users
+            notificationMessage
+            vcs
+            eventType
+            clientPayload
+            schedule
+            scope
+        }
     }
     outputTriggers {
         uuid
@@ -673,6 +709,7 @@ const COMPONENT_FULL_DATA = `
         eventType
         clientPayload
         schedule
+        scope
     }
     releaseInputTriggers {
         uuid
@@ -694,6 +731,12 @@ const COMPONENT_FULL_DATA = `
             }
         }
         outputEvents
+        scope
+    }
+    globalInputEventRefs {
+        uuid
+        overrideOutputEventsLocally
+        outputEventsOverride
     }
     identifiers {
         idType

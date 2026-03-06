@@ -914,6 +914,7 @@ const storeObject : any = {
                 approvalPolicy: component.approvalPolicy,
                 outputTriggers: component.outputTriggers,
                 releaseInputTriggers: component.releaseInputTriggers,
+                globalInputEventRefs: component.globalInputEventRefs?.map(({ uuid, overrideOutputEventsLocally, outputEventsOverride }: any) => ({ uuid, overrideOutputEventsLocally, outputEventsOverride })),
                 identifiers: component.identifiers?.map(({ idType, idValue }: any) => ({ idType, idValue })),
                 authentication: component.authentication ? { login: component.authentication.login, password: component.authentication.password, type: component.authentication.type } : null
             }

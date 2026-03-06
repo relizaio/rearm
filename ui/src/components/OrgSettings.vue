@@ -446,7 +446,7 @@
                             <CirclePlus/>
                         </Icon>
                     </h4>
-                    <n-data-table :columns="approvalRoleFields" :data="myorg.approvalRoles" class="table-hover"></n-data-table>
+                    <n-data-table :columns="approvalRoleFields" :data="myorg.approvalRoles" class="table-hover" :pagination="globalEventsPagination"></n-data-table>
                     <n-modal
                         preset="dialog"
                         :show-icon="false"
@@ -474,7 +474,7 @@
                             <CirclePlus/>
                         </Icon>
                     </h4>
-                    <n-data-table :data="approvalEntryTableData" :columns="approvalEntryFields" :row-key="dataTableRowKey" />
+                    <n-data-table :data="approvalEntryTableData" :columns="approvalEntryFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
                     <n-modal
                         preset="dialog"
                         :show-icon="false"
@@ -492,7 +492,7 @@
                             <CirclePlus/>
                         </Icon>
                     </h4>
-                    <n-data-table :data="approvalPolicyTableData" :columns="approvalPolicyFields" :row-key="dataTableRowKey" />
+                    <n-data-table :data="approvalPolicyTableData" :columns="approvalPolicyFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" :row-props="approvalPolicyRowProps" :row-class-name="approvalPolicyRowClassName" />
 
                     <n-modal
                         preset="dialog"
@@ -506,6 +506,140 @@
                             :isHideTitle="true"
                             @approvalPolicyCreated="approvalPolicyCreated"/>
                     </n-modal>
+
+                    <h4>Global Output Events:
+                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Global Output Event" @click="resetGlobalOutputEvent(); showCreateGlobalOutputEventModal = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <div v-if="selectedPolicyUuid">
+                        <n-data-table :data="globalOutputEvents" :columns="globalOutputEventTableFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
+                        <n-modal
+                            v-model:show="showCreateGlobalOutputEventModal"
+                            preset="dialog"
+                            :show-icon="false"
+                            style="width: 90%"
+                        >
+                            <n-form :model="globalOutputEvent">
+                                <h2>{{ globalOutputEvent.uuid ? 'Edit' : 'Add' }} Global Output Event</h2>
+                                <n-space vertical size="large">
+                                    <n-form-item label="Name" path="name">
+                                        <n-input v-model:value="globalOutputEvent.name" required placeholder="Enter name" />
+                                    </n-form-item>
+                                    <n-form-item label="Type" path="type">
+                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptions" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
+                                        <n-select v-model:value="globalOutputEvent.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
+                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select Integration" :options="ciIntegrationsForGlobalSelect" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Name of GitHub Actions Event" path="eventType">
+                                        <n-input v-model:value="globalOutputEvent.eventType" placeholder="Enter Name of GitHub Actions Event" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
+                                        <n-input v-model:value="globalOutputEvent.clientPayload" placeholder="Enter Additional Optional Client Payload JSON" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
+                                        <n-input type="number" v-model:value="globalOutputEvent.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Jenkins Job Name" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="eventType">
+                                        <n-input v-model:value="globalOutputEvent.eventType" required placeholder="Enter Azure DevOps project name" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Pipeline Definition ID" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter Pipeline Definition ID" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
+                                        <n-input v-model:value="globalOutputEvent.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
+                                        <n-input v-model:value="globalOutputEvent.notificationMessage" placeholder="Email Message Contents" />
+                                    </n-form-item>
+                                    <n-button @click="addGlobalOutputEvent" type="success">Save</n-button>
+                                </n-space>
+                            </n-form>
+                        </n-modal>
+                    </div>
+
+                    <h4>Global Input Events:
+                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Global Input Event" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
+                            <CirclePlus/>
+                        </Icon>
+                    </h4>
+                    <div v-if="selectedPolicyUuid">
+                        <n-data-table :data="globalInputEvents" :columns="globalInputEventTableFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
+                        <n-modal
+                            v-model:show="showCreateGlobalInputEventModal"
+                            preset="dialog"
+                            :show-icon="false"
+                            style="width: 90%"
+                        >
+                            <n-form :model="globalInputEvent">
+                                <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Global Input Event</h2>
+                                <n-space vertical size="large">
+                                    <n-form-item label="Name" path="name">
+                                        <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
+                                    </n-form-item>
+                                    <n-form-item label="Condition Matching Between Groups">
+                                        <n-select v-model:value="globalInputEvent.conditionGroup.matchOperator" :options="[{label: 'Require All Groups To Match', value: 'AND'}, {label: 'Require Any Group To Match', value: 'OR'}]" />
+                                    </n-form-item>
+                                    <n-form-item path="globalInputEvent.conditionGroup">
+                                        <n-dynamic-input v-model:value="globalInputEvent.conditionGroup.conditionGroups" :on-create="onCreateGlobalInputEventConditionGroup">
+                                            <template #create-button-default>
+                                                Add Condition Group
+                                            </template>
+                                            <template #default="{ value: value1, index }">
+                                                <div style="width: 100%;">
+                                                    <h5>Trigger Group #{{ index + 1 }}</h5>
+                                                    <n-form-item label="Condition Matching Within The Group">
+                                                        <n-select v-model:value="value1.matchOperator" :options="[{label: 'Require All Conditions', value: 'AND'}, {label: 'Require Any Condition', value: 'OR'}]" />
+                                                    </n-form-item>
+                                                    <n-dynamic-input v-model:value="value1.conditions" :on-create="onCreateGlobalInputEventCondition">
+                                                        <template #create-button-default>
+                                                            Add Trigger Condition
+                                                        </template>
+                                                        <template #default="{ value, index }">
+                                                            <n-select style="width: 400px;" v-model:value="value.type"
+                                                                v-on:update:value="onGlobalConditionTypeUpdate(value1, index)"
+                                                                :options="[{label: 'Approval Entry', value: 'APPROVAL_ENTRY'}, {label: 'Possible Lifecycles', value: 'LIFECYCLE'}, {label: 'Possible Branch Types', value: 'BRANCH_TYPE'}, {label: 'Metrics', value: 'METRICS'}]" />
+                                                            <n-select v-if="value.type === 'APPROVAL_ENTRY'"
+                                                                v-model:value="value.approvalEntry"
+                                                                :options="globalApprovalEntryOptionsForTriggers"
+                                                            />
+                                                            <n-select v-if="value.type === 'APPROVAL_ENTRY'" style="width:300px;" v-model:value="value.approvalState"
+                                                                :options="[{label: 'Approved', value: 'APPROVED'}, {label: 'Disapproved', value: 'DISAPPROVED'}]" />
+                                                            <n-select v-if="value.type === 'LIFECYCLE'" v-model:value="value.possibleLifecycles" 
+                                                                :options="lifecycleOptions" tag multiple />
+                                                            <n-select v-if="value.type === 'BRANCH_TYPE'" v-model:value="value.possibleBranchTypes" tag multiple
+                                                                :options="[{label: 'Main', value: 'BASE'}, {label: 'Feature', value: 'FEATURE'}, {label: 'Regular', value: 'REGULAR'}, {label: 'Release', value: 'RELEASE'}, {label: 'Develop', value: 'DEVELOP'}, {label: 'Hotfix', value: 'HOTFIX'}]" />
+                                                            <n-select v-if="value.type === 'METRICS'" style="width:70%;" v-model:value="value.metricsType" 
+                                                                :options="[{label: 'Critical Vulnerabilities', value: 'CRITICAL_VULNS'}, {label: 'High Vulnerabilities', value: 'HIGH_VULNS'}, {label: 'Medium Vulnerabilities', value: 'MEDIUM_VULNS'}, {label: 'Low Vulnerabilities', value: 'LOW_VULNS'}, {label: 'Unassigned Vulnerabilities', value: 'UNASSIGNED_VULNS'}, {label: 'Security Violations', value: 'SECURITY_VIOLATIONS'}, {label: 'Operational Violations', value: 'OPERATIONAL_VIOLATIONS'}, {label: 'License Violations', value: 'LICENSE_VIOLATIONS'}]" />
+                                                            <n-select v-if="value.type === 'METRICS'" style="width:300px;" v-model:value="value.comparisonSign" 
+                                                                :options="[{label: '=', value: 'EQUALS'}, {label: '>', value: 'GREATER'}, {label: '<', value: 'LOWER'}, {label: '>=', value: 'GREATER_OR_EQUALS'}, {label: '<=', value: 'LOWER_OR_EQUALS'}]" />
+                                                            <n-input-number v-if="value.type === 'METRICS'" v-model:value="value.metricsValue" />
+                                                        </template>
+                                                    </n-dynamic-input>
+                                                </div>
+                                            </template>
+                                        </n-dynamic-input>
+                                    </n-form-item>
+                                    <n-form-item label="Output Events" path="globalInputEvent.outputEvents">
+                                        <n-select v-model:value="globalInputEvent.outputEvents" 
+                                        :options="globalOutputEventsForInputForm" multiple />
+                                    </n-form-item>
+                                    <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
+                                </n-space>
+                            </n-form>
+                        </n-modal>
+                    </div>
+                    <div v-else class="text-muted">Click an approval policy row above to manage its global events.</div>
                 </div>
             </n-tab-pane>
 
@@ -807,7 +941,7 @@
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
@@ -4196,6 +4330,222 @@ const approvalPolicyFields: DataTableColumns<any> = [
 ]
 
 const approvalPolicyTableData: Ref<any[]> = ref([])
+const approvalPoliciesFullData: Ref<any[]> = ref([])
+const selectedPolicyUuid: Ref<string> = ref('')
+const globalOutputEvents: Ref<any[]> = ref([])
+const globalInputEvents: Ref<any[]> = ref([])
+
+const selectedPolicy = computed(() => {
+    return approvalPoliciesFullData.value.find((p: any) => p.uuid === selectedPolicyUuid.value)
+})
+
+const showCreateGlobalOutputEventModal = ref(false)
+const showCreateGlobalInputEventModal = ref(false)
+
+const globalOutputEvent = ref({
+    uuid: '',
+    name: '',
+    type: '',
+    toReleaseLifecycle: null as string | null,
+    integration: '',
+    users: [] as string[],
+    notificationMessage: '',
+    vcs: '',
+    eventType: '',
+    clientPayload: '',
+    schedule: ''
+})
+
+function resetGlobalOutputEvent () {
+    globalOutputEvent.value = {
+        uuid: '',
+        name: '',
+        type: '',
+        toReleaseLifecycle: null,
+        integration: '',
+        users: [],
+        notificationMessage: '',
+        vcs: '',
+        eventType: '',
+        clientPayload: '',
+        schedule: ''
+    }
+}
+
+interface Condition {
+    type: string;
+    approvalEntry?: string;
+    approvalState?: string;
+    possibleLifecycles?: string[];
+    possibleBranchTypes?: string[];
+    metricsType?: string;
+    comparisonSign?: string;
+    metricsValue?: number;
+}
+
+class UninitializedCondition implements Condition {
+    type = ''
+}
+
+class LifecycleCondition implements Condition {
+    type = 'LIFECYCLE'
+    possibleLifecycles: string[] = []
+}
+
+class BranchTypeCondition implements Condition {
+    type = 'BRANCH_TYPE'
+    possibleBranchTypes: string[] = []
+}
+
+class ApprovalEntryCondition implements Condition {
+    type = 'APPROVAL_ENTRY'
+    approvalEntry = ''
+    approvalState = ''
+}
+
+class MetricsCondition implements Condition {
+    type = 'METRICS'
+    metricsType = ''
+    comparisonSign = ''
+    metricsValue = 0
+}
+
+type ConditionGroup = {
+    conditionGroups: ConditionGroup[];
+    matchOperator: string;
+    conditions: Condition[];
+}
+
+type GlobalInputEvent = {
+    uuid: string;
+    name: string;
+    conditionGroup: ConditionGroup;
+    outputEvents: string[];
+}
+
+const globalInputEvent: Ref<GlobalInputEvent> = ref({
+    uuid: '',
+    name: '',
+    conditionGroup: {
+        conditionGroups: [],
+        matchOperator: '',
+        conditions: []
+    },
+    outputEvents: []
+})
+
+function resetGlobalInputEvent () {
+    globalInputEvent.value = {
+        uuid: '',
+        name: '',
+        conditionGroup: {
+            conditionGroups: [],
+            matchOperator: '',
+            conditions: []
+        },
+        outputEvents: []
+    }
+}
+
+function onCreateGlobalInputEventCondition () {
+    return new UninitializedCondition()
+}
+
+function onCreateGlobalInputEventConditionGroup () {
+    return {
+        conditionGroups: [],
+        matchOperator: 'AND',
+        conditions: []
+    }
+}
+
+function onGlobalConditionTypeUpdate (conditionGroup: ConditionGroup, index: number) {
+    const newType: string = conditionGroup.conditions[index].type
+    switch (newType) {
+    case 'APPROVAL_ENTRY':
+        conditionGroup.conditions[index] = new ApprovalEntryCondition()
+        break
+    case 'LIFECYCLE':
+        conditionGroup.conditions[index] = new LifecycleCondition()
+        break
+    case 'BRANCH_TYPE':
+        conditionGroup.conditions[index] = new BranchTypeCondition()
+        break
+    case 'METRICS':
+        conditionGroup.conditions[index] = new MetricsCondition()
+        break
+    default:
+        break
+    }
+}
+
+const outputTriggerTypeOptions = [
+    {label: 'Release Lifecycle Change', value: 'RELEASE_LIFECYCLE_CHANGE'},
+    {label: 'Marketing Release Lifecycle Change', value: 'MARKETING_RELEASE_LIFECYCLE_CHANGE'},
+    {label: 'External Integration', value: 'INTEGRATION_TRIGGER'},
+    {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'}
+]
+
+const outputTriggerLifecycleOptions = [
+    {label: 'Draft', value: 'DRAFT'}, {label: 'Assembled', value: 'ASSEMBLED'},
+    {label: 'Shipped', value: 'GENERAL_AVAILABILITY'}, {label: 'Rejected', value: 'REJECTED'},
+    {label: 'End of Support', value: 'END_OF_SUPPORT'}
+]
+
+const lifecycleOptions = constants.LifecycleOptions.map((lo: any) => {return {label: lo.label, value: lo.key}})
+
+const ciIntegrationsForGlobalSelect = computed((): any => {
+    return ciIntegrations.value.map((ci: any) => {
+        return { label: ci.note + ' (' + ci.type + ')', value: ci.uuid }
+    })
+})
+
+const selectedGlobalCiIntegration = computed((): any => {
+    if (globalOutputEvent.value.integration) {
+        return ciIntegrations.value.find((ci: any) => ci.uuid === globalOutputEvent.value.integration)
+    }
+    return null
+})
+
+const globalApprovalEntryOptionsForTriggers = computed((): any => {
+    if (!selectedPolicy.value) return []
+    const entries = selectedPolicy.value.approvalEntryDetails || []
+    return entries.map((aed: any) => {
+        return {label: aed.approvalName, value: aed.uuid}
+    })
+})
+
+const globalOutputEventsForInputForm = computed((): any => {
+    return globalOutputEvents.value.map((ot: any) => {
+        return {label: ot.name, value: ot.uuid}
+    })
+})
+
+function selectPolicyForGlobalEvents(policyUuid: string) {
+    if (selectedPolicyUuid.value === policyUuid) {
+        selectedPolicyUuid.value = ''
+        globalOutputEvents.value = []
+        globalInputEvents.value = []
+        return
+    }
+    selectedPolicyUuid.value = policyUuid
+    const policy = approvalPoliciesFullData.value.find((p: any) => p.uuid === policyUuid)
+    if (policy) {
+        globalOutputEvents.value = policy.globalOutputEvents || []
+        globalInputEvents.value = policy.globalInputEvents || []
+    }
+}
+
+function approvalPolicyRowProps (row: any) {
+    return {
+        style: 'cursor: pointer;',
+        onClick: () => selectPolicyForGlobalEvents(row.uuid)
+    }
+}
+
+function approvalPolicyRowClassName (row: any) {
+    return row.uuid === selectedPolicyUuid.value ? 'selected-policy-row' : ''
+}
 
 async function fetchApprovalPolicies () {
     const response = await graphqlClient.query({
@@ -4205,7 +4555,44 @@ async function fetchApprovalPolicies () {
                     uuid
                     policyName
                     approvalEntryDetails {
+                        uuid
                         approvalName
+                    }
+                    globalInputEvents {
+                        uuid
+                        name
+                        conditionGroup {
+                            matchOperator
+                            conditionGroups {
+                                matchOperator
+                                conditions {
+                                    type
+                                    approvalEntry
+                                    approvalState
+                                    possibleLifecycles
+                                    possibleBranchTypes
+                                    metricsType
+                                    comparisonSign
+                                    metricsValue
+                                }
+                            }
+                        }
+                        outputEvents
+                        scope
+                    }
+                    globalOutputEvents {
+                        uuid
+                        name
+                        type
+                        toReleaseLifecycle
+                        integration
+                        users
+                        notificationMessage
+                        vcs
+                        eventType
+                        clientPayload
+                        schedule
+                        scope
                     }
                 }
             }`,
@@ -4215,6 +4602,7 @@ async function fetchApprovalPolicies () {
         fetchPolicy: 'no-cache'
     })
     const approvalPolicyResp = response.data.approvalPoliciesOfOrg
+    approvalPoliciesFullData.value = approvalPolicyResp || []
     if (approvalPolicyResp && approvalPolicyResp.length) {
         approvalPolicyTableData.value = approvalPolicyResp.map((x: any) => {
             let approvalNames = ''
@@ -4230,8 +4618,300 @@ async function fetchApprovalPolicies () {
                 approvalNames
             }
         })
+        // If a policy was selected, refresh its events
+        if (selectedPolicyUuid.value) {
+            selectPolicyForGlobalEvents(selectedPolicyUuid.value)
+        }
+    } else {
+        approvalPolicyTableData.value = []
     }
 }
+async function saveGlobalOutputEvents () {
+    try {
+        const eventsToSave = globalOutputEvents.value.map((e: any) => {
+            const ev: any = {
+                uuid: e.uuid || undefined,
+                name: e.name,
+                type: e.type,
+                toReleaseLifecycle: e.toReleaseLifecycle || undefined,
+                integration: e.integration || undefined,
+                users: e.users || [],
+                notificationMessage: e.notificationMessage || undefined,
+                vcs: e.vcs || undefined,
+                eventType: e.eventType || undefined,
+                clientPayload: e.clientPayload || undefined,
+                schedule: e.schedule || undefined
+            }
+            return ev
+        })
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setGlobalOutputEvents($approvalPolicyUuid: ID!, $events: [ReleaseOutputEventInput!]!) {
+                    setGlobalOutputEvents(approvalPolicyUuid: $approvalPolicyUuid, events: $events) {
+                        uuid
+                        globalOutputEvents {
+                            uuid
+                            name
+                            type
+                            toReleaseLifecycle
+                            integration
+                            users
+                            notificationMessage
+                            vcs
+                            eventType
+                            clientPayload
+                            schedule
+                            scope
+                        }
+                    }
+                }`,
+            variables: {
+                approvalPolicyUuid: selectedPolicyUuid.value,
+                events: eventsToSave
+            }
+        })
+        if (resp.data && resp.data.setGlobalOutputEvents) {
+            globalOutputEvents.value = resp.data.setGlobalOutputEvents.globalOutputEvents || []
+            // Update full data cache
+            const policyIndex = approvalPoliciesFullData.value.findIndex((p: any) => p.uuid === selectedPolicyUuid.value)
+            if (policyIndex > -1) {
+                approvalPoliciesFullData.value[policyIndex].globalOutputEvents = globalOutputEvents.value
+            }
+        }
+        notify('success', 'Success', 'Global output events saved.')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+async function saveGlobalInputEvents () {
+    try {
+        const eventsToSave = globalInputEvents.value.map((e: any) => {
+            const ev: any = {
+                uuid: e.uuid || undefined,
+                name: e.name,
+                conditionGroup: commonFunctions.deepCopy(e.conditionGroup),
+                outputEvents: e.outputEvents || []
+            }
+            // strip __typename from conditionGroup tree
+            const stripTypename = (obj: any) => {
+                if (!obj) return
+                delete obj.__typename
+                if (obj.conditionGroups) obj.conditionGroups.forEach(stripTypename)
+                if (obj.conditions) obj.conditions.forEach((c: any) => delete c.__typename)
+            }
+            stripTypename(ev.conditionGroup)
+            return ev
+        })
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setGlobalInputEvents($approvalPolicyUuid: ID!, $events: [ReleaseInputEventInput!]!) {
+                    setGlobalInputEvents(approvalPolicyUuid: $approvalPolicyUuid, events: $events) {
+                        uuid
+                        globalInputEvents {
+                            uuid
+                            name
+                            conditionGroup {
+                                matchOperator
+                                conditionGroups {
+                                    matchOperator
+                                    conditions {
+                                        type
+                                        approvalEntry
+                                        approvalState
+                                        possibleLifecycles
+                                        possibleBranchTypes
+                                        metricsType
+                                        comparisonSign
+                                        metricsValue
+                                    }
+                                }
+                            }
+                            outputEvents
+                            scope
+                        }
+                    }
+                }`,
+            variables: {
+                approvalPolicyUuid: selectedPolicyUuid.value,
+                events: eventsToSave
+            }
+        })
+        if (resp.data && resp.data.setGlobalInputEvents) {
+            globalInputEvents.value = resp.data.setGlobalInputEvents.globalInputEvents || []
+            const policyIndex = approvalPoliciesFullData.value.findIndex((p: any) => p.uuid === selectedPolicyUuid.value)
+            if (policyIndex > -1) {
+                approvalPoliciesFullData.value[policyIndex].globalInputEvents = globalInputEvents.value
+            }
+        }
+        notify('success', 'Success', 'Global input events saved.')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    }
+}
+
+function addGlobalOutputEvent () {
+    const eventToPush = commonFunctions.deepCopy(globalOutputEvent.value)
+    if (eventToPush.uuid) {
+        const existingIndex = globalOutputEvents.value.findIndex((e: any) => e.uuid === eventToPush.uuid)
+        if (existingIndex > -1) {
+            globalOutputEvents.value[existingIndex] = eventToPush
+        } else {
+            globalOutputEvents.value.push(eventToPush)
+        }
+    } else {
+        globalOutputEvents.value.push(eventToPush)
+    }
+    saveGlobalOutputEvents()
+    resetGlobalOutputEvent()
+    showCreateGlobalOutputEventModal.value = false
+}
+
+function editGlobalOutputEvent (event: any) {
+    globalOutputEvent.value = commonFunctions.deepCopy(event)
+    showCreateGlobalOutputEventModal.value = true
+}
+
+function deleteGlobalOutputEvent (uuid: string) {
+    // Check if any global input event references this output event
+    const referencedBy = globalInputEvents.value.find((ie: any) => ie.outputEvents && ie.outputEvents.includes(uuid))
+    if (referencedBy) {
+        notify('error', 'Error', 'Cannot delete: this output event is referenced by a global input event.')
+        return
+    }
+    const idx = globalOutputEvents.value.findIndex((e: any) => e.uuid === uuid)
+    if (idx > -1) {
+        globalOutputEvents.value.splice(idx, 1)
+        saveGlobalOutputEvents()
+        notify('success', 'Deleted', 'Global output event deleted.')
+    }
+}
+
+function addGlobalInputEvent () {
+    const eventToPush = commonFunctions.deepCopy(globalInputEvent.value)
+    if (eventToPush.uuid) {
+        const existingIndex = globalInputEvents.value.findIndex((e: any) => e.uuid === eventToPush.uuid)
+        if (existingIndex > -1) {
+            globalInputEvents.value[existingIndex] = eventToPush
+        } else {
+            globalInputEvents.value.push(eventToPush)
+        }
+    } else {
+        globalInputEvents.value.push(eventToPush)
+    }
+    saveGlobalInputEvents()
+    resetGlobalInputEvent()
+    showCreateGlobalInputEventModal.value = false
+}
+
+function editGlobalInputEvent (event: any) {
+    globalInputEvent.value = commonFunctions.deepCopy(event)
+    showCreateGlobalInputEventModal.value = true
+}
+
+function deleteGlobalInputEvent (uuid: string) {
+    const idx = globalInputEvents.value.findIndex((e: any) => e.uuid === uuid)
+    if (idx > -1) {
+        globalInputEvents.value.splice(idx, 1)
+        saveGlobalInputEvents()
+        notify('success', 'Deleted', 'Global input event deleted.')
+    }
+}
+
+const globalOutputEventTableFields: DataTableColumns<any> = [
+    {
+        key: 'name',
+        title: 'Name'
+    },
+    {
+        key: 'type',
+        title: 'Type',
+        render: (row: any) => {
+            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
+            return option ? option.label : row.type
+        }
+    },
+    {
+        key: 'toReleaseLifecycle',
+        title: 'Lifecycle',
+        render: (row: any) => {
+            const option = outputTriggerLifecycleOptions.find(opt => opt.value === row.toReleaseLifecycle)
+            return option ? option.label : (row.toReleaseLifecycle || '')
+        }
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => {
+            let els: any[] = []
+            if (isWritable.value) {
+                const editEl = h(NIcon, {
+                    title: 'Edit Output Event',
+                    class: 'icons clickable',
+                    size: 20,
+                    onClick: () => editGlobalOutputEvent(row)
+                }, () => h(EditIcon))
+                const deleteEl = h(NIcon, {
+                    title: 'Delete Output Event',
+                    class: 'icons clickable',
+                    size: 20,
+                    onClick: () => deleteGlobalOutputEvent(row.uuid)
+                }, () => h(Trash))
+                els.push(editEl, deleteEl)
+            }
+            if (!els.length) els = [h('div', 'N/A')]
+            return els
+        }
+    }
+]
+
+const globalInputEventTableFields: DataTableColumns<any> = [
+    {
+        key: 'name',
+        title: 'Name'
+    },
+    {
+        key: 'outputTriggers',
+        title: 'Output Events',
+        render: (row: any) => {
+            let outNames = ''
+            if (row.outputEvents && row.outputEvents.length) {
+                row.outputEvents.forEach((oeId: string) => {
+                    const oe = globalOutputEvents.value.find((x: any) => x.uuid === oeId)
+                    if (oe) outNames += oe.name + ', '
+                })
+                if (outNames) outNames = outNames.substring(0, outNames.length - 2)
+            }
+            return h('div', outNames)
+        }
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => {
+            let els: any[] = []
+            if (isWritable.value) {
+                const editEl = h(NIcon, {
+                    title: 'Edit Input Event',
+                    class: 'icons clickable',
+                    size: 20,
+                    onClick: () => editGlobalInputEvent(row)
+                }, () => h(EditIcon))
+                const deleteEl = h(NIcon, {
+                    title: 'Delete Input Event',
+                    class: 'icons clickable',
+                    size: 20,
+                    onClick: () => deleteGlobalInputEvent(row.uuid)
+                }, () => h(Trash))
+                els.push(editEl, deleteEl)
+            }
+            if (!els.length) els = [h('div', 'N/A')]
+            return els
+        }
+    }
+]
+
+const globalEventsPagination = reactive({ pageSize: 5 })
 
 </script>
   
@@ -4268,6 +4948,11 @@ async function fetchApprovalPolicies () {
 :deep(.inactive-row td) {
     opacity: 0.55;
     background-color: #f5f5f5 !important;
+}
+
+:deep(.selected-policy-row td) {
+    background-color: #d9eef3 !important;
+    font-weight: bold;
 }
 </style>
   
