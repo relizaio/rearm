@@ -451,12 +451,23 @@
                 <n-tab-pane v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" name="approvals" tab="Approvals">
                     <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER'">
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
-                        <n-spin :show="approvalPending" small style="margin-top: 5px;">
-                            <n-button @click="triggerApproval" :disabled="approvalPending">
-                                <span v-if="approvalPending" class="ml-2">Saving...</span>
-                                <span v-else>Save Approvals</span>
+                        <n-space style="margin-top: 5px;">
+                            <n-spin :show="approvalPending" small>
+                                <n-button @click="triggerApproval" :disabled="approvalPending">
+                                    <template #icon>
+                                        <n-icon><ClipboardCheck /></n-icon>
+                                    </template>
+                                    <span v-if="approvalPending">Saving...</span>
+                                    <span v-else>Save Approvals</span>
+                                </n-button>
+                            </n-spin>
+                            <n-button type="warning" @click="resetApprovals">
+                                <template #icon>
+                                    <n-icon><Refresh /></n-icon>
+                                </template>
+                                Reset Approvals
                             </n-button>
-                        </n-spin>
+                        </n-space>
                     </div>
                 </n-tab-pane>
                 <n-tab-pane v-if="false" name="tickets" tab="Tickets">
@@ -1255,6 +1266,23 @@ async function triggerApproval() {
     }
 }
 
+function resetApprovals() {
+    // Restore givenApprovals from original release data (clears admin overrides)
+    givenApprovals.value = computeGivenApprovalsFromRelease()
+    
+    // Reset all approval checkboxes based on givenApprovals
+    Object.keys(approvalMatrixCheckboxes.value).forEach((entryId: string) => {
+        Object.keys(approvalMatrixCheckboxes.value[entryId]).forEach((roleId: string) => {
+            let checkBoxValue = 'UNSET'
+            if (givenApprovals.value[entryId] && (givenApprovals.value[entryId][roleId] === 'APPROVED' || 
+                givenApprovals.value[entryId][roleId] === 'DISAPPROVED')) {
+                checkBoxValue = givenApprovals.value[entryId][roleId]
+            }
+            approvalMatrixCheckboxes.value[entryId][roleId] = checkBoxValue
+        })
+    })
+}
+
 type WhoUpdated = {
     createdType: string;
     lastUpdatedBy: string;
@@ -1322,10 +1350,7 @@ async function approve(approvals: ApprovalInput[]) {
         approvalPending.value = false
     })
 }
-function resetApprovals () {
-    approvalPending.value = false
-    updatedRelease.value.approvals = release.value.approvals
-}
+
 const activeApprovalTypes: Ref<any> = ref({})
 const newRlzApprovals: Ref<any[]> = ref([])
 
@@ -2923,7 +2948,7 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
             render: (row: any) => {
                 if (row[aid]) {
                     let isDisabled = !canUserApproveForRelease(aid)
-                    if (!isDisabled && givenApprovals.value[row.uuid]) isDisabled = (givenApprovals.value[row.uuid][aid].length > 0)
+                    if (!isDisabled && givenApprovals.value[row.uuid]) isDisabled = (givenApprovals.value[row.uuid][aid]?.length > 0)
                     const isDisapproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'DISAPPROVED' : false
                     const isApproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'APPROVED' : false
                     let title: string
@@ -2958,7 +2983,40 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                             }
                         }
                     )
-                    return h(NSpace, {}, () => {return [checkBoxEl]})
+                    // Add Admin Override icon for org admins on DRAFT releases when approval is already given
+                    const isOrgAdmin = myUser?.permissions?.permissions?.some((p: any) => 
+                        p.scope === 'ORGANIZATION' && p.org === release.value?.org && p.type === 'ADMIN'
+                    )
+                    const isDraft = updatedRelease.value?.lifecycle === 'DRAFT' || release.value?.lifecycle === 'DRAFT'
+                    const showOverrideIcon = isOrgAdmin && isDraft && isDisabled && givenApprovals.value[row.uuid]?.[aid]?.length > 0
+                    
+                    const elements = [checkBoxEl]
+                    if (showOverrideIcon) {
+                        const overrideIcon = h(NIcon, {
+                            class: 'clickable',
+                            size: 18,
+                            title: 'Admin Override - Clear approval to allow changes',
+                            style: 'color: #f0a020; margin-left: 4px;',
+                            onClick: () => {
+                                // Clear the given approval to allow editing
+                                if (givenApprovals.value[row.uuid] && givenApprovals.value[row.uuid][aid]) {
+                                    // Create new object to trigger reactivity
+                                    const newGivenApprovals = {...givenApprovals.value}
+                                    if (newGivenApprovals[row.uuid]) {
+                                        newGivenApprovals[row.uuid] = {...newGivenApprovals[row.uuid]}
+                                        delete newGivenApprovals[row.uuid][aid]
+                                    }
+                                    givenApprovals.value = newGivenApprovals
+                                }
+                                // Reset the checkbox state
+                                if (approvalMatrixCheckboxes.value[row.uuid]) {
+                                    approvalMatrixCheckboxes.value[row.uuid][aid] = 'UNSET'
+                                }
+                            }
+                        }, () => h(Edit))
+                        elements.push(overrideIcon)
+                    }
+                    return h(NSpace, {}, () => elements)
                 } else {
                     return h('div')
                 }
