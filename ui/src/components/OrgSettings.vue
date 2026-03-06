@@ -957,6 +957,7 @@ import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
+import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, ConditionGroup, InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
@@ -4372,58 +4373,7 @@ function resetGlobalOutputEvent () {
     }
 }
 
-interface Condition {
-    type: string;
-    approvalEntry?: string;
-    approvalState?: string;
-    possibleLifecycles?: string[];
-    possibleBranchTypes?: string[];
-    metricsType?: string;
-    comparisonSign?: string;
-    metricsValue?: number;
-}
-
-class UninitializedCondition implements Condition {
-    type = ''
-}
-
-class LifecycleCondition implements Condition {
-    type = 'LIFECYCLE'
-    possibleLifecycles: string[] = []
-}
-
-class BranchTypeCondition implements Condition {
-    type = 'BRANCH_TYPE'
-    possibleBranchTypes: string[] = []
-}
-
-class ApprovalEntryCondition implements Condition {
-    type = 'APPROVAL_ENTRY'
-    approvalEntry = ''
-    approvalState = ''
-}
-
-class MetricsCondition implements Condition {
-    type = 'METRICS'
-    metricsType = ''
-    comparisonSign = ''
-    metricsValue = 0
-}
-
-type ConditionGroup = {
-    conditionGroups: ConditionGroup[];
-    matchOperator: string;
-    conditions: Condition[];
-}
-
-type GlobalInputEvent = {
-    uuid: string;
-    name: string;
-    conditionGroup: ConditionGroup;
-    outputEvents: string[];
-}
-
-const globalInputEvent: Ref<GlobalInputEvent> = ref({
+const globalInputEvent: Ref<InputTriggerEvent> = ref({
     uuid: '',
     name: '',
     conditionGroup: {

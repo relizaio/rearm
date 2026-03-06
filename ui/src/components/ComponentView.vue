@@ -590,6 +590,8 @@ import { BugOutlined } from '@vicons/antd'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
+import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, ConditionGroup, InputTriggerEvent } from '../utils/triggerTypes'
+import graphqlQueries from '../utils/graphqlQueries'
 
 const updatedComponent: Ref<any> = ref({})
 const originalComponent: Ref<any> = ref({})
@@ -1179,58 +1181,7 @@ function resetOutputTrigger () {
     }
 }
 
-interface Condition {
-    type: string;
-    approvalEntry?: string;
-    approvalState?: string;
-    possibleLifecycles?: string[];
-    possibleBranchTypes?: string[];
-    metricsType?: string;
-    comparisonSign?: string;
-    metricsValue?: number;
-}
-
-class UninitializedCondition implements Condition {
-    type = ''
-}
-
-class LifecycleCondition implements Condition {
-    type = 'LIFECYCLE'
-    possibleLifecycles = []
-}
-
-class BranchTypeCondition implements Condition {
-    type = 'BRANCH_TYPE'
-    possibleBranchTypes = []
-}
-
-class ApprovalEntryCondition implements Condition {
-    type = 'APPROVAL_ENTRY'
-    approvalEntry = ''
-    approvalState = ''
-}
-
-class MetricsCondition implements Condition {
-    type = 'METRICS'
-    metricsType = ''
-    comparisonSign = ''
-    metricsValue = 0
-}
-
-type ConditionGroup = {
-    conditionGroups: ConditionGroup[];
-    matchOperator: string;
-    conditions: Condition[];
-}
-
-type InputTrigger = {
-    uuid: string;
-    name: string;
-    conditionGroup: ConditionGroup;
-    outputEvents: string[];
-}
-
-const inputTrigger: Ref<InputTrigger> = ref({
+const inputTrigger: Ref<InputTriggerEvent> = ref({
     uuid: '',
     name: '',
     conditionGroup: {
