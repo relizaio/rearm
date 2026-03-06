@@ -254,6 +254,22 @@
                                         <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Trigger" @click="showCreateOutputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
+                                        <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
+                                            <n-space>
+                                                <n-button type="success" @click="saveTriggers">
+                                                    <template #icon>
+                                                        <n-icon><Check /></n-icon>
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetTriggers">
+                                                    <template #icon>
+                                                        <n-icon><X /></n-icon>
+                                                    </template>
+                                                    Reset Changes
+                                                </n-button>
+                                            </n-space>
+                                        </div>
                                         <n-modal
                                             v-model:show="showCreateOutputTriggerModal"
                                             preset="dialog"
@@ -328,6 +344,22 @@
                                         <Icon v-if="isWritable" class="clickable" size="25" title="Add Trigger Event" @click="showCreateInputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
+                                        <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
+                                            <n-space>
+                                                <n-button type="success" @click="saveTriggers">
+                                                    <template #icon>
+                                                        <n-icon><Check /></n-icon>
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetTriggers">
+                                                    <template #icon>
+                                                        <n-icon><X /></n-icon>
+                                                    </template>
+                                                    Reset Changes
+                                                </n-button>
+                                            </n-space>
+                                        </div>
                                         <n-modal
                                             v-model:show="showCreateInputTriggerModal"
                                             preset="dialog"
@@ -441,6 +473,22 @@
                                                     </div>
                                                 </div>
                                             </div>
+                                        </div>
+                                        <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
+                                            <n-space>
+                                                <n-button type="success" @click="saveTriggers">
+                                                    <template #icon>
+                                                        <n-icon><Check /></n-icon>
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetTriggers">
+                                                    <template #icon>
+                                                        <n-icon><X /></n-icon>
+                                                    </template>
+                                                    Reset Changes
+                                                </n-button>
+                                            </n-space>
                                         </div>
                                     </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
@@ -836,7 +884,7 @@ const hasComponentChanges = function() {
 }
 
 const handleComponentSettingsClose = async function(show: boolean) {
-    if (!show && hasComponentChanges()) {
+    if (!show && (hasComponentChanges() || hasTriggerChanges.value)) {
         const confirmed = await commonFunctions.confirmUnsavedChanges()
         if (!confirmed) {
             // Prevent closing by setting it back to true
@@ -846,6 +894,9 @@ const handleComponentSettingsClose = async function(show: boolean) {
         
         // Revert changes
         updatedComponent.value = commonFunctions.deepCopy(originalComponent.value)
+        if (hasTriggerChanges.value) {
+            resetTriggers()
+        }
     }
     
     if (!show) {
@@ -876,6 +927,24 @@ const hasPerspectiveChanges: ComputedRef<boolean> = computed(() => {
     const sorted1 = [...selectedPerspectives.value].sort()
     const sorted2 = [...originalPerspectives.value].sort()
     return !sorted1.every((val, index) => val === sorted2[index])
+})
+
+const hasTriggerChanges: ComputedRef<boolean> = computed((): boolean => {
+    if (!updatedComponent.value || !componentData.value) return false
+    
+    // Check output triggers changes
+    const outputTriggersChanged = commonFunctions.stableStringify(updatedComponent.value.outputTriggers) !== 
+        commonFunctions.stableStringify(componentData.value.outputTriggers)
+    
+    // Check input triggers changes
+    const inputTriggersChanged = commonFunctions.stableStringify(updatedComponent.value.releaseInputTriggers) !== 
+        commonFunctions.stableStringify(componentData.value.releaseInputTriggers)
+    
+    // Check global input event refs changes
+    const globalInputEventRefsChanged = commonFunctions.stableStringify(updatedComponent.value.globalInputEventRefs) !== 
+        commonFunctions.stableStringify(componentData.value.globalInputEventRefs)
+    
+    return outputTriggersChanged || inputTriggersChanged || globalInputEventRefsChanged
 })
 
 async function fetchPerspectives() {
@@ -1330,7 +1399,6 @@ function toggleGlobalInputEventRef (uuid: string, enabled: boolean) {
             (ref: any) => ref.uuid !== uuid
         )
     }
-    save()
 }
 
 function toggleOverrideOutputEvents (uuid: string, override: boolean) {
@@ -1340,7 +1408,6 @@ function toggleOverrideOutputEvents (uuid: string, override: boolean) {
         if (!override) {
             ref.outputEventsOverride = []
         }
-        save()
     }
 }
 
@@ -1348,7 +1415,6 @@ function updateOutputEventsOverride (uuid: string, outputEvents: string[]) {
     const ref = getGlobalInputEventRef(uuid)
     if (ref) {
         ref.outputEventsOverride = outputEvents
-        save()
     }
 }
 
@@ -1357,7 +1423,6 @@ function resetGlobalInputEventOverride (uuid: string) {
     if (ref) {
         ref.overrideOutputEventsLocally = false
         ref.outputEventsOverride = []
-        save()
     }
 }
 
@@ -1457,6 +1522,73 @@ async function save () {
     // Update originalComponent to match current state so hasComponentChanges() returns false
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
+}
+
+function stripGraphQLMetadata(triggers: any[], stripScope: boolean = false) {
+    if (!triggers) return triggers
+    return triggers.map((trigger: any) => {
+        const cleaned: any = { ...trigger }
+        delete cleaned.__typename
+        if (stripScope) delete cleaned.scope
+        
+        // Remove temporary UUID when saving (client-side tracking only)
+        if (stripScope && cleaned.uuid && cleaned.uuid.startsWith('temp-')) {
+            cleaned.uuid = ''
+        }
+        
+        // Clean condition groups
+        if (cleaned.conditionGroup) {
+            const conditionGroup = { ...cleaned.conditionGroup }
+            delete conditionGroup.__typename
+            cleaned.conditionGroup = conditionGroup
+            
+            if (conditionGroup.conditionGroups) {
+                conditionGroup.conditionGroups = conditionGroup.conditionGroups.map((cg: any) => {
+                    const cleanedCg = { ...cg }
+                    delete cleanedCg.__typename
+                    
+                    if (cleanedCg.conditions) {
+                        cleanedCg.conditions = cleanedCg.conditions.map((c: any) => {
+                            const cleanedCondition = { ...c }
+                            delete cleanedCondition.__typename
+                            return cleanedCondition
+                        })
+                    }
+                    return cleanedCg
+                })
+            }
+        }
+        
+        // Clean output events
+        if (cleaned.outputEvents) {
+            cleaned.outputEvents = cleaned.outputEvents.map((oe: any) => {
+                if (typeof oe === 'string') return oe
+                const cleanedOe = { ...oe }
+                delete cleanedOe.__typename
+                if (stripScope) delete cleanedOe.scope
+                return cleanedOe
+            })
+        }
+        
+        return cleaned
+    })
+}
+
+async function saveTriggers() {
+    // Strip scope and __typename before saving to backend
+    updatedComponent.value.outputTriggers = stripGraphQLMetadata(updatedComponent.value.outputTriggers, true)
+    updatedComponent.value.releaseInputTriggers = stripGraphQLMetadata(updatedComponent.value.releaseInputTriggers, true)
+    
+    await save()
+    componentData.value = commonFunctions.deepCopy(updatedComponent.value)
+}
+
+function resetTriggers() {
+    if (!componentData.value) return
+    // Only strip __typename when resetting, keep scope for UI
+    updatedComponent.value.outputTriggers = stripGraphQLMetadata(commonFunctions.deepCopy(componentData.value.outputTriggers), false)
+    updatedComponent.value.releaseInputTriggers = stripGraphQLMetadata(commonFunctions.deepCopy(componentData.value.releaseInputTriggers), false)
+    updatedComponent.value.globalInputEventRefs = commonFunctions.deepCopy(componentData.value.globalInputEventRefs)
 }
 
 const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
@@ -1873,11 +2005,11 @@ async function addOutputTrigger () {
             updatedComponent.value.outputTriggers.push(outputTriggerToPush)
         }
     } else {
-        // Add new trigger (no UUID means it's a new trigger)
+        // Add new trigger - generate temporary UUID for client-side tracking
+        outputTriggerToPush.uuid = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11)
         updatedComponent.value.outputTriggers.push(outputTriggerToPush)
     }
     
-    save()
     resetOutputTrigger()
     showCreateOutputTriggerModal.value = false
 }
@@ -1898,7 +2030,6 @@ async function deleteOutputTrigger (uuid: string) {
         const triggerIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === uuid)
         if (triggerIndex > -1) {
             updatedComponent.value.outputTriggers.splice(triggerIndex, 1)
-            save()
             notify('success', 'Deleted', `Successfully deleted trigger.`)
         } else {
             notify('error', 'Error', `Error when deleting trigger!`)
@@ -1912,11 +2043,55 @@ function editInputTrigger (trigger: any) {
     showCreateInputTriggerModal.value = true
 }
 
+function validateInputTrigger(trigger: any): { valid: boolean; error?: string } {
+    // Validate all condition types have required fields set
+    if (trigger.conditionGroup && trigger.conditionGroup.conditionGroups) {
+        for (const group of trigger.conditionGroup.conditionGroups) {
+            if (group.conditions) {
+                for (const condition of group.conditions) {
+                    if (condition.type === 'APPROVAL_ENTRY') {
+                        if (!condition.approvalState || condition.approvalState === '') {
+                            return { valid: false, error: 'Approval Entry conditions must have an approval state (APPROVED or DISAPPROVED) selected.' }
+                        }
+                    } else if (condition.type === 'LIFECYCLE') {
+                        if (!condition.possibleLifecycles || condition.possibleLifecycles.length === 0) {
+                            return { valid: false, error: 'Lifecycle conditions must have at least one lifecycle selected.' }
+                        }
+                    } else if (condition.type === 'BRANCH_TYPE') {
+                        if (!condition.possibleBranchTypes || condition.possibleBranchTypes.length === 0) {
+                            return { valid: false, error: 'Branch Type conditions must have at least one branch type selected.' }
+                        }
+                    } else if (condition.type === 'METRICS') {
+                        if (!condition.metricsType || condition.metricsType === '') {
+                            return { valid: false, error: 'Metrics conditions must have a metrics type selected.' }
+                        }
+                        if (!condition.comparisonSign || condition.comparisonSign === '') {
+                            return { valid: false, error: 'Metrics conditions must have a comparison operator selected.' }
+                        }
+                        if (condition.metricsValue === undefined || condition.metricsValue === null || condition.metricsValue === '') {
+                            return { valid: false, error: 'Metrics conditions must have a value specified.' }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return { valid: true }
+}
+
 async function addInputTrigger () {
     if (!updatedComponent.value.releaseInputTriggers) {
         updatedComponent.value.releaseInputTriggers = []
     }
     const inputTriggerToPush = commonFunctions.deepCopy(inputTrigger.value)
+    
+    // Validate input trigger
+    const validation = validateInputTrigger(inputTriggerToPush)
+    if (!validation.valid) {
+        notify('error', 'Validation Error', validation.error!)
+        return
+    }
+    
     if (inputTriggerToPush.uuid) {
         // Check if trigger with this UUID already exists
         const existingIndex = updatedComponent.value.releaseInputTriggers.findIndex((ot: any) => ot.uuid === inputTriggerToPush.uuid)
@@ -1928,10 +2103,10 @@ async function addInputTrigger () {
             updatedComponent.value.releaseInputTriggers.push(inputTriggerToPush)
         }
     } else {
-        // Add new trigger (no UUID means it's a new trigger)
+        // Add new trigger - generate temporary UUID for client-side tracking
+        inputTriggerToPush.uuid = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11)
         updatedComponent.value.releaseInputTriggers.push(inputTriggerToPush)
     }
-    save()
     resetInputTrigger()
     showCreateInputTriggerModal.value = false
 }
@@ -1940,7 +2115,6 @@ async function deleteInputTrigger (uuid: string) {
     const triggerIndex = updatedComponent.value.releaseInputTriggers.findIndex((rit: any) => rit.uuid === uuid)
     if (triggerIndex > -1) {
         updatedComponent.value.releaseInputTriggers.splice(triggerIndex, 1)
-        save()
         notify('success', 'Deleted', `Successfully deleted trigger.`)
     } else {
         notify('error', 'Error', `Error when deleting trigger!`)
@@ -2211,6 +2385,15 @@ async function initLoad() {
 }
 
 async function handleTabSwitch(tabName: string) {
+    // Check for unsaved trigger changes before switching tabs
+    if (hasTriggerChanges.value) {
+        const confirmed = await commonFunctions.confirmUnsavedChanges()
+        if (!confirmed) {
+            return
+        }
+        resetTriggers()
+    }
+    
     if (tabName === "outputTriggers") {
         await fetchCiIntegrations()
     } else if (tabName === "Admin Settings") {
