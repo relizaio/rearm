@@ -122,7 +122,7 @@
                                 v-model:show="showComponentSettingsModal"
                                 preset="dialog"
                                 :show-icon="false"
-                                style="width: 90%"
+                                style="width: 90%; min-height: 95vh; background-color: white;" 
                                 @update:show="handleComponentSettingsClose"
                             >
                                 <h3>{{ words.componentFirstUpper }} Settings for {{ componentData?.name }}</h3>
