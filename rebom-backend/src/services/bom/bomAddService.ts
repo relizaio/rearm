@@ -204,35 +204,17 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
       const existingUuid = latestBom.uuid;
       const existingRawUuid = existingUuid + '-raw';
       
-      // CRITICAL: Use existing BOM's repository name to prevent orphaned artifacts
-      // Extract repository name from existing BOM record
-      const existingRepositoryName = extractRepositoryNameFromBom(latestBom);
-      const replacementRepositoryName = existingRepositoryName || repositoryName;
-      
-      if (!existingRepositoryName) {
-        // Legacy BOM without repository name - this is a one-time migration scenario
-        // The replacement will go to the current month's repository, migrating the BOM
-        // The old artifact in the base repository will be orphaned (acceptable)
-        logger.warn({ 
-          existingUuid, 
-          currentMonthRepository: repositoryName,
-          operation: 'legacy_bom_migration'
-        }, "LEGACY BOM MIGRATION: Existing BOM has no repository name - migrating to current month repository. Old artifact in base repository will be orphaned.");
-      } else if (existingRepositoryName !== repositoryName) {
-        // Replacing a BOM that's in a different month's repository
-        // This is expected and correct - we keep the BOM in its original repository
-        logger.info({
-          existingUuid,
-          existingRepository: existingRepositoryName,
-          currentMonthRepository: repositoryName,
-          operation: 'cross_month_replacement'
-        }, "Replacing BOM in its original repository (different from current month) - this is correct behavior");
-      }
+      // use current month's repository
+      logger.info({
+        existingUuid,
+        currentMonthRepository: repositoryName,
+        operation: 'bom_replacement'
+      }, "Replacing BOM in current month's repository");
       
       // Re-upload to existing UUIDs (overwrites old files in OCI)
-      // Use existing repository to keep all versions together
-      const rawReplacementResult = await pushToOci(existingRawUuid, rawBom, replacementRepositoryName);
-      const replacementPushResult = await pushToOci(existingUuid, finalBom, replacementRepositoryName);
+      // Always use current month's repository
+      const rawReplacementResult = await pushToOci(existingRawUuid, rawBom, repositoryName);
+      const replacementPushResult = await pushToOci(existingUuid, finalBom, repositoryName);
       
       // Validate both BOMs went to same repository and have repository names set
       validateDualBomPush(rawReplacementResult, replacementPushResult, 'replacement', existingUuid);

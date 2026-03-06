@@ -630,22 +630,9 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
   
   if (wasEnriched) {
     // Push enriched BOM to OCI (overwrites existing)
-    // CRITICAL: Use the SAME repository as the original upload to keep BOMs together
-    // This prevents month boundary race conditions where enrichment happens in a different month
+    //use current month's repository
     try {
-      // Fetch BOM record to get original repository name from bom field
-      const bomRecords = await BomRepository.bomById(bomUuid);
-      const originalRepositoryName = bomRecords?.[0] ? extractRepositoryNameFromBom(bomRecords[0]) : undefined;
-      
-      if (!originalRepositoryName) {
-        // CRITICAL: For legacy BOMs without repository name, we MUST use current month
-        // This is a one-time migration - the enriched BOM will then have a repository name
-        logger.warn({ bomUuid }, 'No original repository name found (legacy BOM) - using current month for enrichment (one-time migration)');
-      }
-      
-      // ALWAYS use original repository if available to prevent month boundary issues
-      // Only fall back to current month for legacy BOMs (which will then be migrated)
-      const repositoryName = originalRepositoryName || getMonthlyRepositoryName();
+      const repositoryName = getMonthlyRepositoryName();
       
       const pushResult = await pushToOci(bomUuid, result.enrichedBom, repositoryName);
       
@@ -658,9 +645,7 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
       logger.info({ 
         bomUuid, 
         serialNumber: bom.serialNumber, 
-        repositoryName: pushResult.ociRepositoryName, 
-        usedOriginalRepo: !!originalRepositoryName,
-        isLegacyMigration: !originalRepositoryName
+        repositoryName: pushResult.ociRepositoryName
       }, 'Async BOM enrichment completed successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -836,13 +821,8 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
     }
     
     // Push only the final enriched BOM
-    // Use original repository name from BOM record
-    const originalRepositoryName = extractRepositoryNameFromBom(bomRecord);
-    const repositoryName = originalRepositoryName || getMonthlyRepositoryName();
-    
-    if (!originalRepositoryName) {
-      logger.warn({ bomUuid }, 'No original repository name found for re-enrichment, using current month');
-    }
+    // SIMPLIFIED: Always use current month's repository for better backup rotation
+    const repositoryName = getMonthlyRepositoryName();
     
     const pushResult = await pushToOci(bomUuid, result.enrichedBom, repositoryName);
     
