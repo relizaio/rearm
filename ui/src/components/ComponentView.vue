@@ -2048,7 +2048,6 @@ async function deleteOutputTrigger (uuid: string) {
         const triggerIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === uuid)
         if (triggerIndex > -1) {
             updatedComponent.value.outputTriggers.splice(triggerIndex, 1)
-            notify('success', 'Deleted', `Successfully deleted trigger.`)
         } else {
             notify('error', 'Error', `Error when deleting trigger!`)
         }
@@ -2155,7 +2154,6 @@ async function deleteInputTrigger (uuid: string) {
     const triggerIndex = updatedComponent.value.releaseInputTriggers.findIndex((rit: any) => rit.uuid === uuid)
     if (triggerIndex > -1) {
         updatedComponent.value.releaseInputTriggers.splice(triggerIndex, 1)
-        notify('success', 'Deleted', `Successfully deleted trigger.`)
     } else {
         notify('error', 'Error', `Error when deleting trigger!`)
     }
