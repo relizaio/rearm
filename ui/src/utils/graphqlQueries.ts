@@ -37,7 +37,6 @@ const MULTI_RELEASE_GQL_DATA = `
         }
         vcsBranch
         vcsTag
-        reboms
     }
     branch
     branchDetails {
@@ -283,7 +282,6 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
         policyViolationsLicenseTotal
         policyViolationsOperationalTotal
     }
-    reboms
     downloadLinks{
         uri
         content
@@ -344,7 +342,6 @@ const ARTIFACT_DETAIL_DATA = `
         policyViolationsLicenseTotal
         policyViolationsOperationalTotal
     }
-    reboms
     downloadLinks{
         uri
         content
@@ -438,7 +435,6 @@ const singleReleaseDataNoParent = `
         }
         vcsBranch
         vcsTag
-        reboms
         artifacts
         artifactDetails {
             ${ARTIFACT_DETAIL_DATA}
@@ -525,7 +521,6 @@ const singleReleaseDataNoParent = `
             lastUpdatedBy
         }
     }
-    reboms
     variantDetails {
         uuid
         type
