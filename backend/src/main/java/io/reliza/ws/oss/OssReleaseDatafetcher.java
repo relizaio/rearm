@@ -193,33 +193,6 @@ public class OssReleaseDatafetcher {
 		return optRd;
 	}
 	
-	private ConditionGroup normalizeConditionGroupApprovals (ComponentData cd,
-			InputConditionGroup icg) throws RelizaException {
-		Optional<ApprovalPolicyData> oapd = approvalPolicyService.getApprovalPolicyData(cd.getApprovalPolicy());
-		
-		if (oapd.isEmpty()) throw new RelizaException("Missing approval policy on component");
-		
-		List<ApprovalEntryData> availableApprovalEntries = oapd.get().getApprovalEntries()
-				.stream().map(x -> approvalEntryService.getApprovalEntryData(x).get()).toList();
-		List<Condition> cs = new LinkedList<>();
-		for (var incond : icg.conditions()) {
-			var oaed = availableApprovalEntries
-					.stream()
-					.filter(aae -> aae.getApprovalName().equalsIgnoreCase(incond.approvalEntry())).findFirst();
-			if (oaed.isEmpty()) throw new RelizaException("Wrong approval entry");
-			Condition c = new Condition(ConditionType.APPROVAL_ENTRY,
-					oaed.get().getUuid(),
-					incond.approvalState(),
-					null,
-					null,
-					null,
-					null,
-					null);
-			cs.add(c);
-		}
-		return new ConditionGroup(icg.matchOperator(), cs, null);
-	}
-	
 	@Transactional
 	@DgsData(parentType = "Mutation", field = "approveReleaseProgrammatic")
 	public ReleaseData approveReleaseProgrammatic(DgsDataFetchingEnvironment dfe) {
