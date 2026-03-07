@@ -855,6 +855,8 @@ function buildCombinedHistory() {
                     rua: event.rua,
                     rus: event.rus,
                     objectId: event.objectId,
+                    oldValue: event.oldValue,
+                    newValue: event.newValue,
                     wu: event.wu,
                     source: 'release'
                 })
@@ -960,6 +962,11 @@ const props = defineProps<{
 const emit = defineEmits(['approvalsChanged', 'closeRelease'])
 
 const lifecycleOptions = constants.LifecycleOptions
+
+function resolveLifecycleLabel (lifecycle: string) {
+    if (!lifecycle) return ''
+    return lifecycleOptions.find((option: any) => option.key === lifecycle)?.label || lifecycle
+}
 
 onMounted(async () => {
     loadingBar.start()
@@ -2759,8 +2766,14 @@ const releaseHistoryFields = computed(() => [
     },
     {
         key: 'objectId',
-        title: 'Object',
+        title: 'Event or Object Details',
         render: (row: any) => {
+            if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER') {
+                return row.newValue || row.objectId
+            }
+            if (row.rus === 'LIFECYCLE') {
+                return `${resolveLifecycleLabel(row.oldValue)} -> ${resolveLifecycleLabel(row.newValue)}`
+            }
             // For artifact events from acollections, show type with info icon
             if (row.source === 'acollection' && row.artifact) {
                 const art = row.artifact.artifactDetails || row.artifact
