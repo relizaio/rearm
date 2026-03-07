@@ -1593,9 +1593,9 @@ async function saveTriggers() {
 
 function resetTriggers() {
     if (!componentData.value) return
-    // Only strip __typename when resetting, keep scope for UI
-    updatedComponent.value.outputTriggers = stripGraphQLMetadata(commonFunctions.deepCopy(componentData.value.outputTriggers), false)
-    updatedComponent.value.releaseInputTriggers = stripGraphQLMetadata(commonFunctions.deepCopy(componentData.value.releaseInputTriggers), false)
+    // Straight copy from componentData so hasTriggerChanges returns false
+    updatedComponent.value.outputTriggers = commonFunctions.deepCopy(componentData.value.outputTriggers)
+    updatedComponent.value.releaseInputTriggers = commonFunctions.deepCopy(componentData.value.releaseInputTriggers)
     updatedComponent.value.globalInputEventRefs = commonFunctions.deepCopy(componentData.value.globalInputEventRefs)
 }
 
