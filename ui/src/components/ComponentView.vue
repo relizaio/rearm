@@ -639,6 +639,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
 import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, ConditionGroup, InputTriggerEvent } from '../utils/triggerTypes'
+import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import graphqlQueries from '../utils/graphqlQueries'
 
 const updatedComponent: Ref<any> = ref({})
@@ -2003,13 +2004,9 @@ async function addOutputTrigger () {
     }
     const outputTriggerToPush = commonFunctions.deepCopy(outputTrigger.value)
     
-    // Validate output trigger
-    if (!outputTriggerToPush.name || outputTriggerToPush.name.trim() === '') {
-        notify('error', 'Validation Error', 'Output trigger name is required.')
-        return
-    }
-    if (!outputTriggerToPush.type || outputTriggerToPush.type === '') {
-        notify('error', 'Validation Error', 'Output trigger type is required.')
+    const validation = validateOutputTrigger(outputTriggerToPush)
+    if (!validation.valid) {
+        notify('error', 'Validation Error', validation.error!)
         return
     }
     
@@ -2059,64 +2056,6 @@ async function deleteOutputTrigger (uuid: string) {
 function editInputTrigger (trigger: any) {
     inputTrigger.value = commonFunctions.deepCopy(trigger)
     showCreateInputTriggerModal.value = true
-}
-
-function validateInputTrigger(trigger: any): { valid: boolean; error?: string } {
-    // Validate name
-    if (!trigger.name || trigger.name.trim() === '') {
-        return { valid: false, error: 'Input trigger name is required.' }
-    }
-    
-    // Validate at least one condition group exists with conditions
-    if (!trigger.conditionGroup || !trigger.conditionGroup.conditionGroups || trigger.conditionGroup.conditionGroups.length === 0) {
-        return { valid: false, error: 'At least one condition group is required.' }
-    }
-    
-    // Validate condition groups have at least one condition
-    for (const group of trigger.conditionGroup.conditionGroups) {
-        if (!group.conditions || group.conditions.length === 0) {
-            return { valid: false, error: 'Each condition group must have at least one condition.' }
-        }
-    }
-    
-    // Validate at least one output event is selected
-    if (!trigger.outputEvents || trigger.outputEvents.length === 0) {
-        return { valid: false, error: 'At least one output trigger must be selected.' }
-    }
-    
-    // Validate all condition types have required fields set
-    if (trigger.conditionGroup && trigger.conditionGroup.conditionGroups) {
-        for (const group of trigger.conditionGroup.conditionGroups) {
-            if (group.conditions) {
-                for (const condition of group.conditions) {
-                    if (condition.type === 'APPROVAL_ENTRY') {
-                        if (!condition.approvalState || condition.approvalState === '') {
-                            return { valid: false, error: 'Approval Entry conditions must have an approval state (APPROVED or DISAPPROVED) selected.' }
-                        }
-                    } else if (condition.type === 'LIFECYCLE') {
-                        if (!condition.possibleLifecycles || condition.possibleLifecycles.length === 0) {
-                            return { valid: false, error: 'Lifecycle conditions must have at least one lifecycle selected.' }
-                        }
-                    } else if (condition.type === 'BRANCH_TYPE') {
-                        if (!condition.possibleBranchTypes || condition.possibleBranchTypes.length === 0) {
-                            return { valid: false, error: 'Branch Type conditions must have at least one branch type selected.' }
-                        }
-                    } else if (condition.type === 'METRICS') {
-                        if (!condition.metricsType || condition.metricsType === '') {
-                            return { valid: false, error: 'Metrics conditions must have a metrics type selected.' }
-                        }
-                        if (!condition.comparisonSign || condition.comparisonSign === '') {
-                            return { valid: false, error: 'Metrics conditions must have a comparison operator selected.' }
-                        }
-                        if (condition.metricsValue === undefined || condition.metricsValue === null || condition.metricsValue === '') {
-                            return { valid: false, error: 'Metrics conditions must have a value specified.' }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return { valid: true }
 }
 
 async function addInputTrigger () {

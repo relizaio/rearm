@@ -958,6 +958,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
 import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, ConditionGroup, InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
+import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
@@ -4702,6 +4703,11 @@ async function saveGlobalInputEvents () {
 
 function addGlobalOutputEvent () {
     const eventToPush = commonFunctions.deepCopy(globalOutputEvent.value)
+    const validation = validateOutputTrigger(eventToPush)
+    if (!validation.valid) {
+        notify('error', 'Validation Error', validation.error!)
+        return
+    }
     if (eventToPush.uuid) {
         const existingIndex = globalOutputEvents.value.findIndex((e: any) => e.uuid === eventToPush.uuid)
         if (existingIndex > -1) {
@@ -4739,6 +4745,11 @@ function deleteGlobalOutputEvent (uuid: string) {
 
 function addGlobalInputEvent () {
     const eventToPush = commonFunctions.deepCopy(globalInputEvent.value)
+    const validation = validateInputTrigger(eventToPush)
+    if (!validation.valid) {
+        notify('error', 'Validation Error', validation.error!)
+        return
+    }
     if (eventToPush.uuid) {
         const existingIndex = globalInputEvents.value.findIndex((e: any) => e.uuid === eventToPush.uuid)
         if (existingIndex > -1) {
