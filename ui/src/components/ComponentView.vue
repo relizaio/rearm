@@ -2002,6 +2002,16 @@ async function addOutputTrigger () {
     }
     const outputTriggerToPush = commonFunctions.deepCopy(outputTrigger.value)
     
+    // Validate output trigger
+    if (!outputTriggerToPush.name || outputTriggerToPush.name.trim() === '') {
+        notify('error', 'Validation Error', 'Output trigger name is required.')
+        return
+    }
+    if (!outputTriggerToPush.type || outputTriggerToPush.type === '') {
+        notify('error', 'Validation Error', 'Output trigger type is required.')
+        return
+    }
+    
     if (outputTriggerToPush.uuid) {
         // Check if trigger with this UUID already exists
         const existingIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === outputTriggerToPush.uuid)
@@ -2052,6 +2062,28 @@ function editInputTrigger (trigger: any) {
 }
 
 function validateInputTrigger(trigger: any): { valid: boolean; error?: string } {
+    // Validate name
+    if (!trigger.name || trigger.name.trim() === '') {
+        return { valid: false, error: 'Input trigger name is required.' }
+    }
+    
+    // Validate at least one condition group exists with conditions
+    if (!trigger.conditionGroup || !trigger.conditionGroup.conditionGroups || trigger.conditionGroup.conditionGroups.length === 0) {
+        return { valid: false, error: 'At least one condition group is required.' }
+    }
+    
+    // Validate condition groups have at least one condition
+    for (const group of trigger.conditionGroup.conditionGroups) {
+        if (!group.conditions || group.conditions.length === 0) {
+            return { valid: false, error: 'Each condition group must have at least one condition.' }
+        }
+    }
+    
+    // Validate at least one output event is selected
+    if (!trigger.outputEvents || trigger.outputEvents.length === 0) {
+        return { valid: false, error: 'At least one output trigger must be selected.' }
+    }
+    
     // Validate all condition types have required fields set
     if (trigger.conditionGroup && trigger.conditionGroup.conditionGroups) {
         for (const group of trigger.conditionGroup.conditionGroups) {
