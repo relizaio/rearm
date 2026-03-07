@@ -670,16 +670,15 @@
                                 <div v-for="entry in defaultApprovalSetup.entries" :key="entry.approvalName">{{ entry.approvalName }} - {{ entry.approvalRoles.join(', ') }}</div>
                             </div>
                             <div>
-                                <strong>Approval Policy</strong>
-                                <div>{{ defaultApprovalSetup.policy.policyName }}</div>
-                            </div>
-                            <div>
-                                <strong>Global Output Events</strong>
-                                <div v-for="event in defaultApprovalSetup.outputEvents" :key="event.name">{{ event.name }} - {{ outputTriggerLifecycleOptions.find((opt: any) => opt.value === event.toReleaseLifecycle)?.label || event.toReleaseLifecycle }}</div>
-                            </div>
-                            <div>
-                                <strong>Global Input Events</strong>
-                                <div v-for="event in defaultApprovalSetup.inputEvents" :key="event.name">{{ event.name }}</div>
+                                <strong>Approval Policies</strong>
+                                <div v-for="policy in defaultApprovalSetup.policies" :key="policy.policyName" style="margin-bottom: 12px;">
+                                    <div>{{ policy.policyName }}</div>
+                                    <div>Entries: {{ policy.approvalEntries.join(', ') }}</div>
+                                    <div>Output Events:</div>
+                                    <div v-for="event in defaultApprovalSetup.outputEvents" :key="`${policy.policyName}-${event.name}`">{{ event.name }} - {{ outputTriggerLifecycleOptions.find((opt: any) => opt.value === event.toReleaseLifecycle)?.label || event.toReleaseLifecycle }}</div>
+                                    <div>Input Events:</div>
+                                    <div v-for="event in getDefaultPolicyInputEvents(policy.approvalEntries)" :key="`${policy.policyName}-${event.name}`">{{ event.name }}</div>
+                                </div>
                             </div>
                             <div>
                                 <strong>Evidence Mapping</strong>
@@ -2461,17 +2460,27 @@ const defaultApprovalSetup = {
         { approvalName: 'Security Risk Accepted', approvalRoles: ['PRODSEC'] },
         { approvalName: 'Release Authorized', approvalRoles: ['RLZ_MGR'] }
     ],
-    policy: {
-        policyName: 'Full Compliance (CRA, SOC2, ISO 27001)',
-        approvalEntries: [
-            'Build Verified',
-            'Tests Passed',
-            'Legal Compliance Approved',
-            'Security Review Passed',
-            'Security Risk Accepted',
-            'Release Authorized'
-        ]
-    },
+    policies: [
+        {
+            policyName: 'Full Compliance (CRA, SOC2, ISO 27001)',
+            approvalEntries: [
+                'Build Verified',
+                'Tests Passed',
+                'Legal Compliance Approved',
+                'Security Review Passed',
+                'Security Risk Accepted',
+                'Release Authorized'
+            ]
+        },
+        {
+            policyName: 'Internal Component',
+            approvalEntries: [
+                'Tests Passed',
+                'Security Review Passed',
+                'Release Authorized'
+            ]
+        }
+    ],
     outputEvents: [
         {
             name: 'Reject',
@@ -2484,19 +2493,11 @@ const defaultApprovalSetup = {
             toReleaseLifecycle: 'READY_TO_SHIP'
         }
     ],
-    inputEvents: [
+    inputEventTemplates: [
         {
             name: 'Reject on Disapproval',
             lifecycleStates: ['DRAFT', 'ASSEMBLED', 'READY_TO_SHIP'],
             approvalState: 'DISAPPROVED',
-            approvalEntries: [
-                'Build Verified',
-                'Tests Passed',
-                'Legal Compliance Approved',
-                'Security Review Passed',
-                'Security Risk Accepted',
-                'Release Authorized'
-            ],
             matchOperator: 'OR',
             outputEvents: ['Reject']
         },
@@ -2504,14 +2505,6 @@ const defaultApprovalSetup = {
             name: 'Ready to Ship on All Approvals',
             lifecycleStates: ['DRAFT', 'ASSEMBLED'],
             approvalState: 'APPROVED',
-            approvalEntries: [
-                'Build Verified',
-                'Tests Passed',
-                'Legal Compliance Approved',
-                'Security Review Passed',
-                'Security Risk Accepted',
-                'Release Authorized'
-            ],
             matchOperator: 'AND',
             outputEvents: ['Set Ready to Ship']
         },
@@ -2540,6 +2533,19 @@ const defaultApprovalSetup = {
             outputEvents: ['Reject']
         }
     ]
+}
+
+function getDefaultPolicyInputEvents (approvalEntries: string[]) {
+    return defaultApprovalSetup.inputEventTemplates.map((event: any) => {
+        if (event.conditionGroup) {
+            return commonFunctions.deepCopy(event)
+        }
+
+        return {
+            ...commonFunctions.deepCopy(event),
+            approvalEntries: [...approvalEntries]
+        }
+    })
 }
 
 const defaultApprovalEvidenceRows = [
@@ -2691,72 +2697,74 @@ async function populateApprovalDefaults () {
 
         await fetchApprovalEntries()
 
-        const createdPolicy = await gqlCreateApprovalPolicyDirect(
-            defaultApprovalSetup.policy.policyName,
-            defaultApprovalSetup.policy.approvalEntries
-        )
-
-        await fetchApprovalPolicies()
-
-        selectPolicyForGlobalEvents(createdPolicy.uuid)
-
-        globalOutputEvents.value = defaultApprovalSetup.outputEvents.map((event: any) => ({
-            ...commonFunctions.deepCopy(event)
-        }))
-        await saveGlobalOutputEvents()
-
-        const outputEventIdByName: Record<string, string> = {}
-        globalOutputEvents.value.forEach((event: any) => {
-            outputEventIdByName[event.name] = event.uuid
-        })
-
         const approvalEntryIdByName: Record<string, string> = {}
         orgApprovalEntries.value.forEach((entry: any) => {
             approvalEntryIdByName[entry.approvalName] = entry.uuid
         })
 
-        globalInputEvents.value = defaultApprovalSetup.inputEvents.map((event: any) => {
-            if (event.conditionGroup) {
+        for (const policy of defaultApprovalSetup.policies) {
+            const createdPolicy = await gqlCreateApprovalPolicyDirect(
+                policy.policyName,
+                policy.approvalEntries
+            )
+
+            await fetchApprovalPolicies()
+
+            selectPolicyForGlobalEvents(createdPolicy.uuid)
+
+            globalOutputEvents.value = defaultApprovalSetup.outputEvents.map((event: any) => ({
+                ...commonFunctions.deepCopy(event)
+            }))
+            await saveGlobalOutputEvents()
+
+            const outputEventIdByName: Record<string, string> = {}
+            globalOutputEvents.value.forEach((event: any) => {
+                outputEventIdByName[event.name] = event.uuid
+            })
+
+            globalInputEvents.value = getDefaultPolicyInputEvents(policy.approvalEntries).map((event: any) => {
+                if (event.conditionGroup) {
+                    return {
+                        ...commonFunctions.deepCopy(event),
+                        outputEvents: event.outputEvents.map((outputEventName: string) => outputEventIdByName[outputEventName]).filter(Boolean)
+                    }
+                }
+
+                const approvalConditions = event.approvalEntries
+                    .map((entryName: string) => approvalEntryIdByName[entryName])
+                    .filter(Boolean)
+                    .map((approvalEntryUuid: string) => ({
+                        type: 'APPROVAL_ENTRY',
+                        approvalEntry: approvalEntryUuid,
+                        approvalState: event.approvalState
+                    }))
+
                 return {
-                    ...commonFunctions.deepCopy(event),
+                    name: event.name,
+                    conditionGroup: {
+                        matchOperator: 'AND',
+                        conditionGroups: [
+                            {
+                                matchOperator: 'AND',
+                                conditions: [
+                                    {
+                                        type: 'LIFECYCLE',
+                                        possibleLifecycles: event.lifecycleStates
+                                    }
+                                ]
+                            },
+                            {
+                                matchOperator: event.matchOperator,
+                                conditions: approvalConditions
+                            }
+                        ],
+                        conditions: []
+                    },
                     outputEvents: event.outputEvents.map((outputEventName: string) => outputEventIdByName[outputEventName]).filter(Boolean)
                 }
-            }
-
-            const approvalConditions = event.approvalEntries
-                .map((entryName: string) => approvalEntryIdByName[entryName])
-                .filter(Boolean)
-                .map((approvalEntryUuid: string) => ({
-                    type: 'APPROVAL_ENTRY',
-                    approvalEntry: approvalEntryUuid,
-                    approvalState: event.approvalState
-                }))
-
-            return {
-                name: event.name,
-                conditionGroup: {
-                    matchOperator: 'AND',
-                    conditionGroups: [
-                        {
-                            matchOperator: 'AND',
-                            conditions: [
-                                {
-                                    type: 'LIFECYCLE',
-                                    possibleLifecycles: event.lifecycleStates
-                                }
-                            ]
-                        },
-                        {
-                            matchOperator: event.matchOperator,
-                            conditions: approvalConditions
-                        }
-                    ],
-                    conditions: []
-                },
-                outputEvents: event.outputEvents.map((outputEventName: string) => outputEventIdByName[outputEventName]).filter(Boolean)
-            }
-        })
-        await saveGlobalInputEvents()
+            })
+            await saveGlobalInputEvents()
+        }
 
         await fetchApprovalPolicies()
         showPopulateApprovalDefaultsModal.value = false
