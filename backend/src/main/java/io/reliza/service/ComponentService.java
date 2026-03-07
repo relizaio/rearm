@@ -305,6 +305,11 @@ public class ComponentService {
 				cd.setMarketingVersionSchema(cdto.getMarketingVersionSchema());
 			}
 			if (null != cdto.getApprovalPolicy()) {
+				// guardrail: if changing approval policy, check that component doesn't reference global events from the old one
+				if (null != cd.getApprovalPolicy() && !cdto.getApprovalPolicy().equals(cd.getApprovalPolicy())
+						&& null != cd.getGlobalInputEventRefs() && !cd.getGlobalInputEventRefs().isEmpty()) {
+					throw new RelizaException("Cannot change approval policy while component references global events from the current policy. Remove global event references first.");
+				}
 				cd.setApprovalPolicy(cdto.getApprovalPolicy());
 			}
 			if (null != cdto.getReleaseInputTriggers()) {
@@ -318,6 +323,9 @@ public class ComponentService {
 					if (null == t.getUuid()) t.setUuid(UUID.randomUUID());
 				});
 				cd.setOutputTriggers(cdto.getOutputTriggers());
+			}
+			if (null != cdto.getGlobalInputEventRefs()) {
+				cd.setGlobalInputEventRefs(cdto.getGlobalInputEventRefs());
 			}
 			if (null != cdto.getStatus()) {
 				cd.setStatus(cdto.getStatus());

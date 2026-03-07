@@ -203,6 +203,8 @@ type Mutation {
 	archiveApprovalEntry(approvalEntryUuid: ID!): ApprovalEntry
 	createApprovalPolicy(approvalPolicy: ApprovalPolicyInput!): ApprovalPolicy
 	archiveApprovalPolicy(approvalPolicyUuid: ID!): ApprovalPolicy
+	setGlobalInputEvents(approvalPolicyUuid: ID!, events: [ReleaseInputEventInput!]!): ApprovalPolicy
+	setGlobalOutputEvents(approvalPolicyUuid: ID!, events: [ReleaseOutputEventInput!]!): ApprovalPolicy
 	
 	approveReleaseManual(release: ID!, approvals: [ReleaseApprovalInput!]): Release
 	
@@ -362,6 +364,7 @@ type Component {
 	identifiers: [Identifier]
 	repoPath: String
 	authentication: ComponentAuthentication
+	globalInputEventRefs: [GlobalInputEventRef]
 	perspectiveDetails: [Perspective]
 }
 
@@ -1165,6 +1168,8 @@ type ApprovalPolicy {
 	approvalEntries: [ID]
 	approvalEntryDetails: [ApprovalEntry]
 	status: Status
+	globalInputEvents: [ReleaseInputEvent]
+	globalOutputEvents: [ReleaseOutputEvent]
 }
 
 type ApprovalMapping {
@@ -1252,6 +1257,7 @@ type ReleaseInputEvent {
 	name: String
 	conditionGroup: ConditionGroup
 	outputEvents: [ID]
+	scope: EventScope
 }
 
 type ReleaseOutputEvent {
@@ -1266,6 +1272,13 @@ type ReleaseOutputEvent {
     eventType: String
     clientPayload: String
     schedule: String
+    scope: EventScope
+}
+
+type GlobalInputEventRef {
+	uuid: ID
+	overrideOutputEventsLocally: Boolean
+	outputEventsOverride: [ID]
 }
 
 type ApprovalEntryState {
@@ -1449,6 +1462,8 @@ input ApprovalPolicyInput {
 	policyName: String
 	approvalMappings: [ApprovalMappingInput]
 	approvalEntries: [ID]
+	globalInputEvents: [ReleaseInputEventInput]
+	globalOutputEvents: [ReleaseOutputEventInput]
 }
 
 input ApprovalMappingInput {
@@ -1526,9 +1541,16 @@ input UpdateComponentInput {
 	approvalPolicy: ID
 	releaseInputTriggers: [ReleaseInputEventInput]
 	outputTriggers: [ReleaseOutputEventInput]
+	globalInputEventRefs: [GlobalInputEventRefInput]
 	identifiers: [IdentifierInput]
 	repoPath: String
 	authentication: ComponentAuthenticationInput
+}
+
+input GlobalInputEventRefInput {
+	uuid: ID
+	overrideOutputEventsLocally: Boolean
+	outputEventsOverride: [ID]
 }
 
 input VcsRepositoryInput {
@@ -1974,6 +1996,11 @@ enum EventType {
 	EMAIL_NOTIFICATION
 }
 
+enum EventScope {
+	LOCAL
+	GLOBAL
+}
+
 enum BomStructureType{
 	FLAT
 	HIERARCHICAL
@@ -2049,13 +2076,17 @@ enum ProgrammaticType {
 }
 
 enum ReleaseLifecycleEnum {
+	CANCELLED
+	REJECTED
 	PENDING
 	DRAFT
-	CANCELLED
 	ASSEMBLED
-	REJECTED
+	READY_TO_SHIP
 	GENERAL_AVAILABILITY
+	END_OF_MARKETING
+	END_OF_DISTRIBUTION
 	END_OF_SUPPORT
+	END_OF_LIFE
 }
 
 enum StripBomEnum {

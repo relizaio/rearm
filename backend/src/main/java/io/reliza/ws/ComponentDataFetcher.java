@@ -47,8 +47,11 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ComponentData.EventScope;
 import io.reliza.model.ComponentData.EventType;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
+import io.reliza.model.dto.ReleaseInputEventDto;
+import io.reliza.model.dto.ReleaseOutputEventDto;
 import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.RelizaObject;
@@ -513,6 +516,24 @@ public class ComponentDataFetcher {
 
 /* Sub-fields */
 	
+	@DgsData(parentType = "Component", field = "releaseInputTriggers")
+	public List<ReleaseInputEventDto> releaseInputTriggersWithScope(DgsDataFetchingEnvironment dfe) {
+		ComponentData cd = dfe.getSource();
+		if (null == cd.getReleaseInputTriggers()) return null;
+		return cd.getReleaseInputTriggers().stream()
+				.map(e -> ReleaseInputEventDto.fromData(e, EventScope.LOCAL))
+				.toList();
+	}
+
+	@DgsData(parentType = "Component", field = "outputTriggers")
+	public List<ReleaseOutputEventDto> outputTriggersWithScope(DgsDataFetchingEnvironment dfe) {
+		ComponentData cd = dfe.getSource();
+		if (null == cd.getOutputTriggers()) return null;
+		return cd.getOutputTriggers().stream()
+				.map(e -> ReleaseOutputEventDto.fromData(e, EventScope.LOCAL))
+				.toList();
+	}
+
 	@DgsData(parentType = "Component", field = "vcsRepositoryDetails")
 	public VcsRepositoryData vcsRepoOfProject (DgsDataFetchingEnvironment dfe) {
 		VcsRepositoryData vrd = null;

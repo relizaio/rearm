@@ -101,14 +101,20 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	}
 	
 	public enum ReleaseLifecycle {
+		// IMPORTANT: Order matters here - PS - 2026-03-06
 		CANCELLED,
 		REJECTED,
 	    PENDING,
 	    DRAFT,
 	    ASSEMBLED,
-	    GENERAL_AVAILABILITY,
-	    END_OF_SUPPORT;
-		
+		READY_TO_SHIP,
+	    GENERAL_AVAILABILITY, // CLE - released
+		END_OF_MARKETING, // cle - endOfMarketing
+		END_OF_DISTRIBUTION, // cle - endOfDistribution
+	    END_OF_SUPPORT, // cle - endOfSupport
+		END_OF_LIFE // cle - endOfLife
+		;
+
 		public static boolean isAssemblyAllowed(ReleaseLifecycle rl) {
 			boolean isAllowed = false;
 			if (rl == PENDING || rl == DRAFT) isAllowed = true;

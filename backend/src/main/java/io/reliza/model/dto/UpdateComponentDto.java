@@ -21,6 +21,7 @@ import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.EventType;
+import io.reliza.model.ComponentData.GlobalInputEventRef;
 import io.reliza.model.ComponentData.ReleaseInputEvent;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
 import io.reliza.model.IntegrationData.IntegrationType;
@@ -91,6 +92,8 @@ public class UpdateComponentDto {
 	@JsonProperty
 	private List<ReleaseOutputEventInput> outputTriggers;
 	@JsonProperty
+	private List<GlobalInputEventRef> globalInputEventRefs;
+	@JsonProperty
 	private List<TeaIdentifier> identifiers;
 	@JsonProperty
 	private ComponentAuthentication authentication;
@@ -140,6 +143,7 @@ public class UpdateComponentDto {
 								.approvalPolicy(ucd.getApprovalPolicy())
 								.releaseInputTriggers(ucd.getReleaseInputTriggers())
 								.outputTriggers(triggers)
+								.globalInputEventRefs(ucd.getGlobalInputEventRefs())
 								.identifiers(ucd.getIdentifiers())
 								.authentication(ucd.getAuthentication())
 								.build();

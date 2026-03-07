@@ -69,6 +69,19 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		EMAIL_NOTIFICATION;
 	}
 	
+	public enum EventScope {
+		LOCAL,
+		GLOBAL;
+	}
+	
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class GlobalInputEventRef {
+		private UUID uuid;
+		private boolean overrideOutputEventsLocally;
+		private Set<UUID> outputEventsOverride;
+	}
+	
 	public enum ConditionType {
 		APPROVAL_ENTRY,
 		LIFECYCLE,
@@ -185,6 +198,9 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	
 	@JsonProperty
 	private List<ReleaseOutputEvent> outputTriggers;
+	
+	@JsonProperty
+	private List<GlobalInputEventRef> globalInputEventRefs;
 	
 	@JsonProperty
 	private List<TeaIdentifier> identifiers = new LinkedList<>();
