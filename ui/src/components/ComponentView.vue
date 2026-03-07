@@ -646,6 +646,10 @@ const originalComponent: Ref<any> = ref({})
 
 onMounted(async () => {
     await initLoad()
+    // Initialize component settings modal from URL query parameter after data is loaded
+    if (route.query.componentSettingsView === 'true') {
+        await openComponentSettings()
+    }
 })
 
 function renderIcon (icon: Component) {
@@ -818,10 +822,7 @@ const showComponentChangelogModal : Ref<boolean> = ref(false)
 const showAddBranchModal : Ref<boolean> = ref(false)
 const showComponentSettingsModal: Ref<boolean> = ref(false)
 
-// Initialize component settings modal from URL query parameter
-if (route.query.componentSettingsView === 'true') {
-    showComponentSettingsModal.value = true
-}
+// componentSettingsView route param is handled in onMounted after data is loaded
 const showCreateOutputTriggerModal: Ref<boolean> = ref(false)
 const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
