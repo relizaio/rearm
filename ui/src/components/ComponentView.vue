@@ -1345,11 +1345,7 @@ function onCreateIdentifier () {
 
 const lifecycleOptions = constants.LifecycleOptions.map((lo: any) => {return {label: lo.label, value: lo.key}})
 
-const outputTriggerLifecycleOptions = [
-    {label: 'Draft', value: 'DRAFT'}, {label: 'Assembled', value: 'ASSEMBLED'},
-    {label: 'Shipped', value: 'GENERAL_AVAILABILITY'}, {label: 'Rejected', value: 'REJECTED'},
-    {label: 'End of Support', value: 'END_OF_SUPPORT'}
-]
+const outputTriggerLifecycleOptions = constants.LifecycleValueOptions
 
 const outputTriggerTypeOptions = [
     {label: 'Release Lifecycle Change', value: 'RELEASE_LIFECYCLE_CHANGE'},

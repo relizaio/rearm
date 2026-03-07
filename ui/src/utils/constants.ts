@@ -96,10 +96,20 @@ const BRANCH_VERSION_TYPES = [
 ]
 
 const LIFECYCLE_OPTIONS = [
-    {label: 'Pending', key: 'PENDING'}, {label: 'Draft', key: 'DRAFT'}, {label: 'Assembled', key: 'ASSEMBLED'},
-    {label: 'Shipped', key: 'GENERAL_AVAILABILITY'}, {label: 'Cancelled', key: 'CANCELLED'}, {label: 'Rejected', key: 'REJECTED'},
-    {label: 'End of Support', key: 'END_OF_SUPPORT'}
+    {label: 'Cancelled', key: 'CANCELLED'},
+    {label: 'Rejected', key: 'REJECTED'},
+    {label: 'Pending', key: 'PENDING'},
+    {label: 'Draft', key: 'DRAFT'},
+    {label: 'Assembled', key: 'ASSEMBLED'},
+    {label: 'Ready to Ship', key: 'READY_TO_SHIP'},
+    {label: 'Shipped', key: 'GENERAL_AVAILABILITY'},
+    {label: 'End of Marketing', key: 'END_OF_MARKETING'},
+    {label: 'End of Distribution', key: 'END_OF_DISTRIBUTION'},
+    {label: 'End of Support', key: 'END_OF_SUPPORT'},
+    {label: 'End of Life', key: 'END_OF_LIFE'}
 ]
+
+const LIFECYCLE_VALUE_OPTIONS = LIFECYCLE_OPTIONS.map((lo: any) => {return {label: lo.label, value: lo.key}})
 
 enum TeaArtifactChecksumType {
     MD5,
@@ -200,6 +210,7 @@ export default {
     OperatingSystems: OPERATING_SYSTEMS.map((pt: string) => {return {label: pt, value: pt}}),
     CpuArchitectures: CPU_ARCHITECTURES.map((pt: string) => {return {label: pt, value: pt}}),
     LifecycleOptions: LIFECYCLE_OPTIONS,
+    LifecycleValueOptions: LIFECYCLE_VALUE_OPTIONS,
     TeaArtifactChecksumType,
     TeaArtifactChecksumTypes: TEA_ARTIFACT_CHECKSUM_TYPES,
     ContentTypes: CONTENT_TYPES,
