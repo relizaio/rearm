@@ -251,7 +251,7 @@
                                     </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Output Triggers" v-if="myUser.installationType !== 'OSS'">
                                         <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Trigger" @click="showCreateOutputTriggerModal = true">
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Trigger" @click="resetOutputTrigger(); showCreateOutputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
                                         <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
@@ -341,7 +341,7 @@
                                     </n-tab-pane>
                                     <n-tab-pane name="Trigger Events" v-if="myUser.installationType !== 'OSS'">
                                         <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Trigger Event" @click="showCreateInputTriggerModal = true">
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Trigger Event" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
                                         <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
