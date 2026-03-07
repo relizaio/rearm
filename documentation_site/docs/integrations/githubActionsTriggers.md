@@ -8,7 +8,7 @@ N.B. This functinality is not part of ReARM Community Edition and is only availa
 Leave most values at their defaults, uncheck `Active` on Webhook, and set the following permissions:
 Repository Permissions -> Contents -> Access: Read and write.
 
-Select to install for only this account or other accounts as well based on your organization needs. Note, that currently ReARM allows integration with only one GitHub App per ReARM organization.
+Select to install for only this account or other accounts as well based on your organization needs.
 
 2. Once the GitHub App is created, note its App ID.
 
@@ -45,7 +45,13 @@ This script must be present on the main branch of your repository as GitHub Acti
 
 Note that the event type is optional, and you can choose any event and configure it on ReARM.
 
-In your script, you may also make use of client payload as described in the GitHub Documentation [here](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#repository_dispatch).
+In your script, you may also make use of client payload as described in the GitHub Documentation [here](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#repository_dispatch). For this, add payload JSON to the `Optional Client Payload JSON` field in ReARM's output trigger. For example, to pass approved release version to GitHub Actions, you can use the following JSON:
+
+```json
+{"approvedRelease": "$releaseversion"}
+```
+
+Then in the workflow, you can access the payload using `github.event.client_payload.approvedRelease`. See full sample [here](https://github.com/relizaio/rearm-cd/blob/main/.github/workflows/watcher-helm-approved.yml).
 
 ## ReARM Part
 
