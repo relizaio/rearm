@@ -1276,10 +1276,18 @@ function resetInputTrigger () {
 
 const outputTriggersForInputForm = computed((): any => {
     let outputTriggers: any[] = []
+    // Add local output triggers
     if (updatedComponent && updatedComponent.value && updatedComponent.value.outputTriggers) {
         outputTriggers = updatedComponent.value.outputTriggers.map((ot: any) => {
-            return {label: ot.name, value: ot.uuid}
+            return {label: ot.name + ' (Local)', value: ot.uuid}
         })
+    }
+    // Add global output triggers from approval policy
+    if (updatedComponent.value?.approvalPolicyDetails?.globalOutputEvents) {
+        const globalTriggers = updatedComponent.value.approvalPolicyDetails.globalOutputEvents.map((ot: any) => {
+            return {label: ot.name + ' (Global)', value: ot.uuid}
+        })
+        outputTriggers = [...outputTriggers, ...globalTriggers]
     }
     return outputTriggers
 })
