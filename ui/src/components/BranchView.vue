@@ -458,10 +458,7 @@ const isLinkVcsRepo = ref(false)
 
 const showBranchSettingsModal: Ref<boolean> = ref(false)
 
-// Initialize branch settings modal from URL query parameter
-if (route.query.branchSettingsView === 'true') {
-    showBranchSettingsModal.value = true
-}
+// branchSettingsView route param is handled after onCreated completes
 const showSetNextVersionModal: Ref<boolean> = ref(false)
 const showAddComponentModal: Ref<boolean> = ref(false)
 const showEditComponentModal: Ref<boolean> = ref(false)
@@ -2147,7 +2144,12 @@ watch(perPage, (newPerPage) => {
     currentPage.value = 1
 })
 
-onCreated()
+onCreated().then(() => {
+    // Initialize branch settings modal from URL query parameter after data is loaded
+    if (route.query.branchSettingsView === 'true') {
+        openBranchSettings()
+    }
+})
 
 </script>
 
