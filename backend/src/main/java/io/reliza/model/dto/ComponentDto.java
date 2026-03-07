@@ -15,6 +15,7 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ComponentData.GlobalInputEventRef;
 import io.reliza.model.ComponentData.ReleaseInputEvent;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
@@ -64,6 +65,8 @@ public class ComponentDto {
 	private List<ReleaseInputEvent> releaseInputTriggers;
 	@JsonProperty
 	private List<ReleaseOutputEvent> outputTriggers;
+	@JsonProperty
+	private List<GlobalInputEventRef> globalInputEventRefs;
 	@JsonProperty
 	private List<TeaIdentifier> identifiers;
 	@JsonProperty
