@@ -67,8 +67,8 @@ type Query {
 	findingsPerDayByPerspective(perspectiveUuid: ID!, date: String!): DependencyTrackMetrics
 	
 	# Programmatic
-	getReleaseByHashProgrammatic(hash: String!, componentId: ID): Release
-	getLatestReleaseProgrammatic(release: GetLatestReleaseInput!): Release
+	getReleaseByHashProgrammatic(hash: String!, componentId: ID): String
+	getLatestReleaseProgrammatic(release: GetLatestReleaseInput!): String
 	
 	organization(orgUuid: ID!): Organization
 	

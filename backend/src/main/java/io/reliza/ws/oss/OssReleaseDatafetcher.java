@@ -115,7 +115,7 @@ public class OssReleaseDatafetcher {
 	}
 	
 	@DgsData(parentType = "Query", field = "getLatestReleaseProgrammatic")
-	public Optional<ReleaseData> getLatestRelease(DgsDataFetchingEnvironment dfe) throws RelizaException {
+	public String getLatestRelease(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
@@ -179,7 +179,8 @@ public class OssReleaseDatafetcher {
 			throw new RelizaException(re.getMessage());
 		}
 		
-		return optRd;
+		if (optRd.isEmpty()) return "{}";
+		return releaseService.exportReleaseAsObom(optRd.get().getUuid()).toString();
 	}
 	
 	@Transactional

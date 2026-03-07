@@ -509,7 +509,7 @@ public class ReleaseDatafetcher {
 	}
 	
 	@DgsData(parentType = "Query", field = "getReleaseByHashProgrammatic")
-	public Optional<ReleaseData> getReleaseByHash(DgsDataFetchingEnvironment dfe,
+	public String getReleaseByHash(DgsDataFetchingEnvironment dfe,
 			@InputArgument("hash") String hash, @InputArgument("componentId") String componentIdStr) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
@@ -543,7 +543,8 @@ public class ReleaseDatafetcher {
 		// we pass component from artifact since we already scoped artifact search to only this component in getArtifactByDigestAndComponent
 		Optional<ReleaseData> ord = Optional.empty();
 		if (od.isPresent()) ord = sharedReleaseService.getReleaseByOutboundDeliverable(od.get().getUuid(), orgId);
-		return ord;
+		if (ord.isEmpty()) return "{}";
+		return releaseService.exportReleaseAsObom(ord.get().getUuid()).toString();
 	}
 	
 	public static record GetLatestReleaseInput (UUID component, UUID product, String branch,
