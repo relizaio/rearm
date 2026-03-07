@@ -681,6 +681,18 @@
                                 <strong>Global Input Events</strong>
                                 <div v-for="event in defaultApprovalSetup.inputEvents" :key="event.name">{{ event.name }}</div>
                             </div>
+                            <div>
+                                <strong>Evidence Mapping</strong>
+                                <n-data-table
+                                    :columns="defaultApprovalEvidenceColumns"
+                                    :data="defaultApprovalEvidenceRows"
+                                    :pagination="false"
+                                    :row-key="dataTableRowKey"
+                                />
+                            </div>
+                            <div>
+                                You will be able to edit these approval roles, approval entries, approval policy, and triggers later.
+                            </div>
                             <n-space>
                                 <n-button type="primary" :loading="populateApprovalDefaultsProcessing" @click="populateApprovalDefaults">Create Defaults</n-button>
                                 <n-button @click="showPopulateApprovalDefaultsModal = false" :disabled="populateApprovalDefaultsProcessing">Cancel</n-button>
@@ -2529,6 +2541,70 @@ const defaultApprovalSetup = {
         }
     ]
 }
+
+const defaultApprovalEvidenceRows = [
+    {
+        uuid: 'build-verified',
+        evidence: 'Build Verified',
+        cra: 'software build integrity and reproducibility',
+        iso27001: 'change validation before deployment',
+        soc2: 'controlled build and deployment process'
+    },
+    {
+        uuid: 'tests-passed',
+        evidence: 'Tests Passed',
+        cra: 'secure development and product validation',
+        iso27001: 'system testing prior to release',
+        soc2: 'change verification and reliability testing'
+    },
+    {
+        uuid: 'legal-compliance-approved',
+        evidence: 'Legal Compliance Approved',
+        cra: 'regulatory and licensing compliance',
+        iso27001: 'contractual, licensing, and regulatory obligations',
+        soc2: 'compliance and governance controls'
+    },
+    {
+        uuid: 'security-review-passed',
+        evidence: 'Security Review Passed',
+        cra: 'vulnerability evaluation and security assessment',
+        iso27001: 'security risk identification and assessment',
+        soc2: 'security control review and vulnerability management'
+    },
+    {
+        uuid: 'security-risk-accepted',
+        evidence: 'Security Risk Accepted',
+        cra: 'documented risk management decision',
+        iso27001: 'formal risk acceptance by responsible authority',
+        soc2: 'management approval of residual risk'
+    },
+    {
+        uuid: 'release-authorized',
+        evidence: 'Release Authorized',
+        cra: 'manufacturer accountability for placing product on market',
+        iso27001: 'formal change approval before production',
+        soc2: 'authorized production deployment'
+    }
+]
+
+const defaultApprovalEvidenceColumns: DataTableColumns<any> = [
+    {
+        title: 'Evidence',
+        key: 'evidence'
+    },
+    {
+        title: 'CRA',
+        key: 'cra'
+    },
+    {
+        title: 'ISO 27001',
+        key: 'iso27001'
+    },
+    {
+        title: 'SOC2',
+        key: 'soc2'
+    }
+]
 
 const showPopulateApprovalDefaultsButton = computed((): boolean => {
     return !!isWritable.value &&
