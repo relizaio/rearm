@@ -547,6 +547,50 @@ public class ReleaseDatafetcher {
 		return releaseService.exportReleaseAsObom(ord.get().getUuid()).toString();
 	}
 	
+	@DgsData(parentType = "Query", field = "getReleaseByReleaseVersionProgrammatic")
+	public String getReleaseByReleaseVersion(DgsDataFetchingEnvironment dfe,
+			@InputArgument("version") String version, @InputArgument("componentId") UUID componentIdProvided) throws RelizaException {
+		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
+		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
+		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		
+		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT,
+				ApiTypeEnum.ORGANIZATION, ApiTypeEnum.USER, ApiTypeEnum.ORGANIZATION_RW);
+
+		UUID orgId = null;
+		UUID componentId = null;
+		if (ApiTypeEnum.COMPONENT == ahp.getType()) {
+			componentId = ahp.getObjUuid();
+			if (null != componentIdProvided && !componentId.equals(componentIdProvided)) throw new AccessDeniedException("Component ID mismatch");
+		} else {
+			try {
+				orgId = ahp.getObjUuid();
+				componentId = componentIdProvided;
+			} catch (NullPointerException e) {
+				throw new RelizaException("Must provide component UUID as input if using organization wide API access");
+			}
+		}
+		
+		if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
+			orgId = ahp.getObjUuid();
+		}
+		
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
+		if (ocd.isEmpty()) {
+			throw new RelizaException("Component " + componentId + " not found");
+		}
+		
+		RelizaObject ro = ocd.get();
+		if (null == orgId) orgId = ocd.get().getOrg();
+		
+		authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, orgId, CallType.READ, ro);
+		
+		Optional<ReleaseData> ord = releaseService.getReleaseDataByComponentAndVersion(componentId, version);
+		if (ord.isEmpty()) return "{}";
+		return releaseService.exportReleaseAsObom(ord.get().getUuid()).toString();
+	}
+	
 	public static record GetLatestReleaseInput (UUID component, UUID product, String branch,
 			TagRecord tags, ReleaseLifecycle lifecycle, InputConditionGroup conditions,
 			String vcsUri, String repoPath, String upToVersion) {}

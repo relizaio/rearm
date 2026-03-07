@@ -68,7 +68,9 @@ type Query {
 	
 	# Programmatic
 	getReleaseByHashProgrammatic(hash: String!, componentId: ID): String
-	getLatestReleaseProgrammatic(release: GetLatestReleaseInput!): String
+	getReleaseByReleaseVersionProgrammatic(version: String!, componentId: ID!): String
+	getLatestReleaseProgrammaticCdx(release: GetLatestReleaseInput!): String
+	getLatestReleaseProgrammatic(release: GetLatestReleaseInput!): Release
 	
 	organization(orgUuid: ID!): Organization
 	

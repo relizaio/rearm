@@ -115,7 +115,18 @@ public class OssReleaseDatafetcher {
 	}
 	
 	@DgsData(parentType = "Query", field = "getLatestReleaseProgrammatic")
-	public String getLatestRelease(DgsDataFetchingEnvironment dfe) throws RelizaException {
+	public Optional<ReleaseData> getLatestRelease(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		return getLatestReleaseInternal(dfe);
+	}
+	
+	@DgsData(parentType = "Query", field = "getLatestReleaseProgrammaticCdx")
+	public String getLatestReleaseCdx(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		Optional<ReleaseData> optRd = getLatestReleaseInternal(dfe);
+		if (optRd.isEmpty()) return "{}";
+		return releaseService.exportReleaseAsObom(optRd.get().getUuid()).toString();
+	}
+	
+	private Optional<ReleaseData> getLatestReleaseInternal(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
@@ -179,8 +190,34 @@ public class OssReleaseDatafetcher {
 			throw new RelizaException(re.getMessage());
 		}
 		
-		if (optRd.isEmpty()) return "{}";
-		return releaseService.exportReleaseAsObom(optRd.get().getUuid()).toString();
+		return optRd;
+	}
+	
+	private ConditionGroup normalizeConditionGroupApprovals (ComponentData cd,
+			InputConditionGroup icg) throws RelizaException {
+		Optional<ApprovalPolicyData> oapd = approvalPolicyService.getApprovalPolicyData(cd.getApprovalPolicy());
+		
+		if (oapd.isEmpty()) throw new RelizaException("Missing approval policy on component");
+		
+		List<ApprovalEntryData> availableApprovalEntries = oapd.get().getApprovalEntries()
+				.stream().map(x -> approvalEntryService.getApprovalEntryData(x).get()).toList();
+		List<Condition> cs = new LinkedList<>();
+		for (var incond : icg.conditions()) {
+			var oaed = availableApprovalEntries
+					.stream()
+					.filter(aae -> aae.getApprovalName().equalsIgnoreCase(incond.approvalEntry())).findFirst();
+			if (oaed.isEmpty()) throw new RelizaException("Wrong approval entry");
+			Condition c = new Condition(ConditionType.APPROVAL_ENTRY,
+					oaed.get().getUuid(),
+					incond.approvalState(),
+					null,
+					null,
+					null,
+					null,
+					null);
+			cs.add(c);
+		}
+		return new ConditionGroup(icg.matchOperator(), cs, null);
 	}
 	
 	@Transactional
