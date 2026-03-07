@@ -441,6 +441,11 @@
 
             <n-tab-pane name="approvalPolicies" tab="Approval Policies" v-if="myUser.installationType !== 'OSS'">
                 <div class="programmaticAccessBlock mt-4">
+                    <n-space v-if="showPopulateApprovalDefaultsButton" style="margin-bottom: 16px;">
+                        <n-button type="primary" @click="showPopulateApprovalDefaultsModal = true">
+                            Populate Default Approval Setup
+                        </n-button>
+                    </n-space>
                     <h4>Approval Roles:                        
                         <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Role" @click="showCreateApprovalRole = true">
                             <CirclePlus/>
@@ -641,6 +646,48 @@
                     </div>
                     <div v-else class="text-muted">Click an approval policy row above to manage its global events.</div>
                 </div>
+                <n-modal
+                    v-model:show="showPopulateApprovalDefaultsModal"
+                    preset="dialog"
+                    :show-icon="false"
+                    style="width: 90%; max-width: 900px;"
+                >
+                    <n-card
+                        size="huge"
+                        title="Populate Default Approval Setup"
+                        :bordered="false"
+                        role="dialog"
+                        aria-modal="true"
+                    >
+                        <n-space vertical size="large">
+                            <div>This will create the following default objects in order:</div>
+                            <div>
+                                <strong>Approval Roles</strong>
+                                <div v-for="role in defaultApprovalSetup.roles" :key="role.id">{{ role.id }} - {{ role.displayView }}</div>
+                            </div>
+                            <div>
+                                <strong>Approval Entries</strong>
+                                <div v-for="entry in defaultApprovalSetup.entries" :key="entry.approvalName">{{ entry.approvalName }} - {{ entry.approvalRoles.join(', ') }}</div>
+                            </div>
+                            <div>
+                                <strong>Approval Policy</strong>
+                                <div>{{ defaultApprovalSetup.policy.policyName }}</div>
+                            </div>
+                            <div>
+                                <strong>Global Output Events</strong>
+                                <div v-for="event in defaultApprovalSetup.outputEvents" :key="event.name">{{ event.name }} - {{ outputTriggerLifecycleOptions.find((opt: any) => opt.value === event.toReleaseLifecycle)?.label || event.toReleaseLifecycle }}</div>
+                            </div>
+                            <div>
+                                <strong>Global Input Events</strong>
+                                <div v-for="event in defaultApprovalSetup.inputEvents" :key="event.name">{{ event.name }}</div>
+                            </div>
+                            <n-space>
+                                <n-button type="primary" :loading="populateApprovalDefaultsProcessing" @click="populateApprovalDefaults">Create Defaults</n-button>
+                                <n-button @click="showPopulateApprovalDefaultsModal = false" :disabled="populateApprovalDefaultsProcessing">Cancel</n-button>
+                            </n-space>
+                        </n-space>
+                    </n-card>
+                </n-modal>
             </n-tab-pane>
 
             <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
@@ -1082,6 +1129,8 @@ const showCreateResourceGroupModal = ref(false)
 const showCreateApprovalPolicy = ref(false)
 const showCreateApprovalEntry = ref(false)
 const showCreateApprovalRole = ref(false)
+const showPopulateApprovalDefaultsModal = ref(false)
+const populateApprovalDefaultsProcessing = ref(false)
 
 const showCIIntegrationModal = ref(false)
 
@@ -2378,6 +2427,268 @@ async function addApprovalRole () {
         await store.dispatch('addApprovalRole', updObj)
         showCreateApprovalRole.value = false
         resetCreateApprovalRole()
+    }
+}
+
+const defaultApprovalSetup = {
+    roles: [
+        { id: 'DEV', displayView: 'Developer' },
+        { id: 'QA', displayView: 'QA' },
+        { id: 'AUTO_QA', displayView: 'Automated QA' },
+        { id: 'RLZ_MGR', displayView: 'Release Manager' },
+        { id: 'LEGAL', displayView: 'Legal' },
+        { id: 'APPSEC', displayView: 'Security Reviewer' },
+        { id: 'PRODSEC', displayView: 'Product Security Reviewer' }
+    ],
+    entries: [
+        { approvalName: 'Build Verified', approvalRoles: ['DEV'] },
+        { approvalName: 'Tests Passed', approvalRoles: ['QA'] },
+        { approvalName: 'Automated Tests Passed', approvalRoles: ['AUTO_QA'] },
+        { approvalName: 'Legal Compliance Approved', approvalRoles: ['LEGAL'] },
+        { approvalName: 'Security Review Passed', approvalRoles: ['APPSEC'] },
+        { approvalName: 'Security Risk Accepted', approvalRoles: ['PRODSEC'] },
+        { approvalName: 'Release Authorized', approvalRoles: ['RLZ_MGR'] }
+    ],
+    policy: {
+        policyName: 'Full Compliance (CRA, SOC2, ISO 27001)',
+        approvalEntries: [
+            'Build Verified',
+            'Tests Passed',
+            'Legal Compliance Approved',
+            'Security Review Passed',
+            'Security Risk Accepted',
+            'Release Authorized'
+        ]
+    },
+    outputEvents: [
+        {
+            name: 'Reject',
+            type: 'RELEASE_LIFECYCLE_CHANGE',
+            toReleaseLifecycle: 'REJECTED'
+        },
+        {
+            name: 'Set Ready to Ship',
+            type: 'RELEASE_LIFECYCLE_CHANGE',
+            toReleaseLifecycle: 'READY_TO_SHIP'
+        }
+    ],
+    inputEvents: [
+        {
+            name: 'Reject on Disapproval',
+            lifecycleStates: ['DRAFT', 'ASSEMBLED', 'READY_TO_SHIP'],
+            approvalState: 'DISAPPROVED',
+            approvalEntries: [
+                'Build Verified',
+                'Tests Passed',
+                'Legal Compliance Approved',
+                'Security Review Passed',
+                'Security Risk Accepted',
+                'Release Authorized'
+            ],
+            matchOperator: 'OR',
+            outputEvents: ['Reject']
+        },
+        {
+            name: 'Ready to Ship on All Approvals',
+            lifecycleStates: ['DRAFT', 'ASSEMBLED'],
+            approvalState: 'APPROVED',
+            approvalEntries: [
+                'Build Verified',
+                'Tests Passed',
+                'Legal Compliance Approved',
+                'Security Review Passed',
+                'Security Risk Accepted',
+                'Release Authorized'
+            ],
+            matchOperator: 'AND',
+            outputEvents: ['Set Ready to Ship']
+        },
+        {
+            name: 'Reject on Critical Finding',
+            conditionGroup: {
+                matchOperator: 'AND',
+                conditionGroups: [
+                    {
+                        matchOperator: 'AND',
+                        conditions: [
+                            {
+                                type: 'LIFECYCLE',
+                                possibleLifecycles: ['DRAFT', 'ASSEMBLED', 'READY_TO_SHIP']
+                            },
+                            {
+                                type: 'METRICS',
+                                metricsType: 'CRITICAL_VULNS',
+                                comparisonSign: 'GREATER',
+                                metricsValue: 0
+                            }
+                        ]
+                    }
+                ]
+            },
+            outputEvents: ['Reject']
+        }
+    ]
+}
+
+const showPopulateApprovalDefaultsButton = computed((): boolean => {
+    return !!isWritable.value &&
+        (myorg.value?.approvalRoles?.length || 0) === 0 &&
+        orgApprovalEntries.value.length === 0 &&
+        approvalPoliciesFullData.value.length === 0
+})
+
+async function gqlCreateApprovalEntryDirect (approvalName: string, approvalRoles: string[]) {
+    const approvalEntry = {
+        org: orgResolved.value,
+        approvalName,
+        approvalRequirements: approvalRoles.map((roleId: string) => ({
+            allowedApprovalRoleIds: [roleId],
+            requiredNumberOfApprovals: 1,
+            permittedNumberOfDisapprovals: 0
+        }))
+    }
+
+    const response = await graphqlClient.mutate({
+        mutation: gql`
+            mutation createApprovalEntry($approvalEntry: ApprovalEntryInput!) {
+                createApprovalEntry(approvalEntry: $approvalEntry) {
+                    uuid
+                    approvalName
+                }
+            }`,
+        variables: {
+            approvalEntry
+        },
+        fetchPolicy: 'no-cache'
+    })
+
+    const data = response.data as any
+    return data.createApprovalEntry
+}
+
+async function gqlCreateApprovalPolicyDirect (policyName: string, approvalEntries: string[]) {
+    const entryIds = approvalEntries.map((entryName: string) => {
+        const found = orgApprovalEntries.value.find((entry: any) => entry.approvalName === entryName)
+        if (!found) throw new Error(`Unable to find approval entry ${entryName}`)
+        return found.uuid
+    })
+
+    const response = await graphqlClient.mutate({
+        mutation: gql`
+            mutation createApprovalPolicy($approvalPolicy: ApprovalPolicyInput!) {
+                createApprovalPolicy(approvalPolicy: $approvalPolicy) {
+                    uuid
+                    policyName
+                }
+            }`,
+        variables: {
+            approvalPolicy: {
+                org: orgResolved.value,
+                policyName,
+                resourceGroup: '',
+                approvalMappings: [],
+                approvalEntries: entryIds
+            }
+        },
+        fetchPolicy: 'no-cache'
+    })
+
+    const data = response.data as any
+    return data.createApprovalPolicy
+}
+
+async function populateApprovalDefaults () {
+    populateApprovalDefaultsProcessing.value = true
+    try {
+        for (const role of defaultApprovalSetup.roles) {
+            await store.dispatch('addApprovalRole', {
+                orgUuid: orgResolved.value,
+                approvalRole: role
+            })
+        }
+
+        await fetchApprovalEntries()
+
+        for (const entry of defaultApprovalSetup.entries) {
+            await gqlCreateApprovalEntryDirect(entry.approvalName, entry.approvalRoles)
+        }
+
+        await fetchApprovalEntries()
+
+        const createdPolicy = await gqlCreateApprovalPolicyDirect(
+            defaultApprovalSetup.policy.policyName,
+            defaultApprovalSetup.policy.approvalEntries
+        )
+
+        await fetchApprovalPolicies()
+
+        selectPolicyForGlobalEvents(createdPolicy.uuid)
+
+        globalOutputEvents.value = defaultApprovalSetup.outputEvents.map((event: any) => ({
+            ...commonFunctions.deepCopy(event)
+        }))
+        await saveGlobalOutputEvents()
+
+        const outputEventIdByName: Record<string, string> = {}
+        globalOutputEvents.value.forEach((event: any) => {
+            outputEventIdByName[event.name] = event.uuid
+        })
+
+        const approvalEntryIdByName: Record<string, string> = {}
+        orgApprovalEntries.value.forEach((entry: any) => {
+            approvalEntryIdByName[entry.approvalName] = entry.uuid
+        })
+
+        globalInputEvents.value = defaultApprovalSetup.inputEvents.map((event: any) => {
+            if (event.conditionGroup) {
+                return {
+                    ...commonFunctions.deepCopy(event),
+                    outputEvents: event.outputEvents.map((outputEventName: string) => outputEventIdByName[outputEventName]).filter(Boolean)
+                }
+            }
+
+            const approvalConditions = event.approvalEntries
+                .map((entryName: string) => approvalEntryIdByName[entryName])
+                .filter(Boolean)
+                .map((approvalEntryUuid: string) => ({
+                    type: 'APPROVAL_ENTRY',
+                    approvalEntry: approvalEntryUuid,
+                    approvalState: event.approvalState
+                }))
+
+            return {
+                name: event.name,
+                conditionGroup: {
+                    matchOperator: 'AND',
+                    conditionGroups: [
+                        {
+                            matchOperator: 'AND',
+                            conditions: [
+                                {
+                                    type: 'LIFECYCLE',
+                                    possibleLifecycles: event.lifecycleStates
+                                }
+                            ]
+                        },
+                        {
+                            matchOperator: event.matchOperator,
+                            conditions: approvalConditions
+                        }
+                    ],
+                    conditions: []
+                },
+                outputEvents: event.outputEvents.map((outputEventName: string) => outputEventIdByName[outputEventName]).filter(Boolean)
+            }
+        })
+        await saveGlobalInputEvents()
+
+        await fetchApprovalPolicies()
+        showPopulateApprovalDefaultsModal.value = false
+        notify('success', 'Success', 'Default approval setup populated successfully.')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message || String(err)))
+    } finally {
+        populateApprovalDefaultsProcessing.value = false
     }
 }
 
