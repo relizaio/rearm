@@ -2825,8 +2825,21 @@ const approvalHistoryFields = computed(() => [
         }
     },
     {
-        key: 'approvalEntry',
-        title: 'Approval Entry'
+        key: 'approvalEntryName',
+        title: 'Approval Entry',
+        render(row: any) {
+            return h('span', {
+                style: 'display: inline-flex; align-items: center; gap: 6px;'
+            }, [
+                row.approvalEntryName || row.approvalEntry,
+                h(Icon, {
+                    size: '16',
+                    title: `Approval Entry ID: ${row.approvalEntry || ''}`
+                }, {
+                    default: () => h(Info20Regular)
+                })
+            ])
+        }
     },
     {
         key: 'approvalRoleId',

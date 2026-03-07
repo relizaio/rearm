@@ -501,6 +501,7 @@ const singleReleaseDataNoParent = `
     }
     approvalEvents {
         approvalEntry
+        approvalEntryName
         approvalRoleId
         state
         date
