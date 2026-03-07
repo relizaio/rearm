@@ -659,7 +659,7 @@ const hasBranchChanges = computed(() => {
 })
 
 const handleBranchSettingsClose = async function(show: boolean) {
-    if (!show && hasBranchChanges()) {
+    if (!show && hasBranchChanges.value) {
         const confirmed = await commonFunctions.confirmUnsavedChanges()
         if (!confirmed) {
             // Prevent closing by setting it back to true
