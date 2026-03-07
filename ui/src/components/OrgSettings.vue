@@ -2389,74 +2389,103 @@ function resetCreateApprovalRole () {
 }
 
 async function deleteApprovalRole (approvalRoleId: string) {
-    const updObj = {
-        orgUuid: orgResolved.value,
-        approvalRoleId       
-    }
-    try {
-        const org = await store.dispatch('deleteApprovalRole', updObj)
-        if (org && org.uuid) {
-            notify('success', 'Deleted', 'Successfully deleted approval role ' + approvalRoleId)
-        } else {
-            notify('error', 'Failed to Delete', 'There was an error deleting approval role')
+    const onSwalConfirm = async () => {
+        const updObj = {
+            orgUuid: orgResolved.value,
+            approvalRoleId       
         }
-    } catch (err: any) {
-        notify('error', 'Failed to Delete', commonFunctions.parseGraphQLError(err.message))
+        try {
+            const org = await store.dispatch('deleteApprovalRole', updObj)
+            if (org && org.uuid) {
+                notify('success', 'Deleted', 'Successfully deleted approval role ' + approvalRoleId)
+            } else {
+                notify('error', 'Failed to Delete', 'There was an error deleting approval role')
+            }
+        } catch (err: any) {
+            notify('error', 'Failed to Delete', commonFunctions.parseGraphQLError(err.message))
+        }
     }
+    const swalData: SwalData = {
+        questionText: `Are you sure you want to delete approval role ${approvalRoleId}?`,
+        successTitle: 'Deleted!',
+        successText: `Approval role ${approvalRoleId} has been deleted.`,
+        dismissText: 'Delete has been cancelled.'
+    }
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
-async function deleteApprovalPolicy (policyUuid: string) {
-    try {
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation archiveApprovalPolicy($approvalPolicyUuid: ID!) {
-                    archiveApprovalPolicy(approvalPolicyUuid: $approvalPolicyUuid) {
-                        uuid
-                        status
-                        policyName
-                    }
-                }`,
-            variables: {
-                approvalPolicyUuid: policyUuid
-            },
-            fetchPolicy: 'no-cache'
-        })
-        if (response.data && response.data.archiveApprovalPolicy && response.data.archiveApprovalPolicy.status === 'ARCHIVED') {
-            notify('success', 'Archived', 'Successfully archived approval policy ' + response.data.archiveApprovalPolicy.policyName)
-            fetchApprovalPolicies()
-        } else {
-            notify('error', 'Failed to Archive', 'There was an error archiving approval policy')
+async function deleteApprovalPolicy (policyUuid: string, policyName?: string) {
+    const onSwalConfirm = async () => {
+        try {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation archiveApprovalPolicy($approvalPolicyUuid: ID!) {
+                        archiveApprovalPolicy(approvalPolicyUuid: $approvalPolicyUuid) {
+                            uuid
+                            status
+                            policyName
+                        }
+                    }`,
+                variables: {
+                    approvalPolicyUuid: policyUuid
+                },
+                fetchPolicy: 'no-cache'
+            })
+            if (response.data && response.data.archiveApprovalPolicy && response.data.archiveApprovalPolicy.status === 'ARCHIVED') {
+                notify('success', 'Archived', 'Successfully archived approval policy ' + response.data.archiveApprovalPolicy.policyName)
+                fetchApprovalPolicies()
+            } else {
+                notify('error', 'Failed to Archive', 'There was an error archiving approval policy')
+            }
+        } catch (err: any) {
+            notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
         }
-    } catch (err: any) {
-        notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
     }
+    const displayName = policyName || policyUuid
+    const swalData: SwalData = {
+        questionText: `Are you sure you want to delete approval policy ${displayName}?`,
+        successTitle: 'Deleted!',
+        successText: `Approval policy ${displayName} has been deleted.`,
+        dismissText: 'Deletion has been cancelled.'
+    }
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
-async function deleteApprovalEntry (approvalEntryUuid: string) {
-    try {
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation archiveApprovalEntry($approvalEntryUuid: ID!) {
-                    archiveApprovalEntry(approvalEntryUuid: $approvalEntryUuid) {
-                        uuid
-                        status
-                        approvalName
-                    }
-                }`,
-            variables: {
-                approvalEntryUuid
-            },
-            fetchPolicy: 'no-cache'
-        })
-        if (response.data && response.data.archiveApprovalEntry && response.data.archiveApprovalEntry.status === 'ARCHIVED') {
-            notify('success', 'Archived', 'Successfully archived approval entry ' + response.data.archiveApprovalEntry.approvalName)
-            fetchApprovalEntries()
-        } else {
-            notify('error', 'Failed to Archive', 'There was an error archiving approval entry')
+async function deleteApprovalEntry (approvalEntryUuid: string, approvalEntryName?: string) {
+    const onSwalConfirm = async () => {
+        try {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation archiveApprovalEntry($approvalEntryUuid: ID!) {
+                        archiveApprovalEntry(approvalEntryUuid: $approvalEntryUuid) {
+                            uuid
+                            status
+                            approvalName
+                        }
+                    }`,
+                variables: {
+                    approvalEntryUuid
+                },
+                fetchPolicy: 'no-cache'
+            })
+            if (response.data && response.data.archiveApprovalEntry && response.data.archiveApprovalEntry.status === 'ARCHIVED') {
+                notify('success', 'Archived', 'Successfully archived approval entry ' + response.data.archiveApprovalEntry.approvalName)
+                fetchApprovalEntries()
+            } else {
+                notify('error', 'Failed to Archive', 'There was an error archiving approval entry')
+            }
+        } catch (err: any) {
+            notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
         }
-    } catch (err: any) {
-        notify('error', 'Failed to Archive', commonFunctions.parseGraphQLError(err.message))
     }
+    const displayName = approvalEntryName || approvalEntryUuid
+    const swalData: SwalData = {
+        questionText: `Are you sure you want to delete approval entry ${displayName}?`,
+        successTitle: 'Deleted!',
+        successText: `Approval entry ${displayName} has been deleted.`,
+        dismissText: 'Deletion has been cancelled.'
+    }
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 async function createApp() {
@@ -4233,7 +4262,7 @@ const approvalEntryFields: DataTableColumns<any> = [
                         class: 'icons clickable',
                         size: 20,
                         onClick: () => {
-                            deleteApprovalEntry(row.uuid)
+                            deleteApprovalEntry(row.uuid, row.approvalName)
                         }
                     }, 
                     { 
@@ -4316,7 +4345,7 @@ const approvalPolicyFields: DataTableColumns<any> = [
                         class: 'icons clickable',
                         size: 20,
                         onClick: () => {
-                            deleteApprovalPolicy(row.uuid)
+                            deleteApprovalPolicy(row.uuid, row.policyName)
                         }
                     }, 
                     { 
@@ -4728,19 +4757,29 @@ function editGlobalOutputEvent (event: any) {
     showCreateGlobalOutputEventModal.value = true
 }
 
-function deleteGlobalOutputEvent (uuid: string) {
+async function deleteGlobalOutputEvent (uuid: string, name?: string) {
     // Check if any global input event references this output event
     const referencedBy = globalInputEvents.value.find((ie: any) => ie.outputEvents && ie.outputEvents.includes(uuid))
     if (referencedBy) {
         notify('error', 'Error', 'Cannot delete: this output event is referenced by a global input event.')
         return
     }
-    const idx = globalOutputEvents.value.findIndex((e: any) => e.uuid === uuid)
-    if (idx > -1) {
-        globalOutputEvents.value.splice(idx, 1)
-        saveGlobalOutputEvents()
-        notify('success', 'Deleted', 'Global output event deleted.')
+    const onSwalConfirm = async () => {
+        const idx = globalOutputEvents.value.findIndex((e: any) => e.uuid === uuid)
+        if (idx > -1) {
+            globalOutputEvents.value.splice(idx, 1)
+            saveGlobalOutputEvents()
+            notify('success', 'Deleted', 'Global output event deleted.')
+        }
     }
+    const displayName = name || uuid
+    const swalData: SwalData = {
+        questionText: `Are you sure you want to delete global output event ${displayName}?`,
+        successTitle: 'Deleted!',
+        successText: `Global output event ${displayName} has been deleted.`,
+        dismissText: 'Delete has been cancelled.'
+    }
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 function addGlobalInputEvent () {
@@ -4770,13 +4809,23 @@ function editGlobalInputEvent (event: any) {
     showCreateGlobalInputEventModal.value = true
 }
 
-function deleteGlobalInputEvent (uuid: string) {
-    const idx = globalInputEvents.value.findIndex((e: any) => e.uuid === uuid)
-    if (idx > -1) {
-        globalInputEvents.value.splice(idx, 1)
-        saveGlobalInputEvents()
-        notify('success', 'Deleted', 'Global input event deleted.')
+async function deleteGlobalInputEvent (uuid: string, name?: string) {
+    const onSwalConfirm = async () => {
+        const idx = globalInputEvents.value.findIndex((e: any) => e.uuid === uuid)
+        if (idx > -1) {
+            globalInputEvents.value.splice(idx, 1)
+            saveGlobalInputEvents()
+            notify('success', 'Deleted', 'Global input event deleted.')
+        }
     }
+    const displayName = name || uuid
+    const swalData: SwalData = {
+        questionText: `Are you sure you want to delete global input event ${displayName}?`,
+        successTitle: 'Deleted!',
+        successText: `Global input event ${displayName} has been deleted.`,
+        dismissText: 'Delete has been cancelled.'
+    }
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const globalOutputEventTableFields: DataTableColumns<any> = [
@@ -4816,7 +4865,7 @@ const globalOutputEventTableFields: DataTableColumns<any> = [
                     title: 'Delete Output Event',
                     class: 'icons clickable',
                     size: 20,
-                    onClick: () => deleteGlobalOutputEvent(row.uuid)
+                    onClick: () => deleteGlobalOutputEvent(row.uuid, row.name)
                 }, () => h(Trash))
                 els.push(editEl, deleteEl)
             }
@@ -4862,7 +4911,7 @@ const globalInputEventTableFields: DataTableColumns<any> = [
                     title: 'Delete Input Event',
                     class: 'icons clickable',
                     size: 20,
-                    onClick: () => deleteGlobalInputEvent(row.uuid)
+                    onClick: () => deleteGlobalInputEvent(row.uuid, row.name)
                 }, () => h(Trash))
                 els.push(editEl, deleteEl)
             }
