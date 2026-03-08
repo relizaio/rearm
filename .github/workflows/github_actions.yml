@@ -133,7 +133,7 @@ jobs:
           codeql_language: 'custom'
           push_to_rearm_mirror: 'true'
           rearm_mirror_api_id: ${{ secrets.REARM_REARM_BACKEND_API_ID }}
-          rearm_mirror_api_url: ${{ secrets.REARM_REARM_BACKEND_API_KEY }}
+          rearm_mirror_api_key: ${{ secrets.REARM_REARM_BACKEND_API_KEY }}
           rearm_mirror_api_url: https://demo.rearmhq.com
   build-oci-service:
     permissions:
