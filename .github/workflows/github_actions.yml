@@ -60,22 +60,26 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    name: Build And Push Rearm Helm Chart
+    name: Build And Push ReARM Helm Chart
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@14604a6aec66e51fc4d188133849b203b046ed64 # v3.14
+      - name: Build And Submit ReARM Helm to ReARM
+        uses: relizaio/rearm-helm-action@561e932e3c7a60f8c85d2eb2741afea8fb953ecb # v1.5.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
           registry_host: registry.relizahub.com/library
           helm_chart_name: rearm-helm
-          reliza_api_id: ${{ secrets.RELIZA_REARM_HELM_API_ID }}
-          reliza_api_key: ${{ secrets.RELIZA_REARM_HELM_API_KEY }}
-          path: deploy/helm
-          push_to_rearm: 'true'
-          rearm_api_id: ${{ secrets.REARM_REARM_HELM_API_ID }}
-          rearm_api_key: ${{ secrets.REARM_REARM_HELM_API_KEY }}
+          rearm_api_id: ${{ secrets.RELIZA_REARM_HELM_API_ID }}
+          rearm_api_key: ${{ secrets.RELIZA_REARM_HELM_API_KEY }}
+          rearm_api_url: https://reliza.rearmhq.com
+          path: deploy/helm/rearm-helm
+          enable_sbom: true
+          enable_public_cosign_sigstore: true
+          push_to_rearm_mirror: 'true'
+          rearm_mirror_api_id: ${{ secrets.REARM_REARM_HELM_API_ID }}
+          rearm_mirror_api_key: ${{ secrets.REARM_REARM_HELM_API_KEY }}
+          rearm_mirror_api_url: https://demo.rearmhq.com
           rearm_enable_public_cosign_sigstore: 'true'
   build-ui:
     permissions:
