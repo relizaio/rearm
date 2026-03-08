@@ -522,7 +522,7 @@
                     <h3>Release History</h3>
                     <n-data-table :columns="releaseHistoryFields" :data="combinedHistoryEvents" class="table-hover" />
                     <h3>Approval History</h3>
-                    <n-data-table :columns="approvalHistoryFields" :data="release.approvalEvents" class="table-hover" />
+                    <n-data-table :columns="approvalHistoryFields" :data="approvalHistoryEvents" class="table-hover" />
                 </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
                     <div class="container">
@@ -2863,6 +2863,15 @@ const approvalHistoryFields = computed(() => [
         title: 'Approval State'
     }
 ])
+
+const approvalHistoryEvents = computed(() => {
+    const events = release.value?.approvalEvents || []
+    return [...events].sort((a: any, b: any) => {
+        const dateA = a?.date ? new Date(a.date).getTime() : 0
+        const dateB = b?.date ? new Date(b.date).getTime() : 0
+        return dateB - dateA
+    })
+})
 
 async function deleteTag (key: string) {
     updatedRelease.value.tags = updatedRelease.value.tags.filter((t: any) => (t.key !== key))
