@@ -148,11 +148,14 @@
                             </n-modal>
                         </div>
                     </n-space>
-                    <h5>CI Integrations</h5>
-                    <n-data-table :columns="ciIntegrationTableFields" :data="ciIntegrations" :row-key="dataTableRowKey"></n-data-table>
-                    <n-button @click="showCIIntegrationModal=true">Add CI Integration</n-button>
+                    <template v-if="myUser.installationType !== 'OSS'">
+                        <h5>CI Integrations</h5>
+                        <n-data-table :columns="ciIntegrationTableFields" :data="ciIntegrations" :row-key="dataTableRowKey"></n-data-table>
+                        <n-button @click="showCIIntegrationModal=true">Add CI Integration</n-button>
+                    </template>
                 </div>
                 <n-modal
+                    v-if="myUser.installationType !== 'OSS'"
                     v-model:show="showCIIntegrationModal"
                     preset="dialog"
                     :show-icon="false"
@@ -1042,7 +1045,7 @@ onMounted(async () => {
     store.dispatch('fetchResourceGroups', orgResolved.value)
     if (false && myUser.value.installationType !== 'OSS') initializeResourceGroup()
     loadConfiguredIntegrations(true)
-    loadCiIntegrations(true)
+    if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
     loadBearIntegration()
     isWritable.value = commonFunctions.isWritable(orgResolved.value, myUser.value, 'ORG')
     
