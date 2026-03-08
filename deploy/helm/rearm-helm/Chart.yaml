@@ -1,5 +1,5 @@
 apiVersion: v2
-name: rearm-helm
+name: rearm
 description: ReARM Helm chart for Kubernetes
 
 type: application
