@@ -914,7 +914,6 @@ type Release {
 	inProducts: [Release]
 	vcsRepository: VcsRepository
 	tags: [TagRecord]
-	reboms: Object
 	approvalEvents: [ReleaseApprovalEvent]
 	variantDetails: [Variant]
 	updateEvents: [ReleaseUpdateEvent]
@@ -1009,7 +1008,6 @@ type SourceCodeEntry {
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
-	reboms: [Object]
 	artifacts: [ID]
 	artifactDetails: [Artifact]
 }
@@ -1060,7 +1058,6 @@ type Artifact {
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
-	reboms: Object
 	internalBom: InternalBom
 	downloadLinks: [Downloadlink]
 	metrics: DependencyTrackMetrics
@@ -1211,6 +1208,7 @@ type ApprovalRequirement {
 
 type ReleaseApprovalEvent {
 	approvalEntry: ID
+	approvalEntryName: String
 	approvalRoleId: ID
 	state: ApprovalState
 	date: DateTime
@@ -2331,6 +2329,7 @@ enum ReleaseUpdateScopeEnum {
 	TAGS
 	MARKETING_VERSION
 	TRIGGER
+	INPUT_TRIGGER
 }
 
 enum ReleaseUpdateActionEnum {
