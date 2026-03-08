@@ -592,18 +592,18 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.03.12";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.03.34";
     
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "7a0517c339caca96d00ed03e2223e73f3979b8d513b8ec7cd5481963b6927667";
-    private static final String REARM_CD_HELM_VERSION = "0.1.12";
-    private static final String REARM_CD_HELM_COMMIT = "790bcbb47cec72abb57fc7d5f6c176cf9ef8c89b";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.1.12 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "fafb05e1ac9e655b2f284bb72e4437bae696c22012dcb01acb277177e01eae75";
+    private static final String REARM_CD_HELM_VERSION = "0.3.1";
+    private static final String REARM_CD_HELM_COMMIT = "aa79b7997c9448072a88b5099958920079040b9c";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.3.1 [skip ci]";
     
-    public static final String REARM_CD_CONTAINER_DIGEST = "b0ed8b9505893fa92c67da49ee3f03ed39250f58e945f88014ae2be0c237f3fb";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.19";
-    public static final String REARM_CD_CONTAINER_COMMIT = "c9b3b6bd64d337d7f5a8c2a29b0ff0394e85dd48";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): stream helm hash on every deployment";
+    public static final String REARM_CD_CONTAINER_DIGEST = "551f62cf0f2fcd2deff5d2c4931d08bf079773cd581aa14d8aec2cc0270ed191";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.03.26";
+    public static final String REARM_CD_CONTAINER_COMMIT = "1e132f0c574ccdbd64ee03d007ea1bfa8ba74267";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): use explicit kubectl create ns rather than create-namespace on helm";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
