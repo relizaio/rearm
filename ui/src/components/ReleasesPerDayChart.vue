@@ -157,14 +157,13 @@ async function fetchReleaseAnalytics() {
                     orgUuid: orgUuid.value,
                     cutOffDate
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: 'cache-first'
             })
             
-            resp.data.releaseAnalytics.map((item: any) => {
-                item.date = item.date.split('[')[0]
-            })
-            
-            releaseVisData.value.data.values = resp.data.releaseAnalytics
+            releaseVisData.value.data.values = resp.data.releaseAnalytics.map((item: any) => ({
+                ...item,
+                date: item.date.split('[')[0]
+            }))
         } else if (props.type === 'COMPONENT') {
             if (!props.componentUuid) return
             resp = await graphqlClient.query({
@@ -180,14 +179,13 @@ async function fetchReleaseAnalytics() {
                     componentUuid: props.componentUuid,
                     cutOffDate
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: 'cache-first'
             })
             
-            resp.data.releaseAnalyticsByComponent.map((item: any) => {
-                item.date = item.date.split('[')[0]
-            })
-            
-            releaseVisData.value.data.values = resp.data.releaseAnalyticsByComponent
+            releaseVisData.value.data.values = resp.data.releaseAnalyticsByComponent.map((item: any) => ({
+                ...item,
+                date: item.date.split('[')[0]
+            }))
         } else if (props.type === 'BRANCH') {
             if (!props.branchUuid) return
             resp = await graphqlClient.query({
@@ -203,14 +201,13 @@ async function fetchReleaseAnalytics() {
                     branchUuid: props.branchUuid,
                     cutOffDate
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: 'cache-first'
             })
             
-            resp.data.releaseAnalyticsByBranch.map((item: any) => {
-                item.date = item.date.split('[')[0]
-            })
-            
-            releaseVisData.value.data.values = resp.data.releaseAnalyticsByBranch
+            releaseVisData.value.data.values = resp.data.releaseAnalyticsByBranch.map((item: any) => ({
+                ...item,
+                date: item.date.split('[')[0]
+            }))
         } else if (props.type === 'PERSPECTIVE') {
             if (!props.perspectiveUuid) return
             resp = await graphqlClient.query({
@@ -226,14 +223,13 @@ async function fetchReleaseAnalytics() {
                     perspectiveUuid: props.perspectiveUuid,
                     cutOffDate
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: 'cache-first'
             })
             
-            resp.data.releaseAnalyticsByPerspective.map((item: any) => {
-                item.date = item.date.split('[')[0]
-            })
-            
-            releaseVisData.value.data.values = resp.data.releaseAnalyticsByPerspective
+            releaseVisData.value.data.values = resp.data.releaseAnalyticsByPerspective.map((item: any) => ({
+                ...item,
+                date: item.date.split('[')[0]
+            }))
         }
         
         isLoading.value = false
