@@ -515,8 +515,8 @@
                             @approvalPolicyCreated="approvalPolicyCreated"/>
                     </n-modal>
 
-                    <h4>Global Output Events:
-                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Global Output Event" @click="resetGlobalOutputEvent(); showCreateGlobalOutputEventModal = true">
+                    <h4>Policy-Wide Output Events:
+                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Output Event" @click="resetGlobalOutputEvent(); showCreateGlobalOutputEventModal = true">
                             <CirclePlus/>
                         </Icon>
                     </h4>
@@ -529,7 +529,7 @@
                             style="width: 90%"
                         >
                             <n-form :model="globalOutputEvent">
-                                <h2>{{ globalOutputEvent.uuid ? 'Edit' : 'Add' }} Global Output Event</h2>
+                                <h2>{{ globalOutputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Output Event</h2>
                                 <n-space vertical size="large">
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="globalOutputEvent.name" required placeholder="Enter name" />
@@ -576,8 +576,8 @@
                         </n-modal>
                     </div>
 
-                    <h4>Global Input Events:
-                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Global Input Event" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
+                    <h4>Policy-Wide Input Events:
+                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Input Event" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
                             <CirclePlus/>
                         </Icon>
                     </h4>
@@ -590,7 +590,7 @@
                             style="width: 90%"
                         >
                             <n-form :model="globalInputEvent">
-                                <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Global Input Event</h2>
+                                <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Input Event</h2>
                                 <n-space vertical size="large">
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
@@ -5052,7 +5052,7 @@ async function saveGlobalOutputEvents () {
                 approvalPoliciesFullData.value[policyIndex].globalOutputEvents = globalOutputEvents.value
             }
         }
-        notify('success', 'Success', 'Global output events saved.')
+        notify('success', 'Success', 'Policy-wide output events saved.')
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
@@ -5118,7 +5118,7 @@ async function saveGlobalInputEvents () {
                 approvalPoliciesFullData.value[policyIndex].globalInputEvents = globalInputEvents.value
             }
         }
-        notify('success', 'Success', 'Global input events saved.')
+        notify('success', 'Success', 'Policy-wide input events saved.')
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
@@ -5155,7 +5155,7 @@ async function deleteGlobalOutputEvent (uuid: string, name?: string) {
     // Check if any global input event references this output event
     const referencedBy = globalInputEvents.value.find((ie: any) => ie.outputEvents && ie.outputEvents.includes(uuid))
     if (referencedBy) {
-        notify('error', 'Error', 'Cannot delete: this output event is referenced by a global input event.')
+        notify('error', 'Error', 'Cannot delete: this output event is referenced by a policy-wide input event.')
         return
     }
     const onSwalConfirm = async () => {
@@ -5163,14 +5163,14 @@ async function deleteGlobalOutputEvent (uuid: string, name?: string) {
         if (idx > -1) {
             globalOutputEvents.value.splice(idx, 1)
             saveGlobalOutputEvents()
-            notify('success', 'Deleted', 'Global output event deleted.')
+            notify('success', 'Deleted', 'Policy-wide output event deleted.')
         }
     }
     const displayName = name || uuid
     const swalData: SwalData = {
-        questionText: `Are you sure you want to delete global output event ${displayName}?`,
+        questionText: `Are you sure you want to delete policy-wide output event ${displayName}?`,
         successTitle: 'Deleted!',
-        successText: `Global output event ${displayName} has been deleted.`,
+        successText: `Policy-wide output event ${displayName} has been deleted.`,
         dismissText: 'Delete has been cancelled.'
     }
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
@@ -5209,14 +5209,14 @@ async function deleteGlobalInputEvent (uuid: string, name?: string) {
         if (idx > -1) {
             globalInputEvents.value.splice(idx, 1)
             saveGlobalInputEvents()
-            notify('success', 'Deleted', 'Global input event deleted.')
+            notify('success', 'Deleted', 'Policy-wide input event deleted.')
         }
     }
     const displayName = name || uuid
     const swalData: SwalData = {
-        questionText: `Are you sure you want to delete global input event ${displayName}?`,
+        questionText: `Are you sure you want to delete policy-wide input event ${displayName}?`,
         successTitle: 'Deleted!',
-        successText: `Global input event ${displayName} has been deleted.`,
+        successText: `Policy-wide input event ${displayName} has been deleted.`,
         dismissText: 'Delete has been cancelled.'
     }
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)

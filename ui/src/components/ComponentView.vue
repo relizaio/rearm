@@ -249,9 +249,9 @@
                                             </n-space>
                                         </div>
                                     </n-tab-pane>
-                                    <n-tab-pane name="outputTriggers" tab="Output Triggers" v-if="myUser.installationType !== 'OSS'">
+                                    <n-tab-pane name="outputTriggers" tab="Output Events" v-if="myUser.installationType !== 'OSS'">
                                         <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Trigger" @click="resetOutputTrigger(); showCreateOutputTriggerModal = true">
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Event" @click="resetOutputTrigger(); showCreateOutputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
                                         <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
@@ -277,7 +277,7 @@
                                             style="width: 90%"
                                         >
                                             <n-form :model="outputTrigger">
-                                                <h2>Add or Update Output Trigger</h2>
+                                                <h2>Add or Update Output Event</h2>
                                                 <n-space vertical size="large">
                                                     <n-form-item label="Name" path="name">
                                                         <n-input v-model:value="outputTrigger.name" required placeholder="Enter name" />
@@ -339,9 +339,9 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
-                                    <n-tab-pane name="Trigger Events" v-if="myUser.installationType !== 'OSS'">
+                                    <n-tab-pane name="Input Events" v-if="myUser.installationType !== 'OSS'">
                                         <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Trigger Event" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Input Event" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
                                         <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
@@ -415,7 +415,7 @@
                                                             </template>
                                                         </n-dynamic-input>
                                                     </n-form-item>
-                                                    <n-form-item label="Output Triggers" path="inputTrigger.outputEvents">
+                                                    <n-form-item label="Output Events" path="inputTrigger.outputEvents">
                                                         <n-select v-model:value="inputTrigger.outputEvents" 
                                                         :options="outputTriggersForInputForm" multiple />
                                                     </n-form-item>
@@ -426,12 +426,12 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
-                                    <n-tab-pane name="globalTriggerEvents" tab="Global Trigger Events" v-if="myUser.installationType !== 'OSS' && updatedComponent.approvalPolicy">
+                                    <n-tab-pane name="globalTriggerEvents" tab="Policy-Wide Input Events" v-if="myUser.installationType !== 'OSS' && updatedComponent.approvalPolicy">
                                         <div v-if="policyGlobalInputEvents.length === 0" class="text-muted mt-2">
-                                            No global input events defined on the approval policy.
+                                            No policy-wide input events defined on the approval policy.
                                         </div>
                                         <div v-else>
-                                            <p class="text-muted">Select global input events from the approval policy to apply to this component. You can optionally override their output events.</p>
+                                            <p class="text-muted">Select policy-wide input events from the approval policy to apply to this component. You can optionally override their output events.</p>
                                             <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;">
                                                 <div style="display: flex; align-items: center; gap: 8px;">
                                                     <n-checkbox
@@ -2037,7 +2037,7 @@ async function deleteOutputTrigger (uuid: string) {
         inputTriggerIndex = updatedComponent.value.releaseInputTriggers.findIndex((rit: any) => rit.outputEvents.includes(uuid))
     }
     if (inputTriggerIndex > -1) {
-        notify('error', 'Error', `Unable to delete because this trigger is used in one or more input triggers!`)
+        notify('error', 'Error', `Unable to delete because this event is used in one or more input events!`)
     } else {
         const triggerIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === uuid)
         if (triggerIndex > -1) {
@@ -2167,7 +2167,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
     },
     {
         key: 'outputTriggers',
-        title: 'Output Triggers',
+        title: 'Output Events',
         render: (row: any) => {
             let outTriggers = ''
             if (row.outputEvents && row.outputEvents.length) {

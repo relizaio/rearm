@@ -5,11 +5,11 @@ export interface TriggerValidationResult {
 
 export function validateOutputTrigger(trigger: any): TriggerValidationResult {
     if (!trigger.name || trigger.name.trim() === '') {
-        return { valid: false, error: 'Output trigger name is required.' }
+        return { valid: false, error: 'Output event name is required.' }
     }
 
     if (!trigger.type || trigger.type === '') {
-        return { valid: false, error: 'Output trigger type is required.' }
+        return { valid: false, error: 'Output event type is required.' }
     }
 
     return { valid: true }
@@ -17,7 +17,7 @@ export function validateOutputTrigger(trigger: any): TriggerValidationResult {
 
 export function validateInputTrigger(trigger: any): TriggerValidationResult {
     if (!trigger.name || trigger.name.trim() === '') {
-        return { valid: false, error: 'Input trigger name is required.' }
+        return { valid: false, error: 'Input event name is required.' }
     }
 
     if (!trigger.conditionGroup || !trigger.conditionGroup.conditionGroups || trigger.conditionGroup.conditionGroups.length === 0) {
@@ -31,7 +31,7 @@ export function validateInputTrigger(trigger: any): TriggerValidationResult {
     }
 
     if (!trigger.outputEvents || trigger.outputEvents.length === 0) {
-        return { valid: false, error: 'At least one output trigger must be selected.' }
+        return { valid: false, error: 'At least one output event must be selected.' }
     }
 
     if (trigger.conditionGroup && trigger.conditionGroup.conditionGroups) {
