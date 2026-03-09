@@ -399,7 +399,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                     orgUuid: orgUuid.value,
                     date: dateToUse
                 },
-                fetchPolicy: 'network-only'
+                fetchPolicy: 'cache-first'
             })
             
             if (response.data.findingsPerDay) {
@@ -419,7 +419,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                     branchUuid: props.branchUuid,
                     date: dateToUse
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: 'cache-first'
             })
             
             if (response.data.findingsPerDayForBranch) {
@@ -439,7 +439,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                     componentUuid: props.componentUuid,
                     date: dateToUse
                 },
-                fetchPolicy: 'no-cache'
+                fetchPolicy: 'cache-first'
             })
             
             if (response.data.findingsPerDayForComponent) {
@@ -459,7 +459,7 @@ async function fetchFindingsPerDay(dateOverride?: string) {
                     perspectiveUuid: props.perspectiveUuid,
                     date: dateToUse
                 },
-                fetchPolicy: 'network-only'
+                fetchPolicy: 'cache-first'
             })
             
             if (response.data.findingsPerDayByPerspective) {
@@ -496,7 +496,8 @@ async function fetchVulnerabilityViolationAnalytics() {
                     orgUuid: orgUuid.value,
                     dateFrom: dateFromValue,
                     dateTo: dateToValue
-                }
+                },
+                fetchPolicy: 'cache-first'
             })
             
             if (resp.data.vulnerabilitiesViolationsOverTime) {
@@ -524,7 +525,8 @@ async function fetchVulnerabilityViolationAnalytics() {
                     branchUuid: props.branchUuid,
                     dateFrom: dateFromValue,
                     dateTo: dateToValue
-                }
+                },
+                fetchPolicy: 'cache-first'
             })
             
             if (resp.data.vulnerabilitiesViolationsOverTimeByBranch) {
@@ -552,7 +554,8 @@ async function fetchVulnerabilityViolationAnalytics() {
                     componentUuid: props.componentUuid,
                     dateFrom: dateFromValue,
                     dateTo: dateToValue
-                }
+                },
+                fetchPolicy: 'cache-first'
             })
             
             if (resp.data.vulnerabilitiesViolationsOverTimeByComponent) {
@@ -580,7 +583,8 @@ async function fetchVulnerabilityViolationAnalytics() {
                     perspectiveUuid: props.perspectiveUuid,
                     dateFrom: dateFromValue,
                     dateTo: dateToValue
-                }
+                },
+                fetchPolicy: 'cache-first'
             })
             
             if (resp.data.vulnerabilitiesViolationsOverTimeByPerspective) {
