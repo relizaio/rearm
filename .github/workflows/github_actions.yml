@@ -226,6 +226,7 @@ jobs:
           enable_public_cosign_sigstore: 'true'
           enable_codeql: 'true'
           codeql_language: 'javascript'
+          push_to_rearm_mirror: 'true'
           rearm_mirror_api_id: ${{ secrets.REARM_REBOM_BACKEND_API_ID }}
           rearm_mirror_api_key: ${{ secrets.REARM_REBOM_BACKEND_API_KEY }}
           rearm_mirror_api_url: https://demo.rearmhq.com
