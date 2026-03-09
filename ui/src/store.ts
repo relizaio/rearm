@@ -742,13 +742,23 @@ const storeObject : any = {
             }
         },   
         async fetchReleaseById (context : any, params : any) {
-            const gqlQ = (!params.light) ? graphqlQueries.SingleReleaseGql : graphqlQueries.SingleReleaseGqlLight
+            let gqlQ = graphqlQueries.SingleReleaseGql
+            if (params.light) gqlQ = graphqlQueries.SingleReleaseGqlLight
+            else if (params.product) gqlQ = graphqlQueries.SingleReleaseProductGql
             const response = await graphqlClient.query({
                 query: gqlQ,
                 variables: { releaseID: params.release, orgID: params.org },
                 fetchPolicy: 'no-cache'
             })
             context.commit('ADD_RELEASE', response.data.release)
+            return response.data.release
+        },
+        async fetchReleaseType (context : any, params : any) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.SingleReleaseTypeDetectGql,
+                variables: { releaseID: params.release, orgID: params.org },
+                fetchPolicy: 'no-cache'
+            })
             return response.data.release
         },
         async updateBranch (context: any, brProps: any) {

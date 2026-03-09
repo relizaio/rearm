@@ -834,6 +834,208 @@ query FetchRelease($releaseID: ID!, $orgID: ID) {
     }
 }`
 
+const SINGLE_RELEASE_TYPE_DETECT_GQL = gql`
+query FetchRelease($releaseID: ID!, $orgID: ID) {
+    release(releaseUuid: $releaseID, orgUuid: $orgID) {
+        uuid
+        componentDetails {
+            uuid
+            type
+        }
+    }
+}`
+
+const singleReleaseProductNoParent = `
+    createdDate
+    org
+    artifacts
+    inboundDeliverables
+    orgDetails {
+        uuid
+        name
+    }
+    status
+    lifecycle
+    uuid
+    version
+    marketingVersion
+    notes
+    branch
+    branchDetails {
+        uuid
+        name
+    }
+    componentDetails {
+        uuid
+        name
+        type
+        resourceGroup
+        versionType
+        approvalPolicyDetails {
+            uuid
+            policyName
+            approvalEntryDetails {
+                uuid
+                approvalName
+                approvalRequirements {
+                    allowedApprovalRoleIdExpanded {
+                        id
+                        displayView
+                    }
+                }
+            }
+        }
+    }
+    inProducts {
+        uuid
+        version
+        component
+        componentDetails {
+            uuid
+            name
+        }
+        branchDetails {
+            name
+        }
+        lifecycle
+    }
+    tags {
+        key
+        value
+        removable
+    }
+    approvalEvents {
+        approvalEntry
+        approvalEntryName
+        approvalRoleId
+        state
+        date
+        wu {
+            createdType
+            lastUpdatedBy
+        }
+    }
+    updateEvents {
+        rus
+        rua
+        oldValue
+        newValue
+        objectId
+        date
+        wu {
+            createdType
+            lastUpdatedBy
+        }
+    }
+    variantDetails {
+        uuid
+        type
+    }
+    metrics {
+        lastScanned
+        critical
+        high
+        medium
+        low
+        unassigned
+        policyViolationsSecurityTotal
+        policyViolationsLicenseTotal
+        policyViolationsOperationalTotal
+    }
+    identifiers {
+        idType
+        idValue
+    }
+    releaseCollection {
+        ${RELEASE_COLLECTION_DATA}
+    }
+`
+
+const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
+    ${singleReleaseProductNoParent}
+    parentReleases {
+        release
+        releaseDetails {
+            uuid
+            version
+            lifecycle
+            status
+            createdDate
+            org
+            branch
+            branchDetails {
+                uuid
+                name
+            }
+            componentDetails {
+                uuid
+                name
+                type
+            }
+            metrics {
+                lastScanned
+                critical
+                high
+                medium
+                low
+                unassigned
+                policyViolationsSecurityTotal
+                policyViolationsLicenseTotal
+                policyViolationsOperationalTotal
+            }
+            tags {
+                key
+                value
+                removable
+            }
+            parentReleases {
+                release
+                releaseDetails {
+                    uuid
+                    version
+                    lifecycle
+                    status
+                    createdDate
+                    org
+                    branch
+                    branchDetails {
+                        uuid
+                        name
+                    }
+                    componentDetails {
+                        uuid
+                        name
+                        type
+                    }
+                    metrics {
+                        lastScanned
+                        critical
+                        high
+                        medium
+                        low
+                        unassigned
+                        policyViolationsSecurityTotal
+                        policyViolationsLicenseTotal
+                        policyViolationsOperationalTotal
+                    }
+                    tags {
+                        key
+                        value
+                        removable
+                    }
+                }
+            }
+        }
+    }
+`
+
+const SINGLE_RELEASE_PRODUCT_GQL = gql`
+query FetchRelease($releaseID: ID!, $orgID: ID) {
+    release(releaseUuid: $releaseID, orgUuid: $orgID) {
+        ${SINGLE_RELEASE_PRODUCT_GQL_DATA}
+    }
+}`
+
 const BRANCHES_GQL = gql`
 query FetchBranches($componentUuid: ID!) {
     branchesOfComponent(componentUuid: $componentUuid) {
@@ -1002,6 +1204,8 @@ export default {
     SingleReleaseGql: SINGLE_RELEASE_GQL,
     SingleReleaseGqlData: SINGLE_RELEASE_GQL_DATA,
     SingleReleaseGqlLight: SINGLE_RELEASE_GQL_LIGHT,
+    SingleReleaseProductGql: SINGLE_RELEASE_PRODUCT_GQL,
+    SingleReleaseTypeDetectGql: SINGLE_RELEASE_TYPE_DETECT_GQL,
     ComponentFullData: COMPONENT_FULL_DATA,
     ComponentMutate: COMPONENT_MUTATE,
     ReleaseGqlMutate: RELEASE_GQL_MUTATE,

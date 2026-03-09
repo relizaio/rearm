@@ -403,10 +403,6 @@
                             </Icon>
                         </h3>
                         <n-data-table :data="artifacts" :columns="artifactsTableFields" :row-key="artifactsRowKey" />
-                        <div v-if="updatedRelease.componentDetails.type === 'PRODUCT' && underlyingReleaseArtifacts.length > 0">
-                            <h3>Artifacts from Underlying Releases</h3>
-                            <n-data-table :data="underlyingReleaseArtifacts" :columns="underlyingArtifactsTableFields" :row-key="artifactsRowKey" />
-                        </div>
                         <div v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
                             <h3>Changes in SBOM Components
                                 <Icon v-if="isWritable" 
@@ -446,6 +442,24 @@
                     <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
                         <h3>Part of Products</h3>
                         <n-data-table :data="updatedRelease.inProducts" :columns="inProductsTableFields" :row-key="artifactsRowKey" />
+                    </div>
+                </n-tab-pane>
+                <n-tab-pane v-if="isProductRelease" name="underlyingArtifacts" tab="Underlying Artifacts">
+                    <div class="container" v-if="productArtifactsLoading">
+                        <n-spin size="large" />
+                        <p>Loading underlying artifact details...</p>
+                    </div>
+                    <div class="container" v-else-if="productArtifactsLoaded">
+                        <div v-if="underlyingReleaseArtifacts.length > 0">
+                            <h3>Artifacts from Underlying Releases</h3>
+                            <n-data-table :data="underlyingReleaseArtifacts" :columns="underlyingArtifactsTableFields" :row-key="artifactsRowKey" :pagination="{ pageSize: 8 }" />
+                        </div>
+                        <div v-else>
+                            <p>No artifacts found in underlying releases.</p>
+                        </div>
+                    </div>
+                    <div class="container" v-else>
+                        <p>Open this tab to load underlying artifact details.</p>
                     </div>
                 </n-tab-pane>
                 <n-tab-pane v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" name="approvals" tab="Approvals">
@@ -970,6 +984,7 @@ function resolveLifecycleLabel (lifecycle: string) {
 
 onMounted(async () => {
     loadingBar.start()
+    isProductRelease.value = await detectIsProduct()
     await fetchRelease()
     await fetchReleaseKeys()
     isLoading.value = false
@@ -1002,10 +1017,30 @@ const givenApprovals: Ref<any> = ref({})
 const words: Ref<any> = ref({})
 const isComponent: Ref<boolean> = ref(true)
 const isLoading: Ref<boolean> = ref(true)
+const isProductRelease: Ref<boolean> = ref(false)
+const productArtifactsLoaded: Ref<boolean> = ref(false)
+const productArtifactsLoading: Ref<boolean> = ref(false)
+
+async function detectIsProduct (): Promise<boolean> {
+    // Check if release is already in store with component type info
+    const storeRelease = store.getters.releaseById(releaseUuid.value)
+    if (storeRelease && storeRelease.componentDetails && storeRelease.componentDetails.type) {
+        return storeRelease.componentDetails.type === 'PRODUCT'
+    }
+    // Otherwise do a lightweight type-detection query
+    const typeData = await store.dispatch('fetchReleaseType', {
+        release: releaseUuid.value,
+        org: props.orgprop
+    })
+    return typeData?.componentDetails?.type === 'PRODUCT'
+}
 
 async function fetchRelease () {
+    // Use product-simplified query only if we haven't loaded full artifacts yet
+    const useProductQuery = isProductRelease.value && !productArtifactsLoaded.value
     let rlzFetchObj: any = {
-        release: releaseUuid.value
+        release: releaseUuid.value,
+        product: useProductQuery
     }
     if (props.orgprop) {
         rlzFetchObj.org = props.orgprop
@@ -4209,11 +4244,37 @@ async function triggerEnrichment (artifact: string) {
     }
 }
 
+async function fetchProductArtifacts () {
+    if (productArtifactsLoaded.value || productArtifactsLoading.value) return
+    productArtifactsLoading.value = true
+    try {
+        // Re-fetch with the full query (non-product mode) to get all artifact details
+        let rlzFetchObj: any = {
+            release: releaseUuid.value,
+            product: false
+        }
+        if (props.orgprop) {
+            rlzFetchObj.org = props.orgprop
+        }
+        const fullRelease = await store.dispatch('fetchReleaseById', rlzFetchObj)
+        release.value = fullRelease
+        updatedRelease.value = deepCopyRelease(release.value)
+        productArtifactsLoaded.value = true
+    } catch (e: any) {
+        console.error('Failed to fetch product artifact details:', e)
+        notify('error', 'Error', 'Failed to load artifact details.')
+    } finally {
+        productArtifactsLoading.value = false
+    }
+}
+
 async function handleTabSwitch(tabName: string) {
     if (tabName === "compare") {
         await fetchReleases()
     } else if (tabName === "history") {
         await Promise.all([loadUsers(), loadAcollections()])
+    } else if (tabName === "underlyingArtifacts" && isProductRelease.value) {
+        await fetchProductArtifacts()
     }
 }
 
