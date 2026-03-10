@@ -41,7 +41,7 @@ const sections: ComparisonSection[] = [
         right: "SBOM-centric flat project structure.",
       },
       {
-        left: "Highly configurable auto-integration engine aggregating findings from multiple sources and from comopnents into products",
+        left: "Highly configurable auto-integration engine aggregating findings from multiple sources and from components into products",
         right: "Limited single-parent hierarchy.",
       },
       {
