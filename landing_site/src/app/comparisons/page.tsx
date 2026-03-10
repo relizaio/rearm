@@ -98,12 +98,12 @@ const sections: ComparisonSection[] = [
         right: "Single organization and single perspective only.",
       },
       {
-        left: "Future ReARM Pro functionality when it becomes available",
+        left: "Future ReARM Pro functionality when it becomes available.",
         right: "ReARM CE remains the FOSS version with core features.",
       },
       {
-        left: "On-premise (Standard and Enterprise plans) / air-gapped deployment option (Enterprise plan)",
-        right: "Self-hosted by default",
+        left: "On-premise (Standard and Enterprise plans) / air-gapped deployment option (Enterprise plan).",
+        right: "Self-hosted by default.",
       }
     ],
   },
