@@ -3779,7 +3779,7 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
         title: 'Lifecycle',
         render(row: any) {
             if (row.releaseDetails && row.releaseDetails.componentDetails) {
-                return h('span', row.releaseDetails.lifecycle )
+                return h('span', resolveLifecycleLabel(row.releaseDetails.lifecycle) )
             }
         }
     },
