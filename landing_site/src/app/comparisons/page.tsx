@@ -86,19 +86,23 @@ const sections: ComparisonSection[] = [
         right: "Self-managed Dependency-Track integration.",
       },
       {
-        left: "Approval and trigger workflows for release lifecycle.",
-        right: "Core BOM storage functionality and retrieval without approval workflows.",
+        left: "Approval and event workflows for release lifecycle, marketing release workflow.",
+        right: "Core BOM storage functionality and retrieval without approval or marketing release workflows.",
       },
       {
-        left: "Workflow for marketing releases (separate versioning schema that may be used for marketing).",
-        right: "No marketing release functionality.",
+        left: "Reliza-managed SBOM enrichment via BEAR.",
+        right: "Option to self-manage SBOM enrichment.",
       },
       {
-        left: "Support for perspective, multi-organization workflow support (Standard and Enterprise plans)",
+        left: "Support for perspective, multi-organization workflow support (Standard and Enterprise plans).",
         right: "Single organization and single perspective only.",
       },
       {
-        left: "On-premise / air-gapped deployment option (Enterprise plan)",
+        left: "Future ReARM Pro functionality when it becomes available",
+        right: "ReARM CE remains the FOSS version with core features.",
+      },
+      {
+        left: "On-premise (Standard and Enterprise plans) / air-gapped deployment option (Enterprise plan)",
         right: "Self-hosted by default",
       }
     ],
