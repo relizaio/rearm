@@ -2018,7 +2018,7 @@ async function addOutputTrigger () {
         }
     } else {
         // Add new trigger - generate temporary UUID for client-side tracking
-        outputTriggerToPush.uuid = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11)
+        outputTriggerToPush.uuid = 'temp-' + Date.now() + '-' + crypto.randomUUID()
         updatedComponent.value.outputTriggers.push(outputTriggerToPush)
     }
     
@@ -2079,7 +2079,7 @@ async function addInputTrigger () {
         }
     } else {
         // Add new trigger - generate temporary UUID for client-side tracking
-        inputTriggerToPush.uuid = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11)
+        inputTriggerToPush.uuid = 'temp-' + Date.now() + '-' + crypto.randomUUID()
         updatedComponent.value.releaseInputTriggers.push(inputTriggerToPush)
     }
     resetInputTrigger()
