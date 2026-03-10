@@ -36,6 +36,7 @@ const faqs: FaqItem[] = [
       "Starter — Your ReARM instance runs on a single node and artifact storage limited to 100GB (you will be offered to migrate to Standard tier if you exceed this limit). This is ideal for small teams getting started with supply chain evidence management.",
       "Standard — Your ReARM instance runs in a dedicated private VNet / VPC or self-hosted in a non-air-gapped environment.",
       "Enterprise — In addition to the private VNet / VPC and self-hosted options, the Enterprise tier is the only plan where we support fully air-gapped environments.",
+      "For self-hosted deployments under Standard and Enterprise tiers, Reliza provides support for the deployment and maintenance of the ReARM instance, including setting up of regular backups and monitoring.",
     ],
   },
   {
