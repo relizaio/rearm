@@ -35,6 +35,7 @@ export {
   extractRepositoryNameFromSpdxOciResponse,
   validateOciPushResult,
   validateRepositoryMatch,
+  fetchRawBomWithFallback,
   validateDualBomPush,
   getValidatedRepositoryName
 } from './ociRepositoryHelpers';

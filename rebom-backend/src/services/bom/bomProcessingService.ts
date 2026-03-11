@@ -9,7 +9,8 @@ import {
   getMonthlyRepositoryName,
   extractRepositoryNameFromBom,
   extractRepositoryNameFromSpdxOciResponse,
-  validateOciPushResult
+  validateOciPushResult,
+  fetchRawBomWithFallback
 } from '../oci';
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
@@ -847,12 +848,9 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
  * Fetches uuid-raw, applies augmentation, returns BOM ready for enrichment.
  */
 async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> {
-  const rawUuid = bomRecord.uuid + '-raw';
-  
   try {
-    logger.debug({ rawUuid, bomUuid: bomRecord.uuid }, 'Fetching raw CycloneDX BOM for reprocessing');
     const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
-    const rawBom = await fetchFromOci(rawUuid, storedRepositoryName);
+    const rawBom = await fetchRawBomWithFallback(bomRecord.uuid, storedRepositoryName, fetchFromOci);
     
     // Re-augment the BOM with component context
     const rebomOptions = bomRecord.meta;
@@ -863,7 +861,6 @@ async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> 
     
   } catch (error) {
     logger.error({ 
-      rawUuid, 
       bomUuid: bomRecord.uuid, 
       error: error instanceof Error ? error.message : String(error) 
     }, 'Failed to fetch/reprocess raw CycloneDX BOM');
