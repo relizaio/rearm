@@ -122,6 +122,10 @@ public final class ChangelogRecords {
 		String branchName,
 		UUID componentUuid,
 		String componentName,
+		UUID firstReleaseUuid,
+		String firstVersion,
+		UUID lastReleaseUuid,
+		String lastVersion,
 		List<CommitsByType> commitsByType
 	) {}
 	

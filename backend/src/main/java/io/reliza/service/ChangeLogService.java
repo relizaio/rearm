@@ -48,6 +48,7 @@ import io.reliza.dto.ChangelogRecords.ReleaseVulnerabilityInfo;
 import io.reliza.dto.ChangelogRecords.ReleaseWeaknessInfo;
 import io.reliza.dto.FindingChangesWithAttribution;
 import io.reliza.dto.SbomChangesWithAttribution;
+import io.reliza.model.changelog.CommitType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AcollectionData;
 import io.reliza.model.BranchData;
@@ -210,8 +211,19 @@ public class ChangeLogService {
 			cc != null ? cc.getMessage() : commitRecord.commitMessage(),
 			commitRecord.commitAuthor(),
 			commitRecord.commitEmail(),
-			cc != null ? cc.getType().name().toLowerCase() : "other"
+			cc != null ? cc.getType().getPrefix() : "other"
 		);
+	}
+	
+	/**
+	 * Safely get CommitType for sorting purposes, defaulting to OTHERS for unknown types.
+	 */
+	private CommitType getCommitTypeForSorting(String changeType) {
+		try {
+			return CommitType.of(changeType);
+		} catch (IllegalStateException e) {
+			return CommitType.OTHERS;
+		}
 	}
 	
 	private ConventionalCommit resolveConventionalCommit(String commit) {
@@ -771,6 +783,12 @@ public class ChangeLogService {
 				continue;
 			}
 			
+			// Get first and last release versions and UUIDs (releases are sorted newest first)
+			UUID firstReleaseUuid = branchReleases.isEmpty() ? null : branchReleases.get(branchReleases.size() - 1).getUuid();
+			String firstVersion = branchReleases.isEmpty() ? null : branchReleases.get(branchReleases.size() - 1).getVersion();
+			UUID lastReleaseUuid = branchReleases.isEmpty() ? null : branchReleases.get(0).getUuid();
+			String lastVersion = branchReleases.isEmpty() ? null : branchReleases.get(0).getVersion();
+			
 			List<SourceCodeEntryData> sceDataList = sharedReleaseService.getSceDataListFromReleases(branchReleases, org);
 			Map<UUID, CommitRecord> commitIdToRecordMap = sharedReleaseService.getCommitMessageMapForSceDataList(
 				sceDataList, vcsRepoDataList, org);
@@ -786,12 +804,22 @@ public class ChangeLogService {
 			if (!commitsByTypeMap.isEmpty()) {
 				List<CommitsByType> commitsByType = commitsByTypeMap.entrySet().stream()
 					.map(e -> new CommitsByType(e.getKey(), e.getValue()))
+					.sorted((a, b) -> {
+						// Sort by CommitType display priority (lower priority = shown first)
+						CommitType typeA = getCommitTypeForSorting(a.changeType());
+						CommitType typeB = getCommitTypeForSorting(b.changeType());
+						return Integer.compare(typeA.getDisplayPriority(), typeB.getDisplayPriority());
+					})
 					.collect(Collectors.toList());
 				branchChangesList.add(new AggregatedBranchChanges(
 					branchId,
 					branchName,
 					component.getUuid(),
 					component.getName(),
+					firstReleaseUuid,
+					firstVersion,
+					lastReleaseUuid,
+					lastVersion,
 					commitsByType
 				));
 			}

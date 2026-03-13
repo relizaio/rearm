@@ -589,6 +589,10 @@ type AggregatedBranchChanges {
 	branchName: String!
 	componentUuid: ID
 	componentName: String
+	firstReleaseUuid: ID
+	firstVersion: String
+	lastReleaseUuid: ID
+	lastVersion: String
 	commitsByType: [CommitsByType!]!
 }
 
