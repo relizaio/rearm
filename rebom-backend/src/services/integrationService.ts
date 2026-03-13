@@ -70,6 +70,44 @@ export async function getBearIntegration(org: string): Promise<BearIntegrationDt
 }
 
 /**
+ * Updates only the skip patterns for an existing BEAR integration.
+ * Does not modify the URI or API key.
+ * Returns the updated integration configuration.
+ */
+export async function updateBearSkipPatterns(
+    org: string,
+    skipPatterns?: string[]
+): Promise<BearIntegrationDto> {
+    const integration = await IntegrationRepository.findIntegrationByTypeAndOrg(IntegrationType.BEAR, org);
+
+    if (!integration) {
+        throw new Error('BEAR integration not found for organization');
+    }
+
+    if (!integration.config.uri || !integration.config.secretUuid) {
+        throw new Error('BEAR integration is not properly configured');
+    }
+
+    // Update config with new skip patterns, preserving existing URI and secretUuid
+    const config: IntegrationConfig = {
+        type: IntegrationType.BEAR,
+        uri: integration.config.uri,
+        secretUuid: integration.config.secretUuid,
+        skipPatterns: skipPatterns && skipPatterns.length > 0 ? skipPatterns : undefined
+    };
+
+    await IntegrationRepository.upsertIntegration(config, org);
+
+    logger.debug({ org, skipPatternsCount: skipPatterns?.length || 0 }, 'BEAR skip patterns updated successfully');
+
+    return {
+        uri: integration.config.uri,
+        configured: true,
+        skipPatterns: skipPatterns && skipPatterns.length > 0 ? skipPatterns : []
+    };
+}
+
+/**
  * Deletes the BEAR integration and its associated secret for an organization.
  * Returns true if deleted, false if no integration existed.
  */

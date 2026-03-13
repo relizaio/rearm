@@ -301,4 +301,123 @@ describe('integrationService', () => {
             expect(resultStr).not.toContain('encrypted');
         });
     });
+
+    describe('updateBearSkipPatterns', () => {
+        it('should update skip patterns without modifying URI or secret', async () => {
+            const { updateBearSkipPatterns } = await import('../../src/services/integrationService');
+
+            vi.mocked(IntegrationRepository.findIntegrationByTypeAndOrg).mockResolvedValue({
+                uuid: 'existing-int-uuid',
+                created_date: new Date().toISOString(),
+                last_updated_date: new Date().toISOString(),
+                config: {
+                    type: IntegrationType.BEAR,
+                    uri: 'https://bear.example.com',
+                    secretUuid: 'existing-secret-uuid',
+                    skipPatterns: ['pkg:npm/*']
+                },
+                organization: TEST_ORG
+            });
+
+            vi.mocked(IntegrationRepository.upsertIntegration).mockResolvedValue({
+                uuid: 'existing-int-uuid',
+                created_date: new Date().toISOString(),
+                last_updated_date: new Date().toISOString(),
+                config: {
+                    type: IntegrationType.BEAR,
+                    uri: 'https://bear.example.com',
+                    secretUuid: 'existing-secret-uuid',
+                    skipPatterns: ['pkg:maven/*', 'pkg:pypi/*']
+                },
+                organization: TEST_ORG
+            });
+
+            const result = await updateBearSkipPatterns(TEST_ORG, ['pkg:maven/*', 'pkg:pypi/*']);
+
+            expect(result.configured).toBe(true);
+            expect(result.uri).toBe('https://bear.example.com');
+            expect(result.skipPatterns).toEqual(['pkg:maven/*', 'pkg:pypi/*']);
+
+            // Verify upsertIntegration was called with preserved URI and secretUuid
+            expect(IntegrationRepository.upsertIntegration).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: IntegrationType.BEAR,
+                    uri: 'https://bear.example.com',
+                    secretUuid: 'existing-secret-uuid',
+                    skipPatterns: ['pkg:maven/*', 'pkg:pypi/*']
+                }),
+                TEST_ORG
+            );
+
+            // Verify updateSecret was NOT called
+            expect(IntegrationRepository.updateSecret).not.toHaveBeenCalled();
+        });
+
+        it('should throw error if integration does not exist', async () => {
+            const { updateBearSkipPatterns } = await import('../../src/services/integrationService');
+
+            vi.mocked(IntegrationRepository.findIntegrationByTypeAndOrg).mockResolvedValue(null);
+
+            await expect(updateBearSkipPatterns(TEST_ORG, ['pkg:npm/*']))
+                .rejects.toThrow('BEAR integration not found for organization');
+        });
+
+        it('should throw error if integration is not properly configured', async () => {
+            const { updateBearSkipPatterns } = await import('../../src/services/integrationService');
+
+            vi.mocked(IntegrationRepository.findIntegrationByTypeAndOrg).mockResolvedValue({
+                uuid: 'existing-int-uuid',
+                created_date: new Date().toISOString(),
+                last_updated_date: new Date().toISOString(),
+                config: {
+                    type: IntegrationType.BEAR,
+                    uri: '',
+                    secretUuid: undefined,
+                },
+                organization: TEST_ORG
+            });
+
+            await expect(updateBearSkipPatterns(TEST_ORG, ['pkg:npm/*']))
+                .rejects.toThrow('BEAR integration is not properly configured');
+        });
+
+        it('should clear skip patterns when empty array is provided', async () => {
+            const { updateBearSkipPatterns } = await import('../../src/services/integrationService');
+
+            vi.mocked(IntegrationRepository.findIntegrationByTypeAndOrg).mockResolvedValue({
+                uuid: 'existing-int-uuid',
+                created_date: new Date().toISOString(),
+                last_updated_date: new Date().toISOString(),
+                config: {
+                    type: IntegrationType.BEAR,
+                    uri: 'https://bear.example.com',
+                    secretUuid: 'existing-secret-uuid',
+                    skipPatterns: ['pkg:npm/*']
+                },
+                organization: TEST_ORG
+            });
+
+            vi.mocked(IntegrationRepository.upsertIntegration).mockResolvedValue({
+                uuid: 'existing-int-uuid',
+                created_date: new Date().toISOString(),
+                last_updated_date: new Date().toISOString(),
+                config: {
+                    type: IntegrationType.BEAR,
+                    uri: 'https://bear.example.com',
+                    secretUuid: 'existing-secret-uuid',
+                },
+                organization: TEST_ORG
+            });
+
+            const result = await updateBearSkipPatterns(TEST_ORG, []);
+
+            expect(result.skipPatterns).toEqual([]);
+            expect(IntegrationRepository.upsertIntegration).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    skipPatterns: undefined
+                }),
+                TEST_ORG
+            );
+        });
+    });
 });

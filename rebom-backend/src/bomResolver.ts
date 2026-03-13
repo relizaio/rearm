@@ -85,6 +85,9 @@ const resolvers = {
 		setBearIntegration: withErrorHandling(async (_:any, input: { org: string, uri: string, apiKey: string, skipPatterns?: string[] }): Promise<BearIntegrationDto> => {
 			return IntegrationService.setBearIntegration(input.org, input.uri, input.apiKey, input.skipPatterns ?? undefined);
 		}, 'setBearIntegration'),
+		updateBearSkipPatterns: withErrorHandling(async (_:any, input: { org: string, skipPatterns?: string[] }): Promise<BearIntegrationDto> => {
+			return IntegrationService.updateBearSkipPatterns(input.org, input.skipPatterns ?? undefined);
+		}, 'updateBearSkipPatterns'),
 		deleteBearIntegration: withErrorHandling(async (_:any, input: { org: string }): Promise<boolean> => {
 			return IntegrationService.deleteBearIntegration(input.org);
 		}, 'deleteBearIntegration')

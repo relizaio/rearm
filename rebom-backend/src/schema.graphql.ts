@@ -29,6 +29,7 @@ const typeDefs = gql`
     mergeAndStoreBomsCsv(ids: [ID]!, rebomOptions: RebomOptions!, org: ID): String
     triggerEnrichment(id: ID!, org: ID!, force: Boolean): EnrichmentTriggerResult
     setBearIntegration(org: ID!, uri: String!, apiKey: String!, skipPatterns: [String]): BearIntegration
+    updateBearSkipPatterns(org: ID!, skipPatterns: [String]): BearIntegration
     deleteBearIntegration(org: ID!): Boolean!
   }
 
