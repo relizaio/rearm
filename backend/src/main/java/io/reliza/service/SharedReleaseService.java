@@ -639,7 +639,7 @@ public class SharedReleaseService {
 		return rds;
 	}
 	
-	//both dates are inclusive
+	//fromDateTime is exclusive, toDateTime is inclusive (releases where fromDateTime < created_date <= toDateTime)
 	private List<Release> listReleasesOfBranchBetweenDates (UUID branchUuid,  ZonedDateTime fromDateTime, ZonedDateTime toDateTime) {
 		return repository.findReleasesOfBranchBetweenDates(branchUuid.toString(), Utils.stringifyZonedDateTimeForSql(fromDateTime),
 				Utils.stringifyZonedDateTimeForSql(toDateTime));
