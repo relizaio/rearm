@@ -109,6 +109,7 @@ export default function Home() {
               { file: "checkov.png", url: "https://www.checkov.io", title: "Checkov" },
               { file: "gmail.png", url: "https://gmail.com", title: "Gmail" },
               { file: "shiftleftcyber.png", url: "https://shiftleftcyber.io", title: "ShiftLeftCyber" },
+              { file: "clearlydefined.png", url: "https://clearlydefined.io", title: "ClearlyDefined" },
             ].map((item) => (
               <a key={item.file} href={item.url} target="_blank" rel="noopener noreferrer" title={item.title}><img src={`/home/${item.file}`} alt={item.title} className="favAppIcons" /></a>
             ))}
