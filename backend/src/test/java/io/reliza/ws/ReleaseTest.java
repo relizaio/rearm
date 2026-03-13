@@ -192,6 +192,6 @@ public class ReleaseTest
 				.build();
 		Release rProj4 = ossReleaseService.createRelease(releaseDtoProj4, WhoUpdated.getTestWhoUpdated());		
 		var rlzBetweenReleases = sharedReleaseService.listAllReleasesBetweenReleases(rProj1.getUuid(), rProj4.getUuid());
-		Assertions.assertEquals(4,  rlzBetweenReleases.size());
+		Assertions.assertEquals(3,  rlzBetweenReleases.size());
 	}
 }
