@@ -129,11 +129,16 @@
                                 <n-card style="width: 600px" size="huge" :title="bearIntegration && bearIntegration.configured ? 'Edit BEAR Integration' : 'Add BEAR Integration'" :bordered="false"
                                     role="dialog" aria-modal="true">
                                     <n-form>
-                                        <n-form-item label="BEAR URI">
+                                        <n-form-item v-if="bearIntegration && bearIntegration.configured" label="Update Mode">
+                                            <n-checkbox v-model:checked="bearForm.updateSkipPatternsOnly">
+                                                Update skip patterns only (don't modify URI/API Key)
+                                            </n-checkbox>
+                                        </n-form-item>
+                                        <n-form-item label="BEAR URI" v-if="!bearForm.updateSkipPatternsOnly || !bearIntegration || !bearIntegration.configured">
                                             <n-input v-model:value="bearForm.uri" required
                                                 placeholder="Enter BEAR URI" />
                                         </n-form-item>
-                                        <n-form-item label="API Key">
+                                        <n-form-item label="API Key" v-if="!bearForm.updateSkipPatternsOnly || !bearIntegration || !bearIntegration.configured">
                                             <n-input type="password" v-model:value="bearForm.apiKey" required
                                                 placeholder="Enter BEAR API Key" />
                                         </n-form-item>
@@ -1131,7 +1136,8 @@ const bearIntegration: Ref<any> = ref(null)
 const bearForm = ref({
     uri: '',
     apiKey: '',
-    skipPatterns: [] as string[]
+    skipPatterns: [] as string[],
+    updateSkipPatternsOnly: true
 })
 
 const showOrgSettingsGitHubIntegrationModal = ref(false)
@@ -3965,28 +3971,52 @@ async function loadBearIntegration() {
 
 async function onSetBearIntegration() {
     try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setBearIntegration($org: ID!, $uri: String!, $apiKey: String!, $skipPatterns: [String]) {
-                    setBearIntegration(org: $org, uri: $uri, apiKey: $apiKey, skipPatterns: $skipPatterns) {
-                        uri
-                        configured
-                        skipPatterns
-                    }
-                }`,
-            variables: {
-                org: orgResolved.value,
-                uri: bearForm.value.uri,
-                apiKey: bearForm.value.apiKey,
-                skipPatterns: bearForm.value.skipPatterns
+        let resp
+        if (bearForm.value.updateSkipPatternsOnly && bearIntegration.value && bearIntegration.value.configured) {
+            // Update skip patterns only
+            resp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateBearSkipPatterns($org: ID!, $skipPatterns: [String]) {
+                        updateBearSkipPatterns(org: $org, skipPatterns: $skipPatterns) {
+                            uri
+                            configured
+                            skipPatterns
+                        }
+                    }`,
+                variables: {
+                    org: orgResolved.value,
+                    skipPatterns: bearForm.value.skipPatterns
+                }
+            })
+            if (resp.data && resp.data.updateBearSkipPatterns) {
+                bearIntegration.value = resp.data.updateBearSkipPatterns
             }
-        })
-        if (resp.data && resp.data.setBearIntegration) {
-            bearIntegration.value = resp.data.setBearIntegration
+            notify('success', 'Success', 'BEAR skip patterns updated successfully.')
+        } else {
+            // Full integration update
+            resp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setBearIntegration($org: ID!, $uri: String!, $apiKey: String!, $skipPatterns: [String]) {
+                        setBearIntegration(org: $org, uri: $uri, apiKey: $apiKey, skipPatterns: $skipPatterns) {
+                            uri
+                            configured
+                            skipPatterns
+                        }
+                    }`,
+                variables: {
+                    org: orgResolved.value,
+                    uri: bearForm.value.uri,
+                    apiKey: bearForm.value.apiKey,
+                    skipPatterns: bearForm.value.skipPatterns
+                }
+            })
+            if (resp.data && resp.data.setBearIntegration) {
+                bearIntegration.value = resp.data.setBearIntegration
+            }
+            notify('success', 'Success', 'BEAR integration configured successfully.')
         }
         showBearIntegrationModal.value = false
         bearForm.value.apiKey = ''
-        notify('success', 'Success', 'BEAR integration configured successfully.')
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
@@ -3996,7 +4026,8 @@ function resetBearForm() {
     bearForm.value = {
         uri: bearIntegration.value?.uri || '',
         apiKey: '',
-        skipPatterns: bearIntegration.value?.skipPatterns || []
+        skipPatterns: bearIntegration.value?.skipPatterns || [],
+        updateSkipPatternsOnly: true
     }
 }
 
