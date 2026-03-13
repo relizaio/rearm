@@ -1,3 +1,4 @@
+import React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
 
 type FaqItem = {
   question: string;
-  answer: string[];
+  answer: React.ReactNode[];
 };
 
 const faqs: FaqItem[] = [
@@ -51,6 +52,8 @@ const faqs: FaqItem[] = [
       "Even if you only need the core SBOM/xBOM storage and retrieval functionality available in ReARM CE, ReARM Pro can still be the more economical choice.",
       "We believe that the price we offer for ReARM Pro is less than what you would typically pay for your own infrastructure plus ongoing maintenance, monitoring, backups, and upgrades.",
       "On top of that, you get premium support with guaranteed response times, a managed Dependency-Track instance, and automatic upgrades - all handled by Reliza.",
+      "ReARM Pro also includes the ability to arrange custom commercial terms.",
+      <>See <Link href="/comparisons/#rearm-pro-vs-rearm-ce">ReARM Pro vs ReARM CE comparison</Link> for details.</>,
     ],
   },
 ];

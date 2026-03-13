@@ -74,11 +74,11 @@ const sections: ComparisonSection[] = [
     rightLabel: "ReARM CE",
     points: [
       {
-        left: "Managed service with SSO - no infrastructure to maintain. Support for client-hosted deployments, including air-gapped deployments, available for higher tiers.",
+        left: "Managed service with SSO - no infrastructure to maintain. Option for on-premise (Standard and Enterprise plans) or air-gapped deployment (Enterprise plan).",
         right: "Self-hosted - you manage your own infrastructure.",
       },
       {
-        left: "Premium support (up to 24x7 depending on plan).",
+        left: "Premium support (up to 24x7 with 1 hour response time depending on plan).",
         right: "Community support via Discord and GitHub.",
       },
       {
@@ -94,17 +94,13 @@ const sections: ComparisonSection[] = [
         right: "Option to self-manage SBOM enrichment.",
       },
       {
-        left: "Support for perspective, multi-organization workflow support (Standard and Enterprise plans).",
+        left: "Support for perspectives (all plans) and multi-organization workflow (Standard and Enterprise plans).",
         right: "Single organization and single perspective only.",
       },
       {
         left: "Future ReARM Pro functionality when it becomes available.",
         right: "ReARM CE remains the FOSS version with core features.",
       },
-      {
-        left: "On-premise (Standard and Enterprise plans) / air-gapped deployment option (Enterprise plan).",
-        right: "Self-hosted by default.",
-      }
     ],
   },
   {
