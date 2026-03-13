@@ -166,7 +166,7 @@ export default function PricingPlan() {
       amount: startupPrice,
       type: "Per Month",
       bullets: [
-        "Up to 100GB of storage for compressed artifacts*",
+        "Up to 80GB of storage for compressed artifacts*",
         "Priority Support (response within 8 hours)",
         "Managed Dependency-Track",
         "Managed Single Organization Service",
@@ -189,12 +189,9 @@ export default function PricingPlan() {
       amount: standardPrice,
       type: "Per Month",
       bullets: [
-        "Premium support (24x7)",
-        "Managed Dependency-Track",
-        "Private VPN / VNet with SSO and unlimited storage, or on-prem deployment",
-        "Approvals & Event Workflows",
-        "Marketing Releases",
-        "SBOM Enrichment via BEAR",
+        "All in ReARM Pro - Starter",
+        "Enhanced support (24x7, 4 hours response time)",
+        "Private VPN / VNet with SSO and unlimited storage, option for on-prem deployment",
         "Support for Multi-Organization Workflow",
         "Free 90-day trial",
       ],
@@ -212,13 +209,9 @@ export default function PricingPlan() {
       amount: prices.enterprise,
       type: "per user per month",
       bullets: [
-        "Premium support (24x7)",
-        "Managed Dependency-Track",
-        "Private VPN / VNet with SSO and unlimited storage, or on-prem deployment (with air-gapped environment support)",
-        "Approvals & Event Workflows",
-        "Marketing Releases",
-        "SBOM Enrichment via BEAR",
-        "Support for Multi-Organization Workflow",
+        "All in ReARM Pro - Standard",
+        "Premium support (24x7, 1 hour response time)",
+        "Option for air-gapped deployment",
         "Free 90-day trial",
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
@@ -306,7 +299,7 @@ export default function PricingPlan() {
                 {b.endsWith("*") ? (
                   <span className="tooltipWrapper">
                     {b}
-                    <span className="tooltipText">Usually, enough to store more than 300,000 SBOMs</span>
+                    <span className="tooltipText">Usually, enough to store more than 250,000 SBOMs</span>
                   </span>
                 ) : b}
               </li>
