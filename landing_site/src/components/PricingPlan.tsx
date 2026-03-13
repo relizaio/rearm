@@ -288,6 +288,11 @@ export default function PricingPlan() {
                 />
               </div>
             )}
+            {p.id === 0 && (
+              <div className="userSelector">
+                <div className="userSelectorLabel">&nbsp;</div>
+              </div>
+            )}
             {p.id === 3 && (
               <div className="userSelector">
                 <div className="userSelectorLabel">40+ users</div>
