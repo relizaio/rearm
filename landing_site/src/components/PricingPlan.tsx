@@ -167,9 +167,9 @@ export default function PricingPlan() {
       type: "Per Month",
       bullets: [
         "Up to 80GB of storage for compressed artifacts*",
-        "Priority Support (response within 8 hours)",
+        "Priority Support (8 hours response time)",
         "Managed Dependency-Track",
-        "Managed Single Organization Service",
+        "Multi-Perspective Workflow",
         "Approvals & Event Workflows",
         "Marketing Releases",
         "SBOM Enrichment via BEAR",
@@ -190,8 +190,8 @@ export default function PricingPlan() {
       type: "Per Month",
       bullets: [
         "All in ReARM Pro - Starter",
+        "Private VPN / VNet with SSO and unlimited artifact storage, option for on-prem deployment",
         "Enhanced support (24x7, 4 hours response time)",
-        "Private VPN / VNet with SSO and unlimited storage, option for on-prem deployment",
         "Support for Multi-Organization Workflow",
         "Free 90-day trial",
       ],
