@@ -21,6 +21,7 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
+import commonFunctions from '@/utils/commonFunctions'
 
 interface Commit {
     commitId?: string | null
@@ -65,12 +66,22 @@ const normalizedChanges = computed(() => {
         
         // Transform commits to commitRecords
         if (change.commits && change.commits.length > 0) {
-            const commitRecords = change.commits.map(commit => ({
-                linkifiedText: commit.commitUri || '',
-                rawText: commit.message || commit.commitId || 'Change details unavailable',
-                commitAuthor: commit.author || undefined,
-                commitEmail: commit.email || undefined
-            }))
+            const commitRecords = change.commits.map(commit => {
+                // commitUri contains the VCS repository URI, commitId contains the commit hash
+                // Use linkifyCommit to generate the proper commit URL
+                const vcsRepoUri = commit.commitUri || ''
+                const commitHash = commit.commitId || ''
+                const linkifiedUrl = vcsRepoUri && commitHash 
+                    ? commonFunctions.linkifyCommit(vcsRepoUri, commitHash)
+                    : ''
+                
+                return {
+                    linkifiedText: linkifiedUrl,
+                    rawText: commit.message || commit.commitId || 'Change details unavailable',
+                    commitAuthor: commit.author || undefined,
+                    commitEmail: commit.email || undefined
+                }
+            })
             
             return {
                 changeType: change.changeType,
