@@ -657,6 +657,28 @@ public class RebomService {
         return Utils.OM.convertValue(result, BearIntegrationDto.class);
     }
     
+    public BearIntegrationDto updateBearSkipPatterns(UUID org, List<String> skipPatterns) {
+        String mutation = """
+            mutation updateBearSkipPatterns($org: ID!, $skipPatterns: [String]) {
+                updateBearSkipPatterns(org: $org, skipPatterns: $skipPatterns) {
+                    uri
+                    configured
+                    skipPatterns
+                }
+            }""";
+        
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("org", org.toString());
+        variables.put("skipPatterns", skipPatterns);
+        
+        Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
+        var result = response.get("updateBearSkipPatterns");
+        if (result == null) {
+            return BearIntegrationDto.builder().configured(false).build();
+        }
+        return Utils.OM.convertValue(result, BearIntegrationDto.class);
+    }
+    
     public Boolean deleteBearIntegration(UUID org) {
         String mutation = """
             mutation deleteBearIntegration($org: ID!) {

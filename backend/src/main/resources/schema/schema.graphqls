@@ -290,6 +290,7 @@ type Mutation {
 	
 	# BEAR integration
 	setBearIntegration(org: ID!, uri: String!, apiKey: String!, skipPatterns: [String]): BearIntegration
+	updateBearSkipPatterns(org: ID!, skipPatterns: [String]): BearIntegration
 	deleteBearIntegration(org: ID!): Boolean!
 }
 

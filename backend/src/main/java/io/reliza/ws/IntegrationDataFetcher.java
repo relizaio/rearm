@@ -252,6 +252,24 @@ public class IntegrationDataFetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "updateBearSkipPatterns")
+	public BearIntegrationDto updateBearSkipPatterns(
+			@InputArgument("org") UUID orgUuid,
+			@InputArgument("skipPatterns") List<String> skipPatterns) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		// Verify user has admin access to the organization
+		var odUpdate = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roUpdate = odUpdate.isPresent() ? odUpdate.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUpdate), CallType.ADMIN);
+		
+		log.info("User {} updating BEAR skip patterns for organization {}", oud.get().getUuid(), orgUuid);
+		
+		return rebomService.updateBearSkipPatterns(orgUuid, skipPatterns);
+	}
+	
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "deleteBearIntegration")
 	public Boolean deleteBearIntegration(@InputArgument("org") UUID orgUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
