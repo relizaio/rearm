@@ -2,7 +2,7 @@
     <div class="code-changes">
         <div v-if="hasChanges">
             <div v-for="change in filteredChanges" :key="change.changeType">
-                <h4>{{ change.changeType }}</h4>
+                <h4>{{ formatChangeTypeLabel(change.changeType) }}</h4>
                 <ul>
                     <li v-for="commitRecord in change.commitRecords" :key="`commit-${commitRecord.linkifiedText}-${commitRecord.rawText}`">
                         <a :href="commitRecord.linkifiedText" rel="noopener noreferrer" target="_blank">{{ commitRecord.rawText }}</a>
@@ -22,6 +22,26 @@
 <script lang="ts" setup>
 import { computed } from 'vue'
 import commonFunctions from '@/utils/commonFunctions'
+
+// Map of change type prefixes to display names
+const changeTypeLabels: Record<string, string> = {
+    'fix': 'Bug Fixes',
+    'feat': 'Features',
+    'perf': 'Performance Improvements',
+    'revert': 'Reverts',
+    'refactor': 'Code Refactoring',
+    'build': 'Builds',
+    'test': 'Tests',
+    'docs': 'Documentation',
+    'chore': 'Chores',
+    'ci': 'Continuous Integration',
+    'style': 'Styles',
+    'other': 'Others'
+}
+
+function formatChangeTypeLabel(changeType: string): string {
+    return changeTypeLabels[changeType] || changeType.charAt(0).toUpperCase() + changeType.slice(1)
+}
 
 interface Commit {
     commitId?: string | null

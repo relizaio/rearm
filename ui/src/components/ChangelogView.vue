@@ -98,9 +98,19 @@
                             <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid }}">{{ branch.componentName }}</router-link>
                             <span> / </span>
                             <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                            <span v-if="branch.firstVersion && branch.lastVersion && branch.firstReleaseUuid && branch.lastReleaseUuid">
+                                (<router-link :to="{ name: 'ReleaseView', params: { uuid: branch.firstReleaseUuid }}">{{ branch.firstVersion }}</router-link>
+                                <span> - </span>
+                                <router-link :to="{ name: 'ReleaseView', params: { uuid: branch.lastReleaseUuid }}">{{ branch.lastVersion }}</router-link>)
+                            </span>
                         </h3>
                         <h3 v-else-if="showBranchHeadings">
                             <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                            <span v-if="branch.firstVersion && branch.lastVersion && branch.firstReleaseUuid && branch.lastReleaseUuid">
+                                (<router-link :to="{ name: 'ReleaseView', params: { uuid: branch.firstReleaseUuid }}">{{ branch.firstVersion }}</router-link>
+                                <span> - </span>
+                                <router-link :to="{ name: 'ReleaseView', params: { uuid: branch.lastReleaseUuid }}">{{ branch.lastVersion }}</router-link>)
+                            </span>
                         </h3>
                         <CodeChangesDisplay 
                             v-if="!isProduct || (branch.commitsByType && branch.commitsByType.length > 0)"

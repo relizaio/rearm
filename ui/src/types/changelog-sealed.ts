@@ -125,6 +125,10 @@ export interface AggregatedBranchChanges {
     branchName: string
     componentUuid?: string
     componentName?: string
+    firstReleaseUuid?: string
+    firstVersion?: string
+    lastReleaseUuid?: string
+    lastVersion?: string
     commitsByType: CommitsByType[]
 }
 

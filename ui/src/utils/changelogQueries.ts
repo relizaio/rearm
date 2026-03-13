@@ -243,6 +243,10 @@ const AGGREGATED_CHANGELOG_FIELDS = `
         branchName
         componentUuid
         componentName
+        firstReleaseUuid
+        firstVersion
+        lastReleaseUuid
+        lastVersion
         commitsByType {
             ${COMMITS_BY_TYPE_FRAGMENT}
         }
