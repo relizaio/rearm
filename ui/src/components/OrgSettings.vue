@@ -2516,30 +2516,6 @@ const defaultApprovalSetup = {
             approvalState: 'APPROVED',
             matchOperator: 'AND',
             outputEvents: ['Set Ready to Ship']
-        },
-        {
-            name: 'Reject on Critical Finding',
-            conditionGroup: {
-                matchOperator: 'AND',
-                conditionGroups: [
-                    {
-                        matchOperator: 'AND',
-                        conditions: [
-                            {
-                                type: 'LIFECYCLE',
-                                possibleLifecycles: ['DRAFT', 'ASSEMBLED', 'READY_TO_SHIP']
-                            },
-                            {
-                                type: 'METRICS',
-                                metricsType: 'CRITICAL_VULNS',
-                                comparisonSign: 'GREATER',
-                                metricsValue: 0
-                            }
-                        ]
-                    }
-                ]
-            },
-            outputEvents: ['Reject']
         }
     ]
 }
