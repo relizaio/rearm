@@ -177,6 +177,20 @@ export default function Home() {
             ],
           },
           {
+            image: "finding_analysis.png",
+            title: "Finding Management System With Scopes",
+            texts: [
+              { text: "ReARM includes a comprehensive finding management system with support for multiple scopes (organization-wide, product-level, component-level, release-level). It supports all types of findings, including Vulnerabilities, Weaknesses, and License Compliance Violations." },
+            ],
+          },
+          {
+            image: "sbom_augmentation.png",
+            title: "Agentic SBOM Enrichment and Augmentation",
+            texts: [
+              { text: "ReARM includes Reliza BEAR, an agentic SBOM enrichment and augmentation tool that automatically enriches your SBOMs with additional metadata, including supplier, copyright and license information." },
+            ],
+          },
+          {
             image: "rearm_approvals.png",
             title: "Approval and Lifecycle Management",
             texts: [
