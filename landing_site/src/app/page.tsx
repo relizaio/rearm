@@ -211,7 +211,7 @@ export default function Home() {
               </div>
             </div>
             <div className="col-12 col-sm-6 imageCard">
-              <img src={`/home/${item.image}`} alt="" style={{ width: "100%" }} />
+              <img src={`/home/${item.image}`} alt={item.title} style={{ width: "100%" }} />
             </div>
           </div>
         ))}
