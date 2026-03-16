@@ -57,7 +57,7 @@ export default function Home() {
           </div>
         </div>
         <div className="d-flex justify-content-center">
-          <a href="https://demo.rearmhq.com" target="_blank" style={{ textDecoration: "none" }}>
+          <a href="https://demo.rearmhq.com" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
             <button className="btn_usingFree">Try Public Demo</button>
           </a>
         </div>
@@ -232,7 +232,7 @@ export default function Home() {
           <div className="integration-getStarted text-center" style={{ marginTop: "60px" }}>
             <p className="mb-3 fw-semibold mb-4">Questions about product or pricing?</p>
             <h1 className="text-center mx-auto" style={{ maxWidth: "650px" }}>Book demo with us!</h1>
-            <a href="https://calendly.com/pavel-reliza/30min" target="_blank" rel="noopenernoreferrer" className="contactUs-btn_ContactUs fw-bold">
+            <a href="https://calendly.com/pavel-reliza/30min" target="_blank" rel="noopener noreferrer" className="contactUs-btn_ContactUs fw-bold">
               Book Private Demo
             </a>
           </div>

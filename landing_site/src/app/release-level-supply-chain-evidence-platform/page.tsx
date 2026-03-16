@@ -206,7 +206,7 @@ export default function ReleaseEvidencePlatform() {
             Experience how release-level evidence management transforms supply chain security and compliance.
           </p>
           <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
-            <a href="https://demo.rearmhq.com" target="_blank" style={{ textDecoration: "none" }}>
+            <a href="https://demo.rearmhq.com" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
               <button className="btn_usingFree">Try Public Demo</button>
             </a>
             <Link href="/#homePagePricing" style={{ textDecoration: "none" }}>
