@@ -12,13 +12,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 
 import io.reliza.model.AnalyticsMetrics;
+import io.reliza.repositories.dao.ReleasesPerBranchDao;
+import io.reliza.repositories.dao.ReleasesPerComponentDao;
+import io.reliza.repositories.dao.VulnViolationsChartDao;
 
 public interface AnalyticsMetricsRepository extends CrudRepository<AnalyticsMetrics, UUID> {
 	
 	@Query(
-			value = VariableQueries.FIND_ANALYTICS_METRICS_BY_ORG_DATES,
+			value = VariableQueries.FIND_ANALYTICS_CHART_DATA_BY_ORG_DATES,
 			nativeQuery = true)
-	List<AnalyticsMetrics> findAnalyticsMetricsByOrgDates(String orgUuidAsString,
+	List<VulnViolationsChartDao> findAnalyticsChartDataByOrgDates(String orgUuidAsString,
 			String dateKeyFrom, String dateKeyTo);
 	
 	@Query(
@@ -30,25 +33,25 @@ public interface AnalyticsMetricsRepository extends CrudRepository<AnalyticsMetr
 	@Query(
 			value = VariableQueries.ANALYTICS_COMPONENTS_WITH_MOST_RELEASES,
 			nativeQuery = true)
-	List<Object[]> analyticsComponentsWithMostReleases(ZonedDateTime cutOffDate, String compType,
+	List<ReleasesPerComponentDao> analyticsComponentsWithMostReleases(ZonedDateTime cutOffDate, String compType,
 			Integer maxComponents, String organization);
 	
 	@Query(
 			value = VariableQueries.ANALYTICS_BRANCHES_WITH_MOST_RELEASES,
 			nativeQuery = true)
-	List<Object[]> analyticsBranchesWithMostReleases(ZonedDateTime cutOffDate, String compType,
+	List<ReleasesPerBranchDao> analyticsBranchesWithMostReleases(ZonedDateTime cutOffDate, String compType,
 			Integer maxBranches, String organization);
 	
 	@Query(
 			value = VariableQueries.ANALYTICS_COMPONENTS_WITH_MOST_RELEASES_BY_PERSPECTIVE,
 			nativeQuery = true)
-	List<Object[]> analyticsComponentsWithMostReleasesByPerspective(ZonedDateTime cutOffDate, String compType,
+	List<ReleasesPerComponentDao> analyticsComponentsWithMostReleasesByPerspective(ZonedDateTime cutOffDate, String compType,
 			Integer maxComponents, String organization, String perspectiveUuidAsString);
 	
 	@Query(
 			value = VariableQueries.ANALYTICS_BRANCHES_WITH_MOST_RELEASES_BY_PERSPECTIVE,
 			nativeQuery = true)
-	List<Object[]> analyticsBranchesWithMostReleasesByPerspective(ZonedDateTime cutOffDate, String compType,
+	List<ReleasesPerBranchDao> analyticsBranchesWithMostReleasesByPerspective(ZonedDateTime cutOffDate, String compType,
 			Integer maxBranches, String organization, String perspectiveUuidAsString);
 	
 	@Query(
@@ -58,21 +61,21 @@ public interface AnalyticsMetricsRepository extends CrudRepository<AnalyticsMetr
 			String perspectiveUuidAsString, String dateKey);
 	
 	@Query(
-			value = VariableQueries.FIND_ANALYTICS_METRICS_BY_ORG_PERSPECTIVE_DATES,
+			value = VariableQueries.FIND_ANALYTICS_CHART_DATA_BY_ORG_PERSPECTIVE_DATES,
 			nativeQuery = true)
-	List<AnalyticsMetrics> findAnalyticsMetricsByOrgPerspectiveDates(String orgUuidAsString,
+	List<VulnViolationsChartDao> findAnalyticsChartDataByOrgPerspectiveDates(String orgUuidAsString,
 			String perspectiveUuidAsString, String dateKeyFrom, String dateKeyTo);
 	
 	@Query(
 			value = VariableQueries.ANALYTICS_COMPONENTS_WITH_MOST_RELEASES_BY_PRODUCT,
 			nativeQuery = true)
-	List<Object[]> analyticsComponentsWithMostReleasesByProduct(ZonedDateTime cutOffDate, String compType,
+	List<ReleasesPerComponentDao> analyticsComponentsWithMostReleasesByProduct(ZonedDateTime cutOffDate, String compType,
 			Integer maxComponents, String organization, List<UUID> componentUuids);
 	
 	@Query(
 			value = VariableQueries.ANALYTICS_BRANCHES_WITH_MOST_RELEASES_BY_PRODUCT,
 			nativeQuery = true)
-	List<Object[]> analyticsBranchesWithMostReleasesByProduct(ZonedDateTime cutOffDate, String compType,
+	List<ReleasesPerBranchDao> analyticsBranchesWithMostReleasesByProduct(ZonedDateTime cutOffDate, String compType,
 			Integer maxBranches, String organization, List<UUID> componentUuids);
 	
 }

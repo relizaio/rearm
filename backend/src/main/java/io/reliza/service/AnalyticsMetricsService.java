@@ -29,6 +29,7 @@ import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalyticsMetrics;
 import io.reliza.model.AnalyticsMetricsData;
 import io.reliza.model.BranchData;
+import io.reliza.model.ComponentData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ComponentData.ComponentType;
@@ -36,10 +37,12 @@ import io.reliza.model.dto.AnalyticsDtos.ReleasesPerBranch;
 import io.reliza.model.dto.AnalyticsDtos.ReleasesPerComponent;
 import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
 import io.reliza.model.dto.AnalyticsDtos.MostVulnerableComponent;
-import io.reliza.model.dto.AnalyticsDtos;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.repositories.AnalyticsMetricsRepository;
+import io.reliza.repositories.dao.ReleasesPerBranchDao;
+import io.reliza.repositories.dao.ReleasesPerComponentDao;
+import io.reliza.repositories.dao.VulnViolationsChartDao;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -66,21 +69,38 @@ public class AnalyticsMetricsService {
 	    this.repository = repository;
 	}
 	
-	public List<AnalyticsMetricsData> listAnalyticsMetricsByOrgDates(UUID org, ZonedDateTime dateFrom,
+	public List<VulnViolationsChartDto> listChartDataByOrgDates(UUID org, ZonedDateTime dateFrom,
 			ZonedDateTime dateTo) {
 		String dateKeyFrom = AnalyticsMetricsData.obtainAnalyticsDateKey(dateFrom);
 		String dateKeyTo = AnalyticsMetricsData.obtainAnalyticsDateKey(dateTo);
-		var ams = repository.findAnalyticsMetricsByOrgDates(org.toString(), dateKeyFrom, dateKeyTo);
-		return ams.stream().map(AnalyticsMetricsData::dataFromRecord).toList();
+		var zone = dateFrom.getZone();
+		var rows = repository.findAnalyticsChartDataByOrgDates(org.toString(), dateKeyFrom, dateKeyTo);
+		return rows.stream().flatMap(r -> mapChartDaoToChartDtos(r, zone).stream()).toList();
 	}
 	
-	public List<AnalyticsMetricsData> listAnalyticsMetricsByOrgPerspectiveDates(UUID org, UUID perspectiveUuid,
+	public List<VulnViolationsChartDto> listChartDataByOrgPerspectiveDates(UUID org, UUID perspectiveUuid,
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
 		String dateKeyFrom = AnalyticsMetricsData.obtainAnalyticsDateKey(dateFrom);
 		String dateKeyTo = AnalyticsMetricsData.obtainAnalyticsDateKey(dateTo);
-		var ams = repository.findAnalyticsMetricsByOrgPerspectiveDates(
+		var zone = dateFrom.getZone();
+		var rows = repository.findAnalyticsChartDataByOrgPerspectiveDates(
 				org.toString(), perspectiveUuid.toString(), dateKeyFrom, dateKeyTo);
-		return ams.stream().map(AnalyticsMetricsData::dataFromRecord).toList();
+		return rows.stream().flatMap(r -> mapChartDaoToChartDtos(r, zone).stream()).toList();
+	}
+	
+	private List<VulnViolationsChartDto> mapChartDaoToChartDtos(VulnViolationsChartDao row, java.time.ZoneId zone) {
+		LocalDate localDate = LocalDate.parse(row.getDateKey());
+		ZonedDateTime date = localDate.atStartOfDay(zone);
+		return List.of(
+			new VulnViolationsChartDto(date, row.getCritical(), "Critical Vulnerabilities"),
+			new VulnViolationsChartDto(date, row.getHigh(), "High Vulnerabilities"),
+			new VulnViolationsChartDto(date, row.getMedium(), "Medium Vulnerabilities"),
+			new VulnViolationsChartDto(date, row.getLow(), "Low Vulnerabilities"),
+			new VulnViolationsChartDto(date, row.getUnassigned(), "Unassigned Vulnerabilities"),
+			new VulnViolationsChartDto(date, row.getLicenseViolations(), "License Violations"),
+			new VulnViolationsChartDto(date, row.getOperationalViolations(), "Operational Violations"),
+			new VulnViolationsChartDto(date, row.getSecurityViolations(), "Security Violations")
+		);
 	}
 	
 	public Optional<AnalyticsMetricsData> findAnalyticsMetricsByOrgPerspectiveDateKey(UUID org, UUID perspective, String dateKey) {
@@ -199,9 +219,7 @@ public class AnalyticsMetricsService {
 			ZonedDateTime dateTo) {
 		ZonedDateTime today = ZonedDateTime.now();
 		if (dateTo.isAfter(today)) dateTo = today;
-		var amds = listAnalyticsMetricsByOrgDates(org, dateFrom, dateTo);
-		var chartData = new LinkedList<>(amds
-				.stream().map(amd -> amd.convertToChartDto()).flatMap(List::stream).toList());
+		var chartData = new LinkedList<>(listChartDataByOrgDates(org, dateFrom, dateTo));
 		var todaysData = computeActualAnalyticsMetricsDataForOrg(org, ZonedDateTime.now());
 		chartData.addAll(todaysData.convertToChartDto());
 		return chartData;
@@ -333,11 +351,14 @@ public class AnalyticsMetricsService {
 				.map(BranchData::branchDataFromDbRecord)
 				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
 				.collect(Collectors.toList());
+		Set<UUID> componentUuids = activeBranches.stream().map(BranchData::getComponent).collect(Collectors.toSet());
+		Map<UUID, ComponentData> componentByUuid = getComponentService.getListOfComponentData(componentUuids).stream()
+				.collect(Collectors.toMap(ComponentData::getUuid, c -> c));
 		List<ReleaseData> latestReleasesOfBranches;
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
 			latestReleasesOfBranches = customPool.submit(() -> 
 				activeBranches.parallelStream()
-					.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab.getUuid(), ReleaseLifecycle.ASSEMBLED, upToDate))
+					.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab, componentByUuid.get(ab.getComponent()), ReleaseLifecycle.ASSEMBLED, upToDate))
 					.filter(Optional::isPresent)
 					.map(Optional::get)
 					.collect(Collectors.toList())
@@ -369,9 +390,9 @@ public class AnalyticsMetricsService {
 		Set<UUID> allBranchComponentUuids = activeBranches.stream()
 				.map(BranchData::getComponent)
 				.collect(Collectors.toSet());
-		Map<UUID, io.reliza.model.ComponentData> componentByUuid = getComponentService
+		Map<UUID, ComponentData> componentByUuid = getComponentService
 				.getListOfComponentData(allBranchComponentUuids).stream()
-				.collect(Collectors.toMap(io.reliza.model.ComponentData::getUuid, c -> c));
+				.collect(Collectors.toMap(ComponentData::getUuid, c -> c));
 
 		final List<BranchData> filteredActiveBranches;
 		{
@@ -392,7 +413,7 @@ public class AnalyticsMetricsService {
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
 			latestReleasesOfBranches = customPool.submit(() ->
 					filteredActiveBranches.parallelStream()
-						.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab.getUuid(), ReleaseLifecycle.ASSEMBLED, upToDate))
+						.map(ab -> sharedReleaseService.getReleaseDataOfBranch(org, ab, componentByUuid.get(ab.getComponent()), ReleaseLifecycle.ASSEMBLED, upToDate))
 						.filter(Optional::isPresent)
 						.map(Optional::get)
 						.collect(Collectors.toList())
@@ -451,84 +472,69 @@ public class AnalyticsMetricsService {
 		return repository.save(am);
 	}
 	
+	private static ReleasesPerComponent mapDaoToReleasesPerComponent(ReleasesPerComponentDao dao) {
+		return new ReleasesPerComponent(dao.getComponentuuid(), dao.getComponentname(),
+				ComponentType.valueOf(dao.getComponenttype()), dao.getRlzcount());
+	}
+	
+	private static ReleasesPerBranch mapDaoToReleasesPerBranch(ReleasesPerBranchDao dao) {
+		return new ReleasesPerBranch(dao.getComponentuuid(), dao.getComponentname(),
+				dao.getBranchuuid(), dao.getBranchname(),
+				ComponentType.valueOf(dao.getComponenttype()), dao.getRlzcount());
+	}
+	
 	public List<ReleasesPerComponent> analyticsComponentsWithMostRecentReleases (ZonedDateTime cutOffDate,
 			ComponentType compType, Integer maxComponents, UUID organization) {
-		List<ReleasesPerComponent> res = new ArrayList<>();
-		var objList = repository.analyticsComponentsWithMostReleases(cutOffDate, compType.name(),
+		var rows = repository.analyticsComponentsWithMostReleases(cutOffDate, compType.name(),
 				maxComponents, organization.toString());
-		if (null != objList && !objList.isEmpty()) {
-			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerComponent).toList();
-		}
-		return res;
+		return rows.stream().map(AnalyticsMetricsService::mapDaoToReleasesPerComponent).toList();
 	}
 	
 	public List<ReleasesPerBranch> analyticsBranchesWithMostRecentReleases (ZonedDateTime cutOffDate,
 			ComponentType compType, Integer maxComponents, UUID organization) {
-		List<ReleasesPerBranch> res = new ArrayList<>();
-		var objList = repository.analyticsBranchesWithMostReleases(cutOffDate, compType.name(),
+		var rows = repository.analyticsBranchesWithMostReleases(cutOffDate, compType.name(),
 				maxComponents, organization.toString());
-		if (null != objList && !objList.isEmpty()) {
-			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerBranch).toList();
-		}
-		return res;
+		return rows.stream().map(AnalyticsMetricsService::mapDaoToReleasesPerBranch).toList();
 	}
 	
 	public List<ReleasesPerComponent> analyticsComponentsWithMostRecentReleasesByPerspective (ZonedDateTime cutOffDate,
 			ComponentType compType, Integer maxComponents, UUID organization, UUID perspectiveUuid) {
-		List<ReleasesPerComponent> res = new ArrayList<>();
-		var objList = repository.analyticsComponentsWithMostReleasesByPerspective(cutOffDate, compType.name(),
+		var rows = repository.analyticsComponentsWithMostReleasesByPerspective(cutOffDate, compType.name(),
 				maxComponents, organization.toString(), perspectiveUuid.toString());
-		if (null != objList && !objList.isEmpty()) {
-			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerComponent).toList();
-		}
-		return res;
+		return rows.stream().map(AnalyticsMetricsService::mapDaoToReleasesPerComponent).toList();
 	}
 	
 	public List<ReleasesPerBranch> analyticsBranchesWithMostRecentReleasesByPerspective (ZonedDateTime cutOffDate,
 			ComponentType compType, Integer maxComponents, UUID organization, UUID perspectiveUuid) {
-		List<ReleasesPerBranch> res = new ArrayList<>();
-		var objList = repository.analyticsBranchesWithMostReleasesByPerspective(cutOffDate, compType.name(),
+		var rows = repository.analyticsBranchesWithMostReleasesByPerspective(cutOffDate, compType.name(),
 				maxComponents, organization.toString(), perspectiveUuid.toString());
-		if (null != objList && !objList.isEmpty()) {
-			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerBranch).toList();
-		}
-		return res;
+		return rows.stream().map(AnalyticsMetricsService::mapDaoToReleasesPerBranch).toList();
 	}
 	
 	public List<ReleasesPerComponent> analyticsComponentsWithMostRecentReleasesByProduct (ZonedDateTime cutOffDate,
 			ComponentType compType, Integer maxComponents, UUID organization, UUID productUuid) {
-		List<ReleasesPerComponent> res = new ArrayList<>();
-		
 		// Get all component UUIDs that belong to this product (including nested components)
 		Set<UUID> allComponentUuids = new java.util.LinkedHashSet<>();
 		allComponentUuids.add(productUuid);
 		Set<UUID> productComponents = sharedReleaseService.obtainComponentsOfProductOrComponent(productUuid, allComponentUuids);
 		allComponentUuids.addAll(productComponents);
 		
-		var objList = repository.analyticsComponentsWithMostReleasesByProduct(cutOffDate, compType.name(),
+		var rows = repository.analyticsComponentsWithMostReleasesByProduct(cutOffDate, compType.name(),
 				maxComponents, organization.toString(), new ArrayList<>(allComponentUuids));
-		if (null != objList && !objList.isEmpty()) {
-			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerComponent).toList();
-		}
-		return res;
+		return rows.stream().map(AnalyticsMetricsService::mapDaoToReleasesPerComponent).toList();
 	}
 	
 	public List<ReleasesPerBranch> analyticsBranchesWithMostRecentReleasesByProduct (ZonedDateTime cutOffDate,
 			ComponentType compType, Integer maxBranches, UUID organization, UUID productUuid) {
-		List<ReleasesPerBranch> res = new ArrayList<>();
-		
 		// Get all component UUIDs that belong to this product (including nested components)
 		Set<UUID> allComponentUuids = new java.util.LinkedHashSet<>();
 		allComponentUuids.add(productUuid);
 		Set<UUID> productComponents = sharedReleaseService.obtainComponentsOfProductOrComponent(productUuid, allComponentUuids);
 		allComponentUuids.addAll(productComponents);
 		
-		var objList = repository.analyticsBranchesWithMostReleasesByProduct(cutOffDate, compType.name(),
+		var rows = repository.analyticsBranchesWithMostReleasesByProduct(cutOffDate, compType.name(),
 				maxBranches, organization.toString(), new ArrayList<>(allComponentUuids));
-		if (null != objList && !objList.isEmpty()) {
-			res = objList.stream().map(AnalyticsDtos::mapDbOutputToReleasePerBranch).toList();
-		}
-		return res;
+		return rows.stream().map(AnalyticsMetricsService::mapDaoToReleasesPerBranch).toList();
 	}
 	
 	

@@ -523,9 +523,17 @@ class VariableQueries {
 			+ "jsonb_contains(record_data->'commits', jsonb_build_array(:sceUuidAsString)))"
 			+ "ORDER BY last_updated_date desc LIMIT 1";
 
-	protected static final String FIND_ALL_RELEASES_OF_ORG_AFTER_CREATE_DATE = "select * from rearm.releases r where r.record_data->>'"
-			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND r.created_date > :cutOffDate";
-	
+	protected static final String COUNT_RELEASES_OF_ORG_BY_DATE = """
+			select d.date, COUNT(*) as num from (
+				select DATE(r.created_date AT TIME ZONE :tz) as date
+				from rearm.releases r
+				where r.record_data->>'org' = :orgUuidAsString
+					AND r.created_date > :cutOffDate
+			) d
+			GROUP BY d.date
+			ORDER BY d.date
+			""";
+
 	protected static final String FIND_ALL_RELEASES_OF_ORG_BETWEEN_DATES = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND r.created_date > :startDate AND r.created_date <= :endDate";
 
@@ -535,11 +543,27 @@ class VariableQueries {
 	protected static final String FIND_ALL_RELEASES_OF_BRANCH_BETWEEN_DATES = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.BRANCH_FIELD + "' = :branchUuidAsString AND r.created_date > :startDate AND r.created_date <= :endDate";
 
-	protected static final String FIND_ALL_RELEASES_OF_COMPONENT_AFTER_CREATE_DATE = "select * from rearm.releases r where r.record_data->>'"
-			+ CommonVariables.COMPONENT_FIELD + "' = :componentUuidAsString AND r.created_date > :cutOffDate";
+	protected static final String COUNT_RELEASES_OF_COMPONENT_BY_DATE = """
+			select d.date, COUNT(*) as num from (
+				select DATE(r.created_date AT TIME ZONE :tz) as date
+				from rearm.releases r
+				where r.record_data->>'component' = :componentUuidAsString
+					AND r.created_date > :cutOffDate
+			) d
+			GROUP BY d.date
+			ORDER BY d.date
+			""";
 	
-	protected static final String FIND_ALL_RELEASES_OF_BRANCH_AFTER_CREATE_DATE = "select * from rearm.releases r where r.record_data->>'"
-			+ CommonVariables.BRANCH_FIELD + "' = :branchUuidAsString AND r.created_date > :cutOffDate";
+	protected static final String COUNT_RELEASES_OF_BRANCH_BY_DATE = """
+			select d.date, COUNT(*) as num from (
+				select DATE(r.created_date AT TIME ZONE :tz) as date
+				from rearm.releases r
+				where r.record_data->>'branch' = :branchUuidAsString
+					AND r.created_date > :cutOffDate
+			) d
+			GROUP BY d.date
+			ORDER BY d.date
+			""";
 	
 	protected static final String FIND_ALL_RELEASES_OF_ORG_BY_VERSION = "select * from rearm.releases r where r.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND (r.record_data->>'" + CommonVariables.VERSION_FIELD + "' = :version OR r.record_data->>'" + CommonVariables.MARKETING_VERSION_FIELD + "' = :version)";
@@ -1090,11 +1114,22 @@ class VariableQueries {
 	/*
 	 * Analytics Metrics
 	 */
-	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_DATES = """
-			SELECT * from rearm.analytics_metrics am 
-				WHERE am.record_data->>'org' = :orgUuidAsString
+	protected static final String FIND_ANALYTICS_CHART_DATA_BY_ORG_DATES = """
+			SELECT
+				am.record_data->>'dateKey' as dateKey,
+				COALESCE((am.record_data->'metrics'->>'critical')::int, 0) as critical,
+				COALESCE((am.record_data->'metrics'->>'high')::int, 0) as high,
+				COALESCE((am.record_data->'metrics'->>'medium')::int, 0) as medium,
+				COALESCE((am.record_data->'metrics'->>'low')::int, 0) as low,
+				COALESCE((am.record_data->'metrics'->>'unassigned')::int, 0) as unassigned,
+				COALESCE((am.record_data->'metrics'->>'policyViolationsLicenseTotal')::int, 0) as licenseViolations,
+				COALESCE((am.record_data->'metrics'->>'policyViolationsOperationalTotal')::int, 0) as operationalViolations,
+				COALESCE((am.record_data->'metrics'->>'policyViolationsSecurityTotal')::int, 0) as securityViolations
+			FROM rearm.analytics_metrics am
+			WHERE am.record_data->>'org' = :orgUuidAsString
 				AND am.record_data->>'dateKey' >= :dateKeyFrom AND am.record_data->>'dateKey' <= :dateKeyTo
 				AND (am.record_data->>'perspective' is null OR am.record_data->>'perspective' = '' OR am.record_data->>'perspective' = '00000000-0000-0000-0000-000000000000')
+			ORDER BY dateKey
 			""";
 	
 	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_DATE_KEY = """
@@ -1111,11 +1146,22 @@ class VariableQueries {
 				AND am.record_data->>'dateKey' = :dateKey
 			""";
 	
-	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_PERSPECTIVE_DATES = """
-			SELECT * from rearm.analytics_metrics am 
-				WHERE am.record_data->>'org' = :orgUuidAsString
+	protected static final String FIND_ANALYTICS_CHART_DATA_BY_ORG_PERSPECTIVE_DATES = """
+			SELECT
+				am.record_data->>'dateKey' as dateKey,
+				COALESCE((am.record_data->'metrics'->>'critical')::int, 0) as critical,
+				COALESCE((am.record_data->'metrics'->>'high')::int, 0) as high,
+				COALESCE((am.record_data->'metrics'->>'medium')::int, 0) as medium,
+				COALESCE((am.record_data->'metrics'->>'low')::int, 0) as low,
+				COALESCE((am.record_data->'metrics'->>'unassigned')::int, 0) as unassigned,
+				COALESCE((am.record_data->'metrics'->>'policyViolationsLicenseTotal')::int, 0) as licenseViolations,
+				COALESCE((am.record_data->'metrics'->>'policyViolationsOperationalTotal')::int, 0) as operationalViolations,
+				COALESCE((am.record_data->'metrics'->>'policyViolationsSecurityTotal')::int, 0) as securityViolations
+			FROM rearm.analytics_metrics am
+			WHERE am.record_data->>'org' = :orgUuidAsString
 				AND am.record_data->>'perspective' = :perspectiveUuidAsString
 				AND am.record_data->>'dateKey' >= :dateKeyFrom AND am.record_data->>'dateKey' <= :dateKeyTo
+			ORDER BY dateKey
 			""";
 
 	/*

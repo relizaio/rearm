@@ -25,16 +25,6 @@ public class AnalyticsDtos {
 	
 	public static record VulnViolationsChartDto(ZonedDateTime createdDate, Integer num, String type) {}
 	
-	public static ReleasesPerComponent mapDbOutputToReleasePerComponent (Object[] objArr) {
-		ComponentType ctype = ComponentType.valueOf((String) objArr[2]);
-		return new ReleasesPerComponent((UUID) objArr[0], (String) objArr[1], ctype, (Long) objArr[3]);
-	}
-	
-	public static ReleasesPerBranch mapDbOutputToReleasePerBranch (Object[] objArr) {
-		ComponentType ctype = ComponentType.valueOf((String) objArr[4]);
-		return new ReleasesPerBranch((UUID) objArr[0], (String) objArr[1], 
-				(UUID) objArr[2], (String) objArr[3], ctype, (Long) objArr[5]);
-	}
 	
 	public record XYData(String x, Long y) {}
 	

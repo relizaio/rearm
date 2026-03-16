@@ -99,6 +99,7 @@ import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.repositories.dao.DateCountDao;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
 import io.reliza.service.oss.OssReleaseService;
@@ -208,16 +209,14 @@ public class ReleaseService {
 															.toString());
 	}
 	
-	private List<Release> listReleasesOfOrgAfterDate (UUID orgUuid, ZonedDateTime cutOffDate) {
-		return repository.findReleasesOfOrgAfterDate(orgUuid.toString(), cutOffDate);
+	private String extractTimezone(ZonedDateTime zdt) {
+		return zdt.getZone().getId();
 	}
 	
-	private List<Release> listReleasesOfComponentAfterDate (UUID componentUuid, ZonedDateTime cutOffDate) {
-		return repository.findReleasesOfComponentAfterDate(componentUuid.toString(), cutOffDate);
-	}
-	
-	private List<Release> listReleasesOfBranchAfterDate (UUID branchUuid, ZonedDateTime cutOffDate) {
-		return repository.findReleasesOfBranchAfterDate(branchUuid.toString(), cutOffDate);
+	private List<VegaDateValue> mapCountResults(List<DateCountDao> rows) {
+		return rows.stream()
+				.map(row -> new VegaDateValue(row.getDate(), row.getNum()))
+				.toList();
 	}
 
 	private List<Release> listPendingReleasesAfterCutoff (Long cutOffHours) {
@@ -523,9 +522,8 @@ public class ReleaseService {
 	 * @return
 	 */
 	public List<VegaDateValue> getReleaseCreateOverTimeAnalytics(UUID orgUuid, ZonedDateTime cutOffDate) {
-		List<Release> releases = listReleasesOfOrgAfterDate(orgUuid, cutOffDate);
-		return releases.stream()
-				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
+		String tz = extractTimezone(cutOffDate);
+		return mapCountResults(repository.countReleasesOfOrgByDate(orgUuid.toString(), cutOffDate, tz));
 	}
 	
 	/**
@@ -535,9 +533,8 @@ public class ReleaseService {
 	 * @return
 	 */
 	public List<VegaDateValue> getReleaseCreateOverTimeAnalyticsByComponent(UUID componentUuid, ZonedDateTime cutOffDate) {
-		List<Release> releases = listReleasesOfComponentAfterDate(componentUuid, cutOffDate);
-		return releases.stream()
-				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
+		String tz = extractTimezone(cutOffDate);
+		return mapCountResults(repository.countReleasesOfComponentByDate(componentUuid.toString(), cutOffDate, tz));
 	}
 	
 	/**
@@ -547,9 +544,8 @@ public class ReleaseService {
 	 * @return
 	 */
 	public List<VegaDateValue> getReleaseCreateOverTimeAnalyticsByBranch(UUID branchUuid, ZonedDateTime cutOffDate) {
-		List<Release> releases = listReleasesOfBranchAfterDate(branchUuid, cutOffDate);
-		return releases.stream()
-				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
+		String tz = extractTimezone(cutOffDate);
+		return mapCountResults(repository.countReleasesOfBranchByDate(branchUuid.toString(), cutOffDate, tz));
 	}
 	
 	/**
@@ -559,16 +555,22 @@ public class ReleaseService {
 	 * @return
 	 */
 	public List<VegaDateValue> getReleaseCreateOverTimeAnalyticsByPerspective(UUID perspectiveUuid, ZonedDateTime cutOffDate) {
+		String tz = extractTimezone(cutOffDate);
 		List<UUID> componentUuids = getComponentService.listComponentsByPerspective(perspectiveUuid).stream()
 				.map(ComponentData::getUuid).toList();
 		
-		List<Release> releases = new java.util.ArrayList<>();
+		Map<String, Long> dateCountMap = new java.util.LinkedHashMap<>();
 		for (UUID componentUuid : componentUuids) {
-			releases.addAll(listReleasesOfComponentAfterDate(componentUuid, cutOffDate));
+			List<DateCountDao> rows = repository.countReleasesOfComponentByDate(componentUuid.toString(), cutOffDate, tz);
+			for (DateCountDao row : rows) {
+				dateCountMap.merge(row.getDate(), row.getNum(), Long::sum);
+			}
 		}
 		
-		return releases.stream()
-				.map(r -> new VegaDateValue(r.getCreatedDate().toString(), Long.valueOf(1))).toList();
+		return dateCountMap.entrySet().stream()
+				.sorted(Map.Entry.comparingByKey())
+				.map(e -> new VegaDateValue(e.getKey(), e.getValue()))
+				.toList();
 	}
 
 	/**

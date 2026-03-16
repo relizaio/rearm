@@ -16,6 +16,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.Release;
+import io.reliza.repositories.dao.DateCountDao;
 import jakarta.persistence.LockModeType;
 
 public interface ReleaseRepository extends CrudRepository<Release, UUID> {
@@ -61,9 +62,9 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findReleasesOfComponent(String componentUuidAsString, String limitAsStr, String offsetAsStr);
 
 	@Query(
-			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG_AFTER_CREATE_DATE,
+			value = VariableQueries.COUNT_RELEASES_OF_ORG_BY_DATE,
 			nativeQuery = true)
-	List<Release> findReleasesOfOrgAfterDate(String orgUuidAsString, ZonedDateTime cutOffDate);
+	List<DateCountDao> countReleasesOfOrgByDate(String orgUuidAsString, ZonedDateTime cutOffDate, String tz);
 	
 	@Query(
 			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG_BETWEEN_DATES,
@@ -81,14 +82,14 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findReleasesOfBranchBetweenDates(String branchUuidAsString, ZonedDateTime startDate, ZonedDateTime endDate);
 	
 	@Query(
-			value = VariableQueries.FIND_ALL_RELEASES_OF_COMPONENT_AFTER_CREATE_DATE,
+			value = VariableQueries.COUNT_RELEASES_OF_COMPONENT_BY_DATE,
 			nativeQuery = true)
-	List<Release> findReleasesOfComponentAfterDate(String componentUuidAsString, ZonedDateTime cutOffDate);
+	List<DateCountDao> countReleasesOfComponentByDate(String componentUuidAsString, ZonedDateTime cutOffDate, String tz);
 	
 	@Query(
-			value = VariableQueries.FIND_ALL_RELEASES_OF_BRANCH_AFTER_CREATE_DATE,
+			value = VariableQueries.COUNT_RELEASES_OF_BRANCH_BY_DATE,
 			nativeQuery = true)
-	List<Release> findReleasesOfBranchAfterDate(String branchUuidAsString, ZonedDateTime cutOffDate);
+	List<DateCountDao> countReleasesOfBranchByDate(String branchUuidAsString, ZonedDateTime cutOffDate, String tz);
 	
 	@Query(
 			value = VariableQueries.FIND_RELEASES_BY_DELIVERABLE_AND_ORG,

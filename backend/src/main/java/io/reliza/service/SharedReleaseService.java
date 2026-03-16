@@ -71,7 +71,7 @@ public class SharedReleaseService {
 	ArtifactService artifactService;
 	
 	public final static Integer DEFAULT_NUM_RELEASES = 300;
-	private final static Integer DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE = 20;
+	private final static Integer DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE = 10;
 	
 	private final ReleaseRepository repository;
 	
@@ -161,13 +161,17 @@ public class SharedReleaseService {
 		BranchData bd = branchService.getBranchData(branchUuid).get();
 		if (null == orgUuid) orgUuid = bd.getOrg();
 		ComponentData pd = getComponentService.getComponentData(bd.getComponent()).get();
-		Optional<ReleaseData> ord = Optional.empty();
-		List<GenericReleaseData> brReleaseData = listReleaseDataOfBranch(branchUuid, orgUuid, lifecycle, DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE, upToDate);
+		return getReleaseDataOfBranch(orgUuid, bd, pd, lifecycle, upToDate);
+	}
+	
+	public Optional<ReleaseData> getReleaseDataOfBranch (UUID orgUuid, BranchData bd, ComponentData pd, ReleaseLifecycle lifecycle, ZonedDateTime upToDate) {
+		if (null == orgUuid) orgUuid = bd.getOrg();
+		List<GenericReleaseData> brReleaseData = listReleaseDataOfBranch(bd.getUuid(), orgUuid, lifecycle, DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE, upToDate);
 		if (!brReleaseData.isEmpty()) {
 			Collections.sort(brReleaseData, new ReleaseVersionComparator(pd.getVersionSchema(), bd.getVersionSchema()));
-			ord = getReleaseData(brReleaseData.get(0).getUuid(), orgUuid);
+			return Optional.of((ReleaseData) brReleaseData.get(0));
 		}
-		return ord;
+		return Optional.empty();
 	}
 	
 	/**
