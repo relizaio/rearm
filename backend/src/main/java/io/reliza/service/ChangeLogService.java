@@ -251,12 +251,22 @@ public class ChangeLogService {
 	/**
 	 * Gets component changelog between two releases using the new sealed interface pattern.
 	 * Returns either NoneChangelog (per-release breakdown) or AggregatedChangelog (component-level summary)
-	 * based on the aggregation type.
+	 * based on the aggregationType parameter.
 	 * 
-	 * @param uuid1 First release UUID (baseline)
-	 * @param uuid2 Second release UUID (comparison target)
+	 * BASELINE SEMANTICS:
+	 * - The "baseline" is the older release (by creation date), used as the comparison point
+	 * - The "target" is the newer release, representing the current state
+	 * - listAllReleasesBetweenReleases() may exclude the baseline due to exclusive fromDateTime boundary
+	 * - This method ensures BOTH baseline and target are included in the releases list
+	 * - Baseline is included for version range display (e.g., "3.1.0 - 3.2.0")
+	 * - Baseline is EXCLUDED from changelog output (only changes AFTER baseline are shown)
+	 * - Baseline acollection is fetched for SBOM/finding comparison but not displayed
+	 * - All release tracking uses UUID-based identification, not list position
+	 * 
+	 * @param uuid1 First release UUID (can be baseline or target)
+	 * @param uuid2 Second release UUID (can be baseline or target)
 	 * @param org Organization UUID
-	 * @param aggregationType NONE (per-release) or AGGREGATED (component-level)
+	 * @param aggregationType NONE for per-release breakdown, AGGREGATED for component-level summary
 	 * @param userTimeZone User's timezone for date formatting
 	 * @return ComponentChangelog (sealed interface - either NoneChangelog or AggregatedChangelog)
 	 * @throws RelizaException if releases or component not found
@@ -270,19 +280,41 @@ public class ChangeLogService {
 		
 		List<ReleaseData> releases = sharedReleaseService.listAllReleasesBetweenReleases(uuid1, uuid2);
 		
+		// Fetch both releases explicitly to ensure baseline is included
+		ReleaseData release1 = sharedReleaseService.getReleaseData(uuid1, org)
+			.orElseThrow(() -> new RelizaException("Release not found: " + uuid1));
+		ReleaseData release2 = sharedReleaseService.getReleaseData(uuid2, org)
+			.orElseThrow(() -> new RelizaException("Release not found: " + uuid2));
+		
+		// Ensure both releases are in the list (baseline may be excluded by listAllReleasesBetweenReleases)
+
+		Set<UUID> existingUuids = releases.stream()
+			.map(ReleaseData::getUuid)
+			.collect(Collectors.toSet());
+		
+		if (!existingUuids.contains(uuid1)) {
+			releases.add(release1);
+		}
+		if (!existingUuids.contains(uuid2)) {
+			releases.add(release2);
+		}
+		
+		// Re-sort after adding releases to maintain newest-first order
+		releases.sort(NEWEST_FIRST);
+		
 		if (releases.isEmpty()) {
 			throw new RelizaException("No releases found between " + uuid1 + " and " + uuid2);
 		}
-		
-		// Sort newest first — listAllReleasesBetweenReleases does not guarantee order
-		releases.sort(NEWEST_FIRST);
 		
 		ComponentData component = getComponentService.getComponentData(releases.get(0).getComponent())
 			.orElseThrow(() -> new RelizaException("Component not found: " + releases.get(0).getComponent()));
 		
 		// For PRODUCT type, delegate to product-specific method that handles child component releases
+		// Pass release1 and release2 directly - computeProductChangelogFromReleases will determine baseline/target
 		if (component.getType() == ComponentType.PRODUCT) {
-			return computeProductChangelogFromReleases(releases, component, org, aggregationType, userTimeZone);
+			return computeProductChangelogFromReleases(
+				releases, component, org, aggregationType, userTimeZone,
+				release1, release2);
 		}
 		
 		// Convert flat list to grouped structure for new methods
@@ -311,6 +343,14 @@ public class ChangeLogService {
 	 * Gets component changelog for a date range using the new sealed interface pattern.
 	 * Returns either NoneChangelog (per-release breakdown) or AggregatedChangelog (component-level summary)
 	 * based on the aggregation type.
+	 * 
+	 * IMPORTANT: Date-based changelogs have DIFFERENT semantics than UUID-based changelogs:
+	 * - UUID-based (getComponentChangelog): Compares two specific releases, excludes baseline from output
+	 * - Date-based (this method): Shows ALL releases in date range, NO baseline exclusion
+	 * 
+	 * RATIONALE: When querying by date range, users expect to see all activity in that period,
+	 * not a comparison between two specific points. The oldest release in the range is NOT treated
+	 * as a baseline to exclude - it's simply the first release in the time window.
 	 * 
 	 * @param componentUuid Component UUID
 	 * @param branchUuid Optional branch UUID to filter by specific branch
@@ -364,7 +404,9 @@ public class ChangeLogService {
 				.flatMap(List::stream)
 				.sorted(NEWEST_FIRST)
 				.collect(Collectors.toList());
-			return computeProductChangelogFromReleases(allProductReleases, component, org, aggregationType, userTimeZone);
+			return computeProductChangelogFromReleases(
+				allProductReleases, component, org, aggregationType, userTimeZone,
+				null, null);
 		}
 		
 		// Find global first and last releases for metadata (across all branches)
@@ -537,25 +579,56 @@ public class ChangeLogService {
 				continue;
 			}
 			
-			// Prepare commit data for this branch
-			List<SourceCodeEntryData> sceDataList = sharedReleaseService.getSceDataListFromReleases(branchReleases, ctx.org());
+			// Exclude baseline release from changelog - only show releases after baseline
+			UUID baselineUuid = ctx.globalFirst().getUuid();
+			
+			// Filter out baseline release by UUID
+			List<ReleaseData> releasesToShow = branchReleases.stream()
+				.filter(r -> !r.getUuid().equals(baselineUuid))
+				.collect(Collectors.toList());
+			
+			// Early return if no releases to show after excluding baseline
+			if (releasesToShow.isEmpty()) {
+				continue;  // Skip this branch - no changes to display
+			}
+			
+			// Prepare commit data for releases to show
+			List<SourceCodeEntryData> sceDataList = sharedReleaseService.getSceDataListFromReleases(releasesToShow, ctx.org());
 			Map<UUID, CommitRecord> commitIdToRecordMap = sharedReleaseService.getCommitMessageMapForSceDataList(
 				sceDataList, ctx.vcsRepoDataList(), ctx.org());
 			
-			// Pre-fetch all acollections for this branch's releases (avoids per-pair DB calls)
+			// Pre-fetch all acollections for releases to show (avoids per-pair DB calls)
 			Map<UUID, AcollectionData> acollectionByRelease = new HashMap<>();
-			for (ReleaseData rd : branchReleases) {
+			for (ReleaseData rd : releasesToShow) {
 				AcollectionData ac = acollectionService.getLatestCollectionDataOfRelease(rd.getUuid());
 				if (ac != null) {
 					acollectionByRelease.put(rd.getUuid(), ac);
 				}
 			}
 			
+			// IMPORTANT: Also fetch baseline release acollection for SBOM/finding comparison
+			// Although baseline is excluded from display, we need its acollection to compute
+			// SBOM and finding changes for the oldest release in releasesToShow (which compares against baseline)
+			// See computeSbomChangesFromAcollections and computeFindingChangesForRelease below
+			ReleaseData baselineRelease = ctx.globalFirst();
+			AcollectionData baselineAc = acollectionService.getLatestCollectionDataOfRelease(baselineRelease.getUuid());
+			if (baselineAc != null) {
+				acollectionByRelease.put(baselineRelease.getUuid(), baselineAc);
+			} else {
+				// DEFENSIVE: Log warning if baseline acollection is missing
+				// This could cause incorrect SBOM/finding diffs for the first release after baseline
+				log.warn("Baseline acollection not found for release {} - SBOM/finding changes may be incomplete", 
+					baselineRelease.getUuid());
+			}
+			
 			List<NoneReleaseChanges> releaseChangesList = new ArrayList<>();
 			
-			for (int i = 0; i < branchReleases.size(); i++) {
-				ReleaseData currentRelease = branchReleases.get(i);
-				ReleaseData previousRelease = (i < branchReleases.size() - 1) ? branchReleases.get(i + 1) : null;
+			for (int i = 0; i < releasesToShow.size(); i++) {
+				ReleaseData currentRelease = releasesToShow.get(i);
+				// For the oldest release in releasesToShow, compare against baseline
+				ReleaseData previousRelease = (i < releasesToShow.size() - 1) 
+					? releasesToShow.get(i + 1) 
+					: baselineRelease;
 				
 				// --- Code changes ---
 				List<CodeCommit> commits = new ArrayList<>();
@@ -721,6 +794,14 @@ public class ChangeLogService {
 	 * Computes code, SBOM, and finding changes at component level with attribution.
 	 * Aggregates per-branch metrics and combines them for component-level totals.
 	 * 
+	 * BASELINE HANDLING IN AGGREGATED MODE:
+	 * - CODE changes: Baseline is excluded via computeAggregatedCodeChanges (commits filtered by UUID)
+	 * - SBOM changes: Baseline acollection handling is delegated to sbomComparisonService
+	 *   The service receives the full releasesByBranch map (including baseline) and releaseAcollectionsMap,
+	 *   allowing it to fetch baseline acollections as needed for comparison
+	 * - FINDING changes: Baseline handling is delegated to findingComparisonService
+	 *   The service receives the full releasesByBranch map and handles baseline comparison internally
+	 * 
 	 * @param ctx Shared changelog context (component, org, branch names, etc.)
 	 * @param releaseAcollectionsMap Pre-fetched acollections keyed by release UUID
 	 * @param forkPointCache Shared fork point cache across components
@@ -739,14 +820,18 @@ public class ChangeLogService {
 		ReleaseInfo lastReleaseInfo = toReleaseInfo(ctx.globalLast());
 		
 		// 1. Compute CODE changes (aggregated by type)
+		// Baseline is explicitly excluded from commit collection via baselineUuid parameter
 		List<AggregatedBranchChanges> branchChanges = computeAggregatedCodeChanges(
-			ctx.releasesByBranch(), ctx.branchNameMap(), ctx.org(), ctx.vcsRepoDataList(), ctx.component());
+			ctx.releasesByBranch(), ctx.branchNameMap(), ctx.org(), ctx.vcsRepoDataList(), ctx.component(),
+			ctx.globalFirst().getUuid());
 		
 		// 2. Compute component-level SBOM changes with accurate per-release attribution
+		// NOTE: releasesByBranch includes baseline release - service handles baseline comparison internally
 		SbomChangesWithAttribution sbomChanges = computeComponentSbomChanges(
 			ctx.releasesByBranch(), ctx.branchNameMap(), ctx.component(), releaseAcollectionsMap);
 		
 		// 3. Compute component-level finding changes with accurate per-release attribution
+		// NOTE: releasesByBranch includes baseline release - service handles baseline comparison internally
 		FindingChangesWithAttribution findingChanges = computeComponentFindingChanges(
 			ctx.releasesByBranch(), ctx.component(), ctx.branchNameMap(), forkPointCache);
 		
@@ -765,13 +850,16 @@ public class ChangeLogService {
 	/**
 	 * Computes code changes for AGGREGATED mode (commits grouped by type).
 	 * Accepts pre-grouped releases by branch.
+	 * 
+	 * @param baselineUuid UUID of the baseline release to exclude from commit collection
 	 */
 	private List<AggregatedBranchChanges> computeAggregatedCodeChanges(
 			LinkedHashMap<UUID, List<ReleaseData>> releasesByBranch,
 			Map<UUID, String> branchNameMap,
 			UUID org,
 			List<VcsRepositoryData> vcsRepoDataList,
-			ComponentData component) {
+			ComponentData component,
+			UUID baselineUuid) {
 		List<AggregatedBranchChanges> branchChangesList = new ArrayList<>();
 		
 		for (Map.Entry<UUID, List<ReleaseData>> branchEntry : releasesByBranch.entrySet()) {
@@ -789,7 +877,17 @@ public class ChangeLogService {
 			UUID lastReleaseUuid = branchReleases.isEmpty() ? null : branchReleases.get(0).getUuid();
 			String lastVersion = branchReleases.isEmpty() ? null : branchReleases.get(0).getVersion();
 			
-			List<SourceCodeEntryData> sceDataList = sharedReleaseService.getSceDataListFromReleases(branchReleases, org);
+			// Exclude baseline release from commit collection - only show commits from releases after baseline
+			List<ReleaseData> releasesForCommits = branchReleases.stream()
+				.filter(r -> !r.getUuid().equals(baselineUuid))
+				.collect(Collectors.toList());
+			
+			// Skip this branch if no releases to show after excluding baseline
+			if (releasesForCommits.isEmpty()) {
+				continue;
+			}
+			
+			List<SourceCodeEntryData> sceDataList = sharedReleaseService.getSceDataListFromReleases(releasesForCommits, org);
 			Map<UUID, CommitRecord> commitIdToRecordMap = sharedReleaseService.getCommitMessageMapForSceDataList(
 				sceDataList, vcsRepoDataList, org);
 			
@@ -888,29 +986,53 @@ public class ChangeLogService {
 			ComponentData product,
 			UUID org,
 			AggregationType aggregationType,
-			String userTimeZone) throws RelizaException {
+			String userTimeZone,
+			ReleaseData explicitFirst,
+			ReleaseData explicitLast) throws RelizaException {
 		
 		if (productReleases.isEmpty()) {
 			throw new RelizaException("No product releases provided for changelog computation");
 		}
 		
-		ReleaseData productFirst = productReleases.get(productReleases.size() - 1);
-		ReleaseData productLast = productReleases.get(0);
+		// Determine baseline (older) and target (newer) releases
+		// If explicit releases provided, use them; otherwise use oldest and newest from list
+		ReleaseData productFirst = (explicitFirst != null) ? explicitFirst : productReleases.get(productReleases.size() - 1);
+		ReleaseData productLast = (explicitLast != null) ? explicitLast : productReleases.get(0);
+	
+		// If productFirst is newer than productLast, swap them to maintain semantic correctness
+		if (productFirst.getCreatedDate().isAfter(productLast.getCreatedDate())) {
+			ReleaseData tmp = productFirst;
+			productFirst = productLast;  // productFirst becomes the older release (baseline)
+			productLast = tmp;           // productLast becomes the newer release (target)
+		}
 		
 		ReleaseInfo firstReleaseInfo = toReleaseInfo(productFirst);
 		ReleaseInfo lastReleaseInfo = toReleaseInfo(productLast);
 		
-		// Extract child component release UUIDs from product releases' parentReleases
-		Set<UUID> childReleaseUuids = new HashSet<>();
-		for (ReleaseData productRelease : productReleases) {
-			if (productRelease.getParentReleases() != null) {
-				for (ParentRelease pr : productRelease.getParentReleases()) {
-					if (pr.getRelease() != null) {
-						childReleaseUuids.add(pr.getRelease());
-					}
+		// Extract child component release UUIDs from baseline and target product releases
+		Set<UUID> baselineChildReleaseUuids = new HashSet<>();
+		Set<UUID> targetChildReleaseUuids = new HashSet<>();
+		
+		if (productFirst.getParentReleases() != null) {
+			for (ParentRelease pr : productFirst.getParentReleases()) {
+				if (pr.getRelease() != null) {
+					baselineChildReleaseUuids.add(pr.getRelease());
 				}
 			}
 		}
+		
+		if (productLast.getParentReleases() != null) {
+			for (ParentRelease pr : productLast.getParentReleases()) {
+				if (pr.getRelease() != null) {
+					targetChildReleaseUuids.add(pr.getRelease());
+				}
+			}
+		}
+		
+		// Collect all unique child release UUIDs
+		Set<UUID> childReleaseUuids = new HashSet<>();
+		childReleaseUuids.addAll(baselineChildReleaseUuids);
+		childReleaseUuids.addAll(targetChildReleaseUuids);
 		
 		if (childReleaseUuids.isEmpty()) {
 			log.warn("Product {} has no child component releases", product.getName());
@@ -932,8 +1054,38 @@ public class ChangeLogService {
 		Map<UUID, String> branchNameMap = branchService.getBranchDataList(branchList)
 			.stream().collect(Collectors.toMap(BranchData::getUuid, BranchData::getName, (a, b) -> a));
 
-		// Group child releases by component
+		// Build maps of baseline and target child releases by component UUID
+		Map<UUID, UUID> baselineChildByComponent = new HashMap<>();
+		Map<UUID, UUID> targetChildByComponent = new HashMap<>();
+		
+		for (ReleaseData rd : childReleaseDataList) {
+			if (baselineChildReleaseUuids.contains(rd.getUuid())) {
+				baselineChildByComponent.put(rd.getComponent(), rd.getUuid());
+			}
+			if (targetChildReleaseUuids.contains(rd.getUuid())) {
+				targetChildByComponent.put(rd.getComponent(), rd.getUuid());
+			}
+		}
+		
+		// Identify changed components (baseline != target)
+		Set<UUID> changedComponents = new HashSet<>();
+		for (UUID componentUuid : targetChildByComponent.keySet()) {
+			UUID baselineRelease = baselineChildByComponent.get(componentUuid);
+			UUID targetRelease = targetChildByComponent.get(componentUuid);
+			if (baselineRelease == null || !baselineRelease.equals(targetRelease)) {
+				changedComponents.add(componentUuid);
+			}
+		}
+		// Also include components only in baseline (removed from product)
+		for (UUID componentUuid : baselineChildByComponent.keySet()) {
+			if (!targetChildByComponent.containsKey(componentUuid)) {
+				changedComponents.add(componentUuid);
+			}
+		}
+		
+		// Group child releases by component, filtering to only changed components
 		Map<UUID, List<ReleaseData>> childReleasesByComponent = childReleaseDataList.stream()
+			.filter(rd -> changedComponents.contains(rd.getComponent()))
 			.collect(Collectors.groupingBy(ReleaseData::getComponent));
 		
 		// Build component data map
@@ -962,13 +1114,82 @@ public class ChangeLogService {
 			if (componentData == null || componentReleases.isEmpty()) continue;
 			
 			try {
-				// Sort releases by creation date (newest first)
-				componentReleases.sort(NEWEST_FIRST);
+				// Determine baseline and target releases for this component
+				UUID baselineReleaseUuid = baselineChildByComponent.get(componentUuid);
+				UUID targetReleaseUuid = targetChildByComponent.get(componentUuid);
+				
+				// IMPORTANT: Handle component addition/removal cases
+				// - baselineReleaseUuid == null: Component was added to product (new in target)
+				// - targetReleaseUuid == null: Component was removed from product (only in baseline)
+				
+				// CRITICAL: Skip component addition/removal cases for now
+				// TODO: Implement proper handling for added/removed components
+				// - For added components: Could show "Component added" with target release details
+				// - For removed components: Could show "Component removed" with baseline release details
+				// Current approach of setting baseline==target causes issues with listAllReleasesBetweenReleases
+				if (baselineReleaseUuid == null && targetReleaseUuid != null) {
+					log.info("Component {} was added to product in target release - skipping changelog (not yet implemented)", 
+						componentData.getName());
+					continue;
+				}
+				
+				if (targetReleaseUuid == null && baselineReleaseUuid != null) {
+					log.info("Component {} was removed from product in target release - skipping changelog (not yet implemented)", 
+						componentData.getName());
+					continue;
+				}
+				
+				// DEFENSIVE: If both are null, skip (should not happen due to filtering)
+				if (baselineReleaseUuid == null || targetReleaseUuid == null) {
+					log.warn("Missing baseline AND target release for component {} - skipping", componentUuid);
+					continue;
+				}
+				
+				// DEFENSIVE: Skip if baseline == target (no changes to show)
+				// NOTE: This should NEVER trigger due to filtering at lines 1052-1066 which excludes
+				// unchanged components. If this log appears, it indicates a bug in the filtering logic.
+				if (baselineReleaseUuid.equals(targetReleaseUuid)) {
+					log.warn("UNEXPECTED: Component {} has baseline == target despite filtering - possible bug", componentUuid);
+					continue;
+				}
+				
+				// Fetch releases between baseline and target
+				// Note: listAllReleasesBetweenReleases excludes the baseline (fromDateTime is exclusive)
+				// so we need to ensure both baseline and target are included
+				List<ReleaseData> releasesInRange = sharedReleaseService.listAllReleasesBetweenReleases(
+					baselineReleaseUuid, targetReleaseUuid);
+				
+				// Fetch baseline and target releases explicitly
+				ReleaseData compFirst = sharedReleaseService.getReleaseData(baselineReleaseUuid, org)
+					.orElse(null);
+				ReleaseData compLast = sharedReleaseService.getReleaseData(targetReleaseUuid, org)
+					.orElse(null);
+				
+				if (compFirst == null || compLast == null) {
+					log.warn("Could not fetch baseline or target release for component {}", componentUuid);
+					continue;
+				}
+				
+				// Ensure both baseline and target are included in the range
+				// (listAllReleasesBetweenReleases may exclude one or both due to exclusive date boundaries)
+				// Use single-pass Set lookup for efficiency (O(n) once instead of O(n) twice)
+				Set<UUID> existingUuids = releasesInRange.stream()
+					.map(ReleaseData::getUuid)
+					.collect(Collectors.toSet());
+				
+				// Note: compFirst and compLast are guaranteed non-null by check at line 1171
+				if (!existingUuids.contains(baselineReleaseUuid)) {
+					releasesInRange.add(compFirst);
+				}
+				if (!existingUuids.contains(targetReleaseUuid)) {
+					releasesInRange.add(compLast);
+				}
+			
+				// This ensures correct ordering for groupReleasesByBranch and changelog computation
+				releasesInRange.sort(NEWEST_FIRST);
 				
 				// Group by branch for the child component
-				LinkedHashMap<UUID, List<ReleaseData>> releasesByBranch = groupReleasesByBranch(componentReleases);
-				ReleaseData compFirst = componentReleases.get(componentReleases.size() - 1);
-				ReleaseData compLast = componentReleases.get(0);
+				LinkedHashMap<UUID, List<ReleaseData>> releasesByBranch = groupReleasesByBranch(releasesInRange);
 				
 				ChangelogContext ctx = new ChangelogContext(
 					releasesByBranch, componentData, org, compFirst, compLast,
@@ -976,7 +1197,7 @@ public class ChangeLogService {
 				
 				// Pre-fetch acollections once for AGGREGATED mode
 				Map<UUID, List<AcollectionData>> releaseAcollectionsMap = (aggregationType == AggregationType.AGGREGATED)
-					? prefetchAcollections(componentReleases) : new HashMap<>();
+					? prefetchAcollections(releasesInRange) : new HashMap<>();
 				
 				ComponentChangelog childChangelog = (aggregationType == AggregationType.NONE)
 					? computeNoneChangelog(ctx)
@@ -993,11 +1214,11 @@ public class ChangeLogService {
 				
 				// Collect data for product-level SBOM/finding aggregation (AGGREGATED mode)
 				if (aggregationType == AggregationType.AGGREGATED) {
-					List<AcollectionData> latestAcollections = pickLatestAcollections(releaseAcollectionsMap, componentReleases);
+					List<AcollectionData> latestAcollections = pickLatestAcollections(releaseAcollectionsMap, releasesInRange);
 					if (!latestAcollections.isEmpty()) {
 						componentAcollectionsMap.put(componentUuid, latestAcollections);
 					}
-					componentReleasesMap.put(componentUuid, componentReleases);
+					componentReleasesMap.put(componentUuid, releasesInRange);
 					componentNamesMap.put(componentUuid, componentData.getName());
 				}
 				
