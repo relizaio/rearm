@@ -7,6 +7,7 @@ interface RegionPrices {
   currencySymbol: string;
   startupBase: number;
   startupPerUser: number;
+  standardBase: number;
   standardPerUser: number;
   enterprise: string;
 }
@@ -60,44 +61,50 @@ function detectRegionType(): RegionType {
 
 function getRegionPricesForType(regionType: RegionType): RegionPrices {
   let currencySymbol = "$";
-  let startupBase = 107;
-  let startupPerUser = 38;
-  let standardPerUser = 60;
-  let enterprise = "$68";
+  let startupBase = 125;
+  let startupPerUser = 45;
+  let standardBase = 1250;
+  let standardPerUser = 70;
+  let enterprise = "$75";
 
   if (regionType === "EU") {
     currencySymbol = "€";
-    startupBase = 92;
-    startupPerUser = 32;
-    standardPerUser = 51;
-    enterprise = "€58";
+    startupBase = 110;
+    startupPerUser = 40;
+    standardBase = 1090;
+    standardPerUser = 60;
+    enterprise = "€65";
   } else if (regionType === "CA") {
     currencySymbol = "C$";
-    startupBase = 149;
-    startupPerUser = 53;
-    standardPerUser = 83;
-    enterprise = "C$95";
+    startupBase = 160;
+    startupPerUser = 60;
+    standardBase = 1700;
+    standardPerUser = 95;
+    enterprise = "C$100";
   } else if (regionType === "GB") {
     currencySymbol = "£";
-    startupBase = 80;
-    startupPerUser = 28;
-    standardPerUser = 44;
-    enterprise = "£51";
+    startupBase = 95;
+    startupPerUser = 35;
+    standardBase = 940;
+    standardPerUser = 55;
+    enterprise = "£60";
   } else if (regionType === "AU") {
     currencySymbol = "A$";
-    startupBase = 165;
-    startupPerUser = 57;
-    standardPerUser = 90;
-    enterprise = "A$103";
+    startupBase = 175;
+    startupPerUser = 65;
+    standardBase = 1770;
+    standardPerUser = 100;
+    enterprise = "A$105";
   } else if (regionType === "SG") {
     currencySymbol = "S$";
-    startupBase = 139;
-    startupPerUser = 50;
-    standardPerUser = 78;
-    enterprise = "S$89";
+    startupBase = 160;
+    startupPerUser = 55;
+    standardBase = 1600;
+    standardPerUser = 90;
+    enterprise = "S$95";
   }
 
-  return { regionType, currencySymbol, startupBase, startupPerUser, standardPerUser, enterprise };
+  return { regionType, currencySymbol, startupBase, startupPerUser, standardBase, standardPerUser, enterprise };
 }
 
 export default function PricingPlan() {
@@ -129,7 +136,7 @@ export default function PricingPlan() {
   const effectiveRegionType = regionSelection || detectedRegionType;
   const prices = useMemo(() => getRegionPricesForType(effectiveRegionType), [effectiveRegionType]);
   const [startupUsers, setStartupUsers] = useState(1);
-  const [standardUsers, setStandardUsers] = useState(20);
+  const [standardUsers, setStandardUsers] = useState(15);
   
   // Calculate Startup price: $99 base for 1 user, then $30 per additional user
   const startupPrice = useMemo(() => {
@@ -137,9 +144,10 @@ export default function PricingPlan() {
     return `${prices.currencySymbol}${price}`;
   }, [startupUsers, prices]);
   
-  // Calculate Standard price: $66 per user, no minimum
+  // Calculate Standard price: base cliff + per user for additional users
+  const standardMinUsers = 15;
   const standardPrice = useMemo(() => {
-    const price = standardUsers * prices.standardPerUser;
+    const price = prices.standardBase + (standardUsers > standardMinUsers ? (standardUsers - standardMinUsers) * prices.standardPerUser : 0);
     return `${prices.currencySymbol}${price}`;
   }, [standardUsers, prices]);
   
@@ -178,7 +186,7 @@ export default function PricingPlan() {
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
       userSelector: {
         min: 1,
-        max: 19,
+        max: 14,
         value: startupUsers,
         onChange: setStartupUsers,
       },
@@ -197,7 +205,7 @@ export default function PricingPlan() {
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
       userSelector: {
-        min: 20,
+        min: standardMinUsers,
         max: 39,
         value: standardUsers,
         onChange: setStandardUsers,
@@ -207,7 +215,7 @@ export default function PricingPlan() {
       id: 3,
       title: "ReARM Pro - Enterprise",
       amount: prices.enterprise,
-      type: "per user per month",
+      type: "per write user per month",
       bullets: [
         "All in ReARM Pro - Standard",
         "Premium support (24x7, 1 hour response time)",
@@ -262,7 +270,7 @@ export default function PricingPlan() {
             {p.userSelector && (
               <div className="userSelector">
                 <label htmlFor={`users-${p.id}`} className="userSelectorLabel">
-                  Number of users ({p.userSelector.min}-{p.userSelector.max}):
+                  Number of write users ({p.userSelector.min}-{p.userSelector.max}):
                 </label>
                 <input
                   id={`users-${p.id}`}
@@ -295,7 +303,7 @@ export default function PricingPlan() {
             )}
             {p.id === 3 && (
               <div className="userSelector">
-                <div className="userSelectorLabel">40+ users</div>
+                <div className="userSelectorLabel">40+ write users</div>
               </div>
             )}
             <ul className="planFeatures">
