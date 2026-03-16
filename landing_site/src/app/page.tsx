@@ -44,7 +44,11 @@ export default function Home() {
         <div className="row mx-auto" style={{ maxWidth: "1100px" }}>
           <div className="col-12 mb-4">
             <h1 className="C1_title">ReARM</h1>
-            <h1 style={{ textAlign: "center" }}>Release-Level Supply Chain Evidence Platform</h1>
+            <h1 style={{ textAlign: "center" }}>
+              <Link href="/release-level-supply-chain-evidence-platform" style={{ color: "inherit", textDecoration: "none" }}>
+                Release-Level Supply Chain Evidence Platform
+              </Link>
+            </h1>
           </div>
           <div className="col-12">
             <p className="mx-auto C1_text">
