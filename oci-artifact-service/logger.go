@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var sugar *zap.SugaredLogger
@@ -18,7 +19,10 @@ func initLogger() {
 	var err error
 
 	if logType == "json" {
-		logger, err = zap.NewProduction()
+		config := zap.NewProductionConfig()
+		config.EncoderConfig.TimeKey = "timestamp"
+		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+		logger, err = config.Build()
 	} else {
 		logger, err = zap.NewDevelopment()
 	}
