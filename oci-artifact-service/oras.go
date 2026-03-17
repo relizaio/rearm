@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -24,9 +23,9 @@ type OrasClient struct {
 func NewOrasClient(repoName string) (*OrasClient, error) {
 	host := os.Getenv("REGISTRY_HOST")
 	repo, err := remote.NewRepository(host + "/" + repoName)
-	fmt.Println(host + "/" + repoName)
+	getLogger().Infow("Initializing ORAS client", "repository", host+"/"+repoName)
 	if err != nil {
-		fmt.Println(err)
+		getLogger().Errorw("Failed to create repository", "error", err, "repository", host+"/"+repoName)
 		return nil, err
 	}
 	repo.Client = &auth.Client{
@@ -42,11 +41,11 @@ func NewOrasClient(repoName string) (*OrasClient, error) {
 
 func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, tag string, compressionMeta *CompressionMetadata) (v1.Descriptor, error) {
 	// 0. Create a file store
-	fmt.Println("pushing")
+	getLogger().Infow("Pushing artifact", "tag", tag)
 	resp := v1.Descriptor{}
 	fs, err := file.New("")
 	if err != nil {
-		fmt.Println(err)
+		getLogger().Errorw("Failed to create file store", "error", err)
 		return resp, err
 	}
 	defer fs.Close()
@@ -101,18 +100,18 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 		Layers: fileDescriptors,
 	})
 	if err != nil {
-		log.Println("Error Packing", err)
+		getLogger().Errorw("Error packing manifest", "error", err)
 		return resp, err
 	}
 
 	if err = fs.Tag(ctx, manifestDescriptor, tag); err != nil {
-		log.Println("Error tagging artifact", err)
+		getLogger().Errorw("Error tagging artifact", "error", err, "tag", tag)
 		return resp, err
 	}
 	// 3. Copy from the file store to the remote repository
 	resp, err = oras.Copy(ctx, fs, tag, o.Repository, tag, oras.DefaultCopyOptions)
 	if err != nil {
-		log.Println("Error pushing", err)
+		getLogger().Errorw("Error pushing to registry", "error", err, "tag", tag)
 		return resp, err
 	}
 	resp.Size = fileStat.Size()
@@ -125,7 +124,7 @@ func (o *OrasClient) PullArtifact(ctx context.Context, tagDigest string, dirName
 
 	fs, err := file.New("/tmp/" + dirName + "/")
 	if err != nil {
-		log.Println("Error creating temp", err)
+		getLogger().Errorw("Error creating temp directory", "error", err, "dir", dirName)
 		return v1.Descriptor{}, err
 	}
 	defer fs.Close()
@@ -139,12 +138,17 @@ func (o *OrasClient) PullArtifact(ctx context.Context, tagDigest string, dirName
 			return descriptor, nil
 		}
 
-		log.Printf("Pull attempt %d/%d failed: %v", attempt, maxRetries, lastErr)
+		getLogger().Warnw("Pull attempt failed",
+			"attempt", attempt,
+			"max_retries", maxRetries,
+			"tag_digest", tagDigest,
+			"error", lastErr,
+		)
 
 		if attempt < maxRetries {
 			// Exponential backoff: 500ms, 1s, 2s, 4s, 8s
 			delay := baseDelay * time.Duration(1<<(attempt-1))
-			log.Printf("Retrying in %v...", delay)
+			getLogger().Infow("Retrying pull", "delay", delay.String())
 
 			select {
 			case <-ctx.Done():
@@ -154,6 +158,10 @@ func (o *OrasClient) PullArtifact(ctx context.Context, tagDigest string, dirName
 		}
 	}
 
-	log.Printf("Error pulling artifact after %d attempts: %v", maxRetries, lastErr)
+	getLogger().Errorw("Error pulling artifact after all retries",
+		"attempts", maxRetries,
+		"tag_digest", tagDigest,
+		"error", lastErr,
+	)
 	return v1.Descriptor{}, lastErr
 }

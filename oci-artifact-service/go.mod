@@ -6,6 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.3
+	go.uber.org/zap v1.27.1
 	oras.land/oras-go/v2 v2.6.0
 )
 
@@ -17,6 +18,7 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.58.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
 )
 
 require (

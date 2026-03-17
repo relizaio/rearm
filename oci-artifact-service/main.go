@@ -1,13 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gin-gonic/gin"
@@ -16,7 +15,11 @@ import (
 )
 
 func main() {
-	fmt.Println("init")
+	initLogger()
+	sugar := getLogger()
+	defer sugar.Sync()
+
+	sugar.Info("OCI Artifact Service initializing")
 	r := gin.New()
 	r.Use(gin.Recovery())
 	setGinConfigurations(r)
@@ -24,6 +27,7 @@ func main() {
 	r.POST("/push", uploadFile)
 	r.GET("/pull", downloadFile)
 	r.GET("/health", healthCheck)
+	sugar.Info("Server starting on port 8083")
 	r.Run(":8083")
 
 }
@@ -33,14 +37,32 @@ func setGinConfigurations(router *gin.Engine) {
 	// Default is false (health checks are not logged to reduce log noise)
 	logHealthCheck := os.Getenv("LOG_HEALTH_CHECK") == "true"
 
-	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-		SkipPaths: func() []string {
-			if logHealthCheck {
-				return nil
-			}
-			return []string{"/health"}
-		}(),
-	}))
+	// Custom zap logger middleware for Gin
+	router.Use(func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		query := c.Request.URL.RawQuery
+
+		// Skip health check logging if configured
+		if !logHealthCheck && path == "/health" {
+			c.Next()
+			return
+		}
+
+		c.Next()
+
+		sugar := getLogger()
+		latency := time.Since(start)
+		sugar.Infow("HTTP request",
+			"method", c.Request.Method,
+			"path", path,
+			"query", query,
+			"status", c.Writer.Status(),
+			"latency", latency.String(),
+			"client_ip", c.ClientIP(),
+			"user_agent", c.Request.UserAgent(),
+		)
+	})
 }
 
 type Form struct {
@@ -96,7 +118,10 @@ func uploadFile(c *gin.Context) {
 
 	// Verify integrity
 	if len(form.InputDigest) > 0 && form.InputDigest != "" && checksum != form.InputDigest {
-		log.Printf("File Integrity Check Failed: expected %s, got %s", form.InputDigest, checksum)
+		getLogger().Errorw("File Integrity Check Failed",
+			"expected", form.InputDigest,
+			"actual", checksum,
+		)
 		c.String(http.StatusBadRequest, "File Integrity Check Failed")
 		return
 	}
@@ -115,7 +140,7 @@ func uploadFile(c *gin.Context) {
 	if ShouldCompress(mimeType) {
 		compressedFile, compressionMetadata, err = CompressFile(tempFile, mimeType)
 		if err != nil {
-			log.Printf("Compression failed: %v", err)
+			getLogger().Warnw("Compression failed", "error", err, "mime_type", mimeType)
 			// Continue with uncompressed file
 		} else if compressionMetadata != nil {
 			fileToUpload = compressedFile
@@ -132,7 +157,7 @@ func uploadFile(c *gin.Context) {
 
 	resp, err := oc.PushArtifact(c, fileToUpload, form.Tag, compressionMetadata)
 	if err != nil {
-		log.Printf("Error Pushing Artifact: %v", err)
+		getLogger().Errorw("Error Pushing Artifact", "error", err, "repo", form.Repo, "tag", form.Tag)
 		c.String(http.StatusBadRequest, "Error Pushing Artifact: ", err)
 		return
 	}
@@ -221,7 +246,7 @@ func downloadFile(c *gin.Context) {
 
 		decompressedFile, err = DecompressFile(compressedFile)
 		if err != nil {
-			log.Printf("Decompression failed: %v", err)
+			getLogger().Errorw("Decompression failed", "error", err)
 			c.String(http.StatusInternalServerError, "Error decompressing file: ", err)
 			return
 		}
@@ -258,7 +283,7 @@ func downloadFile(c *gin.Context) {
 
 	err = os.RemoveAll("/tmp/" + dirToDownload)
 	if err != nil {
-		log.Printf("Error deleting file: %v", err)
+		getLogger().Warnw("Error deleting file", "error", err, "dir", dirToDownload)
 	}
 
 }
@@ -270,8 +295,7 @@ func healthCheck(c *gin.Context) {
 	if usernamePresent != "" && tokenPresent != "" && hostPresent != "" {
 		c.IndentedJSON(http.StatusOK, gin.H{"health": "OK"})
 	} else {
-		log.Fatal("REGISTRY_USERNAME or REGISTRY_TOKEN or REGISTRY_HOST not set")
-		panic("REGISTRY_USERNAME or REGISTRY_TOKEN not set or REGISTRY_HOST")
+		getLogger().Fatal("REGISTRY_USERNAME or REGISTRY_TOKEN or REGISTRY_HOST not set")
 	}
 
 }
