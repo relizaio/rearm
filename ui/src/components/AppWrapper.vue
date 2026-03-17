@@ -78,9 +78,9 @@ const footerVersionText: ComputedRef<string> = computed((): string => {
 
 const showSignUpFlow = ref('')
 async function fetchCsrfToken() {
-    const response = await axios.get('/api/manual/v1/fetchCsrf');
-    const csrfToken = response.data.token;
-    window.localStorage.setItem('csrf', csrfToken);
+    // Call endpoint to trigger XSRF-TOKEN cookie being set by backend
+    // The cookie will be automatically read by Axios and Apollo Client
+    await axios.get('/api/manual/v1/fetchCsrf');
 }
 
 const onCreate = async function () {

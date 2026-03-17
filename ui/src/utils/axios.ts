@@ -5,8 +5,7 @@ const axiosClient: AxiosInstance = axios.create();
 
 axiosClient.interceptors.request.use(
     config => {
-        const csrfToken = window.localStorage.getItem('csrf')
-        config.headers['X-CSRF-Token'] = csrfToken
+        // Axios automatically reads XSRF-TOKEN cookie and sends X-XSRF-TOKEN header
         try {
             kc.isTokenExpired() 
         } catch (err: any) {

@@ -5,8 +5,16 @@ import UploadHttpLink from "apollo-upload-client/UploadHttpLink.mjs";
 
 const uploadLink = new UploadHttpLink({ uri: '/graphql', credentials: 'same-origin' })
 
+// Helper function to read XSRF-TOKEN cookie
+function getCsrfTokenFromCookie(): string | undefined {
+    return document.cookie
+        .split('; ')
+        .find(row => row.startsWith('XSRF-TOKEN='))
+        ?.split('=')[1];
+}
+
 const headerMiddleware = new SetContextLink(({ headers }) => {
-    const csrfToken = window.localStorage.getItem('csrf');
+    const csrfToken = getCsrfTokenFromCookie();
     try {
         kc.isTokenExpired() 
     } catch (err: any) {
@@ -17,7 +25,7 @@ const headerMiddleware = new SetContextLink(({ headers }) => {
     return {
         headers: {
             ...headers,
-            'X-CSRF-Token': csrfToken,
+            'X-XSRF-TOKEN': csrfToken,
             'AUTHORIZATION': `Bearer ${kc.token}`,
             'Apollo-Require-Preflight': 'true'
         },
