@@ -78,6 +78,17 @@ const footerVersionText: ComputedRef<string> = computed((): string => {
 
 const showSignUpFlow = ref('')
 async function fetchCsrfToken() {
+    // Check if XSRF-TOKEN cookie already exists
+    const existingToken = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('XSRF-TOKEN='))
+        ?.split('=')[1];
+    
+    if (existingToken) {
+        // Cookie already present, skip the call
+        return;
+    }
+    
     // Call endpoint to trigger XSRF-TOKEN cookie being set by backend
     // The cookie will be automatically read by Axios and Apollo Client
     await axios.get('/api/manual/v1/fetchCsrf');
