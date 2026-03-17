@@ -30,6 +30,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.web.client.RestTemplate;
 
@@ -73,6 +75,10 @@ public class App {
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter) throws Exception {
 	  http
+	  .csrf(c -> c
+			.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+			.csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+	  )
 	  .oauth2ResourceServer(
 		    oauth2 -> oauth2.jwt(Customizer.withDefaults())
 		)
