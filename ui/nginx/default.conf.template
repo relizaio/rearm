@@ -21,6 +21,8 @@ server {
 
     location /v1 {
         proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         # https://www.nginx.com/resources/wiki/start/topics/examples/forwarded/
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -32,6 +34,8 @@ server {
 
     location /api {
         proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
@@ -42,6 +46,8 @@ server {
 
     location /tea {
         proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         # https://www.nginx.com/resources/wiki/start/topics/examples/forwarded/
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -53,6 +59,8 @@ server {
 
     location /.well-known/tea {
         proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         # https://www.nginx.com/resources/wiki/start/topics/examples/forwarded/
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -64,6 +72,8 @@ server {
 
     location /graphql {
         proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
@@ -75,6 +85,8 @@ server {
     location /kauth {
         ${KEYCLOAK_ADMIN_ACCESS}
         proxy_pass http://keycloak;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_buffers 8 16k;
@@ -85,6 +97,8 @@ server {
     location /kauth/admin/Reliza {
         ${KEYCLOAK_RELIZA_ADMIN_ACCESS}
         proxy_pass http://keycloak;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_buffers 8 16k;
@@ -95,6 +109,8 @@ server {
     location /kauth/admin/realms/Reliza {
         ${KEYCLOAK_RELIZA_ADMIN_ACCESS}
         proxy_pass http://keycloak;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_buffers 8 16k;
@@ -105,6 +121,8 @@ server {
     location /kauth/admin/serverinfo {
         ${KEYCLOAK_RELIZA_ADMIN_ACCESS}
         proxy_pass http://keycloak;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_buffers 8 16k;
@@ -114,6 +132,8 @@ server {
 
     location /kauth/realms/Reliza {
         proxy_pass http://keycloak;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_buffers 8 16k;
@@ -123,6 +143,8 @@ server {
 
     location /kauth/resources {
         proxy_pass http://keycloak;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_buffers 8 16k;
@@ -132,6 +154,8 @@ server {
 
     location /kauth/js {
         proxy_pass http://keycloak;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_buffers 8 16k;
