@@ -48,6 +48,8 @@ spec:
           value: {{ .Values.rebom.backend.oci.registryNamespace }}
         - name: ENRICHMENT_PENDING_IF_NOT_CONFIGURED
           value: {{ .Values.rebom.backend.enrichmentPendingIfNotConfigured | default "false" | quote }}
+        - name: LOG_TYPE
+          value: {{ .Values.rebom.backend.logFormatType | default "plain" | quote }}
         {{- if .Values.rebom.backend.rebomPropsSecretName }}
         envFrom:
         - secretRef:

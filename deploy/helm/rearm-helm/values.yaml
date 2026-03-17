@@ -82,6 +82,7 @@ uiService:
 
 ociArtifactService:
   enabled: true
+  logFormatType: "plain"
   registryHost: registry.relizahub.com/123-private # change
   registryUser: changeme # change
   registryToken: changeme # change
@@ -131,6 +132,7 @@ rebom:
   postgresStorage: 5Gi
   backend:
     replicaCount: 1
+    logFormatType: "plain"
     oci:
       enabled: "true"
       serviceHost: http://rearm-oci-artifact

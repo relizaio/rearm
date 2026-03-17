@@ -42,6 +42,8 @@ spec:
                   name: oci-registry-secrets
                   key: REGISTRY_TOKEN
                   optional: true
+            - name: LOG_TYPE
+              value: {{ .Values.ociArtifactService.logFormatType | default "plain" | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
