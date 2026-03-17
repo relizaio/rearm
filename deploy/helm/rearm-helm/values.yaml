@@ -83,6 +83,7 @@ uiService:
 ociArtifactService:
   enabled: true
   logFormatType: "plain"
+  logLevel: "info"
   registryHost: registry.relizahub.com/123-private # change
   registryUser: changeme # change
   registryToken: changeme # change
