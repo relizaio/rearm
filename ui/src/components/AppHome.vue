@@ -1341,7 +1341,7 @@ async function fetchMostVulnerableComponents () {
     }
 }
 
-watch(() => [vulnerableComponentsInput.value.componentType, vulnerableComponentsInput.value.maxComponents], () => {
+watch(() => [vulnerableComponentsInput.value.componentType, vulnerableComponentsInput.value.maxComponents, myperspective.value], () => {
     fetchMostVulnerableComponents()
 })
 
