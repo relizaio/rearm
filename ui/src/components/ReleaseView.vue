@@ -210,6 +210,92 @@
                     <n-form-item>
                         Include Suppressed:<n-switch style="margin-left: 5px;" v-model:value="vdrIncludeSuppressed"/>
                     </n-form-item>
+                    <n-form-item label="Snapshot Type (optional)" v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'">
+                        <n-radio-group v-model:value="vdrSnapshotType" name="vdrSnapshotType">
+                            <n-radio-button value="NONE">
+                                <span style="display: inline-flex; align-items: center;">
+                                    Current State
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Export the current state of vulnerabilities without any historical filtering.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="DATE">
+                                <span style="display: inline-flex; align-items: center;">
+                                    By Date
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Export vulnerabilities as they existed at a specific date and time.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="LIFECYCLE">
+                                <span style="display: inline-flex; align-items: center;">
+                                    By Lifecycle
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Export vulnerabilities as they existed when the release reached a specific lifecycle stage.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="APPROVAL">
+                                <span style="display: inline-flex; align-items: center;">
+                                    By Approval
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Export vulnerabilities as they existed when a specific approval was granted.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                        </n-radio-group>
+                    </n-form-item>
+                    <n-form-item v-if="vdrSnapshotType === 'DATE'" label="Cut-off Date">
+                        <n-date-picker
+                            v-model:value="vdrCutoffDate"
+                            type="datetime"
+                            placeholder="Select date/time"
+                            clearable
+                            format="yyyy-MM-dd HH:mm"
+                        />
+                    </n-form-item>
+                    <n-form-item v-if="vdrSnapshotType === 'LIFECYCLE'" label="Lifecycle Stage">
+                        <n-select
+                            v-model:value="vdrTargetLifecycle"
+                            :options="releaseLifecycleSelectOptions"
+                            placeholder="Select lifecycle stage"
+                            clearable
+                            filterable
+                            style="max-width: 400px;"
+                        />
+                    </n-form-item>
+                    <n-form-item v-if="vdrSnapshotType === 'APPROVAL'" label="Approval Entry">
+                        <n-select
+                            v-model:value="vdrTargetApproval"
+                            :options="approvalEventSelectOptions"
+                            :placeholder="approvalEventSelectOptions.length === 0 ? 'No approval events available' : 'Select approval entry'"
+                            :disabled="approvalEventSelectOptions.length === 0"
+                            clearable
+                            filterable
+                            style="max-width: 400px;"
+                        />
+                    </n-form-item>
                     <n-spin :show="bomExportPending || vdrPdfExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
                             :disabled="bomExportPending || vdrPdfExportPending"
@@ -768,9 +854,9 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
-import { Component, ComputedRef, Ref, computed, h, onMounted, ref } from 'vue'
+import { Component, ComputedRef, Ref, computed, h, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
@@ -982,6 +1068,27 @@ function resolveLifecycleLabel (lifecycle: string) {
     return lifecycleOptions.find((option: any) => option.key === lifecycle)?.label || lifecycle
 }
 
+const releaseLifecycleSelectOptions = computed(() => lifecycleOptions.map((option: any) => ({
+    label: option.label,
+    value: option.key
+})))
+
+const approvalEventSelectOptions = computed(() => {
+    const events = updatedRelease.value?.approvalEvents || []
+    const uniqueMap = new Map<string, { label: string, value: string }>()
+    events.forEach((event: any) => {
+        if (!event?.approvalEntry) return
+        if (uniqueMap.has(event.approvalEntry)) return
+        const entryName = event.approvalEntryName || 'Approval Entry'
+        const roleSuffix = event.approvalRoleId ? ` — ${event.approvalRoleId}` : ''
+        uniqueMap.set(event.approvalEntry, {
+            label: `${entryName}${roleSuffix}`,
+            value: event.approvalEntry
+        })
+    })
+    return Array.from(uniqueMap.values())
+})
+
 onMounted(async () => {
     loadingBar.start()
     isProductRelease.value = await detectIsProduct()
@@ -1131,10 +1238,32 @@ const selectedRebomType: Ref<string> = ref('')
 const tldOnly: Ref<boolean> = ref(true)
 const ignoreDev: Ref<boolean> = ref(false)
 const vdrIncludeSuppressed: Ref<boolean> = ref(false)
+const vdrSnapshotType: Ref<string> = ref('NONE')
+const vdrCutoffDate: Ref<number | null> = ref(null)
+const vdrTargetLifecycle: Ref<string | null> = ref(null)
+const vdrTargetApproval: Ref<string | null> = ref(null)
 const vdrExportFormat: Ref<string> = ref('JSON')
 const vdrPdfExportPending: Ref<boolean> = ref(false)
 const selectedBomStructureType: Ref<string> = ref('FLAT')
 const filterCoverageType: Ref<boolean> = ref(false)
+
+// Watch for snapshot type changes and clear other inputs
+watch(vdrSnapshotType, (newType) => {
+    if (newType === 'NONE') {
+        vdrCutoffDate.value = null
+        vdrTargetLifecycle.value = null
+        vdrTargetApproval.value = null
+    } else if (newType === 'DATE') {
+        vdrTargetLifecycle.value = null
+        vdrTargetApproval.value = null
+    } else if (newType === 'LIFECYCLE') {
+        vdrCutoffDate.value = null
+        vdrTargetApproval.value = null
+    } else if (newType === 'APPROVAL') {
+        vdrCutoffDate.value = null
+        vdrTargetLifecycle.value = null
+    }
+})
 const excludeDev: Ref<boolean> = ref(true)
 const excludeTest: Ref<boolean> = ref(true)
 const excludeBuildTime: Ref<boolean> = ref(true)
@@ -2455,18 +2584,60 @@ async function exportReleaseObom () {
     }
 }
 
+function getSnapshotSuffix(): string {
+    if (vdrSnapshotType.value === 'APPROVAL' && vdrTargetApproval.value) {
+        // Look up approval entry name for filename
+        const approvalEvent = updatedRelease.value?.approvalEvents?.find((e: any) => e.approvalEntry === vdrTargetApproval.value)
+        const approvalName = approvalEvent?.approvalEntryName || 'approval'
+        const normalizedApprovalName = approvalName.toLowerCase().replace(/[^a-zA-Z0-9\-._]/g, '_')
+        return `-snapshot-${normalizedApprovalName}`
+    }
+    if (vdrSnapshotType.value === 'LIFECYCLE' && vdrTargetLifecycle.value) {
+        return `-snapshot-${vdrTargetLifecycle.value.toLowerCase()}`
+    }
+    if (vdrSnapshotType.value === 'DATE' && vdrCutoffDate.value) {
+        return '-snapshot-date'
+    }
+    return ''
+}
+
 async function exportReleaseVdr () {
     try {
         bomExportPending.value = true
+        
+        // Validate required fields based on snapshot type
+        if (vdrSnapshotType.value === 'DATE' && !vdrCutoffDate.value) {
+            notify('warning', 'Validation Error', 'Please select a cut-off date')
+            return
+        }
+        if (vdrSnapshotType.value === 'LIFECYCLE' && !vdrTargetLifecycle.value) {
+            notify('warning', 'Validation Error', 'Please select a lifecycle stage')
+            return
+        }
+        if (vdrSnapshotType.value === 'APPROVAL' && !vdrTargetApproval.value) {
+            notify('warning', 'Validation Error', 'Please select an approval entry')
+            return
+        }
+        
+        // Only send the relevant parameter based on snapshot type
+        const upToDateIso = vdrSnapshotType.value === 'DATE' && vdrCutoffDate.value 
+            ? new Date(vdrCutoffDate.value).toISOString() 
+            : null
+        const targetLifecycle = vdrSnapshotType.value === 'LIFECYCLE' ? vdrTargetLifecycle.value : null
+        const targetApproval = vdrSnapshotType.value === 'APPROVAL' ? vdrTargetApproval.value : null
+        
         const gqlResp: any = await graphqlClient.mutate({
             mutation: gql`
-                mutation releaseVdrExport($release: ID!, $includeSuppressed: Boolean) {
-                    releaseVdrExport(release: $release, includeSuppressed: $includeSuppressed)
+                mutation releaseVdrExport($release: ID!, $includeSuppressed: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum, $targetApproval: String) {
+                    releaseVdrExport(release: $release, includeSuppressed: $includeSuppressed, upToDate: $upToDate, targetLifecycle: $targetLifecycle, targetApproval: $targetApproval)
                 }
             `,
             variables: {
                 release: updatedRelease.value.uuid,
-                includeSuppressed: vdrIncludeSuppressed.value
+                includeSuppressed: vdrIncludeSuppressed.value,
+                upToDate: upToDateIso,
+                targetLifecycle: targetLifecycle,
+                targetApproval: targetApproval
             },
             fetchPolicy: 'no-cache'
         })
@@ -2474,12 +2645,14 @@ async function exportReleaseVdr () {
         if (typeof exportContent !== 'string') {
             exportContent = JSON.stringify(exportContent, null, 2)
         }
-        const fileName = updatedRelease.value.uuid + '-vdr.json'
+        const snapshotSuffix = getSnapshotSuffix()
+        const fileName = updatedRelease.value.uuid + '-vdr' + snapshotSuffix + '.json'
         const blob = new Blob([exportContent], { type: 'application/json' })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
         link.download = fileName
         link.click()
+        window.URL.revokeObjectURL(link.href)
         notify('info', 'Processing Download', 'Your VDR is being downloaded...')
     } catch (err: any) {
         Swal.fire(
@@ -2496,14 +2669,67 @@ async function exportReleaseVdrPdf() {
     try {
         vdrPdfExportPending.value = true
         
-        // Fetch vulnerability data for the release
-        const releaseData = await ReleaseVulnerabilityService.fetchReleaseVulnerabilityData(
-            updatedRelease.value.uuid,
-            release.value.org
-        )
+        // Validate required fields based on snapshot type
+        if (vdrSnapshotType.value === 'DATE' && !vdrCutoffDate.value) {
+            notify('warning', 'Validation Error', 'Please select a cut-off date')
+            return
+        }
+        if (vdrSnapshotType.value === 'LIFECYCLE' && !vdrTargetLifecycle.value) {
+            notify('warning', 'Validation Error', 'Please select a lifecycle stage')
+            return
+        }
+        if (vdrSnapshotType.value === 'APPROVAL' && !vdrTargetApproval.value) {
+            notify('warning', 'Validation Error', 'Please select an approval entry')
+            return
+        }
         
-        // Filter to only Vulnerability type
-        const vulnerabilityData = releaseData.vulnerabilityData
+        // Only send the relevant parameter based on snapshot type
+        const upToDateIso = vdrSnapshotType.value === 'DATE' && vdrCutoffDate.value 
+            ? new Date(vdrCutoffDate.value).toISOString() 
+            : null
+        const targetLifecycle = vdrSnapshotType.value === 'LIFECYCLE' ? vdrTargetLifecycle.value : null
+        const targetApproval = vdrSnapshotType.value === 'APPROVAL' ? vdrTargetApproval.value : null
+        
+        const gqlResp: any = await graphqlClient.mutate({
+            mutation: gql`
+                mutation releaseVdrExport($release: ID!, $includeSuppressed: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum, $targetApproval: String) {
+                    releaseVdrExport(release: $release, includeSuppressed: $includeSuppressed, upToDate: $upToDate, targetLifecycle: $targetLifecycle, targetApproval: $targetApproval)
+                }
+            `,
+            variables: {
+                release: updatedRelease.value.uuid,
+                includeSuppressed: vdrIncludeSuppressed.value,
+                upToDate: upToDateIso,
+                targetLifecycle: targetLifecycle,
+                targetApproval: targetApproval
+            },
+            fetchPolicy: 'no-cache'
+        })
+        
+        let vdrJson = gqlResp.data.releaseVdrExport
+        if (typeof vdrJson === 'string') {
+            try {
+                vdrJson = JSON.parse(vdrJson)
+            } catch (parseErr: any) {
+                throw new Error('Failed to parse VDR response: ' + parseErr.message)
+            }
+        }
+        
+        const vulnerabilityData = (Array.isArray(vdrJson.vulnerabilities) ? vdrJson.vulnerabilities : []).map((v: any) => {
+            let severity = v.ratings?.[0]?.severity?.toUpperCase() || 'UNASSIGNED'
+            if (!['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].includes(severity)) severity = 'UNASSIGNED'
+            const purl = v.affects?.[0]?.ref || ''
+            
+            let analysisState = 'IN_TRIAGE'
+            if (v.analysis?.state) {
+                const stateMap: Record<string, string> = {
+                    'not_affected': 'NOT_AFFECTED', 'false_positive': 'FALSE_POSITIVE', 'in_triage': 'IN_TRIAGE',
+                    'exploitable': 'EXPLOITABLE', 'resolved': 'RESOLVED', 'resolved_with_pedigree': 'RESOLVED_WITH_PEDIGREE'
+                }
+                analysisState = stateMap[v.analysis.state] || 'IN_TRIAGE'
+            }
+            return { id: v.id || 'unknown', type: 'Vulnerability', severity, purl, analysisState }
+        })
         
         // Build title for VDR
         const releaseName = updatedRelease.value.componentDetails?.name || updatedRelease.value.uuid
@@ -2515,7 +2741,36 @@ async function exportReleaseVdrPdf() {
         const normalizedName = normalizeForFilename(releaseName)
         const normalizedVersion = normalizeForFilename(releaseVersion)
         const dateStr = new Date().toISOString().slice(0, 10)
-        const filenamePrefix = `vdr-${normalizedName}${normalizedVersion ? `-${normalizedVersion}` : ''}-${dateStr}`
+        const snapshotSuffix = getSnapshotSuffix()
+        const filenamePrefix = `vdr-${normalizedName}${normalizedVersion ? `-${normalizedVersion}` : ''}${snapshotSuffix}-${dateStr}`
+        
+        // Build snapshot information for PDF
+        let snapshotDate: string | undefined
+        let snapshotType: string | undefined
+        
+        // Extract snapshot metadata from VDR properties
+        const metadataProperties = vdrJson.metadata?.properties
+        if (metadataProperties && Array.isArray(metadataProperties)) {
+            const cutoffDateProp = metadataProperties.find((p: any) => p.name === 'vdr:cutoffDate')
+            if (cutoffDateProp && cutoffDateProp.value) {
+                // Parse ISO date string and format it
+                snapshotDate = new Date(cutoffDateProp.value).toLocaleString('en-CA', { hour12: false })
+            }
+            
+            const snapshotTypeProp = metadataProperties.find((p: any) => p.name === 'vdr:snapshotType')
+            const snapshotValueProp = metadataProperties.find((p: any) => p.name === 'vdr:snapshotValue')
+            
+            if (snapshotTypeProp && snapshotValueProp) {
+                if (snapshotTypeProp.value === 'lifecycle') {
+                    snapshotType = `By Lifecycle (${snapshotValueProp.value})`
+                } else if (snapshotTypeProp.value === 'approval') {
+                    // Backend now provides the approval name directly in snapshotValue
+                    snapshotType = `By Approval (${snapshotValueProp.value})`
+                }
+            } else if (vdrSnapshotType.value === 'DATE') {
+                snapshotType = 'By Date'
+            }
+        }
         
         const result = exportFindingsToPdf({
             data: vulnerabilityData,
@@ -2527,7 +2782,9 @@ async function exportReleaseVdrPdf() {
             includeSuppressed: vdrIncludeSuppressed.value,
             filenamePrefix,
             skipDateInFilename: true,
-            hideTypeColumn: true
+            hideTypeColumn: true,
+            snapshotDate,
+            snapshotType
         })
         
         if (!result.success) {

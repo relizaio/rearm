@@ -15,6 +15,8 @@ export interface PdfExportOptions {
     filenamePrefix?: string
     skipDateInFilename?: boolean
     hideTypeColumn?: boolean
+    snapshotDate?: string
+    snapshotType?: string
 }
 
 function getSeverityColor(severity: string): string {
@@ -44,7 +46,9 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         includeSuppressed = false,
         filenamePrefix = 'findings',
         skipDateInFilename = false,
-        hideTypeColumn = false
+        hideTypeColumn = false,
+        snapshotDate,
+        snapshotType
     } = options
 
     // Filter data based on settings
@@ -133,14 +137,32 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         widths.push('auto')
     }
 
+    // Build content array with optional snapshot information
+    const contentArray: any[] = [
+        { text: title, style: 'header' },
+        { text: `Organization: ${orgName || 'Unknown'}`, style: 'subheader' },
+        { text: `Generated: ${new Date().toLocaleString('en-CA', { hour12: false })}`, style: 'subheader' }
+    ]
+    
+    // Add snapshot information if provided
+    if (snapshotDate || snapshotType) {
+        contentArray.push({ 
+            text: `Historical Snapshot: ${snapshotType || 'Yes'} (${snapshotDate || 'Unknown date'})`, 
+            style: 'snapshot',
+            color: '#0066cc',
+            bold: true
+        })
+    }
+    
+    contentArray.push(
+        { text: `Total findings: ${data.length}${includeSuppressed ? ' (including suppressed)' : ''}`, style: 'subheader' },
+        { text: `Tool: ReARM - rearmhq.com`, style: 'subheader', margin: [0, 0, 0, 10] }
+    )
+
     const docDefinition: any = {
         pageOrientation: 'landscape',
         content: [
-            { text: title, style: 'header' },
-            { text: `Organization: ${orgName || 'Unknown'}`, style: 'subheader' },
-            { text: `Generated: ${new Date().toLocaleString('en-CA', { hour12: false })}`, style: 'subheader' },
-            { text: `Total findings: ${data.length}${includeSuppressed ? ' (including suppressed)' : ''}`, style: 'subheader' },
-            { text: `Tool: ReARM - rearmhq.com`, style: 'subheader', margin: [0, 0, 0, 10] },
+            ...contentArray,
             {
                 table: {
                     headerRows: 1,
@@ -157,6 +179,10 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
                 fontSize: 16,
                 bold: true,
                 margin: [0, 0, 0, 5]
+            },
+            snapshot: {
+                fontSize: 11,
+                margin: [0, 0, 0, 3]
             },
             subheader: {
                 fontSize: 10,
