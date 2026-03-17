@@ -15,6 +15,12 @@ func initLogger() {
 		logType = "plain"
 	}
 
+	// LOG_LEVEL env var controls log level: debug, info (default), warn, error, dpanic, panic, fatal
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
 	var logger *zap.Logger
 	var err error
 
@@ -22,9 +28,26 @@ func initLogger() {
 		config := zap.NewProductionConfig()
 		config.EncoderConfig.TimeKey = "timestamp"
 		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+		// Parse and set log level
+		level, err := zapcore.ParseLevel(logLevel)
+		if err != nil {
+			level = zapcore.InfoLevel
+		}
+		config.Level = zap.NewAtomicLevelAt(level)
+
 		logger, err = config.Build()
 	} else {
-		logger, err = zap.NewDevelopment()
+		config := zap.NewDevelopmentConfig()
+
+		// Parse and set log level
+		level, err := zapcore.ParseLevel(logLevel)
+		if err != nil {
+			level = zapcore.InfoLevel
+		}
+		config.Level = zap.NewAtomicLevelAt(level)
+
+		logger, err = config.Build()
 	}
 
 	if err != nil {
