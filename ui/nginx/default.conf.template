@@ -16,7 +16,7 @@ server {
     location / {
         root   /usr/share/nginx/html;
         index  index.html index.htm;
-        try_files $uri uri/ /index.html;
+        try_files $uri $uri/ /index.html;
     }
 
     location /v1 {
@@ -25,6 +25,9 @@ server {
         # https://www.nginx.com/resources/wiki/start/topics/examples/forwarded/
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+        proxy_connect_timeout 90;
+        proxy_read_timeout 90;
+        proxy_send_timeout 90;
     }
 
     location /api {
@@ -32,6 +35,9 @@ server {
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+        proxy_connect_timeout 90;
+        proxy_read_timeout 90;
+        proxy_send_timeout 90;
     }
 
     location /tea {
@@ -40,6 +46,9 @@ server {
         # https://www.nginx.com/resources/wiki/start/topics/examples/forwarded/
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+        proxy_connect_timeout 90;
+        proxy_read_timeout 90;
+        proxy_send_timeout 90;
     }
 
     location /.well-known/tea {
@@ -48,6 +57,9 @@ server {
         # https://www.nginx.com/resources/wiki/start/topics/examples/forwarded/
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+        proxy_connect_timeout 60;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
     }
 
     location /graphql {
@@ -55,6 +67,9 @@ server {
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+        proxy_connect_timeout 90;
+        proxy_read_timeout 90;
+        proxy_send_timeout 90;
     }
 
     location /kauth {
