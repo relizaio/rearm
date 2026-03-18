@@ -21,6 +21,7 @@ func main() {
 
 	sugar.Info("OCI Artifact Service initializing")
 	r := gin.New()
+	r.SetTrustedProxies([]string{"127.0.0.1"})
 	r.Use(gin.Recovery())
 	setGinConfigurations(r)
 
