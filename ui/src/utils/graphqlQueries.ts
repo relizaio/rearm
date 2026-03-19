@@ -849,6 +849,9 @@ const singleReleaseProductNoParent = `
     createdDate
     org
     artifacts
+    artifactDetails {
+        ${ARTIFACT_DETAIL_DATA}
+    }
     inboundDeliverables
     orgDetails {
         uuid
