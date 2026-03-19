@@ -3477,14 +3477,23 @@ const artifactsTableFields: DataTableColumns<any> = [
                     els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
                 })
                 row.tags.filter((t: any) => t.key === 'LIFECYCLE_DECLARED').forEach((t: any) => {
-                    const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
+                    const baseColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
+                    const lighterColor = baseColor + '80'
                     const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => `${lcLabel} (doc)`))
+                    const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lighterColor}; border-color: ${lighterColor};`, round: true }, () => lcLabel)
+                    els.push(h(NTooltip, { trigger: 'hover' }, {
+                        trigger: () => tag,
+                        default: () => 'Document Declared'
+                    }))
                 })
                 row.tags.filter((t: any) => t.key === 'LIFECYCLE').forEach((t: any) => {
                     const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#8b5cf6'
                     const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel))
+                    const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel)
+                    els.push(h(NTooltip, { trigger: 'hover' }, {
+                        trigger: () => tag,
+                        default: () => 'User Declared'
+                    }))
                 })
             }
             return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
@@ -3710,14 +3719,23 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
                     els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
                 })
                 row.tags.filter((t: any) => t.key === 'LIFECYCLE_DECLARED').forEach((t: any) => {
-                    const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
+                    const baseColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
+                    const lighterColor = baseColor + '80'
                     const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => `${lcLabel} (doc)`))
+                    const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lighterColor}; border-color: ${lighterColor};`, round: true }, () => lcLabel)
+                    els.push(h(NTooltip, { trigger: 'hover' }, {
+                        trigger: () => tag,
+                        default: () => 'Document Declared'
+                    }))
                 })
                 row.tags.filter((t: any) => t.key === 'LIFECYCLE').forEach((t: any) => {
                     const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#8b5cf6'
                     const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel))
+                    const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel)
+                    els.push(h(NTooltip, { trigger: 'hover' }, {
+                        trigger: () => tag,
+                        default: () => 'User Declared'
+                    }))
                 })
             }
             return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
