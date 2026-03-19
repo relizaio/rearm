@@ -48,6 +48,7 @@ import java.util.concurrent.CompletionStage;
 import java.time.ZonedDateTime;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.ApprovalState;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -246,11 +247,29 @@ public class ReleaseDatafetcher {
 		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes);
 	}
 	
+	/**
+	 * Generate VDR with CE-compatible snapshot types (DATE, LIFECYCLE).
+	 * For approval-based snapshots (SaaS-only), use releaseVdrExportWithApproval mutation.
+	 * 
+	 * @param releaseUuid Release UUID
+	 * @param includeSuppressed Whether to include suppressed vulnerabilities
+	 * @param upToDate Optional explicit cutoff date
+	 * @param targetLifecycle Optional lifecycle to snapshot at
+	 * @return VDR JSON string
+	 */
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "releaseVdrExport")
 	public String releaseVdrExport(
 			@InputArgument("release") UUID releaseUuid,
-			@InputArgument("includeSuppressed") Boolean includeSuppressed) throws Exception {
+			@InputArgument("includeSuppressed") Boolean includeSuppressed,
+			@InputArgument("upToDate") ZonedDateTime upToDate,
+			@InputArgument("targetLifecycle") ReleaseLifecycle targetLifecycle) throws Exception {
+		
+		// Validate that only one cut-off date parameter is provided
+		if (upToDate != null && targetLifecycle != null) {
+			throw new IllegalArgumentException("Only one cut-off date parameter (upToDate or targetLifecycle) can be specified at a time");
+		}
+		
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		
@@ -264,7 +283,9 @@ public class ReleaseDatafetcher {
 		
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
 		ReleaseData rd = (ReleaseData) ro;
-		return releaseService.generateVdr(rd, includeSuppressed);
+		
+		// CE-compatible: date or lifecycle snapshots only
+		return releaseService.generateVdr(rd, includeSuppressed, upToDate, targetLifecycle);
 	}
 	
 	@PreAuthorize("isAuthenticated()")

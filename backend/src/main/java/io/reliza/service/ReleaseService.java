@@ -31,6 +31,7 @@ import org.cyclonedx.model.Commit;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Component.Type;
 import org.cyclonedx.model.Hash;
+import org.cyclonedx.model.Metadata;
 import org.cyclonedx.model.Hash.Algorithm;
 import org.cyclonedx.model.Pedigree;
 import org.cyclonedx.model.Property;
@@ -75,6 +76,8 @@ import io.reliza.model.DeliverableData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
+import io.reliza.model.VdrSnapshotType;
+import io.reliza.model.VdrMetadataProperty;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseApprovalProgrammaticInput;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
@@ -1566,30 +1569,156 @@ public class ReleaseService {
 		if (releaseOpt.isEmpty()) {
 			throw new RelizaException("Release not found; uuid: " + releaseUuid.toString());
 		}
-		return generateVdr(releaseOpt.get(), includeSuppressed);
+		return generateVdr(releaseOpt.get(), includeSuppressed, null, null);
 	}
 	
 	/**
-	 * Generate CycloneDX 1.6 VDR from release metrics vulnerability details
+	 * Compute the cutoff date for lifecycle-based VDR snapshots.
+	 * Returns the earliest date between upToDate and the lifecycle transition date.
+	 * 
+	 * @param releaseData Release data containing update events
+	 * @param upToDate Explicit cutoff date
+	 * @param targetLifecycle Lifecycle stage to snapshot at (finds first occurrence in history)
+	 * @return Computed cutoff date (earliest of provided dates), or null if none provided
+	 */
+	private ZonedDateTime computeLifecycleCutoffDate(ReleaseData releaseData, ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle) {
+		ZonedDateTime cutOffDate = upToDate;
+
+		if (targetLifecycle != null) {
+			ZonedDateTime lifecycleDate = null;
+			if (releaseData.getUpdateEvents() != null) {
+				for (ReleaseData.ReleaseUpdateEvent event : releaseData.getUpdateEvents()) {
+					// Note: event.newValue() can be null, but String.equals() handles null safely (returns false)
+					if (event.rus() == ReleaseData.ReleaseUpdateScope.LIFECYCLE &&
+						event.rua() == ReleaseData.ReleaseUpdateAction.CHANGED &&
+						targetLifecycle.name().equals(event.newValue())) {
+						// Keep the earliest occurrence
+						// Null check: event.date() should never be null per ReleaseUpdateEvent contract,
+						// but we guard against it to prevent NPE
+						if (event.date() != null && (lifecycleDate == null || event.date().isBefore(lifecycleDate))) {
+							lifecycleDate = event.date();
+						}
+					}
+				}
+			}
+			if (lifecycleDate != null) {
+				cutOffDate = (cutOffDate == null || lifecycleDate.isBefore(cutOffDate)) ? lifecycleDate : cutOffDate;
+			} else {
+				log.warn("Target lifecycle {} specified but not found in release history for release {}", targetLifecycle, releaseData.getUuid());
+			}
+		}
+
+		return cutOffDate;
+	}
+	
+	
+	/**
+	 * Generate CycloneDX 1.6 VDR from release metrics vulnerability details with historical snapshot support.
+	 * This method is for CE/lifecycle-only snapshots. For SaaS approval snapshots, use SaasReleaseService.
+	 * 
 	 * @param releaseData Release data
 	 * @param includeSuppressed Whether to include suppressed vulnerabilities (FALSE_POSITIVE, NOT_AFFECTED)
+	 * @param upToDate Optional explicit cutoff date
+	 * @param targetLifecycle Optional lifecycle to snapshot at
 	 * @return VDR JSON string
 	 */
-	public String generateVdr(ReleaseData releaseData, Boolean includeSuppressed) throws Exception {
+	public String generateVdr(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle) throws Exception {
+		// Compute the actual cutoff date from lifecycle events
+		ZonedDateTime cutOffDate = computeLifecycleCutoffDate(releaseData, upToDate, targetLifecycle);
+		
+		// Determine snapshot metadata
+		VdrSnapshotType snapshotType = null;
+		String snapshotValue = null;
+		if (targetLifecycle != null) {
+			snapshotType = VdrSnapshotType.LIFECYCLE;
+			snapshotValue = targetLifecycle.name();
+		} else if (upToDate != null) {
+			snapshotType = VdrSnapshotType.DATE;
+		}
+		
+		return generateVdrWithSnapshot(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
+	}
+	
+	/**
+	 * Generate VDR with pre-computed snapshot metadata (used by SaasReleaseService).
+	 * This allows SaaS-specific logic to be handled in the SaaS layer.
+	 * 
+	 * @param releaseData Release data
+	 * @param includeSuppressed Whether to include suppressed vulnerabilities
+	 * @param cutOffDate Pre-computed cutoff date
+	 * @param snapshotType Type of snapshot (enum)
+	 * @param snapshotValue Value for snapshot (lifecycle name or approval name)
+	 * @return VDR JSON string
+	 */
+	public String generateVdrWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, 
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
+		return generateVdrInternal(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
+	}
+	
+	/**
+	 * Internal method to generate VDR with pre-computed cutoff date and snapshot metadata
+	 * @param releaseData Release data
+	 * @param includeSuppressed Whether to include suppressed vulnerabilities
+	 * @param cutOffDate Computed cutoff date
+	 * @param snapshotType Type of snapshot (enum)
+	 * @param snapshotValue Value for snapshot (lifecycle name or approval entry name)
+	 * @return VDR JSON string
+	 */
+	private String generateVdrInternal(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
 		Bom bom = new Bom();
 		
 		// Set metadata
 		OrganizationData orgData = getOrganizationService.getOrganizationData(releaseData.getOrg()).orElse(null);
 		ComponentData componentData = getComponentService.getComponentData(releaseData.getComponent()).orElse(null);
-		
+	
 		Component bomComponent = new Component();
 		if (componentData != null) {
 			bomComponent.setName(componentData.getName());
 		}
 		bomComponent.setType(Type.APPLICATION);
 		bomComponent.setVersion(releaseData.getVersion());
-		Utils.augmentRootBomComponent(orgData.getName(), bomComponent);
+		String orgName = orgData != null ? orgData.getName() : null;
+		Utils.augmentRootBomComponent(orgName, bomComponent);
 		Utils.setRearmBomMetadata(bom, bomComponent);
+		
+		// Add property to metadata if this is a historical snapshot
+		if (cutOffDate != null) {
+			Metadata metadata = bom.getMetadata();
+			if (metadata == null) {
+				metadata = new Metadata();
+				bom.setMetadata(metadata);
+			}
+			
+			// Add a property indicating this is a historical snapshot
+			Property snapshotProperty = new Property();
+			snapshotProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT.getPropertyName());
+			snapshotProperty.setValue("true");
+			
+			Property cutoffProperty = new Property();
+			cutoffProperty.setName(VdrMetadataProperty.VDR_CUTOFF_DATE.getPropertyName());
+			cutoffProperty.setValue(cutOffDate.toString());
+			
+			if (metadata.getProperties() == null) {
+				metadata.setProperties(new java.util.ArrayList<>());
+			}
+			metadata.getProperties().add(snapshotProperty);
+			metadata.getProperties().add(cutoffProperty);
+			
+			// Add snapshot type and value if provided
+			if (snapshotType != null) {
+				Property typeProperty = new Property();
+				typeProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT_TYPE.getPropertyName());
+				// Use uppercase enum name for GraphQL compatibility
+				typeProperty.setValue(snapshotType.name());
+				metadata.getProperties().add(typeProperty);
+			}
+			if (snapshotValue != null) {
+				Property valueProperty = new Property();
+				valueProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT_VALUE.getPropertyName());
+				valueProperty.setValue(snapshotValue);
+				metadata.getProperties().add(valueProperty);
+			}
+		}
 		
 		// Transform vulnerabilities to CycloneDX format
 		ReleaseMetricsDto metrics = releaseData.getMetrics();
@@ -1756,11 +1885,25 @@ public class ReleaseService {
 			List<Vulnerability> vulnerabilities = new ArrayList<>();
 			
 			for (VulnerabilityDto vulnDto : metrics.getVulnerabilityDetails()) {
-				List<Vulnerability> vulnEntries = transformVulnerabilityToVdr(vulnDto, vdrContext, includeSuppressed);
+				// Skip if cutOffDate is specified and vulnerability was discovered/attributed after this date
+				// Note: Vulnerabilities discovered before cutOffDate are included, and their analysis state 
+				// is computed historically in transformVulnerabilityToVdr. If all analysis happened after 
+				// cutOffDate, the state correctly falls back to IN_TRIAGE.
+				if (cutOffDate != null && vulnDto.attributedAt() != null && vulnDto.attributedAt().isAfter(cutOffDate)) {
+					continue;
+				}
+				
+				List<Vulnerability> vulnEntries = transformVulnerabilityToVdr(vulnDto, vdrContext, includeSuppressed, cutOffDate);
 				vulnerabilities.addAll(vulnEntries);
 			}
 			
 			bom.setVulnerabilities(vulnerabilities);
+			
+			// If there are no vulnerabilities (e.g., all filtered by cutoff date), exclude components array
+			// to avoid showing an incomplete component list that only includes components with vulnerabilities
+			if (vulnerabilities.isEmpty()) {
+				bom.setComponents(null);
+			}
 		}
 		
 		// Generate JSON using CycloneDX 1.6
@@ -1784,9 +1927,10 @@ public class ReleaseService {
 	 * @param vulnDto The vulnerability DTO
 	 * @param vdrContext Context containing analysis maps and release mappings
 	 * @param includeSuppressed Whether to include suppressed vulnerabilities
+	 * @param cutOffDate Optional date for historical VDR snapshot
 	 * @return List of vulnerability entries (may be multiple if sources have different analysis states)
 	 */
-	private List<Vulnerability> transformVulnerabilityToVdr(VulnerabilityDto vulnDto, VdrContext vdrContext, Boolean includeSuppressed) {
+	private List<Vulnerability> transformVulnerabilityToVdr(VulnerabilityDto vulnDto, VdrContext vdrContext, Boolean includeSuppressed, ZonedDateTime cutOffDate) {
 		List<Vulnerability> result = new ArrayList<>();
 		
 		// Group sources by analysis state
@@ -1794,6 +1938,7 @@ public class ReleaseService {
 		
 		if (vulnDto.sources() != null && !vulnDto.sources().isEmpty()) {
 			for (FindingSourceDto source : vulnDto.sources()) {
+				// We don't have historical sources states directly, we'll determine the state historically inside buildVdrVulnerabilityEntry
 				AnalysisState state = source.analysisState();
 				sourcesByState.computeIfAbsent(state, k -> new ArrayList<>()).add(source);
 			}
@@ -1807,14 +1952,27 @@ public class ReleaseService {
 			AnalysisState analysisState = entry.getKey();
 			List<FindingSourceDto> sourcesForState = entry.getValue();
 			
+			Vulnerability vuln = buildVdrVulnerabilityEntry(vulnDto, analysisState, sourcesForState, vdrContext, cutOffDate);
+			
+			// Determine final state from the returned Vulnerability to apply suppression filter correctly based on historical state
+			AnalysisState finalState = analysisState;
+			if (vuln.getAnalysis() != null && vuln.getAnalysis().getState() != null) {
+				String vdrStateStr = vuln.getAnalysis().getState().name();
+				try {
+					finalState = AnalysisState.valueOf(vdrStateStr);
+				} catch (IllegalArgumentException e) {
+					// Fallback to original analysisState if enum mapping fails (though names should match)
+					log.warn("Could not map VDR analysis state {} to internal AnalysisState", vdrStateStr);
+				}
+			}
+			
 			// Skip suppressed vulnerabilities unless includeSuppressed is true
 			if (!Boolean.TRUE.equals(includeSuppressed) 
-					&& (analysisState == AnalysisState.FALSE_POSITIVE 
-					|| analysisState == AnalysisState.NOT_AFFECTED)) {
+					&& (finalState == AnalysisState.FALSE_POSITIVE 
+					|| finalState == AnalysisState.NOT_AFFECTED)) {
 				continue;
 			}
 			
-			Vulnerability vuln = buildVdrVulnerabilityEntry(vulnDto, analysisState, sourcesForState, vdrContext);
 			result.add(vuln);
 		}
 		
@@ -1824,8 +1982,8 @@ public class ReleaseService {
 	/**
 	 * Build a single CycloneDX Vulnerability entry for a specific analysis state
 	 */
-	private Vulnerability buildVdrVulnerabilityEntry(VulnerabilityDto vulnDto, AnalysisState analysisState, 
-			List<FindingSourceDto> sourcesForState, VdrContext vdrContext) {
+	private Vulnerability buildVdrVulnerabilityEntry(VulnerabilityDto vulnDto, AnalysisState defaultAnalysisState, 
+			List<FindingSourceDto> sourcesForState, VdrContext vdrContext, ZonedDateTime cutOffDate) {
 		Vulnerability vuln = new Vulnerability();
 		
 		// Set vulnerability ID
@@ -1886,9 +2044,11 @@ public class ReleaseService {
 		}
 		
 		// Set analysis state and details
-		if (analysisState != null) {
+		if (defaultAnalysisState != null) {
 			Vulnerability.Analysis analysis = new Vulnerability.Analysis();
-			analysis.setState(mapVdrAnalysisState(analysisState));
+			
+			// Start with default
+			analysis.setState(mapVdrAnalysisState(defaultAnalysisState));
 			
 			// Look up analysis details - first try self release, then dependency releases
 			VulnAnalysisData analysisData = null;
@@ -1915,16 +2075,48 @@ public class ReleaseService {
 			}
 			
 			if (analysisData != null) {
-				// Set justification if present
-				if (analysisData.getAnalysisJustification() != null) {
-					analysis.setJustification(mapVdrAnalysisJustification(analysisData.getAnalysisJustification()));
-				}
-				// Set detail from the latest history entry if present
 				List<VulnAnalysisData.AnalysisHistory> history = analysisData.getAnalysisHistory();
 				if (history != null && !history.isEmpty()) {
-					String latestDetail = history.get(history.size() - 1).getDetails();
-					if (StringUtils.isNotEmpty(latestDetail)) {
-						analysis.setDetail(latestDetail);
+					VulnAnalysisData.AnalysisHistory targetHistory = null;
+					
+					if (cutOffDate != null) {
+						// Find the latest history entry before or on cutOffDate
+						for (int i = history.size() - 1; i >= 0; i--) {
+							VulnAnalysisData.AnalysisHistory entry = history.get(i);
+							if (entry.getCreatedDate() != null && !entry.getCreatedDate().isAfter(cutOffDate)) {
+								targetHistory = entry;
+								break;
+							}
+						}
+					} else {
+						// No cutoff date, use the latest
+						targetHistory = history.get(history.size() - 1);
+					}
+					
+					if (targetHistory != null) {
+						if (targetHistory.getState() != null) {
+							analysis.setState(mapVdrAnalysisState(targetHistory.getState()));
+						}
+						if (targetHistory.getJustification() != null) {
+							analysis.setJustification(mapVdrAnalysisJustification(targetHistory.getJustification()));
+						}
+						if (StringUtils.isNotEmpty(targetHistory.getDetails())) {
+							analysis.setDetail(targetHistory.getDetails());
+						}
+						// Override severity if analysis history changed it
+						if (targetHistory.getSeverity() != null) {
+							Rating rating = new Rating();
+							rating.setSeverity(mapVdrSeverity(targetHistory.getSeverity()));
+							vuln.setRatings(List.of(rating));
+						}
+					}
+				} else {
+					// Fallback if history is empty but we have top-level fields (legacy data)
+					if (analysisData.getAnalysisState() != null && (cutOffDate == null || analysisData.getCreatedDate() == null || !analysisData.getCreatedDate().isAfter(cutOffDate))) {
+						analysis.setState(mapVdrAnalysisState(analysisData.getAnalysisState()));
+						if (analysisData.getAnalysisJustification() != null) {
+							analysis.setJustification(mapVdrAnalysisJustification(analysisData.getAnalysisJustification()));
+						}
 					}
 				}
 			}

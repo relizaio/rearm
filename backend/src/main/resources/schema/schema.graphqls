@@ -218,7 +218,7 @@ type Mutation {
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
 	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType]): String
-	releaseVdrExport(release: ID!, includeSuppressed: Boolean): String
+	releaseVdrExport(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
 
 	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
 
