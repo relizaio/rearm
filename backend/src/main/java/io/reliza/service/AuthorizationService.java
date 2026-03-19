@@ -516,7 +516,7 @@ public class AuthorizationService {
 	 * @throws AccessDeniedException if system is sealed or license is invalid
 	 */
 	public void validateSystemOperational(CallType ct) throws RelizaException {
-		if (ct == CallType.GLOBAL_ADMIN) {
+		if (ct == CallType.GLOBAL_ADMIN || ct == CallType.INIT) {
 			return;
 		}
 		if (licenseStatus.isSystemSealed()) {
