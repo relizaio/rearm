@@ -210,7 +210,7 @@
                     <n-form-item>
                         Include Suppressed:<n-switch style="margin-left: 5px;" v-model:value="vdrIncludeSuppressed"/>
                     </n-form-item>
-                    <n-form-item label="Snapshot Type (optional)" v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'">
+                    <n-form-item label="Snapshot Type (optional)">
                         <n-radio-group v-model:value="vdrSnapshotType" name="vdrSnapshotType">
                             <n-radio-button value="NONE">
                                 <span style="display: inline-flex; align-items: center;">
@@ -251,7 +251,7 @@
                                     </n-tooltip>
                                 </span>
                             </n-radio-button>
-                            <n-radio-button value="APPROVAL">
+                            <n-radio-button v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" value="APPROVAL">
                                 <span style="display: inline-flex; align-items: center;">
                                     By Approval
                                     <n-tooltip trigger="hover">
@@ -2626,22 +2626,46 @@ async function exportReleaseVdr () {
         const targetLifecycle = vdrSnapshotType.value === 'LIFECYCLE' ? vdrTargetLifecycle.value : null
         const targetApproval = vdrSnapshotType.value === 'APPROVAL' ? vdrTargetApproval.value : null
         
-        const gqlResp: any = await graphqlClient.mutate({
-            mutation: gql`
-                mutation releaseVdrExport($release: ID!, $includeSuppressed: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum, $targetApproval: String) {
-                    releaseVdrExport(release: $release, includeSuppressed: $includeSuppressed, upToDate: $upToDate, targetLifecycle: $targetLifecycle, targetApproval: $targetApproval)
-                }
-            `,
-            variables: {
-                release: updatedRelease.value.uuid,
-                includeSuppressed: vdrIncludeSuppressed.value,
-                upToDate: upToDateIso,
-                targetLifecycle: targetLifecycle,
-                targetApproval: targetApproval
-            },
-            fetchPolicy: 'no-cache'
-        })
-        let exportContent = gqlResp.data.releaseVdrExport
+        // Use different mutations based on snapshot type
+        let gqlResp: any
+        let exportContent: string
+        
+        if (vdrSnapshotType.value === 'APPROVAL') {
+            // SaaS-only mutation for approval snapshots
+            gqlResp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseVdrExportWithApproval($release: ID!, $includeSuppressed: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum, $targetApproval: String) {
+                        releaseVdrExportWithApproval(release: $release, includeSuppressed: $includeSuppressed, upToDate: $upToDate, targetLifecycle: $targetLifecycle, targetApproval: $targetApproval)
+                    }
+                `,
+                variables: {
+                    release: updatedRelease.value.uuid,
+                    includeSuppressed: vdrIncludeSuppressed.value,
+                    upToDate: upToDateIso,
+                    targetLifecycle: targetLifecycle,
+                    targetApproval: targetApproval
+                },
+                fetchPolicy: 'no-cache'
+            })
+            exportContent = gqlResp.data.releaseVdrExportWithApproval
+        } else {
+            // CE-compatible mutation for date/lifecycle snapshots
+            gqlResp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseVdrExport($release: ID!, $includeSuppressed: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum) {
+                        releaseVdrExport(release: $release, includeSuppressed: $includeSuppressed, upToDate: $upToDate, targetLifecycle: $targetLifecycle)
+                    }
+                `,
+                variables: {
+                    release: updatedRelease.value.uuid,
+                    includeSuppressed: vdrIncludeSuppressed.value,
+                    upToDate: upToDateIso,
+                    targetLifecycle: targetLifecycle
+                },
+                fetchPolicy: 'no-cache'
+            })
+            exportContent = gqlResp.data.releaseVdrExport
+        }
         if (typeof exportContent !== 'string') {
             exportContent = JSON.stringify(exportContent, null, 2)
         }
@@ -2690,23 +2714,46 @@ async function exportReleaseVdrPdf() {
         const targetLifecycle = vdrSnapshotType.value === 'LIFECYCLE' ? vdrTargetLifecycle.value : null
         const targetApproval = vdrSnapshotType.value === 'APPROVAL' ? vdrTargetApproval.value : null
         
-        const gqlResp: any = await graphqlClient.mutate({
-            mutation: gql`
-                mutation releaseVdrExport($release: ID!, $includeSuppressed: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum, $targetApproval: String) {
-                    releaseVdrExport(release: $release, includeSuppressed: $includeSuppressed, upToDate: $upToDate, targetLifecycle: $targetLifecycle, targetApproval: $targetApproval)
-                }
-            `,
-            variables: {
-                release: updatedRelease.value.uuid,
-                includeSuppressed: vdrIncludeSuppressed.value,
-                upToDate: upToDateIso,
-                targetLifecycle: targetLifecycle,
-                targetApproval: targetApproval
-            },
-            fetchPolicy: 'no-cache'
-        })
+        // Use different mutations based on snapshot type
+        let gqlResp: any
+        let vdrJson: any
         
-        let vdrJson = gqlResp.data.releaseVdrExport
+        if (vdrSnapshotType.value === 'APPROVAL') {
+            // SaaS-only mutation for approval snapshots
+            gqlResp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseVdrExportWithApproval($release: ID!, $includeSuppressed: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum, $targetApproval: String) {
+                        releaseVdrExportWithApproval(release: $release, includeSuppressed: $includeSuppressed, upToDate: $upToDate, targetLifecycle: $targetLifecycle, targetApproval: $targetApproval)
+                    }
+                `,
+                variables: {
+                    release: updatedRelease.value.uuid,
+                    includeSuppressed: vdrIncludeSuppressed.value,
+                    upToDate: upToDateIso,
+                    targetLifecycle: targetLifecycle,
+                    targetApproval: targetApproval
+                },
+                fetchPolicy: 'no-cache'
+            })
+            vdrJson = gqlResp.data.releaseVdrExportWithApproval
+        } else {
+            // CE-compatible mutation for date/lifecycle snapshots
+            gqlResp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseVdrExport($release: ID!, $includeSuppressed: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum) {
+                        releaseVdrExport(release: $release, includeSuppressed: $includeSuppressed, upToDate: $upToDate, targetLifecycle: $targetLifecycle)
+                    }
+                `,
+                variables: {
+                    release: updatedRelease.value.uuid,
+                    includeSuppressed: vdrIncludeSuppressed.value,
+                    upToDate: upToDateIso,
+                    targetLifecycle: targetLifecycle
+                },
+                fetchPolicy: 'no-cache'
+            })
+            vdrJson = gqlResp.data.releaseVdrExport
+        }
         if (typeof vdrJson === 'string') {
             try {
                 vdrJson = JSON.parse(vdrJson)
@@ -2736,17 +2783,10 @@ async function exportReleaseVdrPdf() {
         const releaseVersion = updatedRelease.value.version || ''
         const title = `Vulnerability Disclosure Report (VDR) for release: ${releaseName}${releaseVersion ? `, version ${releaseVersion}` : ''}`
         
-        // Build filename: vdr-{normalized component name}-{normalized version}-{date}.pdf
-        const normalizeForFilename = (str: string) => str.toLowerCase().replace(/[^a-zA-Z0-9\-._]/g, '_')
-        const normalizedName = normalizeForFilename(releaseName)
-        const normalizedVersion = normalizeForFilename(releaseVersion)
-        const dateStr = new Date().toISOString().slice(0, 10)
-        const snapshotSuffix = getSnapshotSuffix()
-        const filenamePrefix = `vdr-${normalizedName}${normalizedVersion ? `-${normalizedVersion}` : ''}${snapshotSuffix}-${dateStr}`
-        
         // Build snapshot information for PDF
         let snapshotDate: string | undefined
         let snapshotType: string | undefined
+        let cutoffDateForFilename: string | undefined
         
         // Extract snapshot metadata from VDR properties
         const metadataProperties = vdrJson.metadata?.properties
@@ -2755,15 +2795,18 @@ async function exportReleaseVdrPdf() {
             if (cutoffDateProp && cutoffDateProp.value) {
                 // Parse ISO date string and format it
                 snapshotDate = new Date(cutoffDateProp.value).toLocaleString('en-CA', { hour12: false })
+                // Extract date portion for filename (YYYY-MM-DD)
+                cutoffDateForFilename = new Date(cutoffDateProp.value).toISOString().slice(0, 10)
             }
             
             const snapshotTypeProp = metadataProperties.find((p: any) => p.name === 'vdr:snapshotType')
             const snapshotValueProp = metadataProperties.find((p: any) => p.name === 'vdr:snapshotValue')
             
             if (snapshotTypeProp && snapshotValueProp) {
-                if (snapshotTypeProp.value === 'lifecycle') {
+                // Backend now sends uppercase enum values (LIFECYCLE, APPROVAL)
+                if (snapshotTypeProp.value === 'LIFECYCLE') {
                     snapshotType = `By Lifecycle (${snapshotValueProp.value})`
-                } else if (snapshotTypeProp.value === 'approval') {
+                } else if (snapshotTypeProp.value === 'APPROVAL') {
                     // Backend now provides the approval name directly in snapshotValue
                     snapshotType = `By Approval (${snapshotValueProp.value})`
                 }
@@ -2771,6 +2814,15 @@ async function exportReleaseVdrPdf() {
                 snapshotType = 'By Date'
             }
         }
+        
+        // Build filename: vdr-{normalized component name}-{normalized version}-{date}.pdf
+        // Use actual cutoff date from VDR metadata if available, otherwise use today's date
+        const normalizeForFilename = (str: string) => str.toLowerCase().replace(/[^a-zA-Z0-9\-._]/g, '_')
+        const normalizedName = normalizeForFilename(releaseName)
+        const normalizedVersion = normalizeForFilename(releaseVersion)
+        const dateStr = cutoffDateForFilename || new Date().toISOString().slice(0, 10)
+        const snapshotSuffix = getSnapshotSuffix()
+        const filenamePrefix = `vdr-${normalizedName}${normalizedVersion ? `-${normalizedVersion}` : ''}${snapshotSuffix}-${dateStr}`
         
         const result = exportFindingsToPdf({
             data: vulnerabilityData,
