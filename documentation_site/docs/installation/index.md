@@ -118,4 +118,6 @@ To obtain it, use command shown in the status section of the Helm chart installa
 echo $(kubectl get secret --namespace rearm system-secret -o jsonpath="{.data.systemSecret}" | base64 --decode)
 ```
 
+Note, if you're getting repeated error, try restarting (deleting) `rearm-backend` pod and then retry the unseal process.
+
 Once you sign in and unseal the system, your user will automatically become the system administrator and the admin of the pre-created organization.
