@@ -156,7 +156,7 @@ const onCreate = async function () {
     }
     
     // Check license validity
-    if (!myUser.value.isLicenseValid && !showSignUpFlow.value && myUser.value.installationType !== 'OSS') {
+    if (!myUser.value.systemSealed && !myUser.value.isLicenseValid && !showSignUpFlow.value && myUser.value.installationType !== 'OSS') {
         if (myUser.value.isGlobalAdmin) {
             // Global admin: show upload license modal
             Swal.fire({
