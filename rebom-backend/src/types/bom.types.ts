@@ -88,6 +88,8 @@ export type RebomOptions = {
     originalFileDigest?: string,
     originalFileSize?: number,
     originalMediaType?: string,
+    processedFileDigest?: string,  // SHA256 of augmented/processed BOM file
+    processedFileSize?: number,
     stripBom: string,
     bomVersion: string,
     purl?: string,

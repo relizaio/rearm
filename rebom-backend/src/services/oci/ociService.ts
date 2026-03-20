@@ -1,6 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 import FormData from 'form-data';
 import { logger } from '../../logger';
+import { createHash } from 'crypto';
 
 const client = axios.create({
     baseURL: process.env.OCI_ARTIFACT_SERVICE_HOST ? process.env.OCI_ARTIFACT_SERVICE_HOST : `http://[::1]:8083/`,
@@ -81,7 +82,7 @@ export function getMonthlyRepositoryName(timestamp?: Date): string {
     return `${OCI_CONFIG.REPOSITORY_SUFFIX}-${suffix}`;
 }
 
-export async function fetchFromOci(tag: string, repositoryName?: string): Promise<Object>{
+export async function fetchFromOci(tag: string, repositoryName?: string, expectedDigest?: string): Promise<Object>{
     if(tag.startsWith(OCI_CONFIG.URN_PREFIX)){
         tag = tag.replace(OCI_CONFIG.URN_PREFIX, "")
     }
@@ -109,6 +110,8 @@ export async function fetchFromOci(tag: string, repositoryName?: string): Promis
     logger.debug({ originalTag: arguments[0], processedTag: tag, repository: repo, providedRepositoryName: repositoryName }, "Fetching from OCI");
     
     try {
+        // Get raw response data for digest validation
+        // transformResponse: [] prevents axios from parsing JSON automatically
         const resp: AxiosResponse = await client.get('/pull', { 
             params: {
                 repo: repo,
@@ -116,16 +119,40 @@ export async function fetchFromOci(tag: string, repositoryName?: string): Promis
             },
             headers: {
                 Accept: 'application/json'
-            }
+            },
+            transformResponse: [] // Get raw response as string/buffer
         });
         
         logger.debug({ 
             status: resp.status, 
-            dataType: typeof resp.data,
-            dataKeys: resp.data ? Object.keys(resp.data) : 'null'
+            dataType: typeof resp.data
         }, "OCI response received");
         
-        const bom: any = resp.data
+        // Validate downloaded artifact digest if expected digest is provided
+        // Must validate BEFORE parsing to match how OCI service calculated the digest
+        if (expectedDigest) {
+            // resp.data is the raw response string/buffer
+            const rawContent = typeof resp.data === 'string' ? resp.data : Buffer.from(resp.data).toString();
+            const actualDigest = createHash('sha256').update(rawContent).digest('hex');
+            
+            if (actualDigest !== expectedDigest) {
+                const error = new Error(`Digest validation failed for artifact. Expected: ${expectedDigest}, Actual: ${actualDigest}`);
+                logger.error({ 
+                    tag, 
+                    repository: repo,
+                    expectedDigest,
+                    actualDigest
+                }, "Downloaded artifact digest does not match stored digest");
+                throw error;
+            }
+            
+            logger.debug({ tag, repository: repo, digest: actualDigest, expected: expectedDigest }, "Artifact digest validated successfully");
+        } else {
+            logger.warn({ tag, repository: repo }, "No expected digest provided for artifact validation - skipping digest check");
+        }
+        
+        // Parse JSON after validation
+        const bom: any = JSON.parse(typeof resp.data === 'string' ? resp.data : Buffer.from(resp.data).toString());
         return bom
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

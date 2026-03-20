@@ -163,25 +163,26 @@ export function validateDualBomPush(
 }
 
 /**
- * Fetch raw CycloneDX BOM with automatic fallback for legacy BOMs.
- * Tries uuid-raw first, falls back to uuid if that fails (for legacy BOMs without -raw suffix).
- * 
+ * Fetches raw BOM with automatic fallback for legacy BOMs.
+ * First tries to fetch with '-raw' suffix, then falls back to UUID without suffix.
  * @param bomUuid - BOM UUID (without -raw suffix)
  * @param repositoryName - Repository name to fetch from
  * @param fetchFromOci - fetchFromOci function to use
+ * @param expectedDigest - Optional expected SHA256 digest for validation
  * @returns Raw BOM content
  * @throws Error if both attempts fail
  */
 export async function fetchRawBomWithFallback(
     bomUuid: string,
     repositoryName: string | undefined,
-    fetchFromOci: (tag: string, repo?: string) => Promise<any>
+    fetchFromOci: (tag: string, repo?: string, digest?: string) => Promise<any>,
+    expectedDigest?: string
 ): Promise<any> {
     const rawBomUuid = bomUuid + '-raw';
     
     try {
         logger.debug({ rawBomUuid, bomUuid, repositoryName }, 'Fetching raw CycloneDX BOM');
-        return await fetchFromOci(rawBomUuid, repositoryName);
+        return await fetchFromOci(rawBomUuid, repositoryName, expectedDigest);
     } catch (error) {
         // Fallback for older BOMs without -raw suffix
         logger.warn({ 
@@ -190,6 +191,6 @@ export async function fetchRawBomWithFallback(
             repositoryName,
             error: error instanceof Error ? error.message : String(error) 
         }, 'Failed to fetch raw BOM with -raw suffix, retrying without suffix for legacy BOM');
-        return await fetchFromOci(bomUuid, repositoryName);
+        return await fetchFromOci(bomUuid, repositoryName, expectedDigest);
     }
 }

@@ -49,7 +49,9 @@ export async function findBomObjectById(id: string, org: string): Promise<Object
     
     // Fetch the actual BOM content from OCI storage using the BOM's UUID
     // Use stored repository name, or fall back to default 'rebom-artifacts' for legacy records
-    const bomContent = await fetchFromOci(bomRecord.uuid, storedRepositoryName);
+    // Validate using processedFileDigest (augmented BOM digest)
+    const expectedDigest = bomRecord.meta?.processedFileDigest;
+    const bomContent = await fetchFromOci(bomRecord.uuid, storedRepositoryName, expectedDigest);
     return bomContent;
 }
 
@@ -105,16 +107,20 @@ export async function findBomBySerialNumberAndVersion(serialNumber: string, vers
                 // Use SPDX BOM's repository name from oci_response, not the CycloneDX BOM's
                 const spdxRepositoryName = extractRepositoryNameFromSpdxOciResponse(spdxBom.oci_response);
                 logger.debug({ fetchId, version, serialNumber, spdxRepositoryName }, "Fetching raw SPDX BOM by version");
-                return await fetchFromOci(fetchId, spdxRepositoryName);
+                // Use file_sha256 field as authoritative source for SPDX digest validation
+                const spdxDigest = spdxBom.file_sha256;
+                return await fetchFromOci(fetchId, spdxRepositoryName, spdxDigest);
             }
         }
         // Native CycloneDX - fetch raw BOM with automatic fallback for legacy BOMs
         logger.debug({ bomUuid: bomRecord.uuid, version, serialNumber }, "Fetching raw CycloneDX BOM by version");
-        return await fetchRawBomWithFallback(bomRecord.uuid, storedRepositoryName, fetchFromOci);
+        const expectedDigest = bomRecord.meta?.originalFileDigest;
+        return await fetchRawBomWithFallback(bomRecord.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
     } else {
-        // Augmented/processed BOM requested
+        // Augmented/processed BOM requested - validate using processedFileDigest
         logger.debug({ uuid: bomRecord.uuid, version, serialNumber }, "Fetching augmented BOM by version");
-        return await fetchFromOci(bomRecord.uuid, storedRepositoryName);
+        const expectedDigest = bomRecord.meta?.processedFileDigest;
+        return await fetchFromOci(bomRecord.uuid, storedRepositoryName, expectedDigest);
     }
 }
 
@@ -179,12 +185,15 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
                 bomUuid: bomById.uuid, 
                 sourceSpdxUuid: bomById.source_spdx_uuid 
             }, "Fetching converted CycloneDX from SPDX source");
-            return await fetchFromOci(bomById.uuid, storedRepositoryName);
+            // Converted BOMs are processed versions - validate using processedFileDigest
+            const expectedDigest = bomById.meta?.processedFileDigest;
+            return await fetchFromOci(bomById.uuid, storedRepositoryName, expectedDigest);
         }
         
         // Native CycloneDX - fetch raw BOM with automatic fallback for legacy BOMs
         logger.debug({ bomUuid: bomById.uuid }, "Fetching raw CycloneDX BOM");
-        return await fetchRawBomWithFallback(bomById.uuid, storedRepositoryName, fetchFromOci);
+        const expectedDigest = bomById.meta?.originalFileDigest;
+        return await fetchRawBomWithFallback(bomById.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
     } 
     else if (format === 'SPDX') {
         if (bomById.source_format === 'SPDX' && bomById.source_spdx_uuid) {
@@ -192,7 +201,9 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
             if (spdxBom?.oci_response) {
                 // Use SPDX BOM's repository name from oci_response
                 const spdxRepositoryName = extractRepositoryNameFromSpdxOciResponse(spdxBom.oci_response);
-                return await fetchFromOci(spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid, spdxRepositoryName);
+                // Use file_sha256 field as authoritative source for SPDX digest validation
+                const spdxDigest = spdxBom.file_sha256;
+                return await fetchFromOci(spdxBom.oci_response.ociResponse?.digest || spdxBom.uuid, spdxRepositoryName, spdxDigest);
             }
         }
         throw new BomNotFoundError(
@@ -219,7 +230,9 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
                 // Use SPDX BOM's repository name from oci_response
                 const spdxRepositoryName = extractRepositoryNameFromSpdxOciResponse(spdxBom.oci_response);
                 logger.debug({ fetchId, spdxRepositoryName }, "Fetching SPDX content from OCI");
-                return await fetchFromOci(fetchId, spdxRepositoryName);
+                // Use file_sha256 field as authoritative source for SPDX digest validation
+                const spdxDigest = spdxBom.file_sha256;
+                return await fetchFromOci(fetchId, spdxRepositoryName, spdxDigest);
             }
         }
         
@@ -227,11 +240,13 @@ export async function findRawBomObjectById(id: string, org: string, format?: str
         if (bomById.source_format === 'CYCLONEDX' || !bomById.source_spdx_uuid) {
             logger.debug({ bomUuid: bomById.uuid, sourceFormat: bomById.source_format }, 
                 "Fetching raw CycloneDX BOM (no format specified)");
-            return await fetchRawBomWithFallback(bomById.uuid, storedRepositoryName, fetchFromOci);
+            const expectedDigest = bomById.meta?.originalFileDigest;
+            return await fetchRawBomWithFallback(bomById.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
         }
         
-        // Fallback to primary UUID (processed/augmented BOM)
+        // Fallback to primary UUID (processed/augmented BOM) - validate using processedFileDigest
         logger.debug({ uuid: bomById.uuid }, "Falling back to primary BOM UUID");
-        return await fetchFromOci(bomById.uuid, storedRepositoryName);
+        const expectedDigest = bomById.meta?.processedFileDigest;
+        return await fetchFromOci(bomById.uuid, storedRepositoryName, expectedDigest);
     }
 }

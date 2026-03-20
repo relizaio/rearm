@@ -90,9 +90,10 @@ async function bomRecordToDto(bomRecord: BomRecord, rootOverride: boolean = true
   let name = ''
   let bomVersion = ''
   
-  // Fetch BOM content from OCI storage
+  // Fetch BOM content from OCI storage (augmented BOM - validate with processedFileDigest)
   const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
-  bomRecord.bom = await fetchFromOci(bomRecord.uuid, storedRepositoryName)
+  const expectedDigest = bomRecord.meta?.processedFileDigest;
+  bomRecord.bom = await fetchFromOci(bomRecord.uuid, storedRepositoryName, expectedDigest)
   
   if (rootOverride)
     bomRecord.bom = rootComponentOverride(bomRecord)

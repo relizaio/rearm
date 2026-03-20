@@ -143,6 +143,10 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   rebomOptions.originalFileSize = rawPushResult.originalSize;
   rebomOptions.originalMediaType = rawPushResult.originalMediaType;
   
+  // Track processed/augmented BOM metadata for validation
+  rebomOptions.processedFileDigest = pushResult.fileSHA256Digest;  // Augmented BOM digest
+  rebomOptions.processedFileSize = pushResult.originalSize;
+  
   // Repository name is already stored in pushResult.ociRepositoryName (bom field)
   // No need to duplicate it in meta
 
@@ -407,6 +411,10 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     
     // Validate that repository name was set
     validateOciPushResult(cycloneDxPushResult, 'converted CycloneDX push', convertedBomUuid);
+    
+    // Store processed BOM digest for validation (converted CycloneDX is the processed version)
+    mergedOptions.processedFileDigest = cycloneDxPushResult.fileSHA256Digest;
+    mergedOptions.processedFileSize = cycloneDxPushResult.originalSize;
     
     // Repository name is already in cycloneDxPushResult.ociRepositoryName
 

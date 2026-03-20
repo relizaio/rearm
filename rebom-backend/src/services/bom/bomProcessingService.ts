@@ -768,9 +768,10 @@ export async function triggerEnrichment(id: string, org: string, force: boolean 
       logger.error({ err, bomUuid: bomRecord.uuid }, 'Forced re-enrichment failed');
     });
   } else {
-    // Normal enrichment - just fetch current BOM and enrich
+    // Normal enrichment - fetch current augmented BOM (validate with processedFileDigest)
     const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
-    const bomContent = await fetchFromOci(bomRecord.uuid, storedRepositoryName);
+    const expectedDigest = bomRecord.meta?.processedFileDigest;
+    const bomContent = await fetchFromOci(bomRecord.uuid, storedRepositoryName, expectedDigest);
     enrichBomAsync(bomRecord.uuid, bomContent, org).catch(err => {
       logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
     });
@@ -850,7 +851,8 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
 async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> {
   try {
     const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
-    const rawBom = await fetchRawBomWithFallback(bomRecord.uuid, storedRepositoryName, fetchFromOci);
+    const expectedDigest = bomRecord.meta?.originalFileDigest;
+    const rawBom = await fetchRawBomWithFallback(bomRecord.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
     
     // Re-augment the BOM with component context
     const rebomOptions = bomRecord.meta;
@@ -886,7 +888,9 @@ async function reprocessSpdxBom(bomRecord: BomRecord, spdxUuid: string, org: str
     // Fetch raw SPDX content from OCI
     const fetchId = spdxRecord.oci_response.ociResponse?.digest || spdxRecord.uuid;
     const spdxRepositoryName = extractRepositoryNameFromSpdxOciResponse(spdxRecord.oci_response);
-    const spdxContent = await fetchFromOci(fetchId, spdxRepositoryName);
+    // Use file_sha256 field as authoritative source for SPDX digest validation
+    const spdxDigest = spdxRecord.file_sha256;
+    const spdxContent = await fetchFromOci(fetchId, spdxRepositoryName, spdxDigest);
     
     // Re-convert SPDX to CycloneDX
     const conversionResult = await SpdxService.convertSpdxToCycloneDx(spdxContent);
@@ -934,10 +938,16 @@ async function updateEnrichmentStatusWithBom(
         bom = $2,
         meta = jsonb_set(
           jsonb_set(
-            jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
-            '{enrichmentTimestamp}', $4::jsonb
+            jsonb_set(
+              jsonb_set(
+                jsonb_set(meta, '{enrichmentStatus}', $3::jsonb),
+                '{enrichmentTimestamp}', $4::jsonb
+              ),
+              '{enrichmentError}', $5::jsonb
+            ),
+            '{processedFileDigest}', $6::jsonb
           ),
-          '{enrichmentError}', $5::jsonb
+          '{processedFileSize}', $7::jsonb
         ),
         last_updated_date = NOW()
       WHERE uuid = $1
@@ -948,7 +958,9 @@ async function updateEnrichmentStatusWithBom(
       updatedOasResponse,
       JSON.stringify(status),
       JSON.stringify(new Date().toISOString()),
-      JSON.stringify(null)
+      JSON.stringify(null),
+      JSON.stringify(oasResponse.fileSHA256Digest || null),
+      JSON.stringify(oasResponse.originalSize || null)
     ]);
     
     if (repositoryName) {

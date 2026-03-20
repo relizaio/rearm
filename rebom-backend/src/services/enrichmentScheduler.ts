@@ -83,9 +83,10 @@ async function runEnrichmentCycle(): Promise<void> {
         
         logger.info({ bomUuid: bom.uuid, serialNumber: bom.serialNumber }, 'Enrichment scheduler: Triggering enrichment');
         
-        // Fetch BOM content from OCI
+        // Fetch BOM content from OCI (augmented BOM - validate with processedFileDigest)
         const storedRepositoryName = extractRepositoryNameFromBom(bom);
-        const bomContent = await fetchFromOci(bom.uuid, storedRepositoryName);
+        const expectedDigest = bom.meta?.processedFileDigest;
+        const bomContent = await fetchFromOci(bom.uuid, storedRepositoryName, expectedDigest);
         
         await enrichBomAsync(bom.uuid, bomContent, bom.organization, credentialsByOrg.get(bom.organization)).catch(err => {
           logger.error({ err, bomUuid: bom.uuid }, 'Enrichment scheduler: Async enrichment failed');

@@ -33,7 +33,9 @@ export class BomMapper {
     static async toDtoWithContent(record: BomRecord): Promise<BomDto> {
         const dto = this.toDto(record);
         const storedRepositoryName = extractRepositoryNameFromBom(record);
-        dto.bom = await fetchFromOci(record.uuid, storedRepositoryName);
+        // Validate augmented/processed BOM using processedFileDigest
+        const expectedDigest = record.meta?.processedFileDigest;
+        dto.bom = await fetchFromOci(record.uuid, storedRepositoryName, expectedDigest);
         return dto;
     }
 
