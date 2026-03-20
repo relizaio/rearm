@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import java.security.MessageDigest;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
@@ -155,7 +156,13 @@ public class SharedArtifactService {
 			repositoryName = io.reliza.util.OciRepositoryUtil.constructRepositoryPath(this.registryNamespace, "downloadable-artifacts");
 		}
 		
-		return this.webClient.get()
+		// Get expected file digest for validation (ORIGINAL_FILE scope)
+	Optional<String> expectedDigest = ad.getDigestRecords().stream()
+		.filter(dr -> dr.algo().equals(TeaChecksumType.SHA_256) && dr.scope().equals(DigestScope.ORIGINAL_FILE))
+		.map(DigestRecord::digest)
+		.findFirst();
+	
+	return this.webClient.get()
 					.uri(uriBuilder -> uriBuilder
 							.path("/pull")
 									.queryParam("repo", repositoryName)
@@ -165,10 +172,38 @@ public class SharedArtifactService {
 					.accept(MediaType.APPLICATION_OCTET_STREAM)
 					.retrieve()
 					.bodyToMono(byte[].class)
-					.map(data -> ResponseEntity.ok()
-									.contentType(MediaType.parseMediaType(mediaType))
-									.header("Content-Disposition", "attachment; filename=\"" + resolvedFileName + "\"")
-									.body(data));	
+					.map(data -> {
+						// Validate downloaded artifact digest
+						if (expectedDigest.isPresent()) {
+							try {
+								MessageDigest digest = MessageDigest.getInstance("SHA-256");
+								byte[] hash = digest.digest(data);
+								String actualDigest = bytesToHex(hash);
+								
+								if (!actualDigest.equalsIgnoreCase(expectedDigest.get())) {
+									log.error("Digest validation failed for artifact {}. Expected: {}, Actual: {}", 
+										ad.getUuid(), expectedDigest.get(), actualDigest);
+									throw new RuntimeException(new RelizaException("Downloaded artifact digest does not match stored digest. Expected: " 
+										+ expectedDigest.get() + ", Actual: " + actualDigest));
+								}
+								
+								log.debug("Artifact {} digest validated successfully: {}", ad.getUuid(), actualDigest);
+							} catch (Exception e) {
+								if (e instanceof RuntimeException && e.getCause() instanceof RelizaException) {
+									throw (RuntimeException) e;
+								}
+								log.error("Error validating artifact digest for {}: {}", ad.getUuid(), e.getMessage());
+								throw new RuntimeException(new RelizaException("Error validating artifact digest: " + e.getMessage()));
+							}
+						} else {
+							log.warn("No original file digest available for artifact {} - skipping digest validation", ad.getUuid());
+						}
+						
+						return ResponseEntity.ok()
+								.contentType(MediaType.parseMediaType(mediaType))
+								.header("Content-Disposition", "attachment; filename=\"" + resolvedFileName + "\"")
+								.body(data);
+					});	
 	}
 	public Mono<ResponseEntity<byte[]>> downloadRawArtifact(ArtifactData ad) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
@@ -362,6 +397,17 @@ public class SharedArtifactService {
 			log.error("Error transferring version history from {} to {}: {}", oldArtifactUuid, newArtifactUuid, e.getMessage());
 			return false;
 		}
+	}
+	
+	/**
+	 * Convert byte array to hex string
+	 */
+	private static String bytesToHex(byte[] bytes) {
+		StringBuilder result = new StringBuilder();
+		for (byte b : bytes) {
+			result.append(String.format("%02x", b));
+		}
+		return result.toString();
 	}
 	
 }
