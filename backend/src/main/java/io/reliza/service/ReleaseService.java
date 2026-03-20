@@ -1691,11 +1691,11 @@ public class ReleaseService {
 			
 			// Add a property indicating this is a historical snapshot
 			Property snapshotProperty = new Property();
-			snapshotProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT.getPropertyName());
+			snapshotProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT.toString());
 			snapshotProperty.setValue("true");
 			
 			Property cutoffProperty = new Property();
-			cutoffProperty.setName(VdrMetadataProperty.VDR_CUTOFF_DATE.getPropertyName());
+			cutoffProperty.setName(VdrMetadataProperty.VDR_CUTOFF_DATE.toString());
 			cutoffProperty.setValue(cutOffDate.toString());
 			
 			if (metadata.getProperties() == null) {
@@ -1707,14 +1707,14 @@ public class ReleaseService {
 			// Add snapshot type and value if provided
 			if (snapshotType != null) {
 				Property typeProperty = new Property();
-				typeProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT_TYPE.getPropertyName());
+				typeProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT_TYPE.toString());
 				// Use uppercase enum name for GraphQL compatibility
 				typeProperty.setValue(snapshotType.name());
 				metadata.getProperties().add(typeProperty);
 			}
 			if (snapshotValue != null) {
 				Property valueProperty = new Property();
-				valueProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT_VALUE.getPropertyName());
+				valueProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT_VALUE.toString());
 				valueProperty.setValue(snapshotValue);
 				metadata.getProperties().add(valueProperty);
 			}

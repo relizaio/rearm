@@ -11,35 +11,23 @@ public enum VdrMetadataProperty {
 	/**
 	 * Indicates whether this VDR is a historical snapshot
 	 */
-	VDR_SNAPSHOT("vdr:snapshot"),
+	VDR_SNAPSHOT,
 	
 	/**
 	 * The cutoff date for the snapshot (ISO 8601 format)
 	 */
-	VDR_CUTOFF_DATE("vdr:cutoffDate"),
+	VDR_CUTOFF_DATE,
 	
 	/**
 	 * The type of snapshot (DATE, LIFECYCLE, or APPROVAL)
 	 */
-	VDR_SNAPSHOT_TYPE("vdr:snapshotType"),
+	VDR_SNAPSHOT_TYPE,
 	
 	/**
 	 * The value associated with the snapshot type (lifecycle name or approval name)
 	 */
-	VDR_SNAPSHOT_VALUE("vdr:snapshotValue");
+	VDR_SNAPSHOT_VALUE;
 	
-	private final String propertyName;
 	
-	VdrMetadataProperty(String propertyName) {
-		this.propertyName = propertyName;
-	}
-	
-	public String getPropertyName() {
-		return propertyName;
-	}
-	
-	@Override
-	public String toString() {
-		return propertyName;
-	}
+	VdrMetadataProperty() {}
 }
