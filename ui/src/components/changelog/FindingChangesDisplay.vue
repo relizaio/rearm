@@ -60,7 +60,8 @@ const normalizeVuln = (v: any) => ({
     severity: v.severity || '',
     aliases: Array.isArray(v.aliases) ? v.aliases.map((a: any) => typeof a === 'string' ? a : a.aliasId) : [],
     type: 'VULN',
-    typeLabel: 'VULNERABILITY'
+    typeLabel: 'VULNERABILITY',
+    analysisState: v.analysisState || null
 })
 
 const normalizeViolation = (v: any) => ({
@@ -69,7 +70,8 @@ const normalizeViolation = (v: any) => ({
     severity: undefined as string | undefined,
     aliases: [] as string[],
     type: 'VIOLATION',
-    typeLabel: 'VIOLATION'
+    typeLabel: 'VIOLATION',
+    analysisState: v.analysisState || null
 })
 
 const normalizeWeakness = (w: any) => ({
@@ -78,7 +80,8 @@ const normalizeWeakness = (w: any) => ({
     severity: w.severity || '',
     aliases: [] as string[],
     type: 'WEAKNESS',
-    typeLabel: 'WEAKNESS'
+    typeLabel: 'WEAKNESS',
+    analysisState: w.analysisState || null
 })
 
 const appearedFindings = computed(() => {

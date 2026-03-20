@@ -66,6 +66,7 @@ export interface VulnerabilityWithAttribution {
     isNetAppeared: boolean   // Org-wide: net appeared across all components
     isStillPresent: boolean  // Org-wide: still present in some releases
     orgContext?: OrgLevelContext  // Optional org-level semantic context (only for multi-component views)
+    analysisState?: string | null  // Analysis state: EXPLOITABLE, IN_TRIAGE, FALSE_POSITIVE, NOT_AFFECTED
 }
 
 /**
@@ -81,6 +82,7 @@ export interface ViolationWithAttribution {
     isNetAppeared: boolean
     isStillPresent: boolean
     orgContext?: OrgLevelContext  // Optional org-level semantic context (only for multi-component views)
+    analysisState?: string | null  // Analysis state: EXPLOITABLE, IN_TRIAGE, FALSE_POSITIVE, NOT_AFFECTED
 }
 
 /**
@@ -98,6 +100,7 @@ export interface WeaknessWithAttribution {
     isNetAppeared: boolean
     isStillPresent: boolean
     orgContext?: OrgLevelContext  // Optional org-level semantic context (only for multi-component views)
+    analysisState?: string | null  // Analysis state: EXPLOITABLE, IN_TRIAGE, FALSE_POSITIVE, NOT_AFFECTED
 }
 
 /**

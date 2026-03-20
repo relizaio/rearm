@@ -104,6 +104,7 @@ type NormalizedFinding = {
     isNetResolved: boolean
     isStillPresent: boolean
     orgContext?: OrgLevelContext
+    analysisState?: string | null
 }
 
 const sortBySeverity = (findings: NormalizedFinding[]) => {
@@ -127,7 +128,8 @@ const normalizeVulnerability = (vuln: VulnerabilityWithAttribution): NormalizedF
     isNetAppeared: vuln.isNetAppeared,
     isNetResolved: vuln.isNetResolved,
     isStillPresent: vuln.isStillPresent,
-    orgContext: vuln.orgContext
+    orgContext: vuln.orgContext,
+    analysisState: vuln.analysisState
 })
 
 const normalizeViolation = (violation: ViolationWithAttribution): NormalizedFinding => ({
@@ -141,7 +143,8 @@ const normalizeViolation = (violation: ViolationWithAttribution): NormalizedFind
     isNetAppeared: violation.isNetAppeared,
     isNetResolved: violation.isNetResolved,
     isStillPresent: violation.isStillPresent,
-    orgContext: violation.orgContext
+    orgContext: violation.orgContext,
+    analysisState: violation.analysisState
 })
 
 const normalizeWeakness = (weakness: WeaknessWithAttribution): NormalizedFinding => ({
@@ -156,7 +159,8 @@ const normalizeWeakness = (weakness: WeaknessWithAttribution): NormalizedFinding
     isNetAppeared: weakness.isNetAppeared,
     isNetResolved: weakness.isNetResolved,
     isStillPresent: weakness.isStillPresent,
-    orgContext: weakness.orgContext
+    orgContext: weakness.orgContext,
+    analysisState: weakness.analysisState
 })
 
 const allFindings = computed(() => {

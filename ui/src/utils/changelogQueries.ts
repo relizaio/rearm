@@ -47,6 +47,7 @@ const RELEASE_FINDING_CHANGES_FRAGMENT = `
         aliases {
             aliasId
         }
+        analysisState
     }
     resolvedVulnerabilities {
         vulnId
@@ -55,26 +56,31 @@ const RELEASE_FINDING_CHANGES_FRAGMENT = `
         aliases {
             aliasId
         }
+        analysisState
     }
     appearedViolations {
         type
         purl
+        analysisState
     }
     resolvedViolations {
         type
         purl
+        analysisState
     }
     appearedWeaknesses {
         cweId
         severity
         ruleId
         location
+        analysisState
     }
     resolvedWeaknesses {
         cweId
         severity
         ruleId
         location
+        analysisState
     }
 `
 
@@ -162,6 +168,7 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         orgContext {
             ${ORG_LEVEL_CONTEXT_FRAGMENT}
         }
+        analysisState
     }
     violations {
         type
@@ -181,6 +188,7 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         orgContext {
             ${ORG_LEVEL_CONTEXT_FRAGMENT}
         }
+        analysisState
     }
     weaknesses {
         cweId
@@ -202,6 +210,7 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
         orgContext {
             ${ORG_LEVEL_CONTEXT_FRAGMENT}
         }
+        analysisState
     }
 `
 
