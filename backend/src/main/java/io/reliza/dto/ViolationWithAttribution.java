@@ -22,5 +22,8 @@ public record ViolationWithAttribution(
     boolean isStillPresent,  // True if exists in at least one component's latest release
     
     // Optional org-level context (only populated for multi-component org-level queries)
-    OrgLevelContext orgContext
+    OrgLevelContext orgContext,
+    
+    // Analysis state (FALSE_POSITIVE, NOT_AFFECTED, etc.)
+    String analysisState
 ) {}

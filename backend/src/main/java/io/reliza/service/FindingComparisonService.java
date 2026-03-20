@@ -590,7 +590,8 @@ public class FindingComparisonService {
 					fa.finding.aliases(),
 					fa.resolvedIn, fa.appearedIn, fa.presentIn,
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
-					flags.orgContext()
+					flags.orgContext(),
+					fa.finding.analysisState() != null ? fa.finding.analysisState().name() : null
 				);
 			})
 			.collect(Collectors.toList());
@@ -604,7 +605,8 @@ public class FindingComparisonService {
 					fa.finding.purl(),
 					fa.resolvedIn, fa.appearedIn, fa.presentIn,
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
-					flags.orgContext()
+					flags.orgContext(),
+					fa.finding.analysisState() != null ? fa.finding.analysisState().name() : null
 				);
 			})
 			.collect(Collectors.toList());
@@ -620,7 +622,8 @@ public class FindingComparisonService {
 					fa.finding.location() != null ? fa.finding.location() : "",
 					fa.resolvedIn, fa.appearedIn, fa.presentIn,
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
-					flags.orgContext()
+					flags.orgContext(),
+					fa.finding.analysisState() != null ? fa.finding.analysisState().name() : null
 				);
 			})
 			.collect(Collectors.toList());

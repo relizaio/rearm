@@ -636,11 +636,13 @@ type ReleaseVulnerabilityInfo {
 	purl: String
 	severity: String
 	aliases: [VulnerabilityAlias!]
+	analysisState: String
 }
 
 type ReleaseViolationInfo {
 	type: String!
 	purl: String
+	analysisState: String
 }
 
 type ReleaseWeaknessInfo {
@@ -648,6 +650,7 @@ type ReleaseWeaknessInfo {
 	severity: String
 	ruleId: String
 	location: String
+	analysisState: String
 }
 
 type ReleaseFindingChanges {
@@ -702,6 +705,7 @@ type VulnerabilityWithAttribution {
 	isNetAppeared: Boolean!
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
+	analysisState: String
 }
 
 type VulnerabilityAlias {
@@ -718,6 +722,7 @@ type ViolationWithAttribution {
 	isNetAppeared: Boolean!
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
+	analysisState: String
 }
 
 type WeaknessWithAttribution {
@@ -732,6 +737,7 @@ type WeaknessWithAttribution {
 	isNetAppeared: Boolean!
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
+	analysisState: String
 }
 
 type OrgLevelContext {

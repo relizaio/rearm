@@ -186,7 +186,8 @@ public final class ChangelogRecords {
 		String vulnId,
 		String purl,
 		String severity,
-		Set<ReleaseMetricsDto.VulnerabilityAliasDto> aliases
+		Set<ReleaseMetricsDto.VulnerabilityAliasDto> aliases,
+		String analysisState
 	) {}
 	
 	/**
@@ -194,7 +195,8 @@ public final class ChangelogRecords {
 	 */
 	public record ReleaseViolationInfo(
 		String type,
-		String purl
+		String purl,
+		String analysisState
 	) {}
 	
 	/**
@@ -204,7 +206,8 @@ public final class ChangelogRecords {
 		String cweId,
 		String severity,
 		String ruleId,
-		String location
+		String location,
+		String analysisState
 	) {}
 	
 	/**
