@@ -1058,11 +1058,7 @@ const notify = async function (type: NotificationType, title: string, content: s
 
 onMounted(async () => {
     store.dispatch('fetchComponents', orgResolved.value)
-    store.dispatch('fetchResourceGroups', orgResolved.value)
     if (false && myUser.value.installationType !== 'OSS') initializeResourceGroup()
-    loadConfiguredIntegrations(true)
-    if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
-    loadBearIntegration()
     isWritable.value = commonFunctions.isWritable(orgResolved.value, myUser.value, 'ORG')
     
     // Load data for the current tab (from URL or default) without router update
@@ -1071,7 +1067,11 @@ onMounted(async () => {
 })
 
 async function loadTabSpecificData (tabName: string) {
-    if (tabName === "users") {
+    if (tabName === "integrations") {
+        loadConfiguredIntegrations(true)
+        if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
+        loadBearIntegration()
+    } else if (tabName === "users") {
         await loadUsers()
         loadInvitedUsers(true)
     } else if (tabName === "userGroups") {
