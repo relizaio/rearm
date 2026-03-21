@@ -258,9 +258,21 @@
                         style="width: 90%;" 
                         :show="showOrgSettingsUserPermissionsModal"
                         @update:show="handleUserPermissionsModalClose"
-                        :title="'User Permissions for ' + selectedUser.email"
                         @after-enter="blurActiveElement"
                     >
+                        <template #header>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span>User Permissions for {{ selectedUser.email }}</span>
+                                <n-tooltip trigger="hover">
+                                    <template #trigger>
+                                        <n-icon size="18" style="cursor: help;">
+                                            <QuestionMark />
+                                        </n-icon>
+                                    </template>
+                                    These are permissions individually set for the user. The user may have additional permissions from the groups they are member of.
+                                </n-tooltip>
+                            </div>
+                        </template>
                         <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
                             <ScopedPermissions
                                 v-model="userScopedPermissions"
