@@ -92,8 +92,10 @@
             <div class="emailConfigurationBlock">
                 <h4 class="mt-4">Email Sending Configuration: </h4>
                 
-                <div v-if="systemInfoIsSet && systemInfoIsSet.emailDetailsSet">Email Sending Configured
+                <div v-if="systemInfoIsSet && systemInfoIsSet.emailDetailsSet">
+                    Email Sending Configured
                     <n-icon @click="showEmailPropsModal = true" class="clickable" title="Change Email Sending Configuration" size="20"><Edit /></n-icon>
+                    <n-button @click="sendTestEmail" type="info" size="small" style="margin-left: 12px;" :loading="sendingTestEmail">Send Test Email</n-button>
                 </div>
                 <div v-else><n-button @click="showEmailPropsModal = true">Configure Sending Emails</n-button></div>
                 
@@ -441,6 +443,28 @@ async function setEmailProps(){
     
 }
 
+async function sendTestEmail() {
+    sendingTestEmail.value = true
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation sendTestEmail {
+                    sendTestEmail
+                }
+            `
+        })
+        if (resp.data && resp.data.sendTestEmail === true) {
+            Swal.fire('Success!', 'Test email sent successfully.', 'success')
+        } else {
+            Swal.fire('Error!', 'Failed to send test email.', 'error')
+        }
+    } catch (err: any) {
+        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+    } finally {
+        sendingTestEmail.value = false
+    }
+}
+
 const showReefModal: Ref<boolean> = ref(false)
 const showDefaultOrgModal: Ref<boolean> = ref(false)
 const reefSiloId: Ref<string> = ref('')
@@ -495,6 +519,7 @@ async function setDefaultOrganization(){
 }
 
 const finalizingAllReleases: Ref<boolean> = ref(false)
+const sendingTestEmail: Ref<boolean> = ref(false)
 async function finalizeAllReleases() {
     const confirmResult = await Swal.fire({
         title: 'Finalize All Releases?',
