@@ -310,6 +310,29 @@ function formatSpecVersion(specVersion: string): string {
     return `${formatName} ${version}`
 }
 
+async function handleFetchUserResult(fetchUserResult: any): Promise<void> {
+    if (!fetchUserResult) return
+    if (fetchUserResult._unauthorized) {
+        await Swal.fire({
+            title: 'Account Inactive',
+            text: 'Your account is inactive. Please contact your System Administrator or support at info@reliza.io',
+            icon: 'error',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            showCancelButton: false
+        })
+    } else if (fetchUserResult._offline) {
+        await Swal.fire({
+            title: 'System Offline',
+            text: 'System offline. Please contact your System Administrator or support at info@reliza.io',
+            icon: 'error',
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            showCancelButton: false
+        })
+    }
+}
+
 export default {
     getGeneratedApiKeyHTML,
     getUserPermission,
@@ -328,5 +351,6 @@ export default {
     isCycloneDXBomArtifact,
     formatSpecVersion,
     stableStringify,
-    confirmUnsavedChanges
+    confirmUnsavedChanges,
+    handleFetchUserResult
 }

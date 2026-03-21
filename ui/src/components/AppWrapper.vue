@@ -63,7 +63,12 @@ import commonFunctions from '../utils/commonFunctions'
 
 const store = useStore()
 await fetchCsrfToken()
-await store.dispatch('fetchMyUser')
+const fetchUserResult = await store.dispatch('fetchMyUser')
+if (!fetchUserResult || fetchUserResult._unauthorized || fetchUserResult._offline) {
+    console.log(fetchUserResult)
+    store.commit('SET_FETCH_USER_STATUS', fetchUserResult || { _offline: true, _errorMessage: 'No response' })
+    await commonFunctions.handleFetchUserResult(fetchUserResult)
+}
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
 const rearmProductVersion: Ref<string> = ref('54ab89bb-f1f1-459c-afbf-e4d78655b298')
 const footerVersionText: ComputedRef<string> = computed((): string => {

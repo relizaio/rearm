@@ -31,6 +31,7 @@ const storeObject : any = {
                 perspectiveUuid: 'default'
             },
             perspectives: [],
+            fetchUserStatus: null,
             instancePagination: () => {
                 const instancePagination = reactive({
                     page: 1,
@@ -73,6 +74,9 @@ const storeObject : any = {
         },
         myuser (state : any) {
             return Object.assign({}, state.iam.user)
+        },
+        fetchUserStatus (state: any) {
+            return state.fetchUserStatus
         },
         myperspective (state : any) {
             return state.iam.perspectiveUuid
@@ -246,6 +250,9 @@ const storeObject : any = {
         },
         SET_MY_USER (state : any, user : any) {
             state.iam.user = Object.assign({}, user)
+        },
+        SET_FETCH_USER_STATUS (state: any, status: any) {
+            state.fetchUserStatus = status
         },
         SET_VCS_REPOS (state : any, vcsRepos : any[]) {
             state.vcsRepos = vcsRepos
@@ -477,8 +484,19 @@ const storeObject : any = {
                             user {
                                 ${graphqlQueries.UserData}
                             }
-                        }`
+                        }`,
+                    errorPolicy: 'all'
                 })
+                if (!data.data || !data.data.user) {
+                    if (data.error && data.error.errors && data.error.errors.length) {
+                        const msg = data.error.errors[0].message
+                        if (msg === 'Not authorized') {
+                            return { _unauthorized: true, _errorMessage: msg }
+                        }
+                        return { _offline: true, _errorMessage: msg }
+                    }
+                    return { _offline: true, _errorMessage: 'No user data returned' }
+                }
                 context.commit('SET_MY_USER', data.data.user)
                 return data.data.user
             } catch (error : any) {
@@ -489,6 +507,7 @@ const storeObject : any = {
                     window.location.href = error.response.data.message.replace('redirect_', '')
                 } else {
                     console.error(error)
+                    return { _offline: true, _errorMessage: error.message || 'Unknown error' }
                 }
             }
         },

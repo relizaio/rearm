@@ -102,7 +102,10 @@ import commonFunctions from '../utils/commonFunctions'
 
 const notification = useNotification()
 const store = useStore()
-await store.dispatch('fetchMyUser')
+const fetchUserStatus = store.getters.fetchUserStatus
+if (fetchUserStatus) {
+    await commonFunctions.handleFetchUserResult(fetchUserStatus)
+}
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
 
 const showCreateFirstOrgModal = ref(false)
