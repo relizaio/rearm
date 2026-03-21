@@ -228,8 +228,8 @@
 
             <n-tab-pane name="users" tab="Users" v-if="isOrgAdmin">
                 <div class="userBlock mt-4">
-                    <h5>Users ({{ users.length }})</h5>
-                    <n-data-table :columns="userFields" :data="users" class="table-hover">
+                    <h5>Users ({{ activeUsers.length }})</h5>
+                    <n-data-table :columns="userFields" :data="activeUsers" class="table-hover">
                     </n-data-table>
                     <n-modal
                         v-model:show="showOrgRegistryTokenModal"
@@ -243,7 +243,7 @@
                                     v-model:value="botToken" /></div>
                         </n-card>
                     </n-modal>
-                    <n-form v-if="isOrgAdmin" class="inviteUserForm" @submit="inviteUser">
+                    <n-form v-if="isOrgAdmin && myorg.type !== 'DEFAULT'" class="inviteUserForm" @submit="inviteUser">
                         <n-input-group class="mt-3">
                             <n-input id="settings-invite-user-email-input" v-model:value="invitee.email" required
                                 placeholder="User Email" />
@@ -274,6 +274,10 @@
                                 <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
                                 <n-button type="warning" @click="editUser(selectedUser.email)">Reset Changes</n-button>
                             </n-space>
+                            <div v-if="canInactivateUsers && selectedUser.uuid !== myUser.uuid" style="margin-top: 30px; border-top: 2px solid #e74c3c; padding-top: 16px;">
+                                <h5 style="color: #e74c3c;">Danger Zone</h5>
+                                <n-button type="error" @click="inactivateUser(selectedUser.uuid)">Inactivate User</n-button>
+                            </div>
                         </div>
                     </n-modal>
                     <n-modal
@@ -292,9 +296,16 @@
                             />
                         </div>
                     </n-modal>
-                    <h6>Pending Invites</h6>
-                    <n-data-table :columns="inviteeFields" :data="invitees" class="table-hover">
-                    </n-data-table>
+                    <div v-if="myorg.type !== 'DEFAULT'">
+                        <h6>Pending Invites</h6>
+                        <n-data-table :columns="inviteeFields" :data="invitees" class="table-hover">
+                        </n-data-table>
+                    </div>
+                    <div class="mt-4">
+                        <h5>Inactive Users ({{ inactiveUsers.length }})</h5>
+                        <n-data-table :columns="inactiveUserFields" :data="inactiveUsers" class="table-hover">
+                        </n-data-table>
+                    </div>
                 </div>
             </n-tab-pane>
 
@@ -1014,7 +1025,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh, Search, FolderPlus, Package } from '@vicons/tabler'
 import { Clean } from '@vicons/carbon'
-import { Info20Regular, Edit24Regular, DeleteDismiss24Regular, ArrowUpload24Regular } from '@vicons/fluent'
+import { Info20Regular, Edit24Regular, DeleteDismiss24Regular, ArrowUpload24Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import axios from '../utils/axios'
@@ -1513,12 +1524,19 @@ function resetCreateIntegrationObject() {
 
 const users: Ref<any[]> = ref([])
 async function loadUsers() {
-    const fetchedUsers = await store.dispatch('fetchUsers', orgResolved.value)
+    const fetchedUsers = await store.dispatch('fetchUsers', { orgUuid: orgResolved.value, includeInactive: true })
     users.value = [...(fetchedUsers || [])].sort((a: any, b: any) =>
         (a.email || '').localeCompare((b.email || ''), undefined, { sensitivity: 'base' })
     )
     userEmailColumnReactive.sortOrder = 'ascend'
 }
+
+const activeUsers = computed(() => users.value.filter((u: any) => u.status !== 'INACTIVE'))
+const inactiveUsers = computed(() => users.value.filter((u: any) => u.status === 'INACTIVE'))
+
+const canInactivateUsers = computed(() => {
+    return isGlobalAdmin.value || (isOrgAdmin.value && myorg.value?.type === 'DEFAULT')
+})
 
 // User Groups
 const showInactiveGroups = ref(false)
@@ -2214,6 +2232,34 @@ const userFields = [
         }
     }
 ]
+const inactiveUserFields = [
+    {
+        key: 'email',
+        title: 'Email'
+    },
+    {
+        key: 'name',
+        title: 'Name'
+    },
+    {
+        key: 'controls',
+        title: 'Manage',
+        render(row: any) {
+            return h('div', [
+                h(
+                    NIcon,
+                    {
+                        title: 'Reactivate User',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => reactivateUser(row.uuid)
+                    }, { default: () => h(Power20Regular) }
+                )
+            ])
+        }
+    }
+]
+
 const invitees: Ref<any[]> = ref([])
 
 const inviteeFields = [
@@ -4200,6 +4246,73 @@ async function removeUser(userUuid: string) {
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
         notify('error', 'Cancelled', 'User removal cancelled.')
+    }
+}
+
+async function inactivateUser(userUuid: string) {
+    const user = users.value.find(u => u.uuid === userUuid)
+    const userDisplay = user?.name || user?.email || userUuid
+    const swalResult = await Swal.fire({
+        title: `Are you sure you want to inactivate the user ${userDisplay}?`,
+        text: 'If you proceed, this user will be inactivated and will no longer be able to access the system.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, inactivate!',
+        cancelButtonText: 'No, cancel'
+    })
+
+    if (swalResult.value) {
+        try {
+            await graphqlClient.mutate({
+                mutation: gql`
+                    mutation inactivateUser($userUuid: ID!) {
+                        inactivateUser(userUuid: $userUuid) {
+                            uuid
+                            status
+                        }
+                    }`,
+                variables: { userUuid }
+            })
+            notify('success', 'Inactivated', `User ${userDisplay} has been inactivated successfully.`)
+            showOrgSettingsUserPermissionsModal.value = false
+            await loadUsers()
+        } catch (e: any) {
+            console.error(e)
+            notify('error', 'Error', `Failed to inactivate user ${userDisplay}: ${commonFunctions.parseGraphQLError(e.message)}`)
+        }
+    }
+}
+
+async function reactivateUser(userUuid: string) {
+    const user = users.value.find(u => u.uuid === userUuid)
+    const userDisplay = user?.name || user?.email || userUuid
+    const swalResult = await Swal.fire({
+        title: `Are you sure you want to reactivate the user ${userDisplay}?`,
+        text: 'If you proceed, this user will be reactivated and will regain access to the system.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, reactivate!',
+        cancelButtonText: 'No, cancel'
+    })
+
+    if (swalResult.value) {
+        try {
+            await graphqlClient.mutate({
+                mutation: gql`
+                    mutation reactivateUser($userUuid: ID!) {
+                        reactivateUser(userUuid: $userUuid) {
+                            uuid
+                            status
+                        }
+                    }`,
+                variables: { userUuid }
+            })
+            notify('success', 'Reactivated', `User ${userDisplay} has been reactivated successfully.`)
+            await loadUsers()
+        } catch (e: any) {
+            console.error(e)
+            notify('error', 'Error', `Failed to reactivate user ${userDisplay}: ${commonFunctions.parseGraphQLError(e.message)}`)
+        }
     }
 }
 

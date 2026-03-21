@@ -501,6 +501,7 @@ const storeObject : any = {
                             organizations {
                                 uuid
                                 name
+                                type
                                 approvalRoles {
                                     id
                                     displayView
@@ -1402,14 +1403,17 @@ const storeObject : any = {
             }
             return data.data.updateReleaseLifecycle
         },
-        async fetchUsers (context: any, orgUuid: any) {
+        async fetchUsers (context: any, params: any) {
+            const orgUuid = typeof params === 'string' ? params : params.orgUuid
+            const includeInactive = typeof params === 'string' ? undefined : params.includeInactive
             const response = await graphqlClient.query({
                 query: gql`
-                    query FetchUsers($orgUuid: ID!) {
-                        users(orgUuid: $orgUuid) {
+                    query FetchUsers($orgUuid: ID!, $includeInactive: Boolean) {
+                        users(orgUuid: $orgUuid, includeInactive: $includeInactive) {
                             uuid
                             name
                             email
+                            status
                             githubId
                             permissions {
                                 permissions {
@@ -1425,7 +1429,7 @@ const storeObject : any = {
                         }
                     }
                 `,
-                variables: { orgUuid },
+                variables: { orgUuid, includeInactive },
                 fetchPolicy: 'no-cache'
             })
             context.commit('SET_USERS', response.data.users)
