@@ -1425,6 +1425,21 @@ const storeObject : any = {
         async fetchUsers (context: any, params: any) {
             const orgUuid = typeof params === 'string' ? params : params.orgUuid
             const includeInactive = typeof params === 'string' ? undefined : params.includeInactive
+            const includeCombinedPermissions = typeof params === 'string' ? false : (params.includeCombinedPermissions || false)
+            
+            const combinedPermissionsFragment = includeCombinedPermissions ? `
+                            combinedUserOrgPermissions {
+                                permissions {
+                                    org
+                                    scope
+                                    object
+                                    type
+                                    meta
+                                    approvals
+                                    functions
+                                }
+                            }` : ''
+            
             const response = await graphqlClient.query({
                 query: gql`
                     query FetchUsers($orgUuid: ID!, $includeInactive: Boolean) {
@@ -1445,6 +1460,7 @@ const storeObject : any = {
                                     functions
                                 }
                             }
+                            ${combinedPermissionsFragment}
                         }
                     }
                 `,
