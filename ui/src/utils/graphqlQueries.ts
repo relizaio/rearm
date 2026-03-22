@@ -273,6 +273,9 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
     metrics {
         dependencyTrackFullUri
         lastScanned
+        dtrackSubmissionFailed
+        dtrackSubmissionAttempts
+        dtrackSubmissionFailureReason
         critical
         high
         medium
@@ -332,6 +335,9 @@ const ARTIFACT_DETAIL_DATA = `
     }
     metrics {
         dependencyTrackFullUri
+        dtrackSubmissionFailed
+        dtrackSubmissionAttempts
+        dtrackSubmissionFailureReason
         lastScanned
         critical
         high

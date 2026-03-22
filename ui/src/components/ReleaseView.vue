@@ -3537,6 +3537,9 @@ const artifactsTableFields: DataTableColumns<any> = [
 
             if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
             if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
+            if (row.metrics && row.metrics.dtrackSubmissionFailed) factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack submission failed'))
+            if (row.metrics && row.metrics.dtrackSubmissionFailed && row.metrics.dtrackSubmissionFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack failure reason: ${row.metrics.dtrackSubmissionFailureReason}`))
+            if (row.metrics && row.metrics.dtrackSubmissionAttempts > 0) factContent.push(h('li', `DependencyTrack submission attempts: ${row.metrics.dtrackSubmissionAttempts}`))
             if (row.artifactDetails && row.artifactDetails.length) {
                 row.artifactDetails.forEach((ad: any) => {
                     const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
@@ -3550,7 +3553,8 @@ const artifactsTableFields: DataTableColumns<any> = [
             }
             const els: any[] = [
                 h(NTooltip, {
-                    trigger: 'hover'
+                    trigger: 'hover',
+                    contentStyle: 'max-width: 900px; white-space: normal; word-break: break-word;'
                 }, {trigger: () => h(NIcon,
                     {
                         class: 'icons',
@@ -3779,6 +3783,9 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
 
             if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
             if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
+            if (row.metrics && row.metrics.dtrackSubmissionFailed) factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack submission failed'))
+            if (row.metrics && row.metrics.dtrackSubmissionFailed && row.metrics.dtrackSubmissionFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack failure reason: ${row.metrics.dtrackSubmissionFailureReason}`))
+            if (row.metrics && row.metrics.dtrackSubmissionAttempts > 0) factContent.push(h('li', `DependencyTrack submission attempts: ${row.metrics.dtrackSubmissionAttempts}`))
             if (row.artifactDetails && row.artifactDetails.length) {
                 row.artifactDetails.forEach((ad: any) => {
                     const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
@@ -3792,7 +3799,8 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
             }
             const els: any[] = [
                 h(NTooltip, {
-                    trigger: 'hover'
+                    trigger: 'hover',
+                    contentStyle: 'max-width: 900px; white-space: normal; word-break: break-word;'
                 }, {trigger: () => h(NIcon,
                     {
                         class: 'icons',
@@ -3953,7 +3961,8 @@ const deliverableTableFields: DataTableColumns<any> = [
             
             const els: any[] = [
                 h(NTooltip, {
-                    trigger: 'hover'
+                    trigger: 'hover',
+                    contentStyle: 'max-width: 900px; white-space: normal; word-break: break-word;'
                 }, {trigger: () => h(NIcon,
                     {
                         class: 'icons',
@@ -4205,7 +4214,8 @@ const commitTableFields: DataTableColumns<any> = [
             if (updatedRelease.value.sourceCodeEntryDetails.vcsRepository?.uri) factContent.push(h('li', `VCS Repo URI: ${updatedRelease.value.sourceCodeEntryDetails.vcsRepository?.uri}`))
             const els: any[] = [
                 h(NTooltip, {
-                    trigger: 'hover'
+                    trigger: 'hover',
+                    contentStyle: 'max-width: 900px; white-space: normal; word-break: break-word;'
                 }, {trigger: () => h(NIcon,
                     {
                         class: 'icons',
@@ -4306,7 +4316,8 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
             if (updatedRelease.value.sourceCodeEntryDetails?.vcsRepository?.uri) factContent.push(h('li', `VCS Repo URI: ${updatedRelease.value.sourceCodeEntryDetails.vcsRepository.uri}`))
             const els: any[] = [
                 h(NTooltip, {
-                    trigger: 'hover'
+                    trigger: 'hover',
+                    contentStyle: 'max-width: 900px; white-space: normal; word-break: break-word;'
                 }, {trigger: () => h(NIcon,
                     {
                         class: 'icons',
