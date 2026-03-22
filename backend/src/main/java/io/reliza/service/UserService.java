@@ -164,11 +164,22 @@ public class UserService {
 	}
 
 	public List<User> listUsersByOrg(UUID org) {
+		return listUsersByOrg(org, false);
+	}
+
+	public List<User> listUsersByOrg(UUID org, boolean includeInactive) {
+		if (includeInactive) {
+			return repository.findUsersByOrgIncludingInactive(org.toString());
+		}
 		return repository.findUsersByOrg(org.toString());
 	}
 	
 	public List<UserData> listUserDataByOrg(UUID org) {
-		List<User> udList = listUsersByOrg(org);
+		return listUserDataByOrg(org, false);
+	}
+
+	public List<UserData> listUserDataByOrg(UUID org, boolean includeInactive) {
+		List<User> udList = listUsersByOrg(org, includeInactive);
 		return transformUserToUserData(udList);
 	}
 
@@ -179,6 +190,11 @@ public class UserService {
 	
 	public List<OrgUserData> listOrgUserDataByOrg (UUID org) {
 		List<UserData> udList = listUserDataByOrg(org);
+		return udList.stream().map(ud -> UserData.convertUserDataToOrgUserData(ud, org)).collect(Collectors.toList());
+	}
+
+	public List<OrgUserData> listOrgUserDataByOrg (UUID org, boolean includeInactive) {
+		List<UserData> udList = listUserDataByOrg(org, includeInactive);
 		return udList.stream().map(ud -> UserData.convertUserDataToOrgUserData(ud, org)).collect(Collectors.toList());
 	}
 	
@@ -632,7 +648,7 @@ public class UserService {
 		return removed;
 	}
 
-	public void softDeleteUser(UUID userUuid, WhoUpdated wu){
+	public UserData softDeleteUser(UUID userUuid, WhoUpdated wu){
 		// locate user
 		Optional<User> ou = getUser(userUuid);
 		if (ou.isPresent()) {
@@ -640,9 +656,21 @@ public class UserService {
 			ud.setStatus(UserStatus.INACTIVE);
 			
 			// save user
-			saveUser(ou.get(), Utils.dataToRecord(ud), wu);
+			User saved = saveUser(ou.get(), Utils.dataToRecord(ud), wu);
+			return UserData.dataFromRecord(saved);
 		}
-		return ;
+		return null;
+	}
+
+	public UserData reactivateUser(UUID userUuid, WhoUpdated wu){
+		Optional<User> ou = getUser(userUuid);
+		if (ou.isPresent()) {
+			UserData ud = UserData.dataFromRecord(ou.get());
+			ud.setStatus(UserStatus.ACTIVE);
+			User saved = saveUser(ou.get(), Utils.dataToRecord(ud), wu);
+			return UserData.dataFromRecord(saved);
+		}
+		return null;
 	}
 
 	public boolean updateUserEmail(UserData ud, String oldEmail, String newEmail, Boolean makePrimary,
@@ -914,7 +942,22 @@ public class UserService {
 						u = createUser(name, email, true, List.of(defaultOrg), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 						u = setUserPermission(u.getUuid(), defaultOrg, PermissionScope.ORGANIZATION, defaultOrg, PermissionType.NONE, Set.of(), null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 						OrganizationData od = getOrganizationService.getOrganizationData(defaultOrg).get();
-						sendEmailToOrgAdminsOnUserJoined(od, email, PermissionType.NONE);
+						
+						// Synchronize new user with SSO groups
+						List<String> groups = null != creds.getClaimAsStringList("groups") ? creds.getClaimAsStringList("groups") : new LinkedList<>();
+						UserData newUserData = UserData.dataFromRecord(u);
+						if (!groups.isEmpty()) {
+							synchronizeUserWithGroupsPerOrg(newUserData, new LinkedHashSet<>(groups), defaultOrg);
+						}
+
+						// Obtain combined permissions (user's own + from groups) and get highest org-wide permission
+						var combinedPermissions = organizationService.obtainCombinedUserOrgPermissions(newUserData, defaultOrg);
+						var orgWidePermission = combinedPermissions.getPermission(defaultOrg, PermissionScope.ORGANIZATION, defaultOrg);
+						PermissionType effectivePermissionType = orgWidePermission.isPresent() 
+							? orgWidePermission.get().getType() 
+							: PermissionType.NONE;
+
+						sendEmailToOrgAdminsOnUserJoined(od, email, effectivePermissionType);
 					}
 				} else {
 					Boolean isEmailVerified = Boolean.parseBoolean(creds.getClaimAsString("email_verified"));

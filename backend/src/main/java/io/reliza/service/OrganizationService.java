@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -161,13 +162,10 @@ public class OrganizationService {
 			});
 	}
 	
-	public Map<String,BigInteger> getNumericAnalytics(UUID orgUuid) {
-		Map<String, BigInteger> analytics = new HashMap<>(repository.getNumericAnalytics(orgUuid.toString()));
-
+	private List<OrgUserRecord> getOrgUserRecords(UUID orgUuid) {
 		List<UserData> orgUsers = userService.listUserDataByOrg(orgUuid);
-		int totalUsers = orgUsers.size();
-
 		List<UserGroupData> orgUserGroups = userGroupService.getUserGroupsByOrganization(orgUuid);
+		
 		Map<UUID, List<UserGroupData>> userGroupsByUserUuid = new HashMap<>();
 		for (UserGroupData ugd : orgUserGroups) {
 			for (UUID userUuid : ugd.getAllUsers()) {
@@ -175,61 +173,76 @@ public class OrganizationService {
 			}
 		}
 
-		long adminAndWriteUsers = orgUsers.stream()
-				.filter(ud -> isWriteUser(ud, orgUuid, userGroupsByUserUuid.getOrDefault(ud.getUuid(), List.of())))
-				.count();
-		long readOnlyUsers = Math.max(0, totalUsers - adminAndWriteUsers);
+		Map<String, UserType> emailToTypeMap = new LinkedHashMap<>();
+		for (UserData ud : orgUsers) {
+			String email = ud.getEmail(orgUuid);
+			if (email != null && !email.isEmpty()) {
+				boolean isWrite = isWriteUser(ud, orgUuid, userGroupsByUserUuid.getOrDefault(ud.getUuid(), List.of()));
+				UserType type = isWrite ? UserType.WRITE : UserType.READ;
+				// If email already exists, keep WRITE if either is WRITE
+				if (emailToTypeMap.containsKey(email)) {
+					if (type == UserType.WRITE) {
+						emailToTypeMap.put(email, UserType.WRITE);
+					}
+				} else {
+					emailToTypeMap.put(email, type);
+				}
+			}
+		}
 
-		analytics.put("admin_and_write_users", BigInteger.valueOf(adminAndWriteUsers));
-		analytics.put("read_only_users", BigInteger.valueOf(readOnlyUsers));
+		return emailToTypeMap.entrySet().stream()
+				.map(entry -> new OrgUserRecord(entry.getKey(), entry.getValue()))
+				.collect(Collectors.toList());
+	}
+
+	public Map<String,BigInteger> getNumericAnalytics(UUID orgUuid) {
+		Map<String, BigInteger> analytics = new HashMap<>(repository.getNumericAnalytics(orgUuid.toString()));
+
+		List<OrgUserRecord> orgUserRecords = getOrgUserRecords(orgUuid);
+		long writeUsers = orgUserRecords.stream().filter(r -> r.type() == UserType.WRITE).count();
+		long readUsers = orgUserRecords.stream().filter(r -> r.type() == UserType.READ).count();
+		
+		analytics.put("admin_and_write_users", BigInteger.valueOf(writeUsers));
+		analytics.put("read_only_users", BigInteger.valueOf(readUsers));
 		return analytics;
 	}
 
-	public record GlobalUserCounts(long writeUsers, long readOnlyUsers, long totalUsers) {}
+	public enum UserType {
+		READ,
+		WRITE
+	}
+
+	public record OrgUserRecord(String email, UserType type) {}
+
+	public record GlobalUserCounts(long writeUsers, long readUsers, long totalUsers) {}
 
 	public GlobalUserCounts getGlobalUserCounts() {
 		List<OrganizationData> allOrgs = listAllOrganizationData();
-		Map<UUID, UserData> allUsersMap = new HashMap<>();
-		Map<UUID, List<UserGroupData>> globalUserGroupsByUser = new HashMap<>();
-		Map<UUID, Set<UUID>> userOrgMap = new HashMap<>();
-
+		Map<String, UserType> globalEmailToTypeMap = new HashMap<>();
+		
 		for (OrganizationData od : allOrgs) {
-			UUID orgUuid = od.getUuid();
-			List<UserData> orgUsers = userService.listUserDataByOrg(orgUuid);
-			List<UserGroupData> orgUserGroups = userGroupService.getUserGroupsByOrganization(orgUuid);
-
-			for (UserData ud : orgUsers) {
-				allUsersMap.put(ud.getUuid(), ud);
-				userOrgMap.computeIfAbsent(ud.getUuid(), k -> new HashSet<>()).add(orgUuid);
-			}
-
-			for (UserGroupData ugd : orgUserGroups) {
-				for (UUID userUuid : ugd.getAllUsers()) {
-					globalUserGroupsByUser.computeIfAbsent(userUuid, k -> new ArrayList<>()).add(ugd);
+			List<OrgUserRecord> orgUserRecords = getOrgUserRecords(od.getUuid());
+			for (OrgUserRecord record : orgUserRecords) {
+				String email = record.email();
+				UserType type = record.type();
+				
+				// Merge by email: WRITE > READ
+				if (globalEmailToTypeMap.containsKey(email)) {
+					if (type == UserType.WRITE) {
+						globalEmailToTypeMap.put(email, UserType.WRITE);
+					}
+					// If existing is already WRITE, keep it
+				} else {
+					globalEmailToTypeMap.put(email, type);
 				}
 			}
 		}
-
-		long writeUsers = 0;
-		for (var entry : allUsersMap.entrySet()) {
-			UUID userUuid = entry.getKey();
-			UserData ud = entry.getValue();
-			Set<UUID> userOrgs = userOrgMap.getOrDefault(userUuid, Set.of());
-			boolean isWrite = false;
-			for (UUID orgUuid : userOrgs) {
-				List<UserGroupData> userGroups = globalUserGroupsByUser.getOrDefault(userUuid, List.of())
-						.stream().filter(ugd -> orgUuid.equals(ugd.getOrg())).collect(Collectors.toList());
-				if (isWriteUser(ud, orgUuid, userGroups)) {
-					isWrite = true;
-					break;
-				}
-			}
-			if (isWrite) writeUsers++;
-		}
-
-		long totalUsers = allUsersMap.size();
-		long readOnlyUsers = totalUsers - writeUsers;
-		return new GlobalUserCounts(writeUsers, readOnlyUsers, totalUsers);
+		
+		long writeUsers = globalEmailToTypeMap.values().stream().filter(t -> t == UserType.WRITE).count();
+		long readUsers = globalEmailToTypeMap.values().stream().filter(t -> t == UserType.READ).count();
+		long totalUsers = globalEmailToTypeMap.size();
+		
+		return new GlobalUserCounts(writeUsers, readUsers, totalUsers);
 	}
 
 	public void validateNewUserAllowedByLicense(boolean isWriteUser) throws RelizaException {
@@ -246,7 +259,7 @@ public class OrganizationService {
 				throw new RelizaException("License limit reached: maximum " + maxWrite + " write users allowed.");
 			}
 		} else {
-			if (counts.readOnlyUsers() >= maxRead) {
+			if (counts.readUsers() >= maxRead) {
 				// read slots full - overflow into write slots
 				if (counts.writeUsers() >= maxWrite) {
 					throw new RelizaException("License limit reached: maximum " + maxRead + " read users and " + maxWrite + " write users allowed.");

@@ -58,6 +58,11 @@ class VariableQueries {
 			AND (record_data->>'status' = 'ACTIVE')
 			""";
 
+	protected static final String FIND_USERS_BY_ORGANIZATION_INCLUDING_INACTIVE = """
+			SELECT * FROM rearm.users
+			WHERE jsonb_contains(record_data, jsonb_build_object('org', jsonb_build_array(:orgUuidAsString)))
+			""";
+
 	protected static final String FIND_USER_BY_ID_WITH_ORGANIZATION = """
 			SELECT * FROM rearm.users
 			WHERE uuid = :userUuid 

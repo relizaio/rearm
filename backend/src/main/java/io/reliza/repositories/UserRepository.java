@@ -28,6 +28,11 @@ public interface UserRepository extends CrudRepository<User, UUID> {
 	List<User> findUsersByOrg(String orgUuidAsString);
 
 	@Query(
+			value = VariableQueries.FIND_USERS_BY_ORGANIZATION_INCLUDING_INACTIVE,
+			nativeQuery = true)
+	List<User> findUsersByOrgIncludingInactive(String orgUuidAsString);
+
+	@Query(
 			value = VariableQueries.FIND_USER_BY_ID_WITH_ORGANIZATION,
 			nativeQuery = true)
 	Optional<User> findUserByIdWithOrganization(UUID userUuid, String orgUuidAsString);

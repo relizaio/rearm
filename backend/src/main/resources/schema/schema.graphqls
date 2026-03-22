@@ -24,7 +24,7 @@ type Query {
 	artifactVersionHistory(artifactUuid: ID!): [Artifact]
 	artifactTypes: [String]
 	release(releaseUuid: ID!, orgUuid: ID): Release
-	users(orgUuid: ID!): [OrgUserData]
+	users(orgUuid: ID!, includeInactive: Boolean): [OrgUserData]
 	combinedUserOrgPermissions(orgUuid: ID!, userUuid: ID!): Permissions
 	resourceGroups(orgUuid: ID!): [ResourceGroup]
 	releaseAnalytics(orgUuid: ID!, cutOffDate: DateTime!): [VegaDateValue]
@@ -159,6 +159,9 @@ type Mutation {
 	createOrganization(name: String!): Organization
 	setEmailProperties(emailProperties: EmailPropertiesInput!): Boolean
 	setDefaultOrganization(organization: ID!): Boolean
+	inactivateUser(userUuid: ID!): User
+	reactivateUser(userUuid: ID!): User
+	sendTestEmail: Boolean
 	
 	# integrations
 	createIntegration(integration: IntegrationInput!): Integration
@@ -219,6 +222,7 @@ type Mutation {
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
 	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType]): String
 	releaseVdrExport(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
+	releaseVdrExportWithApproval(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
 
 	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
 
@@ -387,6 +391,13 @@ type LicensePayload {
 	validTo: DateTime
 	maxWriteUsers: Int
 	maxReadUsers: Int
+	globalUserCounts: GlobalUserCounts
+}
+
+type GlobalUserCounts {
+	writeUsers: Int
+	readUsers: Int
+	totalUsers: Int
 }
 
 type SystemInfoIsSet {
@@ -398,6 +409,7 @@ type SystemInfoIsSet {
 type Organization {
 	uuid: ID
 	name: String
+	type: OrganizationType
 	approvalRoles: [ApprovalRole]
 	terminology: Terminology
 	ignoreViolation: IgnoreViolation
@@ -466,6 +478,7 @@ type User {
 	installationType: String
 	isGlobalAdmin: Boolean
 	isLicenseValid: Boolean
+	status: UserStatus
 }
 
 type UserGroupWebDto {
@@ -502,6 +515,8 @@ type OrgUserData {
 	email: String
 	githubId: String
 	permissions: Permissions
+	combinedUserOrgPermissions: Permissions
+	status: UserStatus
 }
 
 type Permissions {
@@ -2131,7 +2146,17 @@ enum Status {
 	TRANSIENT
 }
 
+enum OrganizationType {
+	DEFAULT
+	REGULAR
+}
+
 enum UserGroupStatus {
+	ACTIVE
+	INACTIVE
+}
+
+enum UserStatus {
 	ACTIVE
 	INACTIVE
 }

@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
+import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
@@ -45,6 +46,7 @@ import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ResourceGroupService;
+import io.reliza.service.SystemInfoService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -69,7 +71,10 @@ public class OrganizationDataFetcher {
 	
 	@Autowired
 	private ResourceGroupService resourceGroupService;
-	
+
+	@Autowired
+	private SystemInfoService systemInfoService;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "organizations")
 	public Iterable<OrganizationData> getOrganizations() {
@@ -84,7 +89,9 @@ public class OrganizationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "users")
-	public List<OrgUserData> getUsers(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException{
+	public List<OrgUserData> getUsers(
+			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("includeInactive") Boolean includeInactive) throws RelizaException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
@@ -96,7 +103,8 @@ public class OrganizationDataFetcher {
 			ct = CallType.ADMIN;
 		}
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUsers), ct);
-		return userService.listOrgUserDataByOrg(od.get().getUuid());
+		boolean includeInactiveUsers = includeInactive != null && includeInactive;
+		return userService.listOrgUserDataByOrg(od.get().getUuid(), includeInactiveUsers);
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -286,6 +294,39 @@ public class OrganizationDataFetcher {
 		
 		Boolean justificationMandatory = settings != null ? (Boolean) settings.get("justificationMandatory") : null;
 		return organizationService.updateSettings(orgUuid, justificationMandatory, wu);
+	}
+
+	@DgsData(parentType = "Organization", field = "type")
+	public String organizationType(DgsDataFetchingEnvironment dfe) {
+		OrganizationData od = dfe.getSource();
+		UUID defaultOrg = systemInfoService.getDefaultOrg();
+		if (defaultOrg != null && defaultOrg.equals(od.getUuid())) {
+			return "DEFAULT";
+		}
+		return "REGULAR";
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "OrgUserData", field = "combinedUserOrgPermissions")
+	public Permissions getCombinedUserOrgPermissionsSubfield(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		
+		OrgUserData orgUserData = dfe.getSource();
+		UUID userUuid = orgUserData.getUuid();
+		UUID orgUuid = orgUserData.getOrgUuid();
+		
+		if (orgUuid == null) {
+			return new Permissions();
+		}
+		
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roUsers = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUsers), CallType.ADMIN);
+		
+		var targetUser = userService.getUserDataWithOrg(userUuid, orgUuid)
+				.orElseThrow(() -> new AccessDeniedException("User is not in organization"));
+		return organizationService.obtainCombinedUserOrgPermissions(targetUser, orgUuid);
 	}
 	
 	private void validateRegexPatterns(List<String> patterns, String fieldName) throws RelizaException {

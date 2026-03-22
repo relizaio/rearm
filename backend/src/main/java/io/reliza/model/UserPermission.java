@@ -220,7 +220,7 @@ public class UserPermission {
 		public int getSize() {
 			return permissions.size();
 		}
-		
+
 		public void setPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type, Collection<String> approvals) {
 			setPermission(orgUuid, scope, objectUuid, type, null, approvals);
 		}

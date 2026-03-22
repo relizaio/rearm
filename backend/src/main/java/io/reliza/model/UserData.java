@@ -95,14 +95,30 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 		private String email;
 		@JsonProperty(CommonVariables.GITHUB_ID_FIELD)
 		private String githubId;
+		@JsonProperty(CommonVariables.ORGANIZATION_FIELD)
+		private UUID orgUuid;
 		/**
 		 * In this context we will only show permissions for this specific org
 		 */
 		@JsonProperty(CommonVariables.PERMISSIONS_FIELD)
 		private Permissions permissions = new Permissions();
+		@JsonProperty(CommonVariables.STATUS_FIELD)
+		private UserStatus status;
+
+		public UUID getUuid(){
+			return uuid;
+		}
 
 		public String getEmail(){
 			return email;
+		}
+
+		public UUID getOrgUuid(){
+			return orgUuid;
+		}
+
+		public Permissions getPermissions(){
+			return permissions;
 		}
 	}
 	private UUID uuid;
@@ -521,8 +537,10 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 			oud.uuid = ud.uuid;
 			oud.name = ud.name;
 			oud.githubId = ud.githubId;
+			oud.orgUuid = orgUuid;
 			oud.permissions = orgPermissions;
 			oud.email = ud.getEmail(orgUuid);
+			oud.status = ud.status;
 		}
 		return oud;
 	}
