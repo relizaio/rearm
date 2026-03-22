@@ -2,6 +2,8 @@ package io.reliza.dto;
 
 import java.util.List;
 
+import io.reliza.model.AnalysisState;
+
 /**
  * Enhanced weakness detail with component attribution.
  * Shows which components/releases resolved, introduced, or still have this weakness.
@@ -27,5 +29,5 @@ public record WeaknessWithAttribution(
     OrgLevelContext orgContext,
     
     // Analysis state (FALSE_POSITIVE, NOT_AFFECTED, etc.)
-    String analysisState
+    AnalysisState analysisState
 ) {}

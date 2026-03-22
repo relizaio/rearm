@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import io.reliza.model.AnalysisState;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.dto.ReleaseMetricsDto;
 
@@ -187,7 +188,7 @@ public final class ChangelogRecords {
 		String purl,
 		String severity,
 		Set<ReleaseMetricsDto.VulnerabilityAliasDto> aliases,
-		String analysisState
+		AnalysisState analysisState
 	) {}
 	
 	/**
@@ -196,7 +197,7 @@ public final class ChangelogRecords {
 	public record ReleaseViolationInfo(
 		String type,
 		String purl,
-		String analysisState
+		AnalysisState analysisState
 	) {}
 	
 	/**
@@ -207,7 +208,7 @@ public final class ChangelogRecords {
 		String severity,
 		String ruleId,
 		String location,
-		String analysisState
+		AnalysisState analysisState
 	) {}
 	
 	/**

@@ -705,7 +705,7 @@ public class ChangeLogService {
 		return vulns.stream()
 			.map(v -> new ReleaseVulnerabilityInfo(v.vulnId(), v.purl(),
 				v.severity() != null ? v.severity().name() : null, v.aliases(),
-				v.analysisState() != null ? v.analysisState().name() : null))
+				v.analysisState()))
 			.toList();
 	}
 	
@@ -715,7 +715,7 @@ public class ChangeLogService {
 		return violations.stream()
 			.map(v -> new ReleaseViolationInfo(
 				v.type() != null ? v.type().name() : "UNKNOWN", v.purl(),
-				v.analysisState() != null ? v.analysisState().name() : null))
+				v.analysisState()))
 			.toList();
 	}
 	
@@ -726,7 +726,7 @@ public class ChangeLogService {
 			.map(w -> new ReleaseWeaknessInfo(w.cweId(),
 				w.severity() != null ? w.severity().name() : null,
 				w.ruleId(), w.location(),
-				w.analysisState() != null ? w.analysisState().name() : null))
+				w.analysisState()))
 			.toList();
 	}
 	

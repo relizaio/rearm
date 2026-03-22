@@ -636,13 +636,13 @@ type ReleaseVulnerabilityInfo {
 	purl: String
 	severity: String
 	aliases: [VulnerabilityAlias!]
-	analysisState: String
+	analysisState: AnalysisState
 }
 
 type ReleaseViolationInfo {
 	type: String!
 	purl: String
-	analysisState: String
+	analysisState: AnalysisState
 }
 
 type ReleaseWeaknessInfo {
@@ -650,7 +650,7 @@ type ReleaseWeaknessInfo {
 	severity: String
 	ruleId: String
 	location: String
-	analysisState: String
+	analysisState: AnalysisState
 }
 
 type ReleaseFindingChanges {
@@ -705,7 +705,7 @@ type VulnerabilityWithAttribution {
 	isNetAppeared: Boolean!
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
-	analysisState: String
+	analysisState: AnalysisState
 }
 
 type VulnerabilityAlias {
@@ -722,7 +722,7 @@ type ViolationWithAttribution {
 	isNetAppeared: Boolean!
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
-	analysisState: String
+	analysisState: AnalysisState
 }
 
 type WeaknessWithAttribution {
@@ -737,7 +737,7 @@ type WeaknessWithAttribution {
 	isNetAppeared: Boolean!
 	isStillPresent: Boolean!
 	orgContext: OrgLevelContext
-	analysisState: String
+	analysisState: AnalysisState
 }
 
 type OrgLevelContext {
@@ -1354,6 +1354,13 @@ enum VulnerabilitySeverity {
 	MEDIUM
 	LOW
 	UNASSIGNED
+}
+
+enum AnalysisState {
+	EXPLOITABLE
+	IN_TRIAGE
+	FALSE_POSITIVE
+	NOT_AFFECTED
 }
 
 # Vulnerability ID types based on OSV schema
@@ -2812,13 +2819,6 @@ enum AnalysisScope {
 	COMPONENT
 	BRANCH
 	RELEASE
-}
-
-enum AnalysisState {
-	EXPLOITABLE
-	IN_TRIAGE
-	FALSE_POSITIVE
-	NOT_AFFECTED
 }
 
 enum AnalysisJustification {

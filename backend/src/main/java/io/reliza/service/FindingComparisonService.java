@@ -591,7 +591,7 @@ public class FindingComparisonService {
 					fa.resolvedIn, fa.appearedIn, fa.presentIn,
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
 					flags.orgContext(),
-					fa.finding.analysisState() != null ? fa.finding.analysisState().name() : null
+					fa.finding.analysisState()
 				);
 			})
 			.collect(Collectors.toList());
@@ -606,7 +606,7 @@ public class FindingComparisonService {
 					fa.resolvedIn, fa.appearedIn, fa.presentIn,
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
 					flags.orgContext(),
-					fa.finding.analysisState() != null ? fa.finding.analysisState().name() : null
+					fa.finding.analysisState()
 				);
 			})
 			.collect(Collectors.toList());
@@ -623,7 +623,7 @@ public class FindingComparisonService {
 					fa.resolvedIn, fa.appearedIn, fa.presentIn,
 					flags.isNetResolved(), flags.isNetAppeared(), flags.isStillPresent(),
 					flags.orgContext(),
-					fa.finding.analysisState() != null ? fa.finding.analysisState().name() : null
+					fa.finding.analysisState()
 				);
 			})
 			.collect(Collectors.toList());
