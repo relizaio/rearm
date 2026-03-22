@@ -429,7 +429,7 @@ const artTypesResp = await graphqlClient.query({
         }`
 })
 
-const artifactTypes = artTypesResp.data.artifactTypes.map((t: string) => {
+const artifactTypes = artTypesResp.data.artifactTypes.filter((t: string) => t !== 'SARIF').map((t: string) => {
     return {
         label: t,
         value: t
