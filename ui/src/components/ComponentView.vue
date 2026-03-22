@@ -1003,6 +1003,7 @@ async function savePerspectives() {
         
         if (response.data && response.data.setPerspectivesOnComponent) {
             updatedComponent.value.perspectiveDetails = response.data.setPerspectivesOnComponent.perspectiveDetails
+            originalComponent.value.perspectiveDetails = commonFunctions.deepCopy(updatedComponent.value.perspectiveDetails)
             originalPerspectives.value = [...selectedPerspectives.value]
             notify('success', 'Success', 'Perspectives updated successfully')
         }
