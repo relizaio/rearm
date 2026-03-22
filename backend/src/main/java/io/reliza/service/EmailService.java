@@ -5,13 +5,13 @@ package io.reliza.service;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.List;
+import java.util.Properties;
 
-import javax.mail.internet.AddressException;
-import javax.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeMessage;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.mail2.javax.HtmlEmail;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.apache.commons.validator.routines.EmailValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,28 +58,24 @@ public class EmailService {
 		boolean isSuccess = true;
 		try {
 			var smtpProps = systemInfoService.getSmtpProps();
-			HtmlEmail email = new HtmlEmail();
-			email.setHostName(smtpProps.smtpHost());
-			email.setSmtpPort(smtpProps.port());
-			email.setAuthentication(smtpProps.userName(), smtpProps.password());
-			email.setStartTLSRequired(smtpProps.isStarttls());
-			email.setSSLOnConnect(smtpProps.isSsl());
-			email.setSubject(subject);
-			List<InternetAddress> toAddresses = toEmails.stream().map(x -> {
-				try {
-					return new InternetAddress(x);
-				} catch (AddressException e) {
-					log.error("exception on parsing smtp emails", e);
-					throw new RuntimeException("Invalid email address");
-				}
-			}).toList();
-			email.setTo(toAddresses);
+			JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
+			mailSender.setHost(smtpProps.smtpHost());
+			mailSender.setPort(smtpProps.port());
+			mailSender.setUsername(smtpProps.userName());
+			mailSender.setPassword(smtpProps.password());
+			Properties props = mailSender.getJavaMailProperties();
+			props.put("mail.transport.protocol", "smtp");
+			props.put("mail.smtp.auth", "true");
+			if (smtpProps.isStarttls()) props.put("mail.smtp.starttls.enable", "true");
+			if (smtpProps.isSsl()) props.put("mail.smtp.ssl.enable", "true");
+			MimeMessage message = mailSender.createMimeMessage();
+			MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 			String fromName = StringUtils.isNotEmpty(smtpProps.fromName()) ? smtpProps.fromName() : "ReARM - Do Not Reply";
-			email.setFrom(systemInfoService.getFromEmail(), fromName);
-			email.setContentType(contentType);
-			email.setHtmlMsg(contentStr);
-			email.setTextMsg(contentStr);
-			email.send();
+			helper.setFrom(systemInfoService.getFromEmail(), fromName);
+			helper.setTo(toEmails.toArray(new String[0]));
+			helper.setSubject(subject);
+			helper.setText(contentStr, "text/html".equalsIgnoreCase(contentType));
+			mailSender.send(message);
 		} catch (Exception e) {
 			log.error("Error on sending smtp email", e);
 			isSuccess = false;
