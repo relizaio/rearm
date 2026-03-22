@@ -579,7 +579,8 @@ public class ComponentService {
 		
 		UUID componentId = Utils.resolveProgrammaticComponentId((String) inputMap.get(CommonVariables.COMPONENT_FIELD), ahp);
 
-		if (null == componentId && ApiTypeEnum.ORGANIZATION_RW != ahp.getType()) {
+		if (null == componentId &&
+			!(ApiTypeEnum.ORGANIZATION_RW == ahp.getType() || ApiTypeEnum.ORGANIZATION == ahp.getType())) {
 			throw new RelizaException("Wrong Key Type");
 		}
 		

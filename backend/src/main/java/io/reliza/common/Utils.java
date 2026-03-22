@@ -592,18 +592,18 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.03.34";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.03.58";
     
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "fafb05e1ac9e655b2f284bb72e4437bae696c22012dcb01acb277177e01eae75";
-    private static final String REARM_CD_HELM_VERSION = "0.3.1";
-    private static final String REARM_CD_HELM_COMMIT = "aa79b7997c9448072a88b5099958920079040b9c";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.3.1 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "d938dc15b235c0d1fef329f5fb1963ca11a7f61e54586622a1e8d9275215e276";
+    private static final String REARM_CD_HELM_VERSION = "0.3.9";
+    private static final String REARM_CD_HELM_COMMIT = "c33e7682789e63cc6062cd6c2b8b596591a8b625";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.3.9 [skip ci]";
     
-    public static final String REARM_CD_CONTAINER_DIGEST = "551f62cf0f2fcd2deff5d2c4931d08bf079773cd581aa14d8aec2cc0270ed191";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.26";
-    public static final String REARM_CD_CONTAINER_COMMIT = "1e132f0c574ccdbd64ee03d007ea1bfa8ba74267";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): use explicit kubectl create ns rather than create-namespace on helm";
+    public static final String REARM_CD_CONTAINER_DIGEST = "17329ae0ecd6053efab0a29a00501bd5dfaac36ec1287cc55806d25a870068dc";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.03.35";
+    public static final String REARM_CD_CONTAINER_COMMIT = "85d37a9464575d3907b237e6e44333e0a36ce59b";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "chore(rearm-cd-app)!: bump ReARM CLI to 26.03.12";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
@@ -697,7 +697,7 @@ public class Utils {
 			if (null != suppliedComponentId && !componentId.equals(suppliedComponentId)) {
 				throw new AccessDeniedException("Component mismatch.");
 			}
-		} else if (ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
+		} else if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
 			componentId = suppliedComponentId;
 		}
 		return componentId;
