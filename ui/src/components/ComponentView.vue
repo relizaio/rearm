@@ -522,10 +522,12 @@
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
                                             <label>Perspectives</label>
                                             <n-select
+                                                v-if="perspectiveOptions.length > 0"
                                                 v-model:value="selectedPerspectives"
                                                 :options="perspectiveOptions"
                                                 multiple
                                                 placeholder="Select perspectives" />
+                                            <span v-else style="color: #888; font-size: 0.9em;">No manually created perspectives defined. You can create them via Organization Settings -&gt; Perspectives tab.</span>
                                         </div>
                                         <div class="coreSettingsActions" v-if="hasPerspectiveChanges" style="margin-top: 20px;">
                                             <n-space>
@@ -916,7 +918,7 @@ const selectedPerspectives: Ref<string[]> = ref([])
 const originalPerspectives: Ref<string[]> = ref([])
 
 const perspectiveOptions: ComputedRef<any[]> = computed(() => {
-    return orgPerspectives.value.map((p: any) => {
+    return orgPerspectives.value.filter((p: any) => p.type === 'PERSPECTIVE').map((p: any) => {
         return {
             label: p.name,
             value: p.uuid
@@ -960,6 +962,7 @@ async function fetchPerspectives() {
                             name
                             org
                             createdDate
+                            type
                         }
                     }`,
                 variables: {
