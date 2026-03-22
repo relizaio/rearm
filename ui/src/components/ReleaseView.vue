@@ -3457,246 +3457,194 @@ const purl: ComputedRef<string | undefined> = computed((): string | undefined =>
 const artifactsRowKey = (row: any) => row.uuid
 const parentReleaseRowKey = (row: any) => row.release
 
-const artifactsTableFields: DataTableColumns<any> = [
-    {
-        key: 'type',
-        title: 'Type',
-        render: (row: any) => {
-            let content = row.type
-            if (row.specVersion && row.serializationFormat) {
-                content += ` - ${commonFunctions.formatSpecVersion(row.specVersion)} (${row.serializationFormat})`
-            } else if (row.type === 'BOM') {
-                content += ` - ${row.bomFormat}`
-            }
-            const els: any[] = [h('span', content)]
-            if (row.tags && row.tags.length) {
-                const coverageTypeTags = row.tags.filter((t: any) => t.key === 'COVERAGE_TYPE')
-                coverageTypeTags.forEach((t: any) => {
-                    const color = constants.ArtifactCoverageTypeColors[t.value] || '#999'
-                    const label = constants.ArtifactCoverageTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
-                })
-                row.tags.filter((t: any) => t.key === 'LIFECYCLE_DECLARED').forEach((t: any) => {
-                    const baseColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
-                    const lighterColor = baseColor + '80'
-                    const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lighterColor}; border-color: ${lighterColor};`, round: true }, () => lcLabel)
-                    els.push(h(NTooltip, { trigger: 'hover' }, {
-                        trigger: () => tag,
-                        default: () => 'Document Declared'
-                    }))
-                })
-                row.tags.filter((t: any) => t.key === 'LIFECYCLE').forEach((t: any) => {
-                    const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#8b5cf6'
-                    const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel)
-                    els.push(h(NTooltip, { trigger: 'hover' }, {
-                        trigger: () => tag,
-                        default: () => 'User Declared'
-                    }))
-                })
-            }
-            return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
-        }
-    },
-    {
-        key: 'artBelongsTo',
-        title: 'Belongs To',
-        render: (row: any) => {
-            const els: any[] = [
-                h('span', row.belongsTo)
-            ]
-            if (row.belongsToId) {
-                els.push(
-                    h(NTooltip, {
-                        trigger: 'hover'
-                    }, {trigger: () => h(NIcon,
-                        {
-                            class: 'icons',
-                            size: 25,
-                        }, () => h(Info20Regular)),
-                    default: () =>  h('div', row.belongsToId)
-                    }
-                    )
-                )
-            }
-            return h('div', els)
-        }
-    },
-    {
-        key: 'facts',
-        title: 'Facts',
-        render: (row: any) => {
-            const factContent: any[] = []
-            factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
-            row.tags.filter((t: any) => t.key !== 'COVERAGE_TYPE').forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
-            if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
-            if (row.version) factContent.push(h('li', `Version: ${row.version}`))
-            if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
-            if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`)))) 
+function renderArtifactTypeColumn (row: any) {
+    let content = row.type
+    if (row.specVersion && row.serializationFormat) {
+        content += ` - ${commonFunctions.formatSpecVersion(row.specVersion)} (${row.serializationFormat})`
+    } else if (row.type === 'BOM') {
+        content += ` - ${row.bomFormat}`
+    }
+    const els: any[] = [h('span', content)]
+    if (row.tags && row.tags.length) {
+        const coverageTypeTags = row.tags.filter((t: any) => t.key === 'COVERAGE_TYPE')
+        coverageTypeTags.forEach((t: any) => {
+            const color = constants.ArtifactCoverageTypeColors[t.value] || '#999'
+            const label = constants.ArtifactCoverageTypes.find((p: any) => p.value === t.value)?.label || t.value
+            els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
+        })
+        row.tags.filter((t: any) => t.key === 'LIFECYCLE_DECLARED').forEach((t: any) => {
+            const baseColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
+            const lighterColor = baseColor + '80'
+            const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
+            const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lighterColor}; border-color: ${lighterColor};`, round: true }, () => lcLabel)
+            els.push(h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => tag,
+                default: () => 'Document Declared'
+            }))
+        })
+        row.tags.filter((t: any) => t.key === 'LIFECYCLE').forEach((t: any) => {
+            const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#8b5cf6'
+            const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
+            const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel)
+            els.push(h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => tag,
+                default: () => 'User Declared'
+            }))
+        })
+    }
+    return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
+}
 
-            if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
-            if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
-            if (row.metrics && row.metrics.dtrackSubmissionFailed) factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack submission failed'))
-            if (row.metrics && row.metrics.dtrackSubmissionFailed && row.metrics.dtrackSubmissionFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack failure reason: ${row.metrics.dtrackSubmissionFailureReason}`))
-            if (row.metrics && row.metrics.dtrackSubmissionAttempts > 0) factContent.push(h('li', `DependencyTrack submission attempts: ${row.metrics.dtrackSubmissionAttempts}`))
-            if (row.artifactDetails && row.artifactDetails.length) {
-                row.artifactDetails.forEach((ad: any) => {
-                    const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
-                    if (ad.tags && ad.tags.length) {
-                        ad.tags.filter((t: any) => t.key && t.key.startsWith('io.reliza')).forEach((t: any) => {
-                            adChildren.push(h('span', ` | ${t.key}: ${t.value}`))
-                        })
-                    }
-                    factContent.push(h('li', {}, adChildren))
+function renderArtifactBelongsToColumn (row: any) {
+    const els: any[] = [
+        h('span', row.belongsTo)
+    ]
+    if (row.belongsToId) {
+        els.push(
+            h(NTooltip, {
+                trigger: 'hover'
+            }, {trigger: () => h(NIcon,
+                {
+                    class: 'icons',
+                    size: 25,
+                }, () => h(Info20Regular)),
+            default: () =>  h('div', row.belongsToId)
+            }
+            )
+        )
+    }
+    return h('div', els)
+}
+
+function renderArtifactFactsColumn (row: any) {
+    const factContent: any[] = []
+    factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
+    row.tags.filter((t: any) => t.key !== 'COVERAGE_TYPE').forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
+    if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
+    if (row.version) factContent.push(h('li', `Version: ${row.version}`))
+    if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
+    if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`))))
+    if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
+    if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
+    if (row.metrics && row.metrics.dtrackSubmissionFailed) factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack submission failed'))
+    if (row.metrics && row.metrics.dtrackSubmissionFailed && row.metrics.dtrackSubmissionFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack failure reason: ${row.metrics.dtrackSubmissionFailureReason}`))
+    if (row.metrics && row.metrics.dtrackSubmissionAttempts > 0) factContent.push(h('li', `DependencyTrack submission attempts: ${row.metrics.dtrackSubmissionAttempts}`))
+    if (row.artifactDetails && row.artifactDetails.length) {
+        row.artifactDetails.forEach((ad: any) => {
+            const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
+            if (ad.tags && ad.tags.length) {
+                ad.tags.filter((t: any) => t.key && t.key.startsWith('io.reliza')).forEach((t: any) => {
+                    adChildren.push(h('span', ` | ${t.key}: ${t.value}`))
                 })
             }
-            const els: any[] = [
-                h(NTooltip, {
-                    trigger: 'hover',
-                    contentStyle: 'max-width: 900px; white-space: normal; word-break: break-word;'
-                }, {trigger: () => h(NIcon,
-                    {
-                        class: 'icons',
-                        size: 25,
-                    }, () => h(Info20Regular)),
-                default: () =>  h('ul', factContent)
-                }
-                )
-            ]
-            return h('div', els)
+            factContent.push(h('li', {}, adChildren))
+        })
+    }
+    return h('div', [
+        h(NTooltip, {
+            trigger: 'hover',
+            contentStyle: 'max-width: 900px; white-space: normal; word-break: break-word;'
+        }, {trigger: () => h(NIcon,
+            {
+                class: 'icons',
+                size: 25,
+            }, () => h(Info20Regular)),
+        default: () =>  h('ul', factContent)
         }
-    },
-    {
-        key: 'vulnerabilities',
-        title: 'Vulnerabilities & Weaknesses',
-        render: (row: any) => {
-            let els: any[] = []
-            if (row.metrics && row.metrics.lastScanned) {
-                const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', 'Vulnerability')}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'LOW', 'Vulnerability')}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
-                els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
-            }
-            if (!els.length) els = [h('div'), 'N/A']
-            return els
+        )
+    ])
+}
+
+function renderArtifactVulnerabilitiesColumn (row: any) {
+    let els: any[] = []
+    if (row.metrics && row.metrics.lastScanned) {
+        const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
+        const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
+        const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', 'Vulnerability')}, row.metrics.high)
+        const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
+        const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'LOW', 'Vulnerability')}, row.metrics.low)
+        const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
+        els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
+    }
+    if (!els.length) els = [h('div'), 'N/A']
+    return els
+}
+
+function renderArtifactViolationsColumn (row: any) {
+    let els: any[] = []
+    if (row.metrics && row.metrics.lastScanned) {
+        const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
+        const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
+        const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
+        const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
+        els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
+    }
+    if (!els.length) els = [h('div'), 'N/A']
+    return els
+}
+
+function renderArtifactDtrackActions (row: any, els: any[]) {
+    if (row.metrics && row.metrics.dependencyTrackFullUri) {
+        const dtrackElIcon = h(NIcon,
+            {
+                title: 'Open Dependency-Track Project in New Window',
+                class: 'icons clickable',
+                size: 25
+            }, () => h(Link))
+        const dtrackUri = row.metrics.dependencyTrackFullUri
+        const dtrackUrl = new URL(dtrackUri)
+        const dtrackLoginUrl = `${dtrackUrl.origin}/login?redirect=${encodeURIComponent(dtrackUrl.pathname)}`
+        els.push(h('a', {target: '_blank', href: dtrackLoginUrl}, dtrackElIcon))
+    }
+    if (row.type === 'BOM') {
+        els.push(h(NIcon,
+            {
+                title: 'Request Refresh of Dependency-Track Metrics',
+                class: 'icons clickable',
+                size: 25,
+                onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
+            }, () => h(SecurityScanOutlined)))
+        if (userPermission.value === 'ADMIN') {
+            els.push(h(NIcon,
+                {
+                    title: 'Trigger Enrichment',
+                    class: 'icons clickable',
+                    size: 25,
+                    onClick: () => triggerEnrichment(row.uuid)
+                }, () => h(UpCircleOutlined)))
         }
-    },
-    {
-        key: 'violations',
-        title: 'Policy Violations',
-        render: (row: any) => {
-            let els: any[] = []
-            if (row.metrics && row.metrics.lastScanned) {
-                const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
-                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
-            }
-            if (!els.length) els = [h('div'), 'N/A']
-            return els
-        }
-    },
+    }
+    if (row.metrics && row.metrics.dependencyTrackFullUri) {
+        els.push(h(NIcon,
+            {
+                title: 'Refetch Dependency-Track Metrics',
+                class: 'icons clickable',
+                size: 25,
+                onClick: () => refetchDependencyTrackMetrics(row.uuid)
+            }, () => h(Refresh)))
+    }
+}
+
+const artifactsTableFields: DataTableColumns<any> = [
+    { key: 'type', title: 'Type', render: renderArtifactTypeColumn },
+    { key: 'artBelongsTo', title: 'Belongs To', render: renderArtifactBelongsToColumn },
+    { key: 'facts', title: 'Facts', render: renderArtifactFactsColumn },
+    { key: 'vulnerabilities', title: 'Vulnerabilities & Weaknesses', render: renderArtifactVulnerabilitiesColumn },
+    { key: 'violations', title: 'Policy Violations', render: renderArtifactViolationsColumn },
     {
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
             let els: any[] = []
-            
             const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
-            if (isDownloadable) {
-                const downloadEl = h(NIcon,
-                    {
-                        title: 'Download Artifact',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => openDownloadArtifactModal(row)
-                    }, () => h(Download))
-                els.push(downloadEl)
-            }
-
-            const uploadEl = h(NIcon,
-                {
-                    title: 'Upload New Artifact Version',
-                    class: 'icons clickable',
-                    size: 25,
-                    onClick: () => uploadNewBomVersion(row)
-                }, () => h(Edit))
-            els.push(uploadEl)
-
-            if (isWritable.value) {
-                const editTagsEl = h(NIcon,
-                    {
-                        title: 'Edit Artifact Tags',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => openEditArtifactTagsModal(row)
-                    }, () => h(Tag))
-                els.push(editTagsEl)
-            }
-
-            if (row.metrics && row.metrics.dependencyTrackFullUri) {
-                const dtrackElIcon = h(NIcon,
-                    {
-                        title: 'Open Dependency-Track Project in New Window',
-                        class: 'icons clickable',
-                        size: 25
-                    }, () => h(Link))
-                const dtrackUri = row.metrics.dependencyTrackFullUri
-                const dtrackUrl = new URL(dtrackUri)
-                const dtrackLoginUrl = `${dtrackUrl.origin}/login?redirect=${encodeURIComponent(dtrackUrl.pathname)}`
-                const dtrackEl = h('a', {target: '_blank', href: dtrackLoginUrl}, dtrackElIcon)
-                els.push(dtrackEl)
-            }
-
-            if (row.type === 'BOM') {
-                const dtrackRescanEl = h(NIcon,
-                    {
-                        title: 'Request Refresh of Dependency-Track Metrics',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
-                    }, () => h(SecurityScanOutlined))
-                els.push(dtrackRescanEl)
-                if (userPermission.value === 'ADMIN') {
-                    const enrichmentEl = h(NIcon,
-                        {
-                            title: 'Trigger Enrichment',
-                            class: 'icons clickable',
-                            size: 25,
-                            onClick: () => triggerEnrichment(row.uuid)
-                        }, () => h(UpCircleOutlined))
-                    els.push(enrichmentEl)
-                }
-            }
-
-            if (row.metrics && row.metrics.dependencyTrackFullUri) {
-                const dtrackRefetchEl = h(NIcon,
-                {
-                    title: 'Refetch Dependency-Track Metrics',
-                    class: 'icons clickable',
-                    size: 25,
-                    onClick: () => refetchDependencyTrackMetrics(row.uuid)
-                }, () => h(Refresh))
-                els.push(dtrackRefetchEl)
-            }
-            
+            if (isDownloadable) els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
+            els.push(h(NIcon, { title: 'Upload New Artifact Version', class: 'icons clickable', size: 25, onClick: () => uploadNewBomVersion(row) }, () => h(Edit)))
+            if (isWritable.value) els.push(h(NIcon, { title: 'Edit Artifact Tags', class: 'icons clickable', size: 25, onClick: () => openEditArtifactTagsModal(row) }, () => h(Tag)))
+            renderArtifactDtrackActions(row, els)
             // Add delete icon for Draft releases
             if (release.value.lifecycle === 'DRAFT' && row.belongsTo === 'Release') {
-                const deleteEl = h(NIcon,
-                    {
-                        title: 'Delete Artifact from Release',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => deleteArtifactFromRelease(row.uuid)
-                    }, () => h(Trash))
-                els.push(deleteEl)
+                els.push(h(NIcon, { title: 'Delete Artifact from Release', class: 'icons clickable', size: 25, onClick: () => deleteArtifactFromRelease(row.uuid) }, () => h(Trash)))
             }
-            
             if (!els.length) els.push(h('span', 'N/A'))
             return h('div', els)
         }
@@ -3704,224 +3652,20 @@ const artifactsTableFields: DataTableColumns<any> = [
 ]
 
 const underlyingArtifactsTableFields: DataTableColumns<any> = [
-    {
-        key: 'type',
-        title: 'Type',
-        render: (row: any) => {
-            let content = row.type
-            if (row.specVersion && row.serializationFormat) {
-                content += ` - ${commonFunctions.formatSpecVersion(row.specVersion)} (${row.serializationFormat})`
-            } else if (row.type === 'BOM') {
-                content += ` - ${row.bomFormat}`
-            }
-            const els: any[] = [h('span', content)]
-            if (row.tags && row.tags.length) {
-                const coverageTypeTags = row.tags.filter((t: any) => t.key === 'COVERAGE_TYPE')
-                coverageTypeTags.forEach((t: any) => {
-                    const color = constants.ArtifactCoverageTypeColors[t.value] || '#999'
-                    const label = constants.ArtifactCoverageTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    els.push(h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${color}; border-color: ${color};`, round: true }, () => label))
-                })
-                row.tags.filter((t: any) => t.key === 'LIFECYCLE_DECLARED').forEach((t: any) => {
-                    const baseColor = constants.ArtifactLifecycleTypeColors[t.value] || '#6366f1'
-                    const lighterColor = baseColor + '80'
-                    const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lighterColor}; border-color: ${lighterColor};`, round: true }, () => lcLabel)
-                    els.push(h(NTooltip, { trigger: 'hover' }, {
-                        trigger: () => tag,
-                        default: () => 'Document Declared'
-                    }))
-                })
-                row.tags.filter((t: any) => t.key === 'LIFECYCLE').forEach((t: any) => {
-                    const lcColor = constants.ArtifactLifecycleTypeColors[t.value] || '#8b5cf6'
-                    const lcLabel = constants.ArtifactLifecycleTypes.find((p: any) => p.value === t.value)?.label || t.value
-                    const tag = h(NTag, { size: 'small', bordered: true, style: `margin-left: 6px; color: ${lcColor}; border-color: ${lcColor};`, round: true }, () => lcLabel)
-                    els.push(h(NTooltip, { trigger: 'hover' }, {
-                        trigger: () => tag,
-                        default: () => 'User Declared'
-                    }))
-                })
-            }
-            return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
-        }
-    },
-    {
-        key: 'artBelongsTo',
-        title: 'Belongs To',
-        render: (row: any) => {
-            const els: any[] = [
-                h('span', row.belongsTo)
-            ]
-            if (row.belongsToId) {
-                els.push(
-                    h(NTooltip, {
-                        trigger: 'hover'
-                    }, {trigger: () => h(NIcon,
-                        {
-                            class: 'icons',
-                            size: 25,
-                        }, () => h(Info20Regular)),
-                    default: () =>  h('div', row.belongsToId)
-                    }
-                    )
-                )
-            }
-            return h('div', els)
-        }
-    },
-    {
-        key: 'facts',
-        title: 'Facts',
-        render: (row: any) => {
-            const factContent: any[] = []
-            factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
-            row.tags.filter((t: any) => t.key !== 'COVERAGE_TYPE').forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
-            if (row.displayIdentifier) factContent.push(h('li', `Display ID: ${row.displayIdentifier}`))
-            if (row.version) factContent.push(h('li', `Version: ${row.version}`))
-            if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
-            if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`)))) 
-
-            if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
-            if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
-            if (row.metrics && row.metrics.dtrackSubmissionFailed) factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack submission failed'))
-            if (row.metrics && row.metrics.dtrackSubmissionFailed && row.metrics.dtrackSubmissionFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack failure reason: ${row.metrics.dtrackSubmissionFailureReason}`))
-            if (row.metrics && row.metrics.dtrackSubmissionAttempts > 0) factContent.push(h('li', `DependencyTrack submission attempts: ${row.metrics.dtrackSubmissionAttempts}`))
-            if (row.artifactDetails && row.artifactDetails.length) {
-                row.artifactDetails.forEach((ad: any) => {
-                    const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
-                    if (ad.tags && ad.tags.length) {
-                        ad.tags.filter((t: any) => t.key && t.key.startsWith('io.reliza')).forEach((t: any) => {
-                            adChildren.push(h('span', ` | ${t.key}: ${t.value}`))
-                        })
-                    }
-                    factContent.push(h('li', {}, adChildren))
-                })
-            }
-            const els: any[] = [
-                h(NTooltip, {
-                    trigger: 'hover',
-                    contentStyle: 'max-width: 900px; white-space: normal; word-break: break-word;'
-                }, {trigger: () => h(NIcon,
-                    {
-                        class: 'icons',
-                        size: 25,
-                    }, () => h(Info20Regular)),
-                default: () =>  h('ul', factContent)
-                }
-                )
-            ]
-            return h('div', els)
-        }
-    },
-    {
-        key: 'vulnerabilities',
-        title: 'Vulnerabilities & Weaknesses',
-        render: (row: any) => {
-            let els: any[] = []
-            if (row.metrics && row.metrics.lastScanned) {
-                const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', 'Vulnerability')}, row.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'MEDIUM', 'Vulnerability')}, row.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'LOW', 'Vulnerability')}, row.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'UNASSIGNED', 'Vulnerability')}, row.metrics.unassigned)
-                els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
-            }
-            if (!els.length) els = [h('div'), 'N/A']
-            return els
-        }
-    },
-    {
-        key: 'violations',
-        title: 'Policy Violations',
-        render: (row: any) => {
-            let els: any[] = []
-            if (row.metrics && row.metrics.lastScanned) {
-                const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsOperationalTotal)
-                els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
-            }
-            if (!els.length) els = [h('div'), 'N/A']
-            return els
-        }
-    },
+    { key: 'type', title: 'Type', render: renderArtifactTypeColumn },
+    { key: 'artBelongsTo', title: 'Belongs To', render: renderArtifactBelongsToColumn },
+    { key: 'facts', title: 'Facts', render: renderArtifactFactsColumn },
+    { key: 'vulnerabilities', title: 'Vulnerabilities & Weaknesses', render: renderArtifactVulnerabilitiesColumn },
+    { key: 'violations', title: 'Policy Violations', render: renderArtifactViolationsColumn },
     {
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
             let els: any[] = []
-            
             const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
-            if (isDownloadable) {
-                const downloadEl = h(NIcon,
-                    {
-                        title: 'Download Artifact',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => openDownloadArtifactModal(row)
-                    }, () => h(Download))
-                els.push(downloadEl)
-            }
-
-            if (isWritable.value) {
-                const editTagsEl = h(NIcon,
-                    {
-                        title: 'Edit Artifact Tags',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => openEditArtifactTagsModal(row)
-                    }, () => h(Tag))
-                els.push(editTagsEl)
-            }
-
-            if (row.metrics && row.metrics.dependencyTrackFullUri) {
-                const dtrackElIcon = h(NIcon,
-                    {
-                        title: 'Open Dependency-Track Project in New Window',
-                        class: 'icons clickable',
-                        size: 25
-                    }, () => h(Link))
-                const dtrackUri = row.metrics.dependencyTrackFullUri
-                const dtrackUrl = new URL(dtrackUri)
-                const dtrackLoginUrl = `${dtrackUrl.origin}/login?redirect=${encodeURIComponent(dtrackUrl.pathname)}`
-                const dtrackEl = h('a', {target: '_blank', href: dtrackLoginUrl}, dtrackElIcon)
-                els.push(dtrackEl)
-            }
-
-            if (row.type === 'BOM') {
-                const dtrackRescanEl = h(NIcon,
-                    {
-                        title: 'Request Refresh of Dependency-Track Metrics',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => requestRefreshDependencyTrackMetrics(row.uuid)
-                    }, () => h(SecurityScanOutlined))
-                els.push(dtrackRescanEl)
-                if (userPermission.value === 'ADMIN') {
-                    const enrichmentEl = h(NIcon,
-                        {
-                            title: 'Trigger Enrichment',
-                            class: 'icons clickable',
-                            size: 25,
-                            onClick: () => triggerEnrichment(row.uuid)
-                        }, () => h(UpCircleOutlined))
-                    els.push(enrichmentEl)
-                }
-            }
-
-            if (row.metrics && row.metrics.dependencyTrackFullUri) {
-                const dtrackRefetchEl = h(NIcon,
-                {
-                    title: 'Refetch Dependency-Track Metrics',
-                    class: 'icons clickable',
-                    size: 25,
-                    onClick: () => refetchDependencyTrackMetrics(row.uuid)
-                }, () => h(Refresh))
-                els.push(dtrackRefetchEl)
-            }
-            
+            if (isDownloadable) els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
+            if (isWritable.value) els.push(h(NIcon, { title: 'Edit Artifact Tags', class: 'icons clickable', size: 25, onClick: () => openEditArtifactTagsModal(row) }, () => h(Tag)))
+            renderArtifactDtrackActions(row, els)
             if (!els.length) els.push(h('span', 'N/A'))
             return h('div', els)
         }
