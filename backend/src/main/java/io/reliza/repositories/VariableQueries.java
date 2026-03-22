@@ -208,8 +208,10 @@ class VariableQueries {
 			and a.record_data->'internalBom'->>'id' is not null
 			and (a.record_data->'metrics'->>'dependencyTrackProject' is null 
 				or a.record_data->'metrics'->>'dependencyTrackProject' = '')
-			and (a.record_data->'metrics'->>'dtrackProjectDeleted' is null 
+			and (a.record_data->'metrics'->>'dtrackProjectDeleted' is null
 				or a.record_data->'metrics'->>'dtrackProjectDeleted' = 'false')
+			and (a.record_data->'metrics'->>'dtrackSubmissionFailed' is null
+				or a.record_data->'metrics'->>'dtrackSubmissionFailed' = 'false')
 			order by a.record_data->>'createdDate' desc
 			limit 20
 		""";

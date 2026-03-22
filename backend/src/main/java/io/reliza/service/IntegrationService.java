@@ -1052,6 +1052,7 @@ public class IntegrationService {
 	
 	@Transactional
 	public boolean requestMetricsRefreshOnDependencyTrack (ArtifactData ad) {
+		sharedArtifactService.resetArtifactDtrackFailedState(ad.getUuid());
 		return dtrackService.requestMetricsRefresh(ad);
 	}
 	

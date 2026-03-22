@@ -1099,6 +1099,9 @@ type SyncDtrackStatusResponse {
 
 type DependencyTrackMetrics {
 	dependencyTrackFullUri: String
+	dtrackSubmissionFailed: Boolean
+	dtrackSubmissionAttempts: Int
+	dtrackSubmissionFailureReason: String
 	lastScanned: DateTime
 	critical: Int
 	high: Int

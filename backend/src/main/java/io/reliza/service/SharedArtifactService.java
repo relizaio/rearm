@@ -293,6 +293,48 @@ public class SharedArtifactService {
 	}
 	
 	
+	@Transactional
+	protected void markArtifactDtrackFailed(UUID artifactUuid, String failureReason) {
+		Optional<Artifact> oa = getArtifact(artifactUuid);
+		if (oa.isEmpty()) {
+			log.warn("markArtifactDtrackFailed: artifact not found for uuid {}", artifactUuid);
+			return;
+		}
+		Artifact a = oa.get();
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		DependencyTrackIntegration dti = ad.getMetrics();
+		if (dti == null) {
+			dti = new DependencyTrackIntegration();
+			ad.setMetrics(dti);
+		}
+		dti.setDtrackSubmissionFailed(true);
+		dti.setDtrackSubmissionFailureReason(failureReason);
+		saveArtifact(a, Utils.dataToRecord(ad), WhoUpdated.getAutoWhoUpdated());
+	}
+
+	@Transactional
+	protected void resetArtifactDtrackFailedState(UUID artifactUuid) {
+		Optional<Artifact> oa = getArtifact(artifactUuid);
+		if (oa.isEmpty()) {
+			log.warn("resetArtifactDtrackFailedState: artifact not found for uuid {}", artifactUuid);
+			return;
+		}
+		Artifact a = oa.get();
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		DependencyTrackIntegration dti = ad.getMetrics();
+		if (dti == null) {
+			return;
+		}
+		Boolean failed = dti.getDtrackSubmissionFailed();
+		Integer attempts = dti.getDtrackSubmissionAttempts();
+		if ((failed != null && failed) || (attempts != null && attempts > 0)) {
+			dti.setDtrackSubmissionFailed(false);
+			dti.setDtrackSubmissionAttempts(0);
+			dti.setDtrackSubmissionFailureReason(null);
+			saveArtifact(a, Utils.dataToRecord(ad), WhoUpdated.getAutoWhoUpdated());
+		}
+	}
+
 	/**
 	 * Saves an artifact without adding a version snapshot.
 	 * Used for version history transfers where we don't want to create a new snapshot.

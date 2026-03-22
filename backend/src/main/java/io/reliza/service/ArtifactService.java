@@ -78,7 +78,9 @@ import reactor.core.publisher.Mono;
 @Service
 @Slf4j
 public class ArtifactService {
-	
+
+	private static final int DTRACK_MAX_SUBMISSION_ATTEMPTS = 5;
+
 	@Autowired
     private SharedArtifactService sharedArtifactService;
 	
@@ -1056,9 +1058,48 @@ public class ArtifactService {
 		} catch (Exception e) {
 			log.error("Failed to submit artifact {} to DTrack: ", ad.getUuid());
 			log.error("Artifact submission error details", e);
+
+			if (isDtrackClientError(e)) {
+				log.error("Permanent DTrack submission failure for artifact {} (4xx error), marking as failed", ad.getUuid());
+				sharedArtifactService.markArtifactDtrackFailed(ad.getUuid(), extractDtrackErrorReason(e));
+			} else {
+				ArtifactData.DependencyTrackIntegration dti = ad.getMetrics();
+				if (dti == null) {
+					dti = new ArtifactData.DependencyTrackIntegration();
+					ad.setMetrics(dti);
+				}
+				int attempts = (dti.getDtrackSubmissionAttempts() != null) ? dti.getDtrackSubmissionAttempts() : 0;
+				attempts++;
+				dti.setDtrackSubmissionAttempts(attempts);
+
+				if (attempts >= DTRACK_MAX_SUBMISSION_ATTEMPTS) {
+					log.error("Artifact {} has reached max DTrack submission attempts ({}), marking as permanently failed",
+						ad.getUuid(), DTRACK_MAX_SUBMISSION_ATTEMPTS);
+					dti.setDtrackSubmissionFailed(true);
+				}
+
+				Optional<Artifact> oa = repository.findById(ad.getUuid());
+				if (oa.isPresent()) {
+					sharedArtifactService.updateArtifactDti(oa.get(), dti, WhoUpdated.getAutoWhoUpdated());
+				}
+			}
 		}
 	}
-	
+
+	private static boolean isDtrackClientError(Exception e) {
+		String msg = e.getMessage();
+		if (msg == null) return false;
+		return msg.matches("(?s).*\\b4\\d{2}\\s.*");
+	}
+
+	private static String extractDtrackErrorReason(Exception e) {
+		String msg = e.getMessage();
+		if (msg == null) return null;
+		int idx = msg.indexOf(" - ");
+		if (idx < 0) return null;
+		return msg.substring(idx + 3);
+	}
+
 	/**
 	 * Try to find an existing artifact with the same BOM digest that already has a DTrack project.
 	 * If found and the project is not deleted, return the DTrack result to reuse.
