@@ -4435,6 +4435,7 @@ async function updateUserPermissions() {
     }
 
     let isSuccess = true
+    let errorOccurred = false
 
     try {
         const resp = await graphqlClient.mutate({
@@ -4453,12 +4454,15 @@ async function updateUserPermissions() {
     } catch (error: any) {
         console.error(error)
         isSuccess = false
+        errorOccurred = true
+        const errorMsg = commonFunctions.parseGraphQLError(error.message)
+        notify('error', 'Error', `Failed to save user ${selectedUser.value.email} permissions: ${errorMsg}`)
     }
 
     if (isSuccess) {
         notify('success', 'Saved', `Saved user ${selectedUser.value.email} permissions successfully!`)
         await loadUsers()
-    } else {
+    } else if (!errorOccurred) {
         notify('error', 'Error', `Failed to save user ${selectedUser.value.email} permissions. Please retry or contact support.`)
     }
 
