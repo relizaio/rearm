@@ -4,7 +4,9 @@
             <app-wrapper />
         </template>
         <template #fallback>
-            <div>Loading...</div>
+            <div class="spinner-overlay">
+                <div class="spinner"></div>
+            </div>
         </template>
     </Suspense>
 </template>
@@ -73,5 +75,26 @@ import AppWrapper from '@/components/AppWrapper.vue'
 
 div:where(.swal2-container) {
   z-index: 3000 !important;
+}
+
+.spinner-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    width: 100vw;
+}
+
+.spinner {
+    width: 48px;
+    height: 48px;
+    border: 5px solid #e0e0e0;
+    border-top-color: cornflowerblue;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 </style>
