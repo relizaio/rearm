@@ -1336,7 +1336,7 @@ const storeObject : any = {
                 sourceCodeEntry: release.sourceCodeEntry,
                 uuid: release.uuid,
                 version: release.version,
-                identifiers: release.identifiers || []
+                identifiers: (release.identifiers || []).map((x: any) => ({idType: x.idType, idValue: x.idValue}))
             }
             if (release.parentReleases && release.parentReleases.length) {
                 console.log(release.parentReleases)
