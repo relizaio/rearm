@@ -68,9 +68,10 @@
                     <p><strong>Base URI:</strong> {{ licenseData.baseUri }}</p>
                     <p><strong>Valid From:</strong> {{ formatDate(licenseData.validFrom) }}</p>
                     <p><strong>Valid To:</strong> {{ formatDate(licenseData.validTo) }}</p>
-                    <p><strong>Max Write Users:</strong> {{ licenseData.maxWriteUsers }}</p>
-                    <p><strong>Max Read Users:</strong> {{ licenseData.maxReadUsers }}</p>
-                    <n-icon @click="showLicenseModal = true" class="clickable" title="Update License" size="20"><Edit /></n-icon>
+                    <p><strong>Write Users:</strong> {{ licenseData.globalUserCounts?.writeUsers || 0 }} / {{ licenseData.maxWriteUsers }}</p>
+                    <p><strong>Read Users:</strong> {{ licenseData.globalUserCounts?.readUsers || 0 }}</p>
+                    <p><strong>Total Users:</strong> {{ licenseData.globalUserCounts?.totalUsers || 0 }} / {{ (licenseData.maxWriteUsers || 0) + (licenseData.maxReadUsers || 0) }}</p>
+                    <n-button type="warning" @click="showLicenseModal = true">Update License</n-button>
                 </div>
                 <div v-else>
                     <p>No valid license found.</p>
@@ -255,6 +256,11 @@ async function initLoad() {
                         validTo
                         maxWriteUsers
                         maxReadUsers
+                        globalUserCounts {
+                            writeUsers
+                            readUsers
+                            totalUsers
+                        }
                     }
                 }
                 `,
@@ -280,6 +286,11 @@ async function uploadLicense() {
                         validTo
                         maxWriteUsers
                         maxReadUsers
+                        globalUserCounts {
+                            writeUsers
+                            readUsers
+                            totalUsers
+                        }
                     }
                 }`,
             variables: {
