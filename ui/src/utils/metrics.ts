@@ -160,7 +160,7 @@ export function buildVulnerabilityColumns(
     onEditFinding?: (row: any) => void
     onViewAnalysis?: (row: any) => void
     initialSeverityFilter?: string
-    initialTypeFilter?: string
+    initialTypeFilter?: string | string[]
     data?: any[]
   }
 ): DataTableColumns<any> {
@@ -235,7 +235,7 @@ export function buildVulnerabilityColumns(
         { label: `Violation (${typeCounts['Violation']})`, value: 'Violation' },
         { label: `Weakness (${typeCounts['Weakness']})`, value: 'Weakness' }
       ],
-      defaultFilterOptionValues: options?.initialTypeFilter ? [options.initialTypeFilter] : [],
+      defaultFilterOptionValues: options?.initialTypeFilter ? (Array.isArray(options.initialTypeFilter) ? options.initialTypeFilter : [options.initialTypeFilter]) : [],
       filter: (value: any, row: any) => row.type === value,
       render: (row: any) => {
         const typeColors: any = {
