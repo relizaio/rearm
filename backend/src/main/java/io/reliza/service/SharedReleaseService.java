@@ -4,6 +4,8 @@
 
 package io.reliza.service;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -1009,50 +1011,34 @@ public class SharedReleaseService {
 	 * @return List of failed releases between current and last successful release, ordered by date descending
 	 */
 	public List<ReleaseData> findIntermediateFailedReleases(ReleaseData currentRelease) {
-		List<ReleaseData> failedReleases = new LinkedList<>();
-		
 		// Only compute for successful releases (DRAFT or higher, ordinal >= 3)
 		if (currentRelease.getLifecycle().ordinal() < ReleaseLifecycle.DRAFT.ordinal()) {
-			return failedReleases;
+			return new LinkedList<>();
 		}
-		
+
 		UUID branchUuid = currentRelease.getBranch();
-		
-		// Get all releases on this branch, sorted by date descending
-		List<ReleaseData> allReleases = listReleaseDataOfBranch(branchUuid, DEFAULT_NUM_RELEASES, true);
-		
-		// Find the current release index
-		int currentIndex = -1;
-		for (int i = 0; i < allReleases.size(); i++) {
-			if (allReleases.get(i).getUuid().equals(currentRelease.getUuid())) {
-				currentIndex = i;
-				break;
-			}
-		}
-		
-		if (currentIndex == -1 || currentIndex >= allReleases.size() - 1) {
-			// Current release not found or is the oldest release
-			return failedReleases;
-		}
-		
-		// Walk backwards from current release to find intermediate failed releases
-		// Stop when we hit another successful release (DRAFT or higher)
-		for (int i = currentIndex + 1; i < allReleases.size(); i++) {
-			ReleaseData release = allReleases.get(i);
-			ReleaseLifecycle lifecycle = release.getLifecycle();
-			
-			if (lifecycle.ordinal() >= ReleaseLifecycle.DRAFT.ordinal()) {
-				// Found a successful release, stop here
-				break;
-			}
-			
-			// This is a failed release (PENDING, REJECTED, or CANCELLED)
-			if (lifecycle == ReleaseLifecycle.PENDING || lifecycle == ReleaseLifecycle.REJECTED || lifecycle == ReleaseLifecycle.CANCELLED) {
-				failedReleases.add(release);
-			}
-		}
-		
-		return failedReleases;
+		ZonedDateTime currentDate = currentRelease.getCreatedDate();
+
+		// Find the previous successful (DRAFT+) release created strictly before this one.
+		// Uses created_date < currentDate so the current release itself is never returned.
+		Optional<ReleaseData> prevSuccessful = getReleaseDataOfBranch(
+			currentRelease.getOrg(), branchUuid, ReleaseLifecycle.DRAFT, currentDate
+		);
+
+		// Lower bound: previous successful release date (exclusive), or epoch if this is the first
+		ZonedDateTime fromDate = prevSuccessful
+			.map(ReleaseData::getCreatedDate)
+			.orElse(ZonedDateTime.ofInstant(Instant.EPOCH, ZoneOffset.UTC));
+
+		// Fetch all releases in (fromDate, currentDate] and keep only failed ones.
+		// The current DRAFT release itself falls at currentDate but is excluded by the lifecycle filter.
+		return listReleasesOfBranchBetweenDates(branchUuid, fromDate, currentDate)
+			.stream()
+			.map(ReleaseData::dataFromRecord)
+			.filter(r -> r.getLifecycle() == ReleaseLifecycle.PENDING
+					  || r.getLifecycle() == ReleaseLifecycle.REJECTED
+					  || r.getLifecycle() == ReleaseLifecycle.CANCELLED)
+			.collect(Collectors.toList());
 	}
 	
 	/**
