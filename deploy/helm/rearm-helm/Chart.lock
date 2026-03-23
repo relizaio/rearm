@@ -1,6 +1,6 @@
 dependencies:
 - name: postgresql
   repository: oci://registry.relizahub.com/library
-  version: 0.1.0
-digest: sha256:0d8eab4731bccc2f95ce8dae4cbd80ec0f7292718f20e967a3044ee691a1858a
-generated: "2025-10-10T14:30:53.2361066-04:00"
+  version: 0.1.2
+digest: sha256:0a21a080032decdea4076a2155d6f03cbcd3e6c6e36d1544b9c1659d5cc4a1ae
+generated: "2026-03-23T08:42:03.9094488-04:00"
