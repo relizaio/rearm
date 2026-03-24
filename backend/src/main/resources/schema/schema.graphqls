@@ -2292,6 +2292,7 @@ enum MarketingReleaseLifecycleEnum {
 enum IntegrateType {
 	FOLLOW
 	INTEGRATE
+	UNINSTALL
 	TARGET
 	NONE
 }
