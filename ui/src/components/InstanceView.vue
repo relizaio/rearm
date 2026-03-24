@@ -7,9 +7,7 @@
                         <span v-if="updatedInstance.instanceType !== InstanceType.CLUSTER"> Instance: <a v-bind:href="'https://'+updatedInstance.uri" target="_blank" rel="noopener noreferrer">{{updatedInstance.uri}}</a></span>
                         <span v-else> Cluster: <a v-bind:href="'https://'+updatedInstance.uri" target="_blank" rel="noopener noreferrer">{{updatedInstance.name}}</a></span>
                         <n-icon v-if="isWritable && updatedInstance.instanceType !== InstanceType.CLUSTER_INSTANCE" @click="genApiKey" class="clickable icons" :title="'Generate ' + instanceWord + ' API Key'" size="20"><LockOpen /></n-icon>
-                        <a :href="'/api/manual/v1/instance/cyclonedxExport/' + instanceUuid" target="_blank" rel="noopener noreferrer">
-                            <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20"><Download /></n-icon>
-                        </a>
+                        <n-icon class="clickable icons" title="Export as CycloneDX JSON" size="20" @click="exportCycloneDx"><Download /></n-icon>
                         <n-icon class="clickable icons" :title="instanceWord + ' Settings'" @click="showInstSettingsModal = true" size="20"><Tool /></n-icon>
                         <n-icon class="clickable icons" title="Refresh Instance Data" @click="onCreate" size="20"><Refresh /></n-icon>
                     </h4>
@@ -328,6 +326,24 @@
                 <instance-view :instanceType="InstanceType.CLUSTER_INSTANCE" :clusterId="instanceUuid"/>
             </n-drawer-content>
         </n-drawer>
+        <n-modal
+            v-model:show="showCdxExportModal"
+            preset="dialog"
+            :show-icon="false"
+            title="Export as CycloneDX JSON"
+            style="width: 400px;"
+        >
+            <n-form-item label="State Type">
+                <n-select
+                    v-model:value="cdxExportStateType"
+                    :options="cdxStateTypeOptions"
+                    placeholder="Select state type" />
+            </n-form-item>
+            <template #action>
+                <n-button @click="showCdxExportModal = false">Cancel</n-button>
+                <n-button type="success" :disabled="!cdxExportStateType" :loading="exportingCdx" @click="doExportCycloneDx">Export</n-button>
+            </template>
+        </n-modal>
     </div>
 </template>
 
@@ -340,7 +356,7 @@ export default {
 import { ComputedRef, ref, computed, Ref, h } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { NDropdown, NEllipsis, NFormItem, NInput, NInputGroup, NButton, NDatePicker, NModal, NTooltip, useNotification, NotificationType, NIcon, NSwitch, NDataTable, NDrawer, NDrawerContent } from 'naive-ui'
+import { NDropdown, NSelect, NEllipsis, NFormItem, NInput, NInputGroup, NButton, NDatePicker, NModal, NTooltip, useNotification, NotificationType, NIcon, NSwitch, NDataTable, NDrawer, NDrawerContent } from 'naive-ui'
 import InstanceHistory from '@/components/InstanceHistory.vue'
 import ReleaseView from '@/components/ReleaseView.vue'
 import AddComponentBranch from '@/components/AddComponentBranch.vue'
@@ -1042,6 +1058,46 @@ const componentTargetReleaseAdded = async function (rlz: any) {
 const removeRelease = async function (releaseUuid: string, namespace: string) {
     updatedInstance.value.targetReleases = updatedInstance.value.targetReleases.filter((r: any) => !(r.release === releaseUuid && r.namespace === namespace))
     await save()
+}
+
+const showCdxExportModal = ref(false)
+const cdxExportStateType = ref('')
+const exportingCdx = ref(false)
+const cdxStateTypeOptions = [
+    { label: 'Plan', value: 'PLAN' },
+    { label: 'Actual', value: 'ACTUAL' }
+]
+
+const exportCycloneDx = function () {
+    cdxExportStateType.value = ''
+    showCdxExportModal.value = true
+}
+
+const doExportCycloneDx = async function () {
+    exportingCdx.value = true
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query getInstanceRevisionCycloneDxExportManual($instanceUuid: ID!, $stateType: InstanceStateType) {
+                    getInstanceRevisionCycloneDxExportManual(instanceUuid: $instanceUuid, stateType: $stateType)
+                }`,
+            variables: { instanceUuid, stateType: cdxExportStateType.value },
+            fetchPolicy: 'no-cache'
+        })
+        const content = response.data.getInstanceRevisionCycloneDxExportManual
+        const blob = new Blob([content], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `instance-${instanceUuid}-${cdxExportStateType.value.toLowerCase()}.cdx.json`
+        a.click()
+        URL.revokeObjectURL(url)
+        showCdxExportModal.value = false
+    } catch (err: any) {
+        notification.error({ title: 'Export Failed', content: commonFunctions.parseGraphQLError(err.message), duration: 5000 })
+    } finally {
+        exportingCdx.value = false
+    }
 }
 
 const onCreate = async function () {
