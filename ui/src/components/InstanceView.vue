@@ -1329,7 +1329,8 @@ matchedProductFields.push({
                     {key: 'INTEGRATE', label: 'INTEGRATE'},
                     {key: 'FOLLOW', label: 'FOLLOW'}, 
                     {key: 'TARGET', label: 'TARGET'}, 
-                    {key: 'NONE', label: 'NONE'}
+                    {key: 'NONE', label: 'NONE'},
+                    {key: 'UNINSTALL', label: 'UNINSTALL'}
                 ],
                 value: row.type,
                 'on-select': (key: any) => setIntegrateType(row, key)
