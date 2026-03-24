@@ -171,6 +171,9 @@ type Mutation {
 	requestRefreshDependencyTrackMetrics(artifact: ID!): Boolean
 	syncDtrackStatus(orgUuid: ID!): SyncDtrackStatusResponse
 	
+	# cdx import
+	importCyclonedxComponents(orgUuid: ID!, cdxJson: String!): [ImportComponentResult]
+	
 	# components and products
 	createComponent(component: CreateComponentInput!): Component
 	updateComponent(component: UpdateComponentInput!): Component
@@ -1095,6 +1098,13 @@ type Artifact {
 type SyncDtrackStatusResponse {
 	successCount: Int!
 	failedArtifactUuids: [ID]
+}
+
+type ImportComponentResult {
+	componentName: String
+	version: String
+	success: Boolean
+	error: String
 }
 
 type DependencyTrackMetrics {

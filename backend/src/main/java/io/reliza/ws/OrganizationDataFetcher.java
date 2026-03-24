@@ -26,6 +26,7 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
+import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.exceptions.RelizaException;
@@ -43,6 +44,8 @@ import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.ApiKeyForUserDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.CdxImportService;
+import io.reliza.service.CdxImportService.ImportComponentResult;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ResourceGroupService;
@@ -75,6 +78,25 @@ public class OrganizationDataFetcher {
 	@Autowired
 	private SystemInfoService systemInfoService;
 
+	@Autowired
+	private CdxImportService cdxImportService;
+
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "importCyclonedxComponents")
+	public List<ImportComponentResult> importCyclonedxComponents(DgsDataFetchingEnvironment dfe,
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("cdxJson") String cdxJson) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ros = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ros), CallType.WRITE);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		List<ImportComponentResult> results = cdxImportService.importFromCycloneDx(orgUuid, cdxJson, wu);
+		return results.stream().filter(r -> r != null).toList();
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "organizations")
 	public Iterable<OrganizationData> getOrganizations() {
@@ -90,11 +112,10 @@ public class OrganizationDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "users")
 	public List<OrgUserData> getUsers(
-			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("includeInactive") Boolean includeInactive) throws RelizaException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		UUID orgUuid = UUID.fromString(orgUuidStr);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject roUsers = od.isPresent() ? od.get() : null;
 		InstallationType systemInstallationType = userService.getInstallationType();

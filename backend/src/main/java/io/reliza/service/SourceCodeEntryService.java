@@ -173,6 +173,32 @@ public class SourceCodeEntryService {
 	}
 
 	@Transactional
+	public void updateVcsTag(UUID sceUuid, String vcsTag, WhoUpdated wu) throws RelizaException {
+		Optional<SourceCodeEntry> osce = getSourceCodeEntryService.getSourceCodeEntry(sceUuid);
+		if (osce.isEmpty()) {
+			throw new RelizaException("SCE not found: " + sceUuid);
+		}
+		SourceCodeEntry sce = osce.get();
+		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
+		if (StringUtils.isEmpty(sced.getVcsTag())) {
+			SceDto updateDto = SceDto.builder()
+					.uuid(sceUuid)
+					.branch(sced.getBranch())
+					.vcs(sced.getVcs())
+					.vcsBranch(sced.getVcsBranch())
+					.commit(sced.getCommit())
+					.commitMessage(sced.getCommitMessage())
+					.commitAuthor(sced.getCommitAuthor())
+					.commitEmail(sced.getCommitEmail())
+					.vcsTag(vcsTag)
+					.organizationUuid(sced.getOrg())
+					.build();
+			SourceCodeEntryData updatedSced = SourceCodeEntryData.scEntryDataFactory(updateDto);
+			saveSourceCodeEntry(sce, Utils.dataToRecord(updatedSced), wu);
+		}
+	}
+
+	@Transactional
 	public boolean addArtifact(UUID sceUuid, SCEArtifact art, WhoUpdated wu) throws RelizaException{
 		SourceCodeEntry sce = getSourceCodeEntryService.getSourceCodeEntry(sceUuid).get();
 		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
