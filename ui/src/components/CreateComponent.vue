@@ -1,6 +1,8 @@
 <template>
     <div class="createComponentGlobal">
         <div v-if="!props.isHideTitle">Create {{ componentProductWords.componentFirstUpper }}</div>
+        <n-tabs v-if="!isProduct" type="line" animated>
+            <n-tab-pane name="create" :tab="'Create ' + componentProductWords.componentFirstUpper">
         <n-form
             ref="createComponentForm"
             :model="component"
@@ -103,6 +105,76 @@
                 <n-button type="warning" @click="onReset">Reset</n-button>
             </div>
         </n-form>
+            </n-tab-pane>
+            <n-tab-pane name="import" tab="Import CycloneDX">
+                <n-form-item label="CycloneDX JSON">
+                    <n-input
+                        v-model:value="cdxJson"
+                        type="textarea"
+                        :rows="12"
+                        placeholder="Paste CycloneDX JSON here..." />
+                </n-form-item>
+                <n-button type="success" :loading="importingCdx" @click="importCyclonedx">Import</n-button>
+                <n-button type="warning" style="margin-left: 8px;" @click="cdxJson = ''">Reset</n-button>
+            </n-tab-pane>
+        </n-tabs>
+        <n-form
+            v-if="isProduct"
+            ref="createComponentForm"
+            :model="component"
+            :rules="rules">
+            <n-form-item    path="name"
+                            label="Name">
+                <n-input
+                            v-model:value="component.name"
+                            required
+                            :placeholder="'Enter ' + componentProductWords.component + ' name'" />
+            </n-form-item>
+            <n-form-item    path="versionSchema"
+                            label="Version Schema">
+                <n-select
+                            v-model:value="component.versionSchema"
+                            tag
+                            filterable
+                            :placeholder="'Enter ' + componentProductWords.component + ' version schema'"
+                            :options="constants.VersionTypes" />
+                <n-input
+                            v-if="component.versionSchema === 'custom_version'"
+                            v-model:value="customVersionSchema"
+                            placeholder="Custom Version Schema" />
+            </n-form-item>
+            <n-form-item    v-if="myUser.installationType !== 'OSS'"
+                            path="marketingversionSchema"
+                            label="Marketing Version Schema">
+                <n-switch v-model:value="marketingVersionEnabled"  @update:value="toggleMarketingVersion"/>
+                <n-select
+                            v-if="marketingVersionEnabled"
+                            v-model:value="component.marketingVersionSchema"
+                            :placeholder="'Enter ' + componentProductWords.component + ' marketing version schema'"
+                            :options="constants.VersionTypes" />
+                <n-input
+                            v-if="component.marketingVersionSchema === 'custom_version' && marketingVersionEnabled"
+                            v-model:value="customMarketingVersion"
+                            placeholder="Custom Version Schema" />
+            </n-form-item>
+            <n-form-item    path="identifiers"
+                            label="Identifiers">
+                <n-dynamic-input v-model:value="component.identifiers" :on-create="onCreateIdentifier">
+                    <template #create-button-default>
+                        Add Identifier
+                    </template>
+                    <template #default="{ value }">
+                        <n-select style="width: 200px;" v-model:value="value.idType"
+                            :options="[{label: 'PURL', value: 'PURL'}, {label: 'TEI', value: 'TEI'}, {label: 'CPE', value: 'CPE'}]" />
+                        <n-input type="text" v-model:value="value.idValue" placeholder="Enter identifier value" />
+                    </template>
+                </n-dynamic-input>
+            </n-form-item>
+            <div>
+                <n-button type="success" @click="onSubmit">Submit</n-button>
+                <n-button type="warning" @click="onReset">Reset</n-button>
+            </div>
+        </n-form>
     </div>
 </template>
 
@@ -114,7 +186,10 @@ export default {
 <script lang="ts" setup>
 import { Ref, ref, ComputedRef, computed } from 'vue'
 import { useStore } from 'vuex'
-import { FormInst, NForm, NFormItem, NInput, NButton, NSelect, NSwitch, NDynamicInput } from 'naive-ui'
+import { FormInst, NForm, NFormItem, NInput, NButton, NSelect, NSwitch, NDynamicInput, NTabs, NTabPane } from 'naive-ui'
+import { useNotification } from 'naive-ui'
+import gql from 'graphql-tag'
+import graphqlClient from '@/utils/graphql'
 import CreateVcsRepository from '@/components/CreateVcsRepository.vue'
 import constants from '@/utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
@@ -127,6 +202,11 @@ const props = defineProps<{
 const emit = defineEmits(['componentCreated'])
 
 const store = useStore()
+const notification = useNotification()
+
+const notify = (type: 'success' | 'error' | 'warning' | 'info', title: string, content: string) => {
+    notification[type]({ title, content, duration: 5000 })
+}
 
 const createComponentForm = ref<FormInst | null>(null)
 
@@ -292,6 +372,51 @@ function onCreateIdentifier () {
 
 store.dispatch('fetchVcsRepos', props.orgProp)
 
+const cdxJson = ref('')
+const importingCdx = ref(false)
+
+async function importCyclonedx() {
+    if (!cdxJson.value.trim()) {
+        notify('warning', 'Empty Input', 'Please paste a CycloneDX JSON before importing.')
+        return
+    }
+    importingCdx.value = true
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation importCyclonedxComponents($orgUuid: ID!, $cdxJson: String!) {
+                    importCyclonedxComponents(orgUuid: $orgUuid, cdxJson: $cdxJson) {
+                        componentName
+                        version
+                        success
+                        error
+                    }
+                }`,
+            variables: {
+                orgUuid: props.orgProp,
+                cdxJson: cdxJson.value
+            }
+        })
+        const results: any[] = (response.data as any)?.importCyclonedxComponents || []
+        const errors = results.filter((r: any) => !r.success)
+        const successes = results.filter((r: any) => r.success)
+        if (errors.length) {
+            for (const e of errors) {
+                notify('error', `Import failed: ${e.componentName || 'unknown'}`, e.error || 'Unknown error')
+            }
+        }
+        if (successes.length) {
+            notify('success', 'Import Complete', `Successfully imported ${successes.length} component(s).`)
+            cdxJson.value = ''
+            await store.dispatch('fetchComponents', { orgid: props.orgProp, forceRefresh: true })
+            emit('componentCreated', null)
+        }
+    } catch (err: any) {
+        notify('error', 'Import Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        importingCdx.value = false
+    }
+}
 
 </script>
 
