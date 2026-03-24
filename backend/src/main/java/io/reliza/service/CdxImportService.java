@@ -60,6 +60,7 @@ public class CdxImportService {
 	private static final String PROP_VCS_TAG = REARM_IMPORT_PREFIX + "vcsTag";
 	private static final String PROP_COMPONENT_VERSION_SCHEMA = REARM_IMPORT_PREFIX + "componentVersionSchema";
 	private static final String PROP_BRANCH_VERSION_SCHEMA = REARM_IMPORT_PREFIX + "branchVersionSchema";
+	private static final String PROP_VCS_PATH = REARM_IMPORT_PREFIX + "vcsPath";
 
 	@Autowired
 	private ComponentService componentService;
@@ -153,14 +154,16 @@ public class CdxImportService {
 			vcsUri = resolveVcsUriFromPedigree(cdxComponent);
 		}
 
+		String vcsTag = resolveProperty(cdxComponent, PROP_VCS_TAG);
+		String vcsPath = resolveProperty(cdxComponent, PROP_VCS_PATH);
+
 		// Find or create component
-		ComponentData componentData = findOrCreateComponent(orgUuid, componentName, versionSchema, branchVersionSchema, vcsUri, wu);
+		ComponentData componentData = findOrCreateComponent(orgUuid, componentName, versionSchema, branchVersionSchema, vcsUri, vcsPath, wu);
 
 		// Find or create branch
 		BranchData branchData = findOrCreateBranch(componentData, vcsBranchName, vcsUri, wu);
 
 		// Create SCEs from pedigree commits if present
-		String vcsTag = resolveProperty(cdxComponent, PROP_VCS_TAG);
 		List<UUID> sceUuids = createSceFromPedigree(orgUuid, cdxComponent, branchData, vcsBranchName, vcsUri, vcsTag, wu);
 
 		UUID primarySceUuid = sceUuids.isEmpty() ? null : sceUuids.get(0);
@@ -202,7 +205,7 @@ public class CdxImportService {
 	}
 
 	private ComponentData findOrCreateComponent(UUID orgUuid, String name, String versionSchema,
-			String branchVersionSchema, String vcsUri, WhoUpdated wu) throws RelizaException {
+			String branchVersionSchema, String vcsUri, String vcsPath, WhoUpdated wu) throws RelizaException {
 		Optional<ComponentData> existing = componentService.findComponentDataByOrgNameType(orgUuid, name, ComponentType.COMPONENT);
 		if (existing.isPresent()) {
 			return existing.get();
@@ -222,6 +225,7 @@ public class CdxImportService {
 				.featureBranchVersioning(branchVersionSchema);
 
 		if (vcsRepoUuid != null) cpdBuilder.vcs(vcsRepoUuid);
+		if (StringUtils.isNotEmpty(vcsPath)) cpdBuilder.repoPath(vcsPath);
 
 		var comp = componentService.createComponent(cpdBuilder.build(), wu);
 		return ComponentData.dataFromRecord(comp);
@@ -300,7 +304,6 @@ public class CdxImportService {
 					sceDtoBuilder.uri(effectiveVcsUri)
 							.type(VcsType.GIT);
 				}
-
 				SceDto sceDto = sceDtoBuilder.build();
 				Optional<io.reliza.model.SourceCodeEntryData> osced = sourceCodeEntryService
 						.populateSourceCodeEntryByVcsAndCommit(sceDto, true, wu);
