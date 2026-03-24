@@ -320,6 +320,7 @@ public class CommonVariables {
 	public static final String FQDN_PROPERTY = "FQDN";
 
 	public static final String BUNDLE_CONFIGURATION_PROPERTY = "CONFIGURATION";
+	public static final String INTEGRATION_TYPE_PROPERTY = "reliza:devops:integrationType";
 	public static final String ARGOCD_NAMESPACE = "argocd";
 	
 	/*** Release Tags ***/
@@ -495,6 +496,13 @@ public class CommonVariables {
 		CLUSTER;
 		
 		private InstanceType () {}
+	}
+
+	public enum InstanceStateType {
+		PLAN,
+		ACTUAL;
+
+		private InstanceStateType () {}
 	}
 
 	// this is currently based on the k8s pod lifecycle but may be extended later
