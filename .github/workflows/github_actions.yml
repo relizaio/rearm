@@ -12,18 +12,23 @@ jobs:
     name: Build And Push Documentation Site
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit Documentation Release
-        uses: relizaio/reliza-docker-action@a8ba201f314e111885f1ec036e8eeabcb02739be # v3.14
+      - name: ReARM Build And Submit Documentation Release
+        uses: relizaio/rearm-docker-action@a2d6978bea42cc6d707515bb927f0c693427fe58 # v1.10.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
           registry_host: registry.relizahub.com
           image_namespace: registry.relizahub.com/library
           image_name: rearm-documentation
-          reliza_api_id: ${{ secrets.RELIZA_REARM_DOCS_API_ID }}
-          reliza_api_key: ${{ secrets.RELIZA_REARM_DOCS_API_KEY }}
+          rearm_api_id: ${{ secrets.RELIZA_REARM_DOCS_API_ID }}
+          rearm_api_key: ${{ secrets.RELIZA_REARM_DOCS_API_KEY }}
+          rearm_api_url: https://reliza.rearmhq.com
           path: documentation_site
-          enable_sbom: 'false'
+          enable_sbom: true
+          source_code_sbom_type: 'npm'
+          enable_public_cosign_sigstore: 'true'
+          enable_codeql: 'true'
+          codeql_language: 'javascript'
   build-docs-helm:
     permissions:
       contents: write
@@ -31,15 +36,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/reliza-helm-action@14604a6aec66e51fc4d188133849b203b046ed64 # v3.14
+        uses: relizaio/rearm-helm-action@a9984fe2e241a8e5838be5415f58936dc92c2421 # v1.7.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
           registry_host: registry.relizahub.com/library
           helm_chart_name: rearm-documentation-helm
-          reliza_api_id: ${{ secrets.RELIZA_REARM_DOCS_HELM_API_ID }}
-          reliza_api_key: ${{ secrets.RELIZA_REARM_DOCS_HELM_API_KEY }}
-          path: deploy/helm
+          rearm_api_id: ${{ secrets.RELIZA_REARM_DOCS_HELM_API_ID }}
+          rearm_api_key: ${{ secrets.RELIZA_REARM_DOCS_HELM_API_KEY }}
+          rearm_api_url: https://reliza.rearmhq.com
+          path: deploy/helm/rearm-documentation-helm
+          enable_sbom: true
+          enable_public_cosign_sigstore: true
   build-landing-helm:
     permissions:
       contents: write
@@ -47,15 +55,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Helm metadata action
-        uses: relizaio/reliza-helm-action@14604a6aec66e51fc4d188133849b203b046ed64 # v3.14
+        uses: relizaio/rearm-helm-action@a9984fe2e241a8e5838be5415f58936dc92c2421 # v1.7.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
           registry_host: registry.relizahub.com/library
           helm_chart_name: rearm-landing-helm
-          reliza_api_id: ${{ secrets.RELIZA_REARM_LANDING_HELM_API_ID }}
-          reliza_api_key: ${{ secrets.RELIZA_REARM_LANDING_HELM_API_KEY }}
-          path: deploy/helm
+          rearm_api_id: ${{ secrets.RELIZA_REARM_LANDING_HELM_API_ID }}
+          rearm_api_key: ${{ secrets.RELIZA_REARM_LANDING_HELM_API_KEY }}
+          rearm_api_url: https://reliza.rearmhq.com
+          path: deploy/helm/rearm-landing-helm
+          enable_sbom: true
+          enable_public_cosign_sigstore: true
   build-rearm-helm:
     permissions:
       contents: write
@@ -80,7 +91,6 @@ jobs:
           rearm_mirror_api_id: ${{ secrets.REARM_REARM_HELM_API_ID }}
           rearm_mirror_api_key: ${{ secrets.REARM_REARM_HELM_API_KEY }}
           rearm_mirror_api_url: https://demo.rearmhq.com
-          rearm_enable_public_cosign_sigstore: 'true'
   build-ui:
     permissions:
       id-token: write
@@ -191,18 +201,22 @@ jobs:
     name: Build And Push ReARM Landing Website rearmhq.com
     runs-on: ubuntu-latest
     steps:
-      - name: RelizaHub Build And Submit ReARM Landing Release
-        uses: relizaio/reliza-docker-action@a8ba201f314e111885f1ec036e8eeabcb02739be # v3.14
+      - name: ReARM Build And Submit ReARM Landing Release
+        uses: relizaio/rearm-docker-action@a2d6978bea42cc6d707515bb927f0c693427fe58 # v1.10.0
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
           registry_host: registry.relizahub.com
           image_namespace: registry.relizahub.com/library
           image_name: rearm-landing
-          reliza_api_id: ${{ secrets.RELIZA_REARM_LANDING_API_ID }}
-          reliza_api_key: ${{ secrets.RELIZA_REARM_LANDING_API_KEY }}
+          rearm_api_id: ${{ secrets.RELIZA_REARM_LANDING_API_ID }}
+          rearm_api_key: ${{ secrets.RELIZA_REARM_LANDING_API_KEY }}
           path: landing_site
-          enable_sbom: 'false'
+          enable_sbom: true
+          source_code_sbom_type: 'npm'
+          enable_public_cosign_sigstore: 'true'
+          enable_codeql: 'true'
+          codeql_language: 'javascript'
   build-rebom-backend:
     permissions:
       id-token: write
