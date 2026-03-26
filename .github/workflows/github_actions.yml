@@ -29,8 +29,6 @@ jobs:
           enable_sbom: true
           source_code_sbom_type: 'npm'
           enable_public_cosign_sigstore: 'true'
-          enable_codeql: 'true'
-          codeql_language: 'javascript'
   build-docs-helm:
     permissions:
       contents: write
