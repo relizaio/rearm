@@ -9,6 +9,8 @@ name: Build Component Container Images And Submit Metadata To Reliza Hub
 
 jobs:
   build-docs:
+    permissions:
+      id-token: write
     name: Build And Push Documentation Site
     runs-on: ubuntu-latest
     steps:
@@ -32,6 +34,7 @@ jobs:
   build-docs-helm:
     permissions:
       contents: write
+      id-token: write
     name: Build And Push Documentation Helm Chart
     runs-on: ubuntu-latest
     steps:
@@ -51,6 +54,7 @@ jobs:
   build-landing-helm:
     permissions:
       contents: write
+      id-token: write
     name: Build And Push ReARM Landing Helm Chart
     runs-on: ubuntu-latest
     steps:
@@ -198,6 +202,8 @@ jobs:
           rearm_mirror_api_key: ${{ secrets.REARM_REARM_KEYCLOAK_API_KEY }}
           rearm_mirror_api_url: https://demo.rearmhq.com
   build-rearm-landing:
+    permissions:
+      id-token: write
     name: Build And Push ReARM Landing Website rearmhq.com
     runs-on: ubuntu-latest
     steps:
@@ -211,6 +217,7 @@ jobs:
           image_name: rearm-landing
           rearm_api_id: ${{ secrets.RELIZA_REARM_LANDING_API_ID }}
           rearm_api_key: ${{ secrets.RELIZA_REARM_LANDING_API_KEY }}
+          rearm_api_url: https://reliza.rearmhq.com
           path: landing_site
           enable_sbom: true
           source_code_sbom_type: 'npm'
