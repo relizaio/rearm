@@ -315,6 +315,7 @@ const RELEASE_COLLECTION_DATA = `
 const ARTIFACT_DETAIL_DATA = `
     uuid
     displayIdentifier
+    createdDate
     buildId
     buildUri
     version
