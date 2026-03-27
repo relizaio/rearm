@@ -27,8 +27,8 @@ const faqs: FaqItem[] = [
     question: "How is the number of users calculated?",
     answer: [
       "Each paid seat corresponds to one write user — someone who can create, modify, or manage releases, components, artifacts, and settings within ReARM.",
-      "For every write user on your plan, we include one additional read-only user at no extra cost. Read-only users can view releases, artifacts, and dashboards but cannot make changes.",
-      "For example, if you purchase a plan for 5 users, you get 5 write users and up to 5 read-only users (10 total).",
+      "For ReARM Pro Standard and Enterprise plans, for every 2 write users we include one additional read-only user at no extra cost. Read-only users can view releases, artifacts, and dashboards but cannot make changes.",
+      "For example, on Standard or Enterprise, if you purchase a plan for 20 write users, you get up to 10 additional read-only users (30 total).",
     ],
   },
   {
