@@ -63,5 +63,4 @@ export type OutputTriggerEvent = {
     eventType?: string;
     clientPayload?: string;
     schedule?: string;
-    includeSuppressed?: boolean;
 }
