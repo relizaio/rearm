@@ -332,6 +332,9 @@
                                                     <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
                                                         <n-input v-model:value="outputTrigger.notificationMessage" placeholder="Email Message Contents (i.e. 'Release ready to ship.')" />
                                                     </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Include Suppressed Vulnerabilities" path="includeSuppressed">
+                                                        <n-switch v-model:value="outputTrigger.includeSuppressed" />
+                                                    </n-form-item>
                                                     <n-button @click="addOutputTrigger" type="success">
                                                         Save
                                                     </n-button>
@@ -1237,7 +1240,8 @@ const outputTrigger = ref({
     vcs: '',
     eventType: '',
     clientPayload: '',
-    schedule: ''
+    schedule: '',
+    includeSuppressed: false
 })
 
 function resetOutputTrigger () {
@@ -1252,7 +1256,8 @@ function resetOutputTrigger () {
         vcs: '',
         eventType: '',
         clientPayload: '',
-        schedule: ''
+        schedule: '',
+        includeSuppressed: false
     }
 }
 
@@ -1355,7 +1360,8 @@ const outputTriggerTypeOptions = [
     {label: 'Release Lifecycle Change', value: 'RELEASE_LIFECYCLE_CHANGE'},
     {label: 'Marketing Release Lifecycle Change', value: 'MARKETING_RELEASE_LIFECYCLE_CHANGE'},
     {label: 'External Integration', value: 'INTEGRATION_TRIGGER'},
-    {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'}
+    {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'},
+    {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'}
 ]
 
 // Global Input Event Refs management

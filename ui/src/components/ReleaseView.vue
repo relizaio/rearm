@@ -3492,6 +3492,30 @@ function renderArtifactTypeColumn (row: any) {
             }))
         })
     }
+    const snapshotTypeTag = row.tags?.find((t: any) => t.key === 'VDR_SNAPSHOT_TYPE')
+    if (snapshotTypeTag) {
+        const snapshotType: string = snapshotTypeTag.value
+        const snapshotValueTag = row.tags?.find((t: any) => t.key === 'VDR_SNAPSHOT_VALUE')
+        const rawValue: string = snapshotValueTag?.value || ''
+        let triggerLabel: string
+        if (snapshotType === 'APPROVAL') {
+            triggerLabel = rawValue ? 'Approval: ' + rawValue : 'Approval'
+        } else if (snapshotType === 'LIFECYCLE') {
+            triggerLabel = 'Lifecycle: ' + rawValue.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
+        } else {
+            triggerLabel = 'Date'
+        }
+        const createdStr = row.createdDate ? new Date(row.createdDate).toLocaleString() : ''
+        const tooltipContent = h('div', [
+            h('div', `Trigger: ${triggerLabel}`),
+            createdStr ? h('div', `Created: ${createdStr}`) : null
+        ])
+        const snapshotTag = h(NTag, { size: 'small', bordered: true, style: 'margin-left: 6px; color: #0ea5e9; border-color: #0ea5e9;', round: true }, () => 'Snapshot')
+        els.push(h(NTooltip, { trigger: 'hover' }, {
+            trigger: () => snapshotTag,
+            default: () => tooltipContent
+        }))
+    }
     return h('div', { style: 'display: flex; align-items: center; flex-wrap: wrap;' }, els)
 }
 
