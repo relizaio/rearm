@@ -46,6 +46,8 @@ spec:
               value: {{ .Values.ociArtifactService.logFormatType | default "plain" | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.ociArtifactService.logLevel | default "info" | quote }}
+            - name: USE_PLAIN_HTTP
+              value: {{ .Values.ociArtifactService.usePlainHttp | default "false" | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http

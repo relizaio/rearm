@@ -84,7 +84,8 @@ ociArtifactService:
   enabled: true
   logFormatType: "plain"
   logLevel: "info"
-  registryHost: registry.relizahub.com/123-private # change
+  usePlainHttp: false
+  registryHost: registry.relizahub.com
   registryUser: changeme # change
   registryToken: changeme # change
   create_secret_in_chart: true
