@@ -36,6 +36,8 @@ func NewOrasClient(repoName string) (*OrasClient, error) {
 			Password: os.Getenv("REGISTRY_TOKEN"),
 		}),
 	}
+	// USE_PLAIN_HTTP env var controls whether to use plain HTTP (default false)
+	repo.PlainHTTP = os.Getenv("USE_PLAIN_HTTP") == "true"
 	return &OrasClient{repo}, nil
 }
 

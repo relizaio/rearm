@@ -13,6 +13,15 @@ export REGISTRY_TOKEN=<TOKEN>
 export REGISTRY_HOST=<HOST>
 ```
 
+### Optional Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `USE_PLAIN_HTTP` | `false` | Use plain HTTP instead of HTTPS when communicating with the registry |
+| `LOG_TYPE` | `plain` | Log format: `plain` (human-readable) or `json` (structured JSON) |
+| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` |
+| `LOG_HEALTH_CHECK` | `false` | Log health check requests (`/health` endpoint) |
+
 ## Usage
 
 ### Push Artifact
