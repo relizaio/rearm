@@ -23,7 +23,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "component-ref", description = "A reference to a TEA component or specific component release")
 @JsonTypeName("component-ref")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaComponentRef {
 
   private UUID uuid;
@@ -47,16 +47,17 @@ public class TeaComponentRef {
   }
 
   /**
-   * A UUID
+   * A unique identifier for the TEA component
    * @return uuid
    */
   @NotNull @Valid 
-  @Schema(name = "uuid", description = "A UUID", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "uuid", description = "A unique identifier for the TEA component", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("uuid")
   public UUID getUuid() {
     return uuid;
   }
 
+  @JsonProperty("uuid")
   public void setUuid(UUID uuid) {
     this.uuid = uuid;
   }
@@ -67,16 +68,17 @@ public class TeaComponentRef {
   }
 
   /**
-   * A UUID
+   * Optional UUID of a specific release included in the product in the case where the product always include a specific release of a component. The product name should include a version identifier in this case. 
    * @return release
    */
   @Valid 
-  @Schema(name = "release", description = "A UUID", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "release", description = "Optional UUID of a specific release included in the product in the case where the product always include a specific release of a component. The product name should include a version identifier in this case. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("release")
   public @Nullable UUID getRelease() {
     return release;
   }
 
+  @JsonProperty("release")
   public void setRelease(@Nullable UUID release) {
     this.release = release;
   }
@@ -113,11 +115,8 @@ public class TeaComponentRef {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

@@ -23,14 +23,26 @@ import jakarta.annotation.Generated;
  */
 
 @JsonTypeName("checksum")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaChecksum {
 
-  private @Nullable TeaChecksumType algType;
+  private TeaChecksumType algType;
 
-  private @Nullable String algValue;
+  private String algValue;
 
-  public TeaChecksum algType(@Nullable TeaChecksumType algType) {
+  public TeaChecksum() {
+    super();
+  }
+
+  /**
+   * Constructor with only required parameters
+   */
+  public TeaChecksum(TeaChecksumType algType, String algValue) {
+    this.algType = algType;
+    this.algValue = algValue;
+  }
+
+  public TeaChecksum algType(TeaChecksumType algType) {
     this.algType = algType;
     return this;
   }
@@ -39,18 +51,19 @@ public class TeaChecksum {
    * Checksum algorithm
    * @return algType
    */
-  @Valid 
-  @Schema(name = "algType", description = "Checksum algorithm", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid 
+  @Schema(name = "algType", description = "Checksum algorithm", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("algType")
-  public @Nullable TeaChecksumType getAlgType() {
+  public TeaChecksumType getAlgType() {
     return algType;
   }
 
-  public void setAlgType(@Nullable TeaChecksumType algType) {
+  @JsonProperty("algType")
+  public void setAlgType(TeaChecksumType algType) {
     this.algType = algType;
   }
 
-  public TeaChecksum algValue(@Nullable String algValue) {
+  public TeaChecksum algValue(String algValue) {
     this.algValue = algValue;
     return this;
   }
@@ -59,14 +72,15 @@ public class TeaChecksum {
    * Checksum value
    * @return algValue
    */
-  
-  @Schema(name = "algValue", description = "Checksum value", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull 
+  @Schema(name = "algValue", description = "Checksum value", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("algValue")
-  public @Nullable String getAlgValue() {
+  public String getAlgValue() {
     return algValue;
   }
 
-  public void setAlgValue(@Nullable String algValue) {
+  @JsonProperty("algValue")
+  public void setAlgValue(String algValue) {
     this.algValue = algValue;
   }
 
@@ -102,11 +116,8 @@ public class TeaChecksum {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

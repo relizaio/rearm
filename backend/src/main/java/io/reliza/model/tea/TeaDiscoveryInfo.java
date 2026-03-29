@@ -27,13 +27,13 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "discovery-info", description = "Discovery information for a TEI")
 @JsonTypeName("discovery-info")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaDiscoveryInfo {
 
   private UUID productReleaseUuid;
 
   @Valid
-  private List<TeaTeaServerInfo> servers = new ArrayList<>();
+  private List<@Valid TeaTeaServerInfo> servers = new ArrayList<>();
 
   public TeaDiscoveryInfo() {
     super();
@@ -42,7 +42,7 @@ public class TeaDiscoveryInfo {
   /**
    * Constructor with only required parameters
    */
-  public TeaDiscoveryInfo(UUID productReleaseUuid, List<TeaTeaServerInfo> servers) {
+  public TeaDiscoveryInfo(UUID productReleaseUuid, List<@Valid TeaTeaServerInfo> servers) {
     this.productReleaseUuid = productReleaseUuid;
     this.servers = servers;
   }
@@ -53,21 +53,22 @@ public class TeaDiscoveryInfo {
   }
 
   /**
-   * A UUID
+   * UUID of the resolved TEA Product Release
    * @return productReleaseUuid
    */
   @NotNull @Valid 
-  @Schema(name = "productReleaseUuid", description = "A UUID", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "productReleaseUuid", description = "UUID of the resolved TEA Product Release", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("productReleaseUuid")
   public UUID getProductReleaseUuid() {
     return productReleaseUuid;
   }
 
+  @JsonProperty("productReleaseUuid")
   public void setProductReleaseUuid(UUID productReleaseUuid) {
     this.productReleaseUuid = productReleaseUuid;
   }
 
-  public TeaDiscoveryInfo servers(List<TeaTeaServerInfo> servers) {
+  public TeaDiscoveryInfo servers(List<@Valid TeaTeaServerInfo> servers) {
     this.servers = servers;
     return this;
   }
@@ -87,11 +88,12 @@ public class TeaDiscoveryInfo {
   @NotNull @Valid @Size(min = 1) 
   @Schema(name = "servers", description = "Array of TEA server information", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("servers")
-  public List<TeaTeaServerInfo> getServers() {
+  public List<@Valid TeaTeaServerInfo> getServers() {
     return servers;
   }
 
-  public void setServers(List<TeaTeaServerInfo> servers) {
+  @JsonProperty("servers")
+  public void setServers(List<@Valid TeaTeaServerInfo> servers) {
     this.servers = servers;
   }
 
@@ -127,11 +129,8 @@ public class TeaDiscoveryInfo {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

@@ -17,25 +17,33 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Type of TEA collection update
+ * The type of CLE lifecycle event
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
-public enum TeaCollectionUpdateReasonType {
+public enum TeaCleEventType {
   
-  INITIAL_RELEASE("INITIAL_RELEASE"),
+  RELEASED("released"),
   
-  VEX_UPDATED("VEX_UPDATED"),
+  END_OF_DEVELOPMENT("endOfDevelopment"),
   
-  ARTIFACT_UPDATED("ARTIFACT_UPDATED"),
+  END_OF_SUPPORT("endOfSupport"),
   
-  ARTIFACT_ADDED("ARTIFACT_ADDED"),
+  END_OF_LIFE("endOfLife"),
   
-  ARTIFACT_REMOVED("ARTIFACT_REMOVED");
+  END_OF_DISTRIBUTION("endOfDistribution"),
+  
+  END_OF_MARKETING("endOfMarketing"),
+  
+  SUPERSEDED_BY("supersededBy"),
+  
+  COMPONENT_RENAMED("componentRenamed"),
+  
+  WITHDRAWN("withdrawn");
 
   private final String value;
 
-  TeaCollectionUpdateReasonType(String value) {
+  TeaCleEventType(String value) {
     this.value = value;
   }
 
@@ -50,8 +58,8 @@ public enum TeaCollectionUpdateReasonType {
   }
 
   @JsonCreator
-  public static TeaCollectionUpdateReasonType fromValue(String value) {
-    for (TeaCollectionUpdateReasonType b : TeaCollectionUpdateReasonType.values()) {
+  public static TeaCleEventType fromValue(String value) {
+    for (TeaCleEventType b : TeaCleEventType.values()) {
       if (b.value.equals(value)) {
         return b;
       }

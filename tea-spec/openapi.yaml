@@ -12,7 +12,7 @@ info:
   license:
     name: Apache 2.0
     url: https://github.com/CycloneDX/transparency-exchange-api/blob/main/LICENSE
-  version: 0.2.0-beta.2
+  version: 0.4.0
 servers:
   - url: http://localhost/tea/v1
     description: Local development
@@ -87,6 +87,30 @@ paths:
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
         - TEA Product Release
+  /productRelease/{uuid}/cle:
+    get:
+      description: Get the CLE (Common Lifecycle Enumeration) data for a TEA Product Release
+      operationId: getCleByProductReleaseId
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Product Release in the TEA server
+          schema:
+            "$ref": "#/components/schemas/uuid"
+      responses:
+        '200':
+          description: CLE data for the requested TEA Product Release found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/cle"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - CLE
   /productReleases:
     get:
       description: Returns a list of TEA product releases. Note that multiple product releases may match.
@@ -103,6 +127,30 @@ paths:
           $ref: "#/components/responses/400-invalid-request"
       tags:
         - TEA Product Release
+  /product/{uuid}/cle:
+    get:
+      description: Get the CLE (Common Lifecycle Enumeration) data for a TEA Product
+      operationId: getCleByProductId
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Product in the TEA server
+          schema:
+            "$ref": "#/components/schemas/uuid"
+      responses:
+        '200':
+          description: CLE data for the requested TEA Product found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/cle"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - CLE
   /products:
     get:
       description: Returns a list of TEA products. Note that multiple products may
@@ -170,6 +218,62 @@ paths:
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
         - TEA Component
+  /component/{uuid}/cle:
+    get:
+      description: Get the CLE (Common Lifecycle Enumeration) data for a TEA Component
+      operationId: getCleByComponentId
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Component in the TEA server
+          schema:
+            "$ref": "#/components/schemas/uuid"
+      responses:
+        '200':
+          description: CLE data for the requested TEA Component found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/cle"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - CLE
+  /components:
+    get:
+      description: Returns a list of TEA components. Note that multiple components may match.
+      operationId: queryTeaComponents
+      parameters:
+        - $ref: "#/components/parameters/page-offset"
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/id-type"
+        - $ref: "#/components/parameters/id-value"
+      responses:
+        '200':
+          $ref: "#/components/responses/paginated-component"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+      tags:
+        - TEA Component
+  /componentReleases:
+    get:
+      description: Returns a list of TEA component releases. Note that multiple component releases may match.
+      operationId: queryTeaComponentReleases
+      parameters:
+        - $ref: "#/components/parameters/page-offset"
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/id-type"
+        - $ref: "#/components/parameters/id-value"
+      responses:
+        '200':
+          $ref: "#/components/responses/paginated-component-release"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+      tags:
+        - TEA Component Release
   /componentRelease/{uuid}:
     get:
       description: Get the TEA Component Release with its latest collection
@@ -193,7 +297,31 @@ paths:
         '404':
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
-        - TEA Component Release        
+        - TEA Component Release
+  /componentRelease/{uuid}/cle:
+    get:
+      description: Get the CLE (Common Lifecycle Enumeration) data for a TEA Component Release
+      operationId: getCleByComponentReleaseId
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Component Release in the TEA server
+          schema:
+            "$ref": "#/components/schemas/uuid"
+      responses:
+        '200':
+          description: CLE data for the requested TEA Component Release found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/cle"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - CLE
   /componentRelease/{uuid}/collection/latest:
     get:
       description: Get the latest TEA Collection belonging to the TEA Component Release
@@ -354,10 +482,10 @@ paths:
           $ref: "#/components/responses/404-object-by-id-not-found"
       tags:
         - TEA Component Release
-  /artifact/{uuid}:
+  /artifact/{uuid}/latest:
     get:
-      description: Get metadata for specific TEA artifact
-      operationId: getArtifact
+      description: Get metadata for latest revision of a specific TEA Artifact
+      operationId: getLatestArtifact
       parameters:
         - name: uuid
           in: path
@@ -365,6 +493,36 @@ paths:
           description: UUID of TEA Artifact in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
+      responses:
+        '200':
+          description: Requested TEA Artifact metadata found and returned
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/artifact"
+        '400':
+          $ref: "#/components/responses/400-invalid-request"
+        '404':
+          $ref: "#/components/responses/404-object-by-id-not-found"
+      tags:
+        - TEA Artifact
+  /artifact/{uuid}/{artifactVersion}:
+    get:
+      description: Get metadata for a specific revision of a specific TEA Artifact
+      operationId: getArtifactByVersion
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID of TEA Artifact in the TEA server
+          schema:
+            "$ref": "#/components/schemas/uuid"
+        - name: artifactVersion
+          in: path
+          required: true
+          description: Version of TEA Artifact
+          schema:
+            type: integer
       responses:
         '200':
           description: Requested TEA Artifact metadata found and returned
@@ -389,7 +547,7 @@ paths:
           description: Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.
           schema:
             type: string
-            example: urn%3Atei%3Auuid%3Aproducts.example.com%3A443%3Ad4d9f54a-abcf-11ee-ac79-1a52914d44b
+            example: urn%3Atei%3Auuid%3Aproducts.example.com%3Ad4d9f54a-abcf-11ee-ac79-1a52914d44b
       responses:
         '200':
           $ref: "#/components/responses/discovery-response"
@@ -427,6 +585,33 @@ components:
         - CPE
         - TEI
         - PURL
+        - COMPLIANCE_DOCUMENT
+    compliance-document-type:
+      type: string
+      description: >
+        Well-known compliance document types. When idType is COMPLIANCE_DOCUMENT,
+        the idValue SHOULD be one of these values.
+      enum:
+        - SOC_2_TYPE_I
+        - SOC_2_TYPE_II
+        - SOC_3
+        - ISO_27001
+        - ISO_27017
+        - ISO_27018
+        - ISO_27701
+        - ISO_42001
+        - PCI_DSS
+        - HIPAA
+        - FedRAMP
+        - GDPR
+        - CSA_STAR
+        - NIST_800_53
+        - NIST_800_171
+        - CMMC
+        - HITRUST
+        - TISAX
+        - CYBER_ESSENTIALS
+        - CYBER_ESSENTIALS_PLUS
     uuid:
       type: string
       description: A UUID
@@ -564,7 +749,7 @@ components:
 
 #
     # Reference to a component, in some cases directly to a specific release
-    # 
+    #
     # The release reference (release UUID) is only used in cases where a product
     # name includes a version and this version of the product always includes
     # the same releases of the component.
@@ -628,7 +813,6 @@ components:
           description: List of different formats of this component release
           items:
             "$ref": "#/components/schemas/release-distribution"
-        # add lifecycle here
       required:
         - uuid
         - version
@@ -643,7 +827,7 @@ components:
             - idType: PURL
               idValue: pkg:maven/org.apache.tomcat/tomcat@11.0.7
           distributions:
-            - distributionType: zip
+            - distributionId: 6a0d58e1-4896-4f1e-83f7-5feb6c032537
               description: Core binary distribution, zip archive
               identifiers:
                 - idType: PURL
@@ -653,7 +837,7 @@ components:
                   algValue: 9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1
               url: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.zip
               signatureUrl: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.zip.asc
-            - distributionType: tar.gz
+            - distributionId: dba01c13-dd96-4928-be72-9c87ffa8cab8
               description: Core binary distribution, tar.gz archive
               identifiers:
                 - idType: PURL
@@ -663,7 +847,7 @@ components:
                   algValue: 2fcece641c62ba1f28e1d7b257493151fc44f161fb391015ee6a95fa71632fb9
               url: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.tar.gz
               signatureUrl: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.tar.gz.asc
-            - distributionType: windows-x64.zip
+            - distributionId: cfe068c2-fae7-43d0-97ec-5ea092454040
               description: Core binary distribution, Windows x64 zip archive
               identifiers:
                 - idType: PURL
@@ -673,7 +857,7 @@ components:
                   algValue: 62a5c358d87a8ef21d7ec1b3b63c9bbb577453dda9c00cbb522b16cee6c23fc4
               url: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6-windows-x64.zip
               signatureUrl: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.zip.asc
-            - distributionType: windows-x64.exe
+            - distributionId: de45ffaf-e4b5-47b5-be28-444a76df098e
               description: Core binary distribution, Windows Service Installer (MSI)
               checksums:
                 - algType: SHA_512
@@ -691,9 +875,9 @@ components:
     release-distribution:
       type: object
       properties:
-        distributionType:
-          type: string
-          description: Unique identifier for the distribution type.
+        distributionId:
+          description: A unique identifier for the TEA Distribution object
+          "$ref": "#/components/schemas/uuid"
         description:
           type: string
           description: Free-text description of the distribution.
@@ -716,9 +900,9 @@ components:
           items:
             "$ref": "#/components/schemas/checksum"
       required:
-        - id
+        - distributionId
       examples:
-        - distributionType: zip
+        - distributionId: 6a0d58e1-4896-4f1e-83f7-5feb6c032537
           description: Core binary distribution, zip archive
           identifiers:
             - idType: PURL
@@ -728,7 +912,7 @@ components:
               algValue: 9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1
           url: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.zip
           signatureUrl: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.zip.asc
-        - distributionType: tar.gz
+        - distributionId: dba01c13-dd96-4928-be72-9c87ffa8cab8
           description: Core binary distribution, tar.gz archive
           identifiers:
             - idType: PURL
@@ -738,7 +922,7 @@ components:
               algValue: 2fcece641c62ba1f28e1d7b257493151fc44f161fb391015ee6a95fa71632fb9
           url: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.tar.gz
           signatureUrl: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.tar.gz.asc
-        - distributionType: windows-x64.zip
+        - distributionId: cfe068c2-fae7-43d0-97ec-5ea092454040
           description: Core binary distribution, Windows x64 zip archive
           identifiers:
             - idType: PURL
@@ -748,7 +932,7 @@ components:
               algValue: 62a5c358d87a8ef21d7ec1b3b63c9bbb577453dda9c00cbb522b16cee6c23fc4
           url: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6-windows-x64.zip
           signatureUrl: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.6.zip.asc
-        - distributionType: windows-x64.exe
+        - distributionId: de45ffaf-e4b5-47b5-be28-444a76df098e
           description: Core binary distribution, Windows Service Installer (MSI)
           checksums:
             - algType: SHA_512
@@ -791,7 +975,7 @@ components:
                 name: Build SBOM
                 type: BOM
                 formats:
-                  - mimeType: application/vnd.cyclonedx+xml
+                  - mediaType: application/vnd.cyclonedx+xml
                     description: CycloneDX SBOM (XML)
                     url: https://repo.maven.apache.org/maven2/org/apache/tomcat/tomcat/11.0.7/tomcat-11.0.7-cyclonedx.xml
                     checksums:
@@ -801,7 +985,7 @@ components:
                 name: Vulnerability Disclosure Report
                 type: VULNERABILITIES
                 formats:
-                  - mimeType: application/vnd.cyclonedx+xml
+                  - mediaType: application/vnd.cyclonedx+xml
                     description: CycloneDX VDR (XML)
                     url: https://tomcat.apache.org/cyclonedx/vdr.xml
                     checksums:
@@ -837,13 +1021,13 @@ components:
           "$ref": "#/components/schemas/collection-update-reason"
         artifacts:
           type: array
-          description: List of TEA artifact objects.
+          description: List of TEA Artifact objects.
           items:
             "$ref": "#/components/schemas/artifact"
       examples:
         # Documents in the latest release of Log4j Core
         - uuid: 4c72fe22-9d83-4c2f-8eba-d6db484f32c8
-          version: 3
+          version: 10
           date: 2024-12-13T00:00:00Z
           updateReason:
             type: ARTIFACT_UPDATED
@@ -853,7 +1037,7 @@ components:
               name: Build SBOM
               type: BOM
               formats:
-                - mimeType: application/vnd.cyclonedx+xml
+                - mediaType: application/vnd.cyclonedx+xml
                   description: CycloneDX SBOM (XML)
                   url: https://repo.maven.apache.org/maven2/org/apache/logging/log4j/log4j-core/2.24.3/log4j-core-2.24.3-cyclonedx.xml
                   signatureUrl: https://repo.maven.apache.org/maven2/org/apache/logging/log4j/log4j-core/2.24.3/log4j-core-2.24.3-cyclonedx.xml.asc
@@ -863,10 +1047,11 @@ components:
                     - algType: SHA-1
                       algValue: 5a7d4caef63c5c5ccdf07c39337323529eb5a770
             - uuid: dfa35519-9734-4259-bba1-3e825cf4be06
+              version: 7
               name: Vulnerability Disclosure Report
               type: VULNERABILITIES
               formats:
-                - mimeType: application/vnd.cyclonedx+xml
+                - mediaType: application/vnd.cyclonedx+xml
                   description: CycloneDX VDR (XML)
                   url: https://logging.apache.org/cyclonedx/vdr.xml
                   checksums:
@@ -908,23 +1093,33 @@ components:
       description: A security-related document
       properties:
         uuid:
-          description: UUID of the TEA Artifact object.
+          description: The UUID of the TEA Artifact object. Together with *version* uniquely identifies the TEA Artifact.
           "$ref": "#/components/schemas/uuid"
+        version:
+          description: |
+            An integer with default value 1.
+            Together with *uuid* uniquely identifies the TEA Artifact.
+            This field can be used to designate successive, immutable revisions of an artefact content (e.g. an updated VEX file).
+          type: integer
+          default: 1
         name:
           type: string
-          description: Artifact name
+          description: Name of TEA Artifact
         type:
-          description: Type of artifact
+          description: Type of TEA Artifact
           "$ref": "#/components/schemas/artifact-type"
-        distributionTypes:
+        createdDate:
+          description: The date when the TEA Artifact revision was created.
+          "$ref": "#/components/schemas/date-time"
+        distributionIds:
           type: array
           description: |
-            List of component distributions types that this artifact applies to.
-            If absent, the artifact applies to all distributions.
+            List of TEA Component Release distributions that this TEA Artifact applies to.
+            If absent or empty, the TEA Artifact applies to all distributions.
           items:
-            type: string
+            "$ref": "#/components/schemas/uuid"
             description: |
-              The `id` of the component format that this artifact applies to.
+              The distribution IDs of the TEA component release distributions that this TEA Artifact applies to.
         formats:
           type: array
           description: |
@@ -932,6 +1127,35 @@ components:
             The order of the list has no significance.
           items:
             "$ref": "#/components/schemas/artifact-format"
+      required:
+        - uuid
+        - type
+        - formats
+      examples:
+        - uuid: 1cb47b95-8bf8-3bad-a5a4-0d54d86e10ce
+          name: Build SBOM
+          type: BOM
+          formats:
+            - mediaType: application/vnd.cyclonedx+xml
+              description: CycloneDX SBOM (XML)
+              url: https://repo.maven.apache.org/maven2/org/apache/logging/log4j/log4j-core/2.24.3/log4j-core-2.24.3-cyclonedx.xml
+              signatureUrl: https://repo.maven.apache.org/maven2/org/apache/logging/log4j/log4j-core/2.24.3/log4j-core-2.24.3-cyclonedx.xml.asc
+              checksums:
+                - algType: MD5
+                  algValue: 2e1a525afc81b0a8ecff114b8b743de9
+                - algType: SHA-1
+                  algValue: 5a7d4caef63c5c5ccdf07c39337323529eb5a770
+        - uuid: dfa35519-9734-4259-bba1-3e825cf4be06
+          version: 7
+          name: Vulnerability Disclosure Report
+          type: VULNERABILITIES
+          formats:
+            - mediaType: application/vnd.cyclonedx+xml
+              description: CycloneDX VDR (XML)
+              url: https://logging.apache.org/cyclonedx/vdr.xml
+              checksums:
+                - algType: SHA-256
+                  algValue: 75b81020b3917cb682b1a7605ade431e062f7a4c01a412f0b87543b6e995ad2a
     artifact-type:
       type: string
       description: Specifies the type of external reference.
@@ -951,23 +1175,23 @@ components:
       type: object
       description: A security-related document in a specific format
       properties:
-        mimeType:
+        mediaType:
           type: string
-          description: The MIME type of the document
+          description: The Media Type of the document
         description:
           type: string
-          description: A free text describing the artifact
+          description: A free text describing the TEA Artifact
         url:
           type: string
-          description: Direct download URL for the artifact
+          description: Direct download URL for the TEA Artifact
           format: url
         signatureUrl:
           type: string
-          description: Direct download URL for an external signature of the artifact
+          description: Direct download URL for an external signature of the TEA Artifact
           format: url
         checksums:
           type: array
-          description: List of checksums for the artifact
+          description: List of checksums for the TEA Artifact
           items:
             "$ref": "#/components/schemas/checksum"
     checksum:
@@ -979,6 +1203,9 @@ components:
         algValue:
           type: string
           description: Checksum value
+      required:
+        - algType
+        - algValue
     checksum-type:
       type: string
       description: Checksum algorithm
@@ -1061,6 +1288,183 @@ components:
         - productReleaseUuid
         - servers
 
+    #
+    # CLE (Common Lifecycle Enumeration) objects
+    # Based on ECMA-428 TC54 TG3 CLE Specification v1.0.0
+    #
+    cle-event-type:
+      type: string
+      description: The type of CLE lifecycle event
+      enum:
+        - released
+        - endOfDevelopment
+        - endOfSupport
+        - endOfLife
+        - endOfDistribution
+        - endOfMarketing
+        - supersededBy
+        - componentRenamed
+        - withdrawn
+    cle-version-specifier:
+      type: object
+      description: A version specifier that can be either a single version or a version range
+      properties:
+        version:
+          type: string
+          description: A specific version string
+        range:
+          type: string
+          description: A version range in vers format (e.g. "vers:npm/>=1.0.0|<2.0.0")
+    cle-event:
+      type: object
+      description: A discrete lifecycle event from the CLE specification
+      properties:
+        id:
+          type: integer
+          description: A unique, auto-incrementing integer identifier for the event
+        type:
+          description: The type of lifecycle event
+          $ref: "#/components/schemas/cle-event-type"
+        effective:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp (UTC) when the event takes effect
+        published:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp (UTC) when the event was first published
+        version:
+          type: string
+          description: Version string (used by released event type)
+        versions:
+          type: array
+          description: List of version specifiers affected by this event
+          items:
+            $ref: "#/components/schemas/cle-version-specifier"
+        supportId:
+          type: string
+          description: Reference to a support policy ID defined in the definitions section
+        license:
+          type: string
+          description: License identifier (used by released event type)
+        supersededByVersion:
+          type: string
+          description: Version string that supersedes the affected versions (used by supersededBy event type)
+        identifiers:
+          type: array
+          description: New identifiers for the component (used by componentRenamed event type)
+          items:
+            $ref: "#/components/schemas/identifier"
+        eventId:
+          type: integer
+          description: ID of the event being withdrawn (used by withdrawn event type)
+        reason:
+          type: string
+          description: Human-readable explanation (used by withdrawn event type)
+        description:
+          type: string
+          description: Human-readable description of the event
+        references:
+          type: array
+          description: List of URLs to supporting documentation
+          items:
+            type: string
+            format: uri
+      required:
+        - id
+        - type
+        - effective
+        - published
+      examples:
+        - id: 1
+          type: released
+          effective: "2024-01-01T00:00:00Z"
+          version: "1.0.0"
+          license: MIT
+          published: "2023-06-01T00:00:00Z"
+        - id: 3
+          type: endOfSupport
+          effective: "2024-01-01T00:00:00Z"
+          versions:
+            - version: "1.0.0"
+          supportId: standard
+          published: "2023-06-01T00:00:00Z"
+    cle-support-definition:
+      type: object
+      description: A support policy definition from CLE
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the support policy
+        description:
+          type: string
+          description: Human-readable description of the policy
+        url:
+          type: string
+          format: uri
+          description: URL to detailed documentation about this support policy
+      required:
+        - id
+        - description
+      examples:
+        - id: standard
+          description: Standard product support policy
+          url: https://example.com/support/standard
+    cle-definitions:
+      type: object
+      description: Container for reusable CLE policy definitions
+      properties:
+        support:
+          type: array
+          description: List of support policies
+          items:
+            $ref: "#/components/schemas/cle-support-definition"
+    cle:
+      type: object
+      description: |
+        Common Lifecycle Enumeration (CLE) object based on ECMA-428 TC54 TG3 CLE Specification v1.0.0.
+        Contains lifecycle events and optional reusable definitions for a component or product.
+      properties:
+        events:
+          type: array
+          description: |
+            Ordered array of CLE Event objects representing lifecycle events.
+            MUST be ordered by ID in descending order (newest events with highest IDs first).
+          items:
+            $ref: "#/components/schemas/cle-event"
+        definitions:
+          description: Container for reusable policy definitions referenced by events
+          $ref: "#/components/schemas/cle-definitions"
+      required:
+        - events
+      examples:
+        - events:
+            - id: 3
+              type: endOfSupport
+              effective: "2025-06-01T00:00:00Z"
+              versions:
+                - range: "vers:npm/>=1.0.0|<2.0.0"
+              supportId: standard
+              published: "2025-01-01T00:00:00Z"
+            - id: 2
+              type: endOfDevelopment
+              effective: "2025-01-01T00:00:00Z"
+              versions:
+                - version: "1.0.0"
+              supportId: standard
+              published: "2024-06-01T00:00:00Z"
+            - id: 1
+              type: released
+              effective: "2024-01-01T00:00:00Z"
+              version: "1.0.0"
+              license: Apache-2.0
+              published: "2024-01-01T00:00:00Z"
+          definitions:
+            support:
+              - id: standard
+                description: Standard product support policy
+                url: https://example.com/support/standard
+
     pagination-details:
       type: object
       properties:
@@ -1084,7 +1488,7 @@ components:
         - pageStartIndex
         - pageSize
         - totalResults
-    
+
     paginated-product-response:
       type: object
       description: A paginated response containing TEA Products
@@ -1096,7 +1500,7 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/product"
-    
+
     paginated-product-release-response:
       type: object
       description: A paginated response containing TEA Product Releases
@@ -1108,6 +1512,30 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/productRelease"
+
+    paginated-component-response:
+      type: object
+      description: A paginated response containing TEA Components
+      allOf:
+        - $ref: "#/components/schemas/pagination-details"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/component"
+
+    paginated-component-release-response:
+      type: object
+      description: A paginated response containing TEA Component Releases
+      allOf:
+        - $ref: "#/components/schemas/pagination-details"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/release"
   responses:
     204-common-delete:
       description: Object deleted successfully
@@ -1147,6 +1575,18 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/paginated-product-release-response"
+    paginated-component:
+      description: A paginated response containing TEA Components
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/paginated-component-response"
+    paginated-component-release:
+      description: A paginated response containing TEA Component Releases
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/paginated-component-release-response"
   parameters:
     # Pagination
     page-offset:
@@ -1223,6 +1663,7 @@ tags:
   - name: TEA Component Release
   - name: TEA Artifact
   - name: TEA Discovery
+  - name: CLE
 externalDocs:
   description: Transparency Exchange API specification
   url: https://github.com/CycloneDX/transparency-exchange-api

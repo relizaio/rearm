@@ -27,7 +27,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "component", description = "A TEA component")
 @JsonTypeName("component")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaComponent {
 
   private UUID uuid;
@@ -56,16 +56,17 @@ public class TeaComponent {
   }
 
   /**
-   * A UUID
+   * A unique identifier for the TEA component
    * @return uuid
    */
   @NotNull @Valid 
-  @Schema(name = "uuid", description = "A UUID", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "uuid", description = "A unique identifier for the TEA component", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("uuid")
   public UUID getUuid() {
     return uuid;
   }
 
+  @JsonProperty("uuid")
   public void setUuid(UUID uuid) {
     this.uuid = uuid;
   }
@@ -86,6 +87,7 @@ public class TeaComponent {
     return name;
   }
 
+  @JsonProperty("name")
   public void setName(String name) {
     this.name = name;
   }
@@ -114,6 +116,7 @@ public class TeaComponent {
     return identifiers;
   }
 
+  @JsonProperty("identifiers")
   public void setIdentifiers(List<@Valid TeaIdentifier> identifiers) {
     this.identifiers = identifiers;
   }
@@ -152,11 +155,8 @@ public class TeaComponent {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

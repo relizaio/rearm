@@ -24,7 +24,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "collection-update-reason", description = "Reason for the update to the TEA collection")
 @JsonTypeName("collection-update-reason")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaCollectionUpdateReason {
 
   private @Nullable TeaCollectionUpdateReasonType type;
@@ -47,6 +47,7 @@ public class TeaCollectionUpdateReason {
     return type;
   }
 
+  @JsonProperty("type")
   public void setType(@Nullable TeaCollectionUpdateReasonType type) {
     this.type = type;
   }
@@ -67,6 +68,7 @@ public class TeaCollectionUpdateReason {
     return comment;
   }
 
+  @JsonProperty("comment")
   public void setComment(@Nullable String comment) {
     this.comment = comment;
   }
@@ -103,11 +105,8 @@ public class TeaCollectionUpdateReason {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

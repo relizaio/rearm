@@ -42,7 +42,7 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-10T17:43:14.237244700-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.2.0-beta.2}")
+@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.4.0}")
 public class ProductReleasesApiController implements ProductReleasesApi {
 
     private final NativeWebRequest request;

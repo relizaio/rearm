@@ -31,10 +31,15 @@ import io.reliza.model.DeliverableData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.tea.TeaArtifact;
 import io.reliza.model.tea.TeaArtifactFormat;
 import io.reliza.model.tea.TeaArtifactType;
 import io.reliza.model.tea.TeaChecksum;
+import io.reliza.model.tea.TeaCle;
+import io.reliza.model.tea.TeaCleEvent;
+import io.reliza.model.tea.TeaCleEventType;
 import io.reliza.model.tea.TeaCollection;
 import io.reliza.model.tea.TeaCollectionBelongsToType;
 import io.reliza.model.tea.TeaCollectionUpdateReason;
@@ -241,7 +246,7 @@ public class TeaTransformerService {
 		tdi.setProductReleaseUuid(releaseUuid);
 		TeaTeaServerInfo ttsi = new TeaTeaServerInfo();
 		ttsi.setRootUrl(URI.create(getServerBaseUri()));
-		ttsi.setVersions(List.of("0.2.0-beta.2"));
+		ttsi.setVersions(List.of("0.4.0"));
 		ttsi.setPriority((float) 1.0);
 		tdi.setServers(List.of(ttsi));
 		return tdi;
@@ -343,7 +348,7 @@ public class TeaTransformerService {
 			String bomFormatDisplay = (rearmAD.getBomFormat() != null) ? rearmAD.getBomFormat().toString() + " " : "";
 			taf.setDescription(String.format("%s%s Raw Artifact as Uploaded", bomFormatDisplay, rearmAD.getType()));
 			var mediaTypeTag = rearmAD.getTags().stream().filter(t -> CommonVariables.MEDIA_TYPE_FIELD.equals(t.key())).findAny();
-			if (mediaTypeTag.isPresent()) taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
+			if (mediaTypeTag.isPresent()) taf.setMediaType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
 			taf.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + rearmAD.getUuid());
 			Optional<ArtifactData> optSignatureAD = artifactService.getArtifactSignature(rearmAD);
 			if (optSignatureAD.isPresent()) {
@@ -356,7 +361,7 @@ public class TeaTransformerService {
 			if (rearmAD.getType() == ArtifactType.BOM && rearmAD.getBomFormat() == BomFormat.CYCLONEDX) {
 				TeaArtifactFormat tafAugmented = new TeaArtifactFormat();
 				tafAugmented.setDescription("CycloneDX BOM Artifact Augmented by Rebom");
-				if (mediaTypeTag.isPresent()) tafAugmented.setMimeType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
+				if (mediaTypeTag.isPresent()) tafAugmented.setMediaType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
 				tafAugmented.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/augmented/" + rearmAD.getUuid());
 				tafAugmented.setSignatureUrl(null); // TODO
 				tafList.add(tafAugmented);
@@ -365,7 +370,7 @@ public class TeaTransformerService {
 			for (var dlink : rearmAD.getDownloadLinks()) {
 				TeaArtifactFormat taf = new TeaArtifactFormat();
 				taf.setDescription("External Artifact");
-				taf.setMimeType(resolveMediaType(rearmAD.getBomFormat(), dlink.getContent().getContentString()));
+				taf.setMediaType(resolveMediaType(rearmAD.getBomFormat(), dlink.getContent().getContentString()));
 				List<TeaChecksum> tcList = new LinkedList<>();
 				rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
 					TeaChecksum tc = new TeaChecksum();
@@ -383,6 +388,43 @@ public class TeaTransformerService {
 		return ta;
 	}
 	
+	public TeaCle transformReleaseToCle(ReleaseData rd) {
+		List<TeaCleEvent> events = new LinkedList<>();
+		int idCounter = 0;
+		for (var ue : rd.getUpdateEvents()) {
+			if (ue.rus() != ReleaseUpdateScope.LIFECYCLE) continue;
+			TeaCleEventType cleType = mapLifecycleToCleEventType(ue.newValue());
+			if (cleType == null) continue;
+			OffsetDateTime ts = ue.date().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
+			TeaCleEvent event = new TeaCleEvent(idCounter++, cleType, ts, ts);
+			event.setVersion(rd.getVersion());
+			if (cleType == TeaCleEventType.WITHDRAWN && StringUtils.isNotEmpty(ue.oldValue())) {
+				event.setReason(ue.oldValue() + " -> " + ue.newValue());
+			}
+			events.add(event);
+		}
+		events.sort((a, b) -> Integer.compare(b.getId(), a.getId()));
+		return new TeaCle(events);
+	}
+
+	private TeaCleEventType mapLifecycleToCleEventType(String lifecycleStr) {
+		if (lifecycleStr == null) return null;
+		try {
+			ReleaseLifecycle lc = ReleaseLifecycle.valueOf(lifecycleStr);
+			return switch (lc) {
+				case GENERAL_AVAILABILITY -> TeaCleEventType.RELEASED;
+				case END_OF_MARKETING -> TeaCleEventType.END_OF_MARKETING;
+				case END_OF_DISTRIBUTION -> TeaCleEventType.END_OF_DISTRIBUTION;
+				case END_OF_SUPPORT -> TeaCleEventType.END_OF_SUPPORT;
+				case END_OF_LIFE -> TeaCleEventType.END_OF_LIFE;
+				case CANCELLED, REJECTED -> TeaCleEventType.WITHDRAWN;
+				default -> null;
+			};
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
 	public TeaCollection transformAcollectionToTea(AcollectionData acd) {
 		TeaCollection tc = new TeaCollection();
 		tc.setUuid(acd.getRelease());

@@ -7,7 +7,7 @@ package io.reliza.ws.tea;
 
 import org.springframework.lang.Nullable;
 import io.reliza.model.tea.TeaIdentifierType;
-import io.reliza.model.tea.TeaPaginatedProductResponse;
+import io.reliza.model.tea.TeaPaginatedComponentReleaseResponse;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -37,32 +37,32 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 @Validated
-@Tag(name = "TEA Product", description = "the TEA Product API")
-public interface ProductsApi {
+@Tag(name = "TEA Component Release", description = "the TEA Component Release API")
+public interface ComponentReleasesApi {
 
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
 
-    String PATH_QUERY_TEA_PRODUCTS = "/products";
+    String PATH_QUERY_TEA_COMPONENT_RELEASES = "/componentReleases";
     /**
-     * GET /products
-     * Returns a list of TEA products. Note that multiple products may match.
+     * GET /componentReleases
+     * Returns a list of TEA component releases. Note that multiple component releases may match.
      *
      * @param pageOffset Pagination offset (optional, default to 0)
      * @param pageSize Pagination offset (optional, default to 100)
      * @param idType Type of identifier specified in the &#x60;idValue&#x60; parameter (optional)
      * @param idValue If present, only the objects with the given identifier value will be returned. (optional)
-     * @return A paginated response containing TEA Products (status code 200)
+     * @return A paginated response containing TEA Component Releases (status code 200)
      *         or Request was Invalid (status code 400)
      */
     @Operation(
-        operationId = "queryTeaProducts",
-        description = "Returns a list of TEA products. Note that multiple products may match.",
-        tags = { "TEA Product" },
+        operationId = "queryTeaComponentReleases",
+        description = "Returns a list of TEA component releases. Note that multiple component releases may match.",
+        tags = { "TEA Component Release" },
         responses = {
-            @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Products", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedProductResponse.class))
+            @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Component Releases", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedComponentReleaseResponse.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid")
         },
@@ -73,10 +73,10 @@ public interface ProductsApi {
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = ProductsApi.PATH_QUERY_TEA_PRODUCTS,
+        value = ComponentReleasesApi.PATH_QUERY_TEA_COMPONENT_RELEASES,
         produces = { "application/json" }
     )
-    default ResponseEntity<TeaPaginatedProductResponse> queryTeaProducts(
+    default ResponseEntity<TeaPaginatedComponentReleaseResponse> queryTeaComponentReleases(
         @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
         @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize,
         @Parameter(name = "idType", description = "Type of identifier specified in the `idValue` parameter", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idType", required = false) @Nullable TeaIdentifierType idType,
@@ -85,7 +85,7 @@ public interface ProductsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"\" }, { \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"name\" : \"name\", \"uuid\" : \"\" } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
+                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true }, { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

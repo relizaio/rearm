@@ -26,10 +26,10 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "artifact-format", description = "A security-related document in a specific format")
 @JsonTypeName("artifact-format")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaArtifactFormat {
 
-  private @Nullable String mimeType;
+  private @Nullable String mediaType;
 
   private @Nullable String description;
 
@@ -40,24 +40,25 @@ public class TeaArtifactFormat {
   @Valid
   private List<@Valid TeaChecksum> checksums = new ArrayList<>();
 
-  public TeaArtifactFormat mimeType(@Nullable String mimeType) {
-    this.mimeType = mimeType;
+  public TeaArtifactFormat mediaType(@Nullable String mediaType) {
+    this.mediaType = mediaType;
     return this;
   }
 
   /**
-   * The MIME type of the document
-   * @return mimeType
+   * The Media Type of the document
+   * @return mediaType
    */
   
-  @Schema(name = "mimeType", description = "The MIME type of the document", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("mimeType")
-  public @Nullable String getMimeType() {
-    return mimeType;
+  @Schema(name = "mediaType", description = "The Media Type of the document", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @JsonProperty("mediaType")
+  public @Nullable String getMediaType() {
+    return mediaType;
   }
 
-  public void setMimeType(@Nullable String mimeType) {
-    this.mimeType = mimeType;
+  @JsonProperty("mediaType")
+  public void setMediaType(@Nullable String mediaType) {
+    this.mediaType = mediaType;
   }
 
   public TeaArtifactFormat description(@Nullable String description) {
@@ -66,16 +67,17 @@ public class TeaArtifactFormat {
   }
 
   /**
-   * A free text describing the artifact
+   * A free text describing the TEA Artifact
    * @return description
    */
   
-  @Schema(name = "description", description = "A free text describing the artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "description", description = "A free text describing the TEA Artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("description")
   public @Nullable String getDescription() {
     return description;
   }
 
+  @JsonProperty("description")
   public void setDescription(@Nullable String description) {
     this.description = description;
   }
@@ -86,16 +88,17 @@ public class TeaArtifactFormat {
   }
 
   /**
-   * Direct download URL for the artifact
+   * Direct download URL for the TEA Artifact
    * @return url
    */
   
-  @Schema(name = "url", description = "Direct download URL for the artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "url", description = "Direct download URL for the TEA Artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("url")
   public @Nullable String getUrl() {
     return url;
   }
 
+  @JsonProperty("url")
   public void setUrl(@Nullable String url) {
     this.url = url;
   }
@@ -106,16 +109,17 @@ public class TeaArtifactFormat {
   }
 
   /**
-   * Direct download URL for an external signature of the artifact
+   * Direct download URL for an external signature of the TEA Artifact
    * @return signatureUrl
    */
   
-  @Schema(name = "signatureUrl", description = "Direct download URL for an external signature of the artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "signatureUrl", description = "Direct download URL for an external signature of the TEA Artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("signatureUrl")
   public @Nullable String getSignatureUrl() {
     return signatureUrl;
   }
 
+  @JsonProperty("signatureUrl")
   public void setSignatureUrl(@Nullable String signatureUrl) {
     this.signatureUrl = signatureUrl;
   }
@@ -134,16 +138,17 @@ public class TeaArtifactFormat {
   }
 
   /**
-   * List of checksums for the artifact
+   * List of checksums for the TEA Artifact
    * @return checksums
    */
   @Valid 
-  @Schema(name = "checksums", description = "List of checksums for the artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "checksums", description = "List of checksums for the TEA Artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("checksums")
   public List<@Valid TeaChecksum> getChecksums() {
     return checksums;
   }
 
+  @JsonProperty("checksums")
   public void setChecksums(List<@Valid TeaChecksum> checksums) {
     this.checksums = checksums;
   }
@@ -157,7 +162,7 @@ public class TeaArtifactFormat {
       return false;
     }
     TeaArtifactFormat artifactFormat = (TeaArtifactFormat) o;
-    return Objects.equals(this.mimeType, artifactFormat.mimeType) &&
+    return Objects.equals(this.mediaType, artifactFormat.mediaType) &&
         Objects.equals(this.description, artifactFormat.description) &&
         Objects.equals(this.url, artifactFormat.url) &&
         Objects.equals(this.signatureUrl, artifactFormat.signatureUrl) &&
@@ -166,14 +171,14 @@ public class TeaArtifactFormat {
 
   @Override
   public int hashCode() {
-    return Objects.hash(mimeType, description, url, signatureUrl, checksums);
+    return Objects.hash(mediaType, description, url, signatureUrl, checksums);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class TeaArtifactFormat {\n");
-    sb.append("    mimeType: ").append(toIndentedString(mimeType)).append("\n");
+    sb.append("    mediaType: ").append(toIndentedString(mediaType)).append("\n");
     sb.append("    description: ").append(toIndentedString(description)).append("\n");
     sb.append("    url: ").append(toIndentedString(url)).append("\n");
     sb.append("    signatureUrl: ").append(toIndentedString(signatureUrl)).append("\n");
@@ -186,11 +191,8 @@ public class TeaArtifactFormat {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

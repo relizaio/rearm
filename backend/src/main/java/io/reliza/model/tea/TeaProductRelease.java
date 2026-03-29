@@ -30,7 +30,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "productRelease", description = "A specific release of a TEA product")
 @JsonTypeName("productRelease")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaProductRelease {
 
   private UUID uuid;
@@ -75,16 +75,17 @@ public class TeaProductRelease {
   }
 
   /**
-   * A UUID
+   * A unique identifier for the TEA Product Release
    * @return uuid
    */
   @NotNull @Valid 
-  @Schema(name = "uuid", description = "A UUID", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "uuid", description = "A unique identifier for the TEA Product Release", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("uuid")
   public UUID getUuid() {
     return uuid;
   }
 
+  @JsonProperty("uuid")
   public void setUuid(UUID uuid) {
     this.uuid = uuid;
   }
@@ -95,16 +96,17 @@ public class TeaProductRelease {
   }
 
   /**
-   * A UUID
+   * UUID of the TEA Product this release belongs to
    * @return product
    */
   @Valid 
-  @Schema(name = "product", description = "A UUID", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "product", description = "UUID of the TEA Product this release belongs to", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("product")
   public @Nullable UUID getProduct() {
     return product;
   }
 
+  @JsonProperty("product")
   public void setProduct(@Nullable UUID product) {
     this.product = product;
   }
@@ -125,6 +127,7 @@ public class TeaProductRelease {
     return productName;
   }
 
+  @JsonProperty("productName")
   public void setProductName(@Nullable String productName) {
     this.productName = productName;
   }
@@ -145,6 +148,7 @@ public class TeaProductRelease {
     return version;
   }
 
+  @JsonProperty("version")
   public void setVersion(String version) {
     this.version = version;
   }
@@ -155,16 +159,17 @@ public class TeaProductRelease {
   }
 
   /**
-   * Timestamp
+   * Timestamp when this Product Release was created in TEA (for sorting purposes)
    * @return createdDate
    */
   @NotNull @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$") 
-  @Schema(name = "createdDate", example = "2024-03-20T15:30:00Z", description = "Timestamp", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "createdDate", example = "2024-03-20T15:30:00Z", description = "Timestamp when this Product Release was created in TEA (for sorting purposes)", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("createdDate")
   public OffsetDateTime getCreatedDate() {
     return createdDate;
   }
 
+  @JsonProperty("createdDate")
   public void setCreatedDate(OffsetDateTime createdDate) {
     this.createdDate = createdDate;
   }
@@ -175,16 +180,17 @@ public class TeaProductRelease {
   }
 
   /**
-   * Timestamp
+   * Timestamp of the product release
    * @return releaseDate
    */
   @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$") 
-  @Schema(name = "releaseDate", example = "2024-03-20T15:30:00Z", description = "Timestamp", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "releaseDate", example = "2024-03-20T15:30:00Z", description = "Timestamp of the product release", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("releaseDate")
   public @Nullable OffsetDateTime getReleaseDate() {
     return releaseDate;
   }
 
+  @JsonProperty("releaseDate")
   public void setReleaseDate(@Nullable OffsetDateTime releaseDate) {
     this.releaseDate = releaseDate;
   }
@@ -205,6 +211,7 @@ public class TeaProductRelease {
     return preRelease;
   }
 
+  @JsonProperty("preRelease")
   public void setPreRelease(@Nullable Boolean preRelease) {
     this.preRelease = preRelease;
   }
@@ -233,6 +240,7 @@ public class TeaProductRelease {
     return identifiers;
   }
 
+  @JsonProperty("identifiers")
   public void setIdentifiers(List<@Valid TeaIdentifier> identifiers) {
     this.identifiers = identifiers;
   }
@@ -261,6 +269,7 @@ public class TeaProductRelease {
     return components;
   }
 
+  @JsonProperty("components")
   public void setComponents(List<@Valid TeaComponentRef> components) {
     this.components = components;
   }
@@ -311,11 +320,8 @@ public class TeaProductRelease {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

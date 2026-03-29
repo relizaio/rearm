@@ -26,7 +26,7 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.2.0-beta.2}")
+@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.4.0}")
 public class ArtifactApiController implements ArtifactApi {
 
 	@Autowired
@@ -48,11 +48,24 @@ public class ArtifactApiController implements ArtifactApi {
     }
     
     @Override
-    public ResponseEntity<TeaArtifact> getArtifact(
+    public ResponseEntity<TeaArtifact> getLatestArtifact(
             @Parameter(name = "uuid", description = "UUID of TEA Artifact in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
         ) {
-    		
         var oad = artifactService.getArtifactData(uuid);
+        if (oad.isEmpty() || !UserService.USER_ORG.equals(oad.get().getOrg())) {
+        	return ResponseEntity.notFound().build();
+        } else {
+        	TeaArtifact ta = teaTransformerService.transformArtifactToTea(oad.get());
+        	return ResponseEntity.ok(ta);
+        }
+    }
+
+    @Override
+    public ResponseEntity<TeaArtifact> getArtifactByVersion(
+            @Parameter(name = "uuid", description = "UUID of TEA Artifact in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+            @Parameter(name = "artifactVersion", description = "Version of TEA Artifact", required = true, in = ParameterIn.PATH) @PathVariable("artifactVersion") Integer artifactVersion
+        ) {
+        var oad = artifactService.getArtifactDataByVersion(uuid, artifactVersion);
         if (oad.isEmpty() || !UserService.USER_ORG.equals(oad.get().getOrg())) {
         	return ResponseEntity.notFound().build();
         } else {

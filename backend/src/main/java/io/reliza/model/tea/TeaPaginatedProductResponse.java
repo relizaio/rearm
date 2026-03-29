@@ -28,7 +28,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "paginated-product-response", description = "A paginated response containing TEA Products")
 @JsonTypeName("paginated-product-response")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaPaginatedProductResponse {
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
@@ -73,6 +73,7 @@ public class TeaPaginatedProductResponse {
     return timestamp;
   }
 
+  @JsonProperty("timestamp")
   public void setTimestamp(OffsetDateTime timestamp) {
     this.timestamp = timestamp;
   }
@@ -93,6 +94,7 @@ public class TeaPaginatedProductResponse {
     return pageStartIndex;
   }
 
+  @JsonProperty("pageStartIndex")
   public void setPageStartIndex(Long pageStartIndex) {
     this.pageStartIndex = pageStartIndex;
   }
@@ -113,6 +115,7 @@ public class TeaPaginatedProductResponse {
     return pageSize;
   }
 
+  @JsonProperty("pageSize")
   public void setPageSize(Long pageSize) {
     this.pageSize = pageSize;
   }
@@ -133,6 +136,7 @@ public class TeaPaginatedProductResponse {
     return totalResults;
   }
 
+  @JsonProperty("totalResults")
   public void setTotalResults(Long totalResults) {
     this.totalResults = totalResults;
   }
@@ -161,6 +165,7 @@ public class TeaPaginatedProductResponse {
     return results;
   }
 
+  @JsonProperty("results")
   public void setResults(List<@Valid TeaProduct> results) {
     this.results = results;
   }
@@ -203,11 +208,8 @@ public class TeaPaginatedProductResponse {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

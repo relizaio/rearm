@@ -1,5 +1,6 @@
 package io.reliza.ws.tea;
 
+import io.reliza.model.tea.TeaCle;
 import io.reliza.model.tea.TeaCollection;
 import io.reliza.model.tea.TeaProductRelease;
 import io.reliza.service.AcollectionService;
@@ -39,7 +40,7 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-09-13T12:58:45.490102-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.2.0-beta.2}")
+@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.4.0}")
 @Slf4j
 public class ProductReleaseApiController implements ProductReleaseApi {
 
@@ -124,6 +125,18 @@ public class ProductReleaseApiController implements ProductReleaseApi {
     		}
      }
     
+    @Override
+    public ResponseEntity<TeaCle> getCleByProductReleaseId(
+    		@Parameter(name = "uuid", description = "UUID of TEA Product Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    	) {
+		var release = sharedReleaseService.getReleaseData(uuid);
+		if (release.isEmpty() || !UserService.USER_ORG.equals(release.get().getOrg())) {
+			return ResponseEntity.notFound().build();
+		}
+		TeaCle cle = teaTransformerService.transformReleaseToCle(release.get());
+		return ResponseEntity.ok(cle);
+    }
+
     @Override
     public ResponseEntity<TeaProductRelease> getTeaProductReleaseByUuid(
             @Parameter(name = "uuid", description = "UUID of TEA Product Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid

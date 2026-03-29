@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.tea.TeaCle;
 import io.reliza.model.tea.TeaCollection;
 import io.reliza.model.tea.TeaComponentReleaseWithCollection;
 import io.reliza.service.AcollectionService;
@@ -35,7 +36,7 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.2.0-beta.2}")
+@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.4.0}")
 @Slf4j
 public class ComponentReleaseApiController implements ComponentReleaseApi {
 
@@ -123,6 +124,18 @@ public class ComponentReleaseApiController implements ComponentReleaseApi {
     		}
      }
     
+    @Override
+    public ResponseEntity<TeaCle> getCleByComponentReleaseId(
+            @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+        ) {
+		var release = sharedReleaseService.getReleaseData(uuid);
+		if (release.isEmpty() || !UserService.USER_ORG.equals(release.get().getOrg())) {
+			return ResponseEntity.notFound().build();
+		}
+		TeaCle cle = teaTransformerService.transformReleaseToCle(release.get());
+		return ResponseEntity.ok(cle);
+    }
+
     @Override
     public ResponseEntity<TeaComponentReleaseWithCollection> getComponentReleaseById(
             @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid

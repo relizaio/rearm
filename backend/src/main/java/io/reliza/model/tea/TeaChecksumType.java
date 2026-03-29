@@ -20,7 +20,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * Checksum algorithm
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public enum TeaChecksumType {
   
   MD5("MD5"),
@@ -67,12 +67,6 @@ public enum TeaChecksumType {
   public static TeaChecksumType fromValue(String value) {
     for (TeaChecksumType b : TeaChecksumType.values()) {
       if (b.value.equals(value)) {
-        return b;
-      }
-    }
-    // Fallback: try matching by enum constant name
-    for (TeaChecksumType b : TeaChecksumType.values()) {
-      if (b.name().equals(value)) {
         return b;
       }
     }

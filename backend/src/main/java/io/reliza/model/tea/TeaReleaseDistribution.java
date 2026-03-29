@@ -10,6 +10,7 @@ import io.reliza.model.tea.TeaIdentifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.lang.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -26,10 +27,10 @@ import jakarta.annotation.Generated;
  */
 
 @JsonTypeName("release-distribution")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaReleaseDistribution {
 
-  private @Nullable String distributionType;
+  private UUID distributionId;
 
   private @Nullable String description;
 
@@ -43,24 +44,36 @@ public class TeaReleaseDistribution {
   @Valid
   private List<@Valid TeaChecksum> checksums = new ArrayList<>();
 
-  public TeaReleaseDistribution distributionType(@Nullable String distributionType) {
-    this.distributionType = distributionType;
+  public TeaReleaseDistribution() {
+    super();
+  }
+
+  /**
+   * Constructor with only required parameters
+   */
+  public TeaReleaseDistribution(UUID distributionId) {
+    this.distributionId = distributionId;
+  }
+
+  public TeaReleaseDistribution distributionId(UUID distributionId) {
+    this.distributionId = distributionId;
     return this;
   }
 
   /**
-   * Unique identifier for the distribution type.
-   * @return distributionType
+   * A unique identifier for the TEA Distribution object
+   * @return distributionId
    */
-  
-  @Schema(name = "distributionType", description = "Unique identifier for the distribution type.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("distributionType")
-  public @Nullable String getDistributionType() {
-    return distributionType;
+  @NotNull @Valid 
+  @Schema(name = "distributionId", description = "A unique identifier for the TEA Distribution object", requiredMode = Schema.RequiredMode.REQUIRED)
+  @JsonProperty("distributionId")
+  public UUID getDistributionId() {
+    return distributionId;
   }
 
-  public void setDistributionType(@Nullable String distributionType) {
-    this.distributionType = distributionType;
+  @JsonProperty("distributionId")
+  public void setDistributionId(UUID distributionId) {
+    this.distributionId = distributionId;
   }
 
   public TeaReleaseDistribution description(@Nullable String description) {
@@ -79,6 +92,7 @@ public class TeaReleaseDistribution {
     return description;
   }
 
+  @JsonProperty("description")
   public void setDescription(@Nullable String description) {
     this.description = description;
   }
@@ -107,6 +121,7 @@ public class TeaReleaseDistribution {
     return identifiers;
   }
 
+  @JsonProperty("identifiers")
   public void setIdentifiers(List<@Valid TeaIdentifier> identifiers) {
     this.identifiers = identifiers;
   }
@@ -127,6 +142,7 @@ public class TeaReleaseDistribution {
     return url;
   }
 
+  @JsonProperty("url")
   public void setUrl(@Nullable String url) {
     this.url = url;
   }
@@ -147,6 +163,7 @@ public class TeaReleaseDistribution {
     return signatureUrl;
   }
 
+  @JsonProperty("signatureUrl")
   public void setSignatureUrl(@Nullable String signatureUrl) {
     this.signatureUrl = signatureUrl;
   }
@@ -175,6 +192,7 @@ public class TeaReleaseDistribution {
     return checksums;
   }
 
+  @JsonProperty("checksums")
   public void setChecksums(List<@Valid TeaChecksum> checksums) {
     this.checksums = checksums;
   }
@@ -188,7 +206,7 @@ public class TeaReleaseDistribution {
       return false;
     }
     TeaReleaseDistribution releaseDistribution = (TeaReleaseDistribution) o;
-    return Objects.equals(this.distributionType, releaseDistribution.distributionType) &&
+    return Objects.equals(this.distributionId, releaseDistribution.distributionId) &&
         Objects.equals(this.description, releaseDistribution.description) &&
         Objects.equals(this.identifiers, releaseDistribution.identifiers) &&
         Objects.equals(this.url, releaseDistribution.url) &&
@@ -198,14 +216,14 @@ public class TeaReleaseDistribution {
 
   @Override
   public int hashCode() {
-    return Objects.hash(distributionType, description, identifiers, url, signatureUrl, checksums);
+    return Objects.hash(distributionId, description, identifiers, url, signatureUrl, checksums);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class TeaReleaseDistribution {\n");
-    sb.append("    distributionType: ").append(toIndentedString(distributionType)).append("\n");
+    sb.append("    distributionId: ").append(toIndentedString(distributionId)).append("\n");
     sb.append("    description: ").append(toIndentedString(description)).append("\n");
     sb.append("    identifiers: ").append(toIndentedString(identifiers)).append("\n");
     sb.append("    url: ").append(toIndentedString(url)).append("\n");
@@ -219,11 +237,8 @@ public class TeaReleaseDistribution {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

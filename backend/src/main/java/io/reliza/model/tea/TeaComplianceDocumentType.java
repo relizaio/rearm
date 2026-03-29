@@ -17,25 +17,55 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Type of TEA collection update
+ * Well-known compliance document types. When idType is COMPLIANCE_DOCUMENT, the idValue SHOULD be one of these values. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
-public enum TeaCollectionUpdateReasonType {
+public enum TeaComplianceDocumentType {
   
-  INITIAL_RELEASE("INITIAL_RELEASE"),
+  SOC_2_TYPE_I("SOC_2_TYPE_I"),
   
-  VEX_UPDATED("VEX_UPDATED"),
+  SOC_2_TYPE_II("SOC_2_TYPE_II"),
   
-  ARTIFACT_UPDATED("ARTIFACT_UPDATED"),
+  SOC_3("SOC_3"),
   
-  ARTIFACT_ADDED("ARTIFACT_ADDED"),
+  ISO_27001("ISO_27001"),
   
-  ARTIFACT_REMOVED("ARTIFACT_REMOVED");
+  ISO_27017("ISO_27017"),
+  
+  ISO_27018("ISO_27018"),
+  
+  ISO_27701("ISO_27701"),
+  
+  ISO_42001("ISO_42001"),
+  
+  PCI_DSS("PCI_DSS"),
+  
+  HIPAA("HIPAA"),
+  
+  FED_RAMP("FedRAMP"),
+  
+  GDPR("GDPR"),
+  
+  CSA_STAR("CSA_STAR"),
+  
+  NIST_800_53("NIST_800_53"),
+  
+  NIST_800_171("NIST_800_171"),
+  
+  CMMC("CMMC"),
+  
+  HITRUST("HITRUST"),
+  
+  TISAX("TISAX"),
+  
+  CYBER_ESSENTIALS("CYBER_ESSENTIALS"),
+  
+  CYBER_ESSENTIALS_PLUS("CYBER_ESSENTIALS_PLUS");
 
   private final String value;
 
-  TeaCollectionUpdateReasonType(String value) {
+  TeaComplianceDocumentType(String value) {
     this.value = value;
   }
 
@@ -50,8 +80,8 @@ public enum TeaCollectionUpdateReasonType {
   }
 
   @JsonCreator
-  public static TeaCollectionUpdateReasonType fromValue(String value) {
-    for (TeaCollectionUpdateReasonType b : TeaCollectionUpdateReasonType.values()) {
+  public static TeaComplianceDocumentType fromValue(String value) {
+    for (TeaComplianceDocumentType b : TeaComplianceDocumentType.values()) {
       if (b.value.equals(value)) {
         return b;
       }

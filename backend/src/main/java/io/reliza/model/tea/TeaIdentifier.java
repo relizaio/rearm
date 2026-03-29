@@ -24,7 +24,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "identifier", description = "An identifier with a specified type")
 @JsonTypeName("identifier")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaIdentifier {
 
   private @Nullable TeaIdentifierType idType;
@@ -47,6 +47,7 @@ public class TeaIdentifier {
     return idType;
   }
 
+  @JsonProperty("idType")
   public void setIdType(@Nullable TeaIdentifierType idType) {
     this.idType = idType;
   }
@@ -67,6 +68,7 @@ public class TeaIdentifier {
     return idValue;
   }
 
+  @JsonProperty("idValue")
   public void setIdValue(@Nullable String idValue) {
     this.idValue = idValue;
   }
@@ -103,11 +105,8 @@ public class TeaIdentifier {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 

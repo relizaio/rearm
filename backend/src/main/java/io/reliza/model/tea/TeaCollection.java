@@ -32,7 +32,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "collection", description = "A collection of security-related documents")
 @JsonTypeName("collection")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-15T13:35:56.249199300-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaCollection {
 
   private @Nullable UUID uuid;
@@ -55,16 +55,17 @@ public class TeaCollection {
   }
 
   /**
-   * A UUID
+   * UUID of the TEA Collection object. This matches the UUID of the associated TEA Component Release or TEA Product Release object. When updating a collection, only the `version` is changed. 
    * @return uuid
    */
   @Valid 
-  @Schema(name = "uuid", description = "A UUID", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "uuid", description = "UUID of the TEA Collection object. This matches the UUID of the associated TEA Component Release or TEA Product Release object. When updating a collection, only the `version` is changed. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("uuid")
   public @Nullable UUID getUuid() {
     return uuid;
   }
 
+  @JsonProperty("uuid")
   public void setUuid(@Nullable UUID uuid) {
     this.uuid = uuid;
   }
@@ -85,6 +86,7 @@ public class TeaCollection {
     return version;
   }
 
+  @JsonProperty("version")
   public void setVersion(@Nullable Integer version) {
     this.version = version;
   }
@@ -95,16 +97,17 @@ public class TeaCollection {
   }
 
   /**
-   * Timestamp
+   * The date when the TEA Collection version was created.
    * @return date
    */
   @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$") 
-  @Schema(name = "date", example = "2024-03-20T15:30:00Z", description = "Timestamp", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "date", example = "2024-03-20T15:30:00Z", description = "The date when the TEA Collection version was created.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("date")
   public @Nullable OffsetDateTime getDate() {
     return date;
   }
 
+  @JsonProperty("date")
   public void setDate(@Nullable OffsetDateTime date) {
     this.date = date;
   }
@@ -125,6 +128,7 @@ public class TeaCollection {
     return belongsTo;
   }
 
+  @JsonProperty("belongsTo")
   public void setBelongsTo(@Nullable TeaCollectionBelongsToType belongsTo) {
     this.belongsTo = belongsTo;
   }
@@ -145,6 +149,7 @@ public class TeaCollection {
     return updateReason;
   }
 
+  @JsonProperty("updateReason")
   public void setUpdateReason(@Nullable TeaCollectionUpdateReason updateReason) {
     this.updateReason = updateReason;
   }
@@ -163,16 +168,17 @@ public class TeaCollection {
   }
 
   /**
-   * List of TEA artifact objects.
+   * List of TEA Artifact objects.
    * @return artifacts
    */
   @Valid 
-  @Schema(name = "artifacts", description = "List of TEA artifact objects.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "artifacts", description = "List of TEA Artifact objects.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("artifacts")
   public List<@Valid TeaArtifact> getArtifacts() {
     return artifacts;
   }
 
+  @JsonProperty("artifacts")
   public void setArtifacts(List<@Valid TeaArtifact> artifacts) {
     this.artifacts = artifacts;
   }
@@ -217,11 +223,8 @@ public class TeaCollection {
    * Convert the given object to string with each line indented by 4 spaces
    * (except the first line).
    */
-  private String toIndentedString(Object o) {
-    if (o == null) {
-      return "null";
-    }
-    return o.toString().replace("\n", "\n    ");
+  private String toIndentedString(@Nullable Object o) {
+    return o == null ? "null" : o.toString().replace("\n", "\n    ");
   }
 }
 
