@@ -32,7 +32,7 @@ public class CommonVariables {
 	public static final UUID DEFAULT_RESOURCE_GROUP = new UUID(0,0); // 00000000-0000-0000-0000-000000000000
 	public static final String DEFAULT_RESOURCE_GROUP_NAME = "default";
 	
-	public static final int DTRACK_DEFAULT_PAGE_SIZE = 80;
+	public static final int DTRACK_DEFAULT_PAGE_SIZE = 50;
 	
 	public static final String NAME_FIELD = "name";
 	public static final String DESCRIPTION_FIELD = "description";
@@ -291,6 +291,9 @@ public class CommonVariables {
 	public static final String ARTIFACT_COVERAGE_TYPE_TAG_KEY = "COVERAGE_TYPE";
 	public static final String ARTIFACT_LIFECYCLE_DECLARED_TAG_KEY = "LIFECYCLE_DECLARED";
 	public static final String ARTIFACT_LIFECYCLE_TAG_KEY = "LIFECYCLE";
+	public static final String VDR_SNAPSHOT_TYPE_TAG_KEY = "VDR_SNAPSHOT_TYPE";
+	public static final String VDR_SNAPSHOT_VALUE_TAG_KEY = "VDR_SNAPSHOT_VALUE";
+	public static final String VDR_SNAPSHOT_TRIGGER_TAG_KEY = "VDR_SNAPSHOT_TRIGGER";
 
 	/*** K8s Labels
 	 * refer to https://helm.sh/docs/chart_best_practices/labels/
