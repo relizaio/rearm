@@ -2,7 +2,7 @@
 
 ReARM is implementing TEA specification as the TEA standard emerges. TEA specification defines a standard, format agnostic, API for the exchange of product related artefacts, like BOMs, between systems. See more details on [TEA GitHub Repository](https://github.com/CycloneDX/transparency-exchange-api/).
 
-Current state of TEA is Beta 2 (as of 2025-12-18).
+Current state of TEA: Community TEA 1.0.0 release is planned for summer 2026.
 
 Current state of ReARM TEA implementation is Alpha (as of 2025-05-22) - which means that most calls and workflows are implemented but with limitations.
 
@@ -21,7 +21,7 @@ enableBetaTea: true
 
 For docker-compose or other installations, set `RELIZAPROP_ENABLE_BETA_TEA` environment variable on ReARM backend to `true`.
 
-This makes TEA available under `/tea/v0.2.0-beta.2/` on your ReARM installation and also resolves `./well-known/tea` links as described below.
+This makes TEA available under `/tea/v0.4.0/` on your ReARM installation and also resolves `./well-known/tea` links as described below.
 
 ## TEA Discovery and Operations
 
