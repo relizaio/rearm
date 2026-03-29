@@ -38,6 +38,11 @@ export default defineConfig({
                 ws: true,
                 changeOrigin: true
             },
+            '^/tea': {
+                target: 'http://localhost:8086',
+                ws: true,
+                changeOrigin: true
+            },
             '^/kauth': {
                 target: 'http://localhost:9080',
                 ws: true,
