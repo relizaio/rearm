@@ -70,6 +70,12 @@ public enum TeaChecksumType {
         return b;
       }
     }
+    // Fallback: try matching by enum constant name
+    for (TeaChecksumType b : TeaChecksumType.values()) {
+      if (b.name().equals(value)) {
+        return b;
+      }
+    }
     throw new IllegalArgumentException("Unexpected value '" + value + "'");
   }
 }
