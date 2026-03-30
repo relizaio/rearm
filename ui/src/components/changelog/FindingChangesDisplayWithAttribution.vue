@@ -3,17 +3,50 @@
         <div v-if="findingChanges">
             <!-- Summary Tags -->
             <div class="summary-tags">
-                <n-tag type="warning" size="small">{{ newFindings.length }} New</n-tag>
-                <n-tag v-if="isOrgLevelView && partiallyResolvedFindings.length > 0" type="info" size="small" class="tag-spacing">{{ partiallyResolvedFindings.length }} Partially Resolved</n-tag>
-                <n-tag v-if="isOrgLevelView && inheritedTechnicalDebtFindings.length > 0" type="error" size="small" class="tag-spacing">{{ inheritedTechnicalDebtFindings.length }} Inherited Debt</n-tag>
-                <n-tag v-if="!isOrgLevelView && stillPresentFindings.length > 0" type="info" size="small" class="tag-spacing">{{ stillPresentFindings.length }} Still Present</n-tag>
-                <n-tag type="success" size="small" class="tag-spacing">{{ fullyResolvedFindings.length }} {{ isOrgLevelView ? 'Fully Resolved' : 'Resolved' }}</n-tag>
-                <n-tag :type="netChange > 0 ? 'error' : netChange < 0 ? 'success' : 'default'" size="small" class="tag-spacing">
-                    Net: {{ netChange > 0 ? '+' : '' }}{{ netChange }}
-                </n-tag>
+                <n-tooltip trigger="hover" placement="bottom">
+                    <template #trigger>
+                        <n-tag type="warning" size="small">{{ newFindings.length }} New</n-tag>
+                    </template>
+                    <span v-if="isOrgLevelView">Findings that appear for the first time across the entire organization in this period.</span>
+                    <span v-else>Findings introduced in this component for the first time in this period.</span>
+                </n-tooltip>
+                <n-tooltip v-if="isOrgLevelView && partiallyResolvedFindings.length > 0" trigger="hover" placement="bottom">
+                    <template #trigger>
+                        <n-tag type="info" size="small" class="tag-spacing">{{ partiallyResolvedFindings.length }} Partially Resolved</n-tag>
+                    </template>
+                    <span>Findings resolved in some components but still present in others within this period.</span>
+                </n-tooltip>
+                <n-tooltip v-if="isOrgLevelView && inheritedTechnicalDebtFindings.length > 0" trigger="hover" placement="bottom">
+                    <template #trigger>
+                        <n-tag type="error" size="small" class="tag-spacing">{{ inheritedTechnicalDebtFindings.length }} Inherited Debt</n-tag>
+                    </template>
+                    <span>Findings that existed before this period and remain unresolved — pre-existing technical debt carried across the entire date range.</span>
+                </n-tooltip>
+                <n-tooltip v-if="!isOrgLevelView && stillPresentFindings.length > 0" trigger="hover" placement="bottom">
+                    <template #trigger>
+                        <n-tag type="info" size="small" class="tag-spacing">{{ stillPresentFindings.length }} Still Present</n-tag>
+                    </template>
+                    <span>Findings that existed before this period and remain unresolved in this component.</span>
+                </n-tooltip>
+                <n-tooltip trigger="hover" placement="bottom">
+                    <template #trigger>
+                        <n-tag type="success" size="small" class="tag-spacing">{{ fullyResolvedFindings.length }} {{ isOrgLevelView ? 'Fully Resolved' : 'Resolved' }}</n-tag>
+                    </template>
+                    <span v-if="isOrgLevelView">Findings resolved across all affected components and no longer present anywhere in this period.</span>
+                    <span v-else>Findings that were present before and are no longer detected in this component.</span>
+                </n-tooltip>
+                <n-tooltip trigger="hover" placement="bottom">
+                    <template #trigger>
+                        <n-tag :type="netChange > 0 ? 'error' : netChange < 0 ? 'success' : 'default'" size="small" class="tag-spacing">
+                            Net: {{ netChange > 0 ? '+' : '' }}{{ netChange }}
+                        </n-tag>
+                    </template>
+                    <span>Net change in findings: new findings minus resolved findings for this period.</span>
+                </n-tooltip>
             </div>
             
-            <FindingListSection title="New Findings" title-class="finding-new" key-prefix="new" :findings="newFindings" :rich-aliases="true">
+            <FindingListSection title="New Findings" title-class="finding-new" key-prefix="new" :findings="newFindings" :rich-aliases="true"
+                :description="isOrgLevelView ? 'Findings that appear for the first time across the entire organization in this period.' : 'Findings introduced in this component for the first time in this period.'">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getAppearedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -21,7 +54,8 @@
                 </template>
             </FindingListSection>
 
-            <FindingListSection v-if="isOrgLevelView" title="Partially Resolved" title-class="finding-partial" key-prefix="partial" :findings="partiallyResolvedFindings" :rich-aliases="true">
+            <FindingListSection v-if="isOrgLevelView" title="Partially Resolved" title-class="finding-partial" key-prefix="partial" :findings="partiallyResolvedFindings" :rich-aliases="true"
+                description="Findings resolved in some components but still present in others within this period.">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -29,7 +63,8 @@
                 </template>
             </FindingListSection>
 
-            <FindingListSection v-if="isOrgLevelView" title="Inherited Technical Debt" title-class="finding-inherited" key-prefix="inherited" :findings="inheritedTechnicalDebtFindings" :rich-aliases="true">
+            <FindingListSection v-if="isOrgLevelView" title="Inherited Technical Debt" title-class="finding-inherited" key-prefix="inherited" :findings="inheritedTechnicalDebtFindings" :rich-aliases="true"
+                description="Findings that existed before this period and remain unresolved — pre-existing technical debt carried across the entire date range.">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getInheritedDebtContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -37,7 +72,8 @@
                 </template>
             </FindingListSection>
 
-            <FindingListSection v-if="!isOrgLevelView" title="Still Present" title-class="finding-present" key-prefix="present" :findings="stillPresentFindings" :rich-aliases="true">
+            <FindingListSection v-if="!isOrgLevelView" title="Still Present" title-class="finding-present" key-prefix="present" :findings="stillPresentFindings" :rich-aliases="true"
+                description="Findings that existed before this period and remain unresolved in this component.">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getStillPresentContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -45,7 +81,8 @@
                 </template>
             </FindingListSection>
 
-            <FindingListSection :title="isOrgLevelView ? 'Fully Resolved' : 'Resolved'" title-class="finding-resolved" key-prefix="resolved" :findings="fullyResolvedFindings" :rich-aliases="true">
+            <FindingListSection :title="isOrgLevelView ? 'Fully Resolved' : 'Resolved'" title-class="finding-resolved" key-prefix="resolved" :findings="fullyResolvedFindings" :rich-aliases="true"
+                :description="isOrgLevelView ? 'Findings resolved across all affected components and no longer present anywhere in this period.' : 'Findings that were present before and are no longer detected in this component.'">
                 <template #attribution="{ finding }">
                     <div v-if="showAttribution" class="attribution">
                         <span v-for="(seg, i) in getResolvedContextSegments(finding)" :key="i" class="attribution-context"><router-link v-if="seg.releaseUuid" :to="{ name: 'ReleaseView', params: { uuid: seg.releaseUuid } }" class="release-link">{{ seg.text }}</router-link><span v-else>{{ seg.text }}</span></span>
@@ -65,7 +102,7 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
-import { NTag } from 'naive-ui'
+import { NTag, NTooltip } from 'naive-ui'
 import FindingListSection from './FindingListSection.vue'
 import { getSeverityIndex } from '../../utils/findingUtils'
 import type { 

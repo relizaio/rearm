@@ -1,7 +1,15 @@
 <template>
     <div v-if="activeFindings.length > 0 || suppressedFindings.length > 0">
         <div v-if="activeFindings.length > 0">
-            <h5 :class="titleClass">{{ title }} ({{ activeFindings.length }})</h5>
+            <h5 :class="titleClass" class="section-title-row">
+                {{ title }} ({{ activeFindings.length }})
+                <n-tooltip v-if="description" trigger="hover" placement="right">
+                    <template #trigger>
+                        <n-icon class="section-info-icon" :size="14"><Info20Regular /></n-icon>
+                    </template>
+                    {{ description }}
+                </n-tooltip>
+            </h5>
             <ul>
                 <li v-for="finding in activeFindings" :key="`${keyPrefix}-${finding.type}-${finding.findingId}-${finding.affectedComponent}`">
                     <span class="finding-row">
@@ -91,10 +99,12 @@ interface Props {
     keyPrefix: string
     findings: any[]
     richAliases?: boolean
+    description?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    richAliases: false
+    richAliases: false,
+    description: undefined
 })
 
 const showSuppressed = ref(false)
@@ -127,6 +137,21 @@ const getAnalysisStateLabel = (state: string | null | undefined): string => {
 
 <style scoped lang="scss">
 @use './finding-common';
+
+.section-title-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.section-info-icon {
+    opacity: 0.5;
+    cursor: default;
+    flex-shrink: 0;
+    &:hover {
+        opacity: 0.9;
+    }
+}
 
 .suppressed-section {
     margin-top: 12px;
