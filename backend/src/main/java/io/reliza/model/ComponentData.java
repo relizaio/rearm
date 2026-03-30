@@ -66,7 +66,8 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		RELEASE_LIFECYCLE_CHANGE,
 		MARKETING_RELEASE_LIFECYCLE_CHANGE,
 		INTEGRATION_TRIGGER,
-		EMAIL_NOTIFICATION;
+		EMAIL_NOTIFICATION,
+		VDR_SNAPSHOT_ARTIFACT;
 	}
 	
 	public enum EventScope {
@@ -148,6 +149,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		private String schedule;
 		private String clientPayload; // i.e. additional GitHub parameters
 		private String eventType;
+		private Boolean includeSuppressed;
 	}
 	
 	@JsonProperty

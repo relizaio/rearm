@@ -1312,6 +1312,7 @@ type ReleaseOutputEvent {
     clientPayload: String
     schedule: String
     scope: EventScope
+    includeSuppressed: Boolean
 }
 
 type GlobalInputEventRef {
@@ -1950,6 +1951,7 @@ input ReleaseOutputEventInput {
 	eventType: String
 	clientPayload: String
 	schedule: String
+	includeSuppressed: Boolean
 }
 
 input ReleaseInputEventInput {
@@ -2040,6 +2042,7 @@ enum EventType {
 	MARKETING_RELEASE_LIFECYCLE_CHANGE
 	INTEGRATION_TRIGGER
 	EMAIL_NOTIFICATION
+	VDR_SNAPSHOT_ARTIFACT
 }
 
 enum EventScope {

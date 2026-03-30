@@ -294,6 +294,7 @@ public class CommonVariables {
 	public static final String VDR_SNAPSHOT_TYPE_TAG_KEY = "VDR_SNAPSHOT_TYPE";
 	public static final String VDR_SNAPSHOT_VALUE_TAG_KEY = "VDR_SNAPSHOT_VALUE";
 	public static final String VDR_SNAPSHOT_TRIGGER_TAG_KEY = "VDR_SNAPSHOT_TRIGGER";
+	public static final String VDR_SNAPSHOT_KEY_TAG_KEY = "VDR_SNAPSHOT_KEY";
 
 	/*** K8s Labels
 	 * refer to https://helm.sh/docs/chart_best_practices/labels/

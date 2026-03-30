@@ -49,6 +49,7 @@ public class UpdateComponentDto {
 		private String schedule;
 		private String clientPayload; // i.e. additional GitHub parameters
 		private String eventType;
+		private Boolean includeSuppressed;
 	}
 	
 	@JsonProperty(CommonVariables.UUID_FIELD)
@@ -110,7 +111,8 @@ public class UpdateComponentDto {
 									.vcs(roei.getVcs())
 									.schedule(roei.getSchedule())
 									.eventType(roei.getEventType())
-									.toReleaseLifecycle(roei.getToReleaseLifecycle());
+									.toReleaseLifecycle(roei.getToReleaseLifecycle())
+									.includeSuppressed(roei.getIncludeSuppressed());
 		if (it == IntegrationType.GITHUB || it == IntegrationType.ADO) {
 			if (StringUtils.isNotEmpty(roei.getClientPayload())) {
 				builder.clientPayload(roei.getClientPayload());
