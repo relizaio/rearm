@@ -710,7 +710,9 @@ public class FindingComparisonService {
 		boolean isFullyResolved = resolvedComponents.size() > 0 && presentComponents.isEmpty();
 		boolean isPartiallyResolved = !isFullyResolved && resolvedComponents.size() > 0 && presentComponents.size() > 0;
 		boolean isInheritedInAllComponents = !isFullyResolved && !isPartiallyResolved && inherited.size() == totalComponents && totalComponents > 1;
-		boolean isNewToOrganization = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && inherited.isEmpty();
+		boolean isNewToOrganization = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && inherited.isEmpty()
+				&& (appearedComponents.size() > 0
+						|| (!presentComponents.isEmpty() && appearedComponents.isEmpty() && resolvedComponents.isEmpty()));
 		boolean wasPreviouslyReported = !isFullyResolved && !isPartiallyResolved && !isInheritedInAllComponents && appearedComponents.size() > 0 && 
 			(inherited.size() > 0 || presentComponents.stream().anyMatch(c -> !appearedComponents.contains(c)));
 		
