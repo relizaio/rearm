@@ -4,7 +4,7 @@ date: "2026-03-29"
 ogImage: "2026-03-29-evidence-store-github-actions-security.png"
 ---
 
-Following the recent Trivy and LiteLLM supply chain attacks, it has become clear that we still do not have a good way to protect our CI/CD layer, specifically GitHub Actions, from supply chain attacks.
+Following the recent Trivy and LiteLLM compromises, it has become clear that we still lack a good way to protect our CI/CD layer, specifically GitHub Actions, from supply chain attacks.
 
 ![2 locks protecting each other - representing Evidence Platform such as ReARM and CI/CD system such as GitHub Actions Protecting each other](/blog_images/2026-03-29-evidence-store-github-actions-security.png)
 
