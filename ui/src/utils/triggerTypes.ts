@@ -51,6 +51,21 @@ export type InputTriggerEvent = {
     outputEvents: string[];
 }
 
+/**
+ * Returns true if any condition group (at any depth) uses OR and mixes
+ * APPROVAL_ENTRY conditions with non-APPROVAL_ENTRY conditions at the same level.
+ * In that case the backend cannot identify which approval fired the trigger, so
+ * VDR snapshots fall back to DATE-type (no approval key, no deduplication).
+ */
+export function hasMixedOrApprovalGroup(cg: ConditionGroup): boolean {
+    if (cg.conditions && cg.matchOperator === 'OR') {
+        const hasApproval = cg.conditions.some(c => c.type === 'APPROVAL_ENTRY')
+        const hasNonApproval = cg.conditions.some(c => c.type !== 'APPROVAL_ENTRY')
+        if (hasApproval && hasNonApproval) return true
+    }
+    return (cg.conditionGroups ?? []).some(sub => hasMixedOrApprovalGroup(sub))
+}
+
 export type OutputTriggerEvent = {
     uuid: string;
     name: string;

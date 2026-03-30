@@ -636,14 +636,14 @@ import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 import axios from '../utils/axios'
-import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X } from '@vicons/tabler'
+import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
-import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, ConditionGroup, InputTriggerEvent } from '../utils/triggerTypes'
+import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, ConditionGroup, InputTriggerEvent, hasMixedOrApprovalGroup } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import graphqlQueries from '../utils/graphqlQueries'
 
@@ -2181,8 +2181,12 @@ const inputTriggerTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             let outTriggers = ''
             if (row.outputEvents && row.outputEvents.length) {
+                const allOutputTriggers = [
+                    ...(updatedComponent.value.outputTriggers ?? []),
+                    ...(updatedComponent.value.approvalPolicyDetails?.globalOutputEvents ?? [])
+                ]
                 row.outputEvents.forEach((oe: string) => {
-                    const outTrigger = updatedComponent.value.outputTriggers.find((x: any) => x.uuid === oe)
+                    const outTrigger = allOutputTriggers.find((x: any) => x.uuid === oe)
                     if (outTrigger && outTrigger.uuid) {
                         outTriggers += outTrigger.name + ', '
                     }
@@ -2223,6 +2227,20 @@ const inputTriggerTableFields: DataTableColumns<any> = [
                 }
                 )
             ]
+            const allOutputTriggersForVdrCheck = [
+                ...(updatedComponent.value.outputTriggers ?? []),
+                ...(updatedComponent.value.approvalPolicyDetails?.globalOutputEvents ?? [])
+            ]
+            const isLinkedToVdrTrigger = (row.outputEvents ?? []).some((oe: string) =>
+                allOutputTriggersForVdrCheck.find((x: any) => x.uuid === oe)?.type === 'VDR_SNAPSHOT_ARTIFACT'
+            )
+            if (isLinkedToVdrTrigger && row.conditionGroup && hasMixedOrApprovalGroup(row.conditionGroup)) {
+                els.push(h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NIcon, { class: 'icons', size: 25, style: 'color: #f0a020; margin-left: 4px;' }, () => h(AlertCircle)),
+                    default: () => 'This trigger has a mixed OR condition group (approval + non-approval). ' +
+                        'The backend cannot identify which approval fired it — VDR snapshots will be DATE-type (no deduplication).'
+                }))
+            }
             return h('div', els)
         }
     },
