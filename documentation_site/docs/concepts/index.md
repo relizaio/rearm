@@ -94,3 +94,44 @@ A Supply-Chain Evidence Store is a system of record that collects, stores, versi
 This includes SBOMs, HBOMs, FBOMs, VEX, BOV, SARIF, attestations, build metadata, and OCI artefacts (all cryptographically linked, diffable, and retained for regulatory and audit-readiness, e.g., EU CRA 10-year and longer retention requirement).
 
 The system provides traceability from sources to build, component, component release, product, product release, deployment and then decomission across multi-tier suppliers, and supports sharing with customers, auditors, and regulators through manual export and sharing and/or controlled transparency APIs.
+
+## Changelog
+
+Changelog is a date-range comparison that shows what changed across one or more components between two points in time. It covers three types of changes: Code, SBOM dependencies, and Security Findings.
+
+### Aggregation Modes
+
+Changelogs support two aggregation modes, selectable per view:
+
+- **NONE** — per-release breakdown. Each release in the date range is shown individually with its own changes. This is useful for auditing exactly what changed and when.
+- **AGGREGATED** — summary view. All changes across the date range are collapsed into a single diff, eliminating intermediate noise. A dependency added then removed within the same period does not appear as a net change. Applies to Code, SBOM, and Finding changes.
+
+### Code Changelog
+
+Shows Git commits associated with releases in the selected period. In NONE mode, commits are listed per release. In AGGREGATED mode, commits are grouped by branch (or by component for Products).
+
+### SBOM Changelog
+
+Tracks changes to SBOM dependencies (by package URL / purl) across the period.
+
+- **Added** — packages that are net-new across the period
+- **Removed** — packages no longer present by the end of the period
+- **Redistributed** *(AGGREGATED only)* — packages moved between components; present in the organization but added in one component while removed from another
+- **Transient** *(AGGREGATED only)* — packages that appeared and disappeared within the same component during the period without leaving a net trace
+
+### Finding Changelog
+
+Tracks security findings (vulnerabilities, policy violations, weaknesses) across the period.
+
+**Component-level** (3 categories):
+- **New** — findings first detected in this component during the period
+- **Still Present** — findings that pre-date the period and remain unresolved
+- **Resolved** — findings that existed before and are no longer detected
+
+**Organization-level** (4 categories, across all components):
+- **New** — first occurrence of this finding across the entire organization
+- **Partially Resolved** — resolved in some components but still present in others
+- **Inherited Technical Debt** — pre-existed throughout the entire period in the components being compared; unresolved carry-over
+- **Fully Resolved** — eliminated across all affected components, not present in any latest release
+
+A **Net Change** metric is shown for both levels: new findings minus resolved findings for the period.
