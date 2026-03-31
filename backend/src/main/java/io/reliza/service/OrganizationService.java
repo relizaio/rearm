@@ -404,13 +404,8 @@ public class OrganizationService {
 			String contentStr = "Please click <a clicktracking=off href=\"" + relizaConfigProps.getBaseuri() + "/joinOrganization/" 
 					+ urlSafeKey + "\">the link </a> to join organization. The link is valid for 48 hours. Note that by clicking the link you are also accepting ReARM cookie and privacy policies.";
 			emailService.sendEmail(List.of(userEmail), emailSubject, "text/html", contentStr);
-
-			var wud = userService.getUserData(wu.getLastUpdatedBy()).get();
-
 			String admingEmailSub = "New user invited to join the organizaiton " + orgName + " on ReARM";
-			String adminEmailContent = "<a clicktracking=off href=\"mailto:" + wud.getEmail() + "\">" + wud.getName() 
-			+ "</a> invited a new user with the email: " + userEmail + " to join the organization "+ orgName 
-			+ " on ReARM with permission: " + type.toString() + "."; 
+			String adminEmailContent = "Admin user with uuid = " + wu.getLastUpdatedBy() + " invited a new user to join the organization " + orgName + " on ReARM with permission: " + type.toString() + ". Check pending invitations for details.";
 			var adminEmails = userService.listOrgAdminUsersDataByOrg(od.getUuid()).stream().map(admin -> admin.getEmail()).toList();
 			emailService.sendEmail(adminEmails, admingEmailSub, "text/html", adminEmailContent);
 			od = OrganizationData.orgDataFromDbRecord(o);

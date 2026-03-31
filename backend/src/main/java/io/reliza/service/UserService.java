@@ -567,7 +567,7 @@ public class UserService {
 		}
 		// if email is supplied and email is present, make sure they match
 		if (proceed && !StringUtils.isEmpty(ud.getEmail()) && StringUtils.isNotEmpty(email) && !ud.getEmail().equals(email)) {
-			log.error("Signed up user supplied email = " + email + " , but had email = " + ud.getEmail());
+			log.error("Signed up user uuid = " + ud.getUuid() + " had email mismatch on signup");
 			proceed = false;
 		}
 		if (proceed && StringUtils.isNotEmpty(email)) {
@@ -791,7 +791,7 @@ public class UserService {
 				User u = getUser(ud.getUuid()).get();
 				u = saveUser(u, Utils.dataToRecord(ud), WhoUpdated.getWhoUpdated(ud));
 				oud = Optional.of(UserData.dataFromRecord(u));
-				log.info("New User Verified with email : ", newEmail);
+				log.info("New User Verified, uuid = {}", ud.getUuid());
 			} else {
 				oud = Optional.empty();
 			}
@@ -922,7 +922,7 @@ public class UserService {
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
 					u = setUserPermission(u.getUuid(), USER_ORG, PermissionScope.ORGANIZATION, USER_ORG, pt, Set.of(), null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 					OrganizationData od = getOrganizationService.getOrganizationData(USER_ORG).get();
-					sendEmailToOrgAdminsOnUserJoined(od, email, pt);
+					sendEmailToOrgAdminsOnUserJoined(od, u.getUuid(), pt);
 				} else if (InstallationType.DEMO == getInstallationType()) {
 					PermissionType pt = isFirstUser ? PermissionType.ADMIN : PermissionType.READ_ONLY;
 					u = createUser(name, email, true, List.of(USER_ORG), sub, oauthType, WhoUpdated.getAutoWhoUpdated());
@@ -930,7 +930,7 @@ public class UserService {
 							Set.of(PermissionFunction.FINDING_ANALYSIS_READ, PermissionFunction.ARTIFACT_DOWNLOAD),
 							null, WhoUpdated.getWhoUpdated(UserData.dataFromRecord(u)));
 					OrganizationData od = getOrganizationService.getOrganizationData(USER_ORG).get();
-					sendEmailToOrgAdminsOnUserJoined(od, email, pt);
+					sendEmailToOrgAdminsOnUserJoined(od, u.getUuid(), pt);
 				} else if (InstallationType.MANAGED_SERVICE == getInstallationType()) {
 					UUID defaultOrg = systemInfoService.getDefaultOrg();
 					if ( null == defaultOrg && isFirstUser ) {
@@ -957,7 +957,7 @@ public class UserService {
 							? orgWidePermission.get().getType() 
 							: PermissionType.NONE;
 
-						sendEmailToOrgAdminsOnUserJoined(od, email, effectivePermissionType);
+						sendEmailToOrgAdminsOnUserJoined(od, u.getUuid(), effectivePermissionType);
 					}
 				} else {
 					Boolean isEmailVerified = Boolean.parseBoolean(creds.getClaimAsString("email_verified"));
@@ -994,9 +994,9 @@ public class UserService {
 		return emailService.sendEmail(emails, subject, contentType, contentStr);
 	}
 
-	public void sendEmailToOrgAdminsOnUserJoined(OrganizationData od, String userEmail, PermissionType permissionType) {
+	public void sendEmailToOrgAdminsOnUserJoined(OrganizationData od, UUID userUuid, PermissionType permissionType) {
 		String adminEmailSub = "New user joined the organizaiton " + od.getName() + " on ReARM at " + relizaConfigProps.getBaseuri();
-		String adminEmailContent = "A new user with the email " + userEmail + 
+		String adminEmailContent = "A new user with the uuid " + userUuid + 
 		" joined the organization "+ od.getName() 
 		+ " on ReARM with permission: " + permissionType.toString() + ".";
 		if (PermissionType.NONE == permissionType) {
