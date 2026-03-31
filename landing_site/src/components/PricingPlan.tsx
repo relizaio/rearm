@@ -61,7 +61,7 @@ function detectRegionType(): RegionType {
 
 function getRegionPricesForType(regionType: RegionType): RegionPrices {
   let currencySymbol = "$";
-  let startupBase = 125;
+  let startupBase = 195;
   let startupPerUser = 45;
   let standardBase = 1250;
   let standardPerUser = 70;
@@ -69,35 +69,35 @@ function getRegionPricesForType(regionType: RegionType): RegionPrices {
 
   if (regionType === "EU") {
     currencySymbol = "€";
-    startupBase = 110;
+    startupBase = 165;
     startupPerUser = 40;
     standardBase = 1090;
     standardPerUser = 60;
     enterprise = "€65";
   } else if (regionType === "CA") {
     currencySymbol = "C$";
-    startupBase = 160;
+    startupBase = 250;
     startupPerUser = 60;
     standardBase = 1700;
     standardPerUser = 95;
     enterprise = "C$100";
   } else if (regionType === "GB") {
     currencySymbol = "£";
-    startupBase = 95;
+    startupBase = 145;
     startupPerUser = 35;
     standardBase = 940;
     standardPerUser = 55;
     enterprise = "£60";
   } else if (regionType === "AU") {
     currencySymbol = "A$";
-    startupBase = 175;
+    startupBase = 275;
     startupPerUser = 65;
     standardBase = 1770;
     standardPerUser = 100;
     enterprise = "A$105";
   } else if (regionType === "SG") {
     currencySymbol = "S$";
-    startupBase = 160;
+    startupBase = 245;
     startupPerUser = 55;
     standardBase = 1600;
     standardPerUser = 90;
