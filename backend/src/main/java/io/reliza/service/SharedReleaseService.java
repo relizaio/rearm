@@ -89,6 +89,11 @@ public class SharedReleaseService {
 	}
 	
 	@Transactional
+	public void touchReleaseLastScanned(UUID releaseUuid) {
+		repository.touchLastScanned(releaseUuid);
+	}
+
+	@Transactional
 	public void saveReleaseMetrics (Release r, ReleaseMetricsDto metrics) {
 		try {
 			if (r.getMetrics() != null) {

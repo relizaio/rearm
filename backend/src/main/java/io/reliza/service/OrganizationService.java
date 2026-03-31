@@ -442,7 +442,7 @@ public class OrganizationService {
 				saveOrganization(org, Utils.dataToRecord(od), WhoUpdated.getWhoUpdated(ud));
 				oud = Optional.of(ud);
 
-				userService.sendEmailToOrgAdminsOnUserJoined(od, oio.get().getEmail(), oio.get().getType());
+				userService.sendEmailToOrgAdminsOnUserJoined(od, ud.getUuid(), oio.get().getType());
 			}
 		}
 		return oud;

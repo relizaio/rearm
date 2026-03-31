@@ -83,6 +83,8 @@ public class ReleaseMetricsComputeService {
 			rd.setMetrics(rmd);
 			if (!rmd.equals(originalMetrics)) {
 				sharedReleaseService.saveReleaseMetrics(r, rmd);
+			} else {
+				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
 		}
 	}
@@ -104,6 +106,8 @@ public class ReleaseMetricsComputeService {
 			if (!clonedMetrics.equals(originalMetrics)) {
 				rd.setMetrics(clonedMetrics);
 				sharedReleaseService.saveReleaseMetrics(r, clonedMetrics);
+			} else {
+				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
 		}
 	}

@@ -126,7 +126,7 @@ public class IntegrationService {
 			.defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
 			.build();
 	
-	final int dtrackBufferSize = 32 * 1024 * 1024;
+	final int dtrackBufferSize = 100 * 1024 * 1024;
     final ExchangeStrategies dtrackExchangeStrategies = ExchangeStrategies.builder()
             .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(dtrackBufferSize))
             .build();
@@ -1028,16 +1028,14 @@ public class IntegrationService {
 			try {
 				return executeDtrackComponentSearch(baseUri, apiToken, queryParams1);
 			} catch (Exception e) {
-				log.error("Error in name search", e);
-				return new LinkedList<Map<String, Object>>();
+				throw new RuntimeException("Error in name search", e);
 			}
 		});
 		var groupFuture = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
 			try {
 				return executeDtrackComponentSearch(baseUri, apiToken, queryParams2);
 			} catch (Exception e) {
-				log.error("Error in group search", e);
-				return new LinkedList<Map<String, Object>>();
+				throw new RuntimeException("Error in group search", e);
 			}
 		});
 		
