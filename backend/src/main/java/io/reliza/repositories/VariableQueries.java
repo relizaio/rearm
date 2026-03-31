@@ -196,8 +196,8 @@ class VariableQueries {
 	protected static final String LIST_ARTIFACTS_BY_ORG = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString";
 	
 	protected static final String LIST_INITIAL_ARTIFACTS_PENDING_DEPENDENCY_TRACK = """
-			select * from rearm.artifacts a where a.record_data->'metrics'->>'lastScanned' is null 
-			and record_data->'metrics'->>'uploadToken' is not null
+			select * from rearm.artifacts a where a.metrics->>'lastScanned' is null 
+			and a.metrics->>'uploadToken' is not null
 		""";
 	
 	protected static final String LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION = """
@@ -206,12 +206,12 @@ class VariableQueries {
 			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
 			and a.record_data->>'type' = 'BOM'
 			and a.record_data->'internalBom'->>'id' is not null
-			and (a.record_data->'metrics'->>'dependencyTrackProject' is null 
-				or a.record_data->'metrics'->>'dependencyTrackProject' = '')
-			and (a.record_data->'metrics'->>'dtrackProjectDeleted' is null
-				or a.record_data->'metrics'->>'dtrackProjectDeleted' = 'false')
-			and (a.record_data->'metrics'->>'dtrackSubmissionFailed' is null
-				or a.record_data->'metrics'->>'dtrackSubmissionFailed' = 'false')
+			and (a.metrics->>'dependencyTrackProject' is null 
+				or a.metrics->>'dependencyTrackProject' = '')
+			and (a.metrics->>'dtrackProjectDeleted' is null
+				or a.metrics->>'dtrackProjectDeleted' = 'false')
+			and (a.metrics->>'dtrackSubmissionFailed' is null
+				or a.metrics->>'dtrackSubmissionFailed' = 'false')
 			order by a.record_data->>'createdDate' desc
 			limit 20
 		""";
@@ -220,39 +220,39 @@ class VariableQueries {
 	+ " and jsonb_contains(record_data, jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))";
 	
 	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECTS = """
-			select * from rearm.artifacts a where a.record_data->'metrics'->>'dependencyTrackProject' in (:dtrackProjectIds)
+			select * from rearm.artifacts a where a.metrics->>'dependencyTrackProject' in (:dtrackProjectIds)
 		""";
 	
 	protected static final String LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG = """
-			select distinct a.record_data->'metrics'->>'dependencyTrackProject' as dtrack_project
+			select distinct a.metrics->>'dependencyTrackProject' as dtrack_project
 			from rearm.artifacts a 
 			where a.record_data->>'org' = :orgUuidAsString
 			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
 			and a.record_data->>'type' = 'BOM'
 			and a.record_data->'internalBom'->>'id' is not null
-			and a.record_data->'metrics'->>'dependencyTrackProject' is not null
-			and a.record_data->'metrics'->>'dependencyTrackProject' != ''
-			and (a.record_data->'metrics'->>'dtrackProjectDeleted' is null 
-				or a.record_data->'metrics'->>'dtrackProjectDeleted' = 'false')
+			and a.metrics->>'dependencyTrackProject' is not null
+			and a.metrics->>'dependencyTrackProject' != ''
+			and (a.metrics->>'dtrackProjectDeleted' is null 
+				or a.metrics->>'dtrackProjectDeleted' = 'false')
 		""";
 	
 	protected static final String LIST_DISTINCT_DELETED_DTRACK_PROJECTS_BY_ORG = """
-			select distinct a.record_data->'metrics'->>'dependencyTrackProject' as dtrack_project
+			select distinct a.metrics->>'dependencyTrackProject' as dtrack_project
 			from rearm.artifacts a 
 			where a.record_data->>'org' = :orgUuidAsString
-			and a.record_data->'metrics'->>'dependencyTrackProject' is not null
-			and a.record_data->'metrics'->>'dependencyTrackProject' != ''
-			and a.record_data->'metrics'->>'dtrackProjectDeleted' = 'true'
+			and a.metrics->>'dependencyTrackProject' is not null
+			and a.metrics->>'dependencyTrackProject' != ''
+			and a.metrics->>'dtrackProjectDeleted' = 'true'
 		""";
 	
 	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG = """
 			select * from rearm.artifacts a 
 			where a.record_data->>'org' = :orgUuidAsString
-			and a.record_data->'metrics'->>'dependencyTrackProject' = :dtrackProject
+			and a.metrics->>'dependencyTrackProject' = :dtrackProject
 			and (a.record_data->>'status' != 'ARCHIVED' or a.record_data->>'status' is null)
 			and a.record_data->>'type' = 'BOM'
 			and a.record_data->'internalBom'->>'id' is not null
-			order by a.record_data->'metrics'->>'uploadDate' desc nulls last
+			order by a.metrics->>'uploadDate' desc nulls last
 		""";
 	
 	protected static final String LIST_ACTIVE_RELEASE_ARTIFACT_UUIDS = """
@@ -299,9 +299,9 @@ class VariableQueries {
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """
 			SELECT * FROM rearm.artifacts
 				WHERE record_data->>'org' = :orgUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
 					WHERE vuln->>'purl' = :location
 					AND vuln->>'vulnId' = :findingId
 				)
@@ -310,9 +310,9 @@ class VariableQueries {
 	protected static final String FIND_ARTIFACTS_WITH_VIOLATION = """
 			SELECT * FROM rearm.artifacts
 				WHERE record_data->>'org' = :orgUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'violationDetails') AS violation
+					SELECT 1 FROM jsonb_array_elements(metrics->'violationDetails') AS violation
 					WHERE violation->>'purl' = :location
 					AND violation->>'type' = :findingId
 				)
@@ -321,9 +321,9 @@ class VariableQueries {
 	protected static final String FIND_ARTIFACTS_WITH_WEAKNESS = """
 			SELECT * FROM rearm.artifacts
 				WHERE record_data->>'org' = :orgUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'weaknessDetails') AS weakness
+					SELECT 1 FROM jsonb_array_elements(metrics->'weaknessDetails') AS weakness
 					WHERE weakness->>'location' = :location
 					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
 				)
@@ -639,7 +639,7 @@ class VariableQueries {
 	""";
 
 	protected static final String FIND_MAX_RELEASE_LAST_SCANNED_TIMESTAMP = """
-		SELECT coalesce(max(cast (record_data->'metrics'->>'lastScanned' as float)), 0) FROM rearm.releases
+		SELECT coalesce(max(cast (metrics->>'lastScanned' as float)), 0) FROM rearm.releases
 	""";
 	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT = """
@@ -647,22 +647,23 @@ class VariableQueries {
 		unprocessedArts AS (
 			SELECT ra.uuid 
 			FROM rearm.artifacts ra 
-			WHERE coalesce(cast (ra.record_data->'metrics'->>'lastScanned' as float), 0) > :cutoffTimestamp
+			WHERE coalesce(cast (ra.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp
 		),
 		releases_with_artifacts AS (
 			SELECT rlzs.*, jsonb_array_elements_text(record_data->'artifacts')::uuid as artifact_uuid
 			FROM rearm.releases rlzs where rlzs.record_data->>'artifacts' != '[]'
 		)
-		SELECT DISTINCT rwa.uuid, rwa.revision, rwa.schema_version, rwa.created_date, rwa.last_updated_date, rwa.record_data
+		SELECT DISTINCT rwa.uuid, rwa.revision, rwa.metrics_revision, rwa.schema_version, rwa.created_date, rwa.last_updated_date, rwa.record_data, rwa.metrics, rwa.approval_events, rwa.update_events
 		FROM releases_with_artifacts rwa
-		INNER JOIN unprocessedArts ua ON ua.uuid = rwa.artifact_uuid;
-	""";
+		INNER JOIN unprocessedArts ua ON ua.uuid = rwa.artifact_uuid
+		WHERE coalesce(cast (rwa.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp
+		""";
 	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
 	WITH
 	  unprocessedArts (uuid) AS (
 	    SELECT ra.uuid FROM rearm.artifacts ra 
-	    WHERE coalesce(cast(ra.record_data->'metrics'->>'lastScanned' as float), 0) > :cutoffTimestamp
+	    WHERE coalesce(cast(ra.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp
 	  ),
 	  unprocessedSces (uuid) AS (
 	    SELECT DISTINCT sce.uuid 
@@ -672,12 +673,12 @@ class VariableQueries {
 	SELECT rlzs.* FROM unprocessedSces, rearm.releases rlzs
 	WHERE rlzs.record_data->>'sourceCodeEntry' = cast(unprocessedSces.uuid as text);
 	""";
-	
+
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES = """
 	WITH
 	  unprocessedArts (uuid) AS (
 	    SELECT ra.uuid FROM rearm.artifacts ra 
-	    WHERE coalesce(cast(ra.record_data->'metrics'->>'lastScanned' as float), 0) > :cutoffTimestamp
+	    WHERE coalesce(cast(ra.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp
 	  ),
 	  unprocessedDeliverables (uuid) AS (
 	    SELECT DISTINCT del.uuid 
@@ -692,20 +693,20 @@ class VariableQueries {
 	SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
 	WHERE rlzs.uuid = cast(unprocessedRlzIds.uuid as uuid);
 	""";
-	
+
 	protected static final String FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE = """
 		WITH
 		  lastComputedRlz (maxVal) AS (
-		    select coalesce(max(cast (record_data->'metrics'->>'lastScanned' as float)), 0) AS lastUpd from rearm.releases
-		  )
-	    SELECT rlz.* from lastComputedRlz, rearm.releases rlz where coalesce(cast (rlz.record_data->'metrics'->>'lastScanned' as float), 0) < (lastComputedRlz.maxVal - 0.01)
+	    select coalesce(max(cast (metrics->>'lastScanned' as float)), 0) AS lastUpd from rearm.releases
+	  )
+    SELECT rlz.* from lastComputedRlz, rearm.releases rlz where coalesce(cast (rlz.metrics->>'lastScanned' as float), 0) < (lastComputedRlz.maxVal - 0.01)
 	    AND rlz.record_data->>'parentReleases' != '[]';
 			""";
 	
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE = """
 		SELECT * FROM rearm.releases 
-			 WHERE last_updated_date - interval '15 seconds' > to_timestamp(coalesce(cast (record_data->'metrics'->>'lastScanned' as float), 0));
-	""";
+			 WHERE last_updated_date - interval '15 seconds' > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0));
+		""";
 
 	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACT = """
 		WITH
@@ -773,9 +774,9 @@ class VariableQueries {
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY = """
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
 					WHERE vuln->>'purl' = :location
 					AND vuln->>'vulnId' = :findingId
 				)
@@ -784,9 +785,9 @@ class VariableQueries {
 	protected static final String FIND_RELEASES_WITH_VIOLATION = """
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'violationDetails') AS violation
+					SELECT 1 FROM jsonb_array_elements(metrics->'violationDetails') AS violation
 					WHERE violation->>'purl' = :location
 					AND violation->>'type' = :findingId
 				)
@@ -795,9 +796,9 @@ class VariableQueries {
 	protected static final String FIND_RELEASES_WITH_WEAKNESS = """
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'weaknessDetails') AS weakness
+					SELECT 1 FROM jsonb_array_elements(metrics->'weaknessDetails') AS weakness
 					WHERE weakness->>'location' = :location
 					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
 				)
@@ -807,9 +808,9 @@ class VariableQueries {
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'branch' = :branchUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
 					WHERE vuln->>'purl' = :location
 					AND vuln->>'vulnId' = :findingId
 				)
@@ -819,9 +820,9 @@ class VariableQueries {
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'branch' = :branchUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'violationDetails') AS violation
+					SELECT 1 FROM jsonb_array_elements(metrics->'violationDetails') AS violation
 					WHERE violation->>'purl' = :location
 					AND violation->>'type' = :findingId
 				)
@@ -831,9 +832,9 @@ class VariableQueries {
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'branch' = :branchUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'weaknessDetails') AS weakness
+					SELECT 1 FROM jsonb_array_elements(metrics->'weaknessDetails') AS weakness
 					WHERE weakness->>'location' = :location
 					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
 				)
@@ -843,9 +844,9 @@ class VariableQueries {
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'component' = :componentUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
 					WHERE vuln->>'purl' = :location
 					AND vuln->>'vulnId' = :findingId
 				)
@@ -855,9 +856,9 @@ class VariableQueries {
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'component' = :componentUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'violationDetails') AS violation
+					SELECT 1 FROM jsonb_array_elements(metrics->'violationDetails') AS violation
 					WHERE violation->>'purl' = :location
 					AND violation->>'type' = :findingId
 				)
@@ -867,9 +868,9 @@ class VariableQueries {
 			SELECT * FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'component' = :componentUuidAsString
-				AND record_data->'metrics' IS NOT NULL
+				AND metrics IS NOT NULL
 				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(record_data->'metrics'->'weaknessDetails') AS weakness
+					SELECT 1 FROM jsonb_array_elements(metrics->'weaknessDetails') AS weakness
 					WHERE weakness->>'location' = :location
 					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
 				)
@@ -1293,19 +1294,19 @@ class VariableQueries {
 	protected static final String FIND_RELEASES_BY_CVE_ID = """
 			SELECT * FROM rearm.releases r
 			WHERE r.record_data->>'org' = :orgUuidAsString
-			AND r.record_data->'metrics' IS NOT NULL
+			AND r.metrics IS NOT NULL
 			AND (
 				EXISTS (
-					SELECT 1 FROM jsonb_array_elements(r.record_data->'metrics'->'vulnerabilityDetails') AS vuln
+					SELECT 1 FROM jsonb_array_elements(r.metrics->'vulnerabilityDetails') AS vuln
 					WHERE vuln->>'vulnId' = :cveId
 				)
 				OR EXISTS (
-					SELECT 1 FROM jsonb_array_elements(r.record_data->'metrics'->'vulnerabilityDetails') AS vuln,
+					SELECT 1 FROM jsonb_array_elements(r.metrics->'vulnerabilityDetails') AS vuln,
 					jsonb_array_elements(vuln->'aliases') AS alias
 					WHERE alias->>'aliasId' = :cveId
 				)
 				OR EXISTS (
-					SELECT 1 FROM jsonb_array_elements(r.record_data->'metrics'->'weaknessDetails') AS weakness
+					SELECT 1 FROM jsonb_array_elements(r.metrics->'weaknessDetails') AS weakness
 					WHERE weakness->>'cweId' = :cveId
 				)
 			)

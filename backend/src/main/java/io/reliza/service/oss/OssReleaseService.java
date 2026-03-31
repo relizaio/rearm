@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -127,24 +128,49 @@ public class OssReleaseService {
 	}
 
 	public enum AcollectionMode { RESOLVE, SKIP }
-	
+
+	@Transactional
+	public Release saveRelease (Release r, ReleaseData rd, WhoUpdated wu) {
+		return saveRelease(r, rd, wu, true, AcollectionMode.RESOLVE);
+	}
+
+	@Transactional
+	public Release saveRelease (Release r, ReleaseData rd, WhoUpdated wu, boolean considerTriggers) {
+		return saveRelease(r, rd, wu, considerTriggers, AcollectionMode.RESOLVE);
+	}
+
+	@Transactional
+	public Release saveRelease (Release r, ReleaseData rd, WhoUpdated wu, AcollectionMode acollectionMode) {
+		return saveRelease(r, rd, wu, true, acollectionMode);
+	}
+
+	@Transactional
+	public Release saveRelease (Release r, ReleaseData rd, WhoUpdated wu, boolean considerTriggers, AcollectionMode acollectionMode) {
+		return saveRelease(r, Utils.dataToRecord(rd), rd, wu, considerTriggers, acollectionMode);
+	}
+
 	@Transactional
 	public Release saveRelease (Release r, Map<String,Object> recordData, WhoUpdated wu) {
-		return saveRelease (r, recordData, wu, true, AcollectionMode.RESOLVE);
+		return saveRelease (r, recordData, null, wu, true, AcollectionMode.RESOLVE);
 	}
 			
 	@Transactional
 	public Release saveRelease (Release r, Map<String,Object> recordData, WhoUpdated wu, boolean considerTriggers) {
-		return saveRelease (r, recordData, wu, considerTriggers, AcollectionMode.RESOLVE);
+		return saveRelease (r, recordData, null, wu, considerTriggers, AcollectionMode.RESOLVE);
 	}
 	
 	@Transactional
 	public Release saveRelease (Release r, Map<String,Object> recordData, WhoUpdated wu, AcollectionMode acollectionMode) {
-		return saveRelease (r, recordData, wu, true, acollectionMode);
+		return saveRelease (r, recordData, null, wu, true, acollectionMode);
 	}
 	
 	@Transactional
 	public Release saveRelease (Release r, Map<String,Object> recordData, WhoUpdated wu, boolean considerTriggers, AcollectionMode acollectionMode) {
+		return saveRelease(r, recordData, null, wu, considerTriggers, acollectionMode);
+	}
+
+	@Transactional
+	public Release saveRelease (Release r, Map<String,Object> recordData, ReleaseData rd, WhoUpdated wu, boolean considerTriggers, AcollectionMode acollectionMode) {
 		// let's add some validation here
 		// per schema version 0 we require that schema version 0 has name and project
 		if (null == recordData || recordData.isEmpty() ||  null == recordData.get(CommonVariables.VERSION_FIELD)) {
@@ -166,6 +192,15 @@ public class OssReleaseService {
 			auditService.createAndSaveAuditRecord(TableName.RELEASES, r);
 		}
 		r.setRecordData(recordData);
+		if (rd != null) {
+			r.setMetrics(rd.getMetrics() != null ? Utils.OM.convertValue(rd.getMetrics(), LinkedHashMap.class) : null);
+			r.setApprovalEvents(rd.getApprovalEvents() != null
+				? rd.getApprovalEvents().stream().map(e -> (Map<String,Object>) Utils.OM.convertValue(e, LinkedHashMap.class)).toList()
+				: null);
+			r.setUpdateEvents(rd.getUpdateEvents() != null
+				? rd.getUpdateEvents().stream().map(e -> (Map<String,Object>) Utils.OM.convertValue(e, LinkedHashMap.class)).toList()
+				: null);
+		}
 		log.debug("setting release recordData:{}", recordData);
 		r = (Release) WhoUpdated.injectWhoUpdatedData(r, wu);
 		r = repository.save(r);

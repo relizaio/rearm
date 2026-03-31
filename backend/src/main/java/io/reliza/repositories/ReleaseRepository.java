@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
@@ -308,5 +309,10 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_RELEASES_BY_CVE_ID,
 			nativeQuery = true)
 	List<Release> findReleasesByCveId(String orgUuidAsString, String cveId);
-	
+
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases SET metrics = CAST(:metrics AS jsonb), metrics_revision = metrics_revision + 1 WHERE uuid = :uuid", nativeQuery = true)
+	void updateMetrics(@Param("uuid") UUID uuid, @Param("metrics") String metrics);
+
 }

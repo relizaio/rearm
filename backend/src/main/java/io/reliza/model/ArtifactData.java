@@ -306,6 +306,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	private List<TagRecord> tags = new ArrayList<>();
 	private StatusEnum status; // HOW TO ASSIGN, ANY FOR NOW
 	private String version; // FIGURE OUT VERSIONING 
+	@JsonIgnore
 	private DependencyTrackIntegration metrics = new DependencyTrackIntegration();
 	/**
 	 * Artifact may have its own artifacts - this is for signature related artifacts, maybe there will be more use cases discovered later
@@ -349,6 +350,9 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		ad.setUuid(a.getUuid());
 		ad.setCreatedDate(a.getCreatedDate());
 		ad.setUpdatedDate(a.getLastUpdatedDate());
+		if (a.getMetrics() != null) {
+			ad.setMetrics(Utils.OM.convertValue(a.getMetrics(), DependencyTrackIntegration.class));
+		}
 		return ad;
 	}
 

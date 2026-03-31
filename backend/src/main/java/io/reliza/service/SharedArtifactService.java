@@ -5,6 +5,7 @@ package io.reliza.service;
 
 import java.security.MessageDigest;
 import java.time.ZonedDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,7 +34,10 @@ import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
+import io.reliza.model.MetricsAudit;
+import io.reliza.model.MetricsAudit.MetricsEntityType;
 import io.reliza.repositories.ArtifactRepository;
+import io.reliza.repositories.MetricsAuditRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
@@ -45,6 +49,9 @@ public class SharedArtifactService {
 
 	@Autowired
     private AuditService auditService;
+
+	@Autowired
+	private MetricsAuditRepository metricsAuditRepository;
 
     private final String url;
     private final WebClient webClient;
@@ -75,6 +82,26 @@ public class SharedArtifactService {
 	
 	@Autowired
     private RebomService rebomService;
+
+	@Transactional
+	public void saveArtifactMetrics (Artifact a, DependencyTrackIntegration metrics) {
+		try {
+			if (a.getMetrics() != null) {
+				MetricsAudit audit = new MetricsAudit();
+				audit.setEntityType(MetricsEntityType.ARTIFACT);
+				audit.setEntityUuid(a.getUuid());
+				audit.setMetricsRevision(a.getMetricsRevision());
+				audit.setRevisionCreatedDate(ZonedDateTime.now());
+				audit.setEntityCreatedDate(a.getCreatedDate());
+				audit.setMetrics(a.getMetrics());
+				metricsAuditRepository.save(audit);
+			}
+			String metricsJson = Utils.OM.writeValueAsString(metrics);
+			repository.updateMetrics(a.getUuid(), metricsJson);
+		} catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+			throw new IllegalStateException("Failed to serialize artifact metrics for artifact " + a.getUuid(), e);
+		}
+	}
 
 	public Optional<Artifact> getArtifact (UUID uuid) {
 		return repository.findById(uuid);
@@ -285,11 +312,10 @@ public class SharedArtifactService {
 			}
 		} else {
 			// No existing metrics - use new dti as-is
-			ad.setMetrics(dti);
+			existingDti = dti;
 		}
-		
-		Map<String,Object> recordData = Utils.dataToRecord(ad);
-		return saveArtifact(a, recordData, wu);
+		saveArtifactMetrics(a, existingDti);
+		return a;
 	}
 	
 	
@@ -309,7 +335,7 @@ public class SharedArtifactService {
 		}
 		dti.setDtrackSubmissionFailed(true);
 		dti.setDtrackSubmissionFailureReason(failureReason);
-		saveArtifact(a, Utils.dataToRecord(ad), WhoUpdated.getAutoWhoUpdated());
+		saveArtifactMetrics(a, dti);
 	}
 
 	@Transactional
@@ -331,7 +357,7 @@ public class SharedArtifactService {
 			dti.setDtrackSubmissionFailed(false);
 			dti.setDtrackSubmissionAttempts(0);
 			dti.setDtrackSubmissionFailureReason(null);
-			saveArtifact(a, Utils.dataToRecord(ad), WhoUpdated.getAutoWhoUpdated());
+			saveArtifactMetrics(a, dti);
 		}
 	}
 
@@ -340,7 +366,17 @@ public class SharedArtifactService {
 	 * Used for version history transfers where we don't want to create a new snapshot.
 	 */
 	@Transactional
+	protected Artifact saveArtifactWithoutSnapshot(Artifact a, ArtifactData ad, WhoUpdated wu) {
+		return saveArtifactWithoutSnapshot(a, Utils.dataToRecord(ad), ad, wu);
+	}
+
+	@Transactional
 	protected Artifact saveArtifactWithoutSnapshot(Artifact a, Map<String, Object> recordData, WhoUpdated wu) {
+		return saveArtifactWithoutSnapshot(a, recordData, null, wu);
+	}
+
+	@Transactional
+	protected Artifact saveArtifactWithoutSnapshot(Artifact a, Map<String, Object> recordData, ArtifactData ad, WhoUpdated wu) {
 		if(recordData.containsKey("uuid") && null != recordData.get("uuid") && recordData.get("uuid").toString().equals(a.getUuid().toString())){
 			log.debug("record and object ids equal");
 		}else{
@@ -355,12 +391,25 @@ public class SharedArtifactService {
 			a.setLastUpdatedDate(ZonedDateTime.now());
 		}
 		a.setRecordData(recordData);
+		if (ad != null && ad.getMetrics() != null) {
+			a.setMetrics(Utils.OM.convertValue(ad.getMetrics(), LinkedHashMap.class));
+		}
 		a = (Artifact) WhoUpdated.injectWhoUpdatedData(a, wu);
 		return repository.save(a);
 	}
 
 	@Transactional
+	protected Artifact saveArtifact (Artifact a, ArtifactData ad, WhoUpdated wu) {
+		return saveArtifact(a, Utils.dataToRecord(ad), ad, wu);
+	}
+
+	@Transactional
 	protected Artifact saveArtifact (Artifact a, Map<String, Object> recordData, WhoUpdated wu) {
+		return saveArtifact(a, recordData, null, wu);
+	}
+
+	@Transactional
+	protected Artifact saveArtifact (Artifact a, Map<String, Object> recordData, ArtifactData ad, WhoUpdated wu) {
 		if(recordData.containsKey("uuid") && null != recordData.get("uuid") && recordData.get("uuid").toString().equals(a.getUuid().toString())){
 			log.debug("record and object ids equal");
 		}else{
@@ -404,6 +453,9 @@ public class SharedArtifactService {
 			a.setLastUpdatedDate(ZonedDateTime.now());
 		}
 		a.setRecordData(recordData);
+		if (ad != null && ad.getMetrics() != null) {
+			a.setMetrics(Utils.OM.convertValue(ad.getMetrics(), LinkedHashMap.class));
+		}
 		a = (Artifact) WhoUpdated.injectWhoUpdatedData(a, wu);
 		return repository.save(a);
 	}
@@ -429,8 +481,7 @@ public class SharedArtifactService {
 				newArtifact.transferVersionHistory(oldArtifact);
 				
 				// Save the updated artifact WITHOUT adding a self-snapshot
-				Map<String, Object> artifactRecordData = Utils.dataToRecord(newArtifact);
-				saveArtifactWithoutSnapshot(newArtifactOpt.get(), artifactRecordData, wu);
+				saveArtifactWithoutSnapshot(newArtifactOpt.get(), newArtifact, wu);
 				return true;
 			}
 			

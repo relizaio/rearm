@@ -30,6 +30,7 @@ import com.github.packageurl.PackageURL;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
+import org.springframework.transaction.annotation.Transactional;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.EnvironmentType;
 import io.reliza.exceptions.RelizaException;
@@ -48,8 +49,12 @@ import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseVersionComparator;
 import io.reliza.model.dto.CveSearchResultDto;
+import io.reliza.model.MetricsAudit;
+import io.reliza.model.MetricsAudit.MetricsEntityType;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.CveSearchResultDto.BranchWithReleases;
 import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
+import io.reliza.repositories.MetricsAuditRepository;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.repositories.ReleaseRepository;
@@ -76,11 +81,33 @@ public class SharedReleaseService {
 	private final static Integer DEFAULT_NUM_RELEASES_FOR_LATEST_RELEASE = 10;
 	
 	private final ReleaseRepository repository;
+	private final MetricsAuditRepository metricsAuditRepository;
 	
-	SharedReleaseService(ReleaseRepository repository) {
+	SharedReleaseService(ReleaseRepository repository, MetricsAuditRepository metricsAuditRepository) {
 		this.repository = repository;
+		this.metricsAuditRepository = metricsAuditRepository;
 	}
 	
+	@Transactional
+	public void saveReleaseMetrics (Release r, ReleaseMetricsDto metrics) {
+		try {
+			if (r.getMetrics() != null) {
+				MetricsAudit audit = new MetricsAudit();
+				audit.setEntityType(MetricsEntityType.RELEASE);
+				audit.setEntityUuid(r.getUuid());
+				audit.setMetricsRevision(r.getMetricsRevision());
+				audit.setRevisionCreatedDate(ZonedDateTime.now());
+				audit.setEntityCreatedDate(r.getCreatedDate());
+				audit.setMetrics(r.getMetrics());
+				metricsAuditRepository.save(audit);
+			}
+			String metricsJson = Utils.OM.writeValueAsString(metrics);
+			repository.updateMetrics(r.getUuid(), metricsJson);
+		} catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+			throw new IllegalStateException("Failed to serialize release metrics for release " + r.getUuid(), e);
+		}
+	}
+
 	public Optional<Release> getRelease (UUID uuid) {
 		return repository.findById(uuid);
 	}

@@ -19,6 +19,7 @@ import org.hibernate.annotations.Type;
 import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import java.util.List;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import io.reliza.common.Utils;
@@ -48,6 +49,21 @@ public class Release implements Serializable, RelizaEntity {
 	@Type(JsonBinaryType.class)
 	@Column(columnDefinition = ModelProperties.JSONB)
 	private Map<String,Object> recordData;
+
+	@Column(name = "metrics_revision", nullable = false)
+	private int metricsRevision = 0;
+
+	@Type(JsonBinaryType.class)
+	@Column(columnDefinition = ModelProperties.JSONB)
+	private Map<String,Object> metrics;
+
+	@Type(JsonBinaryType.class)
+	@Column(name = "approval_events", columnDefinition = ModelProperties.JSONB)
+	private List<Map<String,Object>> approvalEvents;
+
+	@Type(JsonBinaryType.class)
+	@Column(name = "update_events", columnDefinition = ModelProperties.JSONB)
+	private List<Map<String,Object>> updateEvents;
 	
 	@Override
 	public UUID getUuid() {
@@ -93,6 +109,38 @@ public class Release implements Serializable, RelizaEntity {
 	@Override
 	public void setRecordData(Map<String, Object> recordData) {
 		this.recordData = recordData;
+	}
+
+	public int getMetricsRevision() {
+		return metricsRevision;
+	}
+
+	public void setMetricsRevision(int metricsRevision) {
+		this.metricsRevision = metricsRevision;
+	}
+
+	public Map<String,Object> getMetrics() {
+		return metrics;
+	}
+
+	public void setMetrics(Map<String,Object> metrics) {
+		this.metrics = metrics;
+	}
+
+	public List<Map<String,Object>> getApprovalEvents() {
+		return approvalEvents;
+	}
+
+	public void setApprovalEvents(List<Map<String,Object>> approvalEvents) {
+		this.approvalEvents = approvalEvents;
+	}
+
+	public List<Map<String,Object>> getUpdateEvents() {
+		return updateEvents;
+	}
+
+	public void setUpdateEvents(List<Map<String,Object>> updateEvents) {
+		this.updateEvents = updateEvents;
 	}
 
 	@Override

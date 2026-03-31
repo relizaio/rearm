@@ -6,9 +6,11 @@ package io.reliza.repositories;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.Artifact;
 
@@ -88,4 +90,9 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 			value = VariableQueries.FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG,
 			nativeQuery = true)
 	List<Artifact> findArtifactsByDtrackProjectAndOrg(String orgUuidAsString, String dtrackProject);
+
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.artifacts SET metrics = CAST(:metrics AS jsonb), metrics_revision = metrics_revision + 1 WHERE uuid = :uuid", nativeQuery = true)
+	void updateMetrics(@Param("uuid") UUID uuid, @Param("metrics") String metrics);
 }

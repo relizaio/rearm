@@ -344,12 +344,9 @@ public class DtrackCleanupQueryTest {
 			"Orphaned project should be found before marking as deleted");
 		
 		// Mark the artifact as having a deleted DTrack project (simulating cleanup job)
-		Map<String, Object> recordData = orphanedArtifact.getRecordData();
-		@SuppressWarnings("unchecked")
-		Map<String, Object> metrics = (Map<String, Object>) recordData.get("metrics");
+		Map<String, Object> metrics = orphanedArtifact.getMetrics();
 		metrics.put("dtrackProjectDeleted", true);
-		recordData.put("metrics", metrics);
-		orphanedArtifact.setRecordData(recordData);
+		orphanedArtifact.setMetrics(metrics);
 		orphanedArtifact.setLastUpdatedDate(ZonedDateTime.now());
 		artifactRepository.save(orphanedArtifact);
 		
@@ -390,13 +387,15 @@ public class DtrackCleanupQueryTest {
 		InternalBom internalBom = new InternalBom(UUID.randomUUID(), null);
 		artifactData.setInternalBom(internalBom);
 		
-		ArtifactData.DependencyTrackIntegration dti = new ArtifactData.DependencyTrackIntegration();
-		dti.setDependencyTrackProject(dtrackProjectId);
-		artifactData.setMetrics(dti);
-		
 		@SuppressWarnings("unchecked")
 		Map<String, Object> recordData = objectMapper.convertValue(artifactData, Map.class);
 		artifact.setRecordData(recordData);
+
+		ArtifactData.DependencyTrackIntegration dti = new ArtifactData.DependencyTrackIntegration();
+		dti.setDependencyTrackProject(dtrackProjectId);
+		@SuppressWarnings("unchecked")
+		Map<String, Object> metricsMap = objectMapper.convertValue(dti, Map.class);
+		artifact.setMetrics(metricsMap);
 		
 		return artifactRepository.save(artifact);
 	}

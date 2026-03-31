@@ -221,7 +221,18 @@ public class ReleaseMetricsDto implements Cloneable {
              Objects.equals(this.policyViolationsLicenseUnaudited, otherRmd.policyViolationsLicenseUnaudited) &&
              Objects.equals(this.policyViolationsOperationalTotal, otherRmd.policyViolationsOperationalTotal) &&
              Objects.equals(this.policyViolationsOperationalAudited, otherRmd.policyViolationsOperationalAudited) &&
-             Objects.equals(this.policyViolationsOperationalUnaudited, otherRmd.policyViolationsOperationalUnaudited);
+             Objects.equals(this.policyViolationsOperationalUnaudited, otherRmd.policyViolationsOperationalUnaudited) &&
+             detailListEquals(this.vulnerabilityDetails, otherRmd.vulnerabilityDetails) &&
+             detailListEquals(this.violationDetails, otherRmd.violationDetails) &&
+             detailListEquals(this.weaknessDetails, otherRmd.weaknessDetails);
+  	}
+
+  	private static <T> boolean detailListEquals(List<T> a, List<T> b) {
+  		if (a == b) return true;
+  		if (a == null) return b == null || b.isEmpty();
+  		if (b == null) return a.isEmpty();
+  		if (a.size() != b.size()) return false;
+  		return new java.util.HashSet<>(a).equals(new java.util.HashSet<>(b));
   	}
   	
   	@Override
@@ -236,7 +247,10 @@ public class ReleaseMetricsDto implements Cloneable {
   	        policyViolationsSecurityAudited, policyViolationsSecurityUnaudited,
   	        policyViolationsLicenseTotal, policyViolationsLicenseAudited,
   	        policyViolationsLicenseUnaudited, policyViolationsOperationalTotal,
-  	        policyViolationsOperationalAudited, policyViolationsOperationalUnaudited
+  	        policyViolationsOperationalAudited, policyViolationsOperationalUnaudited,
+  	        vulnerabilityDetails != null ? new java.util.HashSet<>(vulnerabilityDetails) : null,
+  	        violationDetails != null ? new java.util.HashSet<>(violationDetails) : null,
+  	        weaknessDetails != null ? new java.util.HashSet<>(weaknessDetails) : null
   	    );
   	}
 

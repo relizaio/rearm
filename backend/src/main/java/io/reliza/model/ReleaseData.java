@@ -210,8 +210,10 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	@JsonProperty
 	private Set<EnvironmentType> approvedEnvironments = new LinkedHashSet<>();
 	
+	@JsonIgnore
 	private List<ReleaseApprovalEvent> approvalEvents = new LinkedList<>();
 	
+	@JsonIgnore
 	private List<ReleaseUpdateEvent> updateEvents = new LinkedList<>();
 	
 	public void addApprovalEvent (ReleaseApprovalEvent rae) {
@@ -232,7 +234,7 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	
 	private List<ReleaseBom> reboms = new ArrayList<>();
 	
-	@JsonProperty
+	@JsonIgnore
 	private ReleaseMetricsDto metrics = new ReleaseMetricsDto();
 
 	@JsonIgnore
@@ -307,6 +309,19 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		ReleaseData rd = Utils.OM.convertValue(recordData, ReleaseData.class);
 		rd.setUuid(r.getUuid());
 		rd.setCreatedDate(r.getCreatedDate());
+		if (r.getMetrics() != null) {
+			rd.setMetrics(Utils.OM.convertValue(r.getMetrics(), ReleaseMetricsDto.class));
+		}
+		if (r.getApprovalEvents() != null) {
+			rd.setApprovalEvents(r.getApprovalEvents().stream()
+				.map(m -> Utils.OM.convertValue(m, ReleaseApprovalEvent.class))
+				.collect(java.util.stream.Collectors.toCollection(LinkedList::new)));
+		}
+		if (r.getUpdateEvents() != null) {
+			rd.setUpdateEvents(r.getUpdateEvents().stream()
+				.map(m -> Utils.OM.convertValue(m, ReleaseUpdateEvent.class))
+				.collect(java.util.stream.Collectors.toCollection(LinkedList::new)));
+		}
 		return rd;
 	}
 	

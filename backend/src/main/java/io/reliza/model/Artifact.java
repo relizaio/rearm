@@ -8,6 +8,8 @@ import java.time.ZonedDateTime;
 import java.util.Map;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -42,6 +44,13 @@ public class Artifact implements Serializable, RelizaEntity {
 	@Type(JsonBinaryType.class)
 	@Column(columnDefinition = ModelProperties.JSONB)
 	private Map<String,Object> recordData;
+
+	@Column(name = "metrics_revision", nullable = false)
+	private int metricsRevision = 0;
+
+	@Type(JsonBinaryType.class)
+	@Column(columnDefinition = ModelProperties.JSONB)
+	private Map<String,Object> metrics;
 	
 	@Override
 	public UUID getUuid() {
@@ -87,6 +96,22 @@ public class Artifact implements Serializable, RelizaEntity {
 	@Override
 	public void setRecordData(Map<String, Object> recordData) {
 		this.recordData = recordData;
+	}
+
+	public int getMetricsRevision() {
+		return metricsRevision;
+	}
+
+	public void setMetricsRevision(int metricsRevision) {
+		this.metricsRevision = metricsRevision;
+	}
+
+	public Map<String,Object> getMetrics() {
+		return metrics;
+	}
+
+	public void setMetrics(Map<String,Object> metrics) {
+		this.metrics = metrics;
 	}
 
 	@Override

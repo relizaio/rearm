@@ -312,8 +312,7 @@ public class ArtifactService {
 			throw new RelizaException("Artifact must have type!");
 		validateCoverageTypeTags(artifactDto.getTags());
 		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto, a.getUuid());
-		Map<String,Object> recordData = Utils.dataToRecord(ad);
-		a = sharedArtifactService.saveArtifact(a, recordData, wu);
+		a = sharedArtifactService.saveArtifact(a, ad, wu);
 		return a;
 	}
 
@@ -359,8 +358,7 @@ public class ArtifactService {
 		
 		validateCoverageTypeTags(preservedTags);
 		ad.setTags(preservedTags);
-		Map<String, Object> recordData = Utils.dataToRecord(ad);
-		return sharedArtifactService.saveArtifact(a, recordData, wu);
+		return sharedArtifactService.saveArtifact(a, ad, wu);
 	}
 
 	/**
@@ -408,8 +406,7 @@ public class ArtifactService {
 		if (artifact.isPresent()) {
 			ArtifactData artifactData = ArtifactData.dataFromRecord(artifact.get());
 			artifactData.setStatus(StatusEnum.ARCHIVED);
-			Map<String,Object> recordData = Utils.dataToRecord(artifactData);
-			sharedArtifactService.saveArtifact(artifact.get(), recordData, wu);
+			sharedArtifactService.saveArtifact(artifact.get(), artifactData, wu);
 			archived = true;
 		}
 		return archived;
@@ -1311,9 +1308,7 @@ public class ArtifactService {
 						dti.setProjectVersion(ad.getMetrics().getProjectVersion());
 						dti.setUploadDate(ad.getMetrics().getUploadDate());
 					}
-					ad.setMetrics(dti);
-					Map<String, Object> recordData = Utils.dataToRecord(ad);
-					sharedArtifactService.saveArtifact(oa.get(), recordData, WhoUpdated.getAutoWhoUpdated());
+					sharedArtifactService.saveArtifactMetrics(oa.get(), dti);
 					log.debug("Artifact metrics updated for artifact: {}", artifactId);
 				} else {
 					log.debug("No metrics changes for artifact: {}", artifactId);
@@ -1642,7 +1637,7 @@ public class ArtifactService {
 						ArtifactData ad = ArtifactData.dataFromRecord(artifact);
 						if (ad.getMetrics() != null) {
 							ad.getMetrics().setUploadDate(now);
-							sharedArtifactService.saveArtifact(artifact, Utils.dataToRecord(ad), WhoUpdated.getAutoWhoUpdated());
+							sharedArtifactService.saveArtifactMetrics(artifact, ad.getMetrics());
 						}
 					}
 					log.debug("Updated uploadDate for {} other artifacts sharing DTrack project {}", artifacts.size() - 1, dtrackProject);

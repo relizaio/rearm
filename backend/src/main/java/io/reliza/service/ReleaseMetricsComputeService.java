@@ -4,7 +4,6 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,17 +13,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import io.reliza.common.Utils;
-import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
-import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.repositories.ReleaseRepository;
-import io.reliza.service.oss.OssReleaseService;
-import io.reliza.service.oss.OssReleaseService.AcollectionMode;
 
 /**
  * Service for computing release metrics.
@@ -49,9 +43,6 @@ public class ReleaseMetricsComputeService {
 
 	@Autowired
 	private VulnAnalysisService vulnAnalysisService;
-
-	@Autowired
-	private OssReleaseService ossReleaseService;
 
 	@Transactional
 	public Optional<Release> getReleaseWriteLocked(UUID uuid) {
@@ -90,8 +81,9 @@ public class ReleaseMetricsComputeService {
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			rmd.setLastScanned(lastScanned);
 			rd.setMetrics(rmd);
-			Map<String,Object> recordData = Utils.dataToRecord(rd);
-			ossReleaseService.saveRelease(r, recordData, WhoUpdated.getAutoWhoUpdated(), AcollectionMode.SKIP);
+			if (!rmd.equals(originalMetrics)) {
+				sharedReleaseService.saveReleaseMetrics(r, rmd);
+			}
 		}
 	}
 
@@ -111,8 +103,7 @@ public class ReleaseMetricsComputeService {
 			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, clonedMetrics);
 			if (!clonedMetrics.equals(originalMetrics)) {
 				rd.setMetrics(clonedMetrics);
-				Map<String,Object> recordData = Utils.dataToRecord(rd);
-				ossReleaseService.saveRelease(r, recordData, WhoUpdated.getAutoWhoUpdated(), AcollectionMode.SKIP);
+				sharedReleaseService.saveReleaseMetrics(r, clonedMetrics);
 			}
 		}
 	}

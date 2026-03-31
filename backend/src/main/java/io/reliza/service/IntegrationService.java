@@ -1649,8 +1649,7 @@ public class IntegrationService {
 				ArtifactData ad = ArtifactData.dataFromRecord(artifact);
 				if (ad.getMetrics() != null && ad.getOrg().equals(orgUuid)) {
 					ad.getMetrics().setDtrackProjectDeleted(true);
-					Map<String, Object> recordData = Utils.dataToRecord(ad);
-					sharedArtifactService.saveArtifact(artifact, recordData, WhoUpdated.getAutoWhoUpdated());
+					sharedArtifactService.saveArtifactMetrics(artifact, ad.getMetrics());
 					totalMarked++;
 				}
 			}
