@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 
@@ -62,6 +63,9 @@ public class AnalyticsMetricsService {
 	private GetComponentService getComponentService;
 	
 	private final AnalyticsMetricsRepository repository;
+
+	private record CachedTodayMetrics(Double cutoffTimestamp, AnalyticsMetricsData data) {}
+	private final Map<UUID, CachedTodayMetrics> todayMetricsCache = new ConcurrentHashMap<>();
 
 	AnalyticsMetricsService(
 		AnalyticsMetricsRepository repository
@@ -346,6 +350,23 @@ public class AnalyticsMetricsService {
 	
 	
 	public AnalyticsMetricsData computeActualAnalyticsMetricsDataForOrg (UUID org, ZonedDateTime createdDate) {
+		LocalDate requestedDate = createdDate.toLocalDate();
+		LocalDate today = LocalDate.now(createdDate.getZone());
+		if (!requestedDate.isBefore(today)) {
+			Double currentCutoff = sharedReleaseService.getMaxReleaseLastScannedTimestamp();
+			if (currentCutoff == null) currentCutoff = 0.0;
+			CachedTodayMetrics cached = todayMetricsCache.get(org);
+			if (cached != null && cached.cutoffTimestamp() >= currentCutoff) {
+				return cached.data();
+			}
+			AnalyticsMetricsData freshData = computeAnalyticsMetricsDataInternal(org, createdDate);
+			todayMetricsCache.put(org, new CachedTodayMetrics(currentCutoff, freshData));
+			return freshData;
+		}
+		return computeAnalyticsMetricsDataInternal(org, createdDate);
+	}
+
+	private AnalyticsMetricsData computeAnalyticsMetricsDataInternal (UUID org, ZonedDateTime createdDate) {
 		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
 		var activeBranches = branchService.listBranchesOfOrg(org).stream()
 				.map(BranchData::branchDataFromDbRecord)

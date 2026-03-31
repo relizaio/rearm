@@ -93,6 +93,10 @@ public class SharedReleaseService {
 		repository.touchLastScanned(releaseUuid);
 	}
 
+	public Double getMaxReleaseLastScannedTimestamp() {
+		return repository.findMaxReleaseLastScannedTimestamp();
+	}
+
 	@Transactional
 	public void saveReleaseMetrics (Release r, ReleaseMetricsDto metrics) {
 		try {
