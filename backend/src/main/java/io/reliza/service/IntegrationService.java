@@ -126,7 +126,7 @@ public class IntegrationService {
 			.defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
 			.build();
 	
-	final int dtrackBufferSize = 100 * 1024 * 1024;
+	final int dtrackBufferSize = 200 * 1024 * 1024;
     final ExchangeStrategies dtrackExchangeStrategies = ExchangeStrategies.builder()
             .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(dtrackBufferSize))
             .build();
