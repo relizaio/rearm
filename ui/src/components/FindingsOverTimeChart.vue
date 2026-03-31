@@ -473,6 +473,12 @@ async function fetchFindingsPerDay(dateOverride?: string) {
     }
 }
 
+function endOfToday(): Date {
+    const d = new Date()
+    d.setHours(23, 59, 59, 999)
+    return d
+}
+
 async function fetchVulnerabilityViolationAnalytics() {
     isLoading.value = true
     try {
@@ -480,7 +486,7 @@ async function fetchVulnerabilityViolationAnalytics() {
         if (props.type === 'ORGANIZATION') {
             if (!orgUuid.value) return
             const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - props.daysBack))
-            const dateToValue = props.dateTo || new Date()
+            const dateToValue = props.dateTo || endOfToday()
             
             resp = await graphqlClient.query({
                 query: gql`
@@ -509,7 +515,7 @@ async function fetchVulnerabilityViolationAnalytics() {
         } else if (props.type === 'BRANCH') {
             if (!props.branchUuid) return
             const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - props.daysBack))
-            const dateToValue = props.dateTo || new Date()
+            const dateToValue = props.dateTo || endOfToday()
             
             resp = await graphqlClient.query({
                 query: gql`
@@ -538,7 +544,7 @@ async function fetchVulnerabilityViolationAnalytics() {
         } else if (props.type === 'COMPONENT') {
             if (!props.componentUuid) return
             const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - props.daysBack))
-            const dateToValue = props.dateTo || new Date()
+            const dateToValue = props.dateTo || endOfToday()
             
             resp = await graphqlClient.query({
                 query: gql`
@@ -567,7 +573,7 @@ async function fetchVulnerabilityViolationAnalytics() {
         } else if (props.type === 'PERSPECTIVE') {
             if (!orgUuid.value || !props.perspectiveUuid) return
             const dateFromValue = props.dateFrom || new Date(new Date().setDate(new Date().getDate() - props.daysBack))
-            const dateToValue = props.dateTo || new Date()
+            const dateToValue = props.dateTo || endOfToday()
             
             resp = await graphqlClient.query({
                 query: gql`
