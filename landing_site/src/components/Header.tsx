@@ -18,6 +18,20 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    function handleScroll() {
+      setMenuOpen(false);
+    }
+
+    if (!menuOpen) {
+      return;
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [menuOpen]);
+
   const closeMenu = () => setMenuOpen(false);
 
   return (
