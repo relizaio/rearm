@@ -512,6 +512,12 @@
                         <div v-else>No vulnerable {{ displayVulnerableComponentType().toLowerCase() }} found.</div>
                     </n-spin>
                 </n-gi>
+                <n-gi span="1">
+                    <most-recent-releases-widget
+                        :org-uuid="myorg?.uuid || ''"
+                        :perspective-uuid="currentPerspectiveUuid"
+                    />
+                </n-gi>
             </n-grid>
 
             <vulnerability-modal
@@ -560,6 +566,7 @@ import MostActiveChart from './MostActiveChart.vue'
 import ReleasesByCve from './ReleasesByCve.vue'
 import ComponentBranchesTable from './ComponentBranchesTable.vue'
 import VulnerabilityModal from './VulnerabilityModal.vue'
+import MostRecentReleasesWidget from './MostRecentReleasesWidget.vue'
 import { processMetricsData } from '@/utils/metrics'
 
 const store = useStore()

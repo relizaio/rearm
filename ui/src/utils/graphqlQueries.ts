@@ -1203,6 +1203,20 @@ query EnvironmentTypes($orgUuid: ID!) {
     environmentTypes(orgUuid: $orgUuid, includeBuiltIn: true)
 }`
 
+const RELEASES_BY_DATE_RANGE_GQL = gql`
+query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!) {
+    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate) {
+        ${MULTI_RELEASE_GQL_DATA}
+    }
+}`
+
+const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL = gql`
+query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!) {
+    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate) {
+        ${MULTI_RELEASE_GQL_DATA}
+    }
+}`
+
 export default {
     BranchGql: BRANCH_GQL_DATA,
     BranchesGql: BRANCHES_GQL,
@@ -1226,4 +1240,6 @@ export default {
     MarketingRelease: MARKETING_RELEASE_GQL_DATA,
     UserData: USER_GQL_DATA,
     EnvironmentTypesGql: ENVIRONMENT_TYPES_GQL,
+    ReleasesByDateRangeGql: RELEASES_BY_DATE_RANGE_GQL,
+    ReleasesByDateRangeAndPerspectiveGql: RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL,
 }
