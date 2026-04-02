@@ -1,7 +1,7 @@
 <template>
     <div class="most-recent-releases-page">
         <div class="page-header">
-            <n-space>
+            <n-space align="center">
                 <n-date-picker
                     v-model:value="startDateValue"
                     type="date"
@@ -12,6 +12,20 @@
                     type="date"
                     placeholder="End Date"
                 />
+                <span>Limit:</span>
+                <n-select
+                    v-model:value="limitPreset"
+                    :options="limitOptions"
+                    style="width: 100px;"
+                    @update:value="onLimitPresetChange"
+                />
+                <n-input-number
+                    v-if="limitPreset === 'custom'"
+                    v-model:value="customLimit"
+                    :min="1"
+                    style="width: 100px;"
+                    placeholder="Custom"
+                />
             </n-space>
         </div>
         <div class="widget-container">
@@ -20,7 +34,7 @@
                 :org-uuid="orgUuid"
                 :perspective-uuid="perspectiveUuid"
                 :show-full-page-icon="false"
-                :max-releases="50"
+                :limit="effectiveLimit"
                 :start-date="dateFrom"
                 :end-date="dateTo"
             />
@@ -38,7 +52,7 @@ export default {
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useStore } from 'vuex'
-import { NSpace, NDatePicker } from 'naive-ui'
+import { NSpace, NDatePicker, NSelect, NInputNumber } from 'naive-ui'
 import MostRecentReleasesWidget from './MostRecentReleasesWidget.vue'
 
 const route = useRoute()
@@ -58,6 +72,23 @@ const endDateValue = ref<number | null>(defaultEndDate)
 
 const dateFrom = computed(() => startDateValue.value ? new Date(startDateValue.value) : undefined)
 const dateTo = computed(() => endDateValue.value ? new Date(endDateValue.value) : undefined)
+
+const limitOptions = [
+    { label: '10', value: 10 },
+    { label: '30', value: 30 },
+    { label: '50', value: 50 },
+    { label: '100', value: 100 },
+    { label: 'Custom', value: 'custom' }
+]
+
+const limitPreset = ref<number | 'custom'>(10)
+const customLimit = ref<number>(10)
+
+const effectiveLimit = computed(() => limitPreset.value === 'custom' ? customLimit.value : limitPreset.value as number)
+
+function onLimitPresetChange(val: number | 'custom') {
+    if (val !== 'custom') customLimit.value = val as number
+}
 
 onMounted(() => {
     if (route.query.fromDate) {

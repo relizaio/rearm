@@ -1,7 +1,14 @@
 <template>
     <div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <h3 style="margin: 0;">Most Recent Releases</h3>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <n-input-number
+                v-if="props.showFullPageIcon"
+                v-model:value="localLimit"
+                style="display: inline-block; width: 80px;"
+                :min="1"
+            />
+            <span v-if="props.showFullPageIcon">Most Recent Releases</span>
+            <h3 v-else style="margin: 0;">Most Recent Releases</h3>
             <router-link
                 v-if="props.showFullPageIcon"
                 :to="{ name: 'MostRecentReleases', params: { orguuid: props.orgUuid } }"
@@ -13,6 +20,7 @@
                 </n-icon>
             </router-link>
         </div>
+        <h3 v-if="props.showFullPageIcon" style="margin-top: 10px;">Most Recent Releases</h3>
         <n-spin :show="loading" style="min-height: 150px;">
             <ol v-if="releases.length">
                 <li v-for="rel in releases" :key="rel.uuid" style="margin-bottom: 8px;">
@@ -68,8 +76,8 @@ export default {
 </script>
 
 <script lang="ts" setup>
-import { ref, Ref, watch, onMounted } from 'vue'
-import { NIcon, NSpin, NSpace, useNotification } from 'naive-ui'
+import { ref, Ref, computed, watch, onMounted } from 'vue'
+import { NIcon, NSpin, NSpace, NInputNumber, useNotification } from 'naive-ui'
 import { ArrowExpand20Regular } from '@vicons/fluent'
 import graphqlClient from '@/utils/graphql'
 import GqlQueries from '@/utils/graphqlQueries'
@@ -81,17 +89,20 @@ const props = withDefaults(defineProps<{
     orgUuid: string
     perspectiveUuid?: string
     showFullPageIcon?: boolean
-    maxReleases?: number
+    limit?: number
     startDate?: Date
     endDate?: Date
 }>(), {
-    showFullPageIcon: true,
-    maxReleases: 5
+    showFullPageIcon: true
 })
 
 const notification = useNotification()
 const loading = ref(false)
 const releases: Ref<any[]> = ref([])
+
+// Internal limit for home-page widget mode; overridden by props.limit on full-page
+const localLimit = ref(5)
+const effectiveLimit = computed(() => props.limit ?? localLimit.value)
 
 const showVulnModal = ref(false)
 const vulnModalRelease: Ref<any> = ref(null)
@@ -130,7 +141,8 @@ async function fetchReleases() {
                 variables: {
                     perspectiveUuid: props.perspectiveUuid,
                     startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString()
+                    endDate: endDate.toISOString(),
+                    limit: effectiveLimit.value
                 },
                 fetchPolicy: 'no-cache'
             })
@@ -141,16 +153,14 @@ async function fetchReleases() {
                 variables: {
                     org: props.orgUuid,
                     startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString()
+                    endDate: endDate.toISOString(),
+                    limit: effectiveLimit.value
                 },
                 fetchPolicy: 'no-cache'
             })
             rawReleases = (response.data as any).releasesByDateRange || []
         }
         releases.value = rawReleases
-            .slice()
-            .sort((a: any, b: any) => new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime())
-            .slice(0, props.maxReleases)
     } catch (error: any) {
         console.error('Error fetching recent releases:', error)
         notification.error({ content: 'Error', meta: 'Failed to load recent releases', duration: 3000 })
@@ -189,6 +199,8 @@ function formatDate(dateStr: string): string {
 
 watch(() => props.perspectiveUuid, () => fetchReleases())
 watch(() => [props.startDate, props.endDate], () => fetchReleases())
+watch(() => props.limit, () => fetchReleases())
+watch(localLimit, () => fetchReleases())
 
 onMounted(() => fetchReleases())
 </script>

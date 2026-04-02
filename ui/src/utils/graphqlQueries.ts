@@ -1204,15 +1204,15 @@ query EnvironmentTypes($orgUuid: ID!) {
 }`
 
 const RELEASES_BY_DATE_RANGE_GQL = gql`
-query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!) {
-    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate) {
+query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int) {
+    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit) {
         ${MULTI_RELEASE_GQL_DATA}
     }
 }`
 
 const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL = gql`
-query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!) {
-    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate) {
+query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int) {
+    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit) {
         ${MULTI_RELEASE_GQL_DATA}
     }
 }`
