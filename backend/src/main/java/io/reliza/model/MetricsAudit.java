@@ -39,6 +39,9 @@ public class MetricsAudit implements Serializable {
 	@Column(name = "entity_uuid", nullable = false)
 	private UUID entityUuid;
 
+	@Column(name = "org", nullable = false)
+	private UUID org;
+
 	@Column(name = "metrics_revision", nullable = false)
 	private int metricsRevision = 0;
 
@@ -74,6 +77,14 @@ public class MetricsAudit implements Serializable {
 
 	public void setEntityUuid(UUID entityUuid) {
 		this.entityUuid = entityUuid;
+	}
+
+	public UUID getOrg() {
+		return org;
+	}
+
+	public void setOrg(UUID org) {
+		this.org = org;
 	}
 
 	public int getMetricsRevision() {

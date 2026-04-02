@@ -90,6 +90,7 @@ public class SharedArtifactService {
 				MetricsAudit audit = new MetricsAudit();
 				audit.setEntityType(MetricsEntityType.ARTIFACT);
 				audit.setEntityUuid(a.getUuid());
+				audit.setOrg(UUID.fromString((String) a.getRecordData().get("org")));
 				audit.setMetricsRevision(a.getMetricsRevision());
 				audit.setRevisionCreatedDate(ZonedDateTime.now());
 				audit.setEntityCreatedDate(a.getCreatedDate());

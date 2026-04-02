@@ -104,6 +104,7 @@ public class SharedReleaseService {
 				MetricsAudit audit = new MetricsAudit();
 				audit.setEntityType(MetricsEntityType.RELEASE);
 				audit.setEntityUuid(r.getUuid());
+				audit.setOrg(UUID.fromString((String) r.getRecordData().get("org")));
 				audit.setMetricsRevision(r.getMetricsRevision());
 				audit.setRevisionCreatedDate(ZonedDateTime.now());
 				audit.setEntityCreatedDate(r.getCreatedDate());
