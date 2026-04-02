@@ -1172,22 +1172,45 @@ public class ReleaseDatafetcher {
 			if (query.contains("@sha")) {
 				query = query.split("@")[1];
 			}
-			
-			Optional<ReleaseData> optArtSearchRd = releaseService.getReleaseDataByOutboundDeliverableDigest(query, orgUuid);
-			if (optArtSearchRd.isPresent()) {
-				retList.add(optArtSearchRd.get());
-			} else {
-				// attempt version search
-				retList = releaseService.listReleaseDataByVersion(query, orgUuid);
+
+			boolean uuidSearchPerformed = false;
+			if (query.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) {
+				UUID queryUuid = UUID.fromString(query);
+				// try release UUID
+				Optional<ReleaseData> byReleaseUuid = sharedReleaseService.getReleaseData(queryUuid, orgUuid);
+				if (byReleaseUuid.isPresent()) {
+					retList.add(byReleaseUuid.get());
+				}
+				// try deliverable UUID
+				if (retList.isEmpty()) {
+					Optional<ReleaseData> byDeliverableUuid = getDeliverableService.getDeliverableData(queryUuid)
+							.flatMap(dd -> sharedReleaseService.getReleaseByOutboundDeliverable(dd.getUuid(), orgUuid));
+					byDeliverableUuid.ifPresent(retList::add);
+				}
+				// try artifact UUID
+				if (retList.isEmpty()) {
+					retList.addAll(sharedReleaseService.gatherReleasesForArtifact(queryUuid, orgUuid));
+				}
+				uuidSearchPerformed = true;
 			}
-			
-			if (retList.isEmpty()) {
-				// attempt search by commit or tag
-				retList = releaseService.getReleaseDataByCommitOrTag(query, orgUuid);
-			}
-			if (retList.isEmpty()) {
-				// finally attempt search by build id
-				retList = releaseService.listReleaseDataByBuildId(query, orgUuid);
+
+			if (!uuidSearchPerformed || retList.isEmpty()) {
+				Optional<ReleaseData> optArtSearchRd = releaseService.getReleaseDataByOutboundDeliverableDigest(query, orgUuid);
+				if (optArtSearchRd.isPresent()) {
+					retList.add(optArtSearchRd.get());
+				} else {
+					// attempt version search
+					retList = releaseService.listReleaseDataByVersion(query, orgUuid);
+				}
+				
+				if (retList.isEmpty()) {
+					// attempt search by commit or tag
+					retList = releaseService.getReleaseDataByCommitOrTag(query, orgUuid);
+				}
+				if (retList.isEmpty()) {
+					// finally attempt search by build id
+					retList = releaseService.listReleaseDataByBuildId(query, orgUuid);
+				}
 			}
 
 			// include all bundles
@@ -1686,5 +1709,50 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
 		return sharedReleaseService.findReleasesByTimeFrameAndBranch(branchUuid, startDate, endDate);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "releasesByDateRange")
+	public List<ReleaseData> releasesByDateRange(
+			@InputArgument("org") UUID orgUuid,
+			@InputArgument("startDate") ZonedDateTime startDate,
+			@InputArgument("endDate") ZonedDateTime endDate,
+			@InputArgument("limit") Integer limit) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		return sharedReleaseService.listReleaseDataOfOrgBetweenDates(orgUuid, startDate, endDate, limit);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "releasesByDateRangeAndComponent")
+	public List<ReleaseData> releasesByDateRangeAndComponent(
+			@InputArgument("componentUuid") UUID componentUuid,
+			@InputArgument("startDate") ZonedDateTime startDate,
+			@InputArgument("endDate") ZonedDateTime endDate,
+			@InputArgument("limit") Integer limit) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.READ);
+		return sharedReleaseService.listReleaseDataOfComponentBetweenDates(componentUuid, startDate, endDate, limit);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "releasesByDateRangeAndBranch")
+	public List<ReleaseData> releasesByDateRangeAndBranch(
+			@InputArgument("branchUuid") UUID branchUuid,
+			@InputArgument("startDate") ZonedDateTime startDate,
+			@InputArgument("endDate") ZonedDateTime endDate,
+			@InputArgument("limit") Integer limit) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
+		RelizaObject ro = obd.isPresent() ? obd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
+		return sharedReleaseService.listReleaseDataOfBranchBetweenDates(branchUuid, startDate, endDate, limit);
 	}
 }

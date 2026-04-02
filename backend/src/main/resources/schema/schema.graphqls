@@ -109,6 +109,11 @@ type Query {
 	searchReleasesByTimeFrame(org: ID!, startDate: DateTime!, endDate: DateTime!, perspectiveUuid: ID): [ComponentWithBranches]
 	searchReleasesByTimeFrameAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
 	searchReleasesByTimeFrameAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
+	# Date Range Queries - return flat [Release] list
+	releasesByDateRange(org: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
+	releasesByDateRangeAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
+	releasesByDateRangeAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
+	releasesByDateRangeAndPerspective(perspectiveUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
 	# Pattern Preview
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
 

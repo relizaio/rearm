@@ -1236,4 +1236,31 @@ public class SharedReleaseService {
 		UUID orgUuid = releaseDataList.get(0).getOrg();
 		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, null);
 	}
+
+	public List<ReleaseData> listReleaseDataOfOrgBetweenDates(UUID orgUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit) {
+		var stream = repository.findReleasesOfOrgBetweenDates(orgUuid.toString(), startDate, endDate)
+				.stream()
+				.map(ReleaseData::dataFromRecord)
+				.sorted(new ReleaseData.ReleaseDateComparator());
+		if (limit != null) stream = stream.limit(limit);
+		return stream.collect(Collectors.toList());
+	}
+
+	public List<ReleaseData> listReleaseDataOfComponentBetweenDates(UUID componentUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit) {
+		var stream = repository.findReleasesOfComponentBetweenDates(componentUuid.toString(), startDate, endDate)
+				.stream()
+				.map(ReleaseData::dataFromRecord)
+				.sorted(new ReleaseData.ReleaseDateComparator());
+		if (limit != null) stream = stream.limit(limit);
+		return stream.collect(Collectors.toList());
+	}
+
+	public List<ReleaseData> listReleaseDataOfBranchBetweenDates(UUID branchUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit) {
+		var stream = repository.findReleasesOfBranchBetweenDates(branchUuid.toString(), startDate, endDate)
+				.stream()
+				.map(ReleaseData::dataFromRecord)
+				.sorted(new ReleaseData.ReleaseDateComparator());
+		if (limit != null) stream = stream.limit(limit);
+		return stream.collect(Collectors.toList());
+	}
 }
