@@ -50,12 +50,13 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import { NSpace, NDatePicker, NSelect, NInputNumber } from 'naive-ui'
 import MostRecentReleasesWidget from './MostRecentReleasesWidget.vue'
 
 const route = useRoute()
+const router = useRouter()
 const store = useStore()
 
 const myorg = computed(() => store.getters.myorg)
@@ -81,6 +82,8 @@ const limitOptions = [
     { label: 'Custom', value: 'custom' }
 ]
 
+const PRESET_VALUES = [10, 30, 50, 100]
+
 const limitPreset = ref<number | 'custom'>(10)
 const customLimit = ref<number>(10)
 
@@ -88,6 +91,14 @@ const effectiveLimit = computed(() => limitPreset.value === 'custom' ? customLim
 
 function onLimitPresetChange(val: number | 'custom') {
     if (val !== 'custom') customLimit.value = val as number
+}
+
+function syncUrl() {
+    const q: Record<string, string> = { ...route.query as Record<string, string> }
+    if (startDateValue.value) q.fromDate = new Date(startDateValue.value).toISOString().split('T')[0]
+    if (endDateValue.value) q.toDate = new Date(endDateValue.value).toISOString().split('T')[0]
+    q.limit = String(effectiveLimit.value)
+    router.replace({ query: q })
 }
 
 onMounted(() => {
@@ -99,14 +110,20 @@ onMounted(() => {
         const toDate = new Date(route.query.toDate as string)
         if (!isNaN(toDate.getTime())) endDateValue.value = toDate.getTime()
     }
+    if (route.query.limit) {
+        const urlLimit = parseInt(route.query.limit as string, 10)
+        if (!isNaN(urlLimit) && urlLimit > 0) {
+            if (PRESET_VALUES.includes(urlLimit)) {
+                limitPreset.value = urlLimit
+            } else {
+                limitPreset.value = 'custom'
+                customLimit.value = urlLimit
+            }
+        }
+    }
 })
 
-watch([startDateValue, endDateValue], ([newStart, newEnd]) => {
-    const params = new URLSearchParams(window.location.search)
-    if (newStart) params.set('fromDate', new Date(newStart).toISOString().split('T')[0])
-    if (newEnd) params.set('toDate', new Date(newEnd).toISOString().split('T')[0])
-    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`)
-})
+watch([startDateValue, endDateValue, effectiveLimit], syncUrl)
 </script>
 
 <style scoped lang="scss">
