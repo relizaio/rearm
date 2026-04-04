@@ -63,7 +63,7 @@ function getRegionPricesForType(regionType: RegionType): RegionPrices {
   let currencySymbol = "$";
   let startupBase = 195;
   let startupPerUser = 45;
-  let standardBase = 1250;
+  let standardBase = 1350;
   let standardPerUser = 70;
   let enterprise = "$75";
 
@@ -71,35 +71,35 @@ function getRegionPricesForType(regionType: RegionType): RegionPrices {
     currencySymbol = "€";
     startupBase = 165;
     startupPerUser = 40;
-    standardBase = 1090;
+    standardBase = 1170;
     standardPerUser = 60;
     enterprise = "€65";
   } else if (regionType === "CA") {
     currencySymbol = "C$";
     startupBase = 250;
     startupPerUser = 60;
-    standardBase = 1700;
+    standardBase = 1850;
     standardPerUser = 95;
     enterprise = "C$100";
   } else if (regionType === "GB") {
     currencySymbol = "£";
     startupBase = 145;
     startupPerUser = 35;
-    standardBase = 940;
+    standardBase = 1020;
     standardPerUser = 55;
     enterprise = "£60";
   } else if (regionType === "AU") {
     currencySymbol = "A$";
     startupBase = 275;
     startupPerUser = 65;
-    standardBase = 1770;
+    standardBase = 1950;
     standardPerUser = 100;
     enterprise = "A$105";
   } else if (regionType === "SG") {
     currencySymbol = "S$";
     startupBase = 245;
     startupPerUser = 55;
-    standardBase = 1600;
+    standardBase = 1730;
     standardPerUser = 90;
     enterprise = "S$95";
   }
@@ -181,7 +181,7 @@ export default function PricingPlan() {
         "Approvals & Event Workflows",
         "Marketing Releases",
         "SBOM Enrichment via BEAR",
-        "Free 90-day trial*",
+        "Free 60-day trial*",
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
       userSelector: {
@@ -201,7 +201,7 @@ export default function PricingPlan() {
         "Private VPN / VNet with SSO and unlimited artifact storage, option for on-prem deployment",
         "Enhanced support (24x7, 4 hours response time)",
         "Support for Multi-Organization Workflow",
-        "Free 90-day trial*",
+        "Free 60-day trial*",
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
       userSelector: {
@@ -220,7 +220,7 @@ export default function PricingPlan() {
         "All in ReARM Pro - Standard",
         "Premium support (24x7, 1 hour response time)",
         "Option for air-gapped deployment",
-        "Free 90-day trial*",
+        "Free 60-day trial*",
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
       userSelector: null,
