@@ -313,7 +313,7 @@ export default function PricingPlan() {
                   <span className="tooltipWrapper">
                     {b}
                     <span className="tooltipText">
-                      {b.startsWith("Free 90-day trial")
+                      {b.startsWith("Free 60-day trial")
                         ? <>A ReARM Pro Starter instance is provided during the trial, subject to Terms of Service.<br />After the trial, you may:<br />- continue with a paid ReARM Pro plan;<br />- export your data and switch to a self-hosted FOSS ReARM CE instance;<br />- or cancel altogether.</>
 
                         : "Usually, enough to store more than 200,000 SBOMs"}
