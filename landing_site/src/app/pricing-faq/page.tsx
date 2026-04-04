@@ -56,6 +56,14 @@ const faqs: FaqItem[] = [
       <>See <Link href="/comparisons/#rearm-pro-vs-rearm-ce">ReARM Pro vs ReARM CE comparison</Link> for details.</>,
     ],
   },
+  {
+    question: "Is it possible to upgrade from ReARM CE to ReARM Pro or vice versa?",
+    answer: [
+      "Yes, the data schema is fully compatible between ReARM editions. You can upgrade or downgrade at any time subject to any applicable contract terms.",
+      "When you downgrade from ReARM Pro to ReARM CE, you lose access to any ReARM Pro features but all your data remains intact.",
+      "When you upgrade from ReARM CE to ReARM Pro, you gain access to all ReARM Pro features right away.",
+    ],
+  },
 ];
 
 export default function PricingFaqPage() {
