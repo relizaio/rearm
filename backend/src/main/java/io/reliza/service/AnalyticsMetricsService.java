@@ -489,10 +489,28 @@ public class AnalyticsMetricsService {
 		}
 		
 		am.setRecordData(recordData);
+		am.setOrg(UUID.fromString((String) recordData.get(CommonVariables.ORGANIZATION_FIELD)));
+		am.setDateKey((String) recordData.get("dateKey"));
+		String perspStr = (String) recordData.get("perspective");
+		am.setPerspective((perspStr != null && !perspStr.isEmpty()
+				&& !"00000000-0000-0000-0000-000000000000".equals(perspStr))
+				? UUID.fromString(perspStr) : null);
+		@SuppressWarnings("unchecked")
+		Map<String, Object> metricsMap = (Map<String, Object>) recordData.get("metrics");
+		if (metricsMap != null) {
+			Map<String, Object> nm = new java.util.LinkedHashMap<>();
+			for (String field : List.of("critical", "high", "medium", "low", "unassigned",
+					"policyViolationsLicenseTotal", "policyViolationsOperationalTotal",
+					"policyViolationsSecurityTotal")) {
+				Object v = metricsMap.get(field);
+				if (v != null) nm.put(field, v);
+			}
+			am.setNumericMetrics(nm);
+		}
 		am = (AnalyticsMetrics) WhoUpdated.injectWhoUpdatedData(am, wu);
 		return repository.save(am);
 	}
-	
+
 	private static ReleasesPerComponent mapDaoToReleasesPerComponent(ReleasesPerComponentDao dao) {
 		return new ReleasesPerComponent(dao.getComponentuuid(), dao.getComponentname(),
 				ComponentType.valueOf(dao.getComponenttype()), dao.getRlzcount());

@@ -1124,52 +1124,54 @@ class VariableQueries {
 	 */
 	protected static final String FIND_ANALYTICS_CHART_DATA_BY_ORG_DATES = """
 			SELECT
-				am.record_data->>'dateKey' as dateKey,
-				COALESCE((am.record_data->'metrics'->>'critical')::int, 0) as critical,
-				COALESCE((am.record_data->'metrics'->>'high')::int, 0) as high,
-				COALESCE((am.record_data->'metrics'->>'medium')::int, 0) as medium,
-				COALESCE((am.record_data->'metrics'->>'low')::int, 0) as low,
-				COALESCE((am.record_data->'metrics'->>'unassigned')::int, 0) as unassigned,
-				COALESCE((am.record_data->'metrics'->>'policyViolationsLicenseTotal')::int, 0) as licenseViolations,
-				COALESCE((am.record_data->'metrics'->>'policyViolationsOperationalTotal')::int, 0) as operationalViolations,
-				COALESCE((am.record_data->'metrics'->>'policyViolationsSecurityTotal')::int, 0) as securityViolations
+				am.date_key as dateKey,
+				COALESCE((am.numeric_metrics->>'critical')::int, 0) as critical,
+				COALESCE((am.numeric_metrics->>'high')::int, 0) as high,
+				COALESCE((am.numeric_metrics->>'medium')::int, 0) as medium,
+				COALESCE((am.numeric_metrics->>'low')::int, 0) as low,
+				COALESCE((am.numeric_metrics->>'unassigned')::int, 0) as unassigned,
+				COALESCE((am.numeric_metrics->>'policyViolationsLicenseTotal')::int, 0) as licenseViolations,
+				COALESCE((am.numeric_metrics->>'policyViolationsOperationalTotal')::int, 0) as operationalViolations,
+				COALESCE((am.numeric_metrics->>'policyViolationsSecurityTotal')::int, 0) as securityViolations
 			FROM rearm.analytics_metrics am
-			WHERE am.record_data->>'org' = :orgUuidAsString
-				AND am.record_data->>'dateKey' >= :dateKeyFrom AND am.record_data->>'dateKey' <= :dateKeyTo
-				AND (am.record_data->>'perspective' is null OR am.record_data->>'perspective' = '' OR am.record_data->>'perspective' = '00000000-0000-0000-0000-000000000000')
-			ORDER BY dateKey
+			WHERE am.org = cast(:orgUuidAsString as uuid)
+				AND am.date_key >= :dateKeyFrom
+				AND am.date_key <= :dateKeyTo
+				AND am.perspective IS NULL
+			ORDER BY am.date_key
 			""";
-	
+
 	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_DATE_KEY = """
-			SELECT * from rearm.analytics_metrics am 
-				WHERE am.record_data->>'org' = :orgUuidAsString
-				AND am.record_data->>'dateKey' = :dateKey
-				AND (am.record_data->>'perspective' is null OR am.record_data->>'perspective' = '' OR am.record_data->>'perspective' = '00000000-0000-0000-0000-000000000000')  
+			SELECT * FROM rearm.analytics_metrics am
+			WHERE am.org = cast(:orgUuidAsString as uuid)
+				AND am.date_key = :dateKey
+				AND am.perspective IS NULL
 			""";
-	
+
 	protected static final String FIND_ANALYTICS_METRICS_BY_ORG_PERSPECTIVE_DATE_KEY = """
-			SELECT * from rearm.analytics_metrics am 
-				WHERE am.record_data->>'org' = :orgUuidAsString
-				AND am.record_data->>'perspective' = :perspectiveUuidAsString
-				AND am.record_data->>'dateKey' = :dateKey
+			SELECT * FROM rearm.analytics_metrics am
+			WHERE am.org = cast(:orgUuidAsString as uuid)
+				AND am.perspective = cast(:perspectiveUuidAsString as uuid)
+				AND am.date_key = :dateKey
 			""";
-	
+
 	protected static final String FIND_ANALYTICS_CHART_DATA_BY_ORG_PERSPECTIVE_DATES = """
 			SELECT
-				am.record_data->>'dateKey' as dateKey,
-				COALESCE((am.record_data->'metrics'->>'critical')::int, 0) as critical,
-				COALESCE((am.record_data->'metrics'->>'high')::int, 0) as high,
-				COALESCE((am.record_data->'metrics'->>'medium')::int, 0) as medium,
-				COALESCE((am.record_data->'metrics'->>'low')::int, 0) as low,
-				COALESCE((am.record_data->'metrics'->>'unassigned')::int, 0) as unassigned,
-				COALESCE((am.record_data->'metrics'->>'policyViolationsLicenseTotal')::int, 0) as licenseViolations,
-				COALESCE((am.record_data->'metrics'->>'policyViolationsOperationalTotal')::int, 0) as operationalViolations,
-				COALESCE((am.record_data->'metrics'->>'policyViolationsSecurityTotal')::int, 0) as securityViolations
+				am.date_key as dateKey,
+				COALESCE((am.numeric_metrics->>'critical')::int, 0) as critical,
+				COALESCE((am.numeric_metrics->>'high')::int, 0) as high,
+				COALESCE((am.numeric_metrics->>'medium')::int, 0) as medium,
+				COALESCE((am.numeric_metrics->>'low')::int, 0) as low,
+				COALESCE((am.numeric_metrics->>'unassigned')::int, 0) as unassigned,
+				COALESCE((am.numeric_metrics->>'policyViolationsLicenseTotal')::int, 0) as licenseViolations,
+				COALESCE((am.numeric_metrics->>'policyViolationsOperationalTotal')::int, 0) as operationalViolations,
+				COALESCE((am.numeric_metrics->>'policyViolationsSecurityTotal')::int, 0) as securityViolations
 			FROM rearm.analytics_metrics am
-			WHERE am.record_data->>'org' = :orgUuidAsString
-				AND am.record_data->>'perspective' = :perspectiveUuidAsString
-				AND am.record_data->>'dateKey' >= :dateKeyFrom AND am.record_data->>'dateKey' <= :dateKeyTo
-			ORDER BY dateKey
+			WHERE am.org = cast(:orgUuidAsString as uuid)
+				AND am.perspective = cast(:perspectiveUuidAsString as uuid)
+				AND am.date_key >= :dateKeyFrom
+				AND am.date_key <= :dateKeyTo
+			ORDER BY am.date_key
 			""";
 
 	/*
