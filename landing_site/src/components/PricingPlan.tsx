@@ -181,7 +181,7 @@ export default function PricingPlan() {
         "Approvals & Event Workflows",
         "Marketing Releases",
         "SBOM Enrichment via BEAR",
-        "Free 90-day trial",
+        "Free 90-day trial*",
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
       userSelector: {
@@ -201,7 +201,7 @@ export default function PricingPlan() {
         "Private VPN / VNet with SSO and unlimited artifact storage, option for on-prem deployment",
         "Enhanced support (24x7, 4 hours response time)",
         "Support for Multi-Organization Workflow",
-        "Free 90-day trial",
+        "Free 90-day trial*",
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
       userSelector: {
@@ -220,7 +220,7 @@ export default function PricingPlan() {
         "All in ReARM Pro - Standard",
         "Premium support (24x7, 1 hour response time)",
         "Option for air-gapped deployment",
-        "Free 90-day trial",
+        "Free 90-day trial*",
       ],
       cta: { label: "Contact Sales", href: "mailto:sales@reliza.io" },
       userSelector: null,
@@ -312,7 +312,12 @@ export default function PricingPlan() {
                 {b.endsWith("*") ? (
                   <span className="tooltipWrapper">
                     {b}
-                    <span className="tooltipText">Usually, enough to store more than 200,000 SBOMs</span>
+                    <span className="tooltipText">
+                      {b.startsWith("Free 90-day trial")
+                        ? <>A ReARM Pro Starter instance is provided during the trial, subject to Terms of Service.<br />After the trial, you may:<br />- continue with a paid ReARM Pro plan;<br />- export your data and switch to a self-hosted FOSS ReARM CE instance;<br />- or cancel altogether.</>
+
+                        : "Usually, enough to store more than 200,000 SBOMs"}
+                    </span>
                   </span>
                 ) : b}
               </li>
