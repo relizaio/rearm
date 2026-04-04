@@ -174,7 +174,7 @@ export default function PricingPlan() {
       amount: startupPrice,
       type: "Per Month",
       bullets: [
-        "Up to 80GB of storage for compressed artifacts*",
+        "Up to 65GB of storage for compressed artifacts*",
         "Priority Support (8 hours response time)",
         "Managed Dependency-Track",
         "Multi-Perspective Workflow",
@@ -312,7 +312,7 @@ export default function PricingPlan() {
                 {b.endsWith("*") ? (
                   <span className="tooltipWrapper">
                     {b}
-                    <span className="tooltipText">Usually, enough to store more than 250,000 SBOMs</span>
+                    <span className="tooltipText">Usually, enough to store more than 200,000 SBOMs</span>
                   </span>
                 ) : b}
               </li>
