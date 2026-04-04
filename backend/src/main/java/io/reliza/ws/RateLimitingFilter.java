@@ -59,8 +59,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         Bucket bucket = buckets.computeIfAbsent(key, k ->
                 Bucket.builder()
                         .addLimit(limit -> limit
-                                .capacity(40)
-                                .refillGreedy(40, Duration.ofSeconds(30))
+                                .capacity(50)
+                                .refillGreedy(50, Duration.ofSeconds(30))
                         )
                         .build()
         );
@@ -84,10 +84,12 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
     private String resolveKey(HttpServletRequest request) {
         // 1) If authenticated user -> user uuid
-        JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-        var oud = userService.getUserDataByAuth(auth);
-        if (oud.isPresent()) {
-            return "user:" + oud.get().getUuid();
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken jwtAuth) {
+            var oud = userService.getUserDataByAuth(jwtAuth);
+            if (oud.isPresent()) {
+                return "user:" + oud.get().getUuid();
+            }
         }
 
         // 2) If programmatic auth present -> apiKeyId (username part)
