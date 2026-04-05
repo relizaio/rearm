@@ -28,6 +28,7 @@ function sidebar() {
         {text: 'Integrations', link: '/integrations/',
           items: [
             {text: 'ReARM CLI', link: '/integrations/rearmcli'},
+            {text: 'BEAR', link: '/integrations/bear'},
             {text: 'GitHub Actions', link: '/integrations/githubActions',
               items: [
                 {text: 'Build Pipelines', link: '/integrations/githubActionsBuild'},
