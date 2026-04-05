@@ -5,6 +5,7 @@ import { fetchFromOci, extractRepositoryNameFromBom } from './oci';
 import { enrichBomAsync } from './bom/bomProcessingService';
 import { getBearCredentials } from './integrationService';
 import { runQuery } from '../utils';
+import { AdvisoryLockKey, tryAdvisoryLock, releaseAdvisoryLock } from './advisoryLock';
 
 const SCHEDULER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const ENRICHMENT_BATCH_LIMIT = 50;
@@ -48,7 +49,21 @@ async function runEnrichmentCycle(): Promise<void> {
     logger.debug('Enrichment scheduler: Previous cycle still running, skipping');
     return;
   }
-  
+
+  // Acquire DB-level advisory lock so only one pod runs enrichment at a time
+  let lockClient = null;
+  try {
+    lockClient = await tryAdvisoryLock(AdvisoryLockKey.ENRICHMENT_SCHEDULER);
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, 'Enrichment scheduler: Failed to acquire advisory lock');
+    return;
+  }
+
+  if (!lockClient) {
+    logger.debug('Enrichment scheduler: Another pod holds the advisory lock, skipping cycle');
+    return;
+  }
+
   isRunning = true;
   logger.info('Enrichment scheduler: Starting cycle');
   
@@ -57,7 +72,6 @@ async function runEnrichmentCycle(): Promise<void> {
     
     if (bomsToEnrich.length === 0) {
       logger.debug('Enrichment scheduler: No BOMs need enrichment');
-      isRunning = false;
       return;
     }
     
@@ -109,6 +123,11 @@ async function runEnrichmentCycle(): Promise<void> {
     }, 'Enrichment scheduler: Cycle failed');
   } finally {
     isRunning = false;
+    if (lockClient) {
+      await releaseAdvisoryLock(lockClient, AdvisoryLockKey.ENRICHMENT_SCHEDULER).catch(err => {
+        logger.error({ err }, 'Enrichment scheduler: Failed to release advisory lock');
+      });
+    }
   }
 }
 
