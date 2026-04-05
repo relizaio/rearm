@@ -3,6 +3,14 @@
 */
 package io.reliza.service;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.concurrent.ConcurrentHashMap;
+
+import javax.sql.DataSource;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -10,14 +18,15 @@ import org.springframework.stereotype.Service;
 
 import io.reliza.common.AdvisoryLockKey;
 import io.reliza.service.oss.OssAnalyticsMetricsService;
-import jakarta.persistence.EntityManager;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
 public class SchedulingService {
     @Autowired
-    private EntityManager entityManager;
+    private DataSource dataSource;
+
+    private final ConcurrentHashMap<AdvisoryLockKey, Connection> lockConnections = new ConcurrentHashMap<>();
 
     @Autowired
     ReleaseService releaseService;
@@ -44,13 +53,36 @@ public class SchedulingService {
     private boolean enableDtrackCleanupScheduler;
     
     private Boolean getLock (AdvisoryLockKey alk) {
-    	String query = "SELECT pg_try_advisory_lock(" + alk.getQueryVal() + ")";
-        return (Boolean) entityManager.createNativeQuery(query).getSingleResult();
+        try {
+            Connection conn = dataSource.getConnection();
+            conn.setAutoCommit(true);
+            try (PreparedStatement stmt = conn.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+                stmt.setLong(1, alk.getQueryVal());
+                try (ResultSet rs = stmt.executeQuery()) {
+                    rs.next();
+                    boolean acquired = rs.getBoolean(1);
+                    if (acquired) {
+                        lockConnections.put(alk, conn);
+                    } else {
+                        conn.close();
+                    }
+                    return acquired;
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to acquire advisory lock " + alk, e);
+        }
     }
     
     private void releaseLock (AdvisoryLockKey alk) {
-    	String query = "SELECT pg_advisory_unlock(" + alk.getQueryVal() + ")";
-        entityManager.createNativeQuery(query).getSingleResult();
+        Connection conn = lockConnections.remove(alk);
+        if (conn == null) return;
+        try (conn; PreparedStatement stmt = conn.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+            stmt.setLong(1, alk.getQueryVal());
+            stmt.execute();
+        } catch (SQLException e) {
+            log.error("Failed to release advisory lock {}", alk, e);
+        }
     }
 
     @Scheduled(fixedRateString = "${relizaprops.rejectPendingReleasesRate}")
