@@ -16,8 +16,8 @@ function sidebar() {
         {text: 'Getting Started', link: '/get-started/'},
         {text: 'Installation', link: '/installation/'},
         {text: 'Concepts', link: '/concepts/'},        
-        {text: 'Bundling', link: '/bundling/'},
         {text: 'Workflows', link: '/workflows/', items: [
+          {text: 'Bundling', link: '/workflows/bundling'},
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'}
         ]},
