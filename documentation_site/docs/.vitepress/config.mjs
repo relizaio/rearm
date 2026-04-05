@@ -17,6 +17,10 @@ function sidebar() {
         {text: 'Installation', link: '/installation/'},
         {text: 'Concepts', link: '/concepts/'},        
         {text: 'Bundling', link: '/bundling/'},
+        {text: 'Workflows', link: '/workflows/', items: [
+          {text: 'License Compliance', link: '/workflows/license-compliance'},
+          {text: 'Auditing Findings', link: '/workflows/auditing-findings'}
+        ]},
         {text: 'Configure', link: '/configure/', items: [
           {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'}
         ]},
