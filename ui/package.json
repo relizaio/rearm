@@ -16,15 +16,15 @@
     "axios": "^1.13.6",
     "keycloak-js": "^26.2.3",
     "packageurl-js": "^2.0.1",
-    "pdfmake": "^0.3.5",
+    "pdfmake": "^0.3.7",
     "prismjs": "^1.30.0",
-    "sweetalert2": "^11.26.22",
+    "sweetalert2": "^11.26.24",
     "vega": "^6.2.0",
     "vega-embed": "^7.1.0",
     "vega-lite": "^6.4.2",
-    "vue": "^3.5.30",
+    "vue": "^3.5.31",
     "vue-prism-editor": "^2.0.0-alpha.2",
-    "vue-router": "^5.0.3",
+    "vue-router": "^5.0.4",
     "vuex": "^4.1.0"
   },
   "devDependencies": {
@@ -37,19 +37,19 @@
     "@vicons/carbon": "^0.13.0",
     "@vicons/fluent": "^0.13.0",
     "@vicons/tabler": "^0.13.0",
-    "@vitejs/plugin-vue": "^6.0.4",
+    "@vitejs/plugin-vue": "^6.0.5",
     "@vue/compiler-sfc": "^3.5.30",
     "@vue/eslint-config-typescript": "^14.7.0",
-    "eslint": "^10.0.3",
+    "eslint": "^10.1.0",
     "eslint-plugin-vue": "^10.8.0",
     "naive-ui": "^2.44.1",
-    "sass": "^1.97.3",
+    "sass": "^1.98.0",
     "typescript": "~5.9.3",
     "vite": "^7.3.1"
   },
   "optionalDependencies": {
     "@esbuild/linux-x64": "^0.27.3",
-    "@rollup/rollup-linux-x64-musl": "^4.57.1"
+    "@rollup/rollup-linux-x64-musl": "^4.60.0"
   },
   "eslintConfig": {
     "root": true,
