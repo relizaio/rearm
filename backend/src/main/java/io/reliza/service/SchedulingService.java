@@ -111,6 +111,7 @@ public class SchedulingService {
             log.debug("resolve dependency track lock acquired {}", lock);
 			if (lock) {
 				try {
+                    log.debug("starting resolve DTrack loop");
 					artifactService.submitPendingArtifactsToDependencyTrack();
 					artifactService.initialProcessArtifactsOnDependencyTrack();
 					releaseService.computeMetricsForAllUnprocessedReleases();

@@ -448,7 +448,7 @@ public class ReleaseService {
 			long matchingStart = System.currentTimeMillis();
 			Set<ReleaseData> rdPreCandidates = sharedReleaseService.greedylocateProductsOfReleaseCollection(releasesToFindProducts, fsData.getOrg());
 			long preCandidateTime = System.currentTimeMillis();
-			log.info("Gather pre candidates time = " + (preCandidateTime - matchingStart));
+			log.debug("Gather pre candidates time = " + (preCandidateTime - matchingStart));
 			log.debug("PSDEBUG: product release candidates before filter = " + rdPreCandidates.toString());
 			if (null != rdPreCandidates && !rdPreCandidates.isEmpty()) {
 				releaseCandidates = rdPreCandidates.stream().filter(r -> featureSet.equals(r.getBranch())).collect(Collectors.toSet());
@@ -458,7 +458,7 @@ public class ReleaseService {
 			var rcSortedList = new LinkedList<ReleaseData>(releaseCandidates);
 			Collections.sort(rcSortedList, new ReleaseDateComparator());
 			log.debug("PSDEBUG: product release candidates after filter = " + releaseCandidates.toString());
-			log.info("Size of product candidates = " + releaseCandidates.size());
+			log.debug("Size of product candidates = " + releaseCandidates.size());
 			
 			// the logic on TRANSIENT- if both sides have transient release, we actually want them to match, but if one of the sides does not have it we still match
 			// due to db query we already checked here that everything from instance is in the product
@@ -514,7 +514,7 @@ public class ReleaseService {
 					}
 				}
 			}
-			log.info("Matching time after greedy match = " + (System.currentTimeMillis() - preCandidateTime));
+			log.debug("Matching time after greedy match = " + (System.currentTimeMillis() - preCandidateTime));
 		}
 		return ord;
 	}
@@ -1189,8 +1189,7 @@ public class ReleaseService {
 				ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.ARTIFACT, ReleaseUpdateAction.ADDED,
 						null, null, artifactUuid, ZonedDateTime.now(), wu);
 				rd.addUpdateEvent(rue);
-				Map<String,Object> recordData = Utils.dataToRecord(rd);
-				ossReleaseService.saveRelease(rOpt.get(), recordData, wu);
+				ossReleaseService.saveRelease(rOpt.get(), rd, wu);
 				added = true;			
 		}
 		return added;
@@ -1346,8 +1345,7 @@ public class ReleaseService {
 				ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.ARTIFACT, ReleaseUpdateAction.ADDED,
 						null, null, artifactUuid, ZonedDateTime.now(), wu);
 				rd.addUpdateEvent(rue);
-				Map<String,Object> recordData = Utils.dataToRecord(rd);
-				ossReleaseService.saveRelease(rOpt.get(), recordData, wu);
+				ossReleaseService.saveRelease(rOpt.get(), rd, wu);
 				added = true;			
 		}
 		return added;
