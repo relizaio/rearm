@@ -1,11 +1,11 @@
-FROM node:24-alpine3.23@sha256:7e0bd0460b26eb3854ea5b99b887a6a14d665d14cae694b78ae2936d14b2befb AS build-stage
+FROM node:24.14.1-alpine3.23@sha256:01743339035a5c3c11a373cd7c83aeab6ed1457b55da6a69e014a95ac4e4700b AS build-stage
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --ignore-scripts
 COPY ./ .
 RUN npm run docs:build
 
-FROM nginx:1.29.4-alpine3.23-slim@sha256:a5459dbb9ed17c9f1eff5448a5dfb22ea3eb386a356e26fc16871dc426ac5383 AS artifact-stage
+FROM nginx:1.29.7-alpine3.23-slim@sha256:0848ca84c476868cbeb6a5c2c009a98821b8540f96c44b1ba06820db50262e35 AS artifact-stage
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
