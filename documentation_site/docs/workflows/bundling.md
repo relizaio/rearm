@@ -1,4 +1,4 @@
-# Bundling Components into Products
+# Bundling & Auto-Integrate
 
 ## Description
 Bundling is a process of *integrating* several Components into a single Product. A Product release stores versions of all individual Components and can be used as a single manifest in the upgrade process.

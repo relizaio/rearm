@@ -4,7 +4,7 @@ sidebarDepth: 2
 
 # ReARM Workflows
 
-- [Bundling](./bundling)
+- [Bundling & Auto-Integrate](./bundling)
 - [License Compliance](./license-compliance)
 - [Auditing Findings](./auditing-findings)
 

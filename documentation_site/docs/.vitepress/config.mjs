@@ -17,7 +17,7 @@ function sidebar() {
         {text: 'Installation', link: '/installation/'},
         {text: 'Concepts', link: '/concepts/'},        
         {text: 'Workflows', link: '/workflows/', items: [
-          {text: 'Bundling', link: '/workflows/bundling'},
+          {text: 'Bundling & Auto-Integrate', link: '/workflows/bundling'},
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'}
         ]},
