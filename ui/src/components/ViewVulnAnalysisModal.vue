@@ -117,7 +117,7 @@ const isVisible = computed({
 })
 
 const modalTitle = computed(() => {
-    return `Vulnerability Analysis Records - ${props.findingType}: ${props.findingId}, location: ${props.location}`
+    return `Finding Analysis Records - ${props.findingType}: ${props.findingId}, location: ${props.location}`
 })
 
 // Helper function to check if a specific scope with UUID exists in analysis records
