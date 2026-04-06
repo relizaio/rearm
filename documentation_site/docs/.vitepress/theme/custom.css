@@ -1,7 +1,3 @@
-.medium-zoom-overlay {
-  z-index: 100;
-}
-
-.medium-zoom-image--opened {
-  z-index: 101;
+.vp-doc img {
+  cursor: zoom-in;
 }
