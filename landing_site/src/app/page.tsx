@@ -75,6 +75,38 @@ export default function Home() {
         />
       </div>
 
+      {/* Questions ReARM Can Answer */}
+      <div className="container-fluid" style={{ padding: "60px 24px", background: "#f8f9fc" }}>
+        <div className="row mx-auto" style={{ maxWidth: "900px" }}>
+          <h2 className="text-center mb-5" style={{ fontWeight: 700, fontSize: "1.75rem" }}>Questions ReARM Can Answer</h2>
+          {[
+            {
+              q: "What is the exact security posture of version 1.0.3 of product X today?",
+              a: "ReARM tracks every vulnerability, license violation, and policy finding per release - so you can see the current security posture of any specific version.",
+            },
+            {
+              q: "What was the security posture of that same version when it was shipped to a key customer 3 months ago?",
+              a: "ReARM stores immutable, timestamped evidence per release. You can reconstruct exactly what was known about any version at any historical moment - no guesswork, full audit trail.",
+            },
+            {
+              q: "Has any Shai-Hulud-infected dependency ever entered our supply chain, and if so, in which releases?",
+              a: "ReARM's cross-release SBOM search lets you query any component or dependency across your entire release history - instantly identifying which releases were affected and when.",
+            },
+            {
+              q: "Has the Log4Shell CVE ever appeared anywhere across our organization?",
+              a: "ReARM aggregates findings from all tools and all releases organization-wide, so you can search for any CVE across your entire product and component portfolio.",
+            },
+          ].map((item, i) => (
+            <div key={i} className="col-12 mb-4">
+              <div style={{ background: "white", borderRadius: "12px", padding: "28px 32px", boxShadow: "0 2px 12px rgba(0,0,0,0.07)" }}>
+                <p style={{ fontWeight: 700, fontSize: "1.05rem", marginBottom: "10px", color: "#18214d" }}>❓ {item.q}</p>
+                <p style={{ margin: 0, color: "#444", lineHeight: 1.7 }}>{item.a}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Alternating features (array2 in CRA) */}
       <div className="container-fluid container4">
         {[
