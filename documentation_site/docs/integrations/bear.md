@@ -8,7 +8,7 @@ BEAR is used to enrich SBOMs/xBOMs with the following elements, if not present a
 - License
 - Copyryght string
 
-This is particular useful for the [License Compliance workflow](../workflows/license_compliance_workflow.md) and to achieve regulatory compliance, such as [NTIA minimum elements](https://worklifenotes.com/2025/04/30/practical-guide-to-ntia-compliant-sbom/).
+This is particular useful for the [License Compliance workflow](../workflows/license-compliance) and to achieve regulatory compliance, such as [NTIA minimum elements](https://worklifenotes.com/2025/04/30/practical-guide-to-ntia-compliant-sbom/).
 
 BEAR is offered as a SaaS service by Reliza for ReARM Pro users, included in the subscription, but can also be self-hosted for ReARM CE users.
 
