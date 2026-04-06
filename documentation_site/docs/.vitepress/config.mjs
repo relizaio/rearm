@@ -5,7 +5,7 @@ function navbar() {
         { text: 'Home', link: '/' },
         { text: 'Concepts', link: '/concepts/' },
         { text: 'Getting Started', link: '/get-started/' },
-        { text: 'Configure ReARM', link: '/configure/' },
+        { text: 'Workflows', link: '/workflows/' },
         { text: 'Integrations', link: '/integrations/' },
         { text: 'Tutorials', link: '/tutorials/' },
     ]
