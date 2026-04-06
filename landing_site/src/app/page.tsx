@@ -82,7 +82,7 @@ export default function Home() {
             image: "rearm_release.png",
             title: "Asset Management & Evidence Platform",
             texts: [
-              { text: "ReARM is a system of record that collects, stores for 10+ years, versions, and traces all digital artifacts required to prove the integrity, safety, and compliance of software, firmware, and hardware throughout their lifecycle. This includes SBOMs, HBOMs, other xBOMs, VEX, VDR, BOV, SARIF, attestations, build metadata, and more." },
+              { text: "ReARM is a system of record that collects, stores for 10+ years, versions, and traces all digital artifacts required to prove the integrity, safety, and compliance of software, firmware, and hardware throughout their lifecycle. This includes SBOMs, HBOMs, other xBOMs, VEX, VDR, BOV, SARIF, digital signatures, attestations, build metadata, and more." },
             ],
           },
           {
@@ -97,6 +97,13 @@ export default function Home() {
             title: "Know exact security posture of each release and changes over time",
             texts: [
               { text: "ReARM aggregates findings from Dependency-Track and other security tools into a unified view. Track vulnerabilities and policy violations across releases with scoped auditing, deduplication, and rich changelogs showing how your security posture evolves over time." },
+            ],
+          },
+          {
+            image: "license_violations.png",
+            title: "License Compliance",
+            texts: [
+              { text: "ReARM allows to track license compliance for all your releases and BOMs with ability to triage and audit violations across various scopes, just like any other finding." },
             ],
           },
           {
