@@ -7,4 +7,5 @@ sidebarDepth: 2
 - [Bundling & Auto-Integrate](./bundling)
 - [License Compliance](./license-compliance)
 - [Auditing Findings](./auditing-findings)
+- [Supply Chain Forensics](./supply-chain-forensics)
 
