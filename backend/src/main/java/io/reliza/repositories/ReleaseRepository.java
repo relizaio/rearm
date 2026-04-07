@@ -317,6 +317,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 
 	@Transactional
 	@Modifying
+	@Query(value = "UPDATE rearm.releases SET metrics_revision = metrics_revision + 1 WHERE uuid = :uuid", nativeQuery = true)
+	void bumpMetricsRevision(@Param("uuid") UUID uuid);
+
+	@Transactional
+	@Modifying
 	@Query(value = "UPDATE rearm.releases SET metrics = jsonb_set(coalesce(metrics, '{}'), '{lastScanned}', to_jsonb(extract(epoch from now()))), last_updated_date = now() WHERE uuid = :uuid", nativeQuery = true)
 	void touchLastScanned(@Param("uuid") UUID uuid);
 
