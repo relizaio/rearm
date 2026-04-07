@@ -50,12 +50,12 @@ public class ReleaseMetricsComputeService {
 	}
 
 	@Transactional
-	protected void computeReleaseMetricsOnRescan(Release r) {
+	protected boolean computeReleaseMetricsOnRescan(Release r) {
 		// Acquire write lock to prevent concurrent modifications
 		Optional<Release> lockedRelease = getReleaseWriteLocked(r.getUuid());
 		if (lockedRelease.isEmpty()) {
 			log.warn("Release {} no longer exists, skipping metrics computation", r.getUuid());
-			return;
+			return false;
 		}
 		r = lockedRelease.get();
 		ZonedDateTime lastScanned = ZonedDateTime.now();
@@ -83,19 +83,21 @@ public class ReleaseMetricsComputeService {
 			rd.setMetrics(rmd);
 			if (!rmd.equals(originalMetrics)) {
 				sharedReleaseService.saveReleaseMetrics(r, rmd);
+				return true;
 			} else {
 				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
 		}
+		return false;
 	}
 
 	@Transactional
-	protected void computeReleaseMetricsOnNonRescan(Release r) {
+	protected boolean computeReleaseMetricsOnNonRescan(Release r) {
 		// Acquire write lock to prevent concurrent modifications
 		Optional<Release> lockedRelease = getReleaseWriteLocked(r.getUuid());
 		if (lockedRelease.isEmpty()) {
 			log.warn("Release {} no longer exists, skipping metrics computation", r.getUuid());
-			return;
+			return false;
 		}
 		r = lockedRelease.get();
 		var rd = ReleaseData.dataFromRecord(r);
@@ -106,10 +108,12 @@ public class ReleaseMetricsComputeService {
 			if (!clonedMetrics.equals(originalMetrics)) {
 				rd.setMetrics(clonedMetrics);
 				sharedReleaseService.saveReleaseMetrics(r, clonedMetrics);
+				return true;
 			} else {
 				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
 		}
+		return false;
 	}
 
 	private ReleaseMetricsDto rollUpProductReleaseMetrics(ReleaseData rd) {

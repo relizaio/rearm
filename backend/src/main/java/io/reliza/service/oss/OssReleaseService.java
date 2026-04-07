@@ -316,6 +316,8 @@ public class OssReleaseService {
 		
 		return Optional.of(previousRelease);
 	}
+	public void processRelease (UUID releaseId) {
+	}
 	@Transactional
 	public Release updateReleaseLifecycle (UUID releaseId, ReleaseLifecycle newLifecycle, WhoUpdated wu) {
 		return updateReleaseLifecycle(releaseId, newLifecycle, wu, true);

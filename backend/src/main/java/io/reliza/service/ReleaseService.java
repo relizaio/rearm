@@ -1458,11 +1458,13 @@ public class ReleaseService {
 	public void computeReleaseMetrics (UUID releaseId, boolean onRescan) {
 		Optional<Release> or = sharedReleaseService.getRelease(releaseId);
 		if (or.isPresent()) {
+			boolean metricsChanged;
 			if (onRescan) {
-				releaseMetricsComputeService.computeReleaseMetricsOnRescan(or.get());
+				metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(or.get());
 			} else {
-				releaseMetricsComputeService.computeReleaseMetricsOnNonRescan(or.get());
+				metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnNonRescan(or.get());
 			}
+			if (metricsChanged) ossReleaseService.processRelease(releaseId);
 		} else {
 			log.warn("Attempted to compute metrics for non-existent release = " + releaseId);
 		}
@@ -1527,8 +1529,9 @@ public class ReleaseService {
 			Set<UUID> dedupProcessedReleases) {
 		releaseList.forEach(r -> {
 			if (!dedupProcessedReleases.contains(r.getUuid())) {
-				releaseMetricsComputeService.computeReleaseMetricsOnRescan(r);
+				boolean metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(r);
 				dedupProcessedReleases.add(r.getUuid());
+				if (metricsChanged) ossReleaseService.processRelease(r.getUuid());
 			}
 		});
 	}
