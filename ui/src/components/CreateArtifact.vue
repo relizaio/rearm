@@ -49,6 +49,7 @@
                         label="Artifact Type">
                 <n-select
                         v-model:value="artifact.type"
+                        filterable
                         :options="artifactTypes" />
             </n-form-item>
             <n-form-item
