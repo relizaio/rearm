@@ -80,7 +80,7 @@ SBOM component search results open in a two-panel modal:
 1. **Left panel - Matched PURLs** - lists each matched component PURL. Click a PURL row to load the releases that contain it.
 2. **Right panel - Releases** - shows all components and their branches/releases that have the selected PURL in their SBOM. Each release row shows version, lifecycle status, and finding counts.
 
-![Search by SBOM Components Results](./images/search_by_sbom_components_results.png)
+![Search by SBOM Components Results](./images/search_by_sbom_component_results.png)
 
 ### By Findings (CVE, CWE, GHSA, etc.)
 
