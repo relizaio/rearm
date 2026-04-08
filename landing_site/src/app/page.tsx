@@ -98,15 +98,19 @@ export default function Home() {
       {/* Questions ReARM Can Answer */}
       <div className="container-fluid" style={{ padding: "60px 24px", background: "#f8f9fc" }}>
         <div className="row mx-auto" style={{ maxWidth: "900px" }}>
-          <h2 className="text-center mb-5" style={{ fontWeight: 700, fontSize: "1.75rem" }}>Questions ReARM Can Answer</h2>
+          <h2 className="text-center mb-5" style={{ fontWeight: 700, fontSize: "1.75rem" }}>Questions ReARM Can Answer Quickly</h2>
           {[
             {
-              q: "What is the exact security posture of version 1.0.3 of product X today?",
-              a: "ReARM tracks every vulnerability, license violation, and policy finding per release - so you can see the current security posture of any specific version.",
+              q: "What is the exact security posture of version 1.0.3 of product X?",
+              a: "ReARM tracks every vulnerability, license violation, and policy finding per release - so you can see the current and historical security posture of any specific version.",
             },
             {
-              q: "What was the security posture of that same version when it was shipped to a key customer 3 months ago?",
-              a: "ReARM stores immutable, timestamped evidence per release. You can reconstruct exactly what was known about any version at any historical moment - no guesswork, full audit trail.",
+              q: "Are we ready to ship version 1.0.4 of product X?",
+              a: "ReARM Pro is the system of record for release approvals and lifecycle management. Your CI/CD pipeline queries ReARM to determine the latest release that has passed all required approval gates - and only promotes or deploys that version. No approved status in ReARM, no deployment.",
+            },
+            {
+              q: "Can we prove to an auditor that every shipped release was reviewed and approved?",
+              a: "Every approval in ReARM Pro is immutably recorded with a timestamp, approver identity, and the evidence it was based on. Your release approval workflow is also your audit trail.",
             },
             {
               q: "Has any Shai-Hulud-infected dependency ever entered our supply chain, and if so, in which releases?",
@@ -169,7 +173,7 @@ export default function Home() {
             image: "auto_integrate.png",
             title: "Automated Bundling into Products",
             texts: [
-              { text: "ReARM automatically bundles your Components into Products and supports multi-level nesting. Evidence and findings from component releases propagate to product level, giving you a unified view across your entire supply chain." },
+              { text: "ReARM automatically bundles your Component Releases into Product Releases and supports multi-level nesting. Evidence and findings propagate from components to products automatically, at any scale - including the release velocity of agentic AI teams." },
             ],
           },
           {
