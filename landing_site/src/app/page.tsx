@@ -75,6 +75,19 @@ export default function Home() {
         />
       </div>
 
+      {/* Agentic AI callout */}
+      <div className="container-fluid" style={{ padding: "64px 24px", background: "#18214d" }}>
+        <div className="mx-auto text-center" style={{ maxWidth: "780px" }}>
+          <p style={{ color: "#a8b4ff", fontWeight: 600, fontSize: "0.95rem", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "20px" }}>Built for the Agentic Era</p>
+          <h2 style={{ color: "white", fontWeight: 700, fontSize: "2rem", lineHeight: 1.35, marginBottom: "24px" }}>
+            Agentic AI has accelerated development by an order of magnitude. Traditional release management has not kept up.
+          </h2>
+          <p style={{ color: "#c8d0f0", fontSize: "1.1rem", lineHeight: 1.8, margin: 0 }}>
+            When dozens - or hundreds - of AI agents are shipping code simultaneously, you need release controls that scale with them. ReARM gives you the visibility, governance, and evidence chain to manage releases at any velocity, without sacrificing compliance or security.
+          </p>
+        </div>
+      </div>
+
       {/* Questions ReARM Can Answer */}
       <div className="container-fluid" style={{ padding: "60px 24px", background: "#f8f9fc" }}>
         <div className="row mx-auto" style={{ maxWidth: "900px" }}>
