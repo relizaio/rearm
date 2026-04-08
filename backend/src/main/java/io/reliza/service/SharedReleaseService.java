@@ -7,9 +7,11 @@ package io.reliza.service;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -131,6 +133,32 @@ public class SharedReleaseService {
 		audit.setEntityCreatedDate(r.getCreatedDate());
 		audit.setMetrics(r.getMetrics());
 		return audit;
+	}
+
+	/**
+	 * Validates that adding the given parent releases to release {@code selfUuid} would not
+	 * create a circular dependency. Walks the ancestry graph of each proposed parent
+	 * transitively; if {@code selfUuid} is encountered, the dependency chain is circular.
+	 *
+	 * @throws RelizaException if a cycle is detected
+	 */
+	public void checkCircularDependency(UUID selfUuid, Collection<ParentRelease> proposedParents) throws RelizaException {
+		Set<UUID> visited = new HashSet<>();
+		Deque<UUID> queue = new ArrayDeque<>();
+		for (ParentRelease pr : proposedParents) {
+			queue.add(pr.getRelease());
+		}
+		while (!queue.isEmpty()) {
+			UUID current = queue.poll();
+			if (selfUuid.equals(current)) {
+				throw new RelizaException("Circular dependency detected: release " + selfUuid + " would depend on itself");
+			}
+			if (visited.add(current)) {
+				getReleaseData(current).ifPresent(rd ->
+					rd.getParentReleases().forEach(pr -> queue.add(pr.getRelease()))
+				);
+			}
+		}
 	}
 
 	public Optional<Release> getRelease (UUID uuid) {

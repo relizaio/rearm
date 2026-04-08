@@ -444,6 +444,7 @@ public class OssReleaseService {
 					releaseDto.getVersion(), null, ZonedDateTime.now(), wu));
 		}
 		if(null != releaseDto.getParentReleases()){
+			sharedReleaseService.checkCircularDependency(r.getUuid(), releaseDto.getParentReleases());
 			List<UuidDiff> parentReleaseDiff = Utils.diffUuidLists(rData.getParentReleases().stream().map(x -> x.getRelease()).toList(), releaseDto.getParentReleases().stream().map(x -> x.getRelease()).toList());
 			if (!parentReleaseDiff.isEmpty()) {
 				rData.setParentReleases(releaseDto.getParentReleases());

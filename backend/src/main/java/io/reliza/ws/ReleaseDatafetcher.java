@@ -499,12 +499,7 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseDto.getUuid(), List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		try {
-			ossReleaseService.updateRelease(releaseDto, wu);
-		} catch (RelizaException e) {
-			log.error("Exception on updateRelease", e);
-			throw new RuntimeException(e.getMessage());
-		}
+		ossReleaseService.updateRelease(releaseDto, wu);
 		return sharedReleaseService.getReleaseData(releaseDto.getUuid()).get();
 	}
 
@@ -520,12 +515,7 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseDto.getUuid(), List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		try {
-			ossReleaseService.updateReleaseTagsMeta(releaseDto, wu);
-		} catch (RelizaException e) {
-			log.error("Exception on updateReleaseTagsMeta", e);
-			throw new RuntimeException(e.getMessage());
-		}
+		ossReleaseService.updateReleaseTagsMeta(releaseDto, wu);
 		return sharedReleaseService.getReleaseData(releaseDto.getUuid()).get();
 	}
 	
