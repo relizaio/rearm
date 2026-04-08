@@ -273,12 +273,13 @@
                             placeholder="Select date/time"
                             clearable
                             format="yyyy-MM-dd HH:mm"
+                            :is-date-disabled="(ts: number) => updatedRelease && updatedRelease.createdDate ? ts < new Date(updatedRelease.createdDate).setHours(0,0,0,0) : false"
                         />
                     </n-form-item>
                     <n-form-item v-if="vdrSnapshotType === 'LIFECYCLE'" label="Lifecycle Stage">
                         <n-select
                             v-model:value="vdrTargetLifecycle"
-                            :options="releaseLifecycleSelectOptions"
+                            :options="vdrLifecycleSelectOptions"
                             placeholder="Select lifecycle stage"
                             clearable
                             filterable
@@ -295,6 +296,9 @@
                             filterable
                             style="max-width: 400px;"
                         />
+                    </n-form-item>
+                    <n-form-item v-if="vdrExportFormat === 'PDF'">
+                        Include ReARM tool attribution:<n-switch style="margin-left: 5px;" v-model:value="vdrIncludeToolAttribution"/>
                     </n-form-item>
                     <n-spin :show="bomExportPending || vdrPdfExportPending" small style="margin-top: 5px;">
                         <n-button type="success" 
@@ -1073,6 +1077,19 @@ const releaseLifecycleSelectOptions = computed(() => lifecycleOptions.map((optio
     value: option.key
 })))
 
+const vdrLifecycleSelectOptions = computed(() => {
+    const events = release.value?.updateEvents || []
+    const seen = new Set<string>()
+    const opts: { label: string, value: string }[] = []
+    events.forEach((event: any) => {
+        if (event.rus === 'LIFECYCLE' && event.rua === 'CHANGED' && event.newValue && !seen.has(event.newValue)) {
+            seen.add(event.newValue)
+            opts.push({ label: resolveLifecycleLabel(event.newValue), value: event.newValue })
+        }
+    })
+    return opts.length > 0 ? opts : releaseLifecycleSelectOptions.value
+})
+
 const approvalEventSelectOptions = computed(() => {
     const events = updatedRelease.value?.approvalEvents || []
     const uniqueMap = new Map<string, { label: string, value: string }>()
@@ -1244,6 +1261,7 @@ const vdrTargetLifecycle: Ref<string | null> = ref(null)
 const vdrTargetApproval: Ref<string | null> = ref(null)
 const vdrExportFormat: Ref<string> = ref('JSON')
 const vdrPdfExportPending: Ref<boolean> = ref(false)
+const vdrIncludeToolAttribution: Ref<boolean> = ref(true)
 const selectedBomStructureType: Ref<string> = ref('FLAT')
 const filterCoverageType: Ref<boolean> = ref(false)
 
@@ -2670,7 +2688,7 @@ async function exportReleaseVdr () {
             exportContent = JSON.stringify(exportContent, null, 2)
         }
         const snapshotSuffix = getSnapshotSuffix()
-        const fileName = updatedRelease.value.uuid + '-vdr' + snapshotSuffix + '.json'
+        const fileName = updatedRelease.value.uuid + '-vdr' + snapshotSuffix + '.cdx.json'
         const blob = new Blob([exportContent], { type: 'application/json' })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
@@ -2788,10 +2806,16 @@ async function exportReleaseVdrPdf() {
         let snapshotType: string | undefined
         let cutoffDateForFilename: string | undefined
         
-        // Extract snapshot metadata from VDR properties
+        // For current state (NONE), label the PDF with generation timestamp
+        if (vdrSnapshotType.value === 'NONE') {
+            snapshotType = 'Current State'
+            snapshotDate = new Date().toLocaleString('en-CA', { hour12: false })
+        }
+
+        // Extract snapshot metadata from VDR properties (only for non-NONE snapshot types)
         const metadataProperties = vdrJson.metadata?.properties
-        if (metadataProperties && Array.isArray(metadataProperties)) {
-            const cutoffDateProp = metadataProperties.find((p: any) => p.name === 'vdr:cutoffDate')
+        if (vdrSnapshotType.value !== 'NONE' && metadataProperties && Array.isArray(metadataProperties)) {
+            const cutoffDateProp = metadataProperties.find((p: any) => p.name === 'VDR_CUTOFF_DATE')
             if (cutoffDateProp && cutoffDateProp.value) {
                 // Parse ISO date string and format it
                 snapshotDate = new Date(cutoffDateProp.value).toLocaleString('en-CA', { hour12: false })
@@ -2799,15 +2823,13 @@ async function exportReleaseVdrPdf() {
                 cutoffDateForFilename = new Date(cutoffDateProp.value).toISOString().slice(0, 10)
             }
             
-            const snapshotTypeProp = metadataProperties.find((p: any) => p.name === 'vdr:snapshotType')
-            const snapshotValueProp = metadataProperties.find((p: any) => p.name === 'vdr:snapshotValue')
+            const snapshotTypeProp = metadataProperties.find((p: any) => p.name === 'VDR_SNAPSHOT_TYPE')
+            const snapshotValueProp = metadataProperties.find((p: any) => p.name === 'VDR_SNAPSHOT_VALUE')
             
             if (snapshotTypeProp && snapshotValueProp) {
-                // Backend now sends uppercase enum values (LIFECYCLE, APPROVAL)
                 if (snapshotTypeProp.value === 'LIFECYCLE') {
                     snapshotType = `By Lifecycle (${snapshotValueProp.value})`
                 } else if (snapshotTypeProp.value === 'APPROVAL') {
-                    // Backend now provides the approval name directly in snapshotValue
                     snapshotType = `By Approval (${snapshotValueProp.value})`
                 }
             } else if (vdrSnapshotType.value === 'DATE') {
@@ -2836,13 +2858,9 @@ async function exportReleaseVdrPdf() {
             skipDateInFilename: true,
             hideTypeColumn: true,
             snapshotDate,
-            snapshotType
+            snapshotType,
+            includeToolAttribution: vdrIncludeToolAttribution.value
         })
-        
-        if (!result.success) {
-            notify('warning', 'No Data', result.message || 'No vulnerabilities found for this release')
-            return
-        }
         
         notify('info', 'Processing Download', 'Your VDR PDF is being downloaded...')
     } catch (err: any) {

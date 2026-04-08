@@ -17,6 +17,7 @@ export interface PdfExportOptions {
     hideTypeColumn?: boolean
     snapshotDate?: string
     snapshotType?: string
+    includeToolAttribution?: boolean
 }
 
 function getSeverityColor(severity: string): string {
@@ -48,7 +49,8 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         skipDateInFilename = false,
         hideTypeColumn = false,
         snapshotDate,
-        snapshotType
+        snapshotType,
+        includeToolAttribution = true
     } = options
 
     // Filter data based on settings
@@ -66,9 +68,7 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         return true
     })
 
-    if (!data || data.length === 0) {
-        return { success: false, message: 'No findings match the selected filters' }
-    }
+    const noFindings = !data || data.length === 0
 
     // Sort data: Type (Vulnerability, Weakness, Violation), then Severity, then PURL/Location
     const typeOrder = ['Vulnerability', 'Weakness', 'Violation']
@@ -145,9 +145,16 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
     ]
     
     // Add snapshot information if provided
-    if (snapshotDate || snapshotType) {
+    if (snapshotType === 'Current State') {
+        contentArray.push({
+            text: `Current State as of ${snapshotDate || new Date().toLocaleString('en-CA', { hour12: false })}`,
+            style: 'snapshot',
+            color: '#444444',
+            bold: false
+        })
+    } else if (snapshotDate || snapshotType) {
         contentArray.push({ 
-            text: `Historical Snapshot: ${snapshotType || 'Yes'} (${snapshotDate || 'Unknown date'})`, 
+            text: `Historical Snapshot: ${snapshotType || 'By Date'} (${snapshotDate || 'Unknown date'})`, 
             style: 'snapshot',
             color: '#0066cc',
             bold: true
@@ -155,24 +162,33 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
     }
     
     contentArray.push(
-        { text: `Total findings: ${data.length}${includeSuppressed ? ' (including suppressed)' : ''}`, style: 'subheader' },
-        { text: `Tool: ReARM - rearmhq.com`, style: 'subheader', margin: [0, 0, 0, 10] }
+        { text: `Total findings: ${noFindings ? 0 : data.length}${includeSuppressed ? ' (including suppressed)' : ''}`, style: 'subheader' }
     )
+    if (includeToolAttribution) {
+        contentArray.push({ text: `Tool: ReARM - rearmhq.com`, style: 'subheader', margin: [0, 0, 0, 10] })
+    }
+
+    const noFindingsText = snapshotType === 'Current State'
+        ? 'No findings found'
+        : `No findings found as of ${snapshotDate || new Date().toLocaleString('en-CA', { hour12: false })}`
+    const mainContent: any[] = noFindings
+        ? [{ text: noFindingsText, style: 'noFindings', margin: [0, 20, 0, 0] }]
+        : [{
+            table: {
+                headerRows: 1,
+                widths: widths,
+                body: tableBody
+            },
+            layout: {
+                fillColor: (rowIndex: number) => rowIndex === 0 ? '#f0f0f0' : null
+            }
+        }]
 
     const docDefinition: any = {
         pageOrientation: 'landscape',
         content: [
             ...contentArray,
-            {
-                table: {
-                    headerRows: 1,
-                    widths: widths,
-                    body: tableBody
-                },
-                layout: {
-                    fillColor: (rowIndex: number) => rowIndex === 0 ? '#f0f0f0' : null
-                }
-            }
+            ...mainContent
         ],
         styles: {
             header: {
@@ -183,6 +199,12 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
             snapshot: {
                 fontSize: 11,
                 margin: [0, 0, 0, 3]
+            },
+            noFindings: {
+                fontSize: 12,
+                bold: true,
+                color: '#444444',
+                alignment: 'center'
             },
             subheader: {
                 fontSize: 10,
