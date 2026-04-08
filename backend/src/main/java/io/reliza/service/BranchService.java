@@ -6,7 +6,9 @@ package io.reliza.service;
 import static io.reliza.common.LambdaExceptionWrappers.handlingConsumerWrapper;
 
 import java.time.ZonedDateTime;
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -317,7 +319,6 @@ public class BranchService {
 
 	@Transactional
 	public BranchData updateBranch (BranchDto branchDto, WhoUpdated wu) throws RelizaException {
-		// TODO: find a way to prevent circular links
 		BranchData retBd = null;
 		Optional<Branch> bOpt = getBranch(branchDto.getUuid());
 		if (bOpt.isPresent()) {
@@ -348,6 +349,7 @@ public class BranchService {
 				bd.setFindingAnalyticsParticipation(branchDto.getFindingAnalyticsParticipation());
 			}
 			if (null != branchDto.getDependencies()) {
+				checkCircularBranchDependency(branchDto.getUuid(), branchDto.getDependencies());
 				bd.setDependencies(branchDto.getDependencies());
 			}
 			if (null != branchDto.getDependencyPatterns()) {
@@ -409,6 +411,34 @@ public class BranchService {
 			retList.add(bd);
 		}
 		return retList;
+	}
+
+	/**
+	 * Validates that the proposed dependencies for branch {@code selfBranchUuid} would not
+	 * create a circular dependency. Walks the dependency graph of each proposed child branch
+	 * transitively; if {@code selfBranchUuid} is encountered, the dependency chain is circular.
+	 *
+	 * @throws RelizaException if a cycle is detected
+	 */
+	public void checkCircularBranchDependency(UUID selfBranchUuid, List<ChildComponent> proposedDeps) throws RelizaException {
+		Set<UUID> visited = new HashSet<>();
+		Deque<UUID> queue = new ArrayDeque<>();
+		for (ChildComponent cc : proposedDeps) {
+			if (cc.getBranch() != null) queue.add(cc.getBranch());
+		}
+		while (!queue.isEmpty()) {
+			UUID current = queue.poll();
+			if (selfBranchUuid.equals(current)) {
+				throw new RelizaException("Circular dependency detected: feature set " + selfBranchUuid + " would depend on itself");
+			}
+			if (visited.add(current)) {
+				getBranchData(current).ifPresent(bd ->
+					bd.getDependencies().forEach(cc -> {
+						if (cc.getBranch() != null) queue.add(cc.getBranch());
+					})
+				);
+			}
+		}
 	}
 
 	public BranchData addChildComponentsToBranch(BranchData branchData,
