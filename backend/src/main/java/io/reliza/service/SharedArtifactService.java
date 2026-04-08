@@ -87,11 +87,20 @@ public class SharedArtifactService {
 	public void saveArtifactMetrics (Artifact a, DependencyTrackIntegration metrics) {
 		try {
 			if (a.getMetrics() != null) {
+				int revision = a.getMetricsRevision();
+				int maxAuditRevision = metricsAuditRepository.findMaxRevision(
+						MetricsEntityType.ARTIFACT.name(), a.getUuid());
+				if (maxAuditRevision >= revision) {
+					revision = maxAuditRevision + 1;
+					log.error("Duplicate metrics audit revision detected for artifact {} - expected {} but max audit is {}, bumping to {}",
+							a.getUuid(), a.getMetricsRevision(), maxAuditRevision, revision);
+					repository.bumpMetricsRevision(a.getUuid());
+				}
 				MetricsAudit audit = new MetricsAudit();
 				audit.setEntityType(MetricsEntityType.ARTIFACT);
 				audit.setEntityUuid(a.getUuid());
 				audit.setOrg(UUID.fromString((String) a.getRecordData().get("org")));
-				audit.setMetricsRevision(a.getMetricsRevision());
+				audit.setMetricsRevision(revision);
 				audit.setRevisionCreatedDate(ZonedDateTime.now());
 				audit.setEntityCreatedDate(a.getCreatedDate());
 				audit.setMetrics(a.getMetrics());

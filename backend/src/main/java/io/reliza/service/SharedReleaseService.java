@@ -26,7 +26,6 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import com.github.packageurl.PackageURL;
@@ -104,17 +103,17 @@ public class SharedReleaseService {
 	public void saveReleaseMetrics (Release r, ReleaseMetricsDto metrics) {
 		try {
 			if (r.getMetrics() != null) {
-				MetricsAudit audit = buildMetricsAudit(r, r.getMetricsRevision());
-				try {
-					metricsAuditRepository.save(audit);
-				} catch (DataIntegrityViolationException e) {
-					int bumpedRevision = r.getMetricsRevision() + 1;
-					log.error("Duplicate metrics audit record detected for release {} at revision {} - bumping to revision {}",
-							r.getUuid(), r.getMetricsRevision(), bumpedRevision);
-					MetricsAudit bumpedAudit = buildMetricsAudit(r, bumpedRevision);
-					metricsAuditRepository.save(bumpedAudit);
+				int revision = r.getMetricsRevision();
+				int maxAuditRevision = metricsAuditRepository.findMaxRevision(
+						MetricsEntityType.RELEASE.name(), r.getUuid());
+				if (maxAuditRevision >= revision) {
+					revision = maxAuditRevision + 1;
+					log.error("Duplicate metrics audit revision detected for release {} - expected {} but max audit is {}, bumping to {}",
+							r.getUuid(), r.getMetricsRevision(), maxAuditRevision, revision);
 					repository.bumpMetricsRevision(r.getUuid());
 				}
+				MetricsAudit audit = buildMetricsAudit(r, revision);
+				metricsAuditRepository.save(audit);
 			}
 			String metricsJson = Utils.OM.writeValueAsString(metrics);
 			repository.updateMetrics(r.getUuid(), metricsJson);

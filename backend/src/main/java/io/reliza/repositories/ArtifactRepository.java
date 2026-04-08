@@ -95,4 +95,9 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	@Modifying
 	@Query(value = "UPDATE rearm.artifacts SET metrics = CAST(:metrics AS jsonb), metrics_revision = metrics_revision + 1 WHERE uuid = :uuid", nativeQuery = true)
 	void updateMetrics(@Param("uuid") UUID uuid, @Param("metrics") String metrics);
+
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.artifacts SET metrics_revision = metrics_revision + 1 WHERE uuid = :uuid", nativeQuery = true)
+	void bumpMetricsRevision(@Param("uuid") UUID uuid);
 }
