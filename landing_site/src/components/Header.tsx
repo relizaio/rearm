@@ -38,8 +38,9 @@ export default function Header() {
     <div style={{ marginBottom: "106px" }}>
       <nav ref={navRef} className="navbar navbar-expand-lg navbar-light fixed-top" style={{ background: "white", minHeight: "100px", boxShadow: "rgba(0, 0, 0, 0.1) 0px 20px 25px -5px, rgba(0, 0, 0, 0.04) 0px 10px 10px -5px" }}>
         <div className="container-fluid">
-          <Link className="navbar-brand" href="/" style={{ marginLeft: "20px", marginRight: "-20px" }}>
-            <Image src="/home/rearm.png" alt="ReARM" width={75} height={74} />
+          <Link className="navbar-brand d-flex align-items-center" href="/" style={{ marginLeft: "20px", marginRight: "-20px", gap: "10px" }}>
+            <Image src="/home/logo_reliza_birds.png" alt="ReARM" width={50} height={50} />
+            <span style={{ fontWeight: 700, fontSize: "1.4rem", color: "rgb(24,33,77)", letterSpacing: "0.02em" }}>ReARM</span>
           </Link>
           <button
             className={`navbar-toggler${menuOpen ? '' : ' collapsed'}`}

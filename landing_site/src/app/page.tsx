@@ -43,7 +43,10 @@ export default function Home() {
       <div className="container-fluid container1">
         <div className="row mx-auto" style={{ maxWidth: "1100px" }}>
           <div className="col-12 mb-4">
-            <h1 className="C1_title">ReARM</h1>
+            <h1 className="C1_title d-flex align-items-center justify-content-center" style={{ gap: "16px" }}>
+              <img src="/home/logo_reliza_birds.png" alt="ReARM" style={{ height: "1em", width: "auto" }} />
+              ReARM
+            </h1>
             <h1 style={{ textAlign: "center" }}>
               <Link href="/release-level-supply-chain-evidence-platform" style={{ color: "inherit", textDecoration: "none" }}>
                 Release-Level Supply Chain Evidence Platform
