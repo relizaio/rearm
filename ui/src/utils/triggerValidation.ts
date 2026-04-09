@@ -60,6 +60,10 @@ export function validateInputTrigger(trigger: any): TriggerValidationResult {
                         if (condition.metricsValue === null || condition.metricsValue === undefined) {
                             return { valid: false, error: 'Metrics conditions must have a metric value set.' }
                         }
+                    } else if (condition.type === 'FIRST_SCANNED') {
+                        if (condition.firstScannedPresent === null || condition.firstScannedPresent === undefined) {
+                            return { valid: false, error: 'First Scanned conditions must specify Present or Not Present.' }
+                        }
                     }
                 }
             }

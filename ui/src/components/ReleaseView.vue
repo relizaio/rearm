@@ -238,6 +238,20 @@
                                     </n-tooltip>
                                 </span>
                             </n-radio-button>
+                            <n-radio-button v-if="updatedRelease?.metrics?.firstScanned || updatedRelease?.metrics?.lastScanned" value="FIRST_SCANNED">
+                                <span style="display: inline-flex; align-items: center;">
+                                    First Scanned
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        <span v-if="updatedRelease?.metrics?.firstScanned">Export vulnerabilities as they existed when this release was first scanned for vulnerabilities.</span>
+                                        <span v-else>Estimated snapshot — exact first scan date not recorded; using release creation date + 6 hours as cutoff.</span>
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
                             <n-radio-button value="LIFECYCLE">
                                 <span style="display: inline-flex; align-items: center;">
                                     By Lifecycle
@@ -1087,6 +1101,12 @@ const vdrLifecycleSelectOptions = computed(() => {
             opts.push({ label: resolveLifecycleLabel(event.newValue), value: event.newValue })
         }
     })
+    // Include the current lifecycle if it was never recorded as a CHANGED event
+    // (e.g. releases created directly in ASSEMBLED state via CLI have no transition event)
+    const currentLifecycle = release.value?.lifecycle
+    if (currentLifecycle && !seen.has(currentLifecycle)) {
+        opts.push({ label: resolveLifecycleLabel(currentLifecycle), value: currentLifecycle })
+    }
     return opts.length > 0 ? opts : releaseLifecycleSelectOptions.value
 })
 
@@ -1259,6 +1279,13 @@ const vdrSnapshotType: Ref<string> = ref('NONE')
 const vdrCutoffDate: Ref<number | null> = ref(null)
 const vdrTargetLifecycle: Ref<string | null> = ref(null)
 const vdrTargetApproval: Ref<string | null> = ref(null)
+const vdrFirstScannedDate = computed<string | null>(() => {
+    if (updatedRelease.value?.metrics?.firstScanned) return updatedRelease.value.metrics.firstScanned
+    if (updatedRelease.value?.metrics?.lastScanned && updatedRelease.value?.createdDate) {
+        return new Date(new Date(updatedRelease.value.createdDate).getTime() + 6 * 3600 * 1000).toISOString()
+    }
+    return null
+})
 const vdrExportFormat: Ref<string> = ref('JSON')
 const vdrPdfExportPending: Ref<boolean> = ref(false)
 const vdrIncludeToolAttribution: Ref<boolean> = ref(true)
@@ -1280,6 +1307,10 @@ watch(vdrSnapshotType, (newType) => {
     } else if (newType === 'APPROVAL') {
         vdrCutoffDate.value = null
         vdrTargetLifecycle.value = null
+    } else if (newType === 'FIRST_SCANNED') {
+        vdrCutoffDate.value = null
+        vdrTargetLifecycle.value = null
+        vdrTargetApproval.value = null
     }
 })
 const excludeDev: Ref<boolean> = ref(true)
@@ -2610,6 +2641,9 @@ function getSnapshotSuffix(): string {
         const normalizedApprovalName = approvalName.toLowerCase().replace(/[^a-zA-Z0-9\-._]/g, '_')
         return `-snapshot-${normalizedApprovalName}`
     }
+    if (vdrSnapshotType.value === 'FIRST_SCANNED') {
+        return '-snapshot-first-scanned'
+    }
     if (vdrSnapshotType.value === 'LIFECYCLE' && vdrTargetLifecycle.value) {
         return `-snapshot-${vdrTargetLifecycle.value.toLowerCase()}`
     }
@@ -2636,11 +2670,17 @@ async function exportReleaseVdr () {
             notify('warning', 'Validation Error', 'Please select an approval entry')
             return
         }
+        if (vdrSnapshotType.value === 'FIRST_SCANNED' && !vdrFirstScannedDate.value) {
+            notify('warning', 'Validation Error', 'First scanned date unavailable for this release')
+            return
+        }
         
         // Only send the relevant parameter based on snapshot type
-        const upToDateIso = vdrSnapshotType.value === 'DATE' && vdrCutoffDate.value 
-            ? new Date(vdrCutoffDate.value).toISOString() 
-            : null
+        const upToDateIso = vdrSnapshotType.value === 'FIRST_SCANNED'
+            ? vdrFirstScannedDate.value
+            : (vdrSnapshotType.value === 'DATE' && vdrCutoffDate.value 
+                ? new Date(vdrCutoffDate.value).toISOString() 
+                : null)
         const targetLifecycle = vdrSnapshotType.value === 'LIFECYCLE' ? vdrTargetLifecycle.value : null
         const targetApproval = vdrSnapshotType.value === 'APPROVAL' ? vdrTargetApproval.value : null
         
@@ -2724,11 +2764,17 @@ async function exportReleaseVdrPdf() {
             notify('warning', 'Validation Error', 'Please select an approval entry')
             return
         }
+        if (vdrSnapshotType.value === 'FIRST_SCANNED' && !vdrFirstScannedDate.value) {
+            notify('warning', 'Validation Error', 'First scanned date unavailable for this release')
+            return
+        }
         
         // Only send the relevant parameter based on snapshot type
-        const upToDateIso = vdrSnapshotType.value === 'DATE' && vdrCutoffDate.value 
-            ? new Date(vdrCutoffDate.value).toISOString() 
-            : null
+        const upToDateIso = vdrSnapshotType.value === 'FIRST_SCANNED'
+            ? vdrFirstScannedDate.value
+            : (vdrSnapshotType.value === 'DATE' && vdrCutoffDate.value 
+                ? new Date(vdrCutoffDate.value).toISOString() 
+                : null)
         const targetLifecycle = vdrSnapshotType.value === 'LIFECYCLE' ? vdrTargetLifecycle.value : null
         const targetApproval = vdrSnapshotType.value === 'APPROVAL' ? vdrTargetApproval.value : null
         
@@ -2832,6 +2878,8 @@ async function exportReleaseVdrPdf() {
                 } else if (snapshotTypeProp.value === 'APPROVAL') {
                     snapshotType = `By Approval (${snapshotValueProp.value})`
                 }
+            } else if (vdrSnapshotType.value === 'FIRST_SCANNED') {
+                snapshotType = 'First Scanned'
             } else if (vdrSnapshotType.value === 'DATE') {
                 snapshotType = 'By Date'
             }
@@ -3567,6 +3615,7 @@ function renderArtifactFactsColumn (row: any) {
     if (row.digestRecords && row.digestRecords.length) row.digestRecords.forEach((d: any) => factContent.push(h('li', `digest (${d.scope}): ${d.algo}:${d.digest}`)))
     if (row.downloadLinks && row.downloadLinks.length) factContent.push(h('li', 'DownloadLinks:'), h('ul', row.downloadLinks.map((dl: DownloadLink) => h('li', `${dl.content}: ${dl.uri}`))))
     if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
+    if (row.metrics && row.metrics.firstScanned) factContent.push(h('li', `first scanned: ${new Date(row.metrics.firstScanned).toLocaleString('en-Ca')}`))
     if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
     if (row.metrics && row.metrics.dtrackSubmissionFailed) factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack submission failed'))
     if (row.metrics && row.metrics.dtrackSubmissionFailed && row.metrics.dtrackSubmissionFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack failure reason: ${row.metrics.dtrackSubmissionFailureReason}`))

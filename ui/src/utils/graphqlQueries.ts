@@ -70,6 +70,7 @@ const MULTI_RELEASE_GQL_DATA = `
     }
     metrics {
         lastScanned
+        firstScanned
         critical
         high
         medium
@@ -340,6 +341,7 @@ const ARTIFACT_DETAIL_DATA = `
         dtrackSubmissionAttempts
         dtrackSubmissionFailureReason
         lastScanned
+        firstScanned
         critical
         high
         medium
@@ -538,6 +540,7 @@ const singleReleaseDataNoParent = `
     }
     metrics {
         lastScanned
+        firstScanned
         critical
         high
         medium
@@ -943,6 +946,7 @@ const singleReleaseProductNoParent = `
     }
     metrics {
         lastScanned
+        firstScanned
         critical
         high
         medium
@@ -984,6 +988,7 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
             }
             metrics {
                 lastScanned
+                firstScanned
                 critical
                 high
                 medium
@@ -1019,6 +1024,7 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                     }
                     metrics {
                         lastScanned
+                        firstScanned
                         critical
                         high
                         medium

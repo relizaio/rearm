@@ -396,7 +396,7 @@
                                                                         <template #default="{ value, index }">
                                                                             <n-select style="width: 400px;" v-model:value="value.type"
                                                                                 v-on:update:value="onConditionTypeUpdate(value1, index)"
-                                                                                :options="[{label: 'Approval Entry', value: 'APPROVAL_ENTRY'}, {label: 'Possible Lifecycles', value: 'LIFECYCLE'}, {label: 'Possible Branch Types', value: 'BRANCH_TYPE'}, {label: 'Metrics', value: 'METRICS'}]" />
+                                                                                :options="[{label: 'Approval Entry', value: 'APPROVAL_ENTRY'}, {label: 'Possible Lifecycles', value: 'LIFECYCLE'}, {label: 'Possible Branch Types', value: 'BRANCH_TYPE'}, {label: 'Metrics', value: 'METRICS'}, {label: 'First Scanned', value: 'FIRST_SCANNED'}]" />
                                                                             <n-select v-if="value.type === 'APPROVAL_ENTRY'"
                                                                                 v-model:value="value.approvalEntry"
                                                                                 :options="approvalEntryOptionsForTriggers"
@@ -412,6 +412,8 @@
                                                                             <n-select v-if="value.type === 'METRICS'" style="width:300px;" v-model:value="value.comparisonSign" 
                                                                                 :options="[{label: '=', value: 'EQUALS'}, {label: '>', value: 'GREATER'}, {label: '<', value: 'LOWER'}, {label: '>=', value: 'GREATER_OR_EQUALS'}, {label: '<=', value: 'LOWER_OR_EQUALS'}]" />
                                                                             <n-input-number v-if="value.type === 'METRICS'" v-model:value="value.metricsValue" />
+                                                                            <n-select v-if="value.type === 'FIRST_SCANNED'" style="width:300px;" v-model:value="value.firstScannedPresent"
+                                                                                :options="[{label: 'Present', value: true}, {label: 'Not Present', value: false}]" />
                                                                         </template>
                                                                     </n-dynamic-input>
                                                                 </div>
@@ -643,7 +645,7 @@ import { BugOutlined } from '@vicons/antd'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
-import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, ConditionGroup, InputTriggerEvent, hasMixedOrApprovalGroup } from '../utils/triggerTypes'
+import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, FirstScannedCondition, ConditionGroup, InputTriggerEvent, hasMixedOrApprovalGroup } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import graphqlQueries from '../utils/graphqlQueries'
 
@@ -1331,6 +1333,9 @@ function onConditionTypeUpdate (conditionGroup: ConditionGroup, index: number) {
         break
     case 'METRICS':
         conditionGroup.conditions[index] = new MetricsCondition()
+        break
+    case 'FIRST_SCANNED':
+        conditionGroup.conditions[index] = new FirstScannedCondition()
         break
     default:
         break
@@ -2334,6 +2339,8 @@ function parseConditionGroupToDisplayElements (cg : ConditionGroup): any {
             else if (c.comparisonSign === 'LOWER') compSign = '<'
             else if (c.comparisonSign === 'EQUALS') compSign = '='
             inGroupEls.push(h('li', `${metricsTypeName} ${compSign} ${c.metricsValue}`))
+        } else if (c.type === 'FIRST_SCANNED') {
+            inGroupEls.push(h('li', `First Scanned: ${c.firstScannedPresent ? 'Present' : 'Not Present'}`))
         }
     }
     return h('ul', inGroupEls)

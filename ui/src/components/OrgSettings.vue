@@ -631,7 +631,7 @@
                                                         <template #default="{ value, index }">
                                                             <n-select style="width: 400px;" v-model:value="value.type"
                                                                 v-on:update:value="onGlobalConditionTypeUpdate(value1, index)"
-                                                                :options="[{label: 'Approval Entry', value: 'APPROVAL_ENTRY'}, {label: 'Possible Lifecycles', value: 'LIFECYCLE'}, {label: 'Possible Branch Types', value: 'BRANCH_TYPE'}, {label: 'Metrics', value: 'METRICS'}]" />
+                                                                :options="[{label: 'Approval Entry', value: 'APPROVAL_ENTRY'}, {label: 'Possible Lifecycles', value: 'LIFECYCLE'}, {label: 'Possible Branch Types', value: 'BRANCH_TYPE'}, {label: 'Metrics', value: 'METRICS'}, {label: 'First Scanned', value: 'FIRST_SCANNED'}]" />
                                                             <n-select v-if="value.type === 'APPROVAL_ENTRY'"
                                                                 v-model:value="value.approvalEntry"
                                                                 :options="globalApprovalEntryOptionsForTriggers"
@@ -647,6 +647,8 @@
                                                             <n-select v-if="value.type === 'METRICS'" style="width:300px;" v-model:value="value.comparisonSign" 
                                                                 :options="[{label: '=', value: 'EQUALS'}, {label: '>', value: 'GREATER'}, {label: '<', value: 'LOWER'}, {label: '>=', value: 'GREATER_OR_EQUALS'}, {label: '<=', value: 'LOWER_OR_EQUALS'}]" />
                                                             <n-input-number v-if="value.type === 'METRICS'" v-model:value="value.metricsValue" />
+                                                            <n-select v-if="value.type === 'FIRST_SCANNED'" style="width:300px;" v-model:value="value.firstScannedPresent"
+                                                                :options="[{label: 'Present', value: true}, {label: 'Not Present', value: false}]" />
                                                         </template>
                                                     </n-dynamic-input>
                                                 </div>
@@ -1033,7 +1035,7 @@ import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
-import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, ConditionGroup, InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
+import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, FirstScannedCondition, ConditionGroup, InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
@@ -4924,6 +4926,9 @@ function onGlobalConditionTypeUpdate (conditionGroup: ConditionGroup, index: num
         break
     case 'METRICS':
         conditionGroup.conditions[index] = new MetricsCondition()
+        break
+    case 'FIRST_SCANNED':
+        conditionGroup.conditions[index] = new FirstScannedCondition()
         break
     default:
         break

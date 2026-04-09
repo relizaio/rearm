@@ -9,6 +9,7 @@ export interface Condition {
     metricsType?: string;
     comparisonSign?: string;
     metricsValue?: number;
+    firstScannedPresent?: boolean;
 }
 
 export class UninitializedCondition implements Condition {
@@ -36,6 +37,11 @@ export class MetricsCondition implements Condition {
     metricsType = ''
     comparisonSign = ''
     metricsValue = 0
+}
+
+export class FirstScannedCondition implements Condition {
+    type = 'FIRST_SCANNED'
+    firstScannedPresent = true
 }
 
 export type ConditionGroup = {
