@@ -62,6 +62,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	@JsonProperty private Integer policyViolationsOperationalUnaudited = 0;
 	@JsonProperty private Integer weaknesses = 0;
 	@JsonProperty private ZonedDateTime lastScanned;
+	@JsonProperty private ZonedDateTime firstScanned;
 	@JsonProperty private List<ViolationDto> violationDetails = new LinkedList<>();
 	@JsonProperty private List<VulnerabilityDto> vulnerabilityDetails = new LinkedList<>();
 	@JsonProperty private List<WeaknessDto> weaknessDetails = new LinkedList<>();
@@ -174,7 +175,10 @@ public class ReleaseMetricsDto implements Cloneable {
             } else cloned.violationDetails = new LinkedList<>();
             if (null != this.vulnerabilityDetails && !this.vulnerabilityDetails.isEmpty()) {
             	cloned.vulnerabilityDetails = new LinkedList<>(this.vulnerabilityDetails);
-            } else cloned.vulnerabilityDetails = new LinkedList<>();            
+            } else cloned.vulnerabilityDetails = new LinkedList<>();
+            if (null != this.weaknessDetails && !this.weaknessDetails.isEmpty()) {
+            	cloned.weaknessDetails = new LinkedList<>(this.weaknessDetails);
+            } else cloned.weaknessDetails = new LinkedList<>();
             return cloned;
         } catch (CloneNotSupportedException e) {
             throw new AssertionError("Cloning not supported", e);
@@ -224,7 +228,13 @@ public class ReleaseMetricsDto implements Cloneable {
              Objects.equals(this.policyViolationsOperationalUnaudited, otherRmd.policyViolationsOperationalUnaudited) &&
              detailListEquals(this.vulnerabilityDetails, otherRmd.vulnerabilityDetails) &&
              detailListEquals(this.violationDetails, otherRmd.violationDetails) &&
-             detailListEquals(this.weaknessDetails, otherRmd.weaknessDetails);
+             detailListEquals(this.weaknessDetails, otherRmd.weaknessDetails) &&
+             // firstScanned is included here (unlike lastScanned) because it should stabilize
+             // after the initial scan and drives meaningful change detection: a transition from
+             // null to a real value (or a shift when a previously-missing artifact is first
+             // scanned) must trigger a save.  lastScanned changes on every rescan by design
+             // and is therefore excluded to avoid spurious saves.
+             Objects.equals(this.firstScanned, otherRmd.firstScanned);
   	}
 
   	private static <T> boolean detailListEquals(List<T> a, List<T> b) {
@@ -250,7 +260,8 @@ public class ReleaseMetricsDto implements Cloneable {
   	        policyViolationsOperationalAudited, policyViolationsOperationalUnaudited,
   	        vulnerabilityDetails != null ? new java.util.HashSet<>(vulnerabilityDetails) : null,
   	        violationDetails != null ? new java.util.HashSet<>(violationDetails) : null,
-  	        weaknessDetails != null ? new java.util.HashSet<>(weaknessDetails) : null
+  	        weaknessDetails != null ? new java.util.HashSet<>(weaknessDetails) : null,
+  	        firstScanned
   	    );
   	}
 
@@ -362,6 +373,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	public void mergeWithByContent(ReleaseMetricsDto otherRmd) {
 		if (null == this.violationDetails) this.violationDetails = new LinkedList<>();
 		if (null == this.vulnerabilityDetails) this.vulnerabilityDetails = new LinkedList<>();
+		if (null == this.weaknessDetails) this.weaknessDetails = new LinkedList<>();
 		
 	    if (otherRmd != null) {
 	    	this.violationDetails = mergeViolationDtos(this.violationDetails, otherRmd.violationDetails);
@@ -371,6 +383,12 @@ public class ReleaseMetricsDto implements Cloneable {
 	    	if (otherRmd.getLastScanned() != null) {
 	    		if (this.lastScanned == null || otherRmd.getLastScanned().isAfter(this.lastScanned)) {
 	    			this.lastScanned = otherRmd.getLastScanned();
+	    		}
+	    	}
+	    	// Update firstScanned to max of both DTOs (all artifacts must be scanned)
+	    	if (otherRmd.getFirstScanned() != null) {
+	    		if (this.firstScanned == null || otherRmd.getFirstScanned().isAfter(this.firstScanned)) {
+	    			this.firstScanned = otherRmd.getFirstScanned();
 	    		}
 	    	}
 	    	this.computeMetricsFromFacts();

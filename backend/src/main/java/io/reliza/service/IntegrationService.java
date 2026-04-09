@@ -618,7 +618,7 @@ public class IntegrationService {
 	}
 	
 	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad, ZonedDateTime lastScanned) throws RelizaException {
-		if (null == lastScanned) lastScanned = ZonedDateTime.now();
+		if (null == lastScanned) lastScanned = ZonedDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
 		DependencyTrackIntegration dti = null;
 		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(ad.getOrg(), IntegrationType.DEPENDENCYTRACK,
 				CommonVariables.BASE_INTEGRATION_IDENTIFIER);
@@ -638,7 +638,7 @@ public class IntegrationService {
 				Map<String, Object> processingRespMap = Utils.OM.readValue(processingResp.getBody(), Map.class);
 				Boolean isProcessing = (Boolean) processingRespMap.get("processing");
 				if (!isProcessing) {
-					dti = obtainDepdencyTrackProjectMetrics(dtrackIntegration.getUri(), apiToken, ad);
+					dti = obtainDepdencyTrackProjectMetrics(dtrackIntegration.getUri(), apiToken, ad, lastScanned);
 					URI fullDtrackUri = URI.create(dtrackIntegration.getFrontendUri()
 							.toString() + "/projects/" + ad.getMetrics().getDependencyTrackProject());
 					dti.setDependencyTrackFullUri(fullDtrackUri);
@@ -656,13 +656,13 @@ public class IntegrationService {
 	}
 	
 	private DependencyTrackIntegration obtainDepdencyTrackProjectMetrics (URI dtrackBaseUri,
-			String apiToken, ArtifactData ad) throws JsonMappingException, JsonProcessingException {
+			String apiToken, ArtifactData ad, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
 		String dtrackProject = ad.getMetrics().getDependencyTrackProject();
 		DependencyTrackIntegration dti = new DependencyTrackIntegration();
 		List<VulnerabilityDto> vulnerabilityDetails = fetchDependencyTrackVulnerabilityDetails(
-				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid());
+				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), lastScanned);
 		List<ViolationDto> violationDetails = fetchDependencyTrackViolationDetails(
-				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), ad.getOrg());
+				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), ad.getOrg(), lastScanned);
 		dti.setVulnerabilityDetails(vulnerabilityDetails);
 		dti.setViolationDetails(violationDetails);
 		vulnAnalysisService.processReleaseMetricsDto(ad.getOrg(), ad.getOrg(), AnalysisScope.ORG, dti);
@@ -703,10 +703,13 @@ public class IntegrationService {
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
 	
 	private List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid) throws JsonMappingException, JsonProcessingException {
+			String apiToken, String dtrackProject, UUID artifactUuid, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
-		final ZonedDateTime attributedAt = ZonedDateTime.now();
+		// Use lastScanned (DTrack scan time) as attributedAt so findings are included in First Scanned VDR
+		// snapshots. Using ZonedDateTime.now() would set attributedAt after lastScanned/firstScanned,
+		// causing all findings to be filtered out when the cutoff equals firstScanned.
+		final ZonedDateTime attributedAt = lastScanned != null ? lastScanned : ZonedDateTime.now();
 		
 		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
 			List<VulnerabilityDto> pageResults = new ArrayList<>();
@@ -739,7 +742,7 @@ public class IntegrationService {
 	}
 	
 	private List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid) throws JsonMappingException, JsonProcessingException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		final Set<FindingSourceDto> sources = Set.of(source);
@@ -775,7 +778,7 @@ public class IntegrationService {
 					licenseId = "undetected";
 				}
 				ViolationDto vdto = new ViolationDto(purl, violationType,
-						licenseId, null, sources, null, null, ZonedDateTime.now());
+						licenseId, null, sources, null, null, lastScanned != null ? lastScanned : ZonedDateTime.now());
 				pageResults.add(vdto);
 			}
 			return pageResults;

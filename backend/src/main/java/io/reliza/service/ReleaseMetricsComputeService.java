@@ -29,6 +29,9 @@ public class ReleaseMetricsComputeService {
 
 	private static final Logger log = LoggerFactory.getLogger(ReleaseMetricsComputeService.class);
 
+	// Fallback offset from artifact creation date to estimate first scan time when no actual firstScanned is recorded
+	private static final long FIRST_SCAN_FALLBACK_HOURS = 6;
+
 	@Autowired
 	private ReleaseRepository repository;
 
@@ -58,12 +61,13 @@ public class ReleaseMetricsComputeService {
 			return false;
 		}
 		r = lockedRelease.get();
-		ZonedDateTime lastScanned = ZonedDateTime.now();
+		ZonedDateTime lastScanned = ZonedDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
 		var rd = ReleaseData.dataFromRecord(r);
 		var originalMetrics = null != rd.getMetrics() ? rd.getMetrics().clone() : null;
 		if (null == originalMetrics || null == originalMetrics.getLastScanned() || lastScanned.isAfter(originalMetrics.getLastScanned())) {
 			ReleaseMetricsDto rmd = new ReleaseMetricsDto();
 			var allReleaseArts = artifactGatherService.gatherReleaseArtifacts(rd);
+			final ZonedDateTime[] releaseFirstScanned = { null };
 			allReleaseArts.forEach(aid -> {
 				var ad = artifactService.getArtifactData(aid);
 				if (ad.isPresent()) {
@@ -74,12 +78,30 @@ public class ReleaseMetricsComputeService {
 						artifactMetrics.setAttributedAtFallback(artifactData.getCreatedDate());
 						rmd.mergeWithByContent(artifactMetrics);
 					}
+					// Compute release firstScanned as max of all artifact firstScanned values.
+					// Only apply fallback for artifacts that have metrics (i.e. were DTrack-submitted),
+					// to avoid setting firstScanned for releases where no actual scanning has occurred.
+					ZonedDateTime artFs = (artifactData.getMetrics() != null) ? artifactData.getMetrics().getFirstScanned() : null;
+					if (artFs == null && artifactData.getMetrics() != null && artifactData.getCreatedDate() != null) {
+						artFs = artifactData.getCreatedDate().plusHours(FIRST_SCAN_FALLBACK_HOURS);
+					}
+					if (artFs != null && (releaseFirstScanned[0] == null || artFs.isAfter(releaseFirstScanned[0]))) {
+						releaseFirstScanned[0] = artFs;
+					}
 				}
 			});
 			rmd.mergeWithByContent(rollUpProductReleaseMetrics(rd));
 			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, rmd);
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			rmd.setLastScanned(lastScanned);
+			// Merge direct-artifact firstScanned into whatever rollUpProductReleaseMetrics contributed.
+			// Do NOT unconditionally overwrite: for product releases with no direct artifacts,
+			// releaseFirstScanned[0] is null and would wipe the value propagated from child releases.
+			if (releaseFirstScanned[0] != null) {
+				if (rmd.getFirstScanned() == null || releaseFirstScanned[0].isAfter(rmd.getFirstScanned())) {
+					rmd.setFirstScanned(releaseFirstScanned[0]);
+				}
+			}
 			rd.setMetrics(rmd);
 			if (!rmd.equals(originalMetrics)) {
 				sharedReleaseService.saveReleaseMetrics(r, rmd);

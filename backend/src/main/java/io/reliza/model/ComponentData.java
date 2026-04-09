@@ -87,7 +87,8 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		APPROVAL_ENTRY,
 		LIFECYCLE,
 		BRANCH_TYPE,
-		METRICS
+		METRICS,
+		FIRST_SCANNED
 	}
 	
 	public enum ComparisonSign {
@@ -116,7 +117,8 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 			Set<BranchType> possibleBranchTypes,
 			MetricsType metricsType,
 			ComparisonSign comparisonSign,
-			Integer metricsValue
+			Integer metricsValue,
+			Boolean firstScannedPresent
 			) {}
 	
 	public static record ConditionGroup (MatchOperator matchOperator, List<Condition> conditions, List<ConditionGroup> conditionGroups) {}

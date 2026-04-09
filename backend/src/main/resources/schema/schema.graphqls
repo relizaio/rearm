@@ -1118,6 +1118,7 @@ type DependencyTrackMetrics {
 	dtrackSubmissionAttempts: Int
 	dtrackSubmissionFailureReason: String
 	lastScanned: DateTime
+	firstScanned: DateTime
 	critical: Int
 	high: Int
 	medium: Int
@@ -1501,6 +1502,7 @@ type Condition {
 	metricsType: MetricsType
 	comparisonSign: ComparisonSign
 	metricsValue: Int
+	firstScannedPresent: Boolean
 }
 
 type ComponentPurlToDtrack {
@@ -2003,6 +2005,7 @@ input ConditionInput {
 	metricsType: MetricsType
 	comparisonSign: ComparisonSign
 	metricsValue: Int
+	firstScannedPresent: Boolean
 }
 
 input ActiveComponentsInput {
@@ -2219,7 +2222,8 @@ enum ConditionType {
 	APPROVAL_ENTRY
 	LIFECYCLE
 	BRANCH_TYPE
-	METRICS	
+	METRICS
+	FIRST_SCANNED
 }
 
 enum MetricsType {

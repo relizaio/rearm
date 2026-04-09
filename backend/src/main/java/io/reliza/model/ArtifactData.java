@@ -268,6 +268,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
     		dti.setPolicyViolationsOperationalAudited(rmd.getPolicyViolationsOperationalAudited());
     		dti.setPolicyViolationsOperationalUnaudited(rmd.getPolicyViolationsOperationalUnaudited());
     		dti.setLastScanned(rmd.getLastScanned());
+    		dti.setFirstScanned(rmd.getFirstScanned());
     		dti.setViolationDetails(rmd.getViolationDetails());
     		dti.setVulnerabilityDetails(rmd.getVulnerabilityDetails());
     		dti.setWeaknessDetails(rmd.getWeaknessDetails());

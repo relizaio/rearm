@@ -1151,7 +1151,11 @@ public class ArtifactService {
 	}
 	
 	public boolean fetchDependencyTrackDataForArtifact (Artifact a) throws RelizaException {
-		ZonedDateTime lastScanned = ZonedDateTime.now();
+		// Truncate to millis: ZonedDateTime.now() has nanosecond precision but ISO 8601
+		// serialization (used by the frontend) only preserves milliseconds. Without truncation,
+		// attributedAt=1775711486.871749400 > cutoff=1775711486.871000000 and all findings
+		// are filtered from the First Scanned VDR snapshot.
+		ZonedDateTime lastScanned = ZonedDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
 		var dti = integrationService.resolveDependencyTrackProcessingStatus(ad, lastScanned);
 		boolean doUpdate = false;

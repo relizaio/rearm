@@ -1604,6 +1604,16 @@ public class ReleaseService {
 			}
 			if (lifecycleDate != null) {
 				cutOffDate = (cutOffDate == null || lifecycleDate.isBefore(cutOffDate)) ? lifecycleDate : cutOffDate;
+			} else if (targetLifecycle == releaseData.getLifecycle()) {
+				// No CHANGED event found, but the release is currently in the target lifecycle.
+				// This happens when a release was created directly in that state (e.g. via CLI).
+				// Use firstScanned from metrics as cutoff (all findings up to first scan are shown).
+				// Fall back to null (no cutoff = show all findings) if firstScanned is unavailable.
+				ZonedDateTime fs = (releaseData.getMetrics() != null) ? releaseData.getMetrics().getFirstScanned() : null;
+				if (fs != null) {
+					cutOffDate = (cutOffDate == null || fs.isBefore(cutOffDate)) ? fs : cutOffDate;
+				}
+				// if fs == null, leave cutOffDate unchanged (null means no cutoff)
 			} else {
 				log.warn("Target lifecycle {} specified but not found in release history for release {}", targetLifecycle, releaseData.getUuid());
 			}
@@ -1611,8 +1621,7 @@ public class ReleaseService {
 
 		return cutOffDate;
 	}
-	
-	
+
 	/**
 	 * Generate CycloneDX 1.6 VDR from release metrics vulnerability details with historical snapshot support.
 	 * This method is for CE/lifecycle-only snapshots. For SaaS approval snapshots, use SaasReleaseService.
@@ -1890,7 +1899,7 @@ public class ReleaseService {
 				// Note: Vulnerabilities discovered before cutOffDate are included, and their analysis state 
 				// is computed historically in transformVulnerabilityToVdr. If all analysis happened after 
 				// cutOffDate, the state correctly falls back to IN_TRIAGE.
-				if (cutOffDate != null && vulnDto.attributedAt() != null && vulnDto.attributedAt().isAfter(cutOffDate)) {
+				if (cutOffDate != null && vulnDto.attributedAt() != null && vulnDto.attributedAt().truncatedTo(java.time.temporal.ChronoUnit.MILLIS).isAfter(cutOffDate)) {
 					continue;
 				}
 				

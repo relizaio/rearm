@@ -317,11 +317,17 @@ public class SharedArtifactService {
 			existingDti.setProjectVersion(dti.getProjectVersion());
 			existingDti.setDependencyTrackFullUri(dti.getDependencyTrackFullUri());
 			existingDti.setLastScanned(dti.getLastScanned());
+			if (existingDti.getFirstScanned() == null && dti.getLastScanned() != null) {
+				existingDti.setFirstScanned(dti.getLastScanned());
+			}
 			if (dti.getUploadDate() != null) {
 				existingDti.setUploadDate(dti.getUploadDate());
 			}
 		} else {
 			// No existing metrics - use new dti as-is
+			if (dti.getFirstScanned() == null && dti.getLastScanned() != null) {
+				dti.setFirstScanned(dti.getLastScanned());
+			}
 			existingDti = dti;
 		}
 		saveArtifactMetrics(a, existingDti);
