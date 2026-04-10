@@ -257,6 +257,7 @@ interface Props {
     perspectives: any[]
     products: any[]
     components: any[]
+    showSbomProbing?: boolean
     modelValue: {
         orgPermission: OrgPermission
         scopedPermissions: ScopedPermission[]
@@ -271,8 +272,8 @@ const installationType = computed(() => store.getters.myuser?.installationType)
 const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
 const permissionFunctions: string[] = constants.PermissionFunctions
-const orgPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'RESOURCE'))
-const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'RESOURCE' && f !== 'FINDING_ANALYSIS_WRITE'))
+const orgPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'RESOURCE' && (props.showSbomProbing || f !== 'SBOM_PROBING')))
+const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'RESOURCE' && f !== 'FINDING_ANALYSIS_WRITE' && (props.showSbomProbing || f !== 'SBOM_PROBING')))
 
 const newPerspectiveId = ref<string | null>(null)
 const newProductId = ref<string | null>(null)

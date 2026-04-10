@@ -454,6 +454,42 @@
                 </div>
             </n-tab-pane>
 
+            <n-tab-pane name="freeFormKeys" tab="Free Form Keys" v-if="isOrgAdmin && myUser.installationType === 'SAAS'">
+                <div class="programmaticAccessBlock mt-4">
+                    <h5>Free Form Keys</h5>
+                    <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys"
+                        class="table-hover">
+                    </n-data-table>
+                    <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
+                        title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        style="width: 90%;"
+                        :show="showFreeFormKeyPermissionsModal"
+                        @update:show="(v) => { if (!v) showFreeFormKeyPermissionsModal = false }"
+                        @after-enter="blurActiveElement"
+                    >
+                        <template #header>Permissions for key {{ selectedFreeFormKey.keyOrder }}</template>
+                        <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
+                            <ScopedPermissions
+                                v-model="freeFormKeyScopedPermissions"
+                                :org-uuid="orgResolved"
+                                :approval-roles="myorg.approvalRoles || []"
+                                :perspectives="perspectives"
+                                :products="orgProducts"
+                                :components="orgComponents"
+                                :show-sbom-probing="true"
+                            />
+                            <n-space style="margin-top: 20px;">
+                                <n-button type="success" @click="updateFreeFormKeyPermissions">Save Permissions</n-button>
+                                <n-button @click="showFreeFormKeyPermissionsModal = false">Cancel</n-button>
+                            </n-space>
+                        </div>
+                    </n-modal>
+                </div>
+            </n-tab-pane>
+
             <n-tab-pane name="approvalPolicies" tab="Approval Policies" v-if="myUser.installationType !== 'OSS'">
                 <div class="programmaticAccessBlock mt-4">
                     <n-space v-if="showPopulateApprovalDefaultsButton" style="margin-bottom: 16px;">
@@ -1086,6 +1122,8 @@ async function loadTabSpecificData (tabName: string) {
     } else if (tabName === "programmaticAccess") {
         await loadUsers()
         loadProgrammaticAccessKeys(true)
+    } else if (tabName === "freeFormKeys") {
+        loadProgrammaticAccessKeys(true)
     } else if (tabName === "approvalPolicies") {
         fetchApprovalEntries()
         fetchApprovalPolicies()
@@ -1102,6 +1140,13 @@ const showOrgApiKeyModal = ref(false)
 const showOrgSettingsProgPermissionsModal = ref(false)
 
 const showOrgSettingsUserPermissionsModal = ref(false)
+
+const showFreeFormKeyPermissionsModal = ref(false)
+const selectedFreeFormKey = ref<any>({})
+const freeFormKeyScopedPermissions = ref<any>({
+    orgPermission: { type: 'NONE', functions: [], approvals: [] },
+    scopedPermissions: []
+})
 
 const showUserGroupPermissionsModal = ref(false)
 
@@ -1482,6 +1527,79 @@ const programmaticAccessFields: Ref<any> = ref([
         
             return el
 
+        }
+    }
+])
+const freeFormKeyFields: Ref<any> = ref([
+    {
+        key: 'uuid',
+        title: 'Internal ID'
+    },
+    {
+        key: 'apiId',
+        title: 'API ID',
+        render: (row: any) => {
+            let keyId = row.type + "__" + row.object
+            if (row.keyOrder) keyId += "__ord__" + row.keyOrder
+            const els: any[] = [
+                h(NTooltip, {
+                        trigger: 'hover'
+                    }, {trigger: () => h(NIcon,
+                            {
+                                class: 'icons',
+                                size: 25,
+                            }, { default: () => h(Info20Regular) }),
+                            default: () => keyId
+                        }
+                )
+            ]
+            return h('div', els)
+        }
+    },
+    {
+        key: 'createdDate',
+        title: 'Created'
+    },
+    {
+        key: 'accessDate',
+        title: 'Last Accessed'
+    },
+    {
+        key: 'updatedByName',
+        title: 'Updated By'
+    },
+    {
+        key: 'notes',
+        title: 'Notes'
+    },
+    {
+        key: 'controls',
+        title: 'Manage',
+        render: (row: any) => {
+            const els: any[] = []
+            if (isOrgAdmin.value) {
+                els.push(
+                    h(
+                        NIcon,
+                        {
+                            title: 'Set Permissions For Key',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => editFreeFormKey(row)
+                        }, { default: () => h(EditIcon) }
+                    )
+                )
+                els.push(h(
+                    NIcon,
+                    {
+                        title: 'Delete Key',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => deleteKey(row.uuid)
+                    }, { default: () => h(Trash) }
+                ))
+            }
+            return h('div', els)
         }
     }
 ])
@@ -3360,6 +3478,138 @@ async function editUser(email: string) {
 
     showOrgSettingsUserPermissionsModal.value = true
 }
+async function genFreeFormApiKey() {
+    const swalResult = await Swal.fire({
+        title: 'Are you sure?',
+        text: 'A new Free Form API Key will be generated.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, generate it!',
+        cancelButtonText: 'No, cancel it'
+    })
+    if (swalResult.value) {
+        const keyResp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setOrgApiKey($orgUuid: ID!) {
+                    setOrgApiKey(orgUuid: $orgUuid, apiType: FREEFORM) {
+                        id
+                        apiKey
+                        authorizationHeader
+                    }
+                }`,
+            variables: {
+                orgUuid: orgResolved.value
+            },
+            fetchPolicy: 'no-cache'
+        })
+        const newKeyMessage = commonFunctions.getGeneratedApiKeyHTML(keyResp.data.setOrgApiKey)
+        loadProgrammaticAccessKeys(false)
+        Swal.fire({
+            title: 'Generated!',
+            customClass: { popup: 'swal-wide' },
+            html: newKeyMessage,
+            icon: 'success'
+        })
+    }
+}
+
+async function editFreeFormKey(key: any) {
+    selectedFreeFormKey.value = commonFunctions.deepCopy(key)
+    await Promise.all([
+        loadPerspectives(),
+        store.dispatch('fetchComponents', orgResolved.value),
+        store.dispatch('fetchProducts', orgResolved.value)
+    ])
+    const scopedPerms: any[] = []
+    let orgPerm = { type: 'NONE', functions: [] as string[], approvals: [] as string[] }
+    for (const up of (selectedFreeFormKey.value.permissions?.permissions || [])) {
+        if (up.scope === 'ORGANIZATION' && up.org === orgResolved.value) {
+            orgPerm = { type: up.type, functions: up.functions || [], approvals: up.approvals || [] }
+        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT') && up.org === orgResolved.value) {
+            const objectName = await resolveScopedObjectName(up.scope, up.object)
+            scopedPerms.push({
+                scope: up.scope,
+                objectId: up.object,
+                objectName,
+                type: up.type,
+                functions: up.functions || [],
+                approvals: up.approvals || []
+            })
+        }
+    }
+    freeFormKeyScopedPermissions.value = {
+        orgPermission: orgPerm,
+        scopedPermissions: scopedPerms
+    }
+    showFreeFormKeyPermissionsModal.value = true
+}
+
+async function updateFreeFormKeyPermissions() {
+    const permissions: any[] = []
+    const scopedData = freeFormKeyScopedPermissions.value
+    const orgPermType = scopedData.orgPermission.type
+    const orgApprovals = scopedData.orgPermission.approvals || []
+    const orgFunctions = scopedData.orgPermission.functions || []
+
+    if (orgPermType && orgPermType !== 'NONE') {
+        permissions.push({
+            org: orgResolved.value,
+            scope: 'ORGANIZATION',
+            type: orgPermType,
+            object: orgResolved.value,
+            functions: orgFunctions,
+            approvals: orgApprovals
+        })
+    }
+
+    if (scopedData.scopedPermissions && scopedData.scopedPermissions.length) {
+        for (const sp of scopedData.scopedPermissions) {
+            if (sp.type && sp.type !== 'NONE') {
+                permissions.push({
+                    org: orgResolved.value,
+                    scope: sp.scope,
+                    type: sp.type,
+                    object: sp.objectId,
+                    functions: sp.functions || [],
+                    approvals: sp.approvals || []
+                })
+            }
+        }
+    }
+
+    let isSuccess = true
+    let errorOccurred = false
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setPermissionsOnFreeformApiKey($permissions: [PermissionInput]) {
+                    setPermissionsOnFreeformApiKey(apiKeyUuid: "${selectedFreeFormKey.value.uuid}",
+                        permissionType: ${orgPermType}, permissions: $permissions) {
+                        uuid
+                    }
+                }`,
+            variables: { permissions }
+        })
+        if (!resp.data.setPermissionsOnFreeformApiKey || !resp.data.setPermissionsOnFreeformApiKey.uuid) isSuccess = false
+    } catch (error: any) {
+        console.error(error)
+        isSuccess = false
+        errorOccurred = true
+        const errorMsg = commonFunctions.parseGraphQLError(error.message)
+        notify('error', 'Error', `Failed to save key permissions: ${errorMsg}`)
+    }
+
+    if (isSuccess) {
+        notify('success', 'Saved', 'Saved key permissions successfully!')
+        await loadProgrammaticAccessKeys(true)
+    } else if (!errorOccurred) {
+        notify('error', 'Error', 'Failed to save key permissions. Please retry or contact support.')
+    }
+
+    showFreeFormKeyPermissionsModal.value = false
+    selectedFreeFormKey.value = {}
+}
+
 function enableRegistry() {
     if (!orgRegistry.value) {
         axios.post('/api/manual/v1/organization/registry/' + orgResolved.value).then(resp => {
@@ -3417,15 +3667,12 @@ async function genApiKey() {
     } else {
         const setKeyPayload = {
             orgUuid: orgResolved.value,
-            keyOrder: '',
             apiType: '',
             notes: (<HTMLInputElement>document.getElementById('swal-input-notes'))!.value
         }
         if (swalResult.value === '0') {
-            setKeyPayload.keyOrder = commonFunctions.genUuid()
             setKeyPayload.apiType = 'ORGANIZATION'
         } else if (swalResult.value === '1') {
-            setKeyPayload.keyOrder = commonFunctions.genUuid()
             setKeyPayload.apiType = 'ORGANIZATION_RW'
         } else if (swalResult.value === '2') {
             setKeyPayload.apiType = 'APPROVAL'
@@ -3438,8 +3685,8 @@ async function genApiKey() {
         }
         const keyResp = await graphqlClient.mutate({
             mutation: gql`
-                mutation setOrgApiKey($orgUuid: ID!, $apiType: ApiTypeEnum!, $keyOrder: String, $notes: String) {
-                    setOrgApiKey(orgUuid: $orgUuid, apiType: $apiType, keyOrder: $keyOrder, notes: $notes) {
+                mutation setOrgApiKey($orgUuid: ID!, $apiType: ApiTypeEnum!, $notes: String) {
+                    setOrgApiKey(orgUuid: $orgUuid, apiType: $apiType, notes: $notes) {
                         id
                         apiKey
                         authorizationHeader
@@ -4653,6 +4900,11 @@ const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
         }
         return accesKey
     })
+})
+const computedFreeFormKeys: ComputedRef<any> = computed((): any => {
+    return programmaticAccessKeys.value
+        .filter((k: any) => k.type === 'FREEFORM')
+        .map((k: any) => formatValuesForApiKeys(k))
 })
 const imageRegistry: ComputedRef<any> = computed((): any => {
     let content = '### OCI Container Images (Suitable for Docker and Helm):\n'
