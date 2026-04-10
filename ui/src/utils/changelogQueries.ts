@@ -231,6 +231,7 @@ const NONE_CHANGELOG_FIELDS = `
         branchName
         componentUuid
         componentName
+        changeType
         releases {
             ${NONE_RELEASE_CHANGES_FRAGMENT}
         }
@@ -256,6 +257,7 @@ const AGGREGATED_CHANGELOG_FIELDS = `
         firstVersion
         lastReleaseUuid
         lastVersion
+        changeType
         commitsByType {
             ${COMMITS_BY_TYPE_FRAGMENT}
         }

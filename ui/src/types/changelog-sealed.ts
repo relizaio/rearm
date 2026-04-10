@@ -107,6 +107,7 @@ export interface NoneBranchChanges {
     componentUuid?: string
     componentName?: string
     releases: NoneReleaseChanges[]
+    changeType?: string
 }
 
 /**
@@ -130,6 +131,7 @@ export interface AggregatedBranchChanges {
     lastReleaseUuid?: string
     lastVersion?: string
     commitsByType: CommitsByType[]
+    changeType?: string
 }
 
 /**

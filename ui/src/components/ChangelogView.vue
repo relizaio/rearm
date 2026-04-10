@@ -103,6 +103,8 @@
                                 <span> - </span>
                                 <router-link :to="{ name: 'ReleaseView', params: { uuid: branch.lastReleaseUuid }}">{{ branch.lastVersion }}</router-link>)
                             </span>
+                            <n-tag v-if="branch.changeType === 'ADDED'" type="success" size="small" style="margin-left: 8px;">New Component</n-tag>
+                            <n-tag v-else-if="branch.changeType === 'REMOVED'" type="error" size="small" style="margin-left: 8px;">Component Removed</n-tag>
                         </h3>
                         <h3 v-else-if="showBranchHeadings">
                             <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
@@ -111,6 +113,8 @@
                                 <span> - </span>
                                 <router-link :to="{ name: 'ReleaseView', params: { uuid: branch.lastReleaseUuid }}">{{ branch.lastVersion }}</router-link>)
                             </span>
+                            <n-tag v-if="branch.changeType === 'ADDED'" type="success" size="small" style="margin-left: 8px;">New Component</n-tag>
+                            <n-tag v-else-if="branch.changeType === 'REMOVED'" type="error" size="small" style="margin-left: 8px;">Component Removed</n-tag>
                         </h3>
                         <CodeChangesDisplay 
                             v-if="!isProduct || (branch.commitsByType && branch.commitsByType.length > 0)"
@@ -127,9 +131,13 @@
                             <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid }}">{{ branch.componentName }}</router-link>
                             <span> / </span>
                             <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: branch.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                            <n-tag v-if="branch.changeType === 'ADDED'" type="success" size="small" style="margin-left: 8px;">New Component</n-tag>
+                            <n-tag v-else-if="branch.changeType === 'REMOVED'" type="error" size="small" style="margin-left: 8px;">Component Removed</n-tag>
                         </h3>
                         <h3 v-else-if="showBranchHeadings">
                             <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: changelog.orgUuid, compuuid: changelog.componentUuid, branchuuid: branch.branchUuid }}">{{ branch.branchName }}</router-link>
+                            <n-tag v-if="branch.changeType === 'ADDED'" type="success" size="small" style="margin-left: 8px;">New Component</n-tag>
+                            <n-tag v-else-if="branch.changeType === 'REMOVED'" type="error" size="small" style="margin-left: 8px;">Component Removed</n-tag>
                         </h3>
                         <div v-for="release in branch.releases" :key="release.releaseUuid">
                             <ReleaseHeader 
