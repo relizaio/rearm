@@ -92,7 +92,7 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
       command.push('--input-files', path)
     })
     command.push('--purl', purl)
-    const mergeResponse: string = await shellExec('rearm-cli', command)
+    const mergeResponse: string = await shellExec('rearm', command)
     
     await deleteTmpFiles(bomPaths)
 

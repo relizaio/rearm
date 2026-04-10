@@ -535,7 +535,7 @@ export async function enrichCycloneDxBom(
     }
 
     logger.info('Running enrichment: rearm-cli bomutils enrich');
-    const result = await shellExec('rearm-cli', args, ENRICHMENT_TIMEOUT_MS);
+    const result = await shellExec('rearm', args, ENRICHMENT_TIMEOUT_MS);
     logger.debug({ enrichmentOutput: result }, 'rearm-cli enrichment completed');
 
     const enrichedContent = await fs.promises.readFile(outputFile, 'utf8');

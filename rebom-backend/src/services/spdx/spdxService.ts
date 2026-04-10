@@ -158,7 +158,7 @@ export class SpdxService {
             ];
             
             logger.info(`Running conversion: rearm-cli ${args.join(' ')}`);
-            const result = await shellExec('rearm-cli', args, 60000); // 60 second timeout for rearm-cli
+            const result = await shellExec('rearm', args, 60000); // 60 second timeout for rearm-cli
             logger.debug({ conversionOutput: result }, "rearm-cli conversion completed");
 
             // Validate the converted CycloneDX file

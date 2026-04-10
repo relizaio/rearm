@@ -24,19 +24,19 @@ WORKDIR /app
 # Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
 COPY tools.${TARGETARCH}.sha256 /tmp/tools.sha256
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.03.13/rearm-26.03.13-linux-amd64.zip ;\
-        unzip rearm-26.03.13-linux-amd64.zip ;\
+        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.04.0/rearm-26.04.0-linux-amd64.zip ;\
+        unzip rearm-26.04.0-linux-amd64.zip ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.30.0/cyclonedx-linux-musl-x64 ;\
         mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.03.13/rearm-26.03.13-linux-arm64.zip ;\
-        unzip rearm-26.03.13-linux-arm64.zip ;\
+        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.04.0/rearm-26.04.0-linux-arm64.zip ;\
+        unzip rearm-26.04.0-linux-arm64.zip ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.30.0/cyclonedx-${TARGETOS}-${TARGETARCH} ;\
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
     fi && \
     sha256sum -c /tmp/tools.sha256 && \
-    mv rearm /usr/local/bin/rearm-cli && \
-    chmod +x /usr/local/bin/rearm-cli && \
+    mv rearm /usr/local/bin/rearm && \
+    chmod +x /usr/local/bin/rearm && \
     chmod +x /usr/local/bin/cyclonedx-cli
 
 COPY package*.json ./
