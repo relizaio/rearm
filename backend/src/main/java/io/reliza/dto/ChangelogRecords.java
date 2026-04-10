@@ -112,7 +112,8 @@ public final class ChangelogRecords {
 		String branchName,
 		UUID componentUuid,
 		String componentName,
-		List<NoneReleaseChanges> releases
+		List<NoneReleaseChanges> releases,
+		String changeType
 	) {}
 	
 	/**
@@ -127,7 +128,8 @@ public final class ChangelogRecords {
 		String firstVersion,
 		UUID lastReleaseUuid,
 		String lastVersion,
-		List<CommitsByType> commitsByType
+		List<CommitsByType> commitsByType,
+		String changeType
 	) {}
 	
 	/**

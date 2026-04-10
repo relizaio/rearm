@@ -606,6 +606,7 @@ type NoneBranchChanges {
 	componentUuid: ID
 	componentName: String
 	releases: [NoneReleaseChanges!]!
+	changeType: String
 }
 
 type AggregatedBranchChanges {
@@ -618,6 +619,7 @@ type AggregatedBranchChanges {
 	lastReleaseUuid: ID
 	lastVersion: String
 	commitsByType: [CommitsByType!]!
+	changeType: String
 }
 
 type CommitsByType {

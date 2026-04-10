@@ -662,7 +662,8 @@ public class ChangeLogService {
 					branchName,
 					ctx.component().getUuid(),
 					ctx.component().getName(),
-					releaseChangesList
+					releaseChangesList,
+					"CHANGED"
 				));
 			}
 		}
@@ -921,7 +922,8 @@ public class ChangeLogService {
 					firstVersion,
 					lastReleaseUuid,
 					lastVersion,
-					commitsByType
+					commitsByType,
+					"CHANGED"
 				));
 			}
 		}
@@ -1100,7 +1102,6 @@ public class ChangeLogService {
 		
 		// Compute per-child-component changelogs and collect data for aggregation
 		List<VcsRepositoryData> vcsRepoDataList = vcsRepositoryService.listVcsRepoDataByOrg(org);
-		List<ComponentChangelog> childChangelogs = new ArrayList<>();
 		Map<UUID, List<AcollectionData>> componentAcollectionsMap = new HashMap<>();
 		Map<UUID, List<ReleaseData>> componentReleasesMap = new HashMap<>();
 		Map<UUID, String> componentNamesMap = new HashMap<>();
@@ -1125,20 +1126,62 @@ public class ChangeLogService {
 				// - baselineReleaseUuid == null: Component was added to product (new in target)
 				// - targetReleaseUuid == null: Component was removed from product (only in baseline)
 				
-				// CRITICAL: Skip component addition/removal cases for now
-				// TODO: Implement proper handling for added/removed components
-				// - For added components: Could show "Component added" with target release details
-				// - For removed components: Could show "Component removed" with baseline release details
-				// Current approach of setting baseline==target causes issues with listAllReleasesBetweenReleases
 				if (baselineReleaseUuid == null && targetReleaseUuid != null) {
-					log.info("Component {} was added to product in target release - skipping changelog (not yet implemented)", 
-						componentData.getName());
+					// Component was newly added to the product in the target release
+					ReleaseData targetRelease = componentReleases.stream()
+						.filter(rd -> rd.getUuid().equals(targetReleaseUuid))
+						.findFirst().orElse(null);
+					if (targetRelease != null) {
+						UUID branchId = targetRelease.getBranch();
+						String branchName = branchNameMap.getOrDefault(branchId, "");
+						if (aggregationType == AggregationType.NONE) {
+							allNoneBranchChanges.add(new NoneBranchChanges(
+								branchId, branchName, componentUuid, componentData.getName(),
+								List.of(new NoneReleaseChanges(targetReleaseUuid, targetRelease.getDecoratedVersionString(userTimeZone), targetRelease.getLifecycle(), List.of(), EMPTY_SBOM_CHANGES, EMPTY_FINDING_CHANGES)),
+								"ADDED"));
+						} else {
+							allAggregatedBranchChanges.add(new AggregatedBranchChanges(
+								branchId, branchName, componentUuid, componentData.getName(),
+								null, null, targetReleaseUuid, targetRelease.getVersion(), List.of(), "ADDED"));
+							List<ReleaseData> addedReleaseList = List.of(targetRelease);
+							Map<UUID, List<AcollectionData>> addedAcollections = prefetchAcollections(addedReleaseList);
+							List<AcollectionData> latestAcollections = pickLatestAcollections(addedAcollections, addedReleaseList);
+							if (!latestAcollections.isEmpty()) {
+								componentAcollectionsMap.put(componentUuid, latestAcollections);
+							}
+							componentReleasesMap.put(componentUuid, addedReleaseList);
+							componentNamesMap.put(componentUuid, componentData.getName());
+						}
+					} else {
+						log.error("Could not find release data for added component {} (releaseUuid={}) - data inconsistency", componentData.getName(), targetReleaseUuid);
+					}
 					continue;
 				}
 				
 				if (targetReleaseUuid == null && baselineReleaseUuid != null) {
-					log.info("Component {} was removed from product in target release - skipping changelog (not yet implemented)", 
-						componentData.getName());
+					// Component was removed from the product in the target release
+					ReleaseData baselineRelease = componentReleases.stream()
+						.filter(rd -> rd.getUuid().equals(baselineReleaseUuid))
+						.findFirst().orElse(null);
+					if (baselineRelease != null) {
+						UUID branchId = baselineRelease.getBranch();
+						String branchName = branchNameMap.getOrDefault(branchId, "");
+						if (aggregationType == AggregationType.NONE) {
+							allNoneBranchChanges.add(new NoneBranchChanges(
+								branchId, branchName, componentUuid, componentData.getName(),
+								List.of(new NoneReleaseChanges(baselineReleaseUuid, baselineRelease.getDecoratedVersionString(userTimeZone), baselineRelease.getLifecycle(), List.of(), EMPTY_SBOM_CHANGES, EMPTY_FINDING_CHANGES)),
+								"REMOVED"));
+						} else {
+							allAggregatedBranchChanges.add(new AggregatedBranchChanges(
+								branchId, branchName, componentUuid, componentData.getName(),
+								baselineReleaseUuid, baselineRelease.getVersion(), null, null, List.of(), "REMOVED"));
+							// NOTE: SBOM/finding aggregation intentionally skipped for removed components.
+							// The baseline release's acollection reflects internal component history,
+							// not the product-level removal of all its artifacts.
+						}
+					} else {
+						log.error("Could not find release data for removed component {} (releaseUuid={}) - data inconsistency", componentData.getName(), baselineReleaseUuid);
+					}
 					continue;
 				}
 				
@@ -1180,7 +1223,7 @@ public class ChangeLogService {
 					.map(ReleaseData::getUuid)
 					.collect(Collectors.toSet());
 				
-				// Note: compFirst and compLast are guaranteed non-null by check at line 1171
+				// Note: compFirst and compLast are guaranteed non-null by check at line 1213
 				if (!existingUuids.contains(baselineReleaseUuid)) {
 					releasesInRange.add(compFirst);
 				}
@@ -1206,7 +1249,6 @@ public class ChangeLogService {
 					? computeNoneChangelog(ctx)
 					: computeAggregatedChangelog(ctx, releaseAcollectionsMap, new HashMap<>());
 				
-				childChangelogs.add(childChangelog);
 				
 				// Collect branch changes from child changelogs for product-level display
 				if (childChangelog instanceof NoneChangelog noneChild) {
