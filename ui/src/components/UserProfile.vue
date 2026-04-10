@@ -49,8 +49,6 @@
             <li v-for="organization in organizations" :key="organization.uuid">
                 {{ organization.name }}
                 &nbsp;
-                <n-icon v-if="false" @click="genUserApiKey(organization.uuid)" class="clickable icons"
-                    title="Generate User API Key" size="20"><LockOpen /></n-icon>
                 <n-icon v-if="false" @click="archiveOrganization(organization.uuid)" class="clickable icons"
                     title="Archive Organiztion" size="20"><Trash /></n-icon>
                 <a v-if="false" :href="'/api/manual/v1/backup/' + organization.uuid" target="_blank"
@@ -230,61 +228,6 @@ const createOrgFromModal = () => {
 
 const showCreateOrgModal: Ref<boolean> = ref(false)
 
-async function genUserApiKey(orgUUID: string) {
-    const swalResult = await Swal.fire({
-        title: 'Are you sure?',
-        text: 'A new API Key will be generated, any existing integrations with previous API Key (if exist) will stop working.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, generate it!',
-        cancelButtonText: 'No, cancel it'
-    })
-    if (swalResult.value) {
-        let path = '/v1/manual/user/setOrgReadApiKey/' + orgUUID
-        const axiosResp = await axios.put(path)
-        let newKeyMessage = getGeneratedApiKeyHTML(axiosResp.data)
-        Swal.fire({
-            title: 'Generated!',
-            customClass: {popup: 'swal-wide'},
-            html: newKeyMessage,
-            icon: 'success'
-        })
-    } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        notify('error', 'Cancelled', 'Your existing API Key is safe')
-    }
-
-}
-function getGeneratedApiKeyHTML(responseData: any) {
-    return `
-            <div style="text-align: left;">
-            <p>Please record these data as you will see API key only once (although you can re-generate it at any time):</p>
-                <table style="width: 95%;">
-                    <tr>
-                        <td>
-                            <strong>API ID:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled>${responseData.id}</textarea>
-                        </td>
-                    </tr>
-                        <td>
-                            <strong>API Key:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled>${responseData.apiKey}</textarea>
-                        </td>
-                    <tr>
-                        <td>
-                            <strong>Header:</strong>
-                        </td>
-                        <td>
-                            <textarea style="width: 100%;" disabled rows="4">${responseData.authorizationHeader}</textarea>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-        `
-}
 async function archiveOrganization(orgUUID: string) {
     let orgToArchive = organizations.value.find((o: any) => o.uuid === orgUUID)
     Swal.fire({
