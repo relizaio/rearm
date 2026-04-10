@@ -13,6 +13,7 @@ For details about the taxonomy, refer to the official CycloneDX Taxonomy Reposit
 | `reliza:containerSafeVersion` | The variant of the release version that is safe to use as a container tag, i.e. if the full version is "1.2.3+metadata", this will be "1.2.3" |
 | `reliza:rearmImport` | Namespace for properties used when importing CycloneDX components to ReARM |
 | `reliza:devops` | Namespace for properties used for managing DevOps operations from ReARM |
+| `reliza:componentMetadata` | Namespace for additional component metadat properties |
 
 
 ## reliza:rearmImport Namespace Taxonomy
@@ -34,3 +35,9 @@ For details about the taxonomy, refer to the official CycloneDX Taxonomy Reposit
 | Property | Description |
 |----------|-------------|
 | `reliza:devops:integrationType` | Enum, known values: FOLLOW, INTEGRATE, TARGET, NONE, UNINSTALL |
+
+## reliza:componentMetadata Namespace Taxonomy
+
+| Property | Description |
+|----------|-------------|
+| `reliza:componentMetadata:componentDistribution` | Enum, known values: PRIVATE, PUBLIC |
