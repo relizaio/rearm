@@ -1,6 +1,6 @@
 import { logger } from '../../logger';
 import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord } from '../../types';
-import { BomValidationError, BomStorageError, OciStorageError } from '../../types/errors';
+import { BomValidationError, BomStorageError, OciStorageError, BomConversionError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
 import { 
@@ -593,6 +593,43 @@ export async function getInitialEnrichmentStatus(org: string): Promise<Enrichmen
     return EnrichmentStatus.PENDING;
   }
   return (await isEnrichmentConfigured(org)) ? EnrichmentStatus.PENDING : EnrichmentStatus.SKIPPED;
+}
+
+export async function computeBomDigestOnly(format: string, bom: any): Promise<string> {
+  let cdxBom = bom;
+  if (format === 'SPDX') {
+    const result = await SpdxService.convertSpdxToCycloneDx(bom);
+    if (!result.success || !result.convertedBom) {
+      throw new BomConversionError(`SPDX to CycloneDX conversion failed: ${result.error}`);
+    }
+    cdxBom = result.convertedBom;
+  }
+  return computeBomDigest(cdxBom);
+}
+
+export interface EnrichedBomProbeResult {
+  status: EnrichmentStatus;
+  enrichedBom?: string;
+}
+
+export async function computeEnrichedBomContent(format: string, bom: any, org: string): Promise<EnrichedBomProbeResult> {
+  let cdxBom = bom;
+  if (format === 'SPDX') {
+    const convResult = await SpdxService.convertSpdxToCycloneDx(bom);
+    if (!convResult.success || !convResult.convertedBom) {
+      throw new BomConversionError(`SPDX to CycloneDX conversion failed: ${convResult.error}`);
+    }
+    cdxBom = convResult.convertedBom;
+  }
+  const credentials = await getBearCredentials(org);
+  if (!credentials) {
+    return { status: EnrichmentStatus.SKIPPED };
+  }
+  const result = await enrichCycloneDxBom(cdxBom, credentials.bearUri, credentials.bearApiKey, credentials.skipPatterns);
+  if (!result.success) {
+    return { status: EnrichmentStatus.FAILED };
+  }
+  return { status: EnrichmentStatus.COMPLETED, enrichedBom: JSON.stringify(result.enrichedBom) };
 }
 
 export interface EnrichmentResult {

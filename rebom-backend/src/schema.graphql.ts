@@ -20,6 +20,8 @@ const typeDefs = gql`
     parseCycloneDxContent(vdrContent: String!): [Vulnerability]
     health: HealthStatus!
     getBearIntegration(org: ID!): BearIntegration
+    getBomDigestProbe(bomContent: BomContentInput!): String!
+    getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
   }
 
   type Mutation {
@@ -122,6 +124,17 @@ const typeDefs = gql`
     LOW
     UNKNOWN
   }
+  input BomContentInput {
+    format: BomFormat!
+    bom: Object!
+    org: ID
+  }
+
+  type EnrichedBomProbeResult {
+    status: EnrichmentStatus!
+    enrichedBom: String
+  }
+
   input BomInput {
     meta: String
     bom: Object

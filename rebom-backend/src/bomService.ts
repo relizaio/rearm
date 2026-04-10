@@ -51,8 +51,11 @@ export {
   createRebomToolObject,
   attachRebomToolToBom,
   computeBomDigest,
-  triggerEnrichment
+  triggerEnrichment,
+  computeBomDigestOnly,
+  computeEnrichedBomContent
 } from './services/bom/bomProcessingService';
+export type { EnrichedBomProbeResult } from './services/bom/bomProcessingService';
 
 // Merge Operations
 export {

@@ -65,7 +65,17 @@ const resolvers = {
 		},
 		getBearIntegration: withErrorHandling(async (_:any, input: { org: string }): Promise<BearIntegrationDto> => {
 			return IntegrationService.getBearIntegration(input.org);
-		}, 'getBearIntegration')
+		}, 'getBearIntegration'),
+		getBomDigestProbe: withErrorHandling(
+			async (_: any, { bomContent }: { bomContent: { format: string; bom: any } }): Promise<string> =>
+				BomService.computeBomDigestOnly(bomContent.format, bomContent.bom),
+			'getBomDigestProbe'
+		),
+		getEnrichedBomProbe: withErrorHandling(
+			async (_: any, { bomContent }: { bomContent: { format: string; bom: any; org: string } }) =>
+				BomService.computeEnrichedBomContent(bomContent.format, bomContent.bom, bomContent.org),
+			'getEnrichedBomProbe'
+		)
 	},
 	Mutation: {
 		addBom: withErrorHandling(async (_:any, bomInput: BomInput): Promise<BomRecord> => BomService.addBom(bomInput), 'addBom'),
