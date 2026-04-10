@@ -31,7 +31,7 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 		COMPONENT,
 		ORGANIZATION,
 		ORGANIZATION_RW,
-		USER;
+		FREEFORM; // arbitrary-permissioned key for RBAC
 	}
 	
 	private static final long serialVersionUID = 2347342;
@@ -65,6 +65,9 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 	
 	@Column(nullable = true)
 	private String keyOrder;
+
+	@Column(nullable = true)
+	private UUID createdBy;
 	
 	@Type(JsonBinaryType.class)
 	@Column(columnDefinition = ModelProperties.JSONB)
@@ -133,6 +136,14 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 
 	public void setKeyOrder(String keyOrder) {
 		this.keyOrder = keyOrder;
+	}
+
+	public UUID getCreatedBy() {
+		return createdBy;
+	}
+
+	public void setCreatedBy(UUID createdBy) {
+		this.createdBy = createdBy;
 	}
 
 	@Override

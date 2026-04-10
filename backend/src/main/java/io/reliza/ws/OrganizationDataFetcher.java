@@ -6,11 +6,13 @@ package io.reliza.ws;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,12 +28,14 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
-import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.common.Utils;
+import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserPermission.Permissions;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.OrganizationData;
@@ -184,7 +188,6 @@ public class OrganizationDataFetcher {
 	public ApiKeyForUserDto setOrgApiKey(
 			@InputArgument("orgUuid") String orgUuidStr,
 			@InputArgument("apiType") ApiTypeEnum keyType,
-			@InputArgument("keyOrder") String keyOrder,
 			@InputArgument("notes") String notes
 		) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
@@ -200,12 +203,12 @@ public class OrganizationDataFetcher {
 			UUID approvalUuid = UUID.randomUUID();
 			apiKey = apiKeyService.setObjectApiKey(approvalUuid, ApiTypeEnum.APPROVAL, od.get().getUuid(), null, notes, wu);
 			keyId = keyType.toString() + "__" + approvalUuid.toString();
+		} else if (keyType == ApiTypeEnum.FREEFORM || keyType == ApiTypeEnum.ORGANIZATION || keyType == ApiTypeEnum.ORGANIZATION_RW) {
+			String keyOrder = UUID.randomUUID().toString();
+			apiKey = apiKeyService.setObjectApiKey(od.get().getUuid(), keyType, od.get().getUuid(), keyOrder, notes, wu);
+			keyId = keyType.toString() + "__" + od.get().getUuid().toString() + "__ord__" + keyOrder;
 		} else {
-			apiKey = apiKeyService.setObjectApiKey(od.get().getUuid(), keyType, od.get().getUuid(), keyOrder, notes,  wu);
-			keyId = keyType.toString() + "__" + od.get().getUuid().toString();
-			if (StringUtils.isNotEmpty(keyOrder)) {
-				keyId += "__ord__" + keyOrder;
-			}
+			throw new RelizaException("Unsupported Key type for this location");
 		}
 		
 		ApiKeyForUserDto retKey = ApiKeyForUserDto.builder()
@@ -350,6 +353,33 @@ public class OrganizationDataFetcher {
 		return organizationService.obtainCombinedUserOrgPermissions(targetUser, orgUuid);
 	}
 	
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setPermissionsOnFreeformApiKey")
+	public ApiKeyDto setPermissionsOnFreeformApiKey(
+			@InputArgument("apiKeyUuid") UUID apiKeyUuid,
+			@InputArgument("permissionType") PermissionType permissionType,
+			@InputArgument("permissions") List<LinkedHashMap<String, Object>> permissions
+		) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var oakd = apiKeyService.getApiKeyData(apiKeyUuid);
+		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
+		OrganizationData od = getOrganizationService.getOrganizationData(oakd.get().getOrg()).get();
+		List<PermissionDto> convertedPermissions = permissions.stream()
+				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+		for (PermissionDto p : convertedPermissions) {
+			if (null != p.approvals() && !p.approvals().isEmpty()) {
+				if (!Utils.isSanitizedApprovalsSent(p.approvals(), od)) {
+					throw new RuntimeException("Invalid approvals sent");
+				}
+			}
+		}
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		return apiKeyService.setPermissionsOnApiKey(apiKeyUuid, permissionType, convertedPermissions, wu);
+	}
+
 	private void validateRegexPatterns(List<String> patterns, String fieldName) throws RelizaException {
 		if (patterns == null) {
 			return;

@@ -104,30 +104,7 @@ public class UserDataFetcher {
 		    throw new RuntimeException(re.getMessage());
 		}
 	}
-	
-	@PreAuthorize("isAuthenticated()")
-	@DgsData(parentType = "Mutation", field = "setUserOrgApiKey")
-	public ApiKeyForUserDto setUserOrgApiKey(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(orgUuid);
-		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ESSENTIAL_READ);
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		
-		String apiKey = apiKeyService.setObjectApiKey(oud.get().getUuid(), ApiTypeEnum.USER, ood.get().getUuid(), null, null, wu);
-		String apiId = ApiTypeEnum.USER.toString() + "__" + oud.get().getUuid().toString() +
-				"__" + ApiTypeEnum.ORGANIZATION.toString() + "__" + ood.get().getUuid().toString();
-		
-		ApiKeyForUserDto retKey = ApiKeyForUserDto.builder()
-				.apiKey(apiKey)
-				.id(apiId)
-				.authorizationHeader("Basic " + HttpHeaders.encodeBasicAuth(apiId, apiKey, StandardCharsets.UTF_8))
-				.build();
-		
-		return retKey;
-	}
-	
+
 	@PreAuthorize("permitAll()")
 	@DgsData(parentType = "Query", field = "healthCheck")
 	public String getHealthCheck() {

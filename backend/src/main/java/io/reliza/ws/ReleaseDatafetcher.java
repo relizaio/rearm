@@ -48,7 +48,6 @@ import java.util.concurrent.CompletionStage;
 import java.time.ZonedDateTime;
 
 import io.reliza.common.CommonVariables;
-import io.reliza.common.CommonVariables.ApprovalState;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -528,7 +527,7 @@ public class ReleaseDatafetcher {
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT,
-				ApiTypeEnum.ORGANIZATION, ApiTypeEnum.USER, ApiTypeEnum.ORGANIZATION_RW);
+				ApiTypeEnum.ORGANIZATION, ApiTypeEnum.ORGANIZATION_RW);
 
 		UUID componentId = null;
 		UUID orgId = null;
@@ -567,7 +566,7 @@ public class ReleaseDatafetcher {
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT,
-				ApiTypeEnum.ORGANIZATION, ApiTypeEnum.USER, ApiTypeEnum.ORGANIZATION_RW);
+				ApiTypeEnum.ORGANIZATION, ApiTypeEnum.ORGANIZATION_RW);
 
 		UUID orgId = null;
 		UUID componentId = null;

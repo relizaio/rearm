@@ -40,6 +40,8 @@ public class ApiKeyDto {
 	private ZonedDateTime accessDate;
 	@JsonProperty(CommonVariables.LAST_UPDATED_BY_FIELD)
 	private UUID lastUpdatedBy;
+	@JsonProperty("createdBy")
+	private UUID createdBy;
 	@JsonProperty(CommonVariables.CREATED_DATE_FIELD)
 	@Setter(AccessLevel.PROTECTED) ZonedDateTime createdDate;
 
@@ -53,6 +55,7 @@ public class ApiKeyDto {
 							.type(ak.getObjectType())
 							.keyOrder(ak.getKeyOrder())
 							.lastUpdatedBy(akData.getLastUpdatedBy())
+							.createdBy(ak.getCreatedBy())
 							.createdDate(ak.getCreatedDate())
 							// .registryRobotLogin(akData.getRegistryRobotLogin())
 							.notes(akData.getNotes())

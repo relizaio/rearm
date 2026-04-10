@@ -55,8 +55,34 @@ public class ApiKeyAccessService {
 		aka.setOrg(org);
 		aka.setApiKeyId(apiKeyId);
 		aka.setAccessDate(ZonedDateTime.now());
-      
+
         saveApiKeyAccess(aka);
     }
-	
+
+	@Transactional
+	public ApiKeyAccess createSbomProbingSession(UUID apiKeyUuid, String ipAddress, UUID orgUuid, String notesJson) {
+		ApiKeyAccess session = new ApiKeyAccess();
+		session.setApiKeyUuid(apiKeyUuid);
+		session.setIpAddress(ipAddress != null ? ipAddress : "");
+		session.setOrg(orgUuid);
+		session.setApiKeyId("SBOM_PROBING");
+		session.setNotes(notesJson);
+		session.setAccessDate(ZonedDateTime.now());
+		return saveApiKeyAccess(session);
+	}
+
+	@Transactional
+	public void updateSbomProbingSessionNotes(UUID sessionUuid, String notesJson) {
+		Optional<ApiKeyAccess> oas = repository.findById(sessionUuid);
+		if (oas.isPresent()) {
+			ApiKeyAccess session = oas.get();
+			session.setNotes(notesJson);
+			saveApiKeyAccess(session);
+		}
+	}
+
+	public Optional<ApiKeyAccess> getSbomProbingSession(UUID sessionUuid) {
+		return repository.findById(sessionUuid);
+	}
+
 }

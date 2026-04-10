@@ -2,10 +2,16 @@ package io.reliza.service;
 
 import java.net.URI;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+import io.reliza.model.AnalysisScope;
+import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +30,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ApiKeyAccess;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
@@ -59,7 +66,13 @@ public class DTrackService {
     @Autowired
     @Lazy
     private ArtifactService artifactService;
-    
+
+    @Autowired
+    private VulnAnalysisService vulnAnalysisService;
+
+    @Autowired
+    private ApiKeyAccessService apiKeyAccessService;
+
     // ========================================
     // PUBLIC API - Orchestration Layer
     // ========================================
@@ -302,6 +315,218 @@ public class DTrackService {
             projectName, projectVersion);
     }
     
+    // ========================================
+    // SBOM PROBING
+    // ========================================
+
+    public enum SbomProbingStatus { PENDING, ENRICHING, DONE, FAILED }
+
+    public record SbomProbingResultDto(SbomProbingStatus status, ArtifactData.DependencyTrackIntegration metrics) {}
+
+    public String startSbomProbing(UUID orgUuid, String sbomJson, UUID componentUuid, UUID branchUuid,
+            UUID apiKeyUuid, String ipAddress) throws RelizaException {
+        // 1. Detect BOM format
+        BomFormat format = artifactService.detectBomFormat(sbomJson);
+
+        // 2. Get digest from rebom and check for existing artifact
+        String digest = rebomService.getBomDigestProbe(sbomJson, format, orgUuid);
+        if (StringUtils.isNotEmpty(digest)) {
+            Optional<Artifact> existingArtifact =
+                sharedArtifactService.findArtifactByStoredDigest(orgUuid, digest);
+            if (existingArtifact.isPresent()) {
+                ArtifactData ead = ArtifactData.dataFromRecord(existingArtifact.get());
+                if (ead.getMetrics() != null && StringUtils.isNotEmpty(ead.getMetrics().getDependencyTrackProject())) {
+                    StringBuilder dedup = new StringBuilder("DEDUP|").append(ead.getMetrics().getDependencyTrackProject());
+                    appendScopeSuffix(dedup, componentUuid, branchUuid);
+                    return encryptionService.encrypt(dedup.toString());
+                }
+            }
+        }
+
+        // 3. Determine scope for session
+        UUID scopeId = orgUuid;
+        AnalysisScope scope = AnalysisScope.ORG;
+        if (branchUuid != null) {
+            scopeId = branchUuid;
+            scope = AnalysisScope.BRANCH;
+        } else if (componentUuid != null) {
+            scopeId = componentUuid;
+            scope = AnalysisScope.COMPONENT;
+        }
+        final UUID fScopeId = scopeId;
+        final AnalysisScope fScope = scope;
+
+        // 4. Create DB session record
+        String probingProjectName = "probing___" + UUID.randomUUID();
+        String initialNotes = buildSessionNotes(SbomProbingStatus.ENRICHING, null, probingProjectName, null, scopeId, scope);
+        ApiKeyAccess session =
+            apiKeyAccessService.createSbomProbingSession(apiKeyUuid, ipAddress, orgUuid, initialNotes);
+        UUID sessionUuid = session.getUuid();
+
+        // 5. Launch async enrichment + DTrack upload
+        final String capturedSbomJson = sbomJson;
+        final BomFormat capturedFormat = format;
+        final UUID capturedOrg = orgUuid;
+        final String capturedProjectName = probingProjectName;
+        CompletableFuture.runAsync(() ->
+            performEnrichmentAndUpload(sessionUuid, capturedSbomJson, capturedFormat,
+                capturedOrg, capturedProjectName, fScopeId, fScope));
+
+        return encryptionService.encrypt("SESSION|" + sessionUuid);
+    }
+
+    private void performEnrichmentAndUpload(UUID sessionUuid, String sbomJson, BomFormat format,
+            UUID orgUuid, String probingProjectName, UUID scopeId, AnalysisScope scope) {
+        try {
+            RebomService.EnrichedBomProbeResult enrichResult =
+                rebomService.getEnrichedBomProbe(sbomJson, format, orgUuid);
+            String bomToSubmit;
+            switch (enrichResult.status()) {
+                case COMPLETED -> bomToSubmit = enrichResult.enrichedBom();
+                case SKIPPED -> bomToSubmit = sbomJson;
+                default -> {
+                    // FAILED
+                    apiKeyAccessService.updateSbomProbingSessionNotes(sessionUuid,
+                        buildSessionNotes(SbomProbingStatus.FAILED, null, probingProjectName, null, scopeId, scope));
+                    return;
+                }
+            }
+            JsonNode bomNode = Utils.OM.readTree(bomToSubmit);
+            UploadableBom uploadableBom = new UploadableBom(bomNode, null, false);
+            DependencyTrackUploadResult uploadResult = integrationService.sendBomToDependencyTrack(
+                orgUuid, uploadableBom, probingProjectName, "0.1.0");
+            if (uploadResult == null) {
+                apiKeyAccessService.updateSbomProbingSessionNotes(sessionUuid,
+                    buildSessionNotes(SbomProbingStatus.FAILED, null, probingProjectName, null, scopeId, scope));
+                return;
+            }
+            apiKeyAccessService.updateSbomProbingSessionNotes(sessionUuid,
+                buildSessionNotes(SbomProbingStatus.PENDING, uploadResult.projectId(),
+                    probingProjectName, uploadResult.token(), scopeId, scope));
+        } catch (Exception e) {
+            log.error("Error during SBOM probing enrichment for session {}: {}", sessionUuid, e.getMessage(), e);
+            apiKeyAccessService.updateSbomProbingSessionNotes(sessionUuid,
+                buildSessionNotes(SbomProbingStatus.FAILED, null, probingProjectName, null, scopeId, scope));
+        }
+    }
+
+    private String buildSessionNotes(SbomProbingStatus status, String projectId,
+            String probingProjectName, String uploadToken, UUID scopeId, AnalysisScope scope) {
+        Map<String, Object> notes = new HashMap<>();
+        notes.put("status", status.name());
+        notes.put("projectId", projectId);
+        notes.put("probingProjectName", probingProjectName);
+        notes.put("uploadToken", uploadToken);
+        notes.put("scopeId", scopeId != null ? scopeId.toString() : null);
+        notes.put("scope", scope != null ? scope.name() : null);
+        try {
+            return Utils.OM.writeValueAsString(notes);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize session notes", e);
+        }
+    }
+
+    private void appendScopeSuffix(StringBuilder sb, UUID componentUuid, UUID branchUuid) {
+        if (branchUuid != null) {
+            sb.append("|b:").append(branchUuid);
+        } else if (componentUuid != null) {
+            sb.append("|c:").append(componentUuid);
+        }
+    }
+
+    public SbomProbingResultDto checkSbomProbingResult(UUID orgUuid, String encryptedRunId) throws RelizaException {
+        String raw = encryptionService.decrypt(encryptedRunId);
+
+        // DEDUP path: instant DONE
+        if (raw.startsWith("DEDUP|")) {
+            String[] parts = raw.split("\\|", 3);
+            String projectId = parts[1];
+            UUID scopeId = orgUuid;
+            AnalysisScope scope = AnalysisScope.ORG;
+            if (parts.length == 3) {
+                String scopePart = parts[2];
+                if (scopePart.startsWith("b:")) { scopeId = UUID.fromString(scopePart.substring(2)); scope = AnalysisScope.BRANCH; }
+                else if (scopePart.startsWith("c:")) { scopeId = UUID.fromString(scopePart.substring(2)); scope = AnalysisScope.COMPONENT; }
+            }
+            return fetchVulnsAndBuildDone(orgUuid, projectId, scopeId, scope);
+        }
+
+        // SESSION path
+        if (raw.startsWith("SESSION|")) {
+            UUID sessionUuid = UUID.fromString(raw.substring("SESSION|".length()));
+            Optional<ApiKeyAccess> oas = apiKeyAccessService.getSbomProbingSession(sessionUuid);
+            if (oas.isEmpty()) return new SbomProbingResultDto(SbomProbingStatus.FAILED, null);
+            String notesJson = oas.get().getNotes();
+            if (StringUtils.isEmpty(notesJson)) return new SbomProbingResultDto(SbomProbingStatus.FAILED, null);
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> notes = Utils.OM.readValue(notesJson, Map.class);
+                SbomProbingStatus status = SbomProbingStatus.valueOf((String) notes.get("status"));
+                switch (status) {
+                    case ENRICHING -> { return new SbomProbingResultDto(SbomProbingStatus.ENRICHING, null); }
+                    case FAILED -> { return new SbomProbingResultDto(SbomProbingStatus.FAILED, null); }
+                    case PENDING -> {
+                        String uploadToken = (String) notes.get("uploadToken");
+                        String projectId = (String) notes.get("projectId");
+                        String scopeStr = (String) notes.get("scope");
+                        String scopeIdStr = (String) notes.get("scopeId");
+                        UUID scopeId = scopeIdStr != null ? UUID.fromString(scopeIdStr) : orgUuid;
+                        AnalysisScope scope = scopeStr != null ? AnalysisScope.valueOf(scopeStr) : AnalysisScope.ORG;
+                        return pollDTrackToken(orgUuid, uploadToken, projectId, scopeId, scope);
+                    }
+                    default -> { return new SbomProbingResultDto(SbomProbingStatus.FAILED, null); }
+                }
+            } catch (Exception e) {
+                throw new RelizaException("Error reading probing session: " + e.getMessage());
+            }
+        }
+
+        throw new RelizaException("Invalid runId format");
+    }
+
+    private SbomProbingResultDto pollDTrackToken(UUID orgUuid, String uploadToken, String projectId,
+            UUID scopeId, AnalysisScope scope) throws RelizaException {
+        Optional<IntegrationData> oid = integrationService.getIntegrationDataByOrgTypeIdentifier(
+            orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+        if (oid.isEmpty()) throw new RelizaException("DependencyTrack integration not configured");
+        String apiToken = encryptionService.decrypt(oid.get().getSecret());
+        URI baseUri = oid.get().getUri();
+        URI eventTokenUri = URI.create(baseUri + "/api/v1/event/token/" + uploadToken);
+        var resp = dtrackWebClient.get().uri(eventTokenUri).header("X-API-Key", apiToken)
+            .retrieve().toEntity(String.class).block();
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> respMap = Utils.OM.readValue(resp.getBody(), Map.class);
+            Boolean isProcessing = (Boolean) respMap.get("processing");
+            if (Boolean.TRUE.equals(isProcessing)) return new SbomProbingResultDto(SbomProbingStatus.PENDING, null);
+        } catch (Exception e) {
+            throw new RelizaException("Error checking DTrack processing status: " + e.getMessage());
+        }
+        return fetchVulnsAndBuildDone(orgUuid, projectId, scopeId, scope);
+    }
+
+    private SbomProbingResultDto fetchVulnsAndBuildDone(UUID orgUuid, String projectId,
+            UUID scopeId, AnalysisScope scope) throws RelizaException {
+        try {
+            Optional<IntegrationData> oid = integrationService.getIntegrationDataByOrgTypeIdentifier(
+                orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
+            if (oid.isEmpty()) throw new RelizaException("DependencyTrack integration not configured");
+            String apiToken = encryptionService.decrypt(oid.get().getSecret());
+            URI baseUri = oid.get().getUri();
+            List<VulnerabilityDto> vulns = integrationService.fetchDependencyTrackVulnerabilityDetails(
+                baseUri, apiToken, projectId, null, null);
+            List<ViolationDto> violations = integrationService.fetchDependencyTrackViolationDetails(
+                baseUri, apiToken, projectId, null, orgUuid, null);
+            ArtifactData.DependencyTrackIntegration dti = new ArtifactData.DependencyTrackIntegration();
+            dti.setVulnerabilityDetails(vulns);
+            dti.setViolationDetails(violations);
+            vulnAnalysisService.processReleaseMetricsDto(orgUuid, scopeId, scope, dti);
+            return new SbomProbingResultDto(SbomProbingStatus.DONE, dti);
+        } catch (Exception e) {
+            throw new RelizaException("Error fetching vulnerabilities and violations: " + e.getMessage());
+        }
+    }
+
     // ========================================
     // DEDUPLICATION & ORCHESTRATION
     // ========================================

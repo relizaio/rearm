@@ -15,6 +15,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
+import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserPermission.Permissions;
@@ -39,6 +40,11 @@ public class ApiKeyData extends RelizaDataParent implements RelizaObject {
 	
 	public void setPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type, Collection<String> approvals) {
 		permissions.setPermission(orgUuid, scope, objectUuid, type, approvals);
+	}
+
+	public void setPermission (UUID orgUuid, PermissionScope scope, UUID objectUuid, PermissionType type,
+			Collection<PermissionFunction> functions, Collection<String> approvals) {
+		permissions.setPermission(orgUuid, scope, objectUuid, type, functions, approvals);
 	}
 	
 	public boolean revokePermission (UUID orgUuid, PermissionScope scope, UUID objectUuid) {

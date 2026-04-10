@@ -29,9 +29,11 @@ import io.reliza.model.ApiKeyAccess;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.ComponentData;
+import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.repositories.ApiKeyRepository;
 
@@ -87,14 +89,7 @@ public class ApiKeyService {
 	}
 	
 	private List<ApiKey> listApiKeyByObjUuidAndType(UUID uuid, ApiTypeEnum type, UUID org) {
-		List<ApiKey> retList = new LinkedList<>();
-		// if type is user, org is required
-		if (ApiTypeEnum.USER == type) {
-			retList = repository.findUserApiKeyByUserUuidAndOrgUuid(uuid, org);
-		} else {
-			retList = repository.findApiKeyByUuidAndType(uuid, type.toString()); 
-		}
-		return retList;
+		return repository.findApiKeyByUuidAndType(uuid, type.toString());
 	}
 	
 	private Optional<ApiKey> getApiKeyByObjUuidTypeOrder(UUID uuid, ApiTypeEnum type, String keyOrder, UUID org) {
@@ -184,15 +179,16 @@ public class ApiKeyService {
 					orgUuid = ocd.get().getOrg();
 				}
 				break;
-			case USER:
 			case APPROVAL:
 			case ORGANIZATION:
 			case ORGANIZATION_RW:
+			case FREEFORM:
 				orgUuid = suppliedOrgUuid;
 				break;
 			// no default case - will fail for any unknown types since org is required
 			}
 			ak.setOrg(orgUuid);
+			ak.setCreatedBy(wu.getLastUpdatedBy());
 			// init ApiKeyData
 			akd = ApiKeyData.apiKeyDataFactory(orgUuid);
 		}
@@ -272,6 +268,31 @@ public class ApiKeyService {
 		return retAkd;
 	}
 	
+	@Transactional
+	public ApiKeyDto setPermissionsOnApiKey(UUID keyUuid, PermissionType orgPermissionType,
+			List<PermissionDto> permissions, WhoUpdated wu) throws RelizaException {
+		Optional<ApiKey> oak = getApiKey(keyUuid);
+		if (oak.isEmpty()) throw new RelizaException("API key not found");
+		ApiKey ak = oak.get();
+		if (ak.getObjectType() != ApiTypeEnum.FREEFORM) {
+			throw new RelizaException("setPermissionsOnApiKey is only supported for FREEFORM keys");
+		}
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		akd.revokeAllOrgPermissions(ak.getOrg());
+		if (orgPermissionType != null) {
+			akd.setPermission(ak.getOrg(), PermissionScope.ORGANIZATION, ak.getOrg(), orgPermissionType, null);
+		}
+		for (PermissionDto p : permissions) {
+			UUID permOrg = p.org() != null ? p.org() : ak.getOrg();
+			akd.setPermission(permOrg, p.scope(), p.object(), p.type(),
+				p.functions() != null ? p.functions() : List.of(),
+				p.approvals() != null ? p.approvals() : List.of());
+		}
+		Map<String, Object> recordData = Utils.dataToRecord(akd);
+		ak = saveApiKey(ak, recordData, wu);
+		return ApiKeyDto.fromApiKey(ak);
+	}
+
 	@Transactional
 	private ApiKey saveApiKey (ApiKey ak, Map<String,Object> recordData, WhoUpdated wu) {
 		// TODO: add validation

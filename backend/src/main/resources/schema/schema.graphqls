@@ -67,6 +67,7 @@ type Query {
 	findingsPerDayByPerspective(perspectiveUuid: ID!, date: String!): DependencyTrackMetrics
 	
 	# Programmatic
+	getSbomProbingResult(runId: String!): SbomProbingResult
 	getReleaseByHashProgrammatic(hash: String!, componentId: ID): String
 	getReleaseByReleaseVersionProgrammatic(version: String!, componentId: ID!): String
 	getLatestReleaseProgrammaticCdx(release: GetLatestReleaseInput!): String
@@ -198,7 +199,6 @@ type Mutation {
 	addReleaseManual(release: ReleaseInput!): Release
 	setComponentApiKey(componentUuid: ID!): ApiKeyForUser
 	setOrgApiKey(orgUuid: ID!, apiType: ApiTypeEnum!, keyOrder: String, notes: String): ApiKeyForUser
-	setUserOrgApiKey(orgUuid: ID!): ApiKeyForUser
 	updateRelease(release: ReleaseInput!): Release
 	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
 	updateReleaseTagsMeta(release: ReleaseInput!): Release
@@ -236,6 +236,7 @@ type Mutation {
 
 	# Programmatic
 	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
+	setPermissionsOnFreeformApiKey(apiKeyUuid: ID!, permissionType: PermissionType, permissions: [PermissionInput]): ApiKey
 	deleteApiKey(apiKeyUuid: ID!): Boolean
 	getNewVersionProgrammatic(newVersionInput: GetNewVersionInput!): Version
 	addReleaseProgrammatic(release: ReleaseInputProg!): Release
@@ -244,6 +245,7 @@ type Mutation {
 	addArtifactProgrammatic(artifactInput: AddArtifactInput): Release
 	approveReleaseProgrammatic(releaseApprovals: ReleaseApprovalProgrammaticInput!): Release
 	synchronizeLiveBranches(synchronizeBranchInput: SynchronizeBranchInput!): Boolean
+	probeSbomProgrammatic(sbom: String!, componentUuid: ID, branchUuid: ID): SbomProbingRun
 	releasecompletionfinalizerProgrammatic(release: ID!): Boolean
 	triggerReleasecompletionfinalizer(release: ID!): Boolean
 	removeUser(org: ID!, user: ID!): Boolean
@@ -465,6 +467,7 @@ type ApiKey {
 	type: ApiTypeEnum
 	keyOrder: String
 	lastUpdatedBy: ID
+	createdBy: ID
 	accessDate: DateTime
 	createdDate: DateTime
 	notes: String
@@ -2088,13 +2091,11 @@ enum ComponentType {
 enum ApiTypeEnum {
 	APPROVAL
 	INSTANCE
+	CLUSTER
 	COMPONENT
 	ORGANIZATION
 	ORGANIZATION_RW
-	USER
-	VERSION_GEN
-	REGISTRY_ORG
-	REGISTRY_USER
+	FREEFORM
 }
 
 enum OAuthType {
@@ -2115,6 +2116,24 @@ enum PermissionFunction {
 	FINDING_ANALYSIS_READ
 	FINDING_ANALYSIS_WRITE
 	ARTIFACT_DOWNLOAD
+	SBOM_PROBING
+}
+
+enum SbomProbingStatus {
+	PENDING
+	ENRICHING
+	DONE
+	FAILED
+}
+
+type SbomProbingRun {
+	runId: String!
+	status: SbomProbingStatus!
+}
+
+type SbomProbingResult {
+	status: SbomProbingStatus!
+	metrics: DependencyTrackMetrics
 }
 
 enum PermissionScope {

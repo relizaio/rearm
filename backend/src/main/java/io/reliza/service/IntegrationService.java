@@ -702,7 +702,7 @@ public class IntegrationService {
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
 	
-	private List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
+	protected List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
@@ -741,7 +741,7 @@ public class IntegrationService {
 		});
 	}
 	
-	private List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
+	protected List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
 			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);

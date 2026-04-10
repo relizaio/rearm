@@ -217,6 +217,60 @@ public class RebomService {
         RebomResponse bomResponse = clonedMapper.convertValue(response.get("addBom"), RebomResponse.class);
         return bomResponse;
     }
+    public record EnrichedBomProbeResult(EnrichmentStatus status, String enrichedBom) {}
+
+    /**
+     * Calls rebom getBomDigestProbe to get the REARM digest for a BOM without storing it.
+     */
+    public String getBomDigestProbe(String bomContent, BomFormat format, UUID org) {
+        String query = """
+            query getBomDigestProbe ($bomContent: BomContentInput!) {
+                getBomDigestProbe(bomContent: $bomContent)
+            }""";
+        Map<String, Object> bomContentInput = new HashMap<>();
+        try {
+            bomContentInput.put("bom", Utils.OM.readTree(bomContent));
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid BOM JSON for digest probe: " + e.getMessage(), e);
+        }
+        bomContentInput.put("format", format != null ? format.name() : null);
+        bomContentInput.put("org", org != null ? org.toString() : null);
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("bomContent", bomContentInput);
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        return (String) response.get("getBomDigestProbe");
+    }
+
+    /**
+     * Calls rebom getEnrichedBomProbe to enrich a BOM via BEAR.
+     * Blocks until enrichment is complete (COMPLETED, SKIPPED, or FAILED).
+     */
+    public EnrichedBomProbeResult getEnrichedBomProbe(String bomContent, BomFormat format, UUID org) {
+        String query = """
+            query getEnrichedBomProbe ($bomContent: BomContentInput!) {
+                getEnrichedBomProbe(bomContent: $bomContent) {
+                    status
+                    enrichedBom
+                }
+            }""";
+        Map<String, Object> bomContentInput = new HashMap<>();
+        try {
+            bomContentInput.put("bom", Utils.OM.readTree(bomContent));
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid BOM JSON for enrichment probe: " + e.getMessage(), e);
+        }
+        bomContentInput.put("format", format != null ? format.name() : null);
+        bomContentInput.put("org", org != null ? org.toString() : null);
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("bomContent", bomContentInput);
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = (Map<String, Object>) response.get("getEnrichedBomProbe");
+        EnrichmentStatus status = EnrichmentStatus.valueOf((String) result.get("status"));
+        String enrichedBom = (String) result.get("enrichedBom");
+        return new EnrichedBomProbeResult(status, enrichedBom);
+    }
+
     public JsonNode findBomByIdJson(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
         String query = """
             query bomById ($id: ID, $org: ID) {

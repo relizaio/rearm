@@ -460,9 +460,6 @@ public class AuthorizationService {
 				&& ApiTypeEnum.COMPONENT == ahp.getType()) {
 			Optional<ComponentData> ocd = getComponentService.getComponentData(ahp.getObjUuid());
 			ro = ocd.isPresent() ? ocd.get() : null;
-		} else if (classType.equals(CommonVariables.ORGANIZATION_FIELD) && ApiTypeEnum.USER == ahp.getType()) {
-			Optional<OrganizationData> od = getOrganizationService.getOrganizationData(ahp.getOrgUuid());
-			ro = od.isPresent() ? od.get() : null;
 		} else if (classType.equals(CommonVariables.ORGANIZATION_FIELD)) {
 			Optional<OrganizationData> od = getOrganizationService.getOrganizationData(ahp.getObjUuid());
 			ro = od.isPresent() ? od.get() : null;
@@ -599,15 +596,6 @@ public class AuthorizationService {
 			}
 		}
 
-		//check if user has access to the organization
-		if(null != matchingKeyId && ahp.getType() == ApiTypeEnum.USER){
-			UserData ud = userService.getUserData(ahp.getObjUuid()).get();
-			log.debug("is User authorized in checking for programmatic access");
-			boolean authorized = isUserAuthorizedOrgWide(ud, ahp.getOrgUuid(), response, ct);
-			log.debug("completed is User authorized for programmatic access");
-			if (!authorized) matchingKeyId = null;
-		}
-
 		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(matchingKeyId);
 		if(oakd.isPresent()){
 			ApiKeyData akd = oakd.get();
@@ -617,6 +605,39 @@ public class AuthorizationService {
 		return matchingKeyId;
 	}
 	
+	public record FreeformKeyVerification(WhoUpdated whoUpdated, UUID orgUuid, UUID apiKeyUuid) {}
+
+	public FreeformKeyVerification verifyFreeformKeyForPermissionFunctions(AuthHeaderParse ahp,
+			Set<PermissionFunction> requiredFunctions) throws RelizaException {
+		return verifyFreeformKeyForPermissionFunctions(ahp, requiredFunctions, true);
+	}
+
+	public FreeformKeyVerification verifyFreeformKeyForPermissionFunctions(AuthHeaderParse ahp,
+			Set<PermissionFunction> requiredFunctions, boolean recordAccess) throws RelizaException {
+		validateSystemOperational(CallType.WRITE);
+		if (ahp == null || ahp.getType() != ApiTypeEnum.FREEFORM)
+			throw new AccessDeniedException("FREEFORM API key required");
+		UUID matchingKeyId = apiKeyService.isMatchingApiKey(ahp);
+		if (matchingKeyId == null)
+			throw new AccessDeniedException("Invalid API key");
+		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(matchingKeyId);
+		if (oakd.isEmpty())
+			throw new AccessDeniedException("API key data not found");
+		ApiKeyData akd = oakd.get();
+		UUID orgUuid = akd.getOrg();
+		Optional<UserPermission> oup = akd.getPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid);
+		if (oup.isEmpty())
+			throw new AccessDeniedException("No org-wide permission on this key");
+		UserPermission up = oup.get();
+		if (up.getType().ordinal() < PermissionType.READ_WRITE.ordinal())
+			throw new AccessDeniedException("Key requires org-wide READ_WRITE or ADMIN permission");
+		if (!up.getFunctions().containsAll(requiredFunctions))
+			throw new AccessDeniedException("Key missing required permission functions: " + requiredFunctions);
+		if (recordAccess)
+			apiKeyAccessService.recordApiKeyAccess(matchingKeyId, ahp.getRemoteIp(), orgUuid, ahp.getApiKeyId());
+		return new FreeformKeyVerification(WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()), orgUuid, matchingKeyId);
+	}
+
 	public AuthHeaderParse isProgrammaticAccessAuthorized(HttpHeaders headers,
 			HttpServletResponse response, String remoteIp, CallType ct) {
 		AuthHeaderParse ahp = null;

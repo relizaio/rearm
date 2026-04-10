@@ -17,15 +17,21 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.ServletWebRequest;
 import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
+import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
+import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.BranchData;
+import io.reliza.model.ComponentData;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.ArtifactData.ArtifactType;
@@ -34,6 +40,9 @@ import io.reliza.model.RelizaObject;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.BranchService;
+import io.reliza.service.DTrackService;
+import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.RebomService;
 import io.reliza.service.RebomService.EnrichmentTriggerResult;
@@ -66,6 +75,15 @@ public class ArtifactDataFetcher {
 	
 	@Autowired
 	private RebomService rebomService;
+
+	@Autowired
+	private DTrackService dTrackService;
+
+	@Autowired
+	private BranchService branchService;
+
+	@Autowired
+	private GetComponentService getComponentService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifact")
@@ -318,5 +336,50 @@ public class ArtifactDataFetcher {
 		}
 		return artifactService.getArtifactData(artifactUuid).get();
 	}
+
+	@DgsData(parentType = "Mutation", field = "probeSbomProgrammatic")
+	public SbomProbingRunWebDto probeSbomProgrammatic(
+			DgsDataFetchingEnvironment dfe,
+			@InputArgument("sbom") String sbom,
+			@InputArgument("componentUuid") String componentUuidStr,
+			@InputArgument("branchUuid") String branchUuidStr) throws RelizaException {
+		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
+		AuthHeaderParse ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
+		var verification = authorizationService.verifyFreeformKeyForPermissionFunctions(ahp, Set.of(PermissionFunction.SBOM_PROBING));
+		UUID orgUuid = verification.orgUuid();
+		UUID componentUuid = componentUuidStr != null ? UUID.fromString(componentUuidStr) : null;
+		UUID branchUuid = branchUuidStr != null ? UUID.fromString(branchUuidStr) : null;
+		if (componentUuid != null) {
+			ComponentData cd = getComponentService.getComponentData(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found"));
+			if (!orgUuid.equals(cd.getOrg())) throw new RelizaException("Component does not belong to org");
+		}
+		if (branchUuid != null) {
+			BranchData bd = branchService.getBranchData(branchUuid)
+				.orElseThrow(() -> new RelizaException("Branch not found"));
+			if (!orgUuid.equals(bd.getOrg())) throw new RelizaException("Branch does not belong to org");
+			if (componentUuid != null && !componentUuid.equals(bd.getComponent()))
+				throw new RelizaException("Branch does not belong to component");
+		}
+		String runId = dTrackService.startSbomProbing(orgUuid, sbom, componentUuid, branchUuid,
+				verification.apiKeyUuid(), ahp.getRemoteIp());
+		return new SbomProbingRunWebDto(runId, DTrackService.SbomProbingStatus.ENRICHING);
+	}
+
+	@DgsData(parentType = "Query", field = "getSbomProbingResult")
+	public SbomProbingResultWebDto getSbomProbingResult(
+			DgsDataFetchingEnvironment dfe,
+			@InputArgument("runId") String runId) throws RelizaException {
+		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
+		AuthHeaderParse ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
+		var verification = authorizationService.verifyFreeformKeyForPermissionFunctions(ahp, Set.of(PermissionFunction.SBOM_PROBING), false);
+		DTrackService.SbomProbingResultDto result = dTrackService.checkSbomProbingResult(verification.orgUuid(), runId);
+		return new SbomProbingResultWebDto(result.status(), result.metrics());
+	}
+
+	public record SbomProbingRunWebDto(String runId, DTrackService.SbomProbingStatus status) {}
+	public record SbomProbingResultWebDto(DTrackService.SbomProbingStatus status, ArtifactData.DependencyTrackIntegration metrics) {}
 
 }

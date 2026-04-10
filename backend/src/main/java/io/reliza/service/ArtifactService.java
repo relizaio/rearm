@@ -1505,6 +1505,16 @@ public class ArtifactService {
 	}
 	
 	/**
+	 * Detects BomFormat (CYCLONEDX or SPDX) from raw BOM string content.
+	 * Returns null if format cannot be determined.
+	 */
+	public BomFormat detectBomFormat(String bomContent) {
+		if (bomContent == null) return null;
+		SpecVersion specVersion = resolveSpecVersionFromJson(bomContent.trim());
+		return deriveBomFormatFromSpecVersion(specVersion);
+	}
+
+	/**
 	 * Derives BomFormat from a detected SpecVersion.
 	 * Returns null if the SpecVersion does not map to a known BOM format (e.g. SARIF, CSAF).
 	 */
