@@ -145,33 +145,39 @@ const apiKey = ref('')
 const apiKeyId = ref('')
 const apiKeyHeader = ref('')
 const orgname = ref('')
-const emailFields: Ref<any> = ref([
-    {
-        key: 'email',
-        title: 'Email'
-    },
-    {
-        key: 'isPrimary',
-        title: 'Primary?',
-        render(row: any) {
-            return h('div', row.isPrimary.toString())
+const emailFields: ComputedRef<any> = computed((): any => {
+    const installationType = store.getters.myuser?.installationType
+    const showMarketing = installationType === 'SAAS' || installationType === 'DEMO'
+    const fields: any[] = [
+        {
+            key: 'email',
+            title: 'Email'
+        },
+        {
+            key: 'isPrimary',
+            title: 'Primary?',
+            render(row: any) {
+                return h('div', row.isPrimary.toString())
+            }
+        },
+        {
+            key: 'isVerified',
+            title: 'Verified?',
+            render(row: any) {
+                return h('div', row.isVerified.toString())
+            }
         }
-    },
-    {
-        key: 'isVerified',
-        title: 'Verified?',
-        render(row: any) {
-            return h('div', row.isVerified.toString())
-        }
-    },
-    {
-        key: 'isAcceptMarketing',
-        title: 'Receive Reliza Info?',
-        render(row: any) {
-            const isMarketingAccepting = row.isAcceptMarketing ? "true" : "false";
-            return h('div', isMarketingAccepting)
-        }
-    },
+    ]
+    if (showMarketing) {
+        fields.push({
+            key: 'isAcceptMarketing',
+            title: 'Receive Reliza Info?',
+            render(row: any) {
+                const isMarketingAccepting = row.isAcceptMarketing ? "true" : "false";
+                return h('div', isMarketingAccepting)
+            }
+        })
+    }
     // {
     //     // <template v-slot:cell(controls)="data">
     //     //             <n-icon @click="updateEmailModal(data.item.email)" class="clickable" title="Update Email" size="20"><EditIcon /></n-icon>
@@ -192,7 +198,8 @@ const emailFields: Ref<any> = ref([
     //         ])
     //     }
     // }
-])
+    return fields
+})
 const updateEmailObj: Ref<any> = ref({})
 const userName = ref('')
 
