@@ -924,7 +924,7 @@ public class ChangeLogService {
 					lastReleaseUuid,
 					lastVersion,
 					commitsByType,
-					"CHANGED"
+					ChangeType.CHANGED
 				));
 			}
 		}
