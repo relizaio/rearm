@@ -618,7 +618,7 @@ public class IntegrationService {
 	}
 	
 	protected DependencyTrackIntegration resolveDependencyTrackProcessingStatus (ArtifactData ad, ZonedDateTime lastScanned) throws RelizaException {
-		if (null == lastScanned) lastScanned = ZonedDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+		if (null == lastScanned) lastScanned = ZonedDateTime.now();
 		DependencyTrackIntegration dti = null;
 		Optional<IntegrationData> oid = getIntegrationDataByOrgTypeIdentifier(ad.getOrg(), IntegrationType.DEPENDENCYTRACK,
 				CommonVariables.BASE_INTEGRATION_IDENTIFIER);

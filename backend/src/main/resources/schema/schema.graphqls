@@ -609,7 +609,7 @@ type NoneBranchChanges {
 	componentUuid: ID
 	componentName: String
 	releases: [NoneReleaseChanges!]!
-	changeType: String
+	changeType: ChangeType
 }
 
 type AggregatedBranchChanges {
@@ -622,7 +622,7 @@ type AggregatedBranchChanges {
 	lastReleaseUuid: ID
 	lastVersion: String
 	commitsByType: [CommitsByType!]!
-	changeType: String
+	changeType: ChangeType
 }
 
 type CommitsByType {
@@ -2151,6 +2151,12 @@ enum ProgrammaticType {
 	MANUAL_AND_AUTO
 	API
 	TEST
+}
+
+enum ChangeType {
+	ADDED
+	CHANGED
+	REMOVED
 }
 
 enum ReleaseLifecycleEnum {

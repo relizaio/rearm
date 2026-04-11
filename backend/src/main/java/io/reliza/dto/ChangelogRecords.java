@@ -22,6 +22,8 @@ public final class ChangelogRecords {
 
 	private ChangelogRecords() {} // prevent instantiation
 
+	public enum ChangeType { ADDED, CHANGED, REMOVED }
+
 	/**
 	 * Sealed interface for component changelogs.
 	 * Permits only NONE and AGGREGATED mode implementations.
@@ -113,7 +115,7 @@ public final class ChangelogRecords {
 		UUID componentUuid,
 		String componentName,
 		List<NoneReleaseChanges> releases,
-		String changeType
+		ChangeType changeType
 	) {}
 	
 	/**
@@ -129,7 +131,7 @@ public final class ChangelogRecords {
 		UUID lastReleaseUuid,
 		String lastVersion,
 		List<CommitsByType> commitsByType,
-		String changeType
+		ChangeType changeType
 	) {}
 	
 	/**

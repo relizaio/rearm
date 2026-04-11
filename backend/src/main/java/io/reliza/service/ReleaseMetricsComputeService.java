@@ -61,7 +61,7 @@ public class ReleaseMetricsComputeService {
 			return false;
 		}
 		r = lockedRelease.get();
-		ZonedDateTime lastScanned = ZonedDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+		ZonedDateTime lastScanned = ZonedDateTime.now();
 		var rd = ReleaseData.dataFromRecord(r);
 		var originalMetrics = null != rd.getMetrics() ? rd.getMetrics().clone() : null;
 		if (null == originalMetrics || null == originalMetrics.getLastScanned() || lastScanned.isAfter(originalMetrics.getLastScanned())) {

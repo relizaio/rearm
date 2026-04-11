@@ -31,6 +31,7 @@ import io.reliza.dto.ChangelogRecords.AggregatedBranchChanges;
 import io.reliza.dto.ChangelogRecords.AggregatedChangelog;
 import io.reliza.dto.ChangelogRecords.CodeCommit;
 import io.reliza.dto.ChangelogRecords.CommitRecord;
+import io.reliza.dto.ChangelogRecords.ChangeType;
 import io.reliza.dto.ChangelogRecords.CommitsByType;
 import io.reliza.dto.ChangelogRecords.ComponentChangelog;
 import io.reliza.dto.ChangelogRecords.NoneBranchChanges;
@@ -663,7 +664,7 @@ public class ChangeLogService {
 					ctx.component().getUuid(),
 					ctx.component().getName(),
 					releaseChangesList,
-					"CHANGED"
+					ChangeType.CHANGED
 				));
 			}
 		}
@@ -1138,11 +1139,11 @@ public class ChangeLogService {
 							allNoneBranchChanges.add(new NoneBranchChanges(
 								branchId, branchName, componentUuid, componentData.getName(),
 								List.of(new NoneReleaseChanges(targetReleaseUuid, targetRelease.getDecoratedVersionString(userTimeZone), targetRelease.getLifecycle(), List.of(), EMPTY_SBOM_CHANGES, EMPTY_FINDING_CHANGES)),
-								"ADDED"));
+								ChangeType.ADDED));
 						} else {
 							allAggregatedBranchChanges.add(new AggregatedBranchChanges(
 								branchId, branchName, componentUuid, componentData.getName(),
-								null, null, targetReleaseUuid, targetRelease.getVersion(), List.of(), "ADDED"));
+								null, null, targetReleaseUuid, targetRelease.getVersion(), List.of(), ChangeType.ADDED));
 							List<ReleaseData> addedReleaseList = List.of(targetRelease);
 							Map<UUID, List<AcollectionData>> addedAcollections = prefetchAcollections(addedReleaseList);
 							List<AcollectionData> latestAcollections = pickLatestAcollections(addedAcollections, addedReleaseList);
@@ -1170,11 +1171,11 @@ public class ChangeLogService {
 							allNoneBranchChanges.add(new NoneBranchChanges(
 								branchId, branchName, componentUuid, componentData.getName(),
 								List.of(new NoneReleaseChanges(baselineReleaseUuid, baselineRelease.getDecoratedVersionString(userTimeZone), baselineRelease.getLifecycle(), List.of(), EMPTY_SBOM_CHANGES, EMPTY_FINDING_CHANGES)),
-								"REMOVED"));
+								ChangeType.REMOVED));
 						} else {
 							allAggregatedBranchChanges.add(new AggregatedBranchChanges(
 								branchId, branchName, componentUuid, componentData.getName(),
-								baselineReleaseUuid, baselineRelease.getVersion(), null, null, List.of(), "REMOVED"));
+								baselineReleaseUuid, baselineRelease.getVersion(), null, null, List.of(), ChangeType.REMOVED));
 							// NOTE: SBOM/finding aggregation intentionally skipped for removed components.
 							// The baseline release's acollection reflects internal component history,
 							// not the product-level removal of all its artifacts.
