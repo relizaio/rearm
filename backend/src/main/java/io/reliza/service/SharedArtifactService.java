@@ -163,7 +163,14 @@ public class SharedArtifactService {
 				rebom = rebomService.findBomByIdJson(ad.getInternalBom().id(), ad.getOrg()).toString();
 			}
 			byte[] byteArray = rebom.getBytes();
-			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
+			String bomFileName = ad.getTags().stream()
+				.filter(t -> t.key().equals(CommonVariables.FILE_NAME_FIELD))
+				.map(t -> t.value())
+				.findFirst()
+				.orElse(ad.getUuid().toString() + ".json");
+			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok()
+				.header("Content-Disposition", "attachment; filename=\"" + bomFileName + "\"")
+				.body(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);
 		}else {
 			monoResponseEntity = downloadRearmNonBomArtifact(ad);
@@ -280,7 +287,14 @@ public class SharedArtifactService {
 			}
 			
 			byte[] byteArray = rebom.getBytes();
-			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok(byteArray);
+			String bomFileName = ad.getTags().stream()
+				.filter(t -> t.key().equals(CommonVariables.FILE_NAME_FIELD))
+				.map(t -> t.value())
+				.findFirst()
+				.orElse(ad.getUuid().toString() + ".json");
+			ResponseEntity<byte[]> responseEntity = ResponseEntity.ok()
+				.header("Content-Disposition", "attachment; filename=\"" + bomFileName + "\"")
+				.body(byteArray);
 			monoResponseEntity = Mono.just(responseEntity);
 		}else {
 			monoResponseEntity = downloadRearmNonBomArtifact(ad);

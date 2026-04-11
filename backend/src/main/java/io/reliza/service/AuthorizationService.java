@@ -638,6 +638,42 @@ public class AuthorizationService {
 		return new FreeformKeyVerification(WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()), orgUuid, matchingKeyId);
 	}
 
+	public FreeformKeyVerification isFreeformKeyAuthorizedForAnyObjectGraphQL(AuthHeaderParse ahp,
+			PermissionFunction function, PermissionScope objectType, Set<UUID> objectUuids,
+			Collection<RelizaObject> ros) throws RelizaException {
+		validateSystemOperational(CallType.READ);
+		if (ahp == null || ahp.getType() != ApiTypeEnum.FREEFORM)
+			throw new AccessDeniedException("FREEFORM API key required");
+		UUID matchingKeyId = apiKeyService.isMatchingApiKey(ahp);
+		if (matchingKeyId == null)
+			throw new AccessDeniedException("Invalid API key");
+		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(matchingKeyId);
+		if (oakd.isEmpty())
+			throw new AccessDeniedException("API key data not found");
+		ApiKeyData akd = oakd.get();
+		UUID orgUuid = akd.getOrg();
+
+		boolean authorized = false;
+		if (objectUuids != null && !objectUuids.isEmpty()) {
+			final UUID org = getMatchingOrg(ros);
+			if (org != null) {
+				var permissions = akd.getPermissions(orgUuid).getOrgPermissionsAsSet(orgUuid);
+				Iterator<UUID> objectIter = objectUuids.iterator();
+				while (!authorized && objectIter.hasNext()) {
+					UUID objectUuid = objectIter.next();
+					authorized = permissions.stream().anyMatch(x ->
+						doesPermissionAuthorize(x, org, function, objectType, objectUuid, CallType.READ));
+				}
+			}
+		}
+		if (!authorized)
+			throw new AccessDeniedException("FreeForm key not authorized for this resource");
+
+		apiKeyAccessService.recordApiKeyAccess(matchingKeyId, ahp.getRemoteIp(), orgUuid, ahp.getApiKeyId());
+		return new FreeformKeyVerification(
+			WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()), orgUuid, matchingKeyId);
+	}
+
 	public AuthHeaderParse isProgrammaticAccessAuthorized(HttpHeaders headers,
 			HttpServletResponse response, String remoteIp, CallType ct) {
 		AuthHeaderParse ahp = null;

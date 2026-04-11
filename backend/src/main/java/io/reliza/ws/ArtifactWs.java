@@ -5,6 +5,7 @@ package io.reliza.ws;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -111,7 +112,53 @@ public class ArtifactWs {
         }
         
         return sharedArtifactService.downloadRawArtifact(oad.get());
-        
+
     }
-    
+
+    @GetMapping("api/programmatic/v1/artifact/{uuid}/download")
+    public Mono<ResponseEntity<byte[]>> downloadArtifactProgrammatic(
+        @RequestHeader HttpHeaders headers,
+        @PathVariable("uuid") UUID uuid,
+        @org.springframework.web.bind.annotation.RequestParam(value = "version", required = false) Integer version,
+        ServletWebRequest request,
+        HttpServletResponse response
+    ) throws Exception {
+        Optional<ArtifactData> latestOad = artifactService.getArtifactData(uuid);
+        if (latestOad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
+        ArtifactData ad = latestOad.get();
+        var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ad.getOrg());
+        Set<UUID> components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+        var ahp = authorizationService.authenticateProgrammatic(headers, request);
+        authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(
+            ahp, PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.COMPONENT, components, List.of(ad));
+        Optional<ArtifactData> oad = (version == null)
+            ? latestOad
+            : artifactService.getArtifactDataByVersion(uuid, version);
+        if (oad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
+        return sharedArtifactService.downloadArtifact(oad.get());
+    }
+
+    @GetMapping("api/programmatic/v1/artifact/{uuid}/rawdownload")
+    public Mono<ResponseEntity<byte[]>> downloadRawArtifactProgrammatic(
+        @RequestHeader HttpHeaders headers,
+        @PathVariable("uuid") UUID uuid,
+        @org.springframework.web.bind.annotation.RequestParam(value = "version", required = false) Integer version,
+        ServletWebRequest request,
+        HttpServletResponse response
+    ) throws Exception {
+        Optional<ArtifactData> latestOad = artifactService.getArtifactData(uuid);
+        if (latestOad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
+        ArtifactData ad = latestOad.get();
+        var releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ad.getOrg());
+        Set<UUID> components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+        var ahp = authorizationService.authenticateProgrammatic(headers, request);
+        authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(
+            ahp, PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.COMPONENT, components, List.of(ad));
+        Optional<ArtifactData> oad = (version == null)
+            ? latestOad
+            : artifactService.getArtifactDataByVersion(uuid, version);
+        if (oad.isEmpty()) throw new RelizaException("Artifact not found; uuid: " + uuid);
+        return sharedArtifactService.downloadRawArtifact(oad.get());
+    }
+
 }

@@ -101,6 +101,7 @@ public class App {
 		  				.requestMatchers("/.well-known/tea/**").permitAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 						.requestMatchers("/api/healthCheck").permitAll()
+						.requestMatchers("/api/programmatic/v1/**").permitAll()
 		  				.anyRequest().authenticated(); 
 	  		} else {
 	  			authz
@@ -110,6 +111,7 @@ public class App {
 		  				.requestMatchers("/.well-known/tea/**").denyAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 						.requestMatchers("/api/healthCheck").permitAll()
+						.requestMatchers("/api/programmatic/v1/**").permitAll()
 		  				.anyRequest().authenticated(); 
 	  		}
 	  	});
