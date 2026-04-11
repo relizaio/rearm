@@ -82,7 +82,9 @@ public class UserPermission {
 		RESOURCE, // self, includes functionality otherwise not covered by other functions, always granted implicitly
 		FINDING_ANALYSIS_READ,
 		FINDING_ANALYSIS_WRITE,
-		ARTIFACT_DOWNLOAD;
+		ARTIFACT_DOWNLOAD,
+		SBOM_PROBING // allows to upload temp sbom to dtrack to get stats on it without creating project or anything (or if deduped, retrieve from existing project)
+		;
 		
 		private PermissionFunction () {}
 	}
