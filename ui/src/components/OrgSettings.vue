@@ -3601,7 +3601,7 @@ async function updateFreeFormKeyPermissions() {
 
     if (isSuccess) {
         notify('success', 'Saved', 'Saved key permissions successfully!')
-        await loadProgrammaticAccessKeys(true)
+        await loadProgrammaticAccessKeys(false)
     } else if (!errorOccurred) {
         notify('error', 'Error', 'Failed to save key permissions. Please retry or contact support.')
     }
@@ -4323,6 +4323,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                             type
                                             meta
                                             approvals
+                                            functions
                                         }
                                     }
                                 }
