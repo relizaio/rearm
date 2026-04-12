@@ -236,11 +236,27 @@ export async function pushToOci(tag: string, bom: any, repositoryName?: string):
     logger.debug({ tag, repository: fullRepoPath, repositoryName: repoName }, "Pushing to OCI with monthly repository");
     
     try {
+        // Materialise form-data into a Buffer so that Content-Length is known.
+        // Native fetch streams an unknown-length body as chunked transfer encoding,
+        // which causes some HTTP servers (including the OCI artifact service) to panic.
+        const formBuffer = await new Promise<Buffer>((resolve, reject) => {
+            formData.getLength((err, length) => {
+                if (err) { reject(err); return; }
+                const chunks: Buffer[] = [];
+                formData.on('data', (chunk: Buffer) => chunks.push(chunk));
+                formData.on('end', () => resolve(Buffer.concat(chunks)));
+                formData.on('error', reject);
+                formData.resume();
+            });
+        });
+
         const response = await fetch(new URL('/push', baseURL()).toString(), {
             method: 'POST',
-            headers: formData.getHeaders() as Record<string, string>,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            body: formData as any,
+            headers: {
+                ...formData.getHeaders() as Record<string, string>,
+                'Content-Length': String(formBuffer.length),
+            },
+            body: formBuffer,
         });
 
         if (!response.ok) {
