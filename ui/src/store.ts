@@ -1,6 +1,5 @@
 import { createStore } from 'vuex'
 import { reactive } from 'vue'
-import axios from './utils/axios'
 import gql from 'graphql-tag'
 import constants from './utils/constants'
 import graphqlClient from './utils/graphql'

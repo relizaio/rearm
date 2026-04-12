@@ -637,7 +637,6 @@ import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import axios from '../utils/axios'
 import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
@@ -1690,13 +1689,13 @@ const setComponentVisibility = async function (newVisValue: string) {
 }
 
 const triggerIntegration = function (integrationUuid: string) {
-    axios.put('/api/manual/v1/component/triggerIntegration/' + componentData.value.uuid + '/' + integrationUuid).then((response) => {
-        if (response.data.successful) {
-            notify('success', 'Triggered', `Successfully sent trigger built event to CI, code = ${response.data.code}`)
-        } else {
-            notify('error', 'Error', `Error on CI build, code = ${response.data.code}. Please check your CI configuration.`)
-        }
-    })
+    // axios.put('/api/manual/v1/component/triggerIntegration/' + componentData.value.uuid + '/' + integrationUuid).then((response) => {
+    //     if (response.data.successful) {
+    //         notify('success', 'Triggered', `Successfully sent trigger built event to CI, code = ${response.data.code}`)
+    //     } else {
+    //         notify('error', 'Error', `Error on CI build, code = ${response.data.code}. Please check your CI configuration.`)
+    //     }
+    // })
 }
 
 const deployedToFields = [
@@ -1863,14 +1862,14 @@ const fetchSecretsIfAllowed = async function() {
 const environmentTypes = ref([])
 
 const loadEnvTypes = async function() {
-    axios.get('/api/manual/v1/instance/environmentTypes/' + updatedComponent.value.org).then(envTypeResp => {
-        envTypeResp.data.forEach((et: any) => {
-            if (!updatedComponent.value.envBranchMap[et]) {
-                updatedComponent.value.envBranchMap[et] = branches.value.filter((br: any) => br.type === 'BASE')[0].uuid
-            }
-        })
-        environmentTypes.value = envTypeResp.data
-    })
+    // axios.get('/api/manual/v1/instance/environmentTypes/' + updatedComponent.value.org).then(envTypeResp => {
+    //     envTypeResp.data.forEach((et: any) => {
+    //         if (!updatedComponent.value.envBranchMap[et]) {
+    //             updatedComponent.value.envBranchMap[et] = branches.value.filter((br: any) => br.type === 'BASE')[0].uuid
+    //         }
+    //     })
+    //     environmentTypes.value = envTypeResp.data
+    // })
 }
 
 const branchTypes = [{label: 'Feature', value: 'FEATURE'}, {label: 'Release', value: 'RELEASE'}]

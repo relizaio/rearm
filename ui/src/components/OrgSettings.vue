@@ -975,35 +975,6 @@
                     </n-form>
                 </div>
             </n-tab-pane>
-            <n-tab-pane name="registry" tab="Registry" v-if="globalRegistryEnabled">
-                <div class="mt-4">
-                    <h5>Organization Registry</h5>
-                    <div v-if="!orgRegistry">
-                        <div v-if="isOrgAdmin">
-                            Enable Organization Registry :
-                            <n-icon @click="enableRegistry()" class="clickable icons"
-                                title="Enable Organization Registry" size="24"><Package /></n-icon>
-                        </div>
-                    </div>
-                    <div v-else>Organization Registry Commands:
-                        <n-icon @click="showRegistryCommands()" class="clickable icons"
-                            title="Show Organization Registry Commands" size="24"><Package /></n-icon>
-                    </div>
-                    <n-modal 
-                        v-model:show="showComponentRegistryModal"
-                        preset="dialog"
-                        style="width: 90%;"
-                        :show-icon="false" >
-                        <n-card size="huge" title="Organization Registry Commands" :bordered="false"
-                            role="dialog" aria-modal="true">
-                            <!-- <div><strong>Username: </strong><n-input type="textarea" disabled v-model:value="robotName" rows="1"/></div>
-                        <div><strong>Token (only displayed once): </strong><n-input type="textarea" disabled v-model:value="botToken" /></div> -->
-                            <!-- <div><strong>Image Repository: </strong><n-input type="textarea" disabled v-model:value="imageRegistry" /></div> -->
-                            <div><span v-html="imageRegistry" /></div>
-                        </n-card>
-                    </n-modal>
-                </div>
-            </n-tab-pane>
         </n-tabs>
         <n-modal 
             v-model:show="showCreateResourceGroupModal"
@@ -1065,7 +1036,6 @@ import { Clean } from '@vicons/carbon'
 import { Info20Regular, Edit24Regular, DeleteDismiss24Regular, ArrowUpload24Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
-import axios from '../utils/axios'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
@@ -1350,7 +1320,6 @@ function resetTerminology() {
 
 const botToken: Ref<string> = ref('')
 const environmentTypes: Ref<string[]> = ref([])
-const globalRegistryEnabled: Ref<boolean> = ref(false)
 const instancePermissions: Ref<any> = ref({})
 const invitee = ref({
     org: orgResolved.value,
@@ -3610,14 +3579,6 @@ async function updateFreeFormKeyPermissions() {
     selectedFreeFormKey.value = {}
 }
 
-function enableRegistry() {
-    if (!orgRegistry.value) {
-        axios.post('/api/manual/v1/organization/registry/' + orgResolved.value).then(resp => {
-            store.dispatch('fetchMyOrganizations')
-            showRegistryCommands()
-        })
-    }
-}
 function extractOrgWidePermission(user: any) {
     const perm = user.permissions.permissions.filter((up: any) =>
         (up.scope === 'ORGANIZATION' && up.org === up.object && up.org === orgResolved.value)
@@ -3653,9 +3614,6 @@ async function genApiKey() {
         showCancelButton: true,
         confirmButtonText: 'Generate it!',
         cancelButtonText: 'Cancel'
-    }
-    if (orgRegistry.value && globalRegistryEnabled.value) {
-        swalObject.inputOptions = ['Org-wide Read Only', 'Org-wide Read-Write', 'Approval and Artifact Upload', 'Private Registry', 'Public Registry']
     }
     const swalResult = await Swal.fire(swalObject)
     if (swalResult.dismiss === Swal.DismissReason.cancel) {

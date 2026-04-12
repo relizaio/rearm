@@ -54,7 +54,6 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import axios from '../utils/axios'
 import { NDropdown, NIcon } from 'naive-ui'
 import { User, Settings, Logout } from '@vicons/tabler'
 import { useStore } from 'vuex'
@@ -163,21 +162,6 @@ watch([hasOnlyPerspectiveAccess, perspectives, myorg, myperspective], () => {
         store.dispatch('updateMyPerspective', perspectives.value[0].uuid)
     }
 }, { immediate: true })
-
-const getVersion : any = async function () {
-    let versionUri
-    if (window.location.host === 'app.relizahub.com') {
-        versionUri = 'https://app.relizahub.com/api/public/v1/instance/productVersion/8a68025d-c5a4-4cec-877c-0082f8c85f5f'
-    } else if (window.location.host === 'test.relizahub.com') {
-        versionUri = 'https://app.relizahub.com/api/public/v1/instance/productVersion/91165f6a-d05b-408f-925b-491ae5d8cd2a'
-    }
-    if (versionUri) {
-        let versionResp = await axios.get(versionUri)
-        version = versionResp.data
-    }
-}
-
-await getVersion()
 
 let organizations = store.getters.allOrganizations
 const orgsDropdownOptions: ComputedRef<any[]> = computed((): any => store.getters.allOrganizations.map((org : any) => {

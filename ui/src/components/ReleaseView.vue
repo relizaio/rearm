@@ -1470,11 +1470,11 @@ const deployTimingData: Ref<any> = ref({
 })
 
 function requestApproval(type: string) {
-    axios.get('/api/manual/v1/release/requestApproval/' + releaseUuid.value + '/' + type).then(response => {
-        if (response.data) {
-            notify('success', 'Approval Requested', 'Approval Requested for the type: ' + type)
-        }
-    })
+    // axios.get('/api/manual/v1/release/requestApproval/' + releaseUuid.value + '/' + type).then(response => {
+    //     if (response.data) {
+    //         notify('success', 'Approval Requested', 'Approval Requested for the type: ' + type)
+    //     }
+    // })
 }
 
 async function triggerApproval() {

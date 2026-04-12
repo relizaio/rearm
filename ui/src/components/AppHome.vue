@@ -551,7 +551,6 @@ import graphqlClient from '../utils/graphql'
 import GqlQueries from '../utils/graphqlQueries'
 import InstanceHistory from './InstanceHistory.vue'
 import { RouterLink } from 'vue-router'
-import axios from '../utils/axios'
 import { Commit } from '@vicons/carbon'
 import { AspectRatio, Box, Eye, QuestionMark, Refresh } from '@vicons/tabler'
 import { CaretDownFilled } from '@vicons/antd'
@@ -1108,10 +1107,10 @@ const searchInstProp = async function (e: Event) {
         query: instancePropsSearchObj.value.value,
         property: instancePropsSearchObj.value.key
     }
-    axios.post('/api/manual/v1/instance/searchInstancesByPropVal', cleanedSearchObj).then(response => {
-        instPropsSearchResults.value = response.data
-        showInstPropSearchResultsModal.value = true
-    })
+    // axios.post('/api/manual/v1/instance/searchInstancesByPropVal', cleanedSearchObj).then(response => {
+    //     instPropsSearchResults.value = response.data
+    //     showInstPropSearchResultsModal.value = true
+    // })
 }
 const instanceChangeSearchObj: Ref<any> = ref({
     dateFrom: (new Date()).getTime(),
@@ -1127,10 +1126,10 @@ const searchInstanceChanges = function(e: Event) {
         org: myorg.value.uuid
     }
 
-    axios.post('/api/manual/v1/instance/searchChangesOverTime', cleanedSearchObj).then(response => {
-        instChangeSearchResults.value = response.data
-        showInstChangeSearchResultsModal.value=true
-    })
+    // axios.post('/api/manual/v1/instance/searchChangesOverTime', cleanedSearchObj).then(response => {
+    //     instChangeSearchResults.value = response.data
+    //     showInstChangeSearchResultsModal.value=true
+    // })
 }
 function openRelease (uuid: string) {
     const routeData = router.resolve({ name: 'ReleaseView', params: { uuid: uuid } })

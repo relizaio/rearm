@@ -20,7 +20,6 @@ export default {
 </script>
 <script lang="ts" setup>
 import * as vegaEmbed from 'vega-embed'
-import axios from '../utils/axios'
 import graphqlClient from '../utils/graphql'
 import gql from 'graphql-tag'
 
@@ -43,17 +42,17 @@ async function fetchComponentArtifacts (componentUuid : string, buildDurationVis
 }
 
 async function fetchComponentReleases (componentUuid : string, deployDurationVisData : any) {
-    let axiosResp = await axios.get('/api/manual/v1/release/listSoftLeadTimeByComponent/' + componentUuid)
-    deployDurationVisData.data.values = axiosResp.data
-    vegaEmbed.default('#deployDurationsVis', deployDurationVisData)
+    // let axiosResp = await axios.get('/api/manual/v1/release/listSoftLeadTimeByComponent/' + componentUuid)
+    // deployDurationVisData.data.values = axiosResp.data
+    // vegaEmbed.default('#deployDurationsVis', deployDurationVisData)
 }
 
 async function fetchReleaseEnvPercentages (componentUuid : string, releasePercentVisData : any) {
-    let axiosResp = await axios.get('/api/manual/v1/release/percentagesByComponent/' + componentUuid)
-    releasePercentVisData.data.values = Object.keys(axiosResp.data).map((k, i) => {
-        return { 'environment': k, 'percentage': parseFloat(axiosResp.data[k]).toFixed(2) }
-    })
-    vegaEmbed.default('#releasePercentVis', releasePercentVisData)
+    // let axiosResp = await axios.get('/api/manual/v1/release/percentagesByComponent/' + componentUuid)
+    // releasePercentVisData.data.values = Object.keys(axiosResp.data).map((k, i) => {
+    //     return { 'environment': k, 'percentage': parseFloat(axiosResp.data[k]).toFixed(2) }
+    // })
+    // vegaEmbed.default('#releasePercentVis', releasePercentVisData)
 }
 
 const buildDurationVisData = {

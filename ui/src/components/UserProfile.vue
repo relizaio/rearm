@@ -113,7 +113,6 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { Edit as EditIcon, Key, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
-import axios from '../utils/axios'
 import Swal from 'sweetalert2'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
@@ -274,35 +273,35 @@ const handleFileChange = (data: OnChange): void => {
 };
 
 const submitFile = async () => {
-    console.log("submit file called", restoreFile.value)
-    if (restoreFile.value) {
-        const formData = new FormData();
-        formData.append('file', restoreFile.value);
+    // console.log("submit file called", restoreFile.value)
+    // if (restoreFile.value) {
+    //     const formData = new FormData();
+    //     formData.append('file', restoreFile.value);
 
-        try {
-            const response = await axios.post('/api/manual/v1/restore', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data'
-                }
-            });
-            showRestoreOrgModal.value = false
-            let htmlResp = parseBackupResponse(response.data)
-            Swal.fire({
-                title: 'Backup Success!',
-                customClass: {popup: 'swal-wide'},
-                html: htmlResp,
-                icon: 'success'
-            })
-        } catch (error: any) {
-            // Handle the error
-            showRestoreOrgModal.value = false
-            Swal.fire(
-                'Error',
-                'Error Restoring ',
-                'error'
-            )
-        }
-    }
+    //     try {
+    //         const response = await axios.post('/api/manual/v1/restore', formData, {
+    //             headers: {
+    //                 'Content-Type': 'multipart/form-data'
+    //             }
+    //         });
+    //         showRestoreOrgModal.value = false
+    //         let htmlResp = parseBackupResponse(response.data)
+    //         Swal.fire({
+    //             title: 'Backup Success!',
+    //             customClass: {popup: 'swal-wide'},
+    //             html: htmlResp,
+    //             icon: 'success'
+    //         })
+    //     } catch (error: any) {
+    //         // Handle the error
+    //         showRestoreOrgModal.value = false
+    //         Swal.fire(
+    //             'Error',
+    //             'Error Restoring ',
+    //             'error'
+    //         )
+    //     }
+    // }
 };
 
 function parseBackupResponse(jsonObject: any) {
@@ -347,20 +346,20 @@ function updateEmailModal(email: string) {
 }
 function updateUserEmail() {
     // e.preventDefault()
-    axios.put('/api/manual/v1/user/updateEmailAddress', updateEmailObj.value).then(response => {
-        if (response.data) {
-            if (updateEmailObj.value.newEmail !== updateEmailObj.value.oldEmail) {
-                notify('error', 'Error', 'Please verify your new email address for it to become active!', 5000)
-            } else {
-                notify('success', 'Success', 'Email address properties updated!', 5000)
-            }
-            // reload my user
-            store.dispatch('fetchMyUser').then(response => {
-                userName.value = response.name
-            })
-            showProfileUpdateEmailModal.value = false
-        }
-    })
+    // axios.put('/api/manual/v1/user/updateEmailAddress', updateEmailObj.value).then(response => {
+    //     if (response.data) {
+    //         if (updateEmailObj.value.newEmail !== updateEmailObj.value.oldEmail) {
+    //             notify('error', 'Error', 'Please verify your new email address for it to become active!', 5000)
+    //         } else {
+    //             notify('success', 'Success', 'Email address properties updated!', 5000)
+    //         }
+    //         // reload my user
+    //         store.dispatch('fetchMyUser').then(response => {
+    //             userName.value = response.name
+    //         })
+    //         showProfileUpdateEmailModal.value = false
+    //     }
+    // })
 }
 function updateUserName() {
     store.dispatch('updateUserName', userName.value)
