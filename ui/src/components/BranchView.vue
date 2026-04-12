@@ -12,6 +12,9 @@
                 <n-icon @click="openNextVersionModal" class="clickable" title='Set Next Version' size="24" style="margin-left: 4px;">
                     <ArrowForward />
                 </n-icon>
+                <n-icon @click="onCreated" class="clickable" title="Refresh Releases" size="24" style="margin-left: 4px;">
+                    <Refresh />
+                </n-icon>
             </div>
             <div class="dangerControls">
                 <n-icon v-if="isWritable && branchData.type !== 'BASE'" @click="archiveBranch" class="clickable" :title="'Archive ' + words.branchFirstUpper" size="24">
@@ -370,7 +373,7 @@ import LinkVcs from './LinkVcs.vue'
 import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
-import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package } from '@vicons/tabler'
+import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
