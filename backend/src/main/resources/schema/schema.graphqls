@@ -1786,6 +1786,7 @@ input GetNewVersionInput {
 	repoPath: String
 	vcsDisplayName: String
 	createComponentIfMissing: Boolean
+	createComponentName: String
 	createComponentVersionSchema: String
 	createComponentFeatureBranchVersionSchema: String
 }
