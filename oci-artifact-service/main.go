@@ -85,7 +85,17 @@ type OASResponse struct {
 
 func uploadFile(c *gin.Context) {
 	var form Form
-	c.ShouldBind(&form)
+	if err := c.ShouldBind(&form); err != nil {
+		getLogger().Errorw("Failed to bind upload form", "error", err)
+		c.String(http.StatusBadRequest, "Invalid request: %v", err)
+		return
+	}
+
+	if form.File == nil {
+		getLogger().Errorw("No file provided in upload request")
+		c.String(http.StatusBadRequest, "No file provided")
+		return
+	}
 
 	// Open the uploaded file
 	uploadedFile, err := form.File.Open()
