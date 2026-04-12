@@ -282,7 +282,12 @@ public class BranchDataFetcher {
 		if(StringUtils.isNotEmpty(versionTypeStr)){
 			versionType = VersionTypeEnum.valueOf(versionTypeStr);
 		}
-		return versionAssignmentService.setNextVesion(branchUuid, versionString, versionType);
+		try {
+			return versionAssignmentService.setNextVesion(branchUuid, versionString, versionType);
+		} catch (RelizaException e) {
+			log.error("setNextVersion failed for branch {}: {}", branchUuid, e.getMessage());
+			throw e;
+		}
 	}
 	
 	@DgsData(parentType = "Mutation", field = "synchronizeLiveBranches")

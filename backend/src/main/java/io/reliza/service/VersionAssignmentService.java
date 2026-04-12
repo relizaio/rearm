@@ -324,35 +324,47 @@ public class VersionAssignmentService {
 	 * @param versionString
 	 */
 	@Transactional
-	public boolean setNextVesion(UUID branchUuid, String versionString){
+	public boolean setNextVesion(UUID branchUuid, String versionString) throws RelizaException {
 		return setNextVesion(branchUuid, versionString, VersionTypeEnum.DEV);
 	}
 	@Transactional
-	public boolean setNextVesion(UUID branchUuid, String versionString, VersionTypeEnum versionType){
+	public boolean setNextVesion(UUID branchUuid, String versionString, VersionTypeEnum versionType) throws RelizaException {
 		
 		BranchData bd = branchService.getBranchData(branchUuid).get();
 		ComponentData pd = getComponentService.getComponentData(bd.getComponent()).get();
 
-
-		Version nextVersion = Version.getVersion(versionString, bd.getVersionSchema());
-		
+		Version nextVersion;
+		try {
+			nextVersion = Version.getVersion(versionString, bd.getVersionSchema());
+		} catch (RuntimeException e) {
+			throw new RelizaException("Version '" + versionString + "' is not valid for schema '" + bd.getVersionSchema() + "': " + e.getMessage());
+		}
 
 		Optional<VersionAssignment> latestOva = getLatestVersionAssignmentOfBranch(branchUuid, 10);
 		if(latestOva.isPresent()){
-			Version latestVersion =  Version.getVersion(latestOva.get().getVersion(), bd.getVersionSchema());
+			Version latestVersion;
+			try {
+				latestVersion = Version.getVersion(latestOva.get().getVersion(), bd.getVersionSchema());
+			} catch (RuntimeException e) {
+				throw new RelizaException("Existing latest version '" + latestOva.get().getVersion() + "' is not compatible with current schema '" + bd.getVersionSchema() + "': " + e.getMessage());
+			}
 			if(nextVersion.compareTo(latestVersion) >= 0)
-				throw new RuntimeException("Next Version must be greater than the latest version");
+				throw new RelizaException("Next Version must be greater than the latest version");
 		}
 
 		VersionAssignment va = new VersionAssignment();
 
-
 		Optional<VersionAssignment> currentNextOva = getNextVersion(branchUuid, versionType);
 		
 		if(currentNextOva.isPresent()){
-			Version currentNextVersion =  Version.getVersion(currentNextOva.get().getVersion(), bd.getVersionSchema());
+			Version currentNextVersion;
+			try {
+				currentNextVersion = Version.getVersion(currentNextOva.get().getVersion(), bd.getVersionSchema());
+			} catch (RuntimeException e) {
+				throw new RelizaException("Existing next version '" + currentNextOva.get().getVersion() + "' is not compatible with current schema '" + bd.getVersionSchema() + "': " + e.getMessage());
+			}
 			if(nextVersion.compareTo(currentNextVersion) >= 0)
-				throw new RuntimeException("Next Version must be greater than the current next version");
+				throw new RelizaException("Next Version must be greater than the current next version");
 			va = currentNextOva.get();
 		}
 
