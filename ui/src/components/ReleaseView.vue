@@ -1282,7 +1282,8 @@ const vdrTargetApproval: Ref<string | null> = ref(null)
 const vdrFirstScannedDate = computed<string | null>(() => {
     if (updatedRelease.value?.metrics?.firstScanned) return updatedRelease.value.metrics.firstScanned
     if (updatedRelease.value?.metrics?.lastScanned && updatedRelease.value?.createdDate) {
-        return new Date(new Date(updatedRelease.value.createdDate).getTime() + 6 * 3600 * 1000).toISOString()
+        const fallback = new Date(new Date(updatedRelease.value.createdDate).getTime() + 6 * 3600 * 1000)
+        return (fallback > new Date() ? new Date() : fallback).toISOString()
     }
     return null
 })
