@@ -13,7 +13,6 @@
     "@ts-stack/markdown": "^1.5.0",
     "@vicons/utils": "^0.1.4",
     "apollo-upload-client": "^19.0.0",
-    "axios": "^1.13.6",
     "keycloak-js": "^26.2.3",
     "packageurl-js": "^2.0.1",
     "pdfmake": "^0.3.7",

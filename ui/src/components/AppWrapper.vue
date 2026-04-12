@@ -54,7 +54,7 @@ import constants from '@/utils/constants'
 import SignUpFlow from '@/components/SignUpFlow.vue'
 import VerifyEmail from '@/components/VerifyEmail.vue'
 import JoinOrganization from '@/components/JoinOrganization.vue'
-import axios from '../utils/axios'
+import { fetchWithAuth } from '../utils/fetchClient'
 import Swal from 'sweetalert2'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
@@ -96,7 +96,7 @@ async function fetchCsrfToken() {
     
     // Call endpoint to trigger XSRF-TOKEN cookie being set by backend
     // The cookie will be automatically read by Axios and Apollo Client
-    await axios.get('/api/manual/v1/fetchCsrf');
+    await fetchWithAuth('/api/manual/v1/fetchCsrf');
 }
 
 const onCreate = async function () {

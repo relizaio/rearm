@@ -861,7 +861,7 @@ import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
-import axios from '../utils/axios'
+import { fetchWithAuth, fetchArrayBufferWithAuth } from '../utils/fetchClient'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -2332,14 +2332,22 @@ const submitForm = async () => {
     artifactUploadData.value.uuid = updatedRelease.value.uuid
     artifactUploadData.value.tag = fileTag.value
     artifactUploadData.value.artifactType = artifactType.value
-    axios.post('/api/manual/v1/artifact/upload', artifactUploadData.value, {
-        headers: {
-            "Content-Type": "multipart/form-data"
+    const formData = new FormData()
+    for (const key of Object.keys(artifactUploadData.value)) {
+        if (artifactUploadData.value[key] !== undefined && artifactUploadData.value[key] !== null) {
+            formData.append(key, artifactUploadData.value[key])
         }
-    }).then(async (response) => {
+    }
+    const uploadResp = await fetchWithAuth('/api/manual/v1/artifact/upload', {
+        method: 'POST',
+        body: formData
+    })
+    if (uploadResp.ok) {
         showUploadArtifactModal.value = false
         await fetchRelease()
-    })
+    } else {
+        notify('error', 'Upload Failed', `HTTP ${uploadResp.status}: ${uploadResp.statusText}`)
+    }
     
 };
 const downloadArtifact = async (art: any, raw: boolean, version?: string) => {
@@ -2353,11 +2361,7 @@ const downloadArtifact = async (art: any, raw: boolean, version?: string) => {
         url += `?version=${encodeURIComponent(version)}`;
     }
     try {
-        const downloadResp = await axios({
-            method: 'get',
-            url,
-            responseType: 'arraybuffer',
-        })
+        const downloadResp = await fetchArrayBufferWithAuth(url)
         const artType = art.tags?.find((tag: any) => tag.key === 'mediaType')?.value
         const fileNameTag = art.tags?.find((tag: any) => tag.key === 'fileName')?.value
         
@@ -2398,7 +2402,7 @@ const downloadArtifact = async (art: any, raw: boolean, version?: string) => {
             fileName = fileNameTag || `${art.uuid}`
         }
         
-        let blob = new Blob([downloadResp.data], { type: artType })
+        let blob = new Blob([downloadResp], { type: artType })
         let link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
         link.download = fileName

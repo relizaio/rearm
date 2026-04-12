@@ -12,7 +12,7 @@ export default {
 <script lang="ts" setup>
 import {onMounted} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import axios from '../utils/axios'
+import { fetchArrayBufferWithAuth } from '../utils/fetchClient'
 import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
@@ -47,14 +47,10 @@ async function downloadArtifact () {
     if (pathSuffix) {
         try {
             const art = await getArtifact()
-            const axiosResp = await axios({
-                method: 'get',
-                url: '/api/manual/v1/artifact/' +  route.params.artuuid.toString() + pathSuffix,
-                responseType: 'arraybuffer',
-            })
+            const arrayBuffer = await fetchArrayBufferWithAuth('/api/manual/v1/artifact/' + route.params.artuuid.toString() + pathSuffix)
             const artType = art.tags.find((tag: any) => tag.key === 'mediaType')?.value
             const fileName = art.tags.find((tag: any) => tag.key === 'fileName')?.value
-            const blob = new Blob([axiosResp.data], { type: artType })
+            const blob = new Blob([arrayBuffer], { type: artType })
             const link = document.createElement('a')
             link.href = window.URL.createObjectURL(blob)
             link.download = fileName
