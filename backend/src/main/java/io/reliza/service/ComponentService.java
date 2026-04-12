@@ -628,16 +628,23 @@ public class ComponentService {
 	@Transactional
 	public ComponentData createComponentFromVcsUri(UUID orgUuid, String vcsUri, String repoPath, String vcsDisplayName, VcsType vcsType,
 			String versionSchema, String featureBranchVersionSchema, WhoUpdated wu) throws RelizaException {
+		return createComponentFromVcsUri(orgUuid, vcsUri, repoPath, vcsDisplayName, vcsType, versionSchema, featureBranchVersionSchema, null, wu);
+	}
+
+	public ComponentData createComponentFromVcsUri(UUID orgUuid, String vcsUri, String repoPath, String vcsDisplayName, VcsType vcsType,
+			String versionSchema, String featureBranchVersionSchema, String componentNameOverride, WhoUpdated wu) throws RelizaException {
 		// Strip username from URI if present (e.g., https://relizaio@dev.azure.com/ -> https://dev.azure.com/)
 		String cleanVcsUri = Utils.normalizeVcsUri(vcsUri);
-		
+
 		// Find or create VCS repository
 		VcsType effectiveVcsType = (vcsType != null) ? vcsType : VcsType.GIT;
 		Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, cleanVcsUri, vcsDisplayName, effectiveVcsType, true, wu);
 		UUID vcsUuid = vcsRepo.get().getUuid();
-		
-		// Create component (use clean URI for name resolution)
-		String componentName = resolveComponentNameFromVcsUri(cleanVcsUri, repoPath);
+
+		// Create component (use override name if provided, otherwise resolve from VCS URI)
+		String componentName = StringUtils.isNotEmpty(componentNameOverride)
+			? componentNameOverride
+			: resolveComponentNameFromVcsUri(cleanVcsUri, repoPath);
 		
 		CreateComponentDto cpd = CreateComponentDto.builder()
 				.organization(orgUuid)

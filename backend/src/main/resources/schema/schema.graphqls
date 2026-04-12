@@ -1807,6 +1807,7 @@ input ReleaseInputProg {
 	repoPath: String
 	vcsDisplayName: String
 	createComponentIfMissing: Boolean
+	createComponentName: String
 	createComponentVersionSchema: String
 	createComponentFeatureBranchVersionSchema: String
 	rebuildRelease: Boolean
