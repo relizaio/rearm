@@ -81,6 +81,8 @@ import { NForm, NFormItem, NInput, NSelect, NRadio, NRadioGroup, NSpin, NButton 
 import constants from '../utils/constants'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
+import Swal from 'sweetalert2'
+import commonFunctions from '@/utils/commonFunctions'
 
 
 async function getGeneratedVersion (branchUuid: string): Promise<string> {
@@ -321,15 +323,19 @@ const onReset = function () {
 
 const onSubmit = async function () {
     let retRlz: any = {}
-    if (isCreateNewRelease.value) {
-        const createRlzResp = await store.dispatch('createRelease', release.value)
-        if (createRlzResp.uuid) {
-            retRlz = createRlzResp
+    try {
+        if (isCreateNewRelease.value) {
+            const createRlzResp = await store.dispatch('createRelease', release.value)
+            if (createRlzResp.uuid) {
+                retRlz = createRlzResp
+            }
+        } else if (release.value.uuid) {
+            retRlz = release.value
         }
-    } else if (release.value.uuid) {
-        retRlz = release.value
+        emit('createdRelease', retRlz)
+    } catch (err: any) {
+        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
     }
-    emit('createdRelease', retRlz)
 }
 
 
