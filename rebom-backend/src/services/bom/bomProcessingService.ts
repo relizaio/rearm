@@ -452,6 +452,21 @@ export function computeBomDigest(bom: any): string {
   if (rootdepIndex > -1) {
     bomForDigest["dependencies"][rootdepIndex]['ref'] = ROOT_PLACEHOLDER
   }
+
+  // Build set of known component refs to detect self-referential dependency entries.
+  // These are entries in dependencies whose ref is not in the components list
+  // (e.g. the Maven JAR of the app itself: pkg:maven/io.reliza/rearm-pro-backend@26.04.x?type=jar)
+  // which cdxgen adds for container image BOMs but does not include in the components array.
+  const componentRefSet = new Set<string>(
+    (bom["components"] || []).map((c: any) => c['bom-ref'] || c.purl || '').filter((r: string) => r !== '')
+  )
+  for (const dep of bomForDigest["dependencies"]) {
+    if (dep.ref !== ROOT_PLACEHOLDER && !componentRefSet.has(dep.ref)) {
+      // Self-referential entry: normalize by stripping the version from the purl
+      // (version is the segment between @ and ? or end-of-string)
+      dep.ref = dep.ref.replace(/@[^?#]*/, '')
+    }
+  }
   
   for (const dep of bomForDigest["dependencies"]) {
     if (dep.dependsOn && Array.isArray(dep.dependsOn)) {
