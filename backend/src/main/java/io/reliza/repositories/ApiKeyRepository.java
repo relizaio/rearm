@@ -25,6 +25,11 @@ public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
 	List<ApiKey> findApiKeyByUuidAndType(UUID uuid, String type, UUID org);
 
 	@Query(
+			value = VariableQueries.FIND_API_KEY_ORG_BY_ID_AND_TYPE,
+			nativeQuery = true)
+	Optional<ApiKey> findApiKeyByUuidAndTypeOnly(UUID uuid, String type, String keyOrder);
+
+	@Query(
 			value = VariableQueries.FIND_USER_API_KEY_BY_USER_ID_AND_ORG,
 			nativeQuery = true)
 	List<ApiKey> findUserApiKeyByUserUuidAndOrgUuid(UUID userUuid, UUID orgUuid);

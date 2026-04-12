@@ -221,6 +221,11 @@ public class ApiKeyService {
 		if (orgUuid == null && ahp.getType() == ApiTypeEnum.COMPONENT) {
 			orgUuid = getComponentService.getComponentData(ahp.getObjUuid()).map(c -> c.getOrg()).orElse(null);
 		}
+		if (orgUuid == null && (ahp.getType() == ApiTypeEnum.INSTANCE || ahp.getType() == ApiTypeEnum.CLUSTER)) {
+			orgUuid = repository.findApiKeyByUuidAndTypeOnly(ahp.getObjUuid(), ahp.getType().toString(),
+					StringUtils.isEmpty(ahp.getKeyOrder()) ? null : ahp.getKeyOrder())
+					.map(ApiKey::getOrg).orElse(null);
+		}
 		if (orgUuid == null) {
 			log.warn("SECURITY: programmatic auth failed - could not resolve org for type={} obj={} ip={}",
 					ahp.getType(), ahp.getObjUuid(), ahp.getRemoteIp());
@@ -242,14 +247,6 @@ public class ApiKeyService {
 		return matchingKeyId;
 	}
 	
-	public UUID getOrgUuidFromKey (AuthHeaderParse ahp) {
-		UUID orgUuid = null;
-		var key = getApiKeyDataByObjUuidTypeOrder(ahp.getObjUuid(), ahp.getType(), ahp.getKeyOrder(), ahp.getOrgUuid());
-		if (key.isPresent()) {
-			orgUuid = key.get().getOrg();
-		}
-		return orgUuid;
-	}
 	
 	@Transactional
 	public ApiKeyDto setApprovalTypes(UUID keyUuid, Collection<String> approvals, WhoUpdated wu) {

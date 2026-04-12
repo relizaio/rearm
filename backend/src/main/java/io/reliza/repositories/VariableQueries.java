@@ -36,6 +36,9 @@ class VariableQueries {
 
 	protected static final String FIND_API_KEY_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE ak.api_key IS NOT NULL and "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and ak.org = :org";
+
+	protected static final String FIND_API_KEY_ORG_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE ak.api_key IS NOT NULL and "
+			+ "ak.object_uuid = :uuid and ak.object_type = :type and (:keyOrder IS NULL OR ak.key_order = :keyOrder)";
 	
 	protected static final String FIND_REGISTRY_API_KEY = "SELECT * from rearm.api_keys ak WHERE "
 			+ "ak.object_uuid = :objUuid and ak.object_type = :type and ak.org = :orgUuid";

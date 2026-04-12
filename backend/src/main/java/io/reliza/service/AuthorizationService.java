@@ -35,7 +35,6 @@ import io.reliza.model.ApiKeyData;
 import io.reliza.model.AuthPrincipal;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
-import io.reliza.model.ReleaseData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission;
