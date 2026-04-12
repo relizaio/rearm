@@ -243,7 +243,7 @@ export async function pushToOci(tag: string, bom: any, repositoryName?: string):
             formData.getLength((err, length) => {
                 if (err) { reject(err); return; }
                 const chunks: Buffer[] = [];
-                formData.on('data', (chunk: Buffer) => chunks.push(chunk));
+                formData.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
                 formData.on('end', () => resolve(Buffer.concat(chunks)));
                 formData.on('error', reject);
                 formData.resume();
