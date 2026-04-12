@@ -1,5 +1,4 @@
 import { getPool } from '../../utils';
-import axios from 'axios';
 import { logger } from '../../logger';
 
 export interface HealthStatus {
@@ -25,8 +24,14 @@ export async function checkDatabaseConnection(): Promise<boolean> {
 export async function checkOciConnection(): Promise<boolean> {
     try {
         const ociHost = process.env.OCI_ARTIFACT_SERVICE_HOST || 'http://[::1]:8083/';
-        const response = await axios.get(`${ociHost}health`, { timeout: 5000 });
-        return response.status === 200;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        try {
+            const response = await fetch(`${ociHost}health`, { signal: controller.signal });
+            return response.status === 200;
+        } finally {
+            clearTimeout(timeoutId);
+        }
     } catch (error) {
         logger.error({ error: error instanceof Error ? error.message : String(error) }, 'OCI health check failed');
         return false;
