@@ -11,14 +11,14 @@ RUN $JAVA_HOME/bin/jlink \
          --compress=2 \
          --output /javaruntime
 
-FROM maven:3.9.14-eclipse-temurin-21-alpine@sha256:eb9561832b985fe1c341af2c147412810c3cad0ddb250e6de31e0f1300433bb1 AS build-cache-stage
+FROM maven:3.9.14-eclipse-temurin-21-alpine@sha256:b9c89e0a0e292a8b8eb5e68c9cf24335f99bbf1483e8c7b56c2b9b96087ad56d AS build-cache-stage
 RUN mkdir /workdir
 WORKDIR /workdir
 
 COPY ./pom.xml .
 RUN mvn -B dependency:go-offline -T1C 
 
-FROM maven:3.9.14-eclipse-temurin-21-alpine@sha256:eb9561832b985fe1c341af2c147412810c3cad0ddb250e6de31e0f1300433bb1 AS build-stage
+FROM maven:3.9.14-eclipse-temurin-21-alpine@sha256:b9c89e0a0e292a8b8eb5e68c9cf24335f99bbf1483e8c7b56c2b9b96087ad56d AS build-stage
 RUN mkdir -p /root/.m2/repository/com
 COPY --from=build-cache-stage /root/.m2 /root/.m2
 
