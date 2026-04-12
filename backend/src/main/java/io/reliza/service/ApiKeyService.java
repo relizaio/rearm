@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 
 
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.lang.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -88,8 +89,8 @@ public class ApiKeyService {
 		return oakd;
 	}
 	
-	private List<ApiKey> listApiKeyByObjUuidAndType(UUID uuid, ApiTypeEnum type, UUID org) {
-		return repository.findApiKeyByUuidAndType(uuid, type.toString());
+	private List<ApiKey> listApiKeyByObjUuidAndType(UUID uuid, ApiTypeEnum type, @NonNull UUID org) {
+		return repository.findApiKeyByUuidAndType(uuid, type.toString(), org);
 	}
 	
 	private Optional<ApiKey> getApiKeyByObjUuidTypeOrder(UUID uuid, ApiTypeEnum type, String keyOrder, UUID org) {
@@ -214,7 +215,12 @@ public class ApiKeyService {
 	 */
 	public UUID isMatchingApiKey(AuthHeaderParse ahp) {
 		UUID matchingKeyId = null;
-		Optional<ApiKey> oak = getApiKeyByObjUuidTypeOrder(ahp.getObjUuid(), ahp.getType(), ahp.getKeyOrder(), ahp.getOrgUuid());
+		UUID orgUuid = ahp.getOrgUuid();
+		if (orgUuid == null && ahp.getType() == ApiTypeEnum.COMPONENT) {
+			orgUuid = getComponentService.getComponentData(ahp.getObjUuid()).map(c -> c.getOrg()).orElse(null);
+		}
+		if (orgUuid == null) return null;
+		Optional<ApiKey> oak = getApiKeyByObjUuidTypeOrder(ahp.getObjUuid(), ahp.getType(), ahp.getKeyOrder(), orgUuid);
 		
 		if (oak.isPresent()) {
 			Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
