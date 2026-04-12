@@ -5,7 +5,7 @@ import matter from "gray-matter";
 export type PostFrontmatter = {
   title: string;
   date: string; // ISO date string
-  ogImage?: string; // optional OG image from /public/blog_images/
+  ogImage?: string; // optional OG image from /public/blog_images/ for blog posts, /public/news_images/ for news
 };
 
 export type Post = PostFrontmatter & {
