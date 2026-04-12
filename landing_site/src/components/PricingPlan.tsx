@@ -198,7 +198,7 @@ export default function PricingPlan() {
       type: "Per Month",
       bullets: [
         "All in ReARM Pro - Starter",
-        "Private VPN / VNet with SSO and unlimited artifact storage, option for on-prem deployment",
+        "Private VPC / VNet with SSO and unlimited artifact storage, option for on-prem deployment",
         "Enhanced support (24x7, 4 hours response time)",
         "Support for Multi-Organization Workflow",
         "Free 60-day trial*",
