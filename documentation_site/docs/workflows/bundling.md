@@ -49,3 +49,8 @@ Editing a pattern-matched dependency automatically creates a manual entry for th
 Once all dependencies are configured, switch *Auto Integrate* selector to *ENABLED*. This ensures that any new incoming component release matching your patterns or manual dependencies will trigger creation of a new version of this *Product*.
 
 Changes to dependencies, patterns, and settings must be saved using the *Save Changes* button that appears when modifications are made.
+
+### Manually Trigger Auto-Integrate
+Use `broken arrow icon` to trigger auto-integrate that was just configured. That would create first auto-integrated release if its components are already available.
+
+![Broken arrow icon on auto-integrate](./images/auto-integrate-broken-arrow.png)
