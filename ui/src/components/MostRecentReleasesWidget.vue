@@ -9,6 +9,9 @@
             />
             <span v-if="props.showFullPageIcon">Most Recent Releases</span>
             <h3 v-else style="margin: 0;">Most Recent Releases</h3>
+            <n-icon class="clickable" size="20" title="Refresh" @click="fetchReleases">
+                <Refresh />
+            </n-icon>
             <router-link
                 v-if="props.showFullPageIcon"
                 :to="{ name: 'MostRecentReleases', params: { orguuid: props.orgUuid } }"
@@ -79,6 +82,7 @@ export default {
 import { ref, Ref, computed, watch, onMounted } from 'vue'
 import { NIcon, NSpin, NSpace, NInputNumber, useNotification } from 'naive-ui'
 import { ArrowExpand20Regular } from '@vicons/fluent'
+import { Refresh } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
 import GqlQueries from '@/utils/graphqlQueries'
 import constants from '@/utils/constants'
