@@ -27,14 +27,26 @@
         <n-spin :show="loading" style="min-height: 150px;">
             <ol v-if="releases.length">
                 <li v-for="rel in releases" :key="rel.uuid" style="margin-bottom: 8px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
-                        <span>
-                            <router-link :to="{ name: rel.componentDetails?.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg', params: { orguuid: props.orgUuid, compuuid: rel.componentDetails?.uuid } }">{{ rel.componentDetails?.name }}</router-link>
-                            &nbsp;·&nbsp;{{ rel.branchDetails?.name }}
-                            &nbsp;·&nbsp;<router-link :to="{ name: 'ReleaseView', params: { uuid: rel.uuid } }">{{ rel.version }}</router-link>
-                            &nbsp;·&nbsp;{{ formatDate(rel.createdDate) }}
+                    <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+                        <span style="display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1; overflow: hidden;">
+                            <router-link style="flex-shrink: 0;" :to="{ name: rel.componentDetails?.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg', params: { orguuid: props.orgUuid, compuuid: rel.componentDetails?.uuid } }">{{ rel.componentDetails?.name }}</router-link>
+                            <span style="flex-shrink: 0;">&nbsp;·&nbsp;</span>
+                            <n-tooltip trigger="hover" :delay="400">
+                                <template #trigger>
+                                    <router-link class="text-ellipsis" :to="{ name: rel.componentDetails?.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg', params: { orguuid: props.orgUuid, compuuid: rel.componentDetails?.uuid, branchuuid: rel.branchDetails?.uuid } }">{{ rel.branchDetails?.name }}</router-link>
+                                </template>
+                                {{ rel.branchDetails?.name }}
+                            </n-tooltip>
+                            <span style="flex-shrink: 0;">&nbsp;·&nbsp;</span>
+                            <n-tooltip trigger="hover" :delay="400">
+                                <template #trigger>
+                                    <router-link class="text-ellipsis" :to="{ name: 'ReleaseView', params: { uuid: rel.uuid } }">{{ rel.version }}</router-link>
+                                </template>
+                                {{ rel.version }}
+                            </n-tooltip>
+                            <span style="flex-shrink: 0;">&nbsp;·&nbsp;{{ formatDate(rel.createdDate) }}</span>
                         </span>
-                        <n-space :size="1" v-if="rel.metrics?.lastScanned">
+                        <n-space :size="1" v-if="rel.metrics?.lastScanned" style="flex-shrink: 0;">
                             <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="openVulnModal(rel, 'CRITICAL', 'Vulnerability')">{{ rel.metrics.critical }}</span>
                             <span title="High Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.HIGH, cursor: 'pointer' }" @click="openVulnModal(rel, 'HIGH', 'Vulnerability')">{{ rel.metrics.high }}</span>
                             <span title="Medium Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer' }" @click="openVulnModal(rel, 'MEDIUM', 'Vulnerability')">{{ rel.metrics.medium }}</span>
@@ -80,7 +92,7 @@ export default {
 
 <script lang="ts" setup>
 import { ref, Ref, computed, watch, onMounted } from 'vue'
-import { NIcon, NSpin, NSpace, NInputNumber, useNotification } from 'naive-ui'
+import { NIcon, NSpin, NSpace, NInputNumber, NTooltip, useNotification } from 'naive-ui'
 import { ArrowExpand20Regular } from '@vicons/fluent'
 import { Refresh } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
@@ -208,3 +220,12 @@ watch(localLimit, () => fetchReleases())
 
 onMounted(() => fetchReleases())
 </script>
+
+<style scoped>
+.text-ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+</style>
