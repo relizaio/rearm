@@ -54,3 +54,44 @@ Changes to dependencies, patterns, and settings must be saved using the *Save Ch
 Use `broken arrow icon` to trigger auto-integrate that was just configured. That would create first auto-integrated release if its components are already available.
 
 ![Broken arrow icon on auto-integrate](./images/auto-integrate-broken-arrow.png)
+
+## Create Feature Set from Product Release
+ReARM allows creation of Feature Sets from Product Releases. The main use-case for this is Branching of Product Releases.
+
+Specifically, consider following possible scenarios:
+
+### 1. Requirement to patch a single component
+1. You have a Product Release version 2.5.7 deployed somewhere. That release belongs to the Base Feature Set of the Product. The release has 15 components.
+2. You already have newer Product Releleases in the same Base Feature Set but you need to do surgical fix for only one of its fifteen Components.
+3. To achieve this, you may create a Feature Set from release.
+
+### 2. Creating a new feature using existing Product Release as a baseline
+1. In this case consider your newest Product Release version 3.5.0 that lives in your Base Feature Set. It has 20 components.
+2. Now you would like to make a new Feature Set to add AI assistance capability across 2 Components out of 20.
+3. To achieve this, you may create a Feature Set from release.
+
+When you create a Feature Set from Product Rrelease, it:
+1. Creates a new Feature Set with the name you specify
+2. And it adds all Components from the Product Release as manual pinned dependencies in the created Feature Set.
+
+For example, consider my Rebom Product with the following releases as on the image below:
+
+![Auto-integrate Rebom releases](./images/auto-integrate-rebom-releases.png)
+
+You may either use copy icon at the right of the release version. Or here is Release View of the same release:
+
+![Auto-integrate - Release View](./images/auto-integrate-release-view.png)
+
+And you can use copy icon in the Release View header.
+
+Then you just need to enter your desired name in the modal:
+
+![Auto-integrate - Feature Set from Release modal](./images/auto-integrate-feature-set-from-release-modal.png)
+
+And after clicking `Create`, a new Feature Set will be provisioned.
+
+If you open settings for the new Feature Set, you will notice that Component Releases of the original Product Release are now added as auto-integrate dependencies:
+
+![Auto-integrate - Feature Set from Release settings](./images/auto-integrate-feature-set-from-release-settings.png)
+
+Note, that Auto Integrate is configured as `DISABLED` initially. You should then modify dependencies as you see fit and then enable Auto Integrate. If you also need to trigger first release manually at this stage, you can do so using `broken arrow` icon as described above.
