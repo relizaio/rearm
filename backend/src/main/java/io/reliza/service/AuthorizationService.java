@@ -546,11 +546,8 @@ public class AuthorizationService {
 			ApiKeyDto akd = oakd.get();
 			if (!ro.getOrg().equals(akd.getOrg())) {
 				AuthorizationResponse.forbid(ar, "Org mismatch");
-				if (!(ro instanceof ReleaseData)) {
-					log.error("SECURITY: org mismatch, api key org = " + akd.getOrg() + " , ro org = " + ro.getOrg());
-				} else {
-					log.error("SECURITY: org mismatch, api key org = " + akd.getOrg() + ", release = " + ((ReleaseData) ro).getUuid());
-				}
+				log.error("SECURITY: org mismatch, api key org={} ro org={} ro uuid={}",
+						akd.getOrg(), ro.getOrg(), ro.getUuid());
 			}
 			
 			if (akd.getType() == ApiTypeEnum.ORGANIZATION && ct == CallType.READ && akd.getObject().equals(ro.getOrg())) {
@@ -585,6 +582,8 @@ public class AuthorizationService {
 		String apiKey = ahp.getApiKey();
 		if (StringUtils.isNotEmpty(apiKey)) matchingKeyId = apiKeyService.isMatchingApiKey(ahp);
 		if (null == matchingKeyId) {
+			log.warn("SECURITY: programmatic auth failed for type={} obj={} keyId={} ip={}",
+					ahp.getType(), ahp.getObjUuid(), ahp.getApiKeyId(), ahp.getRemoteIp());
 			try {
 				if (rt == RequestType.REST) {
 					response.sendError(HttpStatus.FORBIDDEN.value(), "You do not have permissions to this resource");

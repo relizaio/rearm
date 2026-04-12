@@ -16,8 +16,9 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.repositories.ApiKeyRepository;
 
+@Slf4j
 @Service
 public class ApiKeyService {
 	
@@ -219,18 +221,23 @@ public class ApiKeyService {
 		if (orgUuid == null && ahp.getType() == ApiTypeEnum.COMPONENT) {
 			orgUuid = getComponentService.getComponentData(ahp.getObjUuid()).map(c -> c.getOrg()).orElse(null);
 		}
-		if (orgUuid == null) return null;
+		if (orgUuid == null) {
+			log.warn("SECURITY: programmatic auth failed - could not resolve org for type={} obj={} ip={}",
+					ahp.getType(), ahp.getObjUuid(), ahp.getRemoteIp());
+			return null;
+		}
 		Optional<ApiKey> oak = getApiKeyByObjUuidTypeOrder(ahp.getObjUuid(), ahp.getType(), ahp.getKeyOrder(), orgUuid);
 		
 		if (oak.isPresent()) {
 			Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 			ApiKey ak = oak.get();
-			boolean matches = encoder.matches(ahp.getApiKey(), ak.getApiKey());
-			if (!matches) {
-				BCryptPasswordEncoder bcryptEncoder = new BCryptPasswordEncoder(BCryptPasswordEncoder.BCryptVersion.$2B);
-				matches = bcryptEncoder.matches(ahp.getApiKey(), ak.getApiKey());
+			if (encoder.matches(ahp.getApiKey(), ak.getApiKey())) {
+				matchingKeyId = oak.get().getUuid();
 			}
-			if (matches) matchingKeyId = oak.get().getUuid();
+		}
+		if (matchingKeyId == null) {
+			log.warn("SECURITY: programmatic auth failed - invalid key for type={} obj={} keyId={} ip={}",
+					ahp.getType(), ahp.getObjUuid(), ahp.getApiKeyId(), ahp.getRemoteIp());
 		}
 		return matchingKeyId;
 	}
