@@ -70,7 +70,7 @@ Specifically, consider following possible scenarios:
 2. Now you would like to make a new Feature Set to add AI assistance capability across 2 Components out of 20.
 3. To achieve this, you may create a Feature Set from release.
 
-When you create a Feature Set from Product Rrelease, it:
+When you create a Feature Set from Product Release, it:
 1. Creates a new Feature Set with the name you specify
 2. And it adds all Components from the Product Release as manual pinned dependencies in the created Feature Set.
 
