@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
 import { getAllNewsSlugs, getNewsBySlug } from "../../../lib/posts";
 import type { Metadata } from "next";
 import Script from "next/script";
@@ -103,6 +104,7 @@ export default async function NewsPostPage({ params }: { params: any }) {
       </div>
       <div className="blogPostContent">
         <ReactMarkdown
+          rehypePlugins={[rehypeRaw]}
           components={{
             img: (props: any) => (
               // eslint-disable-next-line @next/next/no-img-element
