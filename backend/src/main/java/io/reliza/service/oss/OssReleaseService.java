@@ -335,7 +335,8 @@ public class OssReleaseService {
 		r = saveRelease(r, rd, wu, considerTriggers);
 		ReleaseData savedRd = ReleaseData.dataFromRecord(r);
 		processReleaseLifecycleEvents(savedRd, newLifecycle, oldLifecycle);
-		if (newLifecycle.ordinal() > oldLifecycle.ordinal()) {
+		if (newLifecycle.ordinal() > oldLifecycle.ordinal()
+				&& newLifecycle.ordinal() <= ReleaseLifecycle.GENERAL_AVAILABILITY.ordinal()) {
 			cascadeLifecycleToComponents(savedRd, newLifecycle, wu, new HashSet<>());
 		}
 		return r;
