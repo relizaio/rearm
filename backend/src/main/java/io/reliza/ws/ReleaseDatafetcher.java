@@ -475,12 +475,9 @@ public class ReleaseDatafetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseId);
-		if (ord.isEmpty()) throw new RuntimeException("Wrong release");
-		CallType ct = CallType.ADMIN;
-		ReleaseLifecycle oldLifecycle = ord.get().getLifecycle();
-		if (newLifecycle.ordinal() - oldLifecycle.ordinal() == 1) ct = CallType.WRITE;
+		if (ord.isEmpty()) throw new RuntimeException("Wrong release");;
 		RelizaObject ro = ord.get();
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseId, List.of(ro), ct);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.LIFECYCLE_UPDATE, PermissionScope.RELEASE, releaseId, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		var r = ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu);
 		return ReleaseData.dataFromRecord(r);

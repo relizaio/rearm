@@ -2119,6 +2119,7 @@ enum PermissionFunction {
 	FINDING_ANALYSIS_WRITE
 	ARTIFACT_DOWNLOAD
 	SBOM_PROBING
+	LIFECYCLE_UPDATE
 }
 
 enum SbomProbingStatus {
