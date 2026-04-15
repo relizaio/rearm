@@ -332,10 +332,28 @@ public class OssReleaseService {
 		ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.LIFECYCLE, ReleaseUpdateAction.CHANGED, oldLifecycle.name(),
 				newLifecycle.name(), null, ZonedDateTime.now(), wu);
 		rd.addUpdateEvent(rue);
-		Map<String,Object> recordData = Utils.dataToRecord(rd);
-		r = saveRelease(r, recordData, wu, considerTriggers);
-		processReleaseLifecycleEvents (ReleaseData.dataFromRecord(r), newLifecycle, oldLifecycle);
+		r = saveRelease(r, rd, wu, considerTriggers);
+		ReleaseData savedRd = ReleaseData.dataFromRecord(r);
+		processReleaseLifecycleEvents(savedRd, newLifecycle, oldLifecycle);
+		if (newLifecycle.ordinal() > oldLifecycle.ordinal()) {
+			cascadeLifecycleToComponents(savedRd, newLifecycle, wu, new HashSet<>());
+		}
 		return r;
+	}
+
+	private void cascadeLifecycleToComponents(ReleaseData rd, ReleaseLifecycle newLifecycle, WhoUpdated wu, Set<UUID> visited) {
+		if (!visited.add(rd.getUuid())) return;
+		if (rd.getParentReleases() == null || rd.getParentReleases().isEmpty()) return;
+		for (ParentRelease pr : rd.getParentReleases()) {
+			Optional<ReleaseData> ocrd = sharedReleaseService.getReleaseData(pr.getRelease());
+			if (ocrd.isEmpty()) continue;
+			ReleaseData crd = ocrd.get();
+			if (crd.getLifecycle().ordinal() < newLifecycle.ordinal()) {
+				Release updated = updateReleaseLifecycle(crd.getUuid(), newLifecycle, wu, false);
+				crd = ReleaseData.dataFromRecord(updated);
+			}
+			cascadeLifecycleToComponents(crd, newLifecycle, wu, visited);
+		}
 	}
 	
 	@Transactional
@@ -345,8 +363,7 @@ public class OssReleaseService {
 			var identifiers = sharedReleaseService.resolveReleaseIdentifiersFromComponent(rd);
 			if (null != identifiers && !identifiers.isEmpty()) {
 				rd.setIdentifiers(identifiers);
-				Map<String,Object> recordData = Utils.dataToRecord(rd);
-				r = saveRelease(r, recordData, wu, false);
+				r = saveRelease(r, rd, wu, false);
 				rd = ReleaseData.dataFromRecord(r);
 			}
 		}
