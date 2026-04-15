@@ -20,6 +20,7 @@ function translateFunctionName(fn: string): string {
         case 'FINDING_ANALYSIS_READ': return 'Finding Analysis Read'
         case 'FINDING_ANALYSIS_WRITE': return 'Finding Analysis Write'
         case 'ARTIFACT_DOWNLOAD': return 'Artifact Download'
+        case 'LIFECYCLE_UPDATE': return 'Lifecycle Update'
         case 'SBOM_PROBING': return 'SBOM Probing'
         default: return fn
     }
