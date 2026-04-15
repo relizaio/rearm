@@ -460,12 +460,12 @@
                     </n-gi>
                     <n-gi span="1">
                         <span class="lifecycle" style="float: right; margin-right: 80px;">
-                            <span v-if="isWritable">
+                            <span v-if="canUpdateLifecycle">
                                 <n-dropdown v-if="updatedRelease.lifecycle" trigger="hover" :options="lifecycleOptions" @select="lifecycleChange">
                                     <n-tag type="success">{{ lifecycleOptions.find(lo => lo.key === updatedRelease.lifecycle)?.label }}</n-tag>
                                 </n-dropdown>
                             </span>
-                            <span v-if="!isWritable">
+                            <span v-if="!canUpdateLifecycle">
                                 <n-tag type="success">{{ updatedRelease.lifecycle }}</n-tag>
                             </span>
                         </span>
@@ -1725,6 +1725,14 @@ const isWritable : ComputedRef<boolean> = computed((): boolean => {
         p.object === updatedRelease.value.componentDetails.uuid
     )
     return componentPermission?.type === 'READ_WRITE'
+})
+
+const canUpdateLifecycle: ComputedRef<boolean> = computed((): boolean => {
+    const orguuid = updatedRelease.value.orgDetails?.uuid
+    if (!orguuid) return false
+    const userPermissions: any[] = store.getters.myuser?.permissions?.permissions || []
+    if (userPermissions.some((p: any) => p.scope === 'ORGANIZATION' && p.org === orguuid && p.type === 'ADMIN')) return true
+    return userPermissions.some((p: any) => p.org === orguuid && p.type === 'READ_WRITE' && (p.functions || []).includes('LIFECYCLE_UPDATE'))
 })
 
 const isUpdatable: ComputedRef<boolean> = computed(

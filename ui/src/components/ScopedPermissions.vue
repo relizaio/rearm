@@ -52,6 +52,17 @@
                             Requires "Finding Analysis Read" function to be able to view existing finding records.
                         </n-tooltip>
                     </span>
+                    <span v-else-if="f === 'LIFECYCLE_UPDATE'" style="display: inline-flex; align-items: center;">
+                        {{ translateFunctionName(f) }}
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-icon size="16" style="margin-left: 4px;">
+                                    <QuestionCircle20Regular />
+                                </n-icon>
+                            </template>
+                            Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
+                        </n-tooltip>
+                    </span>
                     <span v-else>
                         {{ translateFunctionName(f) }}
                     </span>
@@ -95,7 +106,20 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :title="translateFunctionName(f)" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                                    <span v-if="f === 'LIFECYCLE_UPDATE'" style="display: inline-flex; align-items: center;">
+                                        {{ translateFunctionName(f) }}
+                                        <n-tooltip trigger="hover">
+                                            <template #trigger>
+                                                <n-icon size="16" style="margin-left: 4px;">
+                                                    <QuestionCircle20Regular />
+                                                </n-icon>
+                                            </template>
+                                            Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
+                                        </n-tooltip>
+                                    </span>
+                                    <span v-else>{{ translateFunctionName(f) }}</span>
+                                </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
@@ -142,7 +166,20 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :title="translateFunctionName(f)" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                                    <span v-if="f === 'LIFECYCLE_UPDATE'" style="display: inline-flex; align-items: center;">
+                                        {{ translateFunctionName(f) }}
+                                        <n-tooltip trigger="hover">
+                                            <template #trigger>
+                                                <n-icon size="16" style="margin-left: 4px;">
+                                                    <QuestionCircle20Regular />
+                                                </n-icon>
+                                            </template>
+                                            Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
+                                        </n-tooltip>
+                                    </span>
+                                    <span v-else>{{ translateFunctionName(f) }}</span>
+                                </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
@@ -190,7 +227,20 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :label="translateFunctionName(f)" :title="translateFunctionName(f)" />
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                                    <span v-if="f === 'LIFECYCLE_UPDATE'" style="display: inline-flex; align-items: center;">
+                                        {{ translateFunctionName(f) }}
+                                        <n-tooltip trigger="hover">
+                                            <template #trigger>
+                                                <n-icon size="16" style="margin-left: 4px;">
+                                                    <QuestionCircle20Regular />
+                                                </n-icon>
+                                            </template>
+                                            Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
+                                        </n-tooltip>
+                                    </span>
+                                    <span v-else>{{ translateFunctionName(f) }}</span>
+                                </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
