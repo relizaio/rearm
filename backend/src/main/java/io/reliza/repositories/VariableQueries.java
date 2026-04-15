@@ -1294,6 +1294,41 @@ class VariableQueries {
 			""";
 	
 	/*
+	 * Release UUIDs by component (used for perspective-scoped download log filtering)
+	 */
+	protected static final String LIST_RELEASE_UUIDS_BY_COMPONENTS = """
+			SELECT r.uuid::text FROM rearm.releases r
+			WHERE r.record_data->>'component' IN (:componentUuids)
+			""";
+
+	protected static final String LIST_ARTIFACT_UUIDS_BY_COMPONENTS = """
+			SELECT DISTINCT jsonb_array_elements_text(r.record_data->'artifacts') AS artifact_uuid
+			FROM rearm.releases r
+			WHERE r.record_data->>'component' IN (:componentUuids)
+			AND r.record_data->'artifacts' IS NOT NULL
+			""";
+
+	/*
+	 * Download Logs
+	 */
+	protected static final String LIST_DOWNLOAD_LOGS_BY_ORG = """
+			SELECT * FROM rearm.download_logs dl
+			WHERE dl.record_data->>'org' = :orgUuidAsString
+			AND (CAST(:fromDate AS timestamptz) IS NULL OR dl.created_date >= :fromDate)
+			AND (CAST(:toDate AS timestamptz) IS NULL OR dl.created_date <= :toDate)
+			ORDER BY dl.created_date DESC
+			""";
+
+	protected static final String LIST_DOWNLOAD_LOGS_BY_ORG_AND_SUBJECTS = """
+			SELECT * FROM rearm.download_logs dl
+			WHERE dl.record_data->>'org' = :orgUuidAsString
+			AND (CAST(:fromDate AS timestamptz) IS NULL OR dl.created_date >= :fromDate)
+			AND (CAST(:toDate AS timestamptz) IS NULL OR dl.created_date <= :toDate)
+			AND dl.record_data->>'subjectUuid' IN (:subjectUuids)
+			ORDER BY dl.created_date DESC
+			""";
+
+	/*
 	 * Release Metrics CVE Search
 	 */
 	protected static final String FIND_RELEASES_BY_CVE_ID = """

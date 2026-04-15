@@ -103,6 +103,9 @@ type Query {
 	# Perspectives
 	perspectives(org: ID!): [Perspective]
 	componentsOfPerspective(perspectiveUuid: ID!): [Component]
+
+	# Download Logs
+	listDownloadLogs(org: ID!, fromDate: DateTime, toDate: DateTime, perspective: ID): [DownloadLog]
 	
 	# CVE Search
 	searchReleasesByCveId(org: ID!, cveId: String!, perspectiveUuid: ID): [ComponentWithBranches]
@@ -2942,4 +2945,47 @@ enum CollectionUpdateReasonType {
 	ARTIFACT_UPDATED
 	ARTIFACT_ADDED
 	ARTIFACT_REMOVED
+}
+
+type DownloadLog {
+	uuid: ID
+	org: ID
+	downloadType: DownloadType
+	subjectType: DownloadSubjectType
+	subjectUuid: ID
+	subjectName: String
+	downloadedBy: ID
+	downloadedByName: String
+	createdType: ProgrammaticType
+	ipAddress: String
+	downloadConfig: DownloadConfig
+	createdDate: DateTime
+}
+
+type DownloadConfig {
+	artifactUuid: ID
+	artifactVersion: Int
+	releaseUuid: ID
+	tldOnly: Boolean
+	ignoreDev: Boolean
+	structure: BomStructureType
+	belongsTo: ArtifactBelongsToEnum
+	mediaType: BomMediaType
+	excludeCoverageTypes: [ArtifactCoverageType]
+	includeSuppressed: Boolean
+	upToDate: DateTime
+	targetLifecycle: ReleaseLifecycleEnum
+	targetApproval: String
+}
+
+enum DownloadType {
+	ARTIFACT_DOWNLOAD
+	RAW_ARTIFACT_DOWNLOAD
+	VDR_EXPORT
+	SBOM_EXPORT
+}
+
+enum DownloadSubjectType {
+	ARTIFACT
+	RELEASE
 }

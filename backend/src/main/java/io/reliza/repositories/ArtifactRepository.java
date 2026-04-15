@@ -3,6 +3,7 @@
 */
 package io.reliza.repositories;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -90,6 +91,11 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 			value = VariableQueries.FIND_ARTIFACTS_BY_DTRACK_PROJECT_AND_ORG,
 			nativeQuery = true)
 	List<Artifact> findArtifactsByDtrackProjectAndOrg(String orgUuidAsString, String dtrackProject);
+
+	@Query(
+			value = VariableQueries.LIST_ARTIFACT_UUIDS_BY_COMPONENTS,
+			nativeQuery = true)
+	List<String> listArtifactUuidsByComponents(@Param("componentUuids") Collection<String> componentUuids);
 
 	@Transactional
 	@Modifying

@@ -28,8 +28,13 @@ import io.reliza.model.ArtifactData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.DownloadLogData.DownloadConfig;
+import io.reliza.model.DownloadLogData.DownloadSubjectType;
+import io.reliza.model.DownloadLogData.DownloadType;
+import io.reliza.model.WhoUpdated;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.DownloadLogService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -55,6 +60,9 @@ public class ArtifactWs {
     
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
+
+	@Autowired
+	private DownloadLogService downloadLogService;
 
     @GetMapping("api/manual/v1/artifact/{uuid}/download")
     public Mono<ResponseEntity<byte[]>> downloadArtifact(
@@ -82,6 +90,10 @@ public class ArtifactWs {
             throw new RelizaException("Artifact not found; uuid: " + uuid.toString());
         }
         
+        WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+        downloadLogService.createDownloadLog(ro.getOrg(), DownloadType.ARTIFACT_DOWNLOAD,
+            DownloadSubjectType.ARTIFACT, oad.get().getUuid(), wu,
+            DownloadConfig.builder().artifactUuid(uuid).artifactVersion(version).build());
         return sharedArtifactService.downloadArtifact(oad.get());
         
     }
@@ -111,6 +123,10 @@ public class ArtifactWs {
             throw new RelizaException("Artifact not found; uuid: " + uuid.toString());
         }
         
+        WhoUpdated wuRaw = WhoUpdated.getWhoUpdated(oud.get());
+        downloadLogService.createDownloadLog(ro.getOrg(), DownloadType.RAW_ARTIFACT_DOWNLOAD,
+            DownloadSubjectType.ARTIFACT, oad.get().getUuid(), wuRaw,
+            DownloadConfig.builder().artifactUuid(uuid).artifactVersion(version).build());
         return sharedArtifactService.downloadRawArtifact(oad.get());
 
     }

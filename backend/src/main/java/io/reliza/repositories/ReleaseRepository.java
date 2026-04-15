@@ -324,5 +324,9 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Modifying
 	@Query(value = "UPDATE rearm.releases SET metrics = jsonb_set(coalesce(metrics, '{}'), '{lastScanned}', to_jsonb(extract(epoch from now()))), last_updated_date = now() WHERE uuid = :uuid", nativeQuery = true)
 	void touchLastScanned(@Param("uuid") UUID uuid);
+	@Query(
+			value = VariableQueries.LIST_RELEASE_UUIDS_BY_COMPONENTS,
+			nativeQuery = true)
+	List<String> listReleaseUuidsByComponents(Collection<String> componentUuids);
 
 }

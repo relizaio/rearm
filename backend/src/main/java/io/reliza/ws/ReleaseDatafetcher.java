@@ -89,6 +89,9 @@ import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
+import io.reliza.model.DownloadLogData.DownloadConfig;
+import io.reliza.model.DownloadLogData.DownloadSubjectType;
+import io.reliza.model.DownloadLogData.DownloadType;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
@@ -97,6 +100,7 @@ import io.reliza.dto.ChangelogRecords.ComponentChangelog;
 import io.reliza.dto.ChangelogRecords.OrganizationChangelog;
 import io.reliza.service.ChangeLogService;
 import io.reliza.service.ComponentService;
+import io.reliza.service.DownloadLogService;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetDeliverableService;
@@ -183,6 +187,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	private OssPerspectiveService ossPerspectiveService;
+
+	@Autowired
+	private DownloadLogService downloadLogService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "release")
@@ -243,6 +250,18 @@ public class ReleaseDatafetcher {
 			mediaType = BomMediaType.JSON;
 		}
 		log.debug("mediaType: {}", mediaType);
+		DownloadConfig sbomConfig = DownloadConfig.builder()
+				.releaseUuid(releaseUuid)
+				.tldOnly(tldOnly)
+				.ignoreDev(ignoreDev)
+				.structure(structure != null ? structure.name() : null)
+				.belongsTo(belongsTo != null ? belongsTo.name() : null)
+				.mediaType(mediaType.name())
+				.excludeCoverageTypes(excludeCoverageTypes != null
+						? excludeCoverageTypes.stream().map(Enum::name).toList() : null)
+				.build();
+		downloadLogService.createDownloadLog(rd.getOrg(), DownloadType.SBOM_EXPORT,
+				DownloadSubjectType.RELEASE, releaseUuid, wu, sbomConfig);
 		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes);
 	}
 	
@@ -282,7 +301,15 @@ public class ReleaseDatafetcher {
 		
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
 		ReleaseData rd = (ReleaseData) ro;
-		
+		WhoUpdated wuVdr = WhoUpdated.getWhoUpdated(oud.get());
+		DownloadConfig vdrConfig = DownloadConfig.builder()
+				.releaseUuid(releaseUuid)
+				.includeSuppressed(includeSuppressed)
+				.upToDate(upToDate)
+				.targetLifecycle(targetLifecycle != null ? targetLifecycle.name() : null)
+				.build();
+		downloadLogService.createDownloadLog(rd.getOrg(), DownloadType.VDR_EXPORT,
+				DownloadSubjectType.RELEASE, releaseUuid, wuVdr, vdrConfig);
 		// CE-compatible: date or lifecycle snapshots only
 		return releaseService.generateVdr(rd, includeSuppressed, upToDate, targetLifecycle);
 	}

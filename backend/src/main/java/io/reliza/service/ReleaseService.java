@@ -1559,19 +1559,19 @@ public class ReleaseService {
 
 	}
 	
-	/**
-	 * Generate CycloneDX 1.6 VDR from release metrics vulnerability details
-	 * @param releaseUuid Release UUID
-	 * @param includeSuppressed Whether to include suppressed vulnerabilities (FALSE_POSITIVE, NOT_AFFECTED)
-	 * @return VDR JSON string
-	 */
-	public String generateVdr(UUID releaseUuid, Boolean includeSuppressed) throws Exception {
-		Optional<ReleaseData> releaseOpt = sharedReleaseService.getReleaseData(releaseUuid);
-		if (releaseOpt.isEmpty()) {
-			throw new RelizaException("Release not found; uuid: " + releaseUuid.toString());
-		}
-		return generateVdr(releaseOpt.get(), includeSuppressed, null, null);
-	}
+	// /**
+	//  * Generate CycloneDX 1.6 VDR from release metrics vulnerability details
+	//  * @param releaseUuid Release UUID
+	//  * @param includeSuppressed Whether to include suppressed vulnerabilities (FALSE_POSITIVE, NOT_AFFECTED)
+	//  * @return VDR JSON string
+	//  */
+	// public String generateVdr(UUID releaseUuid, Boolean includeSuppressed) throws Exception {
+	// 	Optional<ReleaseData> releaseOpt = sharedReleaseService.getReleaseData(releaseUuid);
+	// 	if (releaseOpt.isEmpty()) {
+	// 		throw new RelizaException("Release not found; uuid: " + releaseUuid.toString());
+	// 	}
+	// 	return generateVdr(releaseOpt.get(), includeSuppressed, null, null);
+	// }
 	
 	/**
 	 * Compute the cutoff date for lifecycle-based VDR snapshots.
