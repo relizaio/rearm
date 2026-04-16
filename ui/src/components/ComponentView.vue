@@ -396,51 +396,12 @@
                                                     <n-form-item label="Name" path="name">
                                                         <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
                                                     </n-form-item>
-                                                    <n-form-item path="celExpression">
-                                                        <template #label>
-                                                            Condition (CEL expression)
-                                                            <n-tooltip trigger="hover" style="max-width: 620px;">
-                                                                <template #trigger>
-                                                                    <n-icon size="16" style="margin-left: 4px; cursor: help; vertical-align: middle;"><QuestionCircle20Regular /></n-icon>
-                                                                </template>
-                                                                <div>
-                                                                    <strong>Available variables:</strong>
-                                                                    <table style="border-collapse: collapse; margin-top: 6px; font-size: 12px;">
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.lifecycle</code></td><td>string — e.g. "ASSEMBLED", "GENERAL_AVAILABILITY"</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.version</code></td><td>string — e.g. "1.2.3"</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.branchType</code></td><td>string — "RELEASE", "HOTFIX", "FEATURE"</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.firstScanned</code></td><td>bool</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.criticalVulns</code></td><td>int</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.highVulns</code></td><td>int</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.mediumVulns</code></td><td>int</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.lowVulns</code></td><td>int</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.unassignedVulns</code></td><td>int</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.securityViolations</code></td><td>int</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.operationalViolations</code></td><td>int</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.licenseViolations</code></td><td>int</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.approvals["&lt;uuid&gt;"]</code></td><td>bool — true if that approval entry is granted</td></tr>
-                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.component</code></td><td>string (UUID)</td></tr>
-                                                                    </table>
-                                                                    <div style="margin-top: 8px;"><strong>Examples:</strong></div>
-                                                                    <pre style="font-size: 11px; margin: 4px 0;">release.lifecycle == "ASSEMBLED"
-release.lifecycle == "GENERAL_AVAILABILITY" &amp;&amp; release.criticalVulns == 0
-release.approvals["3fa85f64-5717-4562-b3fc-2c963f66afa6"] == true
-release.branchType in ["RELEASE", "HOTFIX"] &amp;&amp; release.firstScanned &amp;&amp; release.securityViolations == 0</pre>
-                                                                </div>
-                                                            </n-tooltip>
-                                                        </template>
-                                                        <div style="width: 100%;">
-                                                            <n-input
-                                                                v-model:value="inputTrigger.celExpression"
-                                                                type="textarea"
-                                                                :rows="4"
-                                                                style="font-family: monospace;"
-                                                                placeholder='release.lifecycle == "ASSEMBLED" &amp;&amp; release.criticalVulns == 0'
-                                                            />
-                                                            <div v-if="celExpressionError" style="color: #d03050; font-size: 12px; margin-top: 4px;">
-                                                                {{ celExpressionError }}
-                                                            </div>
-                                                        </div>
+                                                    <n-form-item label="Condition" path="celExpression">
+                                                        <CelExpressionBuilder
+                                                            v-model="inputTrigger.celExpression"
+                                                            :approval-entry-options="approvalEntryOptionsForTriggers"
+                                                            :error="celExpressionError"
+                                                        />
                                                     </n-form-item>
                                                     <n-form-item label="Output Events" path="inputTrigger.outputEvents">
                                                         <n-select v-model:value="inputTrigger.outputEvents" 
@@ -660,7 +621,7 @@ import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle } from '@vicons/tabler'
-import { Info20Regular, QuestionCircle20Regular } from '@vicons/fluent'
+import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'
 import gql from 'graphql-tag'
@@ -668,6 +629,7 @@ import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
 import { InputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
+import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 
 const updatedComponent: Ref<any> = ref({})

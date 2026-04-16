@@ -665,51 +665,12 @@
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
                                     </n-form-item>
-                                    <n-form-item path="celExpression">
-                                        <template #label>
-                                            Condition (CEL expression)
-                                            <n-tooltip trigger="hover" style="max-width: 600px;">
-                                                <template #trigger>
-                                                    <n-icon size="16" style="margin-left: 4px; cursor: help;"><QuestionCircle20Regular /></n-icon>
-                                                </template>
-                                                <div>
-                                                    <p><strong>Available variables:</strong></p>
-                                                    <table style="border-collapse: collapse; font-size: 12px;">
-                                                        <tr><td style="padding: 2px 8px;">release.lifecycle</td><td>Current lifecycle string</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.version</td><td>Version string</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.branchType</td><td>BASE / FEATURE / RELEASE / etc.</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.firstScanned</td><td>true if first scan complete</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.criticalVulns</td><td>Count of critical vulnerabilities</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.highVulns</td><td>Count of high vulnerabilities</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.mediumVulns</td><td>Count of medium vulnerabilities</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.lowVulns</td><td>Count of low vulnerabilities</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.unassignedVulns</td><td>Count of unassigned vulnerabilities</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.securityViolations</td><td>Count of security policy violations</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.operationalViolations</td><td>Count of operational violations</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.licenseViolations</td><td>Count of license violations</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.approvals["&lt;uuid&gt;"]</td><td>Approval state for entry UUID</td></tr>
-                                                        <tr><td style="padding: 2px 8px;">release.component</td><td>Component UUID</td></tr>
-                                                    </table>
-                                                    <p style="margin-top: 8px;"><strong>Examples:</strong></p>
-                                                    <p><code>release.lifecycle == "ASSEMBLED" &amp;&amp; release.criticalVulns == 0</code></p>
-                                                    <p><code>release.branchType == "BASE" &amp;&amp; release.highVulns &lt; 5</code></p>
-                                                    <p><code>release.approvals["uuid"] == "APPROVED"</code></p>
-                                                    <p><code>release.firstScanned == true &amp;&amp; release.lifecycle == "BUILT"</code></p>
-                                                </div>
-                                            </n-tooltip>
-                                        </template>
-                                        <div style="width: 100%;">
-                                            <n-input
-                                                v-model:value="globalInputEvent.celExpression"
-                                                type="textarea"
-                                                :rows="4"
-                                                style="font-family: monospace;"
-                                                placeholder='release.lifecycle == "ASSEMBLED" &amp;&amp; release.criticalVulns == 0'
-                                            />
-                                            <div v-if="globalCelExpressionError" style="color: red; font-size: 12px; margin-top: 4px;">
-                                                {{ globalCelExpressionError }}
-                                            </div>
-                                        </div>
+                                    <n-form-item label="Condition" path="celExpression">
+                                        <CelExpressionBuilder
+                                            v-model="globalInputEvent.celExpression"
+                                            :approval-entry-options="globalApprovalEntryOptionsForTriggers"
+                                            :error="globalCelExpressionError"
+                                        />
                                     </n-form-item>
                                     <n-form-item label="Output Events" path="globalInputEvent.outputEvents">
                                         <n-select v-model:value="globalInputEvent.outputEvents" 
@@ -1053,7 +1014,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh, Search, FolderPlus, Package } from '@vicons/tabler'
 import { Clean } from '@vicons/carbon'
-import { Info20Regular, Edit24Regular, DeleteDismiss24Regular, ArrowUpload24Regular, Power20Regular, QuestionCircle20Regular } from '@vicons/fluent'
+import { Info20Regular, Edit24Regular, DeleteDismiss24Regular, ArrowUpload24Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
@@ -1063,6 +1024,7 @@ import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
+import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
