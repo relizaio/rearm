@@ -11,12 +11,10 @@ hero:
       link: /get-started/
       type: primary
 features:
+- title: Release Management at AI-scale
+  details: Connects stakeholders involved in the release management process, integrates with your CI/CD tooling, supports Transparency Exchange API (TEA)
 - title: SBOM / xBOM Management
-  details: Stores Bills of Materials and Attachments alongside your releases
+  details: Stores various Bills of Materials (SBOMs, xBOMs),  VDRs, VEXs, SARIF files, digital signatures, attestations and other security artifacts alongside your releases for 10+ years
 - title: Regulatory Compliance
   details: Helps fulfill xBOM requirements of EU CRA, US EOs 14028, 14144, Section 524B of FD&C Act, India's RBI and SEBI
-- title: Bundling
-  details: Intelligently assembles your Components into Products and produces aggregate xBOMs
-- title: CI/CD Integration
-  details: Integrates with your CI/CD tooling, supports Transparency Exchange API (TEA)
 ---
