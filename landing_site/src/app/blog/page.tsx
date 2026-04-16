@@ -12,7 +12,7 @@ export const metadata = {
     description: "Articles and updates about ReARM, SBOM/xBOM, TEA, and supply chain security.",
     url: `${baseUrl}/blog/`,
     type: "website",
-    siteName: "ReARM - Release-Level Supply Chain Evidence Platform by Reliza",
+    siteName: "ReARM - Release Governance Platform for the Agentic Era by Reliza",
   },
 };
 

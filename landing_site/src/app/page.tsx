@@ -22,7 +22,7 @@ const homepageJsonLd = {
       "@type": "SoftwareApplication",
       "@id": baseUrl,
       name: "ReARM",
-      description: "Release-Level Supply Chain Evidence Platform",
+      description: "Release Governance Platform for the Agentic Era",
       applicationCategory: "DevSecOps",
       url: baseUrl,
       publisher: {
@@ -49,7 +49,7 @@ export default function Home() {
             </h1>
             <h1 style={{ textAlign: "center" }}>
               <Link href="/release-level-supply-chain-evidence-platform" style={{ color: "inherit", textDecoration: "none" }}>
-                Release-Level Supply Chain Evidence Platform
+                Release Governance Platform for the Agentic Era
               </Link>
             </h1>
           </div>

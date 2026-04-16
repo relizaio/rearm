@@ -5,22 +5,22 @@ import Link from "next/link";
 const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com").replace(/\/$/, "");
 
 export const metadata: Metadata = {
-  title: "What Is a Release-Level Supply Chain Evidence Platform? | ReARM",
-  description: "Understanding the evolution from source code repository SCA scans wrapped as SBOMs to release-level supply chain evidence platforms and why this matters for modern software security.",
+  title: "What Is a Release Governance Platform for the Agentic Era? | ReARM",
+  description: "Understanding the evolution from source code repository SCA scans wrapped as SBOMs to Release Governance Platform for the Agentic Eras and why this matters for modern software security.",
   alternates: {
     canonical: `${baseUrl}/release-level-supply-chain-evidence-platform/`,
   },
   openGraph: {
-    title: "What Is a Release-Level Supply Chain Evidence Platform?",
-    description: "Understanding the evolution from source code repository SCA scans wrapped as SBOMs to release-level supply chain evidence platforms and why this matters for modern software security.",
+    title: "What Is a Release Governance Platform for the Agentic Era?",
+    description: "Understanding the evolution from source code repository SCA scans wrapped as SBOMs to Release Governance Platform for the Agentic Eras and why this matters for modern software security.",
     url: `${baseUrl}/release-level-supply-chain-evidence-platform/`,
-    siteName: "ReARM - Release-Level Supply Chain Evidence Platform",
+    siteName: "ReARM - Release Governance Platform for the Agentic Era",
     type: "article",
   },
   twitter: {
     card: "summary_large_image",
-    title: "What Is a Release-Level Supply Chain Evidence Platform?",
-    description: "Understanding the evolution from source code repository SCA scans wrapped as SBOMs to release-level supply chain evidence platforms and why this matters for modern software security.",
+    title: "What Is a Release Governance Platform for the Agentic Era?",
+    description: "Understanding the evolution from source code repository SCA scans wrapped as SBOMs to Release Governance Platform for the Agentic Eras and why this matters for modern software security.",
   },
 };
 
@@ -29,7 +29,7 @@ export default function ReleaseEvidencePlatform() {
     <main className="mainPaddingContainer">
       <article style={{ maxWidth: "900px", margin: "0 auto", padding: "40px 20px" }}>
         <h1 style={{ fontSize: "2.5rem", marginBottom: "1.5rem", textAlign: "center" }}>
-          What Is a Release-Level Supply Chain Evidence Platform?
+          What Is a Release Governance Platform for the Agentic Era?
         </h1>
 
         <section style={{ marginBottom: "3rem" }}>
@@ -103,7 +103,7 @@ export default function ReleaseEvidencePlatform() {
             What a Supply Chain Evidence Platform Is
           </h2>
           <p style={{ fontSize: "1.1rem", lineHeight: "1.8", marginBottom: "1rem" }}>
-            A Release-Level Supply Chain Evidence Platform is a system of record that organizes all supply 
+            A Release Governance Platform for the Agentic Era is a system of record that organizes all supply 
             chain artifacts and security evidence around the release as the primary entity. It also recognizes specific 
             elements within releases, such as Source Code Entries and Deliverables (or Distributions).
           </p>
@@ -132,7 +132,7 @@ export default function ReleaseEvidencePlatform() {
           </h2>
           <p style={{ fontSize: "1.1rem", lineHeight: "1.8", marginBottom: "1rem" }}>
             <Link href="/" style={{ color: "#0066cc", textDecoration: "none" }}>ReARM</Link> was built from 
-            the ground up as a release-level supply chain evidence platform. Here's how it works:
+            the ground up as a Release Governance Platform for the Agentic Era. Here's how it works:
           </p>
           
           <h3 style={{ fontSize: "1.4rem", marginBottom: "0.8rem", marginTop: "1.5rem" }}>
@@ -193,7 +193,7 @@ export default function ReleaseEvidencePlatform() {
             organized around the release as the fundamental unit of delivery.
           </p>
           <p style={{ fontSize: "1.1rem", lineHeight: "1.8", marginBottom: "1rem" }}>
-            A Release-Level Supply Chain Evidence Platform isn't just a better SBOM tool, it's a new category 
+            A Release Governance Platform for the Agentic Era isn't just a better SBOM tool, it's a new category 
             of infrastructure that aligns with how modern software is actually built, delivered, and deployed.
           </p>
         </section>

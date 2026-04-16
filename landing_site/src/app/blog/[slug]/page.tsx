@@ -29,7 +29,7 @@ export async function generateMetadata({ params }: { params: any }): Promise<Met
       description, 
       url, 
       type: "article", 
-      siteName: "ReARM - Release-Level Supply Chain Evidence Platform by Reliza",
+      siteName: "ReARM - Release Governance Platform for the Agentic Era by Reliza",
       images: [
         {
           url: ogImageUrl,
