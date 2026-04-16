@@ -12,16 +12,16 @@
 [![Discord](https://img.shields.io/discord/757425726143201370.svg?color=%237289da&label=Discord&logo=discord&logoColor=%237289da)](https://discord.gg/UTxjBf9juQ)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-blue.svg?logo=LinkedIn)](https://www.linkedin.com/company/relizaio/)
 
-# ReARM - Release-Level Supply Chain Evidence Platform - Community Edition
+# ReARM - Release Governance Platform for the Agentic Era - Community Edition
 
-### ReARM stores and manages SBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts
+### ReARM CE stores and manages per release SBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 
 View ReARM CE Demo made for SecTor 2025 Arsenal on [YouTube](https://www.youtube.com/watch?v=PNGxlvV-EsM) (23 minutes).
 
 ## About
-ReARM is an abbreviation for "Reliza's Artifact and Release Management". It is a DevSecOps and Supply Chain Security tool and SBOM/xBOM repository & evidence store to organize product releases with their metadata, including various Bills of Materials (SBOMs / xBOMs) and security findings.
+ReARM is an abbreviation for "Reliza's Artifact and Release Management".  It is a Release Governance Platform to manage lifecycle for product and component releases and organize release metadata, including SBOMs, xBOMs, other security artifacts, vulnerability, weakness and violation data.
 
 ReARM maintains security documents and findings per each release. See [here](https://rearmhq.com/comparisons/) how ReARM compares with other tools
 
