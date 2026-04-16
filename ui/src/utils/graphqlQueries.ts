@@ -669,22 +669,7 @@ const COMPONENT_FULL_DATA = `
         globalInputEvents {
             uuid
             name
-            conditionGroup {
-                matchOperator
-                conditionGroups {
-                    matchOperator
-                    conditions {
-                        type
-                        approvalEntry
-                        approvalState
-                        possibleLifecycles
-                        possibleBranchTypes
-                        metricsType
-                        comparisonSign
-                        metricsValue
-                    }
-                }
-            }
+            celExpression
             outputEvents
             scope
         }
@@ -700,6 +685,9 @@ const COMPONENT_FULL_DATA = `
             eventType
             clientPayload
             schedule
+            celClientPayload
+            snapshotApprovalEntry
+            snapshotLifecycle
             scope
         }
     }
@@ -715,27 +703,15 @@ const COMPONENT_FULL_DATA = `
         eventType
         clientPayload
         schedule
+        celClientPayload
+        snapshotApprovalEntry
+        snapshotLifecycle
         scope
     }
     releaseInputTriggers {
         uuid
         name
-        conditionGroup {
-            matchOperator
-            conditionGroups {
-                matchOperator
-                conditions {
-                    type
-	                approvalEntry
-	                approvalState
-	                possibleLifecycles
-	                possibleBranchTypes
-	                metricsType
-	                comparisonSign
-	                metricsValue
-                }
-            }
-        }
+        celExpression
         outputEvents
         scope
     }

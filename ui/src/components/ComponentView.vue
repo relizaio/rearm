@@ -332,8 +332,29 @@
                                                     <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
                                                         <n-input v-model:value="outputTrigger.notificationMessage" placeholder="Email Message Contents (i.e. 'Release ready to ship.')" />
                                                     </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Dynamic message (CEL string expression)" path="celClientPayload">
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"Release " + release.version + " reached " + release.lifecycle' />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Dynamic client payload (CEL string expression)" path="celClientPayload">
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"refs/tags/" + release.version' />
+                                                    </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Include Suppressed Vulnerabilities" path="includeSuppressed">
                                                         <n-switch v-model:value="outputTrigger.includeSuppressed" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Snapshot tagging">
+                                                        <n-radio-group v-model:value="snapshotMode">
+                                                            <n-space>
+                                                                <n-radio value="NONE">None (date-stamped)</n-radio>
+                                                                <n-radio value="APPROVAL">Tag by approval entry</n-radio>
+                                                                <n-radio value="LIFECYCLE">Tag by lifecycle</n-radio>
+                                                            </n-space>
+                                                        </n-radio-group>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT' && snapshotMode === 'APPROVAL'" label="Snapshot approval entry">
+                                                        <n-select v-model:value="outputTrigger.snapshotApprovalEntry" :options="approvalEntryOptionsForTriggers" placeholder="Select approval entry" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT' && snapshotMode === 'LIFECYCLE'" label="Snapshot lifecycle">
+                                                        <n-select v-model:value="outputTrigger.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
                                                     </n-form-item>
                                                     <n-button @click="addOutputTrigger" type="success">
                                                         Save
@@ -375,50 +396,51 @@
                                                     <n-form-item label="Name" path="name">
                                                         <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
                                                     </n-form-item>
-                                                    <n-form-item label="Condition Matching Between Groups">
-                                                        <n-select v-model:value="inputTrigger.conditionGroup.matchOperator" :options="[{label: 'Require All Groups To Match', value: 'AND'}, {label: 'Require Any Group To Match', value: 'OR'}]" />
-                                                    </n-form-item>
-                                                    <n-form-item path="inputTrigger.conditionGroup">
-                                                        <n-dynamic-input v-model:value="inputTrigger.conditionGroup.conditionGroups" :on-create="onCreateInputTriggerConditionGroup">
-                                                            <template #create-button-default>
-                                                                Add Condition Group
-                                                            </template>
-                                                            <template #default="{ value: value1, index }">
-                                                                <div style="width: 100%;">
-                                                                    <h5>Trigger Group #{{ index + 1 }}</h5>
-                                                                    <n-form-item label="Condition Matching Within The Group">
-                                                                        <n-select v-model:value="value1.matchOperator" :options="[{label: 'Require All Conditions', value: 'AND'}, {label: 'Require Any Condition', value: 'OR'}]" />
-                                                                    </n-form-item>
-                                                                    <n-dynamic-input v-model:value="value1.conditions" :on-create="onCreateInputTriggerCondition">
-                                                                        <template #create-button-default>
-                                                                            Add Trigger Condition
-                                                                        </template>
-                                                                        <template #default="{ value, index }">
-                                                                            <n-select style="width: 400px;" v-model:value="value.type"
-                                                                                v-on:update:value="onConditionTypeUpdate(value1, index)"
-                                                                                :options="[{label: 'Approval Entry', value: 'APPROVAL_ENTRY'}, {label: 'Possible Lifecycles', value: 'LIFECYCLE'}, {label: 'Possible Branch Types', value: 'BRANCH_TYPE'}, {label: 'Metrics', value: 'METRICS'}, {label: 'First Scanned', value: 'FIRST_SCANNED'}]" />
-                                                                            <n-select v-if="value.type === 'APPROVAL_ENTRY'"
-                                                                                v-model:value="value.approvalEntry"
-                                                                                :options="approvalEntryOptionsForTriggers"
-                                                                            />
-                                                                            <n-select v-if="value.type === 'APPROVAL_ENTRY'" style="width:300px;" v-model:value="value.approvalState"
-                                                                                :options="[{label: 'Approved', value: 'APPROVED'}, {label: 'Disapproved', value: 'DISAPPROVED'}]" />
-                                                                            <n-select v-if="value.type === 'LIFECYCLE'" v-model:value="value.possibleLifecycles" 
-                                                                                :options="lifecycleOptions" tag multiple />
-                                                                            <n-select v-if="value.type === 'BRANCH_TYPE'" v-model:value="value.possibleBranchTypes" tag multiple
-                                                                                :options="[{label: 'Main', value: 'BASE'}, {label: 'Feature', value: 'FEATURE'}, {label: 'Regular', value: 'REGULAR'}, {label: 'Release', value: 'RELEASE'}, {label: 'Develop', value: 'DEVELOP'}, {label: 'Hotfix', value: 'HOTFIX'}]" />
-                                                                            <n-select v-if="value.type === 'METRICS'" style="width:70%;" v-model:value="value.metricsType" 
-                                                                                :options="[{label: 'Critical Vulnerabilities', value: 'CRITICAL_VULNS'}, {label: 'High Vulnerabilities', value: 'HIGH_VULNS'}, {label: 'Medium Vulnerabilities', value: 'MEDIUM_VULNS'}, {label: 'Low Vulnerabilities', value: 'LOW_VULNS'}, {label: 'Unassigned Vulnerabilities', value: 'UNASSIGNED_VULNS'}, {label: 'Security Violations', value: 'SECURITY_VIOLATIONS'}, {label: 'Operational Violations', value: 'OPERATIONAL_VIOLATIONS'}, {label: 'License Violations', value: 'LICENSE_VIOLATIONS'}]" />
-                                                                            <n-select v-if="value.type === 'METRICS'" style="width:300px;" v-model:value="value.comparisonSign" 
-                                                                                :options="[{label: '=', value: 'EQUALS'}, {label: '>', value: 'GREATER'}, {label: '<', value: 'LOWER'}, {label: '>=', value: 'GREATER_OR_EQUALS'}, {label: '<=', value: 'LOWER_OR_EQUALS'}]" />
-                                                                            <n-input-number v-if="value.type === 'METRICS'" v-model:value="value.metricsValue" />
-                                                                            <n-select v-if="value.type === 'FIRST_SCANNED'" style="width:300px;" v-model:value="value.firstScannedPresent"
-                                                                                :options="[{label: 'Present', value: true}, {label: 'Not Present', value: false}]" />
-                                                                        </template>
-                                                                    </n-dynamic-input>
+                                                    <n-form-item path="celExpression">
+                                                        <template #label>
+                                                            Condition (CEL expression)
+                                                            <n-tooltip trigger="hover" style="max-width: 620px;">
+                                                                <template #trigger>
+                                                                    <n-icon size="16" style="margin-left: 4px; cursor: help; vertical-align: middle;"><QuestionCircle20Regular /></n-icon>
+                                                                </template>
+                                                                <div>
+                                                                    <strong>Available variables:</strong>
+                                                                    <table style="border-collapse: collapse; margin-top: 6px; font-size: 12px;">
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.lifecycle</code></td><td>string — e.g. "ASSEMBLED", "GENERAL_AVAILABILITY"</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.version</code></td><td>string — e.g. "1.2.3"</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.branchType</code></td><td>string — "RELEASE", "HOTFIX", "FEATURE"</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.firstScanned</code></td><td>bool</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.criticalVulns</code></td><td>int</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.highVulns</code></td><td>int</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.mediumVulns</code></td><td>int</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.lowVulns</code></td><td>int</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.unassignedVulns</code></td><td>int</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.securityViolations</code></td><td>int</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.operationalViolations</code></td><td>int</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.licenseViolations</code></td><td>int</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.approvals["&lt;uuid&gt;"]</code></td><td>bool — true if that approval entry is granted</td></tr>
+                                                                        <tr><td style="padding: 2px 8px 2px 0;"><code>release.component</code></td><td>string (UUID)</td></tr>
+                                                                    </table>
+                                                                    <div style="margin-top: 8px;"><strong>Examples:</strong></div>
+                                                                    <pre style="font-size: 11px; margin: 4px 0;">release.lifecycle == "ASSEMBLED"
+release.lifecycle == "GENERAL_AVAILABILITY" &amp;&amp; release.criticalVulns == 0
+release.approvals["3fa85f64-5717-4562-b3fc-2c963f66afa6"] == true
+release.branchType in ["RELEASE", "HOTFIX"] &amp;&amp; release.firstScanned &amp;&amp; release.securityViolations == 0</pre>
                                                                 </div>
-                                                            </template>
-                                                        </n-dynamic-input>
+                                                            </n-tooltip>
+                                                        </template>
+                                                        <div style="width: 100%;">
+                                                            <n-input
+                                                                v-model:value="inputTrigger.celExpression"
+                                                                type="textarea"
+                                                                :rows="4"
+                                                                style="font-family: monospace;"
+                                                                placeholder='release.lifecycle == "ASSEMBLED" &amp;&amp; release.criticalVulns == 0'
+                                                            />
+                                                            <div v-if="celExpressionError" style="color: #d03050; font-size: 12px; margin-top: 4px;">
+                                                                {{ celExpressionError }}
+                                                            </div>
+                                                        </div>
                                                     </n-form-item>
                                                     <n-form-item label="Output Events" path="inputTrigger.outputEvents">
                                                         <n-select v-model:value="inputTrigger.outputEvents" 
@@ -627,7 +649,7 @@ export default {
 import { ComputedRef, ref, Ref, computed, h, Component, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
+import { NAlert, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
 import commonFunctions from '../utils/commonFunctions'
 import ComponentAnalytics from './ComponentAnalytics.vue'
 import ChangelogView from './ChangelogView.vue'
@@ -638,13 +660,13 @@ import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle } from '@vicons/tabler'
-import { Info20Regular } from '@vicons/fluent'
+import { Info20Regular, QuestionCircle20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import constants from '@/utils/constants'
-import { Condition, UninitializedCondition, LifecycleCondition, BranchTypeCondition, ApprovalEntryCondition, MetricsCondition, FirstScannedCondition, ConditionGroup, InputTriggerEvent, hasMixedOrApprovalGroup } from '../utils/triggerTypes'
+import { InputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import graphqlQueries from '../utils/graphqlQueries'
 
@@ -1242,8 +1264,12 @@ const outputTrigger = ref({
     eventType: '',
     clientPayload: '',
     schedule: '',
-    includeSuppressed: false
+    includeSuppressed: false,
+    celClientPayload: '',
+    snapshotApprovalEntry: null as string | null,
+    snapshotLifecycle: null as string | null,
 })
+const snapshotMode = ref<'NONE' | 'APPROVAL' | 'LIFECYCLE'>('NONE')
 
 function resetOutputTrigger () {
     outputTrigger.value = {
@@ -1258,32 +1284,30 @@ function resetOutputTrigger () {
         eventType: '',
         clientPayload: '',
         schedule: '',
-        includeSuppressed: false
+        includeSuppressed: false,
+        celClientPayload: '',
+        snapshotApprovalEntry: null,
+        snapshotLifecycle: null,
     }
+    snapshotMode.value = 'NONE'
 }
 
 const inputTrigger: Ref<InputTriggerEvent> = ref({
     uuid: '',
     name: '',
-    conditionGroup: {
-        conditionGroups: [],
-        matchOperator: '',
-        conditions: []
-    },
+    celExpression: '',
     outputEvents: []
 })
+const celExpressionError = ref('')
 
 function resetInputTrigger () {
     inputTrigger.value = {
         uuid: '',
         name: '',
-        conditionGroup: {
-            conditionGroups: [],
-            matchOperator: '',
-            conditions: []
-        },
-        outputEvents: []           
+        celExpression: '',
+        outputEvents: []
     }
+    celExpressionError.value = ''
 }
 
 const outputTriggersForInputForm = computed((): any => {
@@ -1314,40 +1338,6 @@ const approvalEntryOptionsForTriggers = computed((): any => {
     return options
 })
 
-function onCreateInputTriggerCondition () {
-    return new UninitializedCondition()
-}
-
-function onConditionTypeUpdate (conditionGroup: ConditionGroup, index: number) {
-    const newType: string = conditionGroup.conditions[index].type
-    switch (newType) {
-    case 'APPROVAL_ENTRY':
-        conditionGroup.conditions[index] = new ApprovalEntryCondition()
-        break
-    case 'LIFECYCLE':
-        conditionGroup.conditions[index] = new LifecycleCondition()
-        break
-    case 'BRANCH_TYPE':
-        conditionGroup.conditions[index] = new BranchTypeCondition()
-        break
-    case 'METRICS':
-        conditionGroup.conditions[index] = new MetricsCondition()
-        break
-    case 'FIRST_SCANNED':
-        conditionGroup.conditions[index] = new FirstScannedCondition()
-        break
-    default:
-        break
-    }
-}
-
-function onCreateInputTriggerConditionGroup () {
-    return {
-        conditionGroups: [],
-        conditions: [],
-        matchOperator: ''
-    }
-}
 
 function onCreateIdentifier () {
     return {
@@ -1556,29 +1546,6 @@ function stripGraphQLMetadata(triggers: any[], stripScope: boolean = false) {
             cleaned.uuid = ''
         }
         
-        // Clean condition groups
-        if (cleaned.conditionGroup) {
-            const conditionGroup = { ...cleaned.conditionGroup }
-            delete conditionGroup.__typename
-            cleaned.conditionGroup = conditionGroup
-            
-            if (conditionGroup.conditionGroups) {
-                conditionGroup.conditionGroups = conditionGroup.conditionGroups.map((cg: any) => {
-                    const cleanedCg = { ...cg }
-                    delete cleanedCg.__typename
-                    
-                    if (cleanedCg.conditions) {
-                        cleanedCg.conditions = cleanedCg.conditions.map((c: any) => {
-                            const cleanedCondition = { ...c }
-                            delete cleanedCondition.__typename
-                            return cleanedCondition
-                        })
-                    }
-                    return cleanedCg
-                })
-            }
-        }
-        
         // Clean output events
         if (cleaned.outputEvents) {
             cleaned.outputEvents = cleaned.outputEvents.map((oe: any) => {
@@ -1598,9 +1565,18 @@ async function saveTriggers() {
     // Strip scope and __typename before saving to backend
     updatedComponent.value.outputTriggers = stripGraphQLMetadata(updatedComponent.value.outputTriggers, true)
     updatedComponent.value.releaseInputTriggers = stripGraphQLMetadata(updatedComponent.value.releaseInputTriggers, true)
-    
-    await save()
-    componentData.value = commonFunctions.deepCopy(updatedComponent.value)
+
+    try {
+        await save()
+        componentData.value = commonFunctions.deepCopy(updatedComponent.value)
+    } catch (error: any) {
+        const msg: string = error?.message || ''
+        if (msg.includes('Invalid CEL expression')) {
+            notify('error', 'Invalid CEL Expression', msg.replace(/^.*Invalid CEL expression[:\s]*/i, 'Invalid CEL expression: '))
+        } else {
+            notify('error', 'Error', 'Failed to save triggers. Please retry or contact support.')
+        }
+    }
 }
 
 function resetTriggers() {
@@ -2013,6 +1989,17 @@ async function addOutputTrigger () {
         updatedComponent.value.outputTriggers = []
     }
     const outputTriggerToPush = commonFunctions.deepCopy(outputTrigger.value)
+    // Map snapshotMode to the actual snapshot fields
+    if (outputTriggerToPush.type === 'VDR_SNAPSHOT_ARTIFACT') {
+        if (snapshotMode.value === 'APPROVAL') {
+            outputTriggerToPush.snapshotLifecycle = null
+        } else if (snapshotMode.value === 'LIFECYCLE') {
+            outputTriggerToPush.snapshotApprovalEntry = null
+        } else {
+            outputTriggerToPush.snapshotApprovalEntry = null
+            outputTriggerToPush.snapshotLifecycle = null
+        }
+    }
     
     const validation = validateOutputTrigger(outputTriggerToPush)
     if (!validation.valid) {
@@ -2042,6 +2029,13 @@ async function addOutputTrigger () {
 
 function editOutputTrigger (trigger: any) {
     outputTrigger.value = commonFunctions.deepCopy(trigger)
+    if (trigger.snapshotApprovalEntry) {
+        snapshotMode.value = 'APPROVAL'
+    } else if (trigger.snapshotLifecycle) {
+        snapshotMode.value = 'LIFECYCLE'
+    } else {
+        snapshotMode.value = 'NONE'
+    }
     showCreateOutputTriggerModal.value = true
 }
 
@@ -2065,6 +2059,7 @@ async function deleteOutputTrigger (uuid: string) {
 
 function editInputTrigger (trigger: any) {
     inputTrigger.value = commonFunctions.deepCopy(trigger)
+    celExpressionError.value = ''
     showCreateInputTriggerModal.value = true
 }
 
@@ -2075,9 +2070,14 @@ async function addInputTrigger () {
     const inputTriggerToPush = commonFunctions.deepCopy(inputTrigger.value)
     
     // Validate input trigger
+    celExpressionError.value = ''
     const validation = validateInputTrigger(inputTriggerToPush)
     if (!validation.valid) {
-        notify('error', 'Validation Error', validation.error!)
+        if (validation.error === 'CEL expression is required.') {
+            celExpressionError.value = validation.error
+        } else {
+            notify('error', 'Validation Error', validation.error!)
+        }
         return
     }
     
@@ -2204,47 +2204,20 @@ const inputTriggerTableFields: DataTableColumns<any> = [
         key: 'facts',
         title: 'Facts',
         render: (row: any) => {
-            const factContent: any[] = []
-            factContent.push(h('div', `UUID: ${row.uuid}`))
-            factContent.push(h('h5', `Condition Groups:`))
-            if (row.matchOperator === 'AND') {
-                factContent.push(h('div', `Require ALL condition groups below`))
-            } else {
-                factContent.push(h('div', `Require ANY condition group below`))
-            }
-            const groupEls: any[] = []
-            const conditionGroups: ConditionGroup[] = row.conditionGroup.conditionGroups
-            for (const cg of conditionGroups) {
-                const inGroupEls: any = parseConditionGroupToDisplayElements(cg)
-                groupEls.push(inGroupEls)
-            }
-            factContent.push(h('ol', groupEls))
-            const els: any[] = [
-                h(NTooltip, {
-                    trigger: 'hover'
-                }, {trigger: () => h(NIcon,
-                    {
-                        class: 'icons',
-                        size: 25,
-                    }, () => h(Info20Regular)),
-                default: () =>  h('ul', factContent)
-                }
-                )
-            ]
-            const allOutputTriggersForVdrCheck = [
-                ...(updatedComponent.value.outputTriggers ?? []),
-                ...(updatedComponent.value.approvalPolicyDetails?.globalOutputEvents ?? [])
-            ]
-            const isLinkedToVdrTrigger = (row.outputEvents ?? []).some((oe: string) =>
-                allOutputTriggersForVdrCheck.find((x: any) => x.uuid === oe)?.type === 'VDR_SNAPSHOT_ARTIFACT'
-            )
-            if (isLinkedToVdrTrigger && row.conditionGroup && hasMixedOrApprovalGroup(row.conditionGroup)) {
-                els.push(h(NTooltip, { trigger: 'hover' }, {
-                    trigger: () => h(NIcon, { class: 'icons', size: 25, style: 'color: #f0a020; margin-left: 4px;' }, () => h(AlertCircle)),
-                    default: () => 'This trigger has a mixed OR condition group (approval + non-approval). ' +
-                        'The backend cannot identify which approval fired it — VDR snapshots will be DATE-type (no deduplication).'
+            const els: any[] = []
+            if (!row.celExpression) {
+                els.push(h(NAlert, { type: 'warning', style: 'margin-bottom: 4px;' }, {
+                    default: () => 'This trigger has no CEL expression and will not fire. Add a condition.'
                 }))
             }
+            const factContent: any[] = [
+                h('div', `UUID: ${row.uuid}`),
+                h('div', `CEL: ${row.celExpression || '(none)'}`)
+            ]
+            els.push(h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h(NIcon, { class: 'icons', size: 25 }, () => h(Info20Regular)),
+                default: () => h('ul', factContent)
+            }))
             return h('div', els)
         }
     },
@@ -2302,48 +2275,6 @@ const inputTriggerTableFields: DataTableColumns<any> = [
 // if (row.maxSecurityPolicyViolations > -1) factContent.push(h('li', `Maximum Security Policy Violaitons: ${row.maxSecurityPolicyViolations}`))
 
 
-function parseConditionGroupToDisplayElements (cg : ConditionGroup): any {
-    const inGroupEls: any[] = []
-    if (cg.matchOperator === 'AND') {
-        inGroupEls.push(h('div', `Require ALL conditions below`))
-    } else {
-        inGroupEls.push(h('div', `Require ANY condition below`))
-    }
-    for (const c of cg.conditions) {
-        if (c.type === 'LIFECYCLE' && c.possibleLifecycles) {
-            inGroupEls.push(h('li', `Possible Lifecycles: ${c.possibleLifecycles.toString()}`))
-        } else if (c.type === 'BRANCH_TYPE' && c.possibleBranchTypes) {
-            inGroupEls.push(h('li', `Possible Branch Types: ${c.possibleBranchTypes.toString()}`))
-        } else if (c.type === 'APPROVAL_ENTRY') {
-            const approvalEntry = updatedComponent.value.approvalPolicyDetails.approvalEntryDetails.find((aed: any) => aed.uuid === c.approvalEntry)
-            if (approvalEntry) {
-                inGroupEls.push(h('li', `${approvalEntry.approvalName}: ${c.approvalState}`))
-            } else {
-                inGroupEls.push(h('li', `Required approval does NOT belong to the approval policy. Please recreate trigger!`))
-            }
-        } else if (c.type === 'METRICS') {
-            let metricsTypeName = ''
-            if (c.metricsType === 'CRITICAL_VULNS') metricsTypeName = 'Critical vulnerabilities'
-            else if (c.metricsType === 'HIGH_VULNS') metricsTypeName = 'High vulnerabilities'
-            else if (c.metricsType === 'MEDIUM_VULNS') metricsTypeName = 'Medium vulnerabilities'
-            else if (c.metricsType === 'LOW_VULNS') metricsTypeName = 'Low vulnerabilities'
-            else if (c.metricsType === 'UNASSIGNED_VULNS') metricsTypeName = 'Unassigned vulnerabilities'
-            else if (c.metricsType === 'SECURITY_VIOLATIONS') metricsTypeName = 'Security violations'
-            else if (c.metricsType === 'OPERATIONAL_VIOLATIONS') metricsTypeName = 'Operational violations'
-            else if (c.metricsType === 'LICENSE_VIOLATIONS') metricsTypeName = 'License violations'
-            let compSign = ''
-            if (c.comparisonSign === 'GREATER') compSign = '>'
-            else if (c.comparisonSign === 'GREATER_OR_EQUALS') compSign = '>='
-            else if (c.comparisonSign === 'LOWER_OR_EQUALS') compSign = '<='
-            else if (c.comparisonSign === 'LOWER') compSign = '<'
-            else if (c.comparisonSign === 'EQUALS') compSign = '='
-            inGroupEls.push(h('li', `${metricsTypeName} ${compSign} ${c.metricsValue}`))
-        } else if (c.type === 'FIRST_SCANNED') {
-            inGroupEls.push(h('li', `First Scanned: ${c.firstScannedPresent ? 'Present' : 'Not Present'}`))
-        }
-    }
-    return h('ul', inGroupEls)
-}
 
 const users: Ref<any[]> = ref([])
 async function loadUsers() {
