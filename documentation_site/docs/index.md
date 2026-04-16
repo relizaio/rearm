@@ -4,8 +4,8 @@ title: ReARM Documentation
 titleTemplate: false
 
 hero:
-  name: ReARM Documentation - Release-Level Supply Chain Evidence Platform
-  tagline: SBOMs, xBOMs and every other artifact - stored for 10+ years, versioned and audit-ready
+  name: ReARM Documentation
+  tagline: Release Governance Platform for the Agentic Era
   actions:
     - text: Get Started →
       link: /get-started/
