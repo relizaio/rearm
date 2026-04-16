@@ -20,7 +20,8 @@ function sidebar() {
           {text: 'Bundling & Auto-Integrate', link: '/workflows/bundling'},
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'},
-          {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'}
+          {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'},
+          {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'}
         ]},
         {text: 'Configure', link: '/configure/', items: [
           {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'}
