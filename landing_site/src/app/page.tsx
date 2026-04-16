@@ -55,7 +55,7 @@ export default function Home() {
           </div>
           <div className="col-12">
             <p className="mx-auto C1_text">
-              ReARM secures AI-scale software delivery with release-level supply chain evidence, approvals, and audit-ready history.
+              ReARM secures AI-scale software delivery with release-level supply chain evidence, approvals, and audit-ready history
             </p>
           </div>
         </div>
