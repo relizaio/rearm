@@ -22,13 +22,13 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "ReARM - Release Governance Platform for the Agentic Era by Reliza",
   description:
-    "ReARM stores SBOMs/xBOMs and other artifacts per release for 10+ years, versioned and audit-ready with vulnerability insights for supply chain compliance.",
+    "ReARM is the release system of record for AI-scale software delivery - combining approval workflows, policy-driven release gates, supply chain evidence retention, and per-release security posture.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com"),
   alternates: { canonical: "/" },
   openGraph: {
     title: "ReARM - Release Governance Platform for the Agentic Era",
     description:
-      "ReARM stores SBOMs/xBOMs and other artifacts per release for 10+ years, versioned and audit-ready with vulnerability insights for supply chain compliance.",
+      "ReARM is the release system of record for AI-scale software delivery - combining approval workflows, policy-driven release gates, supply chain evidence retention, and per-release security posture.",
     url: "/",
     siteName: "ReARM",
     images: [
@@ -45,7 +45,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "ReARM - Release Governance Platform for the Agentic Era",
     description:
-      "ReARM stores SBOMs/xBOMs and other artifacts per release for 10+ years, versioned and audit-ready with vulnerability insights for supply chain compliance.",
+      "ReARM is the release system of record for AI-scale software delivery - combining approval workflows, policy-driven release gates, supply chain evidence retention, and per-release security posture.",
     images: ["/rearm.png"],
   },
 };

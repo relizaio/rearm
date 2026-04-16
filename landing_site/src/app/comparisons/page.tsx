@@ -4,11 +4,11 @@ const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL ?? "https://rearmhq.com").repl
 
 export const metadata: Metadata = {
   title: "Comparisons - ReARM by Reliza",
-  description: "See how ReARM compares to Dependency-Track, traditional SCA tools, and the differences between ReARM Pro and CE.",
+  description: "See how ReARM compares to Dependency-Track, SCA tools, GUAC, Chainloop, and SBOM management tools - and how it differs from each by operating at the release governance layer.",
   alternates: { canonical: `${baseUrl}/comparisons/` },
   openGraph: {
     title: "Comparisons - ReARM by Reliza",
-    description: "See how ReARM compares to Dependency-Track, traditional SCA tools, and the differences between ReARM Pro and CE.",
+    description: "See how ReARM compares to Dependency-Track, SCA tools, GUAC, Chainloop, and SBOM management tools - and how it differs from each by operating at the release governance layer.",
     url: `${baseUrl}/comparisons/`,
     type: "website",
     siteName: "ReARM - Release Governance Platform for the Agentic Era by Reliza",
@@ -28,7 +28,7 @@ const sections: ComparisonSection[] = [
   {
     id: "rearm-vs-dependency-track",
     title: "ReARM vs Dependency-Track 4",
-    intro: "Dependency-Track is a great open-source tool for vulnerability analysis of SBOMs. ReARM integrates with Dependency-Track and builds on top of it, providing a comprehensive Release Governance Platform for the Agentic Era.",
+    intro: "Dependency-Track is a great open-source tool for continuous SBOM analysis and vulnerability monitoring. ReARM integrates with Dependency-Track and builds on top of it. Dependency-Track tells you what is risky in an SBOM. ReARM tells you whether a release is allowed to ship, why, and what evidence supports that decision years later.",
     leftLabel: "ReARM",
     rightLabel: "Dependency-Track 4",
     points: [
@@ -106,7 +106,7 @@ const sections: ComparisonSection[] = [
   {
     id: "rearm-vs-guac",
     title: "ReARM vs GUAC",
-    intro: "GUAC (Graph for Understanding Artifact Composition) is an open-source project by OpenSSF that aggregates software security metadata into a graph database for querying. While both tools deal with supply chain data, they serve different purposes.",
+    intro: "GUAC (Graph for Understanding Artifact Composition) is an open-source project by OpenSSF that aggregates software security metadata into a graph database for querying. GUAC is a graph for understanding supply chain relationships. ReARM is a release governance product for operating and approving releases in production environments.",
     leftLabel: "ReARM",
     rightLabel: "GUAC",
     points: [
@@ -147,7 +147,7 @@ const sections: ComparisonSection[] = [
   {
     id: "rearm-vs-sca-tools",
     title: "ReARM vs Traditional SCA Tools",
-    intro: "Traditional Software Composition Analysis (SCA) tools like Semgrep, Snyk, Black Duck (Synopsys), Checkmarx, Mend (WhiteSource), and Sonatype focus on scanning and finding vulnerabilities. ReARM is not an SCA tool - it is a Release Governance Platform for the Agentic Era that integrates with SCA tools.",
+    intro: "Traditional Software Composition Analysis (SCA) tools like Semgrep, Snyk, Black Duck (Synopsys), Checkmarx, Mend (WhiteSource), and Sonatype focus on scanning and finding vulnerabilities. SCA tools find issues. ReARM governs the release. ReARM is not an SCA tool - it is a Release Governance Platform that integrates with SCA tools and turns their findings into governed release decisions.",
     leftLabel: "ReARM",
     rightLabel: "SCA Tools (Semgrep, Snyk, Black Duck, Checkmarx, Mend, Sonatype)",
     points: [
@@ -185,6 +185,84 @@ const sections: ComparisonSection[] = [
       },
     ],
   },
+  {
+    id: "rearm-vs-chainloop",
+    title: "ReARM vs Chainloop",
+    intro: "Chainloop describes itself as a governance layer for modern software delivery, focused on centralized guardrails, artifact management, real-time visibility, and compliance. ReARM provides collaboration platform that connects various stakeholders ivolved in the release management process. Chainloop governs delivery signals. ReARM governs release decisions.",
+    leftLabel: "ReARM",
+    rightLabel: "Chainloop",
+    points: [
+      {
+        left: "Release-centric system of record: every artifact, approval, and finding is tied to an explicitly versioned release with full provenance and lifecycle history.",
+        right: "Delivery-process governance layer: focuses on centralizing signals, attestations, and guardrails around the CI/CD workflow itself.",
+      },
+      {
+        left: "Explicit Product-Component release hierarchy with multi-level nesting, automated bundling, and aggregated posture across product versions.",
+        right: "Operates at the workflow and artifact-signal level.",
+      },
+      {
+        left: "Rich multi-scoped changelog functionality, including code-level changes, SBOM component changes, vulnerability, violation and weakness changes.",
+        right: "Changelog functionality as a part of release management is not the primary use case.",
+      },
+      {
+        left: "Approval workflows and lifecycle management: releases move through configurable gates requiring stakeholder sign-off before promotion or deployment.",
+        right: "Policy automation and guardrails enforced at delivery time, but no explicit multi-stakeholder release approval model.",
+      },
+      {
+        left: "Long-term raw artifact retention (10+ years): SBOMs, VEX, VDR, SARIF, attestations, and build metadata stored immutably per release for regulatory compliance.",
+        right: "Focuses on attestation collection and policy enforcement during delivery.",
+      },
+      {
+        left: "Per-release security posture with historical snapshots: answer questions about any past version's vulnerability state at any point in time.",
+        right: "Real-time visibility into delivery pipeline health; per-release security posture is not the primary use case.",
+      },
+      {
+        left: "Deployment gating based on release approval status: CI/CD queries ReARM to confirm a release has passed all required gates before it can be promoted.",
+        right: "Policy guardrails block non-compliant delivery pipelines, but release-level approval state is not the gate.",
+      },
+      {
+        left: "FOSS Community Edition (ReARM CE) available for self-hosting with core functionality, including UI.",
+        right: "Open-source core does not include UI.",
+      },
+    ],
+  },
+  {
+    id: "rearm-vs-sbom-management-tools",
+    title: "ReARM vs SBOM Management Tools",
+    intro: "SBOM management tools such as Manifest, Cybeats, and Interlynk focus on SBOM generation, ingestion, enrichment, and supply chain visibility. These tools help you understand the supply chain. ReARM helps you control the release built from it.",
+    leftLabel: "ReARM",
+    rightLabel: "SBOM Management Tools (Manifest, Cybeats, Interlynk)",
+    points: [
+      {
+        left: "Release governance and system of record: every release has an explicit approval state, lifecycle history, and evidence trail that determines whether it is allowed to ship.",
+        right: "SBOM operations and visibility: focuses on SBOM ingestion, enrichment, inventory, risk aggregation, and supplier/upstream transparency.",
+      },
+      {
+        left: "Active control plane: enforces policies, requires approvals, and gates deployments based on release status.",
+        right: "Visibility layer: surfaces risks and provides transparency but does not gate deployments or manage release approvals.",
+      },
+      {
+        left: "Product-Component release hierarchy: tracks how components compose into products across versioned releases with aggregated posture at every level.",
+        right: "SBOM-centric aggregation; no explicit product/release versioning model or active release lifecycle management.",
+      },
+      {
+        left: "Long-term raw artifact retention (10+ years): SBOMs, VEX, VDR, SARIF, attestations stored immutably per release for audit and regulatory requirements.",
+        right: "SBOM storage and enrichment focused on current inventory; retention depth, scope of accepted artifacts and immutability vary by tool.",
+      },
+      {
+        left: "Per-release historical security posture with point-in-time snapshots: answer what the vulnerability state was for any specific version at any past moment.",
+        right: "Current risk visibility across the software inventory; historical per-release posture snapshots are not the primary focus.",
+      },
+      {
+        left: "Integrates with any SCA, SAST, or DAST tool via a tool-agnostic ingestion model; stores SARIF, VEX, VDR alongside SBOMs.",
+        right: "Primarily integrates with SBOM sources and upstream supplier data; broader security artifact types vary by tool.",
+      },
+      {
+        left: "FOSS Community Edition (ReARM CE) available for self-hosting with core functionality.",
+        right: "Typically commercial platforms; open-source options limited.",
+      },
+    ],
+  },
 ];
 
 export default function ComparisonsPage() {
@@ -192,7 +270,8 @@ export default function ComparisonsPage() {
     <main className="comparisonsContainer">
       <div className="comparisonsHeader">
         <h1 className="comparisonsTitle">Comparisons</h1>
-        <p className="comparisonsSubtitle">See how ReARM compares to other tools in the supply chain security ecosystem</p>
+        <p className="comparisonsSubtitle">Scanners visualize points in time. Graphs organize delivery signals. ReARM governs the release.</p>
+        <p className="comparisonsSubtitle" style={{ marginTop: "0.5rem", fontSize: "0.95rem", opacity: 0.8 }}>Each comparison below is anchored on three questions: What decision does this tool make? At what level does it operate - scan, artifact, graph, or release? Does it preserve a release approval trail and block deployment based on release status?</p>
       </div>
 
       <nav className="comparisonsToc">

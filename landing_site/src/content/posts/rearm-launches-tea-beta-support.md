@@ -3,7 +3,7 @@ title: "ReARM Announces Support for Transparency Exchange API Beta 1"
 date: "2025-05-24"
 ---
 
-We’re excited to announce that Project ReARM by Reliza now includes implementation of [OWASP Transparency Exchange API (TEA)](https://github.com/CycloneDX/transparency-exchange-api/), Beta 1 — marking a significant step forward in software supply chain transparency and interoperability.
+We’re excited to announce that Project ReARM by Reliza now includes implementation of [OWASP Transparency Exchange API (TEA)](https://github.com/CycloneDX/transparency-exchange-api/), Beta 1 - marking a significant step forward in software supply chain transparency and interoperability.
 
 The OWASP TEA standard provides a unified interface for tools to publish and retrieve software transparency metadata, including SBOMs / xBOMs and attestations. As software supply chain threats continue to rise, TEA aims to establish a vendor-neutral way to expose and query security-critical metadata across ecosystems.
 

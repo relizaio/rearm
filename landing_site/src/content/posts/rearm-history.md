@@ -3,7 +3,7 @@ title: "ReARM History"
 date: "2025-05-23"
 ---
 
-In the fast-paced world of software delivery, one of the most persistent challenges has been managing releases, deliverables and their metadata including artifacts. Project ReARM — short for Reliza's Artifact and Release Management — was born out of this very challenge. Developed by [Reliza](https://reliza.io), ReARM rethinks how modern DevSecOps pipelines handle Supply Chain Security.
+In the fast-paced world of software delivery, one of the most persistent challenges has been managing releases, deliverables and their metadata including artifacts. Project ReARM - short for Reliza's Artifact and Release Management - was born out of this very challenge. Developed by [Reliza](https://reliza.io), ReARM rethinks how modern DevSecOps pipelines handle Supply Chain Security.
 
 This post takes a look at the origins of Project ReARM, its evolution, and how it's transforming the DevSecOps and CI/CD landscape.
 
