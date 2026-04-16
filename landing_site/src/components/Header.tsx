@@ -67,7 +67,7 @@ export default function Header() {
                 <Link className="nav-link fs-6 link-inactive" href="/comparisons" onClick={closeMenu}>Comparisons</Link>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
-                <a className="nav-link fs-6" href="https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_Datasheet_v5_2026-03-13.pdf" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }} onClick={closeMenu}>Datasheet</a>
+                <a className="nav-link fs-6" href="https://d7ge14utcyki8.cloudfront.net/ReARM_Product_Info_Datasheet_v6_2026-04-16.pdf" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }} onClick={closeMenu}>Datasheet</a>
               </li>
               <li className="nav-item d-flex align-items-center p-3">
                 <a className="nav-link fs-6" href="/#homePagePricing" style={{ textDecoration: "none" }}>Pricing</a>
