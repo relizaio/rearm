@@ -41,7 +41,7 @@ export default function Home() {
       />
       {/* Hero */}
       <div className="container-fluid container1">
-        <div className="row mx-auto" style={{ maxWidth: "1100px" }}>
+        <div className="row mx-auto" style={{ maxWidth: "1180px" }}>
           <div className="col-12 mb-4">
             <h1 className="C1_title d-flex align-items-center justify-content-center" style={{ gap: "16px" }}>
               <img src="/home/logo_reliza_birds.png" alt="ReARM" style={{ height: "1em", width: "auto" }} />
@@ -55,7 +55,7 @@ export default function Home() {
           </div>
           <div className="col-12">
             <p className="mx-auto C1_text">
-              Per-release SBOMs, xBOMs and every other artifact - stored for 10+ years, versioned and audit-ready
+              ReARM secures AI-scale software delivery with release-level supply chain evidence, approvals, and audit-ready history.
             </p>
           </div>
         </div>
@@ -64,7 +64,6 @@ export default function Home() {
       {/* Agentic AI callout */}
       <div className="container-fluid" style={{ padding: "64px 24px", background: "#18214d" }}>
         <div className="mx-auto text-center" style={{ maxWidth: "950px" }}>
-          <p style={{ color: "#a8b4ff", fontWeight: 600, fontSize: "0.95rem", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "20px" }}>Built for the Agentic Era</p>
           <h2 style={{ color: "white", fontWeight: 700, fontSize: "2rem", lineHeight: 1.35, marginBottom: "24px" }}>
             Agentic AI has accelerated development by an order of magnitude. Traditional release management has not kept up.
           </h2>
@@ -142,6 +141,13 @@ export default function Home() {
             ],
           },
           {
+            image: "rearm_approvals.png",
+            title: "Approvals and Lifecycle Management",
+            texts: [
+              { text: "ReARM Pro provides rich capabilities for managing approvals and lifecycles of your releases. Both manual and automated approvals are supported." },
+            ],
+          },
+          {
             image: "compliance.png",
             title: "Regulatory Compliance",
             texts: [
@@ -188,13 +194,6 @@ export default function Home() {
             title: "Agentic SBOM Enrichment and Augmentation",
             texts: [
               { text: "ReARM includes Reliza BEAR, an agentic SBOM enrichment and augmentation tool that automatically enriches your SBOMs with additional metadata, including supplier, copyright and license information." },
-            ],
-          },
-          {
-            image: "rearm_approvals.png",
-            title: "Approval and Lifecycle Management",
-            texts: [
-              { text: "ReARM Pro provides rich capabilities for managing approvals and lifecycles of your releases. Both manual and automated approvals are supported." },
             ],
           },
         ].map((item, i) => (
