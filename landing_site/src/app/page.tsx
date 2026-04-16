@@ -48,7 +48,7 @@ export default function Home() {
               ReARM
             </h1>
             <h1 style={{ textAlign: "center" }}>
-              <Link href="/release-level-supply-chain-evidence-platform" style={{ color: "inherit", textDecoration: "none" }}>
+              <Link href="/release-governance-platform" style={{ color: "inherit", textDecoration: "none" }}>
                 Release Governance Platform for the Agentic Era
               </Link>
             </h1>
