@@ -55,7 +55,7 @@ public class DownloadLogDataFetcher {
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
 
 		return downloadLogService.listDownloadLogs(orgUuid, fromDate, toDate, perspectiveUuid);
 	}

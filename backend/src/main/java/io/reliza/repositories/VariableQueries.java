@@ -1306,6 +1306,19 @@ class VariableQueries {
 			FROM rearm.releases r
 			WHERE r.record_data->>'component' IN (:componentUuids)
 			AND r.record_data->'artifacts' IS NOT NULL
+			UNION
+			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' AS artifact_uuid
+			FROM rearm.source_code_entries sce
+			JOIN rearm.releases r ON r.record_data->>'sourceCodeEntry' = sce.uuid::text
+			WHERE r.record_data->>'component' IN (:componentUuids)
+			AND sce.record_data->'artifacts' IS NOT NULL
+			UNION
+			SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') AS artifact_uuid
+			FROM rearm.deliverables d
+			JOIN rearm.variants v ON d.uuid::text IN (SELECT jsonb_array_elements_text(v.record_data->'outboundDeliverables'))
+			JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
+			WHERE r.record_data->>'component' IN (:componentUuids)
+			AND d.record_data->'artifacts' IS NOT NULL
 			""";
 
 	/*
