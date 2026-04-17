@@ -80,7 +80,7 @@ Violations and Weaknesses are not included in the BOV — the spec covers only v
 
 ## Download Log
 
-The **Download Log** (accessible from the left navigation bar) records SBOM and VDR download events in your organization. Each entry shows:
+The **Download Log** (accessible under **Organization Settings → Download Log**, visible to org admins only) records SBOM and VDR download events in your organization. Each entry shows:
 
 - **Download type** (`SBOM_EXPORT`, `VDR_EXPORT`)
 - **Subject** — the release the export was generated from, linked to its release page

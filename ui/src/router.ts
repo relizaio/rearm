@@ -105,11 +105,6 @@ const routes : any[] = [
         component: () => import('@/components/JoinOrganization.vue')
     },
     {
-        path: '/downloadLogs/:orguuid',
-        name: 'DownloadLog',
-        component: () => import('@/components/DownloadLogView.vue')
-    },
-    {
         path: '/downloadArtifact/:arttype/:artuuid',
         name: 'DownloadTeaArtifact',
         component: () => import('@/components/DownloadTeaArtifactView.vue')

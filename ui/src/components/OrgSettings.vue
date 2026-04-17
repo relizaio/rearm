@@ -956,6 +956,9 @@
                     </n-form>
                 </div>
             </n-tab-pane>
+            <n-tab-pane name="downloadLog" tab="Download Log" v-if="isOrgAdmin">
+                <DownloadLogView />
+            </n-tab-pane>
         </n-tabs>
         <n-modal 
             v-model:show="showCreateResourceGroupModal"
@@ -1025,6 +1028,7 @@ import constants from '../utils/constants'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
+import DownloadLogView from './DownloadLogView.vue'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'

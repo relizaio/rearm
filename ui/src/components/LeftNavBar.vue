@@ -44,7 +44,7 @@ import { ref, h, Component, ComputedRef, computed, Ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
-import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, FileDownload } from '@vicons/tabler'
+import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar } from '@vicons/tabler'
 
 
 function renderIcon (icon: Component) {
@@ -157,21 +157,6 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                     RouterLink,
                     {
                         to: {
-                            name: 'DownloadLog',
-                            params: {orguuid: org}
-                        }
-                    },
-                    { default: () => 'Download Log' }
-                ),
-            key: 'downloadLog',
-            icon: renderIcon(FileDownload)
-        },
-        {
-            label: () =>
-                h(
-                    RouterLink,
-                    {
-                        to: {
                             name: 'AnalyticsOfOrg',
                             params: {orguuid: org}
                         }
@@ -242,7 +227,6 @@ const routeToMenuKey: Record<string, string> = {
     'SecretsOfOrg': 'secrets',
     'AnalyticsOfOrg': 'analytics',
     'VulnerabilityAnalysis': 'vulnerabilityAnalysis',
-    'DownloadLog': 'downloadLog',
     'OrgSettings': 'orgsettings'
 }
 
