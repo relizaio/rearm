@@ -155,8 +155,14 @@ public class ApiKeyService {
 	}
 	
 	public String setObjectApiKey (UUID uuid, ApiTypeEnum type, UUID suppliedOrgUuid, String keyOrder, String notes, WhoUpdated wu) {
+		// Resolve effective org up front so that presentKey lookup can find an existing row
+		// even when caller passes suppliedOrgUuid=null (e.g. ComponentDataFetcher for COMPONENT).
+		UUID effectiveOrgUuid = suppliedOrgUuid;
+		if (effectiveOrgUuid == null && type == ApiTypeEnum.COMPONENT) {
+			effectiveOrgUuid = getComponentService.getComponentData(uuid).map(ComponentData::getOrg).orElse(null);
+		}
 		// invalidate old key first if any
-		Optional<ApiKey> presentKey = getApiKeyByObjUuidTypeOrder(uuid, type, keyOrder, suppliedOrgUuid);
+		Optional<ApiKey> presentKey = getApiKeyByObjUuidTypeOrder(uuid, type, keyOrder, effectiveOrgUuid);
 		ApiKey ak = null;
 		ApiKeyData akd = null;
 		if (presentKey.isPresent()) {
@@ -170,25 +176,22 @@ public class ApiKeyService {
 			ak.setObjectUuid(uuid);
 			ak.setKeyOrder(keyOrder);
 			// figure out organization
-			UUID orgUuid = null;
-			switch (type) {
-			case INSTANCE:
-			case CLUSTER:
-				orgUuid = suppliedOrgUuid;
-				break;
-			case COMPONENT:
-				Optional<ComponentData> ocd = getComponentService.getComponentData(uuid);
-				if (ocd.isPresent()) {
-					orgUuid = ocd.get().getOrg();
+			UUID orgUuid = effectiveOrgUuid;
+			if (orgUuid == null) {
+				switch (type) {
+				case INSTANCE:
+				case CLUSTER:
+				case APPROVAL:
+				case ORGANIZATION:
+				case ORGANIZATION_RW:
+				case FREEFORM:
+					orgUuid = suppliedOrgUuid;
+					break;
+				case COMPONENT:
+					// already attempted above; leave null so downstream fails loudly if unresolvable
+					break;
+				// no default case - will fail for any unknown types since org is required
 				}
-				break;
-			case APPROVAL:
-			case ORGANIZATION:
-			case ORGANIZATION_RW:
-			case FREEFORM:
-				orgUuid = suppliedOrgUuid;
-				break;
-			// no default case - will fail for any unknown types since org is required
 			}
 			ak.setOrg(orgUuid);
 			ak.setCreatedBy(wu.getLastUpdatedBy());
