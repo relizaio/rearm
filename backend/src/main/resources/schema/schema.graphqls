@@ -1308,9 +1308,9 @@ type BearIntegration {
 type ReleaseInputEvent {
 	uuid: ID
 	name: String
-	conditionGroup: ConditionGroup
 	outputEvents: [ID]
 	scope: EventScope
+	celExpression: String
 }
 
 type ReleaseOutputEvent {
@@ -1324,9 +1324,12 @@ type ReleaseOutputEvent {
   	vcs: ID
     eventType: String
     clientPayload: String
+    celClientPayload: String
     schedule: String
     scope: EventScope
     includeSuppressed: Boolean
+    snapshotApprovalEntry: ID
+    snapshotLifecycle: ReleaseLifecycleEnum
 }
 
 type GlobalInputEventRef {
@@ -1967,15 +1970,18 @@ input ReleaseOutputEventInput {
 	vcs: ID
 	eventType: String
 	clientPayload: String
+	celClientPayload: String
 	schedule: String
 	includeSuppressed: Boolean
+	snapshotApprovalEntry: ID
+	snapshotLifecycle: ReleaseLifecycleEnum
 }
 
 input ReleaseInputEventInput {
 	uuid: ID
 	name: String
-	conditionGroup: ConditionGroupInput
 	outputEvents: [ID]
+	celExpression: String
 }
 
 input GetLatestReleaseInput {

@@ -220,7 +220,7 @@ public class VersionAssignmentService {
 		while (retries > 0) {
 			Optional<VersionAssignment> vaCheck = getVersionAssignment(pd.getUuid(), versionString, versionType);
 			if (vaCheck.isPresent()) {
-				versionString = getVersionStringFromVaCheckRetry(latestOva, vaCheck, projectSchema, branchSchema, bd, 
+				versionString = getVersionStringFromVaCheckRetry(latestOva, vaCheck, projectSchema, branchSchema, bd,
 					bumpAction, modifier, metadata, followedVersion, versionType);
 			} else {
 				break;
@@ -228,6 +228,42 @@ public class VersionAssignmentService {
 			latestOva = getLatestVersionAssignmentOfBranch(bd.getUuid(), 10, projectSchema, branchSchema, versionType);
 			retries--;
 		}
+
+		// Fallback: retries exhausted but version still collides (e.g. follow-version pin hasn't changed so the
+		// library keeps producing the same string, e.g. "0.0.28-fs1"). Find the highest existing ".N" counter
+		// already in use and try the next one, up to 5 attempts.
+		if (getVersionAssignment(pd.getUuid(), versionString, versionType).isPresent()) {
+			final String baseVersion = versionString;
+			List<VersionAssignment> branchVas = repository.findLatestVersionAssignmentsWithLimit(
+					bd.getUuid(), versionType.name(), 50);
+			int maxSuffix = -1;
+			for (VersionAssignment existing : branchVas) {
+				String ev = existing.getVersion();
+				if (ev != null && ev.startsWith(baseVersion + ".")) {
+					String suffix = ev.substring(baseVersion.length() + 1);
+					try {
+						int n = Integer.parseInt(suffix);
+						if (n > maxSuffix) maxSuffix = n;
+					} catch (NumberFormatException ignored) {}
+				}
+			}
+			int counter = maxSuffix + 1;
+			int limit = counter + 5;
+			boolean found = false;
+			while (counter < limit) {
+				String candidate = baseVersion + "." + counter;
+				if (getVersionAssignment(pd.getUuid(), candidate, versionType).isEmpty()) {
+					versionString = candidate;
+					found = true;
+					break;
+				}
+				counter++;
+			}
+			if (!found) {
+				log.error("Could not find free version after 5 counter attempts for branch {}, base version {}", bd.getUuid(), baseVersion);
+			}
+		}
+
 		return versionString;
 	}
 

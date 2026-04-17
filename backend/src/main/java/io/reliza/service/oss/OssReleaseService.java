@@ -657,7 +657,44 @@ public class OssReleaseService {
 				return false;
 			}
 		}
-		
+
+		// Guard against out-of-order assembly: if a parent release in the latest product shares
+		// the triggering branch and is strictly newer, skip auto-integrate
+		Optional<ReleaseData> latestProductOpt = sharedReleaseService.getReleaseDataOfBranch(featureSet.getUuid());
+		if (latestProductOpt.isPresent()) {
+			UUID trigBranchUuid = triggeringRelease.getBranch();
+
+			// Single pass: find the parent release (if any) whose branch matches the triggering branch
+			Optional<ReleaseData> existingRdOpt = Optional.empty();
+			for (ParentRelease pr : latestProductOpt.get().getParentReleases()) {
+				Optional<ReleaseData> prRdOpt = sharedReleaseService.getReleaseData(pr.getRelease());
+				if (prRdOpt.isPresent() && trigBranchUuid.equals(prRdOpt.get().getBranch())) {
+					existingRdOpt = prRdOpt;
+					break;
+				}
+			}
+
+			// Outside the loop: if a matching parent was found, compare using ReleaseVersionComparator (includes date fallback)
+			if (existingRdOpt.isPresent()) {
+				ReleaseData existingRd = existingRdOpt.get();
+				Optional<BranchData> trigBranchOpt = branchService.getBranchData(trigBranchUuid);
+				if (trigBranchOpt.isPresent()) {
+					BranchData trigBranch = trigBranchOpt.get();
+					Optional<ComponentData> trigCompOpt = getComponentService.getComponentData(trigBranch.getComponent());
+					if (trigCompOpt.isPresent()) {
+						String compSchema = trigCompOpt.get().getVersionSchema();
+						String branchSchema = trigBranch.getVersionSchema();
+						if (new ReleaseData.ReleaseVersionComparator(compSchema, branchSchema)
+								.compare(existingRd, triggeringRelease) < 0) {
+							log.debug("skipping out-of-order auto-integrate — existing {} ({}) in product is newer than triggering {} ({})",
+								existingRd.getUuid(), existingRd.getVersion(), triggeringRelease.getUuid(), triggeringRelease.getVersion());
+							return false;
+						}
+					}
+				}
+			}
+		}
+
 		log.debug("PSDEBUG: requirements met - proceeding with auto-integrate");
 		return true;
 	}

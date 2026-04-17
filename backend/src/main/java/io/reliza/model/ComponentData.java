@@ -132,8 +132,8 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	public static class ReleaseInputEvent {
 		private UUID uuid;
 		private String name;
-		private ConditionGroup conditionGroup;
 		private Set<UUID> outputEvents;
+		private String celExpression;
 	}
 	
 	@Data
@@ -150,8 +150,12 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		private UUID vcs;
 		private String schedule;
 		private String clientPayload; // i.e. additional GitHub parameters
+		private String celClientPayload; // CEL string expression; overrides clientPayload (INTEGRATION_TRIGGER) or notificationMessage (EMAIL_NOTIFICATION)
 		private String eventType;
 		private Boolean includeSuppressed;
+		// VDR_SNAPSHOT_ARTIFACT: explicit snapshot context (replaces old conditionGroup-based detection)
+		private UUID snapshotApprovalEntry;      // if set → APPROVAL-type snapshot for this approval entry
+		private ReleaseLifecycle snapshotLifecycle; // if set → LIFECYCLE-type snapshot
 	}
 	
 	@JsonProperty

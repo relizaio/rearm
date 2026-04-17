@@ -78,6 +78,7 @@ import io.reliza.service.ReleaseVersionService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
 import io.reliza.service.VersionAssignmentService.GetNewVersionDto;
+import io.reliza.service.saas.CelEvaluatorService;
 import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.service.saas.ApprovalPolicyService;
 import lombok.extern.slf4j.Slf4j;
@@ -124,6 +125,9 @@ public class ComponentDataFetcher {
 
 	@Autowired
 	private OssPerspectiveService ossPerspectiveService;
+
+	@Autowired
+	private CelEvaluatorService celEvaluatorService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "component")
@@ -289,6 +293,11 @@ public class ComponentDataFetcher {
 						log.error("Error on processing output trigger on component update", e);
 						throw new RuntimeException("Error on processing output trigger");
 					}
+				}
+			}
+			if (null != ucdto.getReleaseInputTriggers()) {
+				for (var inputTrigger : ucdto.getReleaseInputTriggers()) {
+					celEvaluatorService.validate(inputTrigger.getCelExpression());
 				}
 			}
 			ComponentDto cdto = UpdateComponentDto.convertToComponentDto(ucdto, processedOutputTriggers);

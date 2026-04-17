@@ -26,8 +26,11 @@ public class ReleaseOutputEventDto {
 	private UUID vcs;
 	private String schedule;
 	private String clientPayload;
+	private String celClientPayload;
 	private String eventType;
 	private EventScope scope;
+	private UUID snapshotApprovalEntry;
+	private ReleaseLifecycle snapshotLifecycle;
 
 	public static ReleaseOutputEventDto fromData(ReleaseOutputEvent event, EventScope scope) {
 		return ReleaseOutputEventDto.builder()
@@ -41,8 +44,11 @@ public class ReleaseOutputEventDto {
 				.vcs(event.getVcs())
 				.schedule(event.getSchedule())
 				.clientPayload(event.getClientPayload())
+				.celClientPayload(event.getCelClientPayload())
 				.eventType(event.getEventType())
 				.scope(scope)
+				.snapshotApprovalEntry(event.getSnapshotApprovalEntry())
+				.snapshotLifecycle(event.getSnapshotLifecycle())
 				.build();
 	}
 }

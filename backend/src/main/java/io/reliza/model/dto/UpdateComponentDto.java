@@ -48,8 +48,11 @@ public class UpdateComponentDto {
 		private UUID vcs;
 		private String schedule;
 		private String clientPayload; // i.e. additional GitHub parameters
+		private String celClientPayload; // CEL string expression; overrides clientPayload (INTEGRATION_TRIGGER) or notificationMessage (EMAIL_NOTIFICATION)
 		private String eventType;
 		private Boolean includeSuppressed;
+		private UUID snapshotApprovalEntry;
+		private ReleaseLifecycle snapshotLifecycle;
 	}
 	
 	@JsonProperty(CommonVariables.UUID_FIELD)
@@ -117,6 +120,15 @@ public class UpdateComponentDto {
 			if (StringUtils.isNotEmpty(roei.getClientPayload())) {
 				builder.clientPayload(roei.getClientPayload());
 			}
+		}
+		if (StringUtils.isNotEmpty(roei.getCelClientPayload())) {
+			builder.celClientPayload(roei.getCelClientPayload());
+		}
+		if (roei.getSnapshotApprovalEntry() != null) {
+			builder.snapshotApprovalEntry(roei.getSnapshotApprovalEntry());
+		}
+		if (roei.getSnapshotLifecycle() != null) {
+			builder.snapshotLifecycle(roei.getSnapshotLifecycle());
 		}
 		return builder.build();
 	}
