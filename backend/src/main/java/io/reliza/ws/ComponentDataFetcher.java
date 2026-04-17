@@ -15,8 +15,6 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
-import org.jsoup.Jsoup;
-import org.jsoup.safety.Safelist;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.AccessDeniedException;
@@ -48,12 +46,8 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentData.EventScope;
-import io.reliza.model.ComponentData.EventType;
-import io.reliza.model.ComponentData.ReleaseOutputEvent;
 import io.reliza.model.dto.ReleaseInputEventDto;
 import io.reliza.model.dto.ReleaseOutputEventDto;
-import io.reliza.model.IntegrationData;
-import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
@@ -63,13 +57,11 @@ import io.reliza.model.dto.ApiKeyForUserDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.SceDto;
-import io.reliza.model.dto.UpdateComponentDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.dto.ComponentDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
-import io.reliza.service.IntegrationService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
@@ -78,7 +70,6 @@ import io.reliza.service.ReleaseVersionService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
 import io.reliza.service.VersionAssignmentService.GetNewVersionDto;
-import io.reliza.service.saas.CelEvaluatorService;
 import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.service.saas.ApprovalPolicyService;
 import lombok.extern.slf4j.Slf4j;
@@ -115,9 +106,6 @@ public class ComponentDataFetcher {
 	private ReleaseVersionService releaseVersionService;
 	
 	@Autowired
-	private IntegrationService integrationService;
-	
-	@Autowired
 	private ApprovalPolicyService approvalPolicyService;
 
 	@Autowired
@@ -126,9 +114,6 @@ public class ComponentDataFetcher {
 	@Autowired
 	private OssPerspectiveService ossPerspectiveService;
 
-	@Autowired
-	private CelEvaluatorService celEvaluatorService;
-	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "component")
 	public ComponentData getComponent(@InputArgument("componentUuid") String componentUuidStr) throws RelizaException {
@@ -226,85 +211,6 @@ public class ComponentDataFetcher {
 				.build();
 		
 		return retKey;
-	}
-	
-	@PreAuthorize("isAuthenticated()")
-	@Transactional
-	@DgsData(parentType = "Mutation", field = "updateComponent")
-	public ComponentData updateComponent(DgsDataFetchingEnvironment dfe) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		Map<String, Object> componentUpdateData = dfe.getArgument("component");
-		
-		UpdateComponentDto ucdto = Utils.OM.convertValue(componentUpdateData, UpdateComponentDto.class);
-		UUID componentUuid = ucdto.getUuid();
-		List<RelizaObject> ros = new LinkedList<>();
-		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
-		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		ros.add(ro);
-		if (null != ucdto.getVcs()) ros.add(vcsRepositoryService.getVcsRepositoryData(ucdto.getVcs()).orElseThrow());
-		if (null != ucdto.getApprovalPolicy()) ros.add(approvalPolicyService.getApprovalPolicyData(ucdto.getApprovalPolicy()).orElseThrow());
-
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, ros, CallType.WRITE);
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		
-		List<RelizaObject> orgCheckList = new LinkedList<>();
-		orgCheckList.add(ro);
-		if (null != ocd.get().getVcs()) orgCheckList.add(vcsRepositoryService
-				.getVcsRepositoryData(ocd.get().getVcs()).get());
-		if (null != ucdto.getOutputTriggers() && !ucdto.getOutputTriggers().isEmpty()) {
-			for (var trigger : ucdto.getOutputTriggers()) {
-				if (null != trigger.getIntegration()) {
-					orgCheckList.add(integrationService.getIntegrationData(trigger.getIntegration()).get());
-				}
-  				if (null != trigger.getVcs()) {
-					orgCheckList.add(vcsRepositoryService
-							.getVcsRepositoryData(trigger.getVcs()).get());
-  				}
-				if (null != trigger.getUsers() && trigger.getUsers().isEmpty()) {
-					authorizationService.doUsersBelongToOrg(trigger.getUsers(), ro.getOrg());
-				}
-				if (StringUtils.isNotEmpty(trigger.getNotificationMessage())) {
-					trigger.setNotificationMessage(Jsoup.clean(trigger.getNotificationMessage(), Safelist.basic()));
-				}
-			}
-		}
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, orgCheckList, CallType.WRITE);
-		
-		try {
-			List<ReleaseOutputEvent> processedOutputTriggers = new LinkedList<>();
-			if (null != ucdto.getOutputTriggers() && !ucdto.getOutputTriggers().isEmpty()) {
-				for (var trigger : ucdto.getOutputTriggers()) {
-					IntegrationType it = null;
-					if (trigger.getType() == EventType.INTEGRATION_TRIGGER) {
-						Set<IntegrationType> supportedTypes = Set.of(IntegrationType.ADO, IntegrationType.GITHUB,
-								IntegrationType.GITLAB, IntegrationType.JENKINS);
-						IntegrationData id = integrationService.getIntegrationData(trigger.getIntegration()).get();
-						if (!supportedTypes.contains(id.getType())) {
-							throw new RuntimeException("Unsupported trigger type");
-						}
-						it = id.getType();
-					}
-					try {
-						var processedTrigger = UpdateComponentDto
-								.convertReleaseOutputEventFromInput(trigger, it);
-						processedOutputTriggers.add(processedTrigger);
-					} catch (Exception e) {
-						log.error("Error on processing output trigger on component update", e);
-						throw new RuntimeException("Error on processing output trigger");
-					}
-				}
-			}
-			if (null != ucdto.getReleaseInputTriggers()) {
-				for (var inputTrigger : ucdto.getReleaseInputTriggers()) {
-					celEvaluatorService.validate(inputTrigger.getCelExpression());
-				}
-			}
-			ComponentDto cdto = UpdateComponentDto.convertToComponentDto(ucdto, processedOutputTriggers);
-			return ComponentData.dataFromRecord(componentService.updateComponent(cdto, wu));
-		} catch (RelizaException re) {
-			throw new AccessDeniedException(re.getMessage());
-		}
 	}
 	
 	@DgsData(parentType = "Mutation", field = "getNewVersionProgrammatic")
