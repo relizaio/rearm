@@ -44,7 +44,8 @@
                                 </template>
                                 {{ rel.version }}
                             </n-tooltip>
-                            <span style="flex-shrink: 0;">&nbsp;·&nbsp;{{ formatDate(rel.createdDate) }}</span>
+                            <span v-if="!props.showFullPageIcon" style="flex-shrink: 0;">&nbsp;·&nbsp;{{ formatDate(rel.createdDate) }}</span>
+                            <span style="flex-shrink: 0;">&nbsp;·&nbsp;{{ rel.lifecycle }}</span>
                         </span>
                         <n-space :size="1" v-if="rel.metrics?.lastScanned" style="flex-shrink: 0;">
                             <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="openVulnModal(rel, 'CRITICAL', 'Vulnerability')">{{ rel.metrics.critical }}</span>
