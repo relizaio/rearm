@@ -178,6 +178,17 @@ public class BranchService {
 			}
 		}
 		
+		// Unarchive an existing archived branch when a release is incoming (create=true implies write intent)
+		if (create && wu != null && ob.isPresent()) {
+			BranchData foundBd = BranchData.branchDataFromDbRecord(ob.get());
+			if (foundBd.getStatus() == StatusEnum.ARCHIVED) {
+				log.info("Unarchiving branch {} ({}) due to incoming release", foundBd.getName(), foundBd.getUuid());
+				foundBd.setStatus(StatusEnum.ACTIVE);
+				Map<String,Object> recordData = Utils.dataToRecord(foundBd);
+				ob = Optional.of(saveBranch(ob.get(), recordData, wu));
+			}
+		}
+
 		if (ob.isEmpty() && create) {
 			// create new branch and return it
 			// TODO: sort out handling of vcs repository (consider removing it altogether and tying to branch to branch)
@@ -191,7 +202,7 @@ public class BranchService {
 					createBranch(cleanedName, component, bt, cd.getVcs(), cleanedName, cd.getFeatureBranchVersioning(), cd.getMarketingVersionSchema(), wu)
 			);
 		}
-		
+
 		return ob;
 	}
 	
@@ -503,6 +514,19 @@ public class BranchService {
 		return archived;
 	}
 	
+	public Boolean unarchiveBranch(UUID branchUuid, WhoUpdated wu) throws RelizaException {
+		Boolean unarchived = false;
+		Optional<Branch> obr = getBranch(branchUuid);
+		if (obr.isPresent()) {
+			BranchData bd = BranchData.branchDataFromDbRecord(obr.get());
+			bd.setStatus(StatusEnum.ACTIVE);
+			Map<String,Object> recordData = Utils.dataToRecord(bd);
+			saveBranch(obr.get(), recordData, wu);
+			unarchived = true;
+		}
+		return unarchived;
+	}
+
 	/**
 	 * Archive all branches of a component (including base branch).
 	 * This is called when archiving a component.
@@ -631,6 +655,16 @@ public class BranchService {
 		try {
 			branchUuid = UUID.fromString(branchStr);
 			ob = getBranch(branchUuid);
+			// Unarchive if needed (UUID path — findBranchByName handles the name path)
+			if (ob.isPresent() && wu != null) {
+				BranchData tempBd = BranchData.branchDataFromDbRecord(ob.get());
+				if (tempBd.getStatus() == StatusEnum.ARCHIVED) {
+					log.info("Unarchiving branch {} ({}) due to incoming release", tempBd.getName(), branchUuid);
+					tempBd.setStatus(StatusEnum.ACTIVE);
+					Map<String,Object> recordData = Utils.dataToRecord(tempBd);
+					ob = Optional.of(saveBranch(ob.get(), recordData, wu));
+				}
+			}
 		} catch (IllegalArgumentException e) {
 			// parse branch from name
 			try {

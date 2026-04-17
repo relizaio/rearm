@@ -49,6 +49,7 @@ import java.time.ZonedDateTime;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
@@ -640,6 +641,13 @@ public class ReleaseDatafetcher {
 				branchUuid = UUID.fromString(branchStr);
 				ob = branchService.getBranch(branchUuid);
 				obd = Optional.of(BranchData.branchDataFromDbRecord(ob.get()));
+				// Unarchive if needed (UUID path — findBranchByName handles the name path)
+				if (obd.get().getStatus() == StatusEnum.ARCHIVED) {
+					log.info("Unarchiving branch {} ({}) due to incoming release", obd.get().getName(), branchUuid);
+					branchService.unarchiveBranch(branchUuid, wu);
+					ob = branchService.getBranch(branchUuid);
+					obd = Optional.of(BranchData.branchDataFromDbRecord(ob.get()));
+				}
 			} catch (IllegalArgumentException e) {
 				try {
 					ob = branchService.findBranchByName(componentId, branchStr, true, wu);
