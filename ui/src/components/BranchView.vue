@@ -75,14 +75,15 @@
                 <n-input v-if="isWritable" id="branchVersionMetadata" v-model:value="modifiedBranch.metadata" />
                 <n-input v-else type="text" id="versionMetadata" name="versionMetadata" :value="modifiedBranch.metadata" readonly/>
             </div>
-            <div class="branchTypeBlock" v-if="branchData.componentDetails.type === 'COMPONENT'">
-                <label id="branchTypeMetadataLabel">Branch Type</label>
+            <div class="branchTypeBlock">
+                <label id="branchTypeMetadataLabel">{{ words.branchFirstUpper }} Type</label>
                 <n-select
                     v-if="isWritable && branchData.type !== 'BASE'"
                     id="branchType"
                     v-model:value="modifiedBranch.type"
                     :options="branchSelectOptions" 
                 />
+                <n-tag v-else-if="branchData.type === 'BASE'" type="success" :bordered="false">{{ branchData.type }}</n-tag>
                 <n-input v-else class="w-25" type="text" :value="branchData.type" readonly/>
             </div>
             <div class="findingAnalyticsParticipationBlock">
@@ -768,8 +769,8 @@ async function saveModifiedBranch () {
         // Check if branch type is being changed to BASE
         if (modifiedBranch.value.type === 'BASE' && branchData.value.type !== 'BASE') {
             const result = await Swal.fire({
-                title: 'Change Branch Type to Base?',
-                text: 'Changing this branch to Base will automatically convert the current Base branch to Regular. Only one Base branch can exist per component.',
+                title: `Change ${words.value.branchFirstUpper} Type to Base?`,
+                text: `Changing this ${words.value.branch} to Base will automatically convert the current Base ${words.value.branch} to Regular. Only one Base ${words.value.branch} can exist per ${branchData.value.componentDetails.type === 'PRODUCT' ? 'product' : 'component'}.`,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#3085d6',

@@ -620,7 +620,7 @@ import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle } from '@vicons/tabler'
+import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle, Star } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'
@@ -1891,7 +1891,28 @@ const branchFields: any[] = [
                 ) : null
             ])
         },
-        key: 'name'
+        key: 'name',
+        render: (row: any) => {
+            const children: any[] = [h('span', row.name)]
+            if (row.type === 'BASE') {
+                children.push(h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NIcon, {
+                        size: 16,
+                        color: '#f0a020',
+                        style: 'cursor: help;'
+                    }, () => h(Star)),
+                    default: () => h('div', { style: 'max-width: 360px;' }, [
+                        h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, `This is the base ${words.value.branch}.`),
+                        h('ul', { style: 'margin: 0; padding-left: 18px;' }, [
+                            h('li', `Each ${words.value.component} must have exactly one base ${words.value.branch}.`),
+                            h('li', `The base ${words.value.branch} cannot be archived.`),
+                            h('li', `It takes priority during auto-integrate resolutions (especially when using pattern matching).`)
+                        ])
+                    ])
+                }))
+            }
+            return h('div', { style: 'display: flex; align-items: center; gap: 6px;' }, children)
+        }
     },
     {
         title: 'Version Schema',
