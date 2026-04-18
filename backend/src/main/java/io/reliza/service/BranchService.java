@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +57,10 @@ public class BranchService {
 	
 	@Autowired
     private AuditService auditService;
+
+	@Autowired
+	@Lazy
+	private DependencyPatternService dependencyPatternService;
 
 	private final BranchRepository repository;
 
@@ -220,6 +225,40 @@ public class BranchService {
 	
 	public List<BranchData> findBranchDataByChildComponent (UUID orgUuid, UUID component) {
 		return transformBranchToBranchData(findFeatureSetsByChildComponent(orgUuid, component));
+	}
+
+	/**
+	 * Return all feature sets in an org that include the given component as an
+	 * auto-integrate dependency of any requirement type (REQUIRED, OPTIONAL, or IGNORED),
+	 * either via explicit dependencies or via matching dependency patterns.
+	 * De-duplicated by feature-set UUID.
+	 */
+	public List<BranchData> findFeatureSetsDependingOnComponent (UUID orgUuid, UUID component) {
+		Map<UUID, BranchData> byUuid = new LinkedHashMap<>();
+		for (BranchData bd : findBranchDataByChildComponent(orgUuid, component)) {
+			byUuid.put(bd.getUuid(), bd);
+		}
+		for (BranchData bd : dependencyPatternService.findFeatureSetsMatchingComponentByPattern(orgUuid, component)) {
+			byUuid.putIfAbsent(bd.getUuid(), bd);
+		}
+		return new LinkedList<>(byUuid.values());
+	}
+
+	/**
+	 * Return all feature sets in an org that include the given component+branch pair as
+	 * an auto-integrate dependency of any requirement type (REQUIRED, OPTIONAL, or IGNORED),
+	 * either via explicit dependencies or via dependency patterns that resolve to this branch.
+	 * De-duplicated by feature-set UUID.
+	 */
+	public List<BranchData> findFeatureSetsDependingOnBranch (UUID orgUuid, UUID component, UUID branchUuid) {
+		Map<UUID, BranchData> byUuid = new LinkedHashMap<>();
+		for (BranchData bd : findFeatureSetDataByChildComponentBranch(orgUuid, component, branchUuid)) {
+			byUuid.put(bd.getUuid(), bd);
+		}
+		for (BranchData bd : dependencyPatternService.findFeatureSetsMatchingBranchByPattern(orgUuid, component, branchUuid)) {
+			byUuid.putIfAbsent(bd.getUuid(), bd);
+		}
+		return new LinkedList<>(byUuid.values());
 	}
 	
 	/**

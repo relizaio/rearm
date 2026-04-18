@@ -121,6 +121,11 @@ type Query {
 	# Pattern Preview
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
 
+	# Reverse dependency lookup: which feature sets include this component/branch as a dependency
+	# (any requirement type — REQUIRED, OPTIONAL, or IGNORED — via explicit deps or patterns)
+	featureSetsUsingComponent(componentUuid: ID!): [Branch]
+	featureSetsUsingBranch(branchUuid: ID!): [Branch]
+
 	# Instances
 	instance(instanceUuid: ID!, revision: Int): Instance
 	instancesOfOrganization(orgUuid: ID!): [Instance]

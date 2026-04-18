@@ -398,6 +398,45 @@ public class BranchDataFetcher {
 		return result;
 	}
 	
+	/**
+	 * Return all feature sets that include the given component (product or component)
+	 * as an auto-integrate dependency of any requirement type (REQUIRED, OPTIONAL, IGNORED),
+	 * via explicit dependencies or matching dependency patterns.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "featureSetsUsingComponent")
+	public List<BranchData> featureSetsUsingComponent(
+			@InputArgument("componentUuid") String compUuidStr) throws RelizaException {
+		UUID compUuid = UUID.fromString(compUuidStr);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ComponentData> ocd = getComponentService.getComponentData(compUuid);
+		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, compUuid, List.of(ro), CallType.READ);
+		if (ocd.isEmpty()) return List.of();
+		return branchService.findFeatureSetsDependingOnComponent(ocd.get().getOrg(), compUuid);
+	}
+
+	/**
+	 * Return all feature sets that include the given branch (feature set or base branch)
+	 * as an auto-integrate dependency of any requirement type (REQUIRED, OPTIONAL, IGNORED),
+	 * via explicit dependencies or dependency patterns that resolve to this specific branch.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "featureSetsUsingBranch")
+	public List<BranchData> featureSetsUsingBranch(
+			@InputArgument("branchUuid") String branchUuidStr) throws RelizaException {
+		UUID branchUuid = UUID.fromString(branchUuidStr);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
+		RelizaObject ro = obd.isPresent() ? obd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.READ);
+		if (obd.isEmpty()) return List.of();
+		BranchData bd = obd.get();
+		return branchService.findFeatureSetsDependingOnBranch(bd.getOrg(), bd.getComponent(), branchUuid);
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "previewPattern")
 	public List<Map<String, Object>> previewPattern(

@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
-import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.BranchData.DependencyPattern;
 import io.reliza.model.ComponentData;
@@ -35,6 +34,9 @@ public class DependencyPatternService {
 	
 	@Autowired
 	private ComponentService componentService;
+
+	@Autowired
+	private GetComponentService getComponentService;
 	
 	/**
 	 * Resolve effective dependencies for a feature set.
@@ -145,6 +147,69 @@ public class DependencyPatternService {
 		return baseBranch.map(Branch::getUuid).orElse(null);
 	}
 	
+	/**
+	 * Reverse-lookup: find feature sets in an org whose dependency patterns match
+	 * the given component by name. Does not filter by requirement status — includes
+	 * patterns that would produce REQUIRED, OPTIONAL, or IGNORED ChildComponents.
+	 *
+	 * @param orgUuid organization UUID
+	 * @param componentUuid component whose inclusion we want to check
+	 * @return list of feature sets whose patterns match this component
+	 */
+	public List<BranchData> findFeatureSetsMatchingComponentByPattern(UUID orgUuid, UUID componentUuid) {
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
+		if (ocd.isEmpty()) return new ArrayList<>();
+		String componentName = ocd.get().getName();
+		List<BranchData> candidates = branchService.findFeatureSetDataWithDependencyPatterns(orgUuid);
+		List<BranchData> matched = new ArrayList<>();
+		for (BranchData fs : candidates) {
+			// exclude self-dependency: the fs's own product component can't depend on itself
+			if (componentUuid.equals(fs.getComponent())) continue;
+			if (componentMatchesAnyPattern(componentName, fs.getDependencyPatterns())) {
+				matched.add(fs);
+			}
+		}
+		return matched;
+	}
+
+	/**
+	 * Reverse-lookup: find feature sets whose dependency patterns match the given
+	 * component AND resolve to the given branch (via targetBranchName or fallback to BASE).
+	 *
+	 * @param orgUuid organization UUID
+	 * @param componentUuid component whose inclusion we want to check
+	 * @param branchUuid specific branch we require the pattern to resolve to
+	 * @return list of feature sets matching by component+branch via patterns
+	 */
+	public List<BranchData> findFeatureSetsMatchingBranchByPattern(UUID orgUuid, UUID componentUuid, UUID branchUuid) {
+		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
+		if (ocd.isEmpty()) return new ArrayList<>();
+		String componentName = ocd.get().getName();
+		List<BranchData> candidates = branchService.findFeatureSetDataWithDependencyPatterns(orgUuid);
+		List<BranchData> matched = new ArrayList<>();
+		for (BranchData fs : candidates) {
+			if (componentUuid.equals(fs.getComponent())) continue; // skip self-dependency
+			if (fs.getDependencyPatterns() == null) continue;
+			boolean hit = false;
+			for (DependencyPattern dp : fs.getDependencyPatterns()) {
+				if (dp.getPattern() == null) continue;
+				try {
+					if (!Pattern.compile(dp.getPattern()).matcher(componentName).matches()) continue;
+				} catch (PatternSyntaxException e) {
+					log.warn("Invalid pattern in feature set {}: {}", fs.getUuid(), dp.getPattern());
+					continue;
+				}
+				UUID resolvedBranch = findTargetBranch(componentUuid, dp);
+				if (branchUuid.equals(resolvedBranch)) {
+					hit = true;
+					break;
+				}
+			}
+			if (hit) matched.add(fs);
+		}
+		return matched;
+	}
+
 	/**
 	 * Check if a component matches any pattern in a feature set's dependency patterns.
 	 * 
