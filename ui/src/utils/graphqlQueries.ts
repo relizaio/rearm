@@ -1035,6 +1035,32 @@ query FetchBranches($componentUuid: ID!) {
     }
 }`
 
+const FEATURE_SETS_USING_COMPONENT_GQL = gql`
+query FeatureSetsUsingComponent($componentUuid: ID!) {
+    featureSetsUsingComponent(componentUuid: $componentUuid) {
+        uuid
+        name
+        org
+        type
+        componentDetails { uuid name }
+        dependencies { status branch componentDetails { uuid } }
+        dependencyPatterns { pattern defaultStatus targetBranchName fallbackToBase }
+    }
+}`
+
+const FEATURE_SETS_USING_BRANCH_GQL = gql`
+query FeatureSetsUsingBranch($branchUuid: ID!) {
+    featureSetsUsingBranch(branchUuid: $branchUuid) {
+        uuid
+        name
+        org
+        type
+        componentDetails { uuid name }
+        dependencies { status branch componentDetails { uuid } }
+        dependencyPatterns { pattern defaultStatus targetBranchName fallbackToBase }
+    }
+}`
+
 const BRANCH_GQL_MUTATE = gql`
 mutation updateBranch($br: BranchInput!) {
     updateBranch(branch:$br) {
@@ -1224,4 +1250,6 @@ export default {
     EnvironmentTypesGql: ENVIRONMENT_TYPES_GQL,
     ReleasesByDateRangeGql: RELEASES_BY_DATE_RANGE_GQL,
     ReleasesByDateRangeAndPerspectiveGql: RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL,
+    FeatureSetsUsingComponentGql: FEATURE_SETS_USING_COMPONENT_GQL,
+    FeatureSetsUsingBranchGql: FEATURE_SETS_USING_BRANCH_GQL,
 }

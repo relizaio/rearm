@@ -38,6 +38,7 @@
                                 <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
                                 <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="openComponentSettings" size="24"><Tool /></n-icon>
                                 <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" size="24"><List /></n-icon>
+                                <n-icon v-if="componentData" class="clickable icons" :title="'Feature Sets Including This ' + words.componentFirstUpper" @click="showFeatureSetParticipationModal = true" size="24"><Eye /></n-icon>
                                 <n-tooltip trigger="hover" v-if="componentData && componentData.uuid">
                                     <template #trigger>
                                         <n-icon class="icons" size="24"><InfoCircle /></n-icon>
@@ -83,6 +84,19 @@
                                             :orgprop="componentData.org"
                                             :componenttypeprop="componentData.type"
                                             :iscomponentchangelog="true"
+                                />
+                            </n-modal>
+                            <n-modal
+                                v-model:show="showFeatureSetParticipationModal"
+                                preset="dialog"
+                                :show-icon="false"
+                                style="width: 90%"
+                            >
+                                <feature-set-participation
+                                    v-if="componentData"
+                                    mode="component"
+                                    :componentUuid="componentData.uuid"
+                                    :componentName="componentData.name"
                                 />
                             </n-modal>
                             <n-modal
@@ -617,10 +631,11 @@ import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
+import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle, Star } from '@vicons/tabler'
+import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle, Star, Eye } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'
@@ -810,6 +825,7 @@ const selectedCiIntegration: ComputedRef<any> = computed((): any => {
 const showCloneBranchModal : Ref<boolean> = ref(false)
 const showComponentAnalyticsModal : Ref<boolean> = ref(false)
 const showComponentChangelogModal : Ref<boolean> = ref(false)
+const showFeatureSetParticipationModal : Ref<boolean> = ref(false)
 const showAddBranchModal : Ref<boolean> = ref(false)
 const showComponentSettingsModal: Ref<boolean> = ref(false)
 

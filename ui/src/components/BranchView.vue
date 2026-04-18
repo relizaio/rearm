@@ -15,6 +15,9 @@
                 <n-icon @click="onCreated" class="clickable" title="Refresh Releases" size="24" style="margin-left: 4px;">
                     <Refresh />
                 </n-icon>
+                <n-icon @click="showFeatureSetParticipationModal = true" class="clickable" :title="'Feature Sets Including This ' + words.branchFirstUpper" size="24" style="margin-left: 4px;">
+                    <Eye />
+                </n-icon>
             </div>
             <div class="dangerControls">
                 <n-icon v-if="isWritable && branchData.type !== 'BASE'" @click="archiveBranch" class="clickable" :title="'Archive ' + words.branchFirstUpper" size="24">
@@ -36,6 +39,19 @@
                             :inputType="branchData.componentDetails.type"
                             :disallowPlaceholder="true"
                             @createdRelease="showCreateReleaseModal = false" />
+        </n-modal>
+        <n-modal
+            v-model:show="showFeatureSetParticipationModal"
+            preset="dialog"
+            :show-icon="false"
+            style="width: 90%"
+        >
+            <feature-set-participation
+                mode="branch"
+                :branchUuid="branchData.uuid"
+                :branchName="branchData.name"
+                :componentName="branchData.componentDetails.name"
+            />
         </n-modal>
         <n-modal
             v-model:show="showBranchSettingsModal"
@@ -371,6 +387,7 @@ import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
 import SideBySide from './SideBySide.vue'
 import LinkVcs from './LinkVcs.vue'
+import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
@@ -469,6 +486,7 @@ const showAddComponentModal: Ref<boolean> = ref(false)
 const showEditComponentModal: Ref<boolean> = ref(false)
 const showAddOssArtifactModal: Ref<boolean> = ref(false)
 const showCreateReleaseModal: Ref<boolean> = ref(false)
+const showFeatureSetParticipationModal: Ref<boolean> = ref(false)
 const showPatternPreviewModal: Ref<boolean> = ref(false)
 const patternPreviewData: Ref<any[]> = ref([])
 const selectNewVcsRepo = ref(false)
