@@ -102,6 +102,17 @@
                             />
                         </template>
 
+                        <!-- ANY_APPROVAL -->
+                        <template v-else-if="cond.type === 'ANY_APPROVAL'">
+                            <span style="font-size: 13px;">Any approval is</span>
+                            <n-select
+                                v-model:value="(cond as AnyApprovalCondition).approvalState"
+                                :options="approvalStateOptions"
+                                size="small"
+                                style="width: 150px;"
+                            />
+                        </template>
+
                         <!-- METRICS -->
                         <template v-else-if="cond.type === 'METRICS'">
                             <n-select
@@ -163,26 +174,37 @@
                     <div>
                         <strong>Available variables:</strong>
                         <table style="border-collapse: collapse; margin-top: 6px; font-size: 12px;">
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.lifecycle</code></td><td>string — e.g. "ASSEMBLED", "GENERAL_AVAILABILITY"</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.version</code></td><td>string — e.g. "1.2.3"</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.branchType</code></td><td>string — "RELEASE", "HOTFIX", "FEATURE"</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.firstScanned</code></td><td>bool</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.criticalVulns</code></td><td>int</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.highVulns</code></td><td>int</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.mediumVulns</code></td><td>int</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.lowVulns</code></td><td>int</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.unassignedVulns</code></td><td>int</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.securityViolations</code></td><td>int</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.operationalViolations</code></td><td>int</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.licenseViolations</code></td><td>int</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.approvals["&lt;uuid&gt;"]</code></td><td>string — "APPROVED" or "DISAPPROVED"</td></tr>
-                            <tr><td style="padding: 2px 8px 2px 0;"><code>release.component</code></td><td>string (UUID)</td></tr>
+                            <tbody>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.lifecycle</code></td><td>string — e.g. "ASSEMBLED", "GENERAL_AVAILABILITY"</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.version</code></td><td>string — e.g. "1.2.3"</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.branchType</code></td><td>string — "RELEASE", "HOTFIX", "FEATURE"</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.firstScanned</code></td><td>bool</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.criticalVulns</code></td><td>int</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.highVulns</code></td><td>int</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.mediumVulns</code></td><td>int</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.lowVulns</code></td><td>int</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.unassignedVulns</code></td><td>int</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.securityViolations</code></td><td>int</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.operationalViolations</code></td><td>int</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.licenseViolations</code></td><td>int</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.approvals["&lt;uuid&gt;"]</code></td><td>string — "APPROVED" or "DISAPPROVED"</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.anyApproved</code></td><td>bool — true if any approval entry is APPROVED</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.anyDisapproved</code></td><td>bool — true if any approval entry is DISAPPROVED</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>approvals</code></td><td>map&lt;string,string&gt; — top-level, keyed by approval entry UUID</td></tr>
+                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.component</code></td><td>string (UUID)</td></tr>
+                            </tbody>
                         </table>
                         <div style="margin-top: 8px;"><strong>Examples:</strong></div>
                         <pre style="font-size: 11px; margin: 4px 0;">release.lifecycle == "ASSEMBLED"
 release.lifecycle == "GENERAL_AVAILABILITY" &amp;&amp; release.criticalVulns == 0
 release.approvals["3fa85f64-5717-4562-b3fc-2c963f66afa6"] == "APPROVED"
-release.branchType in ["RELEASE", "HOTFIX"] &amp;&amp; release.firstScanned == true &amp;&amp; release.securityViolations == 0</pre>
+release.branchType in ["RELEASE", "HOTFIX"] &amp;&amp; release.firstScanned == true &amp;&amp; release.securityViolations == 0
+
+// any / all across approval entries:
+release.lifecycle in ["DRAFT","ASSEMBLED","READY_TO_SHIP"] &amp;&amp; release.anyDisapproved
+approvals.exists(k, approvals[k] == "DISAPPROVED")
+approvals.all(k, approvals[k] == "APPROVED")
+approvals.filter(k, approvals[k] == "APPROVED").size() &gt;= 3</pre>
                     </div>
                 </n-tooltip>
             </div>
@@ -207,7 +229,7 @@ import constants from '../utils/constants'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ConditionType = 'LIFECYCLE' | 'BRANCH_TYPE' | 'APPROVAL_ENTRY' | 'METRICS' | 'FIRST_SCANNED'
+type ConditionType = 'LIFECYCLE' | 'BRANCH_TYPE' | 'APPROVAL_ENTRY' | 'ANY_APPROVAL' | 'METRICS' | 'FIRST_SCANNED'
 type MetricField = 'criticalVulns' | 'highVulns' | 'mediumVulns' | 'lowVulns' | 'unassignedVulns'
     | 'securityViolations' | 'operationalViolations' | 'licenseViolations'
 type CompOp = '==' | '!=' | '>' | '>=' | '<' | '<='
@@ -215,9 +237,10 @@ type CompOp = '==' | '!=' | '>' | '>=' | '<' | '<='
 interface LifecycleCondition   { type: 'LIFECYCLE';      lifecycles: string[] }
 interface BranchTypeCondition  { type: 'BRANCH_TYPE';    branchTypes: string[] }
 interface ApprovalEntryCondition { type: 'APPROVAL_ENTRY'; approvalEntry: string; approvalState: 'APPROVED' | 'DISAPPROVED' }
+interface AnyApprovalCondition { type: 'ANY_APPROVAL'; approvalState: 'APPROVED' | 'DISAPPROVED' }
 interface MetricsCondition     { type: 'METRICS';        metricField: MetricField; operator: CompOp; value: number }
 interface FirstScannedCondition { type: 'FIRST_SCANNED'; present: boolean }
-type Condition = LifecycleCondition | BranchTypeCondition | ApprovalEntryCondition | MetricsCondition | FirstScannedCondition
+type Condition = LifecycleCondition | BranchTypeCondition | ApprovalEntryCondition | AnyApprovalCondition | MetricsCondition | FirstScannedCondition
 
 interface ConditionGroup { operator: 'AND' | 'OR'; conditions: Condition[] }
 interface BuilderState   { topOperator: 'AND' | 'OR'; groups: ConditionGroup[] }
@@ -246,6 +269,7 @@ const conditionTypeOptions = [
     { label: 'Lifecycle',       value: 'LIFECYCLE' },
     { label: 'Branch Type',     value: 'BRANCH_TYPE' },
     { label: 'Approval Entry',  value: 'APPROVAL_ENTRY' },
+    { label: 'Any Approval',    value: 'ANY_APPROVAL' },
     { label: 'Metrics',         value: 'METRICS' },
     { label: 'First Scanned',   value: 'FIRST_SCANNED' }
 ]
@@ -311,6 +335,8 @@ function conditionToCel(c: Condition): string {
     case 'APPROVAL_ENTRY':
         if (!c.approvalEntry) return 'true'
         return `release.approvals["${c.approvalEntry}"] == "${c.approvalState}"`
+    case 'ANY_APPROVAL':
+        return c.approvalState === 'APPROVED' ? 'release.anyApproved' : 'release.anyDisapproved'
     case 'METRICS':
         return `release.${c.metricField} ${c.operator} ${c.value}`
     case 'FIRST_SCANNED':
@@ -400,6 +426,10 @@ function parseCondition(expr: string): Condition | null {
     m = s.match(/^release\.approvals\["([^"]+)"\]\s*==\s*"(APPROVED|DISAPPROVED)"$/)
     if (m) return { type: 'APPROVAL_ENTRY', approvalEntry: m[1], approvalState: m[2] as 'APPROVED' | 'DISAPPROVED' }
 
+    // ANY_APPROVAL: release.anyApproved / release.anyDisapproved (optional "== true")
+    m = s.match(/^release\.(anyApproved|anyDisapproved)(?:\s*==\s*true)?$/)
+    if (m) return { type: 'ANY_APPROVAL', approvalState: m[1] === 'anyApproved' ? 'APPROVED' : 'DISAPPROVED' }
+
     // FIRST_SCANNED
     m = s.match(/^release\.firstScanned\s*==\s*(true|false)$/)
     if (m) return { type: 'FIRST_SCANNED', present: m[1] === 'true' }
@@ -487,6 +517,7 @@ function createDefaultCondition(type: ConditionType): Condition {
     case 'LIFECYCLE':      return { type: 'LIFECYCLE', lifecycles: [] }
     case 'BRANCH_TYPE':   return { type: 'BRANCH_TYPE', branchTypes: [] }
     case 'APPROVAL_ENTRY': return { type: 'APPROVAL_ENTRY', approvalEntry: '', approvalState: 'APPROVED' }
+    case 'ANY_APPROVAL':   return { type: 'ANY_APPROVAL', approvalState: 'DISAPPROVED' }
     case 'METRICS':        return { type: 'METRICS', metricField: 'criticalVulns', operator: '==', value: 0 }
     case 'FIRST_SCANNED':  return { type: 'FIRST_SCANNED', present: true }
     }
