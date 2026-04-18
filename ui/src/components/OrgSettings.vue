@@ -1225,6 +1225,7 @@ const approvalRoleFields: any[] = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 50,
         render: (row: any) => {
             let els: any[] = []
             if (isWritable) {
@@ -1843,6 +1844,7 @@ const perspectiveFields = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 50,
         render(row: any) {
             const actions = [
                 h(
@@ -4894,6 +4896,7 @@ const approvalEntryFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 50,    
         render: (row: any) => {
             let els: any[] = []
             if (isWritable) {
@@ -4977,6 +4980,7 @@ const approvalPolicyFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 50,
         render: (row: any) => {
             let els: any[] = []
             if (isWritable) {
@@ -5457,6 +5461,7 @@ const globalOutputEventTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 50,
         render: (row: any) => {
             let els: any[] = []
             if (isWritable.value) {
@@ -5498,6 +5503,7 @@ const globalInputEventTableFields: DataTableColumns<any> = [
     {
         key: 'outputTriggers',
         title: 'Output Events',
+        minWidth: 153,
         render: (row: any) => {
             let outNames = ''
             if (row.outputEvents && row.outputEvents.length) {
@@ -5513,6 +5519,7 @@ const globalInputEventTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 75,
         render: (row: any) => {
             let els: any[] = []
             if (isWritable.value) {

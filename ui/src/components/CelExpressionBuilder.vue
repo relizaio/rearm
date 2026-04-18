@@ -167,46 +167,56 @@
                     :placeholder="placeholder || 'release.lifecycle == &quot;ASSEMBLED&quot; &amp;&amp; release.criticalVulns == 0'"
                     @update:value="onCelInput"
                 />
-                <n-tooltip trigger="hover" style="max-width: 620px;">
+                <n-popover
+                    trigger="click"
+                    placement="bottom-end"
+                    :width="640"
+                    style="max-height: 70vh; overflow: auto;"
+                >
                     <template #trigger>
-                        <n-icon size="16" style="margin-top: 6px; cursor: help; color: #888;"><QuestionCircle20Regular /></n-icon>
+                        <n-icon size="16" style="margin-top: 6px; cursor: help; color: #888;" title="CEL help"><QuestionCircle20Regular /></n-icon>
                     </template>
                     <div>
+                        <div style="margin-bottom: 4px; font-size: 11px; color: #888;">
+                            Click the <n-icon size="12" style="vertical-align: middle;"><ClipboardPaste20Regular /></n-icon> icon to insert into the editor (appended with <code>&amp;&amp;</code> when text already exists).
+                        </div>
                         <strong>Available variables:</strong>
-                        <table style="border-collapse: collapse; margin-top: 6px; font-size: 12px;">
+                        <table style="border-collapse: collapse; margin-top: 6px; font-size: 12px; width: 100%;">
                             <tbody>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.lifecycle</code></td><td>string — e.g. "ASSEMBLED", "GENERAL_AVAILABILITY"</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.version</code></td><td>string — e.g. "1.2.3"</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.branchType</code></td><td>string — "RELEASE", "HOTFIX", "FEATURE"</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.firstScanned</code></td><td>bool</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.criticalVulns</code></td><td>int</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.highVulns</code></td><td>int</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.mediumVulns</code></td><td>int</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.lowVulns</code></td><td>int</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.unassignedVulns</code></td><td>int</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.securityViolations</code></td><td>int</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.operationalViolations</code></td><td>int</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.licenseViolations</code></td><td>int</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.approvals["&lt;uuid&gt;"]</code></td><td>string — "APPROVED" or "DISAPPROVED"</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.anyApproved</code></td><td>bool — true if any approval entry is APPROVED</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.anyDisapproved</code></td><td>bool — true if any approval entry is DISAPPROVED</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>approvals</code></td><td>map&lt;string,string&gt; — top-level, keyed by approval entry UUID</td></tr>
-                                <tr><td style="padding: 2px 8px 2px 0;"><code>release.component</code></td><td>string (UUID)</td></tr>
+                                <tr v-for="v in variableDocs" :key="v.name">
+                                    <td style="padding: 2px 6px 2px 0; white-space: nowrap;">
+                                        <n-icon
+                                            size="14"
+                                            class="clickable"
+                                            style="color: #888; vertical-align: middle;"
+                                            title="Paste into editor"
+                                            @click="insertSnippet(v.snippet)"
+                                        ><ClipboardPaste20Regular /></n-icon>
+                                    </td>
+                                    <td style="padding: 2px 8px 2px 0;"><code v-html="v.display"></code></td>
+                                    <td v-html="v.desc"></td>
+                                </tr>
                             </tbody>
                         </table>
-                        <div style="margin-top: 8px;"><strong>Examples:</strong></div>
-                        <pre style="font-size: 11px; margin: 4px 0;">release.lifecycle == "ASSEMBLED"
-release.lifecycle == "GENERAL_AVAILABILITY" &amp;&amp; release.criticalVulns == 0
-release.approvals["3fa85f64-5717-4562-b3fc-2c963f66afa6"] == "APPROVED"
-release.branchType in ["RELEASE", "HOTFIX"] &amp;&amp; release.firstScanned == true &amp;&amp; release.securityViolations == 0
-
-// any / all across approval entries:
-release.lifecycle in ["DRAFT","ASSEMBLED","READY_TO_SHIP"] &amp;&amp; release.anyDisapproved
-approvals.exists(k, approvals[k] == "DISAPPROVED")
-approvals.all(k, approvals[k] == "APPROVED")
-approvals.filter(k, approvals[k] == "APPROVED").size() &gt;= 3</pre>
+                        <div style="margin-top: 10px;"><strong>Examples:</strong></div>
+                        <table style="border-collapse: collapse; margin-top: 4px; font-size: 11px; width: 100%;">
+                            <tbody>
+                                <tr v-for="(ex, i) in exampleDocs" :key="i">
+                                    <td style="padding: 2px 6px 2px 0; vertical-align: top; white-space: nowrap;">
+                                        <n-icon
+                                            size="14"
+                                            class="clickable"
+                                            style="color: #888;"
+                                            title="Paste into editor"
+                                            @click="insertSnippet(ex)"
+                                        ><ClipboardPaste20Regular /></n-icon>
+                                    </td>
+                                    <td><code style="white-space: pre-wrap; word-break: break-all;">{{ ex }}</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                </n-tooltip>
+                </n-popover>
             </div>
             <div
                 v-if="celText && !canParseCurrentCel"
@@ -223,8 +233,8 @@ approvals.filter(k, approvals[k] == "APPROVED").size() &gt;= 3</pre>
 
 <script lang="ts" setup>
 import { ref, reactive, watch, nextTick } from 'vue'
-import { NRadioGroup, NRadioButton, NRadio, NSelect, NInputNumber, NButton, NAlert, NInput, NTooltip, NIcon } from 'naive-ui'
-import { QuestionCircle20Regular } from '@vicons/fluent'
+import { NRadioGroup, NRadioButton, NRadio, NSelect, NInputNumber, NButton, NAlert, NInput, NTooltip, NIcon, NPopover } from 'naive-ui'
+import { QuestionCircle20Regular, ClipboardPaste20Regular } from '@vicons/fluent'
 import constants from '../utils/constants'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -309,6 +319,48 @@ const compOpOptions = [
     { label: '<',  value: '<' },
     { label: '<=', value: '<=' }
 ]
+
+// ─── Docs for help popover ──────────────────────────────────────────────────
+
+interface VariableDoc { name: string; snippet: string; display: string; desc: string }
+
+const variableDocs: VariableDoc[] = [
+    { name: 'release.lifecycle',             snippet: 'release.lifecycle',             display: 'release.lifecycle',             desc: 'string — e.g. "ASSEMBLED", "GENERAL_AVAILABILITY"' },
+    { name: 'release.version',               snippet: 'release.version',               display: 'release.version',               desc: 'string — e.g. "1.2.3"' },
+    { name: 'release.branchType',            snippet: 'release.branchType',            display: 'release.branchType',            desc: 'string — "RELEASE", "HOTFIX", "FEATURE"' },
+    { name: 'release.firstScanned',          snippet: 'release.firstScanned',          display: 'release.firstScanned',          desc: 'bool' },
+    { name: 'release.criticalVulns',         snippet: 'release.criticalVulns',         display: 'release.criticalVulns',         desc: 'int' },
+    { name: 'release.highVulns',             snippet: 'release.highVulns',             display: 'release.highVulns',             desc: 'int' },
+    { name: 'release.mediumVulns',           snippet: 'release.mediumVulns',           display: 'release.mediumVulns',           desc: 'int' },
+    { name: 'release.lowVulns',              snippet: 'release.lowVulns',              display: 'release.lowVulns',              desc: 'int' },
+    { name: 'release.unassignedVulns',       snippet: 'release.unassignedVulns',       display: 'release.unassignedVulns',       desc: 'int' },
+    { name: 'release.securityViolations',    snippet: 'release.securityViolations',    display: 'release.securityViolations',    desc: 'int' },
+    { name: 'release.operationalViolations', snippet: 'release.operationalViolations', display: 'release.operationalViolations', desc: 'int' },
+    { name: 'release.licenseViolations',     snippet: 'release.licenseViolations',     display: 'release.licenseViolations',     desc: 'int' },
+    { name: 'release.approvals',             snippet: 'release.approvals["<uuid>"]',   display: 'release.approvals["&lt;uuid&gt;"]', desc: 'string — "APPROVED" or "DISAPPROVED"' },
+    { name: 'release.anyApproved',           snippet: 'release.anyApproved',           display: 'release.anyApproved',           desc: 'bool — true if any approval entry is APPROVED' },
+    { name: 'release.anyDisapproved',        snippet: 'release.anyDisapproved',        display: 'release.anyDisapproved',        desc: 'bool — true if any approval entry is DISAPPROVED' },
+    { name: 'approvals',                     snippet: 'approvals',                     display: 'approvals',                     desc: 'map&lt;string,string&gt; — top-level, keyed by approval entry UUID' },
+    { name: 'release.component',             snippet: 'release.component',             display: 'release.component',             desc: 'string (UUID)' }
+]
+
+const exampleDocs: string[] = [
+    'release.lifecycle == "ASSEMBLED"',
+    'release.lifecycle == "GENERAL_AVAILABILITY" && release.criticalVulns == 0',
+    'release.approvals["3fa85f64-5717-4562-b3fc-2c963f66afa6"] == "APPROVED"',
+    'release.branchType in ["RELEASE", "HOTFIX"] && release.firstScanned == true && release.securityViolations == 0',
+    'release.lifecycle in ["DRAFT","ASSEMBLED","READY_TO_SHIP"] && release.anyDisapproved',
+    'approvals.exists(k, approvals[k] == "DISAPPROVED")',
+    'approvals.all(k, approvals[k] == "APPROVED")',
+    'approvals.filter(k, approvals[k] == "APPROVED").size() >= 3'
+]
+
+function insertSnippet(snippet: string) {
+    const current = (celText.value || '').trim()
+    const next = current ? `${current} && ${snippet}` : snippet
+    mode.value = 'cel'
+    onCelInput(next)
+}
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
