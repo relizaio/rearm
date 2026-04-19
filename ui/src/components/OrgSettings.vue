@@ -948,13 +948,24 @@
                             <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
                         </n-form-item>
 
-                        <n-form-item label="Branch Prefix Mode">
+                        <n-form-item>
+                            <template #label>
+                                <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                    <span>Branch Prefix Mode</span>
+                                    <n-tooltip trigger="hover" placement="right">
+                                        <template #trigger>
+                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                        </template>
+                                        <div style="max-width: 700px; white-space: pre-line;">{{ branchPrefixModeTooltip }}</div>
+                                    </n-tooltip>
+                                </span>
+                            </template>
                             <div style="display: flex; flex-direction: column; width: 100%;">
                                 <n-select
                                     v-model:value="orgSettings.branchPrefixMode"
                                     :options="orgBranchPrefixModeOptions"
                                     style="max-width: 480px;" />
-                                <span class="text-muted" style="margin-top: 4px;">{{ branchPrefixHelpText(orgSettings.branchPrefixMode) }}</span>
+                                <span class="text-muted" style="margin-top: 4px;">Current: {{ branchPrefixModeLabels[orgSettings.branchPrefixMode] }}</span>
                             </div>
                         </n-form-item>
 
@@ -1198,18 +1209,23 @@ const orgSettings = reactive({
     branchPrefixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION'
 })
 
+const branchPrefixModeLabels: Record<string, string> = {
+    APPEND: 'Append',
+    NO_APPEND: 'Never Append',
+    APPEND_EXCEPT_FOLLOW_VERSION: 'Append Except when Following Version'
+}
+
 const orgBranchPrefixModeOptions = [
-    { label: 'APPEND — Feature branches get namespace suffix (e.g., 1.2.3-feat_login)', value: 'APPEND' },
-    { label: 'NO_APPEND — No branch suffix; version conflicts resolved via -0, -1, -2...', value: 'NO_APPEND' },
-    { label: 'APPEND_EXCEPT_FOLLOW_VERSION — Append suffix unless branch has a "follow version" dependency', value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
+    { label: branchPrefixModeLabels.APPEND, value: 'APPEND' },
+    { label: branchPrefixModeLabels.NO_APPEND, value: 'NO_APPEND' },
+    { label: branchPrefixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION, value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
 ]
 
-function branchPrefixHelpText (mode: string): string {
-    if (mode === 'APPEND') return 'Feature branches get namespace suffix (e.g., 1.2.3-feat_login).'
-    if (mode === 'NO_APPEND') return 'No branch suffix; version conflicts are resolved via -0, -1, -2...'
-    if (mode === 'APPEND_EXCEPT_FOLLOW_VERSION') return 'Appends branch suffix on most feature sets, but feature sets with a "follow version" dependency stay unprefixed to align with their upstream.'
-    return ''
-}
+const branchPrefixModeTooltip = [
+    `${branchPrefixModeLabels.APPEND}: branches get a namespace suffix (e.g., 1.2.3-feat_login).`,
+    `${branchPrefixModeLabels.NO_APPEND}: no branch suffix; version conflicts resolved via -0, -1, -2...`,
+    `${branchPrefixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION}: append suffix unless the branch has a "follow version" dependency.`
+].join('\n')
 const savingOrgSettings = ref(false)
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)

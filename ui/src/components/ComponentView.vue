@@ -184,12 +184,20 @@
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.featureBranchVersioning" readonly/>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
-                                            <label>Branch Prefix Mode</label>
+                                            <label style="display: flex; align-items: center; gap: 6px;">
+                                                <span>{{ words.branchFirstUpper }} Prefix Mode</span>
+                                                <n-tooltip trigger="hover" placement="right">
+                                                    <template #trigger>
+                                                        <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                    </template>
+                                                    <div style="max-width: 700px; white-space: pre-line;">{{ branchPrefixModeTooltip }}</div>
+                                                </n-tooltip>
+                                            </label>
                                             <n-select
                                                 v-if="isWritable"
                                                 :options="componentBranchPrefixModeOptions"
                                                 v-model:value="componentBranchPrefixModeModel" />
-                                            <n-input v-if="!isWritable" type="text" :value="componentBranchPrefixModeModel" readonly/>
+                                            <n-input v-if="!isWritable" type="text" :value="componentBranchPrefixModeLabel" readonly/>
                                             <span class="text-muted" style="display: block; margin-top: 4px;">{{ componentBranchPrefixModeEffective }}</span>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && myUser.installationType === 'SAAS'">
@@ -246,7 +254,7 @@
                                                 </template>
                                             </n-dynamic-input>
                                             <!-- div v-else>{{ resolvedVisibilityLabel }}</div -->
-                                            <n-button type="warning" style="margin-top:10px;" v-if="isWritable && updatedComponent.identifiers" @click="populateMissingComponentReleaseIdentifiers">Propagate To Releases With Missing Identifiers</n-button>
+                                            <n-button type="warning" style="margin-top:10px;" v-if="isWritable && updatedComponent.identifiers && updatedComponent.identifiers.length > 0" @click="populateMissingComponentReleaseIdentifiers">Propagate To Releases With Missing Identifiers</n-button>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && myUser.installationType !== 'OSS'">
                                             <label>Approval Policy</label>
@@ -644,7 +652,7 @@ import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle, Star, Eye } from '@vicons/tabler'
+import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle, Star, Eye, QuestionMark } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'
@@ -1848,12 +1856,32 @@ const showReleaseModal = function (rluuid: string) {
 
 const marketingVersionEnabled = ref(updatedComponent.value.versionType === 'MARKETING')
 
-const componentBranchPrefixModeOptions = [
-    { label: 'INHERIT — Use organization setting', value: 'INHERIT' },
-    { label: 'APPEND — Feature branches get namespace suffix (e.g., 1.2.3-feat_login)', value: 'APPEND' },
-    { label: 'NO_APPEND — No branch suffix; version conflicts resolved via -0, -1, -2...', value: 'NO_APPEND' },
-    { label: 'APPEND_EXCEPT_FOLLOW_VERSION — Append suffix unless branch has a "follow version" dependency', value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
-]
+const branchPrefixModeLabels: Record<string, string> = {
+    INHERIT: 'Inherit',
+    APPEND: 'Append',
+    NO_APPEND: 'Never Append',
+    APPEND_EXCEPT_FOLLOW_VERSION: 'Append Except when Following Version'
+}
+
+const componentBranchPrefixModeOptions = computed(() => {
+    const br = words.value?.branchFirstUpper || 'Branch'
+    return [
+        { label: `${branchPrefixModeLabels.INHERIT} (use organization setting)`, value: 'INHERIT' },
+        { label: branchPrefixModeLabels.APPEND, value: 'APPEND' },
+        { label: branchPrefixModeLabels.NO_APPEND, value: 'NO_APPEND' },
+        { label: branchPrefixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION, value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
+    ].map(o => ({ ...o, label: o.label.replace(/Branch/g, br) }))
+})
+
+const branchPrefixModeTooltip = computed((): string => {
+    const br = words.value?.branchFirstUpper || 'Branch'
+    return [
+        `${branchPrefixModeLabels.INHERIT}: use the organization default.`,
+        `${branchPrefixModeLabels.APPEND}: ${br.toLowerCase()}es get a namespace suffix (e.g., 1.2.3-feat_login).`,
+        `${branchPrefixModeLabels.NO_APPEND}: no ${br.toLowerCase()} suffix; version conflicts resolved via -0, -1, -2...`,
+        `${branchPrefixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION}: append suffix unless the ${br.toLowerCase()} has a "follow version" dependency.`
+    ].join('\n')
+})
 
 const componentBranchPrefixModeModel = computed({
     get (): string {
@@ -1865,19 +1893,20 @@ const componentBranchPrefixModeModel = computed({
     }
 })
 
+const componentBranchPrefixModeLabel = computed((): string => {
+    return branchPrefixModeLabels[componentBranchPrefixModeModel.value] || componentBranchPrefixModeModel.value
+})
+
 const componentBranchPrefixModeEffective = computed((): string => {
     const current = componentBranchPrefixModeModel.value
     if (current !== 'INHERIT') {
-        if (current === 'APPEND') return 'Feature branches get namespace suffix (e.g., 1.2.3-feat_login).'
-        if (current === 'NO_APPEND') return 'No branch suffix; version conflicts resolved via -0, -1, -2...'
-        if (current === 'APPEND_EXCEPT_FOLLOW_VERSION') return 'Appends branch suffix on most feature sets, but feature sets with a "follow version" dependency stay unprefixed.'
-        return ''
+        return `This ${(words.value?.component || 'component').toLowerCase()} uses: ${branchPrefixModeLabels[current]}.`
     }
     const orgMode = myorg.value?.settings?.branchPrefixMode
     if (orgMode && orgMode !== 'INHERIT') {
-        return `Currently inheriting: ${orgMode} from organization`
+        return `Currently inheriting: ${branchPrefixModeLabels[orgMode]} (from organization).`
     }
-    return 'Currently inheriting: APPEND (default)'
+    return `Currently inheriting: ${branchPrefixModeLabels.APPEND} (default).`
 })
 
 function toggleMarketingVersion (value: boolean) {

@@ -785,6 +785,7 @@ const BRANCH_GQL_DATA = `
         component {
             uuid
             name
+            type
         }
         branch {
             uuid

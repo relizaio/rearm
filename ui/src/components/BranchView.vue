@@ -1311,6 +1311,29 @@ const getRowClassName = (row: any) => {
     return ''
 }
 
+function resolveComponentHref (component: any, branch?: any): string | null {
+    if (!component?.uuid || !branchData.value?.org) return null
+    const routeName = component.type === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg'
+    const params: Record<string, string> = {
+        orguuid: branchData.value.org,
+        compuuid: component.uuid
+    }
+    if (branch?.uuid) params.branchuuid = branch.uuid
+    return router.resolve({ name: routeName, params }).href
+}
+
+function renderDependencyComponentLink (component: any, label: string) {
+    const href = resolveComponentHref(component)
+    if (!href) return label
+    return h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, label)
+}
+
+function renderDependencyBranchLink (component: any, branch: any, label: string) {
+    const href = resolveComponentHref(component, branch)
+    if (!href) return label
+    return h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, label)
+}
+
 const effectiveDepTableFields: DataTableColumns<any> = [
     {
         title: 'Component / Product',
@@ -1318,19 +1341,20 @@ const effectiveDepTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             const isNewlyAdded = newlyAddedDependencies.value.has(row.component?.uuid)
             const name = row.component?.name || 'Unknown'
-            
+            const link = renderDependencyComponentLink(row.component, name)
+
             if (isNewlyAdded) {
                 return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
-                    h('span', name),
-                    h(NTag, { 
-                        type: 'success', 
+                    link,
+                    h(NTag, {
+                        type: 'success',
                         size: 'small',
                         style: 'font-weight: bold;'
                     }, { default: () => 'NEW' })
                 ])
             }
-            
-            return name
+
+            return link
         }
     },
     {
@@ -1366,12 +1390,13 @@ const effectiveDepTableFields: DataTableColumns<any> = [
             }
             
             if (!row.branch) return 'Unknown'
-            
+
             const isExcluded = row.status === 'IGNORED'
-            
-            return h('span', { 
+            const link = renderDependencyBranchLink(row.component, row.branch, row.branch.name)
+
+            return h('span', {
                 style: isExcluded ? 'opacity: 0.5' : ''
-            }, row.branch.name)
+            }, [link])
         }
     },
     {
