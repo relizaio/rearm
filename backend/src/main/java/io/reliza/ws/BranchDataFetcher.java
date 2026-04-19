@@ -256,14 +256,15 @@ public class BranchDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "autoIntegrateFeatureSet")
-	public Boolean autoIntegrateFeatureSet(@InputArgument("branchUuid") UUID branchUuid) throws RelizaException {
+	public ReleaseData autoIntegrateFeatureSet(@InputArgument("branchUuid") UUID branchUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.WRITE);
-		releaseService.autoIntegrateFeatureSetOnDemand(obd.get());
-		return true;
+		return releaseService.autoIntegrateFeatureSetOnDemand(obd.get())
+				.flatMap(sharedReleaseService::getReleaseData)
+				.orElse(null);
 	}
 	
 	@DgsData(parentType = "Mutation", field = "setNextVersion")
@@ -505,6 +506,8 @@ public class BranchDataFetcher {
 			dep.put("component", comp);
 			dep.put("branch", branchData.get());
 			dep.put("status", tempPattern.getDefaultStatus());
+			dep.put("source", "PATTERN");
+			dep.put("sourcePattern", tempPattern);
 			log.info("Preview pattern: {} - status: {}", tempPattern.getPattern(), tempPattern.getDefaultStatus());
 			result.add(dep);
 		}

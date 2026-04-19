@@ -813,28 +813,28 @@ public class OssReleaseService {
 	 * @param orgUuid The organization UUID
 	 * @param parentReleases The parent releases to include in the product
 	 */
-	public void createProductRelease(BranchData featureSet, UUID orgUuid, Collection<ParentRelease> parentReleases) {
+	public Optional<UUID> createProductRelease(BranchData featureSet, UUID orgUuid, Collection<ParentRelease> parentReleases) {
 		// Determine version bump action
 		ActionEnum action = ActionEnum.BUMP;
 		try {
 			action = getLargestActionFromComponents(
-				featureSet.getComponent(), 
-				featureSet.getUuid(), 
+				featureSet.getComponent(),
+				featureSet.getUuid(),
 				new LinkedList<ParentRelease>(parentReleases)
 			);
 		} catch (RelizaException e1) {
 			log.error("Error calculating version action for feature set " + featureSet.getUuid() + ": " + e1.getMessage());
 		}
-		
+
 		// Get new version
 		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersion(
-			featureSet.getUuid(), 
-			action, 
-			null, 
+			featureSet.getUuid(),
+			action,
+			null,
 			null,
 			VersionTypeEnum.DEV
 		);
-		
+
 		// Build and create release
 		ReleaseDto releaseDto = ReleaseDto.builder()
 			.component(featureSet.getComponent())
@@ -845,11 +845,13 @@ public class OssReleaseService {
 			.version(ova.get().getVersion())
 			.parentReleases(new LinkedList<ParentRelease>(parentReleases))
 			.build();
-		
+
 		try {
-			createRelease(releaseDto, WhoUpdated.getAutoWhoUpdated());
+			Release created = createRelease(releaseDto, WhoUpdated.getAutoWhoUpdated());
+			return created != null ? Optional.of(created.getUuid()) : Optional.empty();
 		} catch (Exception e) {
 			log.error("Exception on creating programmatic release, feature set = " + featureSet.getUuid());
+			return Optional.empty();
 		}
 	}
 	
@@ -1188,7 +1190,6 @@ public class OssReleaseService {
 		ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.RELEASE_CREATED, ReleaseUpdateAction.ADDED, null, null, null,
 				ZonedDateTime.now(), wu);
 		rData.addUpdateEvent(rue);
-		Map<String,Object> recordData = Utils.dataToRecord(rData);
 
 		// consume or create version assignment
 		Optional<VersionAssignment> ova = versionAssignmentService.getVersionAssignment(rData.getComponent(), rData.getVersion());
@@ -1228,7 +1229,7 @@ public class OssReleaseService {
 				rData = ReleaseData.dataFromRecord(r);
 			}
 		} else if (ova.isPresent()) {
-			r = saveRelease(r, recordData, wu);
+			r = saveRelease(r, rData, wu);
 			rData = ReleaseData.dataFromRecord(r);
 			variantService.ensureBaseVariantForRelease(rData, wu);
 			VersionAssignment va = ova.get();
@@ -1237,7 +1238,7 @@ public class OssReleaseService {
 			versionAssignmentService.saveVersionAssignment(va);
 			handleNewReleaseNotifications(rData, bdOpt.get());
 		} else { // ova empty
-			r = saveRelease(r, recordData, wu);
+			r = saveRelease(r, rData, wu);
 			rData = ReleaseData.dataFromRecord(r);
 			variantService.ensureBaseVariantForRelease(rData, wu);
 			versionAssignmentService.createNewVersionAssignment(rData.getBranch(), rData.getVersion(), r.getUuid());

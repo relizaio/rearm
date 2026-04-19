@@ -1392,7 +1392,7 @@ public class ReleaseService {
 	public void saveAll(List<Release> releases){
 		repository.saveAll(releases);
 	}
-	public void autoIntegrateFeatureSetOnDemand (BranchData bd) {
+	public Optional<UUID> autoIntegrateFeatureSetOnDemand (BranchData bd) {
 		// check that status of this child project is not ignored
 		log.info("PSDEBUG: autointegrate feature set on demand for bd = " + bd.getUuid());
 		// Use effective dependencies which includes pattern-resolved dependencies
@@ -1441,8 +1441,9 @@ public class ReleaseService {
 		// If one of required projects does not have latest release, then we fail the process and don't yield anything there
 		if (requirementsMet) {
 			// create new product release using shared method
-			ossReleaseService.createProductRelease(bd, bd.getOrg(), parentReleases);
+			return ossReleaseService.createProductRelease(bd, bd.getOrg(), parentReleases);
 		}
+		return Optional.empty();
 	}
 	
 	public Optional<ReleaseData> getReleaseDataFromProgrammaticInput (ReleaseApprovalProgrammaticInput rapi) throws RelizaException {

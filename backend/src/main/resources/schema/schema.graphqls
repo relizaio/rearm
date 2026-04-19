@@ -193,7 +193,7 @@ type Mutation {
 	updateComponent(component: UpdateComponentInput!): Component
 	createBranch(componentUuid: ID!, name: String!, versionSchema: String): Branch
 	updateBranch(branch: BranchInput!): Branch
-	autoIntegrateFeatureSet(branchUuid: ID!): Boolean
+	autoIntegrateFeatureSet(branchUuid: ID!): Release
 	archiveBranch(branchUuid: ID!): Boolean
 	archiveComponent(componentUuid: ID!): Boolean
 	setNextVersion(branchUuid: ID!, versionString: String!, versionType: VersionType): Boolean
@@ -1774,7 +1774,7 @@ input ArtifactInput {
 	displayIdentifier: String
 	downloadLinks: [LinkInput]
 	inventoryTypes: [InventoryType]
-	bomFormat: String @deprecated(reason: "Deprecated: bomFormat is now auto-detected from file content. This field is optional and will be removed in a future version.")
+	bomFormat: String @deprecated(reason: "Auto-detected from file content when a file is uploaded. Still required for metadata-only BOM artifacts (type: BOM with downloadLinks but no uploaded file), since there is nothing local to inspect. Will be removed once download-link content inference is available.")
 	storedIn: String
 	tags: [TagRecordInput]
 	status: String
