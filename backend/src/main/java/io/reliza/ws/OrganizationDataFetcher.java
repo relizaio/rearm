@@ -28,6 +28,7 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
+import io.reliza.common.CommonVariables.BranchPrefixMode;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.exceptions.RelizaException;
@@ -315,9 +316,14 @@ public class OrganizationDataFetcher {
 		RelizaObject roSettings = odSettings.isPresent() ? odSettings.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roSettings), CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		
-		Boolean justificationMandatory = settings != null ? (Boolean) settings.get("justificationMandatory") : null;
-		return organizationService.updateSettings(orgUuid, justificationMandatory, wu);
+
+		OrganizationData.Settings settingsPatch = settings == null
+				? new OrganizationData.Settings()
+				: Utils.OM.convertValue(settings, OrganizationData.Settings.class);
+		if (settingsPatch.getBranchPrefixMode() == BranchPrefixMode.INHERIT) {
+			throw new RelizaException("INHERIT is not a valid branchPrefixMode for organization settings");
+		}
+		return organizationService.updateSettings(orgUuid, settingsPatch, wu);
 	}
 
 	@DgsData(parentType = "Organization", field = "type")

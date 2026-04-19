@@ -690,5 +690,23 @@ public class CommonVariables {
 		DEPLOYMENT,
 		ARCHIVAL;
 	}
-	
+
+	/**
+	 * Controls whether non-base branches append a branch-derived suffix to
+	 * semver, four-part, and calver versions.
+	 *
+	 * APPEND: append branch namespace to version (e.g., 1.2.3-feat_x)
+	 * NO_APPEND: do not append; rely on conflict suffix (-0, -1, ...) for collisions
+	 * APPEND_EXCEPT_FOLLOW_VERSION: append for all branches and feature sets, except
+	 *   those that have at least one dependency with the follow-version option enabled
+	 *   (treated as NO_APPEND for such branches)
+	 * INHERIT: component-level only; defer to organization setting
+	 */
+	public enum BranchPrefixMode {
+		APPEND,
+		NO_APPEND,
+		APPEND_EXCEPT_FOLLOW_VERSION,
+		INHERIT;
+	}
+
 }

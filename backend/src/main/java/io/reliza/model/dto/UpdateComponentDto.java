@@ -16,6 +16,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.BranchPrefixMode;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
@@ -101,7 +102,14 @@ public class UpdateComponentDto {
 	private List<TeaIdentifier> identifiers;
 	@JsonProperty
 	private ComponentAuthentication authentication;
-	
+
+	/**
+	 * Optional branch prefix mode override for this component.
+	 * Null = leave unchanged on update; INHERIT = clear override (defer to org).
+	 */
+	@JsonProperty
+	private BranchPrefixMode branchPrefixMode;
+
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
 			IntegrationType it) throws JsonMappingException, JsonProcessingException {
 		var builder = ReleaseOutputEvent.builder()
@@ -160,6 +168,7 @@ public class UpdateComponentDto {
 								.globalInputEventRefs(ucd.getGlobalInputEventRefs())
 								.identifiers(ucd.getIdentifiers())
 								.authentication(ucd.getAuthentication())
+								.branchPrefixMode(ucd.getBranchPrefixMode())
 								.build();
 		return cdto;
 	}

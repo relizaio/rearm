@@ -979,6 +979,9 @@ class VariableQueries {
 	
 	protected static final String FIND_VERSION_ASSIGNMENT_BY_COMPONENT_AND_VERSION = "SELECT * from rearm.version_assignments va "
 			+ "WHERE va.component = :componentUuid AND va.version = :version AND va.version_type = :versionType";
+
+	protected static final String FIND_VERSION_ASSIGNMENTS_BY_COMPONENT_AND_VERSION_LIKE = "SELECT * from rearm.version_assignments va "
+			+ "WHERE va.component = :componentUuid AND va.version_type = :versionType AND va.version LIKE :versionLike ESCAPE '\\'";
 	
 	protected static final String FIND_OPEN_VERSION_ASSIGNMENT_BY_BRANCH = "SELECT * from rearm.version_assignments va WHERE "
 			+ "va.branch = :branchUuid AND va.assignment_type = 'OPEN' AND va.version_type = :versionType";		

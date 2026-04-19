@@ -212,7 +212,7 @@ public class VulnAnalysisDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, createDto.getOrg(), ros, CallType.READ);
 		
 		// Validate justification is provided when org setting requires it
-		if (ood.isPresent() && ood.get().getSettingsWithDefaults().isJustificationMandatory()
+		if (ood.isPresent() && Boolean.TRUE.equals(ood.get().getSettingsWithDefaults().getJustificationMandatory())
 				&& createDto.getJustification() == null) {
 			throw new RelizaException("Justification is required by organization settings");
 		}
@@ -245,7 +245,7 @@ public class VulnAnalysisDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, existing.getOrg(), List.of(ro), CallType.READ);
 		
 		// Validate justification is provided when org setting requires it
-		if (ood.isPresent() && ood.get().getSettingsWithDefaults().isJustificationMandatory()
+		if (ood.isPresent() && Boolean.TRUE.equals(ood.get().getSettingsWithDefaults().getJustificationMandatory())
 				&& updateDto.getJustification() == null) {
 			throw new RelizaException("Justification is required by organization settings");
 		}

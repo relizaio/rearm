@@ -37,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.AuthorizationStatus;
+import io.reliza.common.CommonVariables.BranchPrefixMode;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.common.CommonVariables.StatusEnum;
@@ -572,15 +573,22 @@ public class OrganizationService {
 	}
 
 	/**
-	 * Updates organization settings
+	 * Updates organization settings from the given patch. Null fields on the patch are ignored
+	 * (leave the existing value unchanged). INHERIT on branchPrefixMode is invalid here.
+	 *
 	 * @param orgUuid organization UUID
-	 * @param justificationMandatory whether justification is mandatory for vulnerability analysis
+	 * @param settingsPatch settings patch; must be non-null (use an empty Settings for a no-op)
 	 * @param wu who updated
 	 * @return updated OrganizationData
 	 */
 	@Transactional
-	public OrganizationData updateSettings(@NonNull UUID orgUuid, Boolean justificationMandatory, @NonNull WhoUpdated wu) {
+	public OrganizationData updateSettings(@NonNull UUID orgUuid, @NonNull OrganizationData.Settings settingsPatch,
+			@NonNull WhoUpdated wu) {
 		try {
+			BranchPrefixMode branchPrefixMode = settingsPatch.getBranchPrefixMode();
+			if (branchPrefixMode == BranchPrefixMode.INHERIT) {
+				throw new IllegalArgumentException("INHERIT is not a valid branchPrefixMode for organization settings");
+			}
 			OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
 					.orElseThrow(() -> new IllegalArgumentException("Organization not found: " + orgUuid));
 			
@@ -589,11 +597,15 @@ public class OrganizationService {
 			if (settings == null) {
 				settings = new OrganizationData.Settings();
 			}
-			
-			if (justificationMandatory != null) {
-				settings.setJustificationMandatory(justificationMandatory);
+
+			if (settingsPatch.getJustificationMandatory() != null) {
+				settings.setJustificationMandatory(settingsPatch.getJustificationMandatory());
 			}
-			
+
+			if (branchPrefixMode != null) {
+				settings.setBranchPrefixMode(branchPrefixMode);
+			}
+
 			od.setSettings(settings);
 			
 			Organization org = getOrganizationService.getOrganization(orgUuid)

@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ApprovalRole;
+import io.reliza.common.CommonVariables.BranchPrefixMode;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionType;
@@ -50,9 +51,23 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	@Data
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class Settings {
+		/**
+		 * Whether justification is mandatory for vulnerability analysis.
+		 * Nullable so that settings patches can distinguish "leave unchanged" (null) from
+		 * "explicitly set". Treated as false when null.
+		 */
 		@JsonProperty
-		private boolean justificationMandatory = false;
-		
+		private Boolean justificationMandatory;
+
+		/**
+		 * Controls whether non-base branches append a branch-derived suffix
+		 * to semver, four-part, and calver versions.
+		 * Nullable; null is treated as APPEND at resolution time.
+		 * INHERIT is not a valid value for organization-level settings.
+		 */
+		@JsonProperty
+		private BranchPrefixMode branchPrefixMode;
+
 		public static Settings getDefault() {
 			return new Settings();
 		}

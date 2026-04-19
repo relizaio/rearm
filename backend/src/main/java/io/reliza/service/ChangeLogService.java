@@ -64,6 +64,7 @@ import io.reliza.model.changelog.CommitBody;
 import io.reliza.model.changelog.CommitFooter;
 import io.reliza.model.changelog.CommitMessage;
 import io.reliza.model.changelog.ConventionalCommit;
+import io.reliza.versioning.VersionApi;
 import io.reliza.model.changelog.entry.AggregationType;
 import io.reliza.dto.FindingChangesRecord;
 import io.reliza.model.dto.ReleaseMetricsDto;
@@ -231,7 +232,10 @@ public class ChangeLogService {
 		if (StringUtils.isEmpty(commit)) {
 			return null;
 		}
-		
+		if (!VersionApi.isConventionalCommit(commit)) {
+			return null;
+		}
+
 		String[] commitMessageArray = commit.split(CommitMatcherUtil.LINE_SEPARATOR);
 		
 		if (commitMessageArray.length == 1) {

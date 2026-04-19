@@ -11,6 +11,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.BranchPrefixMode;
 import io.reliza.model.ComponentData.DefaultBranchName;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.tea.TeaIdentifier;
@@ -53,4 +54,10 @@ public class CreateComponentDto {
 	private Boolean includeApi; // to create api key right away
 	
 	private String repoPath; // Repository path for monorepo component disambiguation
+
+	/**
+	 * Optional branch prefix mode override for this component.
+	 * Null or INHERIT = inherit from organization setting.
+	 */
+	private BranchPrefixMode branchPrefixMode;
 }

@@ -389,6 +389,7 @@ type Component {
 	identifiers: [Identifier]
 	repoPath: String
 	authentication: ComponentAuthentication
+	branchPrefixMode: BranchPrefixMode
 	globalInputEventRefs: [GlobalInputEventRef]
 	perspectiveDetails: [Perspective]
 }
@@ -449,6 +450,23 @@ type IgnoreViolation {
 
 type Settings {
 	justificationMandatory: Boolean
+	branchPrefixMode: BranchPrefixMode
+}
+
+"""
+Controls whether non-base branches append a branch-derived suffix to
+semver, four-part, and calver versions.
+- APPEND: append branch namespace (e.g., 1.2.3-feat_x)
+- NO_APPEND: do not append; conflicts resolved via -0, -1, ... suffix
+- APPEND_EXCEPT_FOLLOW_VERSION: append for all branches and feature sets,
+  except those with at least one follow-version dependency (treated as NO_APPEND for such branches)
+- INHERIT: component-level only; defer to organization setting. Not valid at organization level.
+"""
+enum BranchPrefixMode {
+	APPEND
+	NO_APPEND
+	APPEND_EXCEPT_FOLLOW_VERSION
+	INHERIT
 }
 
 type AdminOrganization {
@@ -1571,6 +1589,7 @@ input IgnoreViolationInput {
 
 input SettingsInput {
 	justificationMandatory: Boolean
+	branchPrefixMode: BranchPrefixMode
 }
 
 input PermissionInput {
@@ -1597,6 +1616,7 @@ input CreateComponentInput {
 	approvalPolicy: ID
 	identifiers: [IdentifierInput]
 	repoPath: String
+	branchPrefixMode: BranchPrefixMode
 }
 
 input UpdateComponentInput {
@@ -1615,6 +1635,7 @@ input UpdateComponentInput {
 	identifiers: [IdentifierInput]
 	repoPath: String
 	authentication: ComponentAuthenticationInput
+	branchPrefixMode: BranchPrefixMode
 }
 
 input GlobalInputEventRefInput {

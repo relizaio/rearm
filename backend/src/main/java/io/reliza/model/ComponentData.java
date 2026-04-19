@@ -15,6 +15,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ApprovalState;
+import io.reliza.common.CommonVariables.BranchPrefixMode;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.VisibilitySetting;
 import io.reliza.common.Utils;
@@ -225,7 +226,14 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	
 	@JsonProperty
 	private ComponentAuthentication authentication;
-	
+
+	/**
+	 * Component-level override for branch prefix mode. Nullable.
+	 * null or INHERIT means "inherit from organization setting".
+	 */
+	@JsonProperty
+	private BranchPrefixMode branchPrefixMode;
+
 	public List<TeaIdentifier> getIdentifiers () {
 		return new LinkedList<>(this.identifiers);
 	}
@@ -245,6 +253,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		if (null != cpd.getIdentifiers()) cd.setIdentifiers(cpd.getIdentifiers());
 		if (null != cpd.getKind()) cd.setKind(cpd.getKind());
 		if (null != cpd.getRepoPath()) cd.setRepoPath(cpd.getRepoPath());
+		if (null != cpd.getBranchPrefixMode()) cd.setBranchPrefixMode(cpd.getBranchPrefixMode());
 		return cd;
 	}
 	

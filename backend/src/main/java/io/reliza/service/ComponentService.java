@@ -331,6 +331,11 @@ public class ComponentService {
 				cd.setStatus(cdto.getStatus());
 			}
 			if (null != cdto.getIdentifiers()) cd.setIdentifiers(cdto.getIdentifiers());
+			if (null != cdto.getBranchPrefixMode()) {
+				// INHERIT clears the override (defers to org setting) — store as null for a cleaner record
+				cd.setBranchPrefixMode(cdto.getBranchPrefixMode() == io.reliza.common.CommonVariables.BranchPrefixMode.INHERIT
+						? null : cdto.getBranchPrefixMode());
+			}
 			Map<String,Object> componentData = Utils.dataToRecord(cd);
 			comp = saveComponent(comp, componentData, wu);
 		}

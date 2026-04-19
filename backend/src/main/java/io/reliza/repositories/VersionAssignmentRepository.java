@@ -40,6 +40,11 @@ public interface VersionAssignmentRepository extends CrudRepository<VersionAssig
 			nativeQuery = true)
 	Optional<VersionAssignment> findVersionAssignmentByComponentAndVersion(UUID componentUuid, String version, String versionType);
 
+	@Query(
+			value = VariableQueries.FIND_VERSION_ASSIGNMENTS_BY_COMPONENT_AND_VERSION_LIKE,
+			nativeQuery = true)
+	List<VersionAssignment> findVersionAssignmentsByComponentAndVersionLike(UUID componentUuid, String versionType, String versionLike);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query(value = "SELECT va from VersionAssignment va WHERE branch = :branchUuid AND assignmentType = 'OPEN' AND versionType = :versionType")
 	Optional<VersionAssignment> findOPENVersionAssignmentByBranch(UUID branchUuid, String versionType);

@@ -16,10 +16,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.CommonVariables.BranchPrefixMode;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.ComponentData;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VersionAssignment;
 import io.reliza.model.VersionAssignment.AssignmentTypeEnum;
@@ -29,6 +31,7 @@ import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.repositories.VersionAssignmentRepository;
 import io.reliza.versioning.Version;
+import io.reliza.versioning.Version.ModifierPolicy;
 import io.reliza.versioning.VersionApi.ActionEnum;
 import io.reliza.versioning.VersionUtils;
 
@@ -37,7 +40,10 @@ public class VersionAssignmentService {
 
 	@Autowired
     private GetComponentService getComponentService;
-	
+
+	@Autowired
+    private GetOrganizationService getOrganizationService;
+
 	@Autowired
     private BranchService branchService;
 	
@@ -230,16 +236,19 @@ public class VersionAssignmentService {
 		}
 
 		// Fallback: retries exhausted but version still collides (e.g. follow-version pin hasn't changed so the
-		// library keeps producing the same string, e.g. "0.0.28-fs1"). Find the highest existing ".N" counter
-		// already in use and try the next one, up to 5 attempts.
+		// library keeps producing the same string, or branch prefix is disabled causing collisions across
+		// feature branches of the same component). Scan component-wide for existing "baseVersion-N" entries
+		// (strictly numeric suffix, no further dots/dashes) and pick the next counter. Counter starts at 0
+		// ("1.2.3-0", "1.2.3-1", ...). Up to 5 attempts after the scanned maximum.
 		if (getVersionAssignment(pd.getUuid(), versionString, versionType).isPresent()) {
 			final String baseVersion = versionString;
-			List<VersionAssignment> branchVas = repository.findLatestVersionAssignmentsWithLimit(
-					bd.getUuid(), versionType.name(), 50);
+			String likePattern = escapeForLike(baseVersion) + "-%";
+			List<VersionAssignment> existingVas = repository.findVersionAssignmentsByComponentAndVersionLike(
+					pd.getUuid(), versionType.name(), likePattern);
 			int maxSuffix = -1;
-			for (VersionAssignment existing : branchVas) {
+			for (VersionAssignment existing : existingVas) {
 				String ev = existing.getVersion();
-				if (ev != null && ev.startsWith(baseVersion + ".")) {
+				if (ev != null && ev.startsWith(baseVersion + "-")) {
 					String suffix = ev.substring(baseVersion.length() + 1);
 					try {
 						int n = Integer.parseInt(suffix);
@@ -251,7 +260,7 @@ public class VersionAssignmentService {
 			int limit = counter + 5;
 			boolean found = false;
 			while (counter < limit) {
-				String candidate = baseVersion + "." + counter;
+				String candidate = baseVersion + "-" + counter;
 				if (getVersionAssignment(pd.getUuid(), candidate, versionType).isEmpty()) {
 					versionString = candidate;
 					found = true;
@@ -260,7 +269,7 @@ public class VersionAssignmentService {
 				counter++;
 			}
 			if (!found) {
-				log.error("Could not find free version after 5 counter attempts for branch {}, base version {}", bd.getUuid(), baseVersion);
+				log.error("Could not find free version after 5 counter attempts for component {}, base version {}", pd.getUuid(), baseVersion);
 			}
 		}
 
@@ -288,21 +297,22 @@ public class VersionAssignmentService {
 			ActionEnum bumpAction, String modifier, String metadata, String followedVersion) {
 		Version v = null;
 		String namespace = computeNamespaceForBranch(branchSchema, bd);
+		ModifierPolicy modifierPolicy = resolveModifierPolicy(bd, branchSchema, namespace);
 		if (StringUtils.isNotEmpty(followedVersion) && latestOva.isPresent() && VersionUtils.isVersionMatchingSchemaAndPin(branchSchema, followedVersion, latestOva.get().getVersion())) {
 			log.debug("followedVersion = " + followedVersion + ", latestOvaVersion = " + latestOva.get().getVersion());
-			v = Version.getVersionFromPinAndOldVersion(branchSchema, followedVersion, latestOva.get().getVersion(), bumpAction, namespace);
+			v = Version.getVersionFromPinAndOldVersion(branchSchema, followedVersion, latestOva.get().getVersion(), bumpAction, namespace, modifierPolicy);
 		} else if (StringUtils.isNotEmpty(followedVersion)) {
 			v = Version.getVersionFromPin(branchSchema, followedVersion, namespace);
 		} else if (latestOva.isPresent() && VersionUtils.isVersionMatchingSchemaAndPin(projectSchema, branchSchema, latestOva.get().getVersion())) {
 			// use this latest version assignment, schema and pin to generate new one
-			v = Version.getVersionFromPinAndOldVersion(projectSchema, branchSchema, latestOva.get().getVersion(), bumpAction, namespace);
+			v = Version.getVersionFromPinAndOldVersion(projectSchema, branchSchema, latestOva.get().getVersion(), bumpAction, namespace, modifierPolicy);
 		} else if (VersionUtils.isPinMatchingSchema(projectSchema, branchSchema)){
 			// try to generate new version based on schema and pin
 			v = Version.getVersionFromPin(projectSchema, branchSchema, namespace);
 		} else if (latestOva.isPresent() && VersionUtils.isVersionMatchingSchema(branchSchema, latestOva.get().getVersion())) {
 			// prev version is matching branch
 			// generate version based on this branch only and prev version
-			v = Version.getVersionFromPinAndOldVersion(branchSchema, branchSchema, latestOva.get().getVersion(), bumpAction, namespace);
+			v = Version.getVersionFromPinAndOldVersion(branchSchema, branchSchema, latestOva.get().getVersion(), bumpAction, namespace, modifierPolicy);
 		} else {
 			// generate version solely based on this branch pin
 			v = Version.getVersion(branchSchema);
@@ -315,6 +325,24 @@ public class VersionAssignmentService {
 		return v.constructVersionString();
 	}
 
+	/**
+	 * Decides which {@link ModifierPolicy} to pass to the versioning library.
+	 * CLEAR when the branch is a non-base, prefix-eligible schema and the caller
+	 * has opted out of appending a branch prefix — prevents a sibling branch's
+	 * prefix modifier from leaking into the new version.
+	 */
+	private ModifierPolicy resolveModifierPolicy(BranchData bd, String branchSchema, String namespace) {
+		if (StringUtils.isNotEmpty(namespace)) {
+			return ModifierPolicy.USE_NAMESPACE;
+		}
+		if (bd.getType() != BranchType.BASE
+				&& isPrefixEligibleSchema(branchSchema)
+				&& !shouldAppendBranchPrefix(bd)) {
+			return ModifierPolicy.CLEAR;
+		}
+		return ModifierPolicy.INHERIT;
+	}
+
 	private String computeNamespaceForBranch(String branchSchema, BranchData bd) {
 		if (bd.getType() == BranchType.BASE) {
 			return null;
@@ -322,10 +350,52 @@ public class VersionAssignmentService {
 		if (StringUtils.isEmpty(branchSchema)) {
 			return null;
 		}
-		if (VersionUtils.isSchemaSemver(branchSchema) || VersionUtils.isSchemaFourPartVersioning(branchSchema) || VersionUtils.isSchemaCalver(branchSchema)) {
+		if (isPrefixEligibleSchema(branchSchema)) {
+			if (!shouldAppendBranchPrefix(bd)) {
+				return null;
+			}
 			return bd.getName().toLowerCase().replaceAll("[^a-z0-9]", "_");
 		}
 		return null;
+	}
+
+	private static boolean isPrefixEligibleSchema(String branchSchema) {
+		return StringUtils.isNotEmpty(branchSchema)
+				&& (VersionUtils.isSchemaSemver(branchSchema)
+						|| VersionUtils.isSchemaFourPartVersioning(branchSchema)
+						|| VersionUtils.isSchemaCalver(branchSchema));
+	}
+
+	/**
+	 * Resolves the effective branch-prefix-append setting for the component/org of the given branch.
+	 * Resolution: component override (if not INHERIT) > org setting > default APPEND.
+	 * APPEND_EXCEPT_FOLLOW_VERSION behaves like NO_APPEND when the branch has at least one
+	 * follow-version dependency, otherwise behaves like APPEND.
+	 */
+	private boolean shouldAppendBranchPrefix(BranchData bd) {
+		BranchPrefixMode effective = null;
+		Optional<ComponentData> ocd = getComponentService.getComponentData(bd.getComponent());
+		if (ocd.isPresent()) {
+			BranchPrefixMode comp = ocd.get().getBranchPrefixMode();
+			if (comp != null && comp != BranchPrefixMode.INHERIT) {
+				effective = comp;
+			}
+		}
+		if (effective == null) {
+			Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(bd.getOrg());
+			if (ood.isPresent() && ood.get().getSettings() != null) {
+				effective = ood.get().getSettings().getBranchPrefixMode();
+			}
+		}
+		if (effective == null) {
+			return true; // default APPEND
+		}
+		return switch (effective) {
+			case APPEND -> true;
+			case NO_APPEND -> false;
+			case APPEND_EXCEPT_FOLLOW_VERSION -> bd.getFollowedVersionComponent().isEmpty();
+			case INHERIT -> true; // should not happen at org level; treat as default
+		};
 	}
 	
 	public VersionAssignment saveVersionAssignment (VersionAssignment va) {
@@ -452,6 +522,16 @@ public class VersionAssignmentService {
 
 	public void saveAll(List<VersionAssignment> versionAssignments){
 		repository.saveAll(versionAssignments);
+	}
+
+	/**
+	 * Escapes SQL LIKE wildcard characters ('%', '_') and the escape character ('\')
+	 * so that the input string can be used as a literal prefix in a LIKE pattern
+	 * with {@code ESCAPE '\'}.
+	 */
+	private static String escapeForLike(String s) {
+		if (s == null) return "";
+		return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
 	}
 
 	public record GetNewVersionDto(
