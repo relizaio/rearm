@@ -186,7 +186,7 @@
                         @click="showAddComponentModal = true" title="Add Dependency" size="20" style="margin-left: 4px; vertical-align: middle;">
                         <CirclePlus />
                     </n-icon>
-                    <n-icon v-if="isWritable && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable"
+                    <n-icon v-if="isWritable && branchData.autoIntegrate === 'ENABLED' && modifiedBranch.autoIntegrate === 'ENABLED'" class="clickable"
                         @click="triggerAutoIntegrate" title="Trigger Auto Integrate" size="20" style="margin-left: 4px; vertical-align: middle;">
                         <TrendingUp />
                     </n-icon>
@@ -645,17 +645,25 @@ const createFsFromRelease = async function(){
 }
 
 async function triggerAutoIntegrate () {
-    await graphqlClient.mutate({
+    const resp = await graphqlClient.mutate({
         mutation: gql`
             mutation autoIntegrateFeatureSet($branchUuid: ID!) {
-                autoIntegrateFeatureSet(branchUuid: $branchUuid)
+                autoIntegrateFeatureSet(branchUuid: $branchUuid) {
+                    uuid
+                    version
+                }
             }`,
         variables: { branchUuid: branchUuid.value },
         fetchPolicy: 'no-cache'
     })
-    notify('success', 'Success', 'Auto Integrate Triggered')
+    const release = (resp.data as any)?.autoIntegrateFeatureSet
     await onCreated()
-    showBranchSettingsModal.value = false
+    if (release && release.version) {
+        notify('success', 'Auto Integrate Completed', `Release ${release.version} was created via auto-integration.`)
+        showBranchSettingsModal.value = false
+    } else {
+        notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
+    }
 }
 
 const openBranchSettings = function() {
