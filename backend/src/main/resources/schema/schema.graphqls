@@ -1730,7 +1730,6 @@ input TagRecordInput {
 }
 
 input DeliverableInput {
-	name: String
 	displayIdentifier: String
 	branch: ID
 	type: CdxType
