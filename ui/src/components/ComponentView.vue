@@ -183,6 +183,15 @@
                                             <n-input v-if="isWritable" v-model:value="updatedComponent.featureBranchVersioning" />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.featureBranchVersioning" readonly/>
                                         </div>
+                                        <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
+                                            <label>Branch Prefix Mode</label>
+                                            <n-select
+                                                v-if="isWritable"
+                                                :options="componentBranchPrefixModeOptions"
+                                                v-model:value="componentBranchPrefixModeModel" />
+                                            <n-input v-if="!isWritable" type="text" :value="componentBranchPrefixModeModel" readonly/>
+                                            <span class="text-muted" style="display: block; margin-top: 4px;">{{ componentBranchPrefixModeEffective }}</span>
+                                        </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && myUser.installationType === 'SAAS'">
                                             <label  id="componentKindLabel" for="componentKind">Component Kind</label>
                                             <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" clearable />
@@ -1583,6 +1592,7 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         updatedComponent.value.versionType !== componentData.value.versionType ||
         updatedComponent.value.marketingVersionSchema !== componentData.value.marketingVersionSchema ||
         updatedComponent.value.featureBranchVersioning !== componentData.value.featureBranchVersioning ||
+        (updatedComponent.value.branchPrefixMode || null) !== (componentData.value.branchPrefixMode || null) ||
         updatedComponent.value.defaultConfig !== componentData.value.defaultConfig ||
         updatedComponent.value.repoPath !== componentData.value.repoPath ||
         updatedComponent.value.vcs !== componentData.value.vcs ||
@@ -1599,6 +1609,7 @@ function resetCoreSettings() {
     updatedComponent.value.versionType = componentData.value.versionType
     updatedComponent.value.marketingVersionSchema = componentData.value.marketingVersionSchema
     updatedComponent.value.featureBranchVersioning = componentData.value.featureBranchVersioning
+    updatedComponent.value.branchPrefixMode = componentData.value.branchPrefixMode
     updatedComponent.value.defaultConfig = componentData.value.defaultConfig
     updatedComponent.value.repoPath = componentData.value.repoPath
     updatedComponent.value.vcs = componentData.value.vcs
@@ -1836,6 +1847,38 @@ const showReleaseModal = function (rluuid: string) {
 }
 
 const marketingVersionEnabled = ref(updatedComponent.value.versionType === 'MARKETING')
+
+const componentBranchPrefixModeOptions = [
+    { label: 'INHERIT — Use organization setting', value: 'INHERIT' },
+    { label: 'APPEND — Feature branches get namespace suffix (e.g., 1.2.3-feat_login)', value: 'APPEND' },
+    { label: 'NO_APPEND — No branch suffix; version conflicts resolved via -0, -1, -2...', value: 'NO_APPEND' },
+    { label: 'APPEND_EXCEPT_FOLLOW_VERSION — Append suffix unless branch has a "follow version" dependency', value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
+]
+
+const componentBranchPrefixModeModel = computed({
+    get (): string {
+        return updatedComponent.value?.branchPrefixMode || 'INHERIT'
+    },
+    set (v: string) {
+        if (!updatedComponent.value) return
+        updatedComponent.value.branchPrefixMode = v === 'INHERIT' ? null : v
+    }
+})
+
+const componentBranchPrefixModeEffective = computed((): string => {
+    const current = componentBranchPrefixModeModel.value
+    if (current !== 'INHERIT') {
+        if (current === 'APPEND') return 'Feature branches get namespace suffix (e.g., 1.2.3-feat_login).'
+        if (current === 'NO_APPEND') return 'No branch suffix; version conflicts resolved via -0, -1, -2...'
+        if (current === 'APPEND_EXCEPT_FOLLOW_VERSION') return 'Appends branch suffix on most feature sets, but feature sets with a "follow version" dependency stay unprefixed.'
+        return ''
+    }
+    const orgMode = myorg.value?.settings?.branchPrefixMode
+    if (orgMode && orgMode !== 'INHERIT') {
+        return `Currently inheriting: ${orgMode} from organization`
+    }
+    return 'Currently inheriting: APPEND (default)'
+})
 
 function toggleMarketingVersion (value: boolean) {
     if(value){

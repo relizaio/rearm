@@ -941,13 +941,23 @@
                 <div class="adminSettingsBlock mt-4">
                     <h5>Finding Analysis Settings</h5>
                     <p class="text-muted">Configure requirements for vulnerability finding analysis creation.</p>
-                    
+
                     <n-form>
                         <n-form-item label="Justification Mandatory">
                             <n-switch v-model:value="orgSettings.justificationMandatory" />
                             <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
                         </n-form-item>
-                        
+
+                        <n-form-item label="Branch Prefix Mode">
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-select
+                                    v-model:value="orgSettings.branchPrefixMode"
+                                    :options="orgBranchPrefixModeOptions"
+                                    style="max-width: 480px;" />
+                                <span class="text-muted" style="margin-top: 4px;">{{ branchPrefixHelpText(orgSettings.branchPrefixMode) }}</span>
+                            </div>
+                        </n-form-item>
+
                         <n-space>
                             <n-button type="primary" @click="saveOrgSettings" :loading="savingOrgSettings">
                                 Save Settings
@@ -1184,8 +1194,22 @@ const savingIgnoreViolation = ref(false)
 
 // Admin Settings - Organization Settings
 const orgSettings = reactive({
-    justificationMandatory: false
+    justificationMandatory: false,
+    branchPrefixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION'
 })
+
+const orgBranchPrefixModeOptions = [
+    { label: 'APPEND — Feature branches get namespace suffix (e.g., 1.2.3-feat_login)', value: 'APPEND' },
+    { label: 'NO_APPEND — No branch suffix; version conflicts resolved via -0, -1, -2...', value: 'NO_APPEND' },
+    { label: 'APPEND_EXCEPT_FOLLOW_VERSION — Append suffix unless branch has a "follow version" dependency', value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
+]
+
+function branchPrefixHelpText (mode: string): string {
+    if (mode === 'APPEND') return 'Feature branches get namespace suffix (e.g., 1.2.3-feat_login).'
+    if (mode === 'NO_APPEND') return 'No branch suffix; version conflicts are resolved via -0, -1, -2...'
+    if (mode === 'APPEND_EXCEPT_FOLLOW_VERSION') return 'Appends branch suffix on most feature sets, but feature sets with a "follow version" dependency stay unprefixed to align with their upstream.'
+    return ''
+}
 const savingOrgSettings = ref(false)
 
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
@@ -3058,6 +3082,7 @@ async function saveIgnoreViolation() {
 async function loadOrgSettings() {
     const s = myorg.value?.settings
     orgSettings.justificationMandatory = s?.justificationMandatory || false
+    orgSettings.branchPrefixMode = (s?.branchPrefixMode && s.branchPrefixMode !== 'INHERIT') ? s.branchPrefixMode : 'APPEND'
 }
 
 async function saveOrgSettings() {
@@ -3079,13 +3104,15 @@ async function saveOrgSettings() {
                         }
                         settings {
                             justificationMandatory
+                            branchPrefixMode
                         }
                     }
                 }`,
             variables: {
                 orgUuid: orgResolved.value,
                 settings: {
-                    justificationMandatory: orgSettings.justificationMandatory
+                    justificationMandatory: orgSettings.justificationMandatory,
+                    branchPrefixMode: orgSettings.branchPrefixMode
                 }
             },
             fetchPolicy: 'no-cache'
