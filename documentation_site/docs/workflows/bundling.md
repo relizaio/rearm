@@ -45,6 +45,20 @@ When a component matches both a dependency pattern and has a manual entry, the *
 
 Editing a pattern-matched dependency automatically creates a manual entry for that component, which then overrides the pattern-matched version. This effectively converts the pattern-matched dependency to manual while the pattern continues to exist and may match other components.
 
+### Branch Suffix Mode
+When ReARM auto-integrates a non-base Feature Set, by default it appends the Feature Set name as a suffix to the resolved version (e.g., `1.2.3-feat_login`). *Branch Suffix Mode* controls this suffix behavior. It can be set at two levels:
+
+1. **Organization level** - configured under `Admin Settings → Admin Settings → Branch Suffix Mode`. This sets the default for all Components in the organization.
+2. **Component / Product level** - configured on the Component or Product settings screen. Each Component or Product can override the organization default or inherit it.
+
+Available modes:
+- **Inherit** (Component or Product level only) - use the organization default.
+- **Append** - always append the Feature Set name suffix to non-base releases (e.g., `1.2.3-feat_login`). This is the default behavior.
+- **Never Append** - never append a Feature Set suffix. Version conflicts with the Base Feature Set are resolved by appending `-0`, `-1`, `-2`, etc.
+- **Append Except when Following Version** - append the suffix unless the Feature Set has a dependency marked as *Follow Version*; in that case, the followed version is used as-is without a suffix.
+
+The per-Component / per-Product setting also shows the currently effective mode (either the explicit Component/Product value, or the inherited organization value). When no organization setting is configured, the system default is *Append*.
+
 ### Enable Auto-Integrate
 Once all dependencies are configured, switch *Auto Integrate* selector to *ENABLED*. This ensures that any new incoming component release matching your patterns or manual dependencies will trigger creation of a new version of this *Product*.
 
