@@ -1,8 +1,8 @@
-FROM ghcr.io/cyclonedx/cdxgen:v12.0.0@sha256:8b2c6973fa0cb1f1277838b383dfe2b83cdd246be88ac98dbc1be63cce8502ce AS sbom-stage
+FROM ghcr.io/cyclonedx/cdxgen:v12.2.0@sha256:2bec9267cdffa2f8ecfadcfc186f9a2d25e89c4088f79b5a683ec33171ef1fc3 AS sbom-stage
 ARG VERSION
 USER root
 RUN mkdir /sbom && chown cyclonedx:cyclonedx /sbom
 USER cyclonedx
 WORKDIR /app
 COPY . .
-RUN export FETCH_LICENSE=true && cdxgen ./ -t go --project-version $VERSION -o /sbom/sbom.json
+RUN export FETCH_LICENSE=true && cdxgen ./ -t go --project-version $VERSION --spec-version 1.6 -o /sbom/sbom.json
