@@ -35,7 +35,7 @@ RUN sed -i "s,Version_Managed_By_CI_AND_Reliza,$VERSION," pom.xml
 
 RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B clean package spring-boot:repackage && cp target/*.jar application.jar && java -Djarmode=layertools -jar application.jar extract
 
-FROM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS artifact-stage
+FROM alpine:3.23.4@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 AS artifact-stage
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 COPY --from=jre-build /javaruntime $JAVA_HOME
