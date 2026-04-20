@@ -185,20 +185,20 @@
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData">
                                             <label style="display: flex; align-items: center; gap: 6px;">
-                                                <span>{{ words.branchFirstUpper }} Prefix Mode</span>
+                                                <span>{{ words.branchFirstUpper }} Suffix Mode</span>
                                                 <n-tooltip trigger="hover" placement="right">
                                                     <template #trigger>
                                                         <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
                                                     </template>
-                                                    <div style="max-width: 700px; white-space: pre-line;">{{ branchPrefixModeTooltip }}</div>
+                                                    <div style="max-width: 700px; white-space: pre-line;">{{ branchSuffixModeTooltip }}</div>
                                                 </n-tooltip>
                                             </label>
                                             <n-select
                                                 v-if="isWritable"
-                                                :options="componentBranchPrefixModeOptions"
-                                                v-model:value="componentBranchPrefixModeModel" />
-                                            <n-input v-if="!isWritable" type="text" :value="componentBranchPrefixModeLabel" readonly/>
-                                            <span class="text-muted" style="display: block; margin-top: 4px;">{{ componentBranchPrefixModeEffective }}</span>
+                                                :options="componentBranchSuffixModeOptions"
+                                                v-model:value="componentBranchSuffixModeModel" />
+                                            <n-input v-if="!isWritable" type="text" :value="componentBranchSuffixModeLabel" readonly/>
+                                            <span class="text-muted" style="display: block; margin-top: 4px;">{{ componentBranchSuffixModeEffective }}</span>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && myUser.installationType === 'SAAS'">
                                             <label  id="componentKindLabel" for="componentKind">Component Kind</label>
@@ -1600,7 +1600,7 @@ const hasCoreSettingsChanges: ComputedRef<boolean> = computed((): boolean => {
         updatedComponent.value.versionType !== componentData.value.versionType ||
         updatedComponent.value.marketingVersionSchema !== componentData.value.marketingVersionSchema ||
         updatedComponent.value.featureBranchVersioning !== componentData.value.featureBranchVersioning ||
-        (updatedComponent.value.branchPrefixMode || null) !== (componentData.value.branchPrefixMode || null) ||
+        (updatedComponent.value.branchSuffixMode || null) !== (componentData.value.branchSuffixMode || null) ||
         updatedComponent.value.defaultConfig !== componentData.value.defaultConfig ||
         updatedComponent.value.repoPath !== componentData.value.repoPath ||
         updatedComponent.value.vcs !== componentData.value.vcs ||
@@ -1617,7 +1617,7 @@ function resetCoreSettings() {
     updatedComponent.value.versionType = componentData.value.versionType
     updatedComponent.value.marketingVersionSchema = componentData.value.marketingVersionSchema
     updatedComponent.value.featureBranchVersioning = componentData.value.featureBranchVersioning
-    updatedComponent.value.branchPrefixMode = componentData.value.branchPrefixMode
+    updatedComponent.value.branchSuffixMode = componentData.value.branchSuffixMode
     updatedComponent.value.defaultConfig = componentData.value.defaultConfig
     updatedComponent.value.repoPath = componentData.value.repoPath
     updatedComponent.value.vcs = componentData.value.vcs
@@ -1856,57 +1856,57 @@ const showReleaseModal = function (rluuid: string) {
 
 const marketingVersionEnabled = ref(updatedComponent.value.versionType === 'MARKETING')
 
-const branchPrefixModeLabels: Record<string, string> = {
+const branchSuffixModeLabels: Record<string, string> = {
     INHERIT: 'Inherit',
     APPEND: 'Append',
     NO_APPEND: 'Never Append',
     APPEND_EXCEPT_FOLLOW_VERSION: 'Append Except when Following Version'
 }
 
-const componentBranchPrefixModeOptions = computed(() => {
+const componentBranchSuffixModeOptions = computed(() => {
     const br = words.value?.branchFirstUpper || 'Branch'
     return [
-        { label: `${branchPrefixModeLabels.INHERIT} (use organization setting)`, value: 'INHERIT' },
-        { label: branchPrefixModeLabels.APPEND, value: 'APPEND' },
-        { label: branchPrefixModeLabels.NO_APPEND, value: 'NO_APPEND' },
-        { label: branchPrefixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION, value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
+        { label: `${branchSuffixModeLabels.INHERIT} (use organization setting)`, value: 'INHERIT' },
+        { label: branchSuffixModeLabels.APPEND, value: 'APPEND' },
+        { label: branchSuffixModeLabels.NO_APPEND, value: 'NO_APPEND' },
+        { label: branchSuffixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION, value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
     ].map(o => ({ ...o, label: o.label.replace(/Branch/g, br) }))
 })
 
-const branchPrefixModeTooltip = computed((): string => {
+const branchSuffixModeTooltip = computed((): string => {
     const br = words.value?.branchFirstUpper || 'Branch'
     return [
-        `${branchPrefixModeLabels.INHERIT}: use the organization default.`,
-        `${branchPrefixModeLabels.APPEND}: ${br.toLowerCase()}es get a namespace suffix (e.g., 1.2.3-feat_login).`,
-        `${branchPrefixModeLabels.NO_APPEND}: no ${br.toLowerCase()} suffix; version conflicts resolved via -0, -1, -2...`,
-        `${branchPrefixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION}: append suffix unless the ${br.toLowerCase()} has a "follow version" dependency.`
+        `${branchSuffixModeLabels.INHERIT}: use the organization default.`,
+        `${branchSuffixModeLabels.APPEND}: ${br.toLowerCase()}es get a namespace suffix (e.g., 1.2.3-feat_login).`,
+        `${branchSuffixModeLabels.NO_APPEND}: no ${br.toLowerCase()} suffix; version conflicts resolved via -0, -1, -2...`,
+        `${branchSuffixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION}: append suffix unless the ${br.toLowerCase()} has a "follow version" dependency.`
     ].join('\n')
 })
 
-const componentBranchPrefixModeModel = computed({
+const componentBranchSuffixModeModel = computed({
     get (): string {
-        return updatedComponent.value?.branchPrefixMode || 'INHERIT'
+        return updatedComponent.value?.branchSuffixMode || 'INHERIT'
     },
     set (v: string) {
         if (!updatedComponent.value) return
-        updatedComponent.value.branchPrefixMode = v === 'INHERIT' ? null : v
+        updatedComponent.value.branchSuffixMode = v === 'INHERIT' ? null : v
     }
 })
 
-const componentBranchPrefixModeLabel = computed((): string => {
-    return branchPrefixModeLabels[componentBranchPrefixModeModel.value] || componentBranchPrefixModeModel.value
+const componentBranchSuffixModeLabel = computed((): string => {
+    return branchSuffixModeLabels[componentBranchSuffixModeModel.value] || componentBranchSuffixModeModel.value
 })
 
-const componentBranchPrefixModeEffective = computed((): string => {
-    const current = componentBranchPrefixModeModel.value
+const componentBranchSuffixModeEffective = computed((): string => {
+    const current = componentBranchSuffixModeModel.value
     if (current !== 'INHERIT') {
-        return `This ${(words.value?.component || 'component').toLowerCase()} uses: ${branchPrefixModeLabels[current]}.`
+        return `This ${(words.value?.component || 'component').toLowerCase()} uses: ${branchSuffixModeLabels[current]}.`
     }
-    const orgMode = myorg.value?.settings?.branchPrefixMode
+    const orgMode = myorg.value?.settings?.branchSuffixMode
     if (orgMode && orgMode !== 'INHERIT') {
-        return `Currently inheriting: ${branchPrefixModeLabels[orgMode]} (from organization).`
+        return `Currently inheriting: ${branchSuffixModeLabels[orgMode]} (from organization).`
     }
-    return `Currently inheriting: ${branchPrefixModeLabels.APPEND} (default).`
+    return `Currently inheriting: ${branchSuffixModeLabels.APPEND} (default).`
 })
 
 function toggleMarketingVersion (value: boolean) {

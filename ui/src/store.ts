@@ -534,7 +534,7 @@ const storeObject : any = {
                                 }
                                 settings {
                                     justificationMandatory
-                                    branchPrefixMode
+                                    branchSuffixMode
                                 }
                             }
                         }`,
@@ -941,7 +941,7 @@ const storeObject : any = {
                 featureBranchVersioning: component.featureBranchVersioning,
                 marketingVersionSchema: component.marketingVersionSchema,
                 versionType: component.versionType,
-                branchPrefixMode: component.branchPrefixMode === 'INHERIT' ? null : component.branchPrefixMode,
+                branchSuffixMode: component.branchSuffixMode || 'INHERIT',
                 approvalPolicy: component.approvalPolicy,
                 outputTriggers: component.outputTriggers,
                 releaseInputTriggers: component.releaseInputTriggers,

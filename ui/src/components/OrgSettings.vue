@@ -951,21 +951,21 @@
                         <n-form-item>
                             <template #label>
                                 <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>Branch Prefix Mode</span>
+                                    <span>Branch Suffix Mode</span>
                                     <n-tooltip trigger="hover" placement="right">
                                         <template #trigger>
                                             <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
                                         </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">{{ branchPrefixModeTooltip }}</div>
+                                        <div style="max-width: 700px; white-space: pre-line;">{{ branchSuffixModeTooltip }}</div>
                                     </n-tooltip>
                                 </span>
                             </template>
                             <div style="display: flex; flex-direction: column; width: 100%;">
                                 <n-select
-                                    v-model:value="orgSettings.branchPrefixMode"
-                                    :options="orgBranchPrefixModeOptions"
+                                    v-model:value="orgSettings.branchSuffixMode"
+                                    :options="orgBranchSuffixModeOptions"
                                     style="max-width: 480px;" />
-                                <span class="text-muted" style="margin-top: 4px;">Current: {{ branchPrefixModeLabels[orgSettings.branchPrefixMode] }}</span>
+                                <span class="text-muted" style="margin-top: 4px;">Current: {{ branchSuffixModeLabels[orgSettings.branchSuffixMode] }}</span>
                             </div>
                         </n-form-item>
 
@@ -1206,25 +1206,25 @@ const savingIgnoreViolation = ref(false)
 // Admin Settings - Organization Settings
 const orgSettings = reactive({
     justificationMandatory: false,
-    branchPrefixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION'
+    branchSuffixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION'
 })
 
-const branchPrefixModeLabels: Record<string, string> = {
+const branchSuffixModeLabels: Record<string, string> = {
     APPEND: 'Append',
     NO_APPEND: 'Never Append',
     APPEND_EXCEPT_FOLLOW_VERSION: 'Append Except when Following Version'
 }
 
-const orgBranchPrefixModeOptions = [
-    { label: branchPrefixModeLabels.APPEND, value: 'APPEND' },
-    { label: branchPrefixModeLabels.NO_APPEND, value: 'NO_APPEND' },
-    { label: branchPrefixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION, value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
+const orgBranchSuffixModeOptions = [
+    { label: branchSuffixModeLabels.APPEND, value: 'APPEND' },
+    { label: branchSuffixModeLabels.NO_APPEND, value: 'NO_APPEND' },
+    { label: branchSuffixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION, value: 'APPEND_EXCEPT_FOLLOW_VERSION' }
 ]
 
-const branchPrefixModeTooltip = [
-    `${branchPrefixModeLabels.APPEND}: branches get a namespace suffix (e.g., 1.2.3-feat_login).`,
-    `${branchPrefixModeLabels.NO_APPEND}: no branch suffix; version conflicts resolved via -0, -1, -2...`,
-    `${branchPrefixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION}: append suffix unless the branch has a "follow version" dependency.`
+const branchSuffixModeTooltip = [
+    `${branchSuffixModeLabels.APPEND}: branches get a namespace suffix (e.g., 1.2.3-feat_login).`,
+    `${branchSuffixModeLabels.NO_APPEND}: no branch suffix; version conflicts resolved via -0, -1, -2...`,
+    `${branchSuffixModeLabels.APPEND_EXCEPT_FOLLOW_VERSION}: append suffix unless the branch has a "follow version" dependency.`
 ].join('\n')
 const savingOrgSettings = ref(false)
 
@@ -3098,7 +3098,7 @@ async function saveIgnoreViolation() {
 async function loadOrgSettings() {
     const s = myorg.value?.settings
     orgSettings.justificationMandatory = s?.justificationMandatory || false
-    orgSettings.branchPrefixMode = (s?.branchPrefixMode && s.branchPrefixMode !== 'INHERIT') ? s.branchPrefixMode : 'APPEND'
+    orgSettings.branchSuffixMode = (s?.branchSuffixMode && s.branchSuffixMode !== 'INHERIT') ? s.branchSuffixMode : 'APPEND'
 }
 
 async function saveOrgSettings() {
@@ -3120,7 +3120,7 @@ async function saveOrgSettings() {
                         }
                         settings {
                             justificationMandatory
-                            branchPrefixMode
+                            branchSuffixMode
                         }
                     }
                 }`,
@@ -3128,7 +3128,7 @@ async function saveOrgSettings() {
                 orgUuid: orgResolved.value,
                 settings: {
                     justificationMandatory: orgSettings.justificationMandatory,
-                    branchPrefixMode: orgSettings.branchPrefixMode
+                    branchSuffixMode: orgSettings.branchSuffixMode
                 }
             },
             fetchPolicy: 'no-cache'

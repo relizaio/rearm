@@ -650,7 +650,7 @@ const COMPONENT_FULL_DATA = `
     marketingVersionSchema
     versionType
     featureBranchVersioning
-    branchPrefixMode
+    branchSuffixMode
     vcs
     repoPath
     vcsRepositoryDetails {
