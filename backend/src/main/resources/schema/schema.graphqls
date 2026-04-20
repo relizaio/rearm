@@ -1773,7 +1773,8 @@ input ArtifactInput {
 	displayIdentifier: String
 	downloadLinks: [LinkInput]
 	inventoryTypes: [InventoryType]
-	bomFormat: String @deprecated(reason: "Auto-detected from file content when a file is uploaded. Still required for metadata-only BOM artifacts (type: BOM with downloadLinks but no uploaded file), since there is nothing local to inspect. Will be removed once download-link content inference is available.")
+# Auto-detected from file content when a file is uploaded. Still required for metadata-only BOM artifacts (type: BOM with downloadLinks but no uploaded file), since there is nothing local to inspect. Will be removed once download-link content inference is available.
+	bomFormat: String
 	storedIn: String
 	tags: [TagRecordInput]
 	status: String
