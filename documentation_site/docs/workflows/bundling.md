@@ -59,6 +59,20 @@ Available modes:
 
 The per-Component / per-Product setting also shows the currently effective mode (either the explicit Component/Product value, or the inherited organization value). When no organization setting is configured, the system default is *Append*.
 
+#### Which Branch Suffix Mode to Choose
+
+The right mode depends on how you use non-base Feature Sets and whether downstream consumers need to distinguish between releases from different Feature Sets.
+
+- **Append** (default) - Best when Feature Sets represent parallel development streams that may produce releases with overlapping version numbers (e.g., a hotfix branch `1.2.3` and a mainline `1.2.3`). The suffix guarantees globally unique, human-readable versions and makes the originating Feature Set visible directly in the version string. Choose this if you are unsure.
+
+- **Never Append** - Best when versions must stay clean for external consumers (e.g., published libraries, container images with strict tagging rules) and you control branch or feature set versioning so that collisions do not exist or are rare (i.e., if you are already using a technique like the one described [here](https://worklifenotes.com/2019/01/20/semver-in-production-always-keep-separate-production-branch-on-its-own-minor/). If a collision does occur, ReARM tries to auto-resolve it by appending `-0`, `-1`, etc. Avoid this mode if you expect frequent version collisions, as the auto-resolution suffix is less meaningful than a Branch or Feature Set name.
+
+- **Append Except when Following Version** - Best when a Feature Set exists primarily to track an upstream Component version exactly (via *Follow Version*), and you want the Product release to carry that upstream version verbatim. Other Branches and Feature Sets to get suffixed normally. Typical use case: a Feature Set that mirrors a single third-party or vendored Component version. Note, that follow version resolution within the Feature Set when non-followed version Components are changing may still result in version collisions, which are auto-resolved by appending `-0`, `-1`, etc.
+
+General guidance:
+
+- Prefer configuring the mode at the **Organization level** first and only override per Component or Product when needed.
+
 ### Enable Auto-Integrate
 Once all dependencies are configured, switch *Auto Integrate* selector to *ENABLED*. This ensures that any new incoming component release matching your patterns or manual dependencies will trigger creation of a new version of this *Product*.
 
