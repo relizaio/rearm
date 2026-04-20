@@ -11,6 +11,7 @@ import java.util.Optional;
 
 import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,7 +62,21 @@ public class VersionAssignmentTest
 
 	@Autowired
 	private TestInitializer testInitializer;
-	
+
+	/**
+	 * CE shares a single organization across tests (see TestInitializer). Some
+	 * suffix-mode tests mutate the org's branchSuffixMode; reset it to APPEND
+	 * before every test so the default-mode tests behave deterministically
+	 * regardless of execution order.
+	 */
+	@BeforeEach
+	public void resetOrgBranchSuffixMode() {
+		Organization org = testInitializer.obtainOrganization();
+		OrganizationData.Settings patch = new OrganizationData.Settings();
+		patch.setBranchSuffixMode(BranchSuffixMode.APPEND);
+		organizationService.updateSettings(org.getUuid(), patch, WhoUpdated.getTestWhoUpdated());
+	}
+
 	@Test
 	public void testObtainVersionAssignment1Semver() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();

@@ -530,9 +530,8 @@ public class OssReleaseService {
 		if (null != releaseDto.getIdentifiers()) {
 			rData.setIdentifiers(releaseDto.getIdentifiers());
 		}
-		Map<String,Object> recordData = Utils.dataToRecord(rData);
-		log.debug("saving release with recordData: {}", recordData);
-		return saveRelease(r, recordData, wu);
+		log.debug("saving release with rData: {}", rData);
+		return saveRelease(r, rData, wu);
 	}
 	
 	@Transactional
