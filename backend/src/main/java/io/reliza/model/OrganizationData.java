@@ -18,11 +18,12 @@ import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ApprovalRole;
-import io.reliza.common.CommonVariables.BranchPrefixMode;
+import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionType;
@@ -66,7 +67,8 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		 * INHERIT is not a valid value for organization-level settings.
 		 */
 		@JsonProperty
-		private BranchPrefixMode branchPrefixMode;
+		@JsonAlias("branchPrefixMode")
+		private BranchSuffixMode branchSuffixMode;
 
 		public static Settings getDefault() {
 			return new Settings();

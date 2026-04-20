@@ -16,7 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import io.reliza.common.CommonVariables.BranchPrefixMode;
+import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.BranchType;
@@ -327,17 +327,17 @@ public class VersionAssignmentService {
 
 	/**
 	 * Decides which {@link ModifierPolicy} to pass to the versioning library.
-	 * CLEAR when the branch is a non-base, prefix-eligible schema and the caller
-	 * has opted out of appending a branch prefix — prevents a sibling branch's
-	 * prefix modifier from leaking into the new version.
+	 * CLEAR when the branch is a non-base, suffix-eligible schema and the caller
+	 * has opted out of appending a branch suffix — prevents a sibling branch's
+	 * suffix modifier from leaking into the new version.
 	 */
 	private ModifierPolicy resolveModifierPolicy(BranchData bd, String branchSchema, String namespace) {
 		if (StringUtils.isNotEmpty(namespace)) {
 			return ModifierPolicy.USE_NAMESPACE;
 		}
 		if (bd.getType() != BranchType.BASE
-				&& isPrefixEligibleSchema(branchSchema)
-				&& !shouldAppendBranchPrefix(bd)) {
+				&& isSuffixEligibleSchema(branchSchema)
+				&& !shouldAppendBranchSuffix(bd)) {
 			return ModifierPolicy.CLEAR;
 		}
 		return ModifierPolicy.INHERIT;
@@ -350,8 +350,8 @@ public class VersionAssignmentService {
 		if (StringUtils.isEmpty(branchSchema)) {
 			return null;
 		}
-		if (isPrefixEligibleSchema(branchSchema)) {
-			if (!shouldAppendBranchPrefix(bd)) {
+		if (isSuffixEligibleSchema(branchSchema)) {
+			if (!shouldAppendBranchSuffix(bd)) {
 				return null;
 			}
 			return bd.getName().toLowerCase().replaceAll("[^a-z0-9]", "_");
@@ -359,7 +359,7 @@ public class VersionAssignmentService {
 		return null;
 	}
 
-	private static boolean isPrefixEligibleSchema(String branchSchema) {
+	private static boolean isSuffixEligibleSchema(String branchSchema) {
 		return StringUtils.isNotEmpty(branchSchema)
 				&& (VersionUtils.isSchemaSemver(branchSchema)
 						|| VersionUtils.isSchemaFourPartVersioning(branchSchema)
@@ -367,24 +367,24 @@ public class VersionAssignmentService {
 	}
 
 	/**
-	 * Resolves the effective branch-prefix-append setting for the component/org of the given branch.
+	 * Resolves the effective branch-suffix-append setting for the component/org of the given branch.
 	 * Resolution: component override (if not INHERIT) > org setting > default APPEND.
 	 * APPEND_EXCEPT_FOLLOW_VERSION behaves like NO_APPEND when the branch has at least one
 	 * follow-version dependency, otherwise behaves like APPEND.
 	 */
-	private boolean shouldAppendBranchPrefix(BranchData bd) {
-		BranchPrefixMode effective = null;
+	private boolean shouldAppendBranchSuffix(BranchData bd) {
+		BranchSuffixMode effective = null;
 		Optional<ComponentData> ocd = getComponentService.getComponentData(bd.getComponent());
 		if (ocd.isPresent()) {
-			BranchPrefixMode comp = ocd.get().getBranchPrefixMode();
-			if (comp != null && comp != BranchPrefixMode.INHERIT) {
+			BranchSuffixMode comp = ocd.get().getBranchSuffixMode();
+			if (comp != null && comp != BranchSuffixMode.INHERIT) {
 				effective = comp;
 			}
 		}
 		if (effective == null) {
 			Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(bd.getOrg());
 			if (ood.isPresent() && ood.get().getSettings() != null) {
-				effective = ood.get().getSettings().getBranchPrefixMode();
+				effective = ood.get().getSettings().getBranchSuffixMode();
 			}
 		}
 		if (effective == null) {

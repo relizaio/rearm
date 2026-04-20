@@ -11,7 +11,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
-import io.reliza.common.CommonVariables.BranchPrefixMode;
+import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.ComponentData.ComponentAuthentication;
 import io.reliza.model.ComponentData.ComponentKind;
@@ -75,5 +75,5 @@ public class ComponentDto {
 	@JsonProperty
 	private ComponentAuthentication authentication;
 	@JsonProperty
-	private BranchPrefixMode branchPrefixMode;
+	private BranchSuffixMode branchSuffixMode;
 }

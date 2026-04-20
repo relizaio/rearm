@@ -45,10 +45,13 @@ public enum CdxType {
 	public static CdxType resolveStringToType (String typeStr) {
 		CdxType retType = null;
 		String cleanStr = cleanString(typeStr);
-		retType = CdxType.valueOf(cleanStr);
-		if (null == retType) {
-			var optRetType = Arrays.asList(CdxType.values()).stream().filter(x -> x.synonyms.contains(cleanStr)).findAny();
-			if (optRetType.isPresent()) retType = optRetType.get();
+		try {
+			retType = CdxType.valueOf(cleanStr);
+		} catch (IllegalArgumentException e) {
+			retType = Arrays.stream(CdxType.values())
+				.filter(x -> x.synonyms.contains(cleanStr))
+				.findAny()
+				.orElse(null);
 		}
 		return retType;
 	}

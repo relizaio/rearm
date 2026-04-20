@@ -37,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.AuthorizationStatus;
-import io.reliza.common.CommonVariables.BranchPrefixMode;
+import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.common.CommonVariables.StatusEnum;
@@ -574,7 +574,7 @@ public class OrganizationService {
 
 	/**
 	 * Updates organization settings from the given patch. Null fields on the patch are ignored
-	 * (leave the existing value unchanged). INHERIT on branchPrefixMode is invalid here.
+	 * (leave the existing value unchanged). INHERIT on branchSuffixMode is invalid here.
 	 *
 	 * @param orgUuid organization UUID
 	 * @param settingsPatch settings patch; must be non-null (use an empty Settings for a no-op)
@@ -585,9 +585,9 @@ public class OrganizationService {
 	public OrganizationData updateSettings(@NonNull UUID orgUuid, @NonNull OrganizationData.Settings settingsPatch,
 			@NonNull WhoUpdated wu) {
 		try {
-			BranchPrefixMode branchPrefixMode = settingsPatch.getBranchPrefixMode();
-			if (branchPrefixMode == BranchPrefixMode.INHERIT) {
-				throw new IllegalArgumentException("INHERIT is not a valid branchPrefixMode for organization settings");
+			BranchSuffixMode branchSuffixMode = settingsPatch.getBranchSuffixMode();
+			if (branchSuffixMode == BranchSuffixMode.INHERIT) {
+				throw new IllegalArgumentException("INHERIT is not a valid branchSuffixMode for organization settings");
 			}
 			OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
 					.orElseThrow(() -> new IllegalArgumentException("Organization not found: " + orgUuid));
@@ -602,8 +602,8 @@ public class OrganizationService {
 				settings.setJustificationMandatory(settingsPatch.getJustificationMandatory());
 			}
 
-			if (branchPrefixMode != null) {
-				settings.setBranchPrefixMode(branchPrefixMode);
+			if (branchSuffixMode != null) {
+				settings.setBranchSuffixMode(branchSuffixMode);
 			}
 
 			od.setSettings(settings);

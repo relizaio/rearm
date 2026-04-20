@@ -28,7 +28,7 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
-import io.reliza.common.CommonVariables.BranchPrefixMode;
+import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.exceptions.RelizaException;
@@ -320,8 +320,8 @@ public class OrganizationDataFetcher {
 		OrganizationData.Settings settingsPatch = settings == null
 				? new OrganizationData.Settings()
 				: Utils.OM.convertValue(settings, OrganizationData.Settings.class);
-		if (settingsPatch.getBranchPrefixMode() == BranchPrefixMode.INHERIT) {
-			throw new RelizaException("INHERIT is not a valid branchPrefixMode for organization settings");
+		if (settingsPatch.getBranchSuffixMode() == BranchSuffixMode.INHERIT) {
+			throw new RelizaException("INHERIT is not a valid branchSuffixMode for organization settings");
 		}
 		return organizationService.updateSettings(orgUuid, settingsPatch, wu);
 	}

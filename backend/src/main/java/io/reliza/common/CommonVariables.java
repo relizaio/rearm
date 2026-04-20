@@ -702,7 +702,7 @@ public class CommonVariables {
 	 *   (treated as NO_APPEND for such branches)
 	 * INHERIT: component-level only; defer to organization setting
 	 */
-	public enum BranchPrefixMode {
+	public enum BranchSuffixMode {
 		APPEND,
 		NO_APPEND,
 		APPEND_EXCEPT_FOLLOW_VERSION,

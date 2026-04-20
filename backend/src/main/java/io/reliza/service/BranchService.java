@@ -403,45 +403,47 @@ public class BranchService {
 				bd.setDependencies(branchDto.getDependencies());
 			}
 			if (null != branchDto.getDependencyPatterns()) {
-			// Validate regex patterns
-			for (BranchData.DependencyPattern pattern : branchDto.getDependencyPatterns()) {
-				if (StringUtils.isNotEmpty(pattern.getPattern())) {
-					try {
-						java.util.regex.Pattern.compile(pattern.getPattern());
-					} catch (Exception e) {
-						log.error("Invalid regex pattern: {} - {}", pattern.getPattern(), e.getMessage());
-						throw new RelizaException("Invalid regex pattern: " + pattern.getPattern());
+				// Validate regex patterns and assign UUIDs to newly-inserted patterns
+				for (BranchData.DependencyPattern pattern : branchDto.getDependencyPatterns()) {
+					if (StringUtils.isNotEmpty(pattern.getPattern())) {
+						try {
+							java.util.regex.Pattern.compile(pattern.getPattern());
+						} catch (Exception e) {
+							log.error("Invalid regex pattern: {} - {}", pattern.getPattern(), e.getMessage());
+							throw new RelizaException("Invalid regex pattern: " + pattern.getPattern());
+						}
+					}
+					if (pattern.getUuid() == null) {
+						pattern.setUuid(UUID.randomUUID());
 					}
 				}
-	
+				bd.setDependencyPatterns(branchDto.getDependencyPatterns());
 			}
-			bd.setDependencyPatterns(branchDto.getDependencyPatterns());
-		}
-		if(null !=  branchDto.getPullRequestData()){
-				bd.setPullRequestData(branchDto.getPullRequestData());
+			if(null !=  branchDto.getPullRequestData()){
+					bd.setPullRequestData(branchDto.getPullRequestData());
+				}
+				// don't convert from base to regular, only allow make base functionality
+			if (BranchType.BASE == branchDto.getType()) {
+				// Get the old base branch BEFORE setting the new one
+				Optional<Branch> oldBaseBranchOpt = getBaseBranchOfComponent(bd.getComponent());
+				
+				// Only proceed if there's an existing base branch and it's different from the current branch
+				if (oldBaseBranchOpt.isPresent() && !oldBaseBranchOpt.get().getUuid().equals(bd.getUuid())) {
+					Branch oldBaseBranch = oldBaseBranchOpt.get();
+					BranchData oldBaseBranchData = BranchData.branchDataFromDbRecord(oldBaseBranch);
+					oldBaseBranchData.setType(BranchType.REGULAR);
+					Map<String,Object> recordDataOld = Utils.dataToRecord(oldBaseBranchData);
+					saveBranch(oldBaseBranch, recordDataOld, wu);
+				}
+				
+				// Now set the current branch to BASE
+				bd.setType(BranchType.BASE);
+			} else if (null != bd.getType() && BranchType.BASE != bd.getType()) {
+				bd.setType(branchDto.getType());
 			}
-			// don't convert from base to regular, only allow make base functionality
-		if (BranchType.BASE == branchDto.getType()) {
-			// Get the old base branch BEFORE setting the new one
-			Optional<Branch> oldBaseBranchOpt = getBaseBranchOfComponent(bd.getComponent());
-			
-			// Only proceed if there's an existing base branch and it's different from the current branch
-			if (oldBaseBranchOpt.isPresent() && !oldBaseBranchOpt.get().getUuid().equals(bd.getUuid())) {
-				Branch oldBaseBranch = oldBaseBranchOpt.get();
-				BranchData oldBaseBranchData = BranchData.branchDataFromDbRecord(oldBaseBranch);
-				oldBaseBranchData.setType(BranchType.REGULAR);
-				Map<String,Object> recordDataOld = Utils.dataToRecord(oldBaseBranchData);
-				saveBranch(oldBaseBranch, recordDataOld, wu);
-			}
-			
-			// Now set the current branch to BASE
-			bd.setType(BranchType.BASE);
-		} else if (null != bd.getType() && BranchType.BASE != bd.getType()) {
-			bd.setType(branchDto.getType());
-		}
-			Map<String,Object> recordData = Utils.dataToRecord(bd);
-			b = saveBranch(b, recordData, wu);
-			retBd = BranchData.branchDataFromDbRecord(b);
+				Map<String,Object> recordData = Utils.dataToRecord(bd);
+				b = saveBranch(b, recordData, wu);
+				retBd = BranchData.branchDataFromDbRecord(b);
 		}
 		return retBd;
 	}

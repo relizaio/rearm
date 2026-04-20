@@ -18,7 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
-import io.reliza.common.CommonVariables.BranchPrefixMode;
+import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData.BranchType;
@@ -191,7 +191,7 @@ public class VersionAssignmentTest
 	 * feature branches get a namespace suffix derived from branch name.
 	 */
 	@Test
-	public void testBranchPrefixModeDefaultAppend() throws RelizaException {
+	public void testBranchSuffixModeDefaultAppend() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Component comp = componentService.createComponent("testBranchPrefixDefault_" + UUID_SHORT(),
 				org.getUuid(), ComponentType.COMPONENT, "semver", "semver", null,
@@ -207,14 +207,14 @@ public class VersionAssignmentTest
 	 * Component with NO_APPEND from the start: feature branches do not get namespace suffix.
 	 */
 	@Test
-	public void testBranchPrefixModeNoAppendFromStart() throws RelizaException {
+	public void testBranchSuffixModeNoAppendFromStart() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Component comp = componentService.createComponent("testBranchPrefixNoAppend_" + UUID_SHORT(),
 				org.getUuid(), ComponentType.COMPONENT, "semver", "semver", null,
 				WhoUpdated.getTestWhoUpdated());
 		componentService.updateComponent(ComponentDto.builder()
 				.uuid(comp.getUuid())
-				.branchPrefixMode(BranchPrefixMode.NO_APPEND)
+				.branchSuffixMode(BranchSuffixMode.NO_APPEND)
 				.build(), WhoUpdated.getTestWhoUpdated());
 		Branch foo = createSemverFeatureBranch("foo", comp);
 		Optional<VersionAssignment> v1 = versionAssignmetService.getSetNewVersion(foo.getUuid(), null, null, null, VersionTypeEnum.DEV);
@@ -231,7 +231,7 @@ public class VersionAssignmentTest
 	 * After fix: new version is 0.0.2 (clean).
 	 */
 	@Test
-	public void testBranchPrefixModeNoAppendClearsLeakedModifier() throws RelizaException {
+	public void testBranchSuffixModeNoAppendClearsLeakedModifier() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Component comp = componentService.createComponent("testBranchPrefixLeak_" + UUID_SHORT(),
 				org.getUuid(), ComponentType.COMPONENT, "semver", "semver", null,
@@ -245,7 +245,7 @@ public class VersionAssignmentTest
 		// Switch component to NO_APPEND
 		componentService.updateComponent(ComponentDto.builder()
 				.uuid(comp.getUuid())
-				.branchPrefixMode(BranchPrefixMode.NO_APPEND)
+				.branchSuffixMode(BranchSuffixMode.NO_APPEND)
 				.build(), WhoUpdated.getTestWhoUpdated());
 		// Next version on same branch must not carry "-foo" modifier
 		Optional<VersionAssignment> v3 = versionAssignmetService.getSetNewVersion(foo.getUuid(), null, null, null, VersionTypeEnum.DEV);
@@ -259,10 +259,10 @@ public class VersionAssignmentTest
 	 * Component override beats organization setting: org=NO_APPEND, component=APPEND → APPEND wins.
 	 */
 	@Test
-	public void testBranchPrefixModeComponentOverridesOrg() throws RelizaException {
+	public void testBranchSuffixModeComponentOverridesOrg() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		OrganizationData.Settings orgPatch = new OrganizationData.Settings();
-		orgPatch.setBranchPrefixMode(BranchPrefixMode.NO_APPEND);
+		orgPatch.setBranchSuffixMode(BranchSuffixMode.NO_APPEND);
 		organizationService.updateSettings(org.getUuid(), orgPatch, WhoUpdated.getTestWhoUpdated());
 
 		Component comp = componentService.createComponent("testBranchPrefixCompOverride_" + UUID_SHORT(),
@@ -270,7 +270,7 @@ public class VersionAssignmentTest
 				WhoUpdated.getTestWhoUpdated());
 		componentService.updateComponent(ComponentDto.builder()
 				.uuid(comp.getUuid())
-				.branchPrefixMode(BranchPrefixMode.APPEND)
+				.branchSuffixMode(BranchSuffixMode.APPEND)
 				.build(), WhoUpdated.getTestWhoUpdated());
 
 		Branch foo = createSemverFeatureBranch("foo", comp);
@@ -282,10 +282,10 @@ public class VersionAssignmentTest
 	 * Component INHERIT (null) defers to organization setting.
 	 */
 	@Test
-	public void testBranchPrefixModeComponentInheritsOrg() throws RelizaException {
+	public void testBranchSuffixModeComponentInheritsOrg() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		OrganizationData.Settings orgPatch = new OrganizationData.Settings();
-		orgPatch.setBranchPrefixMode(BranchPrefixMode.NO_APPEND);
+		orgPatch.setBranchSuffixMode(BranchSuffixMode.NO_APPEND);
 		organizationService.updateSettings(org.getUuid(), orgPatch, WhoUpdated.getTestWhoUpdated());
 
 		Component comp = componentService.createComponent("testBranchPrefixInherit_" + UUID_SHORT(),
@@ -294,7 +294,7 @@ public class VersionAssignmentTest
 		// Explicitly set INHERIT on the component — should be stored as null and defer to org
 		componentService.updateComponent(ComponentDto.builder()
 				.uuid(comp.getUuid())
-				.branchPrefixMode(BranchPrefixMode.INHERIT)
+				.branchSuffixMode(BranchSuffixMode.INHERIT)
 				.build(), WhoUpdated.getTestWhoUpdated());
 
 		Branch foo = createSemverFeatureBranch("foo", comp);
@@ -306,10 +306,10 @@ public class VersionAssignmentTest
 	 * Organization-level INHERIT must be rejected by the service validation.
 	 */
 	@Test
-	public void testBranchPrefixModeOrgRejectsInherit() {
+	public void testBranchSuffixModeOrgRejectsInherit() {
 		Organization org = testInitializer.obtainOrganization();
 		OrganizationData.Settings orgPatch = new OrganizationData.Settings();
-		orgPatch.setBranchPrefixMode(BranchPrefixMode.INHERIT);
+		orgPatch.setBranchSuffixMode(BranchSuffixMode.INHERIT);
 		Assertions.assertThrows(IllegalArgumentException.class, () ->
 			organizationService.updateSettings(org.getUuid(), orgPatch, WhoUpdated.getTestWhoUpdated())
 		);

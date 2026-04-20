@@ -592,18 +592,18 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.03.58";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.04.3";
     
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "d938dc15b235c0d1fef329f5fb1963ca11a7f61e54586622a1e8d9275215e276";
-    private static final String REARM_CD_HELM_VERSION = "0.3.9";
-    private static final String REARM_CD_HELM_COMMIT = "c33e7682789e63cc6062cd6c2b8b596591a8b625";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.3.9 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "0e8be9bdf6411e4a576086000a7627ccb7b75caab5e5bec91a1d56b91bcb7436";
+    private static final String REARM_CD_HELM_VERSION = "0.3.17";
+    private static final String REARM_CD_HELM_COMMIT = "4900329bd9a954eb11273efe73a366d3a13e6037";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.3.17 [skip ci]";
     
-    public static final String REARM_CD_CONTAINER_DIGEST = "17329ae0ecd6053efab0a29a00501bd5dfaac36ec1287cc55806d25a870068dc";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.35";
-    public static final String REARM_CD_CONTAINER_COMMIT = "85d37a9464575d3907b237e6e44333e0a36ce59b";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "chore(rearm-cd-app)!: bump ReARM CLI to 26.03.12";
+    public static final String REARM_CD_CONTAINER_DIGEST = "b6d0a3d413cfe448571258745101cf4fa0f16211d10672207e4229fee5f35a50";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.03.43";
+    public static final String REARM_CD_CONTAINER_COMMIT = "96e448781c85c9fc96dc5331cfdab20443db5541";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "chore(rearm-cd-app): trigger build";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);

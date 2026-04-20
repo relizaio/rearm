@@ -389,7 +389,7 @@ type Component {
 	identifiers: [Identifier]
 	repoPath: String
 	authentication: ComponentAuthentication
-	branchPrefixMode: BranchPrefixMode
+	branchSuffixMode: BranchSuffixMode
 	globalInputEventRefs: [GlobalInputEventRef]
 	perspectiveDetails: [Perspective]
 }
@@ -450,7 +450,7 @@ type IgnoreViolation {
 
 type Settings {
 	justificationMandatory: Boolean
-	branchPrefixMode: BranchPrefixMode
+	branchSuffixMode: BranchSuffixMode
 }
 
 """
@@ -462,7 +462,7 @@ semver, four-part, and calver versions.
   except those with at least one follow-version dependency (treated as NO_APPEND for such branches)
 - INHERIT: component-level only; defer to organization setting. Not valid at organization level.
 """
-enum BranchPrefixMode {
+enum BranchSuffixMode {
 	APPEND
 	NO_APPEND
 	APPEND_EXCEPT_FOLLOW_VERSION
@@ -1589,7 +1589,7 @@ input IgnoreViolationInput {
 
 input SettingsInput {
 	justificationMandatory: Boolean
-	branchPrefixMode: BranchPrefixMode
+	branchSuffixMode: BranchSuffixMode
 }
 
 input PermissionInput {
@@ -1616,7 +1616,7 @@ input CreateComponentInput {
 	approvalPolicy: ID
 	identifiers: [IdentifierInput]
 	repoPath: String
-	branchPrefixMode: BranchPrefixMode
+	branchSuffixMode: BranchSuffixMode
 }
 
 input UpdateComponentInput {
@@ -1635,7 +1635,7 @@ input UpdateComponentInput {
 	identifiers: [IdentifierInput]
 	repoPath: String
 	authentication: ComponentAuthenticationInput
-	branchPrefixMode: BranchPrefixMode
+	branchSuffixMode: BranchSuffixMode
 }
 
 input GlobalInputEventRefInput {
