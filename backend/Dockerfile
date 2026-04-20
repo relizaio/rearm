@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21.0.10_7-jdk-alpine-3.23@sha256:c98f0d2e171c898bf896dc4166815d28a56d428e218190a1f35cdc7d82efd61f AS jre-build
+FROM eclipse-temurin:21.0.10_7-jdk-alpine-3.23@sha256:bcc7ec7e8fef937ba9f01ee5f810361d722c6b5dbe19ac188ab7b25c1a4dd2c9 AS jre-build
 # Create a custom Java runtime
 # to get list of java modules, use the following from target/ directory: 
 # jdeps -R -s --multi-release 16 -cp '.\unjar\BOOT-INF\lib\*' .\rearm-core-Version_Managed_By_CI_AND_Reliza.jar
@@ -11,14 +11,14 @@ RUN $JAVA_HOME/bin/jlink \
          --compress=2 \
          --output /javaruntime
 
-FROM maven:3.9.14-eclipse-temurin-21-alpine@sha256:b9c89e0a0e292a8b8eb5e68c9cf24335f99bbf1483e8c7b56c2b9b96087ad56d AS build-cache-stage
+FROM maven:3.9.14-eclipse-temurin-21-alpine@sha256:6fc501a760cf277ce3702265fc1c88ec8b9fcbb9a264ebd907b65eb18148fbef AS build-cache-stage
 RUN mkdir /workdir
 WORKDIR /workdir
 
 COPY ./pom.xml .
 RUN mvn -B dependency:go-offline -T1C 
 
-FROM maven:3.9.14-eclipse-temurin-21-alpine@sha256:b9c89e0a0e292a8b8eb5e68c9cf24335f99bbf1483e8c7b56c2b9b96087ad56d AS build-stage
+FROM maven:3.9.14-eclipse-temurin-21-alpine@sha256:6fc501a760cf277ce3702265fc1c88ec8b9fcbb9a264ebd907b65eb18148fbef AS build-stage
 RUN mkdir -p /root/.m2/repository/com
 COPY --from=build-cache-stage /root/.m2 /root/.m2
 
