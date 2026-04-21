@@ -568,12 +568,38 @@
                 </n-tab-pane>
                 <n-tab-pane v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" name="approvals" tab="Approvals">
                     <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER'">
-                        <div style="margin-bottom: 10px;">
+                        <div v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'PRODUCT'" style="margin-bottom: 10px;">
                             <strong>Approved Environments: </strong>
-                            <template v-if="updatedRelease.approvedEnvironments && updatedRelease.approvedEnvironments.length">
-                                <n-tag v-for="env in updatedRelease.approvedEnvironments" :key="env" type="success" style="margin-right: 5px;">{{ env }}</n-tag>
+                            <template v-if="!showApprovedEnvOverride">
+                                <template v-if="updatedRelease.approvedEnvironments && updatedRelease.approvedEnvironments.length">
+                                    <n-tag v-for="env in updatedRelease.approvedEnvironments" :key="env" type="success" style="margin-right: 5px;">{{ env }}</n-tag>
+                                </template>
+                                <span v-else>No approved environments set for this release.</span>
+                                <Icon v-if="isOrgAdmin" class="clickable" size="16" title="OVERRIDE approved environments (admin only)" style="margin-left: 8px; vertical-align: middle;" @click="openApprovedEnvOverride">
+                                    <Edit24Regular />
+                                </Icon>
                             </template>
-                            <span v-else>No approved environments set for this release.</span>
+                            <template v-else>
+                                <div style="margin-top: 5px;">
+                                    <n-tag type="warning" style="margin-right: 8px;">OVERRIDE MODE</n-tag>
+                                    <n-select
+                                        v-model:value="approvedEnvOverrideValues"
+                                        multiple
+                                        filterable
+                                        :options="approvedEnvTypeOptions"
+                                        placeholder="Select approved environments"
+                                        style="margin-top: 5px; max-width: 600px;"
+                                    />
+                                    <n-space style="margin-top: 8px;">
+                                        <n-button type="success" :loading="approvedEnvOverridePending" :disabled="approvedEnvOverridePending" @click="saveApprovedEnvOverride">
+                                            Save Override
+                                        </n-button>
+                                        <n-button @click="cancelApprovedEnvOverride" :disabled="approvedEnvOverridePending">
+                                            Cancel
+                                        </n-button>
+                                    </n-space>
+                                </div>
+                            </template>
                         </div>
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
                         <n-space v-if="hasApprovalChanges" style="margin-top: 5px;">
@@ -1744,6 +1770,67 @@ const canUpdateLifecycle: ComputedRef<boolean> = computed((): boolean => {
 
 const isUpdatable: ComputedRef<boolean> = computed(
     (): any => updatedRelease.value.lifecycle === 'DRAFT' )
+
+const isOrgAdmin: ComputedRef<boolean> = computed((): boolean => userPermission.value === 'ADMIN')
+
+const showApprovedEnvOverride: Ref<boolean> = ref(false)
+const approvedEnvOverrideValues: Ref<string[]> = ref([])
+const approvedEnvOverridePending: Ref<boolean> = ref(false)
+const approvedEnvTypes: Ref<string[]> = ref([])
+
+const approvedEnvTypeOptions: ComputedRef<any[]> = computed((): any[] =>
+    approvedEnvTypes.value.map((e: string) => ({ label: e, value: e }))
+)
+
+async function loadApprovedEnvTypes () {
+    if (approvedEnvTypes.value.length > 0) return
+    const orgUuid = updatedRelease.value?.orgDetails?.uuid
+    if (!orgUuid) return
+    const resp = await graphqlClient.query({
+        query: graphqlQueries.EnvironmentTypesGql,
+        variables: { orgUuid }
+    })
+    approvedEnvTypes.value = resp.data.environmentTypes || []
+}
+
+async function openApprovedEnvOverride () {
+    await loadApprovedEnvTypes()
+    approvedEnvOverrideValues.value = [...(updatedRelease.value.approvedEnvironments || [])]
+    showApprovedEnvOverride.value = true
+}
+
+function cancelApprovedEnvOverride () {
+    showApprovedEnvOverride.value = false
+    approvedEnvOverrideValues.value = []
+}
+
+async function saveApprovedEnvOverride () {
+    approvedEnvOverridePending.value = true
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation overrideApprovedEnvironments($releaseUuid: ID!, $approvedEnvironments: [String!]!) {
+                    overrideApprovedEnvironments(releaseUuid: $releaseUuid, approvedEnvironments: $approvedEnvironments) {
+                        uuid
+                        approvedEnvironments
+                    }
+                }`,
+            variables: {
+                releaseUuid: updatedRelease.value.uuid,
+                approvedEnvironments: approvedEnvOverrideValues.value
+            }
+        })
+        if (resp.data && resp.data.overrideApprovedEnvironments) {
+            updatedRelease.value.approvedEnvironments = resp.data.overrideApprovedEnvironments.approvedEnvironments || []
+        }
+        notify('success', 'Saved', 'Approved environments overridden.')
+        showApprovedEnvOverride.value = false
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        approvedEnvOverridePending.value = false
+    }
+}
 
 const approvalPending: Ref<boolean> = ref(false)
 const bomExportPending: Ref<boolean> = ref(false)

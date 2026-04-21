@@ -388,7 +388,7 @@
                                                         <n-select v-model:value="outputTrigger.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
-                                                        <n-select v-model:value="outputTrigger.approvedEnvironment" filterable tag :options="environmentTypeOptions" placeholder="Select or type an environment (e.g. UAT)" />
+                                                        <n-select v-model:value="outputTrigger.approvedEnvironment" filterable :options="environmentTypeOptions" placeholder="Select an environment (e.g. UAT)" />
                                                     </n-form-item>
                                                     <n-button @click="addOutputTrigger" type="success">
                                                         Save

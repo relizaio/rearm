@@ -641,7 +641,7 @@
                                         <n-select v-model:value="globalOutputEvent.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
                                     </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
-                                        <n-select v-model:value="globalOutputEvent.approvedEnvironment" filterable tag :options="environmentOptions" placeholder="Select or type an environment (e.g. UAT)" />
+                                        <n-select v-model:value="globalOutputEvent.approvedEnvironment" filterable :options="environmentOptions" placeholder="Select an environment (e.g. UAT)" />
                                     </n-form-item>
                                     <n-button @click="addGlobalOutputEvent" type="success">Save</n-button>
                                 </n-space>
