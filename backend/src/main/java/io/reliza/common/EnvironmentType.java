@@ -14,9 +14,14 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 public class EnvironmentType {
 	
+	private static final java.util.regex.Pattern VALID_PATTERN = java.util.regex.Pattern.compile("^[A-Z]+$");
+	
 	private String environmentType;
 	
 	private EnvironmentType(String environmentType) {
+		if (environmentType == null || !VALID_PATTERN.matcher(environmentType).matches()) {
+			throw new IllegalArgumentException("Environment type must contain only uppercase A-Z characters: " + environmentType);
+		}
 		// clean input of any possible injections
 		this.environmentType = Jsoup.clean(environmentType, Safelist.basic());
 	}
@@ -74,5 +79,25 @@ public class EnvironmentType {
 			builtInSet.add(new EnvironmentType(ete.toString()));
 		}
 		return builtInSet;
+	}
+	
+	public static boolean isBuiltIn (String value) {
+		if (value == null) return false;
+		for (EnvironmentTypeEnum ete : EnvironmentTypeEnum.values()) {
+			if (ete.name().equals(value)) return true;
+		}
+		return false;
+	}
+	
+	/**
+	 * Constructs an EnvironmentType and validates that the value is one of the built-in
+	 * {@link EnvironmentTypeEnum} values. Throws IllegalArgumentException otherwise.
+	 */
+	public static EnvironmentType forBuiltInValue (String value) {
+		if (!isBuiltIn(value)) {
+			throw new IllegalArgumentException("Environment type must be one of built-in values "
+					+ java.util.Arrays.toString(EnvironmentTypeEnum.values()) + ": " + value);
+		}
+		return new EnvironmentType(value);
 	}
 }

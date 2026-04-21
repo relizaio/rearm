@@ -69,7 +69,8 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		TAGS,
 		MARKETING_VERSION,
 		TRIGGER,
-		INPUT_TRIGGER
+		INPUT_TRIGGER,
+		APPROVED_ENVIRONMENT
 	}
 	
 	public enum ReleaseUpdateAction {

@@ -210,6 +210,7 @@ type Mutation {
 	updateRelease(release: ReleaseInput!): Release
 	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
 	updateReleaseTagsMeta(release: ReleaseInput!): Release
+	overrideApprovedEnvironments(releaseUuid: ID!, approvedEnvironments: [String!]!): Release
 	addMarketingReleaseManual(marketingRelease: MarketingReleaseInput!): MarketingRelease
 	updateMarketingRelease(marketingRelease: MarketingReleaseInput!): MarketingRelease
 	modifyMarketingReleaseLifecycle(marketingReleaseUuid: ID!, newLifecycle: MarketingReleaseLifecycleEnum): MarketingRelease 
@@ -281,6 +282,13 @@ type Mutation {
 	updatePerspective(uuid: ID!, name: String!): Perspective
 	deletePerspective(uuid: ID!): Perspective
 	setPerspectivesOnComponent(componentUuid: ID!, perspectiveUuids: [ID!]!): Component
+	"""
+	SaaS-only. Creates a component or product and atomically assigns it to the given
+	perspective. Requires WRITE permission on the perspective. Only real perspectives
+	(PerspectiveType.PERSPECTIVE) are allowed — product-derived perspectives are rejected.
+	Perspective org must match component's target org (enforced by authorization).
+	"""
+	createComponentInPerspective(component: CreateComponentInput!, perspectiveUuid: ID!): Component
 	
 	# Enrichment
 	triggerEnrichment(artifact: ID!): EnrichmentTriggerResult
@@ -991,6 +999,7 @@ type Release {
 	inProducts: [Release]
 	vcsRepository: VcsRepository
 	tags: [TagRecord]
+	approvedEnvironments: [String]
 	approvalEvents: [ReleaseApprovalEvent]
 	variantDetails: [Variant]
 	updateEvents: [ReleaseUpdateEvent]
@@ -1365,6 +1374,7 @@ type ReleaseOutputEvent {
     includeSuppressed: Boolean
     snapshotApprovalEntry: ID
     snapshotLifecycle: ReleaseLifecycleEnum
+    approvedEnvironment: String
 }
 
 type GlobalInputEventRef {
@@ -2025,6 +2035,7 @@ input ReleaseOutputEventInput {
 	includeSuppressed: Boolean
 	snapshotApprovalEntry: ID
 	snapshotLifecycle: ReleaseLifecycleEnum
+	approvedEnvironment: String
 }
 
 input ReleaseInputEventInput {
@@ -2117,6 +2128,7 @@ enum EventType {
 	INTEGRATION_TRIGGER
 	EMAIL_NOTIFICATION
 	VDR_SNAPSHOT_ARTIFACT
+	ADD_APPROVED_ENVIRONMENT
 }
 
 enum EventScope {
@@ -2488,6 +2500,7 @@ enum ReleaseUpdateScopeEnum {
 	MARKETING_VERSION
 	TRIGGER
 	INPUT_TRIGGER
+	APPROVED_ENVIRONMENT
 }
 
 enum ReleaseUpdateActionEnum {

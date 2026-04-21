@@ -54,6 +54,7 @@ public class UpdateComponentDto {
 		private Boolean includeSuppressed;
 		private UUID snapshotApprovalEntry;
 		private ReleaseLifecycle snapshotLifecycle;
+		private String approvedEnvironment;
 	}
 	
 	@JsonProperty(CommonVariables.UUID_FIELD)
@@ -137,6 +138,9 @@ public class UpdateComponentDto {
 		}
 		if (roei.getSnapshotLifecycle() != null) {
 			builder.snapshotLifecycle(roei.getSnapshotLifecycle());
+		}
+		if (StringUtils.isNotEmpty(roei.getApprovedEnvironment())) {
+			builder.approvedEnvironment(roei.getApprovedEnvironment());
 		}
 		return builder.build();
 	}

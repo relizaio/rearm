@@ -31,6 +31,7 @@ public class ReleaseOutputEventDto {
 	private EventScope scope;
 	private UUID snapshotApprovalEntry;
 	private ReleaseLifecycle snapshotLifecycle;
+	private String approvedEnvironment;
 
 	public static ReleaseOutputEventDto fromData(ReleaseOutputEvent event, EventScope scope) {
 		return ReleaseOutputEventDto.builder()
@@ -49,6 +50,7 @@ public class ReleaseOutputEventDto {
 				.scope(scope)
 				.snapshotApprovalEntry(event.getSnapshotApprovalEntry())
 				.snapshotLifecycle(event.getSnapshotLifecycle())
+				.approvedEnvironment(event.getApprovedEnvironment())
 				.build();
 	}
 }

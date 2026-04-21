@@ -69,7 +69,8 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		MARKETING_RELEASE_LIFECYCLE_CHANGE,
 		INTEGRATION_TRIGGER,
 		EMAIL_NOTIFICATION,
-		VDR_SNAPSHOT_ARTIFACT;
+		VDR_SNAPSHOT_ARTIFACT,
+		ADD_APPROVED_ENVIRONMENT;
 	}
 	
 	public enum EventScope {
@@ -158,6 +159,8 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		// VDR_SNAPSHOT_ARTIFACT: explicit snapshot context (replaces old conditionGroup-based detection)
 		private UUID snapshotApprovalEntry;      // if set → APPROVAL-type snapshot for this approval entry
 		private ReleaseLifecycle snapshotLifecycle; // if set → LIFECYCLE-type snapshot
+		// ADD_APPROVED_ENVIRONMENT: environment string to add to release.approvedEnvironments when fired
+		private String approvedEnvironment;
 	}
 	
 	@JsonProperty
