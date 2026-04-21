@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.model.AnalysisJustification;
+import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.FindingType;
@@ -39,6 +40,15 @@ public class VulnAnalysisWebDto {
 		@JsonProperty("severity")
 		private VulnerabilitySeverity severity;
 		
+		@JsonProperty("responses")
+		private List<AnalysisResponse> responses;
+		
+		@JsonProperty("recommendation")
+		private String recommendation;
+		
+		@JsonProperty("workaround")
+		private String workaround;
+		
 		public static AnalysisHistoryWebDto fromAnalysisHistory(VulnAnalysisData.AnalysisHistory history) {
 			AnalysisHistoryWebDto dto = new AnalysisHistoryWebDto();
 			dto.setState(history.getState());
@@ -46,6 +56,9 @@ public class VulnAnalysisWebDto {
 			dto.setDetails(history.getDetails());
 			dto.setCreatedDate(history.getCreatedDate());
 			dto.setSeverity(history.getSeverity());
+			dto.setResponses(history.getResponses());
+			dto.setRecommendation(history.getRecommendation());
+			dto.setWorkaround(history.getWorkaround());
 			return dto;
 		}
 	}
@@ -98,6 +111,15 @@ public class VulnAnalysisWebDto {
 	@JsonProperty("severity")
 	private VulnerabilitySeverity severity;
 	
+	@JsonProperty("responses")
+	private List<AnalysisResponse> responses;
+	
+	@JsonProperty("recommendation")
+	private String recommendation;
+	
+	@JsonProperty("workaround")
+	private String workaround;
+	
 	public static VulnAnalysisWebDto fromVulnAnalysisData(VulnAnalysisData vad) {
 		VulnAnalysisWebDto dto = new VulnAnalysisWebDto();
 		dto.setUuid(vad.getUuid());
@@ -115,6 +137,9 @@ public class VulnAnalysisWebDto {
 		dto.setAnalysisState(vad.getAnalysisState());
 		dto.setAnalysisJustification(vad.getAnalysisJustification());
 		dto.setSeverity(vad.getSeverity());
+		dto.setResponses(vad.getResponses());
+		dto.setRecommendation(vad.getRecommendation());
+		dto.setWorkaround(vad.getWorkaround());
 		dto.setAnalysisHistory(vad.getAnalysisHistory().stream()
 				.map(AnalysisHistoryWebDto::fromAnalysisHistory)
 				.toList());

@@ -24,6 +24,7 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.model.AnalysisJustification;
+import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.BranchData;
@@ -333,10 +334,60 @@ public class VulnAnalysisService {
 	}
 	
 	/**
+	 * Returns the details text from the most recent analysis history entry, or null if none.
+	 * Used during partial updates so CISA validation can see the persisted impact statement
+	 * when the caller didn't supply a new one.
+	 */
+	private static String latestDetails(VulnAnalysisData vad) {
+		List<VulnAnalysisData.AnalysisHistory> history = vad.getAnalysisHistory();
+		if (history == null || history.isEmpty()) return null;
+		return history.get(history.size() - 1).getDetails();
+	}
+	
+	/**
+	 * Validates CISA VEX requirements on a state transition:
+	 *   - NOT_AFFECTED requires a machine-readable justification OR an impact statement (details).
+	 *   - EXPLOITABLE requires an action statement: at least one response OR a non-blank recommendation.
+	 * Other states (IN_TRIAGE, FALSE_POSITIVE, FIXED) have no additional CISA requirement.
+	 */
+	private void validateCisaConstraints(AnalysisState state, AnalysisJustification justification,
+			String details, List<AnalysisResponse> responses, String recommendation) throws RelizaException {
+		// Null state means "no state change" on an update — nothing to validate here.
+		// Create path guarantees non-null state via required GraphQL input + explicit check in createVulnAnalysis.
+		if (state == null) {
+			return;
+		}
+		switch (state) {
+			case NOT_AFFECTED -> {
+				if (justification == null && StringUtils.isBlank(details)) {
+					throw new RelizaException("NOT_AFFECTED analysis requires either a justification " +
+							"or an impact statement in details (CISA VEX requirement)");
+				}
+			}
+			case EXPLOITABLE -> {
+				boolean hasResponse = responses != null && !responses.isEmpty();
+				if (!hasResponse && StringUtils.isBlank(recommendation)) {
+					throw new RelizaException("EXPLOITABLE analysis requires an action statement: " +
+							"at least one response or a non-blank recommendation (CISA VEX requirement)");
+				}
+			}
+			default -> { /* no CISA requirement */ }
+		}
+	}
+	
+	/**
 	 * Create a new vulnerability analysis
 	 */
 	@Transactional
 	public VulnAnalysisData createVulnAnalysis(CreateVulnAnalysisDto createDto, WhoUpdated wu) throws RelizaException {
+		
+		// State is required on create (GraphQL schema marks it non-null; enforce defensively).
+		if (createDto.getState() == null) {
+			throw new RelizaException("Analysis state is required when creating a vulnerability analysis");
+		}
+		// CISA VEX validation
+		validateCisaConstraints(createDto.getState(), createDto.getJustification(), createDto.getDetails(),
+				createDto.getResponses(), createDto.getRecommendation());
 		
 		// Minimize PURL if location type is PURL
 		String normalizedLocation = createDto.getLocation();
@@ -363,7 +414,8 @@ public class VulnAnalysisService {
 				createDto.getFindingId(), createDto.getFindingAliases(), createDto.getFindingType(), 
 				createDto.getScope(), createDto.getScopeUuid(),
 				hierarchy.release(), hierarchy.branch(), hierarchy.component(),
-				createDto.getState(), createDto.getJustification(), createDto.getDetails(), wu);
+				createDto.getState(), createDto.getJustification(), createDto.getDetails(),
+				createDto.getResponses(), createDto.getRecommendation(), createDto.getWorkaround(), wu);
 		
 		// Set severity if provided
 		if (createDto.getSeverity() != null) {
@@ -378,7 +430,7 @@ public class VulnAnalysisService {
 	}
 	
 	/**
-	 * Update an existing vulnerability analysis with a new state
+	 * Update an existing vulnerability analysis with a new state (backwards-compatible overload).
 	 */
 	public VulnAnalysisData updateAnalysisState(
 			UUID analysisUuid,
@@ -387,7 +439,25 @@ public class VulnAnalysisService {
 			String details,
 			List<String> findingAliases,
 			VulnerabilitySeverity severity,
-			WhoUpdated wu) {
+			WhoUpdated wu) throws RelizaException {
+		return updateAnalysisState(analysisUuid, newState, newJustification, details, findingAliases, severity,
+				null, null, null, wu);
+	}
+	
+	/**
+	 * Update an existing vulnerability analysis with a new state and CISA-VEX fields.
+	 */
+	public VulnAnalysisData updateAnalysisState(
+			UUID analysisUuid,
+			AnalysisState newState,
+			AnalysisJustification newJustification,
+			String details,
+			List<String> findingAliases,
+			VulnerabilitySeverity severity,
+			List<AnalysisResponse> responses,
+			String recommendation,
+			String workaround,
+			WhoUpdated wu) throws RelizaException {
 		
 		Optional<VulnAnalysis> existingAnalysis = vulnAnalysisRepository.findById(analysisUuid);
 		if (existingAnalysis.isEmpty()) {
@@ -397,18 +467,35 @@ public class VulnAnalysisService {
 		VulnAnalysis va = existingAnalysis.get();
 		VulnAnalysisData vad = VulnAnalysisData.dataFromRecord(va);
 		
+		// Partial-update semantics: if caller did not supply a new state, retain the existing one
+		// so the new history entry remains semantically meaningful and top-level state stays stable.
+		AnalysisState effectiveState = newState != null ? newState : vad.getAnalysisState();
+		
+		// CISA VEX validation must consider the post-merge record: if the caller didn't supply a
+		// given field, the persisted value remains in effect after the update. Validating only the
+		// incoming fields would reject legitimate partial updates (e.g. severity-only) against
+		// records that already satisfy the CISA constraints.
+		// Mirror addAnalysisHistoryEntry's preserve-on-null contract: null means "don't touch",
+		// any non-null value (including "" or empty list) means "replace". This lets callers
+		// explicitly clear a field through the UI without the validator silently papering over it.
+		AnalysisJustification effJustification = newJustification != null
+				? newJustification : vad.getAnalysisJustification();
+		String effDetails = details != null ? details : latestDetails(vad);
+		List<AnalysisResponse> effResponses = responses != null ? responses : vad.getResponses();
+		String effRecommendation = recommendation != null ? recommendation : vad.getRecommendation();
+		validateCisaConstraints(effectiveState, effJustification, effDetails, effResponses, effRecommendation);
+		
 		// Update finding aliases if provided
 		if (findingAliases != null) {
 			vad.setFindingAliases(findingAliases);
 		}
 		
-		// Update severity if provided
-		if (severity != null) {
-			vad.setSeverity(severity);
-		}
-		
-		// Add new history entry and update current state
-		vad.addAnalysisHistoryEntry(newState, newJustification, details, severity, wu);
+		// Add new history entry and update current state.
+		// addAnalysisHistoryEntry preserves top-level fields (severity, responses, recommendation,
+		// workaround) when the corresponding argument is null and mirrors them when non-null —
+		// this covers partial updates uniformly, so no separate setSeverity() call is needed here.
+		vad.addAnalysisHistoryEntry(effectiveState, newJustification, details, severity,
+				responses, recommendation, workaround, wu);
 		
 		Map<String, Object> recordData = Utils.OM.convertValue(vad, new TypeReference<Map<String, Object>>() {});
 		VulnAnalysis savedVA = saveVulnAnalysis(va, recordData, wu);
@@ -616,16 +703,21 @@ public class VulnAnalysisService {
 	/**
 	 * Returns priority value for analysis state.
 	 * Higher value = higher priority (wins in conflict resolution)
-	 * EXPLOITABLE(4) > IN_TRIAGE(3) > NOT_AFFECTED(1) > FALSE_POSITIVE(0)
-	 * Note: NULL is handled separately in selectHigherPriorityAnalysisState
+	 * EXPLOITABLE(5) > IN_TRIAGE(4) > NULL(3) > FIXED(2) > NOT_AFFECTED(1) > FALSE_POSITIVE(0).
+	 * Rationale for FIXED > NOT_AFFECTED: both are terminal non-affecting states, but FIXED is a
+	 * strictly stronger signal (the issue was actually remediated) than NOT_AFFECTED (the component
+	 * isn't exercised in a vulnerable way). A deterministic tie-break also avoids flaky display
+	 * values when sources arrive from a non-deterministic iteration order (e.g. HashSet).
+	 * Note: NULL is handled separately in selectHigherPriorityAnalysisState.
 	 */
 	private int getAnalysisStatePriority(AnalysisState state) {
 		if (state == null) {
-			return 2; // NULL is between IN_TRIAGE and NOT_AFFECTED
+			return 3; // NULL sits between IN_TRIAGE and FIXED — still "unknown, potentially affecting"
 		}
 		return switch (state) {
-			case EXPLOITABLE -> 4;
-			case IN_TRIAGE -> 3;
+			case EXPLOITABLE -> 5;
+			case IN_TRIAGE -> 4;
+			case FIXED -> 2;
 			case NOT_AFFECTED -> 1;
 			case FALSE_POSITIVE -> 0;
 		};

@@ -27,6 +27,7 @@ import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.AnalysisState;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.FindingType;
@@ -211,10 +212,13 @@ public class VulnAnalysisDataFetcher {
 		
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, createDto.getOrg(), ros, CallType.READ);
 		
-		// Validate justification is provided when org setting requires it
-		if (ood.isPresent() && Boolean.TRUE.equals(ood.get().getSettingsWithDefaults().getJustificationMandatory())
+		// Org-level justificationMandatory: only meaningful when CISA expects a justification
+		// (state == NOT_AFFECTED). For IN_TRIAGE / FALSE_POSITIVE / FIXED / EXPLOITABLE the
+		// CISA VEX model has no justification requirement, so the blanket setting is skipped.
+		if (createDto.getState() == AnalysisState.NOT_AFFECTED
+				&& ood.isPresent() && Boolean.TRUE.equals(ood.get().getSettingsWithDefaults().getJustificationMandatory())
 				&& createDto.getJustification() == null) {
-			throw new RelizaException("Justification is required by organization settings");
+			throw new RelizaException("Justification is required by organization settings for NOT_AFFECTED findings");
 		}
 		
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
@@ -244,10 +248,18 @@ public class VulnAnalysisDataFetcher {
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, existing.getOrg(), List.of(ro), CallType.READ);
 		
-		// Validate justification is provided when org setting requires it
-		if (ood.isPresent() && Boolean.TRUE.equals(ood.get().getSettingsWithDefaults().getJustificationMandatory())
-				&& updateDto.getJustification() == null) {
-			throw new RelizaException("Justification is required by organization settings");
+		// Org-level justificationMandatory: only meaningful when the effective state after
+		// this update is NOT_AFFECTED. For other states the CISA VEX model has no
+		// justification requirement, so the blanket setting is skipped.
+		// We compare against existing.getAnalysisJustification() (the top-level mirror), which is
+		// updated to the most-recently-supplied non-null justification via addAnalysisHistoryEntry.
+		// That is the record's effective current justification — latest history entry may have a
+		// null justification on purpose (partial update that didn't touch justification).
+		AnalysisState effectiveState = updateDto.getState() != null ? updateDto.getState() : existing.getAnalysisState();
+		if (effectiveState == AnalysisState.NOT_AFFECTED
+				&& ood.isPresent() && Boolean.TRUE.equals(ood.get().getSettingsWithDefaults().getJustificationMandatory())
+				&& updateDto.getJustification() == null && existing.getAnalysisJustification() == null) {
+			throw new RelizaException("Justification is required by organization settings for NOT_AFFECTED findings");
 		}
 		
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
@@ -259,6 +271,9 @@ public class VulnAnalysisDataFetcher {
 				updateDto.getDetails(),
 				updateDto.getFindingAliases(),
 				updateDto.getSeverity(),
+				updateDto.getResponses(),
+				updateDto.getRecommendation(),
+				updateDto.getWorkaround(),
 				wu);
 		
 		return VulnAnalysisWebDto.fromVulnAnalysisData(vad);

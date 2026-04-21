@@ -280,8 +280,10 @@ public class ReleaseMetricsDto implements Cloneable {
   		int unassignedVulns = 0;
   		
   		for (var x: violationDetails) {
-			// Skip findings with FALSE_POSITIVE or NOT_AFFECTED analysis state
-			if (x.analysisState() == AnalysisState.FALSE_POSITIVE || x.analysisState() == AnalysisState.NOT_AFFECTED) {
+			// Skip findings with FALSE_POSITIVE, NOT_AFFECTED, or FIXED analysis state (non-affecting)
+			if (x.analysisState() == AnalysisState.FALSE_POSITIVE
+					|| x.analysisState() == AnalysisState.NOT_AFFECTED
+					|| x.analysisState() == AnalysisState.FIXED) {
 				continue;
 			}
 			switch (x.type()) {
@@ -300,8 +302,10 @@ public class ReleaseMetricsDto implements Cloneable {
 		}
   		
   		for (var x: vulnerabilityDetails) {
-			// Skip findings with FALSE_POSITIVE or NOT_AFFECTED analysis state
-			if (x.analysisState() == AnalysisState.FALSE_POSITIVE || x.analysisState() == AnalysisState.NOT_AFFECTED) {
+			// Skip findings with FALSE_POSITIVE, NOT_AFFECTED, or FIXED analysis state (non-affecting)
+			if (x.analysisState() == AnalysisState.FALSE_POSITIVE
+					|| x.analysisState() == AnalysisState.NOT_AFFECTED
+					|| x.analysisState() == AnalysisState.FIXED) {
 				continue;
 			}
   			switch (x.severity()) {
@@ -327,8 +331,10 @@ public class ReleaseMetricsDto implements Cloneable {
 
 		int weaknessCount = 0;
 		for (var x: weaknessDetails) {
-			// Skip findings with FALSE_POSITIVE or NOT_AFFECTED analysis state
-			if (x.analysisState() == AnalysisState.FALSE_POSITIVE || x.analysisState() == AnalysisState.NOT_AFFECTED) {
+			// Skip findings with FALSE_POSITIVE, NOT_AFFECTED, or FIXED analysis state (non-affecting)
+			if (x.analysisState() == AnalysisState.FALSE_POSITIVE
+					|| x.analysisState() == AnalysisState.NOT_AFFECTED
+					|| x.analysisState() == AnalysisState.FIXED) {
 				continue;
 			}
 			++weaknessCount;

@@ -1430,6 +1430,17 @@ enum AnalysisState {
 	IN_TRIAGE
 	FALSE_POSITIVE
 	NOT_AFFECTED
+	FIXED
+}
+
+# CycloneDX 1.7 analysis.response values - declares the supplier action
+# against an affecting vulnerability (CISA VEX "action statement").
+enum AnalysisResponse {
+	CAN_NOT_FIX
+	WILL_NOT_FIX
+	UPDATE
+	ROLLBACK
+	WORKAROUND_AVAILABLE
 }
 
 # Vulnerability ID types based on OSV schema
@@ -2868,6 +2879,9 @@ enum SpecVersion {
 type VulnAnalysisWebDto {
 	uuid: ID!
 	org: ID!
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
 	location: String!
 	locationType: LocationType!
 	findingId: String!
@@ -2893,6 +2907,9 @@ type AnalysisHistoryWebDto {
 	details: String
 	createdDate: DateTime!
 	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
 }
 
 input CreateVulnAnalysisInput {
@@ -2908,6 +2925,9 @@ input CreateVulnAnalysisInput {
 	justification: AnalysisJustification
 	details: String
 	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
 }
 
 input UpdateVulnAnalysisInput {
@@ -2917,6 +2937,9 @@ input UpdateVulnAnalysisInput {
 	details: String
 	findingAliases: [String]
 	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
 }
 
 enum LocationType {

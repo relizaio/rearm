@@ -53,6 +53,7 @@ import io.reliza.common.CdxType;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.model.AnalysisJustification;
+import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.VulnAnalysisData;
@@ -1677,6 +1678,17 @@ public class ReleaseService {
 	 */
 	private String generateVdrInternal(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
 		Bom bom = new Bom();
+		// CISA/CDX VDRs SHOULD have a serial number (urn:uuid). Derive deterministically from the
+		// release identity + snapshot coordinates so that re-exporting the same logical snapshot
+		// yields the same serial (idempotent; referenceable from external systems).
+		String serialSeed = String.join("|",
+				String.valueOf(releaseData.getUuid()),
+				snapshotType != null ? snapshotType.name() : "LIVE",
+				snapshotValue != null ? snapshotValue : "",
+				cutOffDate != null ? cutOffDate.toInstant().toString() : "",
+				Boolean.TRUE.equals(includeSuppressed) ? "withSuppressed" : "noSuppressed");
+		UUID serialUuid = UUID.nameUUIDFromBytes(serialSeed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		bom.setSerialNumber("urn:uuid:" + serialUuid);
 		
 		// Set metadata
 		OrganizationData orgData = getOrganizationService.getOrganizationData(releaseData.getOrg()).orElse(null);
@@ -1977,10 +1989,11 @@ public class ReleaseService {
 				}
 			}
 			
-			// Skip suppressed vulnerabilities unless includeSuppressed is true
+			// Skip suppressed vulnerabilities (non-affecting states) unless includeSuppressed is true
 			if (!Boolean.TRUE.equals(includeSuppressed) 
 					&& (finalState == AnalysisState.FALSE_POSITIVE 
-					|| finalState == AnalysisState.NOT_AFFECTED)) {
+					|| finalState == AnalysisState.NOT_AFFECTED
+					|| finalState == AnalysisState.FIXED)) {
 				continue;
 			}
 			
@@ -2054,35 +2067,41 @@ public class ReleaseService {
 			vuln.setAffects(affects);
 		}
 		
-		// Set analysis state and details
-		if (defaultAnalysisState != null) {
-			Vulnerability.Analysis analysis = new Vulnerability.Analysis();
+		// Look up analysis details - first try self release, then dependency releases.
+		// This lookup must run independent of defaultAnalysisState, because DTrack's
+		// per-source analysisState can be null while a VulnAnalysisData record (with
+		// full CISA VEX triage) exists in ReARM.
+		VulnAnalysisData analysisData = null;
+		if (vulnDto.purl() != null && vulnDto.vulnId() != null) {
+			String key = computeAnalysisKey(vulnDto.purl(), vulnDto.vulnId());
 			
-			// Start with default
-			analysis.setState(mapVdrAnalysisState(defaultAnalysisState));
+			// Try self release first
+			analysisData = vdrContext.selfAnalysisMap().get(key);
 			
-			// Look up analysis details - first try self release, then dependency releases
-			VulnAnalysisData analysisData = null;
-			if (vulnDto.purl() != null && vulnDto.vulnId() != null) {
-				String key = computeAnalysisKey(vulnDto.purl(), vulnDto.vulnId());
-				
-				// Try self release first
-				analysisData = vdrContext.selfAnalysisMap().get(key);
-				
-				// If not found, try dependency releases that have this analysis state
-				if (analysisData == null) {
-					for (FindingSourceDto srcDto : sourcesForState) {
-						if (srcDto.release() != null) {
-							Map<String, VulnAnalysisData> relMap = vdrContext.releaseAnalysisMaps().get(srcDto.release());
-							if (relMap != null) {
-								analysisData = relMap.get(key);
-								if (analysisData != null) {
-									break;
-								}
+			// If not found, try dependency releases
+			if (analysisData == null) {
+				for (FindingSourceDto srcDto : sourcesForState) {
+					if (srcDto.release() != null) {
+						Map<String, VulnAnalysisData> relMap = vdrContext.releaseAnalysisMaps().get(srcDto.release());
+						if (relMap != null) {
+							analysisData = relMap.get(key);
+							if (analysisData != null) {
+								break;
 							}
 						}
 					}
 				}
+			}
+		}
+		
+		// Emit analysis block when we have either a DTrack-provided default state or
+		// any ReARM-side VulnAnalysisData to surface.
+		if (defaultAnalysisState != null || analysisData != null) {
+			Vulnerability.Analysis analysis = new Vulnerability.Analysis();
+			
+			// Start with default if present
+			if (defaultAnalysisState != null) {
+				analysis.setState(mapVdrAnalysisState(defaultAnalysisState));
 			}
 			
 			if (analysisData != null) {
@@ -2113,6 +2132,19 @@ public class ReleaseService {
 						}
 						if (StringUtils.isNotEmpty(targetHistory.getDetails())) {
 							analysis.setDetail(targetHistory.getDetails());
+						}
+						// CISA VEX action-statement fields (CDX 1.4+)
+						List<AnalysisResponse> historyResponses = targetHistory.getResponses();
+						if (historyResponses != null && !historyResponses.isEmpty()) {
+							analysis.setResponses(historyResponses.stream()
+									.map(ReleaseService::mapVdrAnalysisResponse)
+									.toList());
+						}
+						if (StringUtils.isNotBlank(targetHistory.getRecommendation())) {
+							vuln.setRecommendation(targetHistory.getRecommendation());
+						}
+						if (StringUtils.isNotBlank(targetHistory.getWorkaround())) {
+							vuln.setWorkaround(targetHistory.getWorkaround());
 						}
 						// Override severity if analysis history changed it
 						if (targetHistory.getSeverity() != null) {
@@ -2215,14 +2247,29 @@ public class ReleaseService {
 	}
 	
 	/**
-	 * Map internal analysis state to CycloneDX analysis state
+	 * Map internal analysis state to CycloneDX analysis state.
+	 * Internal FIXED maps to CDX RESOLVED (terminal "remediated" state).
 	 */
-	private Vulnerability.Analysis.State mapVdrAnalysisState(AnalysisState state) {
+	private static Vulnerability.Analysis.State mapVdrAnalysisState(AnalysisState state) {
 		return switch (state) {
 			case EXPLOITABLE -> Vulnerability.Analysis.State.EXPLOITABLE;
 			case IN_TRIAGE -> Vulnerability.Analysis.State.IN_TRIAGE;
 			case FALSE_POSITIVE -> Vulnerability.Analysis.State.FALSE_POSITIVE;
 			case NOT_AFFECTED -> Vulnerability.Analysis.State.NOT_AFFECTED;
+			case FIXED -> Vulnerability.Analysis.State.RESOLVED;
+		};
+	}
+	
+	/**
+	 * Map internal analysis response to CycloneDX analysis response (CDX 1.4+).
+	 */
+	private static Vulnerability.Analysis.Response mapVdrAnalysisResponse(AnalysisResponse response) {
+		return switch (response) {
+			case CAN_NOT_FIX -> Vulnerability.Analysis.Response.CAN_NOT_FIX;
+			case WILL_NOT_FIX -> Vulnerability.Analysis.Response.WILL_NOT_FIX;
+			case UPDATE -> Vulnerability.Analysis.Response.UPDATE;
+			case ROLLBACK -> Vulnerability.Analysis.Response.ROLLBACK;
+			case WORKAROUND_AVAILABLE -> Vulnerability.Analysis.Response.WORKAROUND_AVAILABLE;
 		};
 	}
 	

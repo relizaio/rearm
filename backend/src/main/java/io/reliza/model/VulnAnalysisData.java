@@ -42,13 +42,31 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		@JsonProperty("severity")
 		private VulnerabilitySeverity severity;
 		
+		@JsonProperty("responses")
+		private List<AnalysisResponse> responses = new LinkedList<>();
+		
+		@JsonProperty("recommendation")
+		private String recommendation;
+		
+		@JsonProperty("workaround")
+		private String workaround;
+		
 		public AnalysisHistory() {}
 		
 		public AnalysisHistory(AnalysisState state, AnalysisJustification justification, String details, VulnerabilitySeverity severity, WhoUpdated wu) {
+			this(state, justification, details, severity, null, null, null, wu);
+		}
+		
+		public AnalysisHistory(AnalysisState state, AnalysisJustification justification, String details,
+				VulnerabilitySeverity severity, List<AnalysisResponse> responses, String recommendation,
+				String workaround, WhoUpdated wu) {
 			this.state = state;
 			this.justification = justification;
 			this.details = details;
 			this.severity = severity;
+			this.responses = responses != null ? new LinkedList<>(responses) : new LinkedList<>();
+			this.recommendation = recommendation;
+			this.workaround = workaround;
 			this.createdDate = ZonedDateTime.now();
 			this.whoUpdated = wu;
 		}
@@ -99,6 +117,30 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		
 		public void setSeverity(VulnerabilitySeverity severity) {
 			this.severity = severity;
+		}
+		
+		public List<AnalysisResponse> getResponses() {
+			return responses != null ? new LinkedList<>(responses) : new LinkedList<>();
+		}
+		
+		public void setResponses(List<AnalysisResponse> responses) {
+			this.responses = responses != null ? new LinkedList<>(responses) : new LinkedList<>();
+		}
+		
+		public String getRecommendation() {
+			return recommendation;
+		}
+		
+		public void setRecommendation(String recommendation) {
+			this.recommendation = recommendation;
+		}
+		
+		public String getWorkaround() {
+			return workaround;
+		}
+		
+		public void setWorkaround(String workaround) {
+			this.workaround = workaround;
 		}
 	}
 	
@@ -151,6 +193,15 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 	
 	@JsonProperty("severity")
 	private VulnerabilitySeverity severity;
+	
+	@JsonProperty("responses")
+	private List<AnalysisResponse> responses = new LinkedList<>();
+	
+	@JsonProperty("recommendation")
+	private String recommendation;
+	
+	@JsonProperty("workaround")
+	private String workaround;
 	
 	private VulnAnalysisData() {}
 	
@@ -296,19 +347,72 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		this.severity = severity;
 	}
 	
-	/**
-	 * Adds a new entry to the analysis history and updates current state
-	 */
-	public void addAnalysisHistoryEntry(AnalysisState state, AnalysisJustification justification, String details, VulnerabilitySeverity severity, WhoUpdated wu) {
-		AnalysisHistory entry = new AnalysisHistory(state, justification, details, severity, wu);
-		this.analysisHistory.add(entry);
-		this.analysisState = state;
-		this.analysisJustification = justification;
-		this.severity = severity;
+	public List<AnalysisResponse> getResponses() {
+		return responses != null ? new LinkedList<>(responses) : new LinkedList<>();
+	}
+	
+	public void setResponses(List<AnalysisResponse> responses) {
+		this.responses = responses != null ? new LinkedList<>(responses) : new LinkedList<>();
+	}
+	
+	public String getRecommendation() {
+		return recommendation;
+	}
+	
+	public void setRecommendation(String recommendation) {
+		this.recommendation = recommendation;
+	}
+	
+	public String getWorkaround() {
+		return workaround;
+	}
+	
+	public void setWorkaround(String workaround) {
+		this.workaround = workaround;
 	}
 	
 	/**
-	 * Factory method to create a new VulnAnalysisData instance
+	 * Adds a new entry to the analysis history and updates current state.
+	 * Kept for backwards compatibility; delegates to the full-parameter overload.
+	 */
+	public void addAnalysisHistoryEntry(AnalysisState state, AnalysisJustification justification, String details, VulnerabilitySeverity severity, WhoUpdated wu) {
+		addAnalysisHistoryEntry(state, justification, details, severity, null, null, null, wu);
+	}
+	
+	/**
+	 * Adds a new entry to the analysis history and updates current state, including
+	 * CISA-VEX action-statement fields (responses, recommendation, workaround).
+	 */
+	public void addAnalysisHistoryEntry(AnalysisState state, AnalysisJustification justification, String details,
+			VulnerabilitySeverity severity, List<AnalysisResponse> responses, String recommendation,
+			String workaround, WhoUpdated wu) {
+		AnalysisHistory entry = new AnalysisHistory(state, justification, details, severity, responses, recommendation, workaround, wu);
+		this.analysisHistory.add(entry);
+		// Top-level mirror reflects the "current" analysis. We only overwrite a field when the caller
+		// explicitly provided a value, so partial updates (including the 5-arg legacy overload that
+		// passes null for the CISA fields) don't silently wipe previously-stored data.
+		if (state != null) {
+			this.analysisState = state;
+		}
+		if (justification != null) {
+			this.analysisJustification = justification;
+		}
+		if (severity != null) {
+			this.severity = severity;
+		}
+		if (responses != null) {
+			this.responses = new LinkedList<>(responses);
+		}
+		if (recommendation != null) {
+			this.recommendation = recommendation;
+		}
+		if (workaround != null) {
+			this.workaround = workaround;
+		}
+	}
+	
+	/**
+	 * Factory method to create a new VulnAnalysisData instance (backwards-compatible overload).
 	 */
 	public static VulnAnalysisData createVulnAnalysisData(
 			UUID org,
@@ -327,6 +431,34 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 			AnalysisJustification initialJustification,
 			String initialDetails,
 			WhoUpdated wu) {
+		return createVulnAnalysisData(org, location, rawLocation, locationType, findingId, findingAliases,
+				findingType, scope, scopeUuid, release, branch, component, initialState, initialJustification,
+				initialDetails, null, null, null, wu);
+	}
+	
+	/**
+	 * Factory method to create a new VulnAnalysisData instance with CISA-VEX fields.
+	 */
+	public static VulnAnalysisData createVulnAnalysisData(
+			UUID org,
+			String location,
+			String rawLocation,
+			LocationType locationType,
+			String findingId,
+			List<String> findingAliases,
+			FindingType findingType,
+			AnalysisScope scope,
+			UUID scopeUuid,
+			UUID release,
+			UUID branch,
+			UUID component,
+			AnalysisState initialState,
+			AnalysisJustification initialJustification,
+			String initialDetails,
+			List<AnalysisResponse> initialResponses,
+			String initialRecommendation,
+			String initialWorkaround,
+			WhoUpdated wu) {
 		
 		VulnAnalysisData vad = new VulnAnalysisData();
 		vad.setUuid(UUID.randomUUID());
@@ -342,7 +474,8 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		vad.setRelease(release);
 		vad.setBranch(branch);
 		vad.setComponent(component);
-		vad.addAnalysisHistoryEntry(initialState, initialJustification, initialDetails, null, wu);
+		vad.addAnalysisHistoryEntry(initialState, initialJustification, initialDetails, null,
+				initialResponses, initialRecommendation, initialWorkaround, wu);
 		
 		return vad;
 	}
@@ -390,13 +523,17 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 				java.util.Objects.equals(component, that.component) &&
 				analysisState == that.analysisState &&
 				analysisJustification == that.analysisJustification &&
-				java.util.Objects.equals(severity, that.severity);
+				java.util.Objects.equals(severity, that.severity) &&
+				java.util.Objects.equals(responses, that.responses) &&
+				java.util.Objects.equals(recommendation, that.recommendation) &&
+				java.util.Objects.equals(workaround, that.workaround);
 	}
 	
 	@Override
 	public int hashCode() {
 		return java.util.Objects.hash(super.hashCode(), uuid, org, location, rawLocation, 
 				locationType, findingId, findingAliases, findingType, scope, scopeUuid,
-				release, branch, component, analysisState, analysisJustification, severity);
+				release, branch, component, analysisState, analysisJustification, severity,
+				responses, recommendation, workaround);
 	}
 }

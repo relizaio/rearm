@@ -8,5 +8,6 @@ public enum AnalysisState {
 	EXPLOITABLE,
 	IN_TRIAGE,
 	FALSE_POSITIVE,
-	NOT_AFFECTED
+	NOT_AFFECTED,
+	FIXED
 }

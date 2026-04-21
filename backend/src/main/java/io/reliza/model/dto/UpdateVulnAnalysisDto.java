@@ -10,6 +10,7 @@ import java.util.UUID;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.model.AnalysisJustification;
+import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import lombok.Data;
@@ -34,4 +35,13 @@ public class UpdateVulnAnalysisDto {
 	
 	@JsonProperty("severity")
 	private VulnerabilitySeverity severity;
+	
+	@JsonProperty("responses")
+	private List<AnalysisResponse> responses;
+	
+	@JsonProperty("recommendation")
+	private String recommendation;
+	
+	@JsonProperty("workaround")
+	private String workaround;
 }
