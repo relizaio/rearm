@@ -12,6 +12,11 @@ export function validateOutputTrigger(trigger: any): TriggerValidationResult {
         return { valid: false, error: 'Output event type is required.' }
     }
 
+    if (trigger.type === 'ADD_APPROVED_ENVIRONMENT' &&
+        (!trigger.approvedEnvironment || String(trigger.approvedEnvironment).trim() === '')) {
+        return { valid: false, error: 'Approved environment is required for Add Approved Environment events.' }
+    }
+
     return { valid: true }
 }
 

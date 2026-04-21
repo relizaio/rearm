@@ -508,6 +508,7 @@ const singleReleaseDataNoParent = `
         value
         removable
     }
+    approvedEnvironments
     approvalEvents {
         approvalEntry
         approvalEntryName
@@ -689,6 +690,7 @@ const COMPONENT_FULL_DATA = `
             celClientPayload
             snapshotApprovalEntry
             snapshotLifecycle
+            approvedEnvironment
             scope
         }
     }
@@ -707,6 +709,7 @@ const COMPONENT_FULL_DATA = `
         celClientPayload
         snapshotApprovalEntry
         snapshotLifecycle
+        approvedEnvironment
         scope
     }
     releaseInputTriggers {
@@ -895,6 +898,7 @@ const singleReleaseProductNoParent = `
         value
         removable
     }
+    approvedEnvironments
     approvalEvents {
         approvalEntry
         approvalEntryName

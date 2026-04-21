@@ -568,6 +568,13 @@
                 </n-tab-pane>
                 <n-tab-pane v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" name="approvals" tab="Approvals">
                     <div class="container" v-if="updatedRelease.type !== 'PLACEHOLDER'">
+                        <div style="margin-bottom: 10px;">
+                            <strong>Approved Environments: </strong>
+                            <template v-if="updatedRelease.approvedEnvironments && updatedRelease.approvedEnvironments.length">
+                                <n-tag v-for="env in updatedRelease.approvedEnvironments" :key="env" type="success" style="margin-right: 5px;">{{ env }}</n-tag>
+                            </template>
+                            <span v-else>No approved environments set for this release.</span>
+                        </div>
                         <n-data-table :data="releaseApprovalTableData" :columns="releaseApprovalTableFields" :row-key="approvalRowKey" />
                         <n-space v-if="hasApprovalChanges" style="margin-top: 5px;">
                             <n-spin :show="approvalPending" small>

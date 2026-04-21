@@ -23,4 +23,5 @@ export type OutputTriggerEvent = {
     celClientPayload?: string | null;
     snapshotApprovalEntry?: string | null;
     snapshotLifecycle?: string | null;
+    approvedEnvironment?: string | null;
 }

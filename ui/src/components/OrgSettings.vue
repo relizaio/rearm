@@ -564,7 +564,7 @@
                     </n-modal>
 
                     <h4>Policy-Wide Output Events:
-                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Output Event" @click="resetGlobalOutputEvent(); showCreateGlobalOutputEventModal = true">
+                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Output Event" @click="resetGlobalOutputEvent(); loadEnvironmentTypesForOutputEvents(); showCreateGlobalOutputEventModal = true">
                             <CirclePlus/>
                         </Icon>
                     </h4>
@@ -639,6 +639,9 @@
                                     </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'VDR_SNAPSHOT_ARTIFACT' && globalSnapshotMode === 'LIFECYCLE'" label="Snapshot lifecycle">
                                         <n-select v-model:value="globalOutputEvent.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
+                                        <n-select v-model:value="globalOutputEvent.approvedEnvironment" filterable tag :options="environmentOptions" placeholder="Select or type an environment (e.g. UAT)" />
                                     </n-form-item>
                                     <n-button @click="addGlobalOutputEvent" type="success">Save</n-button>
                                 </n-space>
@@ -1074,6 +1077,7 @@ import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
+import graphqlQueries from '../utils/graphqlQueries'
 import constants from '../utils/constants'
 import { InputTriggerEvent, OutputTriggerEvent } from '../utils/triggerTypes'
 import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerValidation'
@@ -5113,7 +5117,8 @@ const globalOutputEvent = ref({
     includeSuppressed: false,
     celClientPayload: '' as string | null,
     snapshotApprovalEntry: null as string | null,
-    snapshotLifecycle: null as string | null
+    snapshotLifecycle: null as string | null,
+    approvedEnvironment: null as string | null
 })
 
 const globalSnapshotMode = ref<'NONE' | 'APPROVAL' | 'LIFECYCLE'>('NONE')
@@ -5134,7 +5139,8 @@ function resetGlobalOutputEvent () {
         includeSuppressed: false,
         celClientPayload: '',
         snapshotApprovalEntry: null,
-        snapshotLifecycle: null
+        snapshotLifecycle: null,
+        approvedEnvironment: null
     }
     globalSnapshotMode.value = 'NONE'
 }
@@ -5163,7 +5169,8 @@ const outputTriggerTypeOptions = [
     {label: 'Marketing Release Lifecycle Change', value: 'MARKETING_RELEASE_LIFECYCLE_CHANGE'},
     {label: 'External Integration', value: 'INTEGRATION_TRIGGER'},
     {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'},
-    {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'}
+    {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'},
+    {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'}
 ]
 
 const outputTriggerLifecycleOptions = constants.LifecycleValueOptions
@@ -5257,6 +5264,7 @@ async function fetchApprovalPolicies () {
                         celClientPayload
                         snapshotApprovalEntry
                         snapshotLifecycle
+                        approvedEnvironment
                     }
                 }
             }`,
@@ -5307,7 +5315,8 @@ async function saveGlobalOutputEvents () {
                 schedule: e.schedule || undefined,
                 celClientPayload: e.celClientPayload || undefined,
                 snapshotApprovalEntry: e.snapshotApprovalEntry || undefined,
-                snapshotLifecycle: e.snapshotLifecycle || undefined
+                snapshotLifecycle: e.snapshotLifecycle || undefined,
+                approvedEnvironment: e.approvedEnvironment || undefined
             }
             return ev
         })
@@ -5405,9 +5414,14 @@ function addGlobalOutputEvent () {
         } else if (globalSnapshotMode.value === 'LIFECYCLE') {
             eventToPush.snapshotApprovalEntry = null
         }
+        eventToPush.approvedEnvironment = null
+    } else if (eventToPush.type === 'ADD_APPROVED_ENVIRONMENT') {
+        eventToPush.snapshotApprovalEntry = null
+        eventToPush.snapshotLifecycle = null
     } else {
         eventToPush.snapshotApprovalEntry = null
         eventToPush.snapshotLifecycle = null
+        eventToPush.approvedEnvironment = null
     }
     const validation = validateOutputTrigger(eventToPush)
     if (!validation.valid) {
@@ -5438,7 +5452,17 @@ function editGlobalOutputEvent (event: any) {
     } else {
         globalSnapshotMode.value = 'NONE'
     }
+    loadEnvironmentTypesForOutputEvents()
     showCreateGlobalOutputEventModal.value = true
+}
+
+async function loadEnvironmentTypesForOutputEvents () {
+    if (environmentTypes.value.length > 0) return
+    const resp = await graphqlClient.query({
+        query: graphqlQueries.EnvironmentTypesGql,
+        variables: { orgUuid: orgResolved.value }
+    })
+    environmentTypes.value = resp.data.environmentTypes || []
 }
 
 async function deleteGlobalOutputEvent (uuid: string, name?: string) {

@@ -282,7 +282,7 @@
                                     </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Output Events" v-if="myUser.installationType !== 'OSS'">
                                         <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Event" @click="resetOutputTrigger(); showCreateOutputTriggerModal = true">
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Event" @click="resetOutputTrigger(); loadEnvTypes(); showCreateOutputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
                                         <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
@@ -386,6 +386,9 @@
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT' && snapshotMode === 'LIFECYCLE'" label="Snapshot lifecycle">
                                                         <n-select v-model:value="outputTrigger.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
+                                                        <n-select v-model:value="outputTrigger.approvedEnvironment" filterable tag :options="environmentTypeOptions" placeholder="Select or type an environment (e.g. UAT)" />
                                                     </n-form-item>
                                                     <n-button @click="addOutputTrigger" type="success">
                                                         Save
@@ -1263,6 +1266,7 @@ const outputTrigger = ref({
     celClientPayload: '',
     snapshotApprovalEntry: null as string | null,
     snapshotLifecycle: null as string | null,
+    approvedEnvironment: null as string | null,
 })
 const snapshotMode = ref<'NONE' | 'APPROVAL' | 'LIFECYCLE'>('NONE')
 
@@ -1283,6 +1287,7 @@ function resetOutputTrigger () {
         celClientPayload: '',
         snapshotApprovalEntry: null,
         snapshotLifecycle: null,
+        approvedEnvironment: null,
     }
     snapshotMode.value = 'NONE'
 }
@@ -1350,7 +1355,8 @@ const outputTriggerTypeOptions = [
     {label: 'Marketing Release Lifecycle Change', value: 'MARKETING_RELEASE_LIFECYCLE_CHANGE'},
     {label: 'External Integration', value: 'INTEGRATION_TRIGGER'},
     {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'},
-    {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'}
+    {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'},
+    {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'}
 ]
 
 // Global Input Event Refs management
@@ -1832,18 +1838,20 @@ const fetchSecretsIfAllowed = async function() {
     }
 }
 
-const environmentTypes = ref([])
+const environmentTypes = ref<string[]>([])
 
 const loadEnvTypes = async function() {
-    // axios.get('/api/manual/v1/instance/environmentTypes/' + updatedComponent.value.org).then(envTypeResp => {
-    //     envTypeResp.data.forEach((et: any) => {
-    //         if (!updatedComponent.value.envBranchMap[et]) {
-    //             updatedComponent.value.envBranchMap[et] = branches.value.filter((br: any) => br.type === 'BASE')[0].uuid
-    //         }
-    //     })
-    //     environmentTypes.value = envTypeResp.data
-    // })
+    if (environmentTypes.value.length > 0) return
+    const resp = await graphqlClient.query({
+        query: graphqlQueries.EnvironmentTypesGql,
+        variables: { orgUuid: updatedComponent.value.org }
+    })
+    environmentTypes.value = resp.data.environmentTypes || []
 }
+
+const environmentTypeOptions = computed((): any[] => {
+    return environmentTypes.value.map((et: string) => ({ label: et, value: et }))
+})
 
 const branchTypes = [{label: 'Feature', value: 'FEATURE'}, {label: 'Release', value: 'RELEASE'}]
 const selectedReleaseUuid: Ref<string> = ref('')
@@ -2070,8 +2078,16 @@ async function addOutputTrigger () {
             outputTriggerToPush.snapshotApprovalEntry = null
             outputTriggerToPush.snapshotLifecycle = null
         }
+        outputTriggerToPush.approvedEnvironment = null
+    } else if (outputTriggerToPush.type === 'ADD_APPROVED_ENVIRONMENT') {
+        outputTriggerToPush.snapshotApprovalEntry = null
+        outputTriggerToPush.snapshotLifecycle = null
+    } else {
+        outputTriggerToPush.snapshotApprovalEntry = null
+        outputTriggerToPush.snapshotLifecycle = null
+        outputTriggerToPush.approvedEnvironment = null
     }
-    
+
     const validation = validateOutputTrigger(outputTriggerToPush)
     if (!validation.valid) {
         notify('error', 'Validation Error', validation.error!)
@@ -2107,6 +2123,7 @@ function editOutputTrigger (trigger: any) {
     } else {
         snapshotMode.value = 'NONE'
     }
+    loadEnvTypes()
     showCreateOutputTriggerModal.value = true
 }
 
