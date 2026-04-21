@@ -311,7 +311,8 @@ const columns: DataTableColumns<any> = [
                 EXPLOITABLE: 'error',
                 IN_TRIAGE: 'warning',
                 FALSE_POSITIVE: 'success',
-                NOT_AFFECTED: 'info'
+                NOT_AFFECTED: 'info',
+                FIXED: 'success'
             }
             return h(NTag, { 
                 type: stateColors[row.analysisState] || 'default', 
@@ -343,7 +344,8 @@ const columns: DataTableColumns<any> = [
                         EXPLOITABLE: 'error',
                         IN_TRIAGE: 'warning',
                         FALSE_POSITIVE: 'success',
-                        NOT_AFFECTED: 'info'
+                        NOT_AFFECTED: 'info',
+                        FIXED: 'success'
                     }
                     
                     const dateStr = history.createdDate 
@@ -357,6 +359,15 @@ const columns: DataTableColumns<any> = [
                     }
                     if (history.severity) {
                         tooltipLines.push(`Severity: ${history.severity}`)
+                    }
+                    if (history.responses && history.responses.length > 0) {
+                        tooltipLines.push(`Responses: ${history.responses.join(', ')}`)
+                    }
+                    if (history.recommendation) {
+                        tooltipLines.push(`Recommendation: ${history.recommendation}`)
+                    }
+                    if (history.workaround) {
+                        tooltipLines.push(`Workaround: ${history.workaround}`)
                     }
                     if (history.details) {
                         tooltipLines.push(`Details: ${history.details}`)
@@ -442,12 +453,18 @@ const fetchAnalysisRecords = async () => {
                         analysisState
                         analysisJustification
                         severity
+                        responses
+                        recommendation
+                        workaround
                         analysisHistory {
                             state
                             justification
                             severity
                             details
                             createdDate
+                            responses
+                            recommendation
+                            workaround
                         }
                         releaseDetails {
                             uuid

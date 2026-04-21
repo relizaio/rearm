@@ -6,8 +6,11 @@
         :show-icon="false"
         style="width: 60%;"
     >
-        <n-form ref="formRef" :model="formData" :rules="rules" label-placement="left" label-width="140px">
-            <n-form-item label="Finding Aliases">
+        <n-form ref="formRef" :model="formData" :rules="rules" label-placement="left" label-width="180px">
+            <n-form-item>
+                <template #label>
+                    <field-label label="Finding Aliases" :tip="FIELD_HELP.findingAliases" />
+                </template>
                 <n-dynamic-input
                     v-model:value="formData.findingAliases"
                     placeholder="Add alias"
@@ -22,7 +25,10 @@
                 </n-dynamic-input>
             </n-form-item>
 
-            <n-form-item label="Current State" path="state">
+            <n-form-item path="state">
+                <template #label>
+                    <field-label label="Current State" :tip="FIELD_HELP.state" />
+                </template>
                 <n-select
                     v-model:value="formData.state"
                     :options="stateOptions"
@@ -30,16 +36,31 @@
                 />
             </n-form-item>
 
-            <n-form-item label="Justification" path="justification">
+            <n-alert
+                v-if="stateGuidance"
+                type="info"
+                :show-icon="false"
+                style="margin: -8px 0 16px 180px;"
+            >
+                {{ stateGuidance }}
+            </n-alert>
+
+            <n-form-item v-if="showJustification" path="justification">
+                <template #label>
+                    <field-label label="Justification" :tip="FIELD_HELP.justification" />
+                </template>
                 <n-select
                     v-model:value="formData.justification"
                     :options="justificationOptions"
-                    placeholder="Select justification (optional)"
-                    clearable
+                    :placeholder="justificationPlaceholder"
+                    :clearable="!justificationMandatory"
                 />
             </n-form-item>
 
-            <n-form-item label="Severity" path="severity">
+            <n-form-item path="severity">
+                <template #label>
+                    <field-label label="Severity" :tip="FIELD_HELP.severity" />
+                </template>
                 <n-select
                     v-model:value="formData.severity"
                     :options="severityOptions"
@@ -48,11 +69,57 @@
                 />
             </n-form-item>
 
-            <n-form-item label="Details" path="details">
+            <n-form-item
+                v-if="showResponses"
+                path="responses"
+            >
+                <template #label>
+                    <field-label label="Responses" :tip="FIELD_HELP.responses" />
+                </template>
+                <n-select
+                    v-model:value="formData.responses"
+                    :options="responseOptions"
+                    multiple
+                    :placeholder="formData.state === AnalysisState.EXPLOITABLE ? 'Select one or more responses (required unless recommendation provided)' : 'Select one or more responses (optional)'"
+                    clearable
+                />
+            </n-form-item>
+
+            <n-form-item
+                v-if="showRecommendation"
+                path="recommendation"
+            >
+                <template #label>
+                    <field-label label="Recommendation" :tip="FIELD_HELP.recommendation" />
+                </template>
+                <n-input
+                    v-model:value="formData.recommendation"
+                    type="textarea"
+                    placeholder="Recommended remediation (required unless responses provided)"
+                    :rows="2"
+                />
+            </n-form-item>
+
+            <n-form-item v-if="showWorkaround" path="workaround">
+                <template #label>
+                    <field-label label="Workaround" :tip="FIELD_HELP.workaround" />
+                </template>
+                <n-input
+                    v-model:value="formData.workaround"
+                    type="textarea"
+                    placeholder="Workaround description (optional)"
+                    :rows="2"
+                />
+            </n-form-item>
+
+            <n-form-item path="details">
+                <template #label>
+                    <field-label label="Details (Impact Statement)" :tip="FIELD_HELP.details" />
+                </template>
                 <n-input
                     v-model:value="formData.details"
                     type="textarea"
-                    placeholder="Additional details (optional)"
+                    :placeholder="formData.state === AnalysisState.NOT_AFFECTED ? 'Impact statement (required unless justification provided)' : 'Additional details (optional)'"
                     :rows="3"
                 />
             </n-form-item>
@@ -77,10 +144,18 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue'
-import { NModal, NForm, NFormItem, NSelect, NInput, NButton, NSpace, NDynamicInput, useNotification, FormInst, FormRules } from 'naive-ui'
+import { useStore } from 'vuex'
+import { NModal, NForm, NFormItem, NSelect, NInput, NButton, NSpace, NDynamicInput, NAlert, useNotification, FormInst, FormItemRule, FormRules } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
-import { ANALYSIS_STATE_OPTIONS, ANALYSIS_JUSTIFICATION_OPTIONS } from '@/constants/vulnAnalysis'
+import {
+    ANALYSIS_STATE_OPTIONS,
+    ANALYSIS_JUSTIFICATION_OPTIONS,
+    ANALYSIS_RESPONSE_OPTIONS,
+    AnalysisState
+} from '@/constants/vulnAnalysis'
+import { FIELD_HELP, STATE_GUIDANCE } from '@/constants/vulnAnalysisFieldHelp'
+import FieldLabel from './FieldLabel.vue'
 
 interface Props {
     show: boolean
@@ -94,9 +169,40 @@ const emit = defineEmits<{
     'updated': [analysis: any]
 }>()
 
+const store = useStore()
 const notification = useNotification()
 const formRef = ref<FormInst | null>(null)
 const submitting = ref(false)
+
+// Org-level setting — only meaningful for NOT_AFFECTED (CISA VEX).
+const justificationMandatoryOrg = computed(() => {
+    const orgUuid = props.analysisRecord?.org
+    if (!orgUuid) return false
+    const org = store.getters.orgById(orgUuid)
+    return org?.settings?.justificationMandatory === true
+})
+const justificationMandatory = computed(() =>
+    justificationMandatoryOrg.value && formData.value.state === AnalysisState.NOT_AFFECTED
+)
+
+const stateGuidance = computed(() => STATE_GUIDANCE[formData.value.state] || '')
+
+// Per-state field visibility (CISA VEX).
+const showJustification = computed(() => formData.value.state === AnalysisState.NOT_AFFECTED)
+const showResponses = computed(() =>
+    formData.value.state === AnalysisState.EXPLOITABLE ||
+    formData.value.state === AnalysisState.FIXED
+)
+const showRecommendation = computed(() => formData.value.state === AnalysisState.EXPLOITABLE)
+const showWorkaround = computed(() => formData.value.state === AnalysisState.EXPLOITABLE)
+
+const justificationPlaceholder = computed(() => {
+    if (formData.value.state === AnalysisState.NOT_AFFECTED && !formData.value.details.trim()) {
+        return 'Select justification (required unless details provided)'
+    }
+    if (justificationMandatory.value) return 'Select justification (required by org settings)'
+    return 'Select justification (optional)'
+})
 
 const isVisible = computed({
     get: () => props.show,
@@ -115,14 +221,26 @@ const modalTitle = computed(() => {
 
 const formData = ref({
     findingAliases: [] as string[],
-    state: 'IN_TRIAGE',
+    state: AnalysisState.IN_TRIAGE as string,
     justification: null as string | null,
     severity: null as string | null,
-    details: ''
+    details: '',
+    responses: [] as string[],
+    recommendation: '',
+    workaround: ''
+})
+
+// Clear fields that are hidden for the current state so stale values aren't submitted.
+watch(() => formData.value.state, () => {
+    if (!showJustification.value) formData.value.justification = null
+    if (!showResponses.value) formData.value.responses = []
+    if (!showRecommendation.value) formData.value.recommendation = ''
+    if (!showWorkaround.value) formData.value.workaround = ''
 })
 
 const stateOptions = ANALYSIS_STATE_OPTIONS
 const justificationOptions = ANALYSIS_JUSTIFICATION_OPTIONS
+const responseOptions = ANALYSIS_RESPONSE_OPTIONS
 const severityOptions = [
     { label: 'Critical', value: 'CRITICAL' },
     { label: 'High', value: 'HIGH' },
@@ -131,18 +249,51 @@ const severityOptions = [
     { label: 'Unassigned', value: 'UNASSIGNED' }
 ]
 
-const rules: FormRules = {
-    state: [{ required: true, message: 'Analysis state is required', trigger: 'change' }]
-}
+const rules = computed<FormRules>(() => ({
+    state: [{ required: true, message: 'Analysis state is required', trigger: 'change' }],
+    // Org-level setting: justification always required.
+    justification: justificationMandatory.value
+        ? [{ required: true, message: 'Justification is required by organization settings', trigger: 'change' }]
+        : [],
+    // CISA VEX: NOT_AFFECTED requires justification OR details.
+    details: [
+        {
+            validator: (_rule: FormItemRule, value: string) => {
+                if (formData.value.state !== AnalysisState.NOT_AFFECTED) return true
+                if (formData.value.justification) return true
+                if (value && value.trim().length > 0) return true
+                return new Error('NOT_AFFECTED requires either a justification or an impact statement in details')
+            },
+            trigger: ['blur', 'change']
+        }
+    ],
+    // CISA VEX: EXPLOITABLE requires responses OR recommendation.
+    recommendation: [
+        {
+            validator: (_rule: FormItemRule, value: string) => {
+                if (formData.value.state !== AnalysisState.EXPLOITABLE) return true
+                if (formData.value.responses && formData.value.responses.length > 0) return true
+                if (value && value.trim().length > 0) return true
+                return new Error('EXPLOITABLE requires an action statement: at least one response or a non-empty recommendation')
+            },
+            trigger: ['blur', 'change']
+        }
+    ]
+}))
 
 // Watch for changes in the analysis record and populate form
 watch(() => props.analysisRecord, (newRecord) => {
     if (newRecord) {
         formData.value.findingAliases = newRecord.findingAliases || []
-        formData.value.state = newRecord.analysisState || 'IN_TRIAGE'
+        formData.value.state = newRecord.analysisState || AnalysisState.IN_TRIAGE
         formData.value.justification = newRecord.analysisJustification || null
         formData.value.severity = newRecord.severity || null
-        formData.value.details = ''
+        const history = newRecord.analysisHistory || []
+        const latestDetails = history.length > 0 ? (history[history.length - 1].details || '') : ''
+        formData.value.details = latestDetails
+        formData.value.responses = newRecord.responses || []
+        formData.value.recommendation = newRecord.recommendation || ''
+        formData.value.workaround = newRecord.workaround || ''
     }
 }, { immediate: true })
 
@@ -172,7 +323,13 @@ const handleSubmit = async () => {
             input.severity = formData.value.severity
         }
         
-        const response = await graphqlClient.mutate({
+        // Always send these fields so clearing them in the form is persisted
+        // (backend treats null as "preserve previous", so we must send explicit values).
+        input.responses = formData.value.responses || []
+        input.recommendation = (formData.value.recommendation || '').trim()
+        input.workaround = (formData.value.workaround || '').trim()
+        
+        const response = await graphqlClient.mutate<{ updateVulnAnalysis: any }>({
             mutation: gql`
                 mutation updateVulnAnalysis($analysis: UpdateVulnAnalysisInput!) {
                     updateVulnAnalysis(analysis: $analysis) {
@@ -188,11 +345,17 @@ const handleSubmit = async () => {
                         analysisState
                         analysisJustification
                         severity
+                        responses
+                        recommendation
+                        workaround
                         analysisHistory {
                             state
                             justification
                             details
                             createdDate
+                            responses
+                            recommendation
+                            workaround
                         }
                     }
                 }
@@ -205,7 +368,7 @@ const handleSubmit = async () => {
             duration: 3000
         })
         
-        emit('updated', response.data.updateVulnAnalysis)
+        emit('updated', response.data?.updateVulnAnalysis)
         isVisible.value = false
     } catch (error: any) {
         console.error('Error updating vulnerability analysis:', error)

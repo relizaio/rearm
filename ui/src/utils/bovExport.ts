@@ -3,6 +3,8 @@
  * Builds BOV JSON purely from in-memory findings data — no backend calls required.
  */
 
+import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
+
 export interface BovExportFilters {
     types: string[]
     severities: string[]
@@ -15,6 +17,8 @@ const ANALYSIS_STATE_MAP: Record<string, string> = {
     EXPLOITABLE: 'exploitable',
     NOT_AFFECTED: 'not_affected',
     FALSE_POSITIVE: 'false_positive',
+    // Internal FIXED maps to CDX `resolved`
+    FIXED: 'resolved',
     RESOLVED: 'resolved',
     RESOLVED_WITH_PEDIGREE: 'resolved_with_pedigree'
 }
@@ -28,8 +32,7 @@ const SEVERITY_MAP: Record<string, string> = {
 }
 
 function isSuppressed(row: any): boolean {
-    const state = row.analysisState
-    return state === 'FALSE_POSITIVE' || state === 'NOT_AFFECTED'
+    return isSuppressedAnalysisState(row.analysisState)
 }
 
 /**

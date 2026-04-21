@@ -3,6 +3,7 @@ import Swal from 'sweetalert2'
 import { searchDtrackComponentByPurl } from '@/utils/dtrack'
 import { Info20Regular } from '@vicons/fluent'
 import { Edit, Eye } from '@vicons/tabler'
+import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -243,7 +244,7 @@ export function buildVulnerabilityColumns(
           Violation: 'warning',
           Weakness: 'info'
         }
-        const isSuppressed = row.analysisState === 'FALSE_POSITIVE' || row.analysisState === 'NOT_AFFECTED'
+        const isSuppressed = isSuppressedAnalysisState(row.analysisState)
         const tagStyle = isSuppressed ? { textDecoration: 'line-through' } : {}
         const typeTag = h(NTag, { 
           type: typeColors[row.type] || 'default', 

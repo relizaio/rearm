@@ -1,6 +1,7 @@
 import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
 import constants from '@/utils/constants'
+import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 
 pdfMake.vfs = pdfFonts.vfs
 
@@ -61,10 +62,7 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
         const severity = (!row.severity || row.severity === '-') ? 'UNASSIGNED' : row.severity
         if (!severities.includes(severity)) return false
         // Filter suppressed
-        if (!includeSuppressed) {
-            const state = row.analysisState
-            if (state === 'FALSE_POSITIVE' || state === 'NOT_AFFECTED') return false
-        }
+        if (!includeSuppressed && isSuppressedAnalysisState(row.analysisState)) return false
         return true
     })
 
@@ -109,7 +107,7 @@ export function exportFindingsToPdf(options: PdfExportOptions): { success: boole
 
     // Add data rows
     data.forEach((row: any) => {
-        const isSuppressedRow = row.analysisState === 'FALSE_POSITIVE' || row.analysisState === 'NOT_AFFECTED'
+        const isSuppressedRow = isSuppressedAnalysisState(row.analysisState)
         const rowStyle = isSuppressedRow ? { decoration: 'lineThrough', color: '#888888' } : {}
         
         const rowData: any[] = []

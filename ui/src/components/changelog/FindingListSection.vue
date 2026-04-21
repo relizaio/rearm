@@ -92,6 +92,7 @@ import { computed, ref } from 'vue'
 import { NTag, NTooltip, NIcon, NCollapseTransition } from 'naive-ui'
 import { Info20Regular, ChevronRight20Regular, ChevronDown20Regular } from '@vicons/fluent'
 import { getSeverityTagType, getFindingTypeTagType, getFindingUrl, openExternalLink } from '../../utils/findingUtils'
+import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 
 interface Props {
     title: string
@@ -110,7 +111,7 @@ const props = withDefaults(defineProps<Props>(), {
 const showSuppressed = ref(false)
 
 const isSuppressed = (finding: any): boolean => {
-    return finding.analysisState === 'FALSE_POSITIVE' || finding.analysisState === 'NOT_AFFECTED'
+    return isSuppressedAnalysisState(finding.analysisState)
 }
 
 const activeFindings = computed(() => {
@@ -130,6 +131,8 @@ const getAnalysisStateLabel = (state: string | null | undefined): string => {
     switch (state) {
         case 'FALSE_POSITIVE': return 'FALSE POSITIVE'
         case 'NOT_AFFECTED': return 'NOT AFFECTED'
+        case 'FIXED': return 'FIXED'
+        case 'IN_TRIAGE': return 'IN TRIAGE'
         default: return state
     }
 }
