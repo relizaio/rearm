@@ -3,7 +3,7 @@ export enum AnalysisState {
     IN_TRIAGE = 'IN_TRIAGE',
     FALSE_POSITIVE = 'FALSE_POSITIVE',
     NOT_AFFECTED = 'NOT_AFFECTED',
-    FIXED = 'FIXED'
+    RESOLVED = 'RESOLVED'
 }
 
 export enum AnalysisResponse {
@@ -21,7 +21,7 @@ export enum AnalysisResponse {
 export const SUPPRESSED_ANALYSIS_STATES: ReadonlySet<string> = new Set([
     AnalysisState.FALSE_POSITIVE,
     AnalysisState.NOT_AFFECTED,
-    AnalysisState.FIXED
+    AnalysisState.RESOLVED
 ])
 
 export const isSuppressedAnalysisState = (state: string | null | undefined): boolean =>
@@ -32,7 +32,7 @@ export const ANALYSIS_STATE_OPTIONS = [
     { label: 'In Triage', value: AnalysisState.IN_TRIAGE },
     { label: 'False Positive', value: AnalysisState.FALSE_POSITIVE },
     { label: 'Not Affected', value: AnalysisState.NOT_AFFECTED },
-    { label: 'Fixed', value: AnalysisState.FIXED }
+    { label: 'Resolved', value: AnalysisState.RESOLVED }
 ]
 
 export const ANALYSIS_RESPONSE_OPTIONS = [

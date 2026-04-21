@@ -535,6 +535,7 @@ const storeObject : any = {
                                 settings {
                                     justificationMandatory
                                     branchSuffixMode
+                                    vexComplianceFramework
                                 }
                             }
                         }`,

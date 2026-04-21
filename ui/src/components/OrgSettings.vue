@@ -951,6 +951,35 @@
                         <n-form-item>
                             <template #label>
                                 <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                    <span>VEX Compliance Framework</span>
+                                    <n-tooltip trigger="hover" placement="right">
+                                        <template #trigger>
+                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                        </template>
+                                        <div style="max-width: 700px; white-space: pre-line;">CycloneDX is always the baseline data model. A compliance framework layers extra validation rules on vulnerability analysis create/update:
+- None: no extra rules (pure CycloneDX baseline).
+- CISA: CISA VEX minimum requirements — NOT_AFFECTED requires a Justification or Details (impact statement); EXPLOITABLE requires a Response or Recommendation.
+
+Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-vex-508c.pdf</div>
+                                    </n-tooltip>
+                                </span>
+                            </template>
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-select
+                                    v-model:value="orgSettings.vexComplianceFramework"
+                                    :options="vexComplianceFrameworkOptions"
+                                    style="max-width: 480px;" />
+                                <span class="text-muted" style="margin-top: 4px;">
+                                    {{ orgSettings.vexComplianceFramework === 'CISA'
+                                        ? 'CISA VEX rules enforced on create/update.'
+                                        : 'No framework rules enforced (CycloneDX baseline).' }}
+                                </span>
+                            </div>
+                        </n-form-item>
+
+                        <n-form-item>
+                            <template #label>
+                                <span style="display: inline-flex; align-items: center; gap: 6px;">
                                     <span>Branch Suffix Mode</span>
                                     <n-tooltip trigger="hover" placement="right">
                                         <template #trigger>
@@ -1206,8 +1235,14 @@ const savingIgnoreViolation = ref(false)
 // Admin Settings - Organization Settings
 const orgSettings = reactive({
     justificationMandatory: false,
-    branchSuffixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION'
+    branchSuffixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION',
+    vexComplianceFramework: 'NONE' as 'NONE' | 'CISA'
 })
+
+const vexComplianceFrameworkOptions = [
+    { label: 'None (CycloneDX baseline)', value: 'NONE' },
+    { label: 'CISA VEX minimum requirements', value: 'CISA' }
+]
 
 const branchSuffixModeLabels: Record<string, string> = {
     APPEND: 'Append',
@@ -3099,6 +3134,7 @@ async function loadOrgSettings() {
     const s = myorg.value?.settings
     orgSettings.justificationMandatory = s?.justificationMandatory || false
     orgSettings.branchSuffixMode = (s?.branchSuffixMode && s.branchSuffixMode !== 'INHERIT') ? s.branchSuffixMode : 'APPEND'
+    orgSettings.vexComplianceFramework = s?.vexComplianceFramework || 'NONE'
 }
 
 async function saveOrgSettings() {
@@ -3121,6 +3157,7 @@ async function saveOrgSettings() {
                         settings {
                             justificationMandatory
                             branchSuffixMode
+                            vexComplianceFramework
                         }
                     }
                 }`,
@@ -3128,7 +3165,8 @@ async function saveOrgSettings() {
                 orgUuid: orgResolved.value,
                 settings: {
                     justificationMandatory: orgSettings.justificationMandatory,
-                    branchSuffixMode: orgSettings.branchSuffixMode
+                    branchSuffixMode: orgSettings.branchSuffixMode,
+                    vexComplianceFramework: orgSettings.vexComplianceFramework
                 }
             },
             fetchPolicy: 'no-cache'

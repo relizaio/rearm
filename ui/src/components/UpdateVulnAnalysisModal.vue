@@ -185,13 +185,25 @@ const justificationMandatory = computed(() =>
     justificationMandatoryOrg.value && formData.value.state === AnalysisState.NOT_AFFECTED
 )
 
-const stateGuidance = computed(() => STATE_GUIDANCE[formData.value.state] || '')
+// Active VEX compliance framework for this org. CycloneDX is always the baseline data
+// model; a framework (currently NONE or CISA) layers additional validation rules.
+const vexFramework = computed<'NONE' | 'CISA'>(() => {
+    const orgUuid = props.analysisRecord?.org
+    if (!orgUuid) return 'NONE'
+    const org = store.getters.orgById(orgUuid)
+    return (org?.settings?.vexComplianceFramework === 'CISA') ? 'CISA' : 'NONE'
+})
+const cisaEnforced = computed(() => vexFramework.value === 'CISA')
+
+const stateGuidance = computed(() =>
+    cisaEnforced.value ? (STATE_GUIDANCE[formData.value.state] || '') : ''
+)
 
 // Per-state field visibility (CISA VEX).
 const showJustification = computed(() => formData.value.state === AnalysisState.NOT_AFFECTED)
 const showResponses = computed(() =>
     formData.value.state === AnalysisState.EXPLOITABLE ||
-    formData.value.state === AnalysisState.FIXED
+    formData.value.state === AnalysisState.RESOLVED
 )
 const showRecommendation = computed(() => formData.value.state === AnalysisState.EXPLOITABLE)
 const showWorkaround = computed(() => formData.value.state === AnalysisState.EXPLOITABLE)
@@ -249,37 +261,42 @@ const severityOptions = [
     { label: 'Unassigned', value: 'UNASSIGNED' }
 ]
 
-const rules = computed<FormRules>(() => ({
-    state: [{ required: true, message: 'Analysis state is required', trigger: 'change' }],
-    // Org-level setting: justification always required.
-    justification: justificationMandatory.value
-        ? [{ required: true, message: 'Justification is required by organization settings', trigger: 'change' }]
-        : [],
-    // CISA VEX: NOT_AFFECTED requires justification OR details.
-    details: [
-        {
-            validator: (_rule: FormItemRule, value: string) => {
-                if (formData.value.state !== AnalysisState.NOT_AFFECTED) return true
-                if (formData.value.justification) return true
-                if (value && value.trim().length > 0) return true
-                return new Error('NOT_AFFECTED requires either a justification or an impact statement in details')
-            },
-            trigger: ['blur', 'change']
-        }
-    ],
-    // CISA VEX: EXPLOITABLE requires responses OR recommendation.
-    recommendation: [
-        {
-            validator: (_rule: FormItemRule, value: string) => {
-                if (formData.value.state !== AnalysisState.EXPLOITABLE) return true
-                if (formData.value.responses && formData.value.responses.length > 0) return true
-                if (value && value.trim().length > 0) return true
-                return new Error('EXPLOITABLE requires an action statement: at least one response or a non-empty recommendation')
-            },
-            trigger: ['blur', 'change']
-        }
-    ]
-}))
+const rules = computed<FormRules>(() => {
+    const baseRules: FormRules = {
+        state: [{ required: true, message: 'Analysis state is required', trigger: 'change' }],
+        // Org-level setting: justification always required (independent of framework).
+        justification: justificationMandatory.value
+            ? [{ required: true, message: 'Justification is required by organization settings', trigger: 'change' }]
+            : []
+    }
+    if (cisaEnforced.value) {
+        // CISA VEX: NOT_AFFECTED requires justification OR details.
+        baseRules.details = [
+            {
+                validator: (_rule: FormItemRule, value: string) => {
+                    if (formData.value.state !== AnalysisState.NOT_AFFECTED) return true
+                    if (formData.value.justification) return true
+                    if (value && value.trim().length > 0) return true
+                    return new Error('NOT_AFFECTED requires either a justification or an impact statement in details')
+                },
+                trigger: ['blur', 'change']
+            }
+        ]
+        // CISA VEX: EXPLOITABLE requires responses OR recommendation.
+        baseRules.recommendation = [
+            {
+                validator: (_rule: FormItemRule, value: string) => {
+                    if (formData.value.state !== AnalysisState.EXPLOITABLE) return true
+                    if (formData.value.responses && formData.value.responses.length > 0) return true
+                    if (value && value.trim().length > 0) return true
+                    return new Error('EXPLOITABLE requires an action statement: at least one response or a non-empty recommendation')
+                },
+                trigger: ['blur', 'change']
+            }
+        ]
+    }
+    return baseRules
+})
 
 // Watch for changes in the analysis record and populate form
 watch(() => props.analysisRecord, (newRecord) => {

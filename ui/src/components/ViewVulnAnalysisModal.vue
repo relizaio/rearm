@@ -312,7 +312,7 @@ const columns: DataTableColumns<any> = [
                 IN_TRIAGE: 'warning',
                 FALSE_POSITIVE: 'success',
                 NOT_AFFECTED: 'info',
-                FIXED: 'success'
+                RESOLVED: 'success'
             }
             return h(NTag, { 
                 type: stateColors[row.analysisState] || 'default', 
@@ -345,7 +345,7 @@ const columns: DataTableColumns<any> = [
                         IN_TRIAGE: 'warning',
                         FALSE_POSITIVE: 'success',
                         NOT_AFFECTED: 'info',
-                        FIXED: 'success'
+                        RESOLVED: 'success'
                     }
                     
                     const dateStr = history.createdDate 

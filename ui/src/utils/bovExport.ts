@@ -17,8 +17,7 @@ const ANALYSIS_STATE_MAP: Record<string, string> = {
     EXPLOITABLE: 'exploitable',
     NOT_AFFECTED: 'not_affected',
     FALSE_POSITIVE: 'false_positive',
-    // Internal FIXED maps to CDX `resolved`
-    FIXED: 'resolved',
+    // Internal RESOLVED mirrors CDX `resolved` (baseline CycloneDX terminology).
     RESOLVED: 'resolved',
     RESOLVED_WITH_PEDIGREE: 'resolved_with_pedigree'
 }

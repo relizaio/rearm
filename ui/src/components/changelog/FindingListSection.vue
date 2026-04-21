@@ -131,7 +131,7 @@ const getAnalysisStateLabel = (state: string | null | undefined): string => {
     switch (state) {
         case 'FALSE_POSITIVE': return 'FALSE POSITIVE'
         case 'NOT_AFFECTED': return 'NOT AFFECTED'
-        case 'FIXED': return 'FIXED'
+        case 'RESOLVED': return 'RESOLVED'
         case 'IN_TRIAGE': return 'IN TRIAGE'
         default: return state
     }

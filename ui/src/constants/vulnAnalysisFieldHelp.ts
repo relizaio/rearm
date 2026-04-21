@@ -38,6 +38,6 @@ export const STATE_GUIDANCE: Record<string, string> = {
         'CISA VEX impact statement: provide a Justification or a non-empty Details (impact statement).',
     [AnalysisState.FALSE_POSITIVE]:
         'Not actually affected. No additional fields required.',
-    [AnalysisState.FIXED]:
+    [AnalysisState.RESOLVED]:
         'Remediated. No additional fields required.'
 }
