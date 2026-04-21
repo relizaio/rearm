@@ -28,6 +28,8 @@ import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.BranchData;
+import io.reliza.model.OrganizationData;
+import io.reliza.model.VexComplianceFramework;
 import io.reliza.model.ComponentData;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.FindingType;
@@ -59,6 +61,9 @@ public class VulnAnalysisService {
 	
 	@Autowired
 	private GetComponentService getComponentService;
+	
+	@Autowired
+	private GetOrganizationService getOrganizationService;
 	
 	@Autowired
 	private VulnAnalysisUpdateService vulnAnalysisUpdateService;
@@ -345,18 +350,42 @@ public class VulnAnalysisService {
 	}
 	
 	/**
-	 * Validates CISA VEX requirements on a state transition:
-	 *   - NOT_AFFECTED requires a machine-readable justification OR an impact statement (details).
-	 *   - EXPLOITABLE requires an action statement: at least one response OR a non-blank recommendation.
-	 * Other states (IN_TRIAGE, FALSE_POSITIVE, FIXED) have no additional CISA requirement.
+	 * Validates VEX constraints on a state transition, dispatching on the organization's
+	 * configured {@link VexComplianceFramework}. CycloneDX is the baseline data model
+	 * and mandates no field-level requirements; frameworks layer rules on top.
+	 *
+	 * <ul>
+	 *   <li>{@link VexComplianceFramework#NONE} — no-op (pure CycloneDX baseline).</li>
+	 *   <li>{@link VexComplianceFramework#CISA} — CISA VEX minimum requirements
+	 *       (https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-vex-508c.pdf):
+	 *       NOT_AFFECTED requires a justification OR an impact statement (details);
+	 *       EXPLOITABLE requires an action statement (a response OR a recommendation).
+	 *       Other states have no additional requirement.</li>
+	 * </ul>
+	 *
+	 * @param framework     active framework for the organization (never null; resolve with {@link #resolveVexFramework(UUID)})
+	 * @param state         post-merge analysis state being validated; null means "no state change" and is a no-op
+	 */
+	private void validateVexConstraints(VexComplianceFramework framework, AnalysisState state,
+			AnalysisJustification justification, String details, List<AnalysisResponse> responses,
+			String recommendation) throws RelizaException {
+		// Null state means "no state change" on an update — nothing to validate here.
+		// Create path guarantees non-null state via required GraphQL input + explicit check in createVulnAnalysis.
+		if (state == null || framework == null || framework == VexComplianceFramework.NONE) {
+			return;
+		}
+		switch (framework) {
+			case CISA -> validateCisaConstraints(state, justification, details, responses, recommendation);
+			default -> { /* no rules */ }
+		}
+	}
+
+	/**
+	 * CISA VEX minimum-requirements rules, applied only when the org selects
+	 * {@link VexComplianceFramework#CISA}.
 	 */
 	private void validateCisaConstraints(AnalysisState state, AnalysisJustification justification,
 			String details, List<AnalysisResponse> responses, String recommendation) throws RelizaException {
-		// Null state means "no state change" on an update — nothing to validate here.
-		// Create path guarantees non-null state via required GraphQL input + explicit check in createVulnAnalysis.
-		if (state == null) {
-			return;
-		}
 		switch (state) {
 			case NOT_AFFECTED -> {
 				if (justification == null && StringUtils.isBlank(details)) {
@@ -374,6 +403,18 @@ public class VulnAnalysisService {
 			default -> { /* no CISA requirement */ }
 		}
 	}
+
+	/**
+	 * Resolve the active VEX compliance framework for the given organization, defaulting to
+	 * {@link VexComplianceFramework#NONE} when the org or its settings are missing/unset.
+	 */
+	private VexComplianceFramework resolveVexFramework(UUID orgUuid) {
+		if (orgUuid == null) return VexComplianceFramework.NONE;
+		return getOrganizationService.getOrganizationData(orgUuid)
+				.map(OrganizationData::getSettingsWithDefaults)
+				.map(OrganizationData.Settings::getVexComplianceFrameworkOrDefault)
+				.orElse(VexComplianceFramework.NONE);
+	}
 	
 	/**
 	 * Create a new vulnerability analysis
@@ -385,9 +426,10 @@ public class VulnAnalysisService {
 		if (createDto.getState() == null) {
 			throw new RelizaException("Analysis state is required when creating a vulnerability analysis");
 		}
-		// CISA VEX validation
-		validateCisaConstraints(createDto.getState(), createDto.getJustification(), createDto.getDetails(),
-				createDto.getResponses(), createDto.getRecommendation());
+		// VEX constraint validation dispatched by org-configured framework (see resolveVexFramework).
+		VexComplianceFramework framework = resolveVexFramework(createDto.getOrg());
+		validateVexConstraints(framework, createDto.getState(), createDto.getJustification(),
+				createDto.getDetails(), createDto.getResponses(), createDto.getRecommendation());
 		
 		// Minimize PURL if location type is PURL
 		String normalizedLocation = createDto.getLocation();
@@ -483,7 +525,8 @@ public class VulnAnalysisService {
 		String effDetails = details != null ? details : latestDetails(vad);
 		List<AnalysisResponse> effResponses = responses != null ? responses : vad.getResponses();
 		String effRecommendation = recommendation != null ? recommendation : vad.getRecommendation();
-		validateCisaConstraints(effectiveState, effJustification, effDetails, effResponses, effRecommendation);
+		VexComplianceFramework framework = resolveVexFramework(vad.getOrg());
+		validateVexConstraints(framework, effectiveState, effJustification, effDetails, effResponses, effRecommendation);
 		
 		// Update finding aliases if provided
 		if (findingAliases != null) {
@@ -684,7 +727,9 @@ public class VulnAnalysisService {
 	
 	/**
 	 * Selects the higher priority analysis state between two states.
-	 * Priority: EXPLOITABLE > IN_TRIAGE > NULL > NOT_AFFECTED > FALSE_POSITIVE
+	 * Null is handled by short-circuit (null candidate preserves current; null current yields
+	 * candidate) so the numeric priority below never applies to null.
+	 * Among non-null values: EXPLOITABLE > IN_TRIAGE > RESOLVED > NOT_AFFECTED > FALSE_POSITIVE.
 	 */
 	private AnalysisState selectHigherPriorityAnalysisState(AnalysisState current, AnalysisState candidate) {
 		if (candidate == null) {
@@ -701,23 +746,26 @@ public class VulnAnalysisService {
 	}
 	
 	/**
-	 * Returns priority value for analysis state.
-	 * Higher value = higher priority (wins in conflict resolution)
-	 * EXPLOITABLE(5) > IN_TRIAGE(4) > NULL(3) > FIXED(2) > NOT_AFFECTED(1) > FALSE_POSITIVE(0).
-	 * Rationale for FIXED > NOT_AFFECTED: both are terminal non-affecting states, but FIXED is a
+	 * Returns priority value for analysis state. Higher value = higher priority (wins in
+	 * conflict resolution). Ordering among non-null values:
+	 *   EXPLOITABLE(5) > IN_TRIAGE(4) > RESOLVED(2) > NOT_AFFECTED(1) > FALSE_POSITIVE(0).
+	 * Rationale for RESOLVED > NOT_AFFECTED: both are terminal non-affecting states, but RESOLVED is a
 	 * strictly stronger signal (the issue was actually remediated) than NOT_AFFECTED (the component
 	 * isn't exercised in a vulnerable way). A deterministic tie-break also avoids flaky display
 	 * values when sources arrive from a non-deterministic iteration order (e.g. HashSet).
-	 * Note: NULL is handled separately in selectHigherPriorityAnalysisState.
+	 *
+	 * Note: the null case below returns a sentinel value for defensive callers, but
+	 * {@link #selectHigherPriorityAnalysisState} short-circuits on null before calling this method,
+	 * so that value never participates in the real tie-break.
 	 */
 	private int getAnalysisStatePriority(AnalysisState state) {
 		if (state == null) {
-			return 3; // NULL sits between IN_TRIAGE and FIXED — still "unknown, potentially affecting"
+			return 3; // unreachable via selectHigherPriorityAnalysisState (short-circuits on null).
 		}
 		return switch (state) {
 			case EXPLOITABLE -> 5;
 			case IN_TRIAGE -> 4;
-			case FIXED -> 2;
+			case RESOLVED -> 2;
 			case NOT_AFFECTED -> 1;
 			case FALSE_POSITIVE -> 0;
 		};

@@ -25,7 +25,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 
@@ -34,6 +33,8 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisJustification;
 import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.OrganizationData;
+import io.reliza.model.VexComplianceFramework;
 import io.reliza.model.VulnAnalysis;
 import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.WhoUpdated;
@@ -45,7 +46,7 @@ import io.reliza.repositories.VulnAnalysisRepository;
  * Rules tested:
  *   - NOT_AFFECTED requires either a justification OR a non-blank details/impact statement.
  *   - EXPLOITABLE requires at least one response OR a non-blank recommendation.
- *   - Other states (IN_TRIAGE, FALSE_POSITIVE, FIXED) have no additional CISA requirement.
+ *   - Other states (IN_TRIAGE, FALSE_POSITIVE, RESOLVED) have no additional CISA requirement.
  *
  * Also round-trips VulnAnalysisData with the new responses/recommendation/workaround
  * fields through the {@code addAnalysisHistoryEntry} and history-getter path.
@@ -62,10 +63,13 @@ public class VulnAnalysisServiceCisaValidationTest {
 	@Mock
 	private VulnAnalysisUpdateService vulnAnalysisUpdateService;
 
+	@Mock
+	private GetOrganizationService getOrganizationService;
+
 	@InjectMocks
 	private VulnAnalysisService service;
 
-	private Method validateCisaConstraints;
+	private Method validateVexConstraints;
 	private Method selectHigherPriorityAnalysisState;
 
 	@BeforeEach
@@ -73,22 +77,43 @@ public class VulnAnalysisServiceCisaValidationTest {
 		selectHigherPriorityAnalysisState = VulnAnalysisService.class.getDeclaredMethod(
 				"selectHigherPriorityAnalysisState", AnalysisState.class, AnalysisState.class);
 		selectHigherPriorityAnalysisState.setAccessible(true);
-		// Look up the private validation helper via reflection so we can unit-test
+		// Look up the framework-aware validation helper via reflection so we can unit-test
 		// it in isolation without needing mocked collaborators.
-		validateCisaConstraints = VulnAnalysisService.class.getDeclaredMethod(
-				"validateCisaConstraints",
+		validateVexConstraints = VulnAnalysisService.class.getDeclaredMethod(
+				"validateVexConstraints",
+				VexComplianceFramework.class,
 				AnalysisState.class,
 				AnalysisJustification.class,
 				String.class,
 				List.class,
 				String.class);
-		validateCisaConstraints.setAccessible(true);
+		validateVexConstraints.setAccessible(true);
+		// Default: org→CISA framework so existing end-to-end update tests keep exercising
+		// the CISA rules through resolveVexFramework.
+		OrganizationData cisaOrg = new OrganizationData();
+		OrganizationData.Settings cisaSettings = new OrganizationData.Settings();
+		cisaSettings.setVexComplianceFramework(VexComplianceFramework.CISA);
+		cisaOrg.setSettings(cisaSettings);
+		lenient().when(getOrganizationService.getOrganizationData(any())).thenReturn(Optional.of(cisaOrg));
 	}
 
+	/**
+	 * Invoke the validator under the CISA framework (legacy test surface — exercises the
+	 * CISA minimum-requirements branch).
+	 */
 	private void invoke(AnalysisState state, AnalysisJustification justification, String details,
 			List<AnalysisResponse> responses, String recommendation) throws Throwable {
+		invokeWithFramework(VexComplianceFramework.CISA, state, justification, details, responses, recommendation);
+	}
+
+	/**
+	 * Invoke the validator under an explicit framework.
+	 */
+	private void invokeWithFramework(VexComplianceFramework framework, AnalysisState state,
+			AnalysisJustification justification, String details, List<AnalysisResponse> responses,
+			String recommendation) throws Throwable {
 		try {
-			validateCisaConstraints.invoke(service, state, justification, details, responses, recommendation);
+			validateVexConstraints.invoke(service, framework, state, justification, details, responses, recommendation);
 		} catch (InvocationTargetException ite) {
 			throw ite.getCause();
 		}
@@ -161,8 +186,8 @@ public class VulnAnalysisServiceCisaValidationTest {
 	}
 
 	@Test
-	void fixed_noExtraFieldsRequired() {
-		assertDoesNotThrow(() -> invoke(AnalysisState.FIXED, null, null, null, null));
+	void resolved_noExtraFieldsRequired() {
+		assertDoesNotThrow(() -> invoke(AnalysisState.RESOLVED, null, null, null, null));
 	}
 
 	@Test
@@ -237,24 +262,24 @@ public class VulnAnalysisServiceCisaValidationTest {
 		assertEquals(List.of(AnalysisResponse.ROLLBACK), vad.getResponses());
 	}
 
-	// ---- Priority tie-break between FIXED and NOT_AFFECTED ----
+	// ---- Priority tie-break between RESOLVED and NOT_AFFECTED ----
 
 	private AnalysisState higher(AnalysisState current, AnalysisState candidate) throws Exception {
 		return (AnalysisState) selectHigherPriorityAnalysisState.invoke(service, current, candidate);
 	}
 
 	@Test
-	void priority_fixedBeatsNotAffected_regardlessOfArgOrder() throws Exception {
-		// Deterministic: FIXED is strictly stronger than NOT_AFFECTED (remediated vs non-exposed).
-		assertEquals(AnalysisState.FIXED, higher(AnalysisState.NOT_AFFECTED, AnalysisState.FIXED));
-		assertEquals(AnalysisState.FIXED, higher(AnalysisState.FIXED, AnalysisState.NOT_AFFECTED));
+	void priority_resolvedBeatsNotAffected_regardlessOfArgOrder() throws Exception {
+		// Deterministic: RESOLVED is strictly stronger than NOT_AFFECTED (remediated vs non-exposed).
+		assertEquals(AnalysisState.RESOLVED, higher(AnalysisState.NOT_AFFECTED, AnalysisState.RESOLVED));
+		assertEquals(AnalysisState.RESOLVED, higher(AnalysisState.RESOLVED, AnalysisState.NOT_AFFECTED));
 	}
 
 	@Test
 	void priority_exploitableWinsOverAllOthers() throws Exception {
 		for (AnalysisState other : new AnalysisState[] {
 				AnalysisState.IN_TRIAGE, AnalysisState.NOT_AFFECTED,
-				AnalysisState.FALSE_POSITIVE, AnalysisState.FIXED }) {
+				AnalysisState.FALSE_POSITIVE, AnalysisState.RESOLVED }) {
 			assertEquals(AnalysisState.EXPLOITABLE, higher(other, AnalysisState.EXPLOITABLE));
 			assertEquals(AnalysisState.EXPLOITABLE, higher(AnalysisState.EXPLOITABLE, other));
 		}
@@ -265,8 +290,8 @@ public class VulnAnalysisServiceCisaValidationTest {
 		// Short-circuit semantics of selectHigherPriorityAnalysisState:
 		//   - candidate null → return current (regardless of priority)
 		//   - current null, candidate non-null → return candidate
-		assertEquals(AnalysisState.FIXED, higher(null, AnalysisState.FIXED));
-		assertEquals(AnalysisState.FIXED, higher(AnalysisState.FIXED, null));
+		assertEquals(AnalysisState.RESOLVED, higher(null, AnalysisState.RESOLVED));
+		assertEquals(AnalysisState.RESOLVED, higher(AnalysisState.RESOLVED, null));
 		assertEquals(AnalysisState.IN_TRIAGE, higher(null, AnalysisState.IN_TRIAGE));
 	}
 
@@ -381,6 +406,45 @@ public class VulnAnalysisServiceCisaValidationTest {
 	}
 
 	@Test
+	void jackson_legacyNullResponses_deserializeToEmptyList() throws Exception {
+		// R7 regression: legacy records stored before the responses field existed,
+		// or any record with explicit "responses": null, must deserialize to an empty
+		// list so equals/hashCode stay stable and downstream callers don't NPE.
+		String legacyHistoryJson = "{\"state\":\"EXPLOITABLE\",\"responses\":null}";
+		VulnAnalysisData.AnalysisHistory history = Utils.OM.convertValue(
+				Utils.OM.readValue(legacyHistoryJson, Map.class),
+				VulnAnalysisData.AnalysisHistory.class);
+		assertNotNull(history.getResponses());
+		assertTrue(history.getResponses().isEmpty());
+
+		String legacyVadJson = "{\"uuid\":\"" + UUID.randomUUID() + "\",\"responses\":null}";
+		VulnAnalysisData vad = Utils.OM.convertValue(
+				Utils.OM.readValue(legacyVadJson, Map.class),
+				VulnAnalysisData.class);
+		assertNotNull(vad.getResponses());
+		assertTrue(vad.getResponses().isEmpty());
+	}
+
+	@Test
+	void analysisState_jsonCreator_mapsLegacyFixedToResolved() throws Exception {
+		// Persisted records from before the FIXED → RESOLVED rename must continue to load.
+		AnalysisState fromLegacy = Utils.OM.readValue("\"FIXED\"", AnalysisState.class);
+		assertEquals(AnalysisState.RESOLVED, fromLegacy);
+		// Case and whitespace tolerance (JsonCreator-wide behavior).
+		assertEquals(AnalysisState.RESOLVED, Utils.OM.readValue("\" fixed \"", AnalysisState.class));
+		assertEquals(AnalysisState.EXPLOITABLE, Utils.OM.readValue("\"exploitable\"", AnalysisState.class));
+	}
+
+	@Test
+	void analysisState_jsonCreator_unknownValueReturnsNull() throws Exception {
+		// Unknown / future / typo'd values must not blow up deserialization of the surrounding
+		// record. Downstream VDR and analytics code treats null as "no state".
+		assertEquals(null, Utils.OM.readValue("\"TOTALLY_BOGUS\"", AnalysisState.class));
+		assertEquals(null, Utils.OM.readValue("\"\"", AnalysisState.class));
+		assertEquals(null, Utils.OM.readValue("null", AnalysisState.class));
+	}
+
+	@Test
 	void updateAnalysisState_clearingRecommendation_onExploitableRecordWithoutResponses_throws() {
 		// Existing record had a recommendation only (no responses). Caller explicitly clears
 		// recommendation to a blank string without supplying responses. After merge the record
@@ -401,5 +465,51 @@ public class VulnAnalysisServiceCisaValidationTest {
 				null,
 				(WhoUpdated) null));
 		assertTrue(ex.getMessage().contains("EXPLOITABLE"));
+	}
+
+	// ---- Framework dispatch: NONE (CycloneDX baseline) must skip all extra rules ----
+
+	@Test
+	void noneFramework_notAffectedWithoutFields_passes() {
+		assertDoesNotThrow(() -> invokeWithFramework(
+				VexComplianceFramework.NONE, AnalysisState.NOT_AFFECTED, null, null, null, null));
+	}
+
+	@Test
+	void noneFramework_exploitableWithoutActionStatement_passes() {
+		assertDoesNotThrow(() -> invokeWithFramework(
+				VexComplianceFramework.NONE, AnalysisState.EXPLOITABLE, null, null, null, null));
+	}
+
+	@Test
+	void nullFramework_isTreatedAsNone() {
+		assertDoesNotThrow(() -> invokeWithFramework(
+				null, AnalysisState.NOT_AFFECTED, null, null, null, null));
+	}
+
+	@Test
+	void updateAnalysisState_orgUsesNoneFramework_allowsBareState() throws Exception {
+		// Override the default CISA stub: this org has framework=NONE, so CISA rules are skipped.
+		OrganizationData noneOrg = new OrganizationData();
+		OrganizationData.Settings noneSettings = new OrganizationData.Settings();
+		noneSettings.setVexComplianceFramework(VexComplianceFramework.NONE);
+		noneOrg.setSettings(noneSettings);
+		lenient().when(getOrganizationService.getOrganizationData(any())).thenReturn(Optional.of(noneOrg));
+
+		// Prime a record that would fail CISA (NOT_AFFECTED with no justification + no details).
+		// Under NONE framework, this must update successfully.
+		VulnAnalysis va = primeExistingRecord(
+				AnalysisState.IN_TRIAGE, null, null,
+				null, null, null);
+
+		assertDoesNotThrow(() -> service.updateAnalysisState(
+				va.getUuid(),
+				AnalysisState.NOT_AFFECTED,
+				null,
+				null,
+				null,
+				null,
+				null, null, null,
+				WhoUpdated.getTestWhoUpdated()));
 	}
 }

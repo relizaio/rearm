@@ -20,7 +20,7 @@ import io.reliza.model.AnalysisState;
 /**
  * Unit tests for the private VDR mapping helpers in {@link ReleaseService}:
  *   - {@code mapVdrAnalysisState}  : internal AnalysisState -> CDX Analysis.State
- *                                    (FIXED must map to RESOLVED per CISA VEX)
+ *                                    (identity mapping; internal names mirror CDX 1.6)
  *   - {@code mapVdrAnalysisResponse}: internal AnalysisResponse -> CDX Analysis.Response
  */
 public class ReleaseServiceVdrMappingTest {
@@ -48,8 +48,8 @@ public class ReleaseServiceVdrMappingTest {
 	}
 
 	@Test
-	void mapState_fixedMapsToResolved() throws Exception {
-		assertEquals(Vulnerability.Analysis.State.RESOLVED, mapState(AnalysisState.FIXED));
+	void mapState_resolvedMapsToResolved() throws Exception {
+		assertEquals(Vulnerability.Analysis.State.RESOLVED, mapState(AnalysisState.RESOLVED));
 	}
 
 	@Test

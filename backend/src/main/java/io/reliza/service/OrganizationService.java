@@ -606,6 +606,10 @@ public class OrganizationService {
 				settings.setBranchSuffixMode(branchSuffixMode);
 			}
 
+			if (settingsPatch.getVexComplianceFramework() != null) {
+				settings.setVexComplianceFramework(settingsPatch.getVexComplianceFramework());
+			}
+
 			od.setSettings(settings);
 			
 			Organization org = getOrganizationService.getOrganization(orgUuid)

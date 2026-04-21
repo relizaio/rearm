@@ -1678,17 +1678,11 @@ public class ReleaseService {
 	 */
 	private String generateVdrInternal(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
 		Bom bom = new Bom();
-		// CISA/CDX VDRs SHOULD have a serial number (urn:uuid). Derive deterministically from the
-		// release identity + snapshot coordinates so that re-exporting the same logical snapshot
-		// yields the same serial (idempotent; referenceable from external systems).
-		String serialSeed = String.join("|",
-				String.valueOf(releaseData.getUuid()),
-				snapshotType != null ? snapshotType.name() : "LIVE",
-				snapshotValue != null ? snapshotValue : "",
-				cutOffDate != null ? cutOffDate.toInstant().toString() : "",
-				Boolean.TRUE.equals(includeSuppressed) ? "withSuppressed" : "noSuppressed");
-		UUID serialUuid = UUID.nameUUIDFromBytes(serialSeed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-		bom.setSerialNumber("urn:uuid:" + serialUuid);
+		// CISA/CDX VDRs SHOULD have a serial number (urn:uuid). Derive deterministically so that
+		// re-exporting the same logical snapshot yields the same serial (idempotent; referenceable
+		// from external systems). Seed shape is locked by VulnAnalysisServiceVdrSerialTest.
+		bom.setSerialNumber(buildVdrSerialNumber(releaseData.getUuid(), snapshotType, snapshotValue,
+				cutOffDate, includeSuppressed));
 		
 		// Set metadata
 		OrganizationData orgData = getOrganizationService.getOrganizationData(releaseData.getOrg()).orElse(null);
@@ -1993,7 +1987,7 @@ public class ReleaseService {
 			if (!Boolean.TRUE.equals(includeSuppressed) 
 					&& (finalState == AnalysisState.FALSE_POSITIVE 
 					|| finalState == AnalysisState.NOT_AFFECTED
-					|| finalState == AnalysisState.FIXED)) {
+					|| finalState == AnalysisState.RESOLVED)) {
 				continue;
 			}
 			
@@ -2247,8 +2241,31 @@ public class ReleaseService {
 	}
 	
 	/**
-	 * Map internal analysis state to CycloneDX analysis state.
-	 * Internal FIXED maps to CDX RESOLVED (terminal "remediated" state).
+	 * Build the deterministic VDR {@code serialNumber} (urn:uuid:...) for a given release snapshot.
+	 *
+	 * The seed shape is intentionally part of the external contract: any change re-keys every
+	 * previously-exported VDR and breaks consumer idempotency. {@code VulnAnalysisServiceVdrSerialTest}
+	 * pins the exact seed format + expected UUID for a known input so accidental refactors fail loudly.
+	 *
+	 * Seed components (pipe-separated, UTF-8):
+	 *   releaseUuid | snapshotType.name() (or "LIVE") | snapshotValue (or "") |
+	 *   cutOffDate.toInstant().toString() (or "") | "withSuppressed" / "noSuppressed"
+	 * Hashed via {@link UUID#nameUUIDFromBytes(byte[])} (v3, MD5).
+	 */
+	static String buildVdrSerialNumber(UUID releaseUuid, VdrSnapshotType snapshotType, String snapshotValue,
+			ZonedDateTime cutOffDate, Boolean includeSuppressed) {
+		String serialSeed = String.join("|",
+				String.valueOf(releaseUuid),
+				snapshotType != null ? snapshotType.name() : "LIVE",
+				snapshotValue != null ? snapshotValue : "",
+				cutOffDate != null ? cutOffDate.toInstant().toString() : "",
+				Boolean.TRUE.equals(includeSuppressed) ? "withSuppressed" : "noSuppressed");
+		UUID serialUuid = UUID.nameUUIDFromBytes(serialSeed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		return "urn:uuid:" + serialUuid;
+	}
+	
+	/**
+	 * Map internal analysis state to CycloneDX analysis state. Internal names mirror CDX 1.6.
 	 */
 	private static Vulnerability.Analysis.State mapVdrAnalysisState(AnalysisState state) {
 		return switch (state) {
@@ -2256,7 +2273,7 @@ public class ReleaseService {
 			case IN_TRIAGE -> Vulnerability.Analysis.State.IN_TRIAGE;
 			case FALSE_POSITIVE -> Vulnerability.Analysis.State.FALSE_POSITIVE;
 			case NOT_AFFECTED -> Vulnerability.Analysis.State.NOT_AFFECTED;
-			case FIXED -> Vulnerability.Analysis.State.RESOLVED;
+			case RESOLVED -> Vulnerability.Analysis.State.RESOLVED;
 		};
 	}
 	

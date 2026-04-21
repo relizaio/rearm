@@ -70,8 +70,24 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		@JsonAlias("branchPrefixMode")
 		private BranchSuffixMode branchSuffixMode;
 
+		/**
+		 * VEX compliance framework to enforce on vulnerability analysis create/update.
+		 * Nullable; treated as {@link VexComplianceFramework#NONE} (pure CycloneDX baseline,
+		 * no extra validation) when null. Layers on top of {@link #justificationMandatory},
+		 * which remains independently enforced for {@code NOT_AFFECTED} regardless of framework.
+		 */
+		@JsonProperty
+		private VexComplianceFramework vexComplianceFramework;
+
 		public static Settings getDefault() {
 			return new Settings();
+		}
+
+		/**
+		 * @return the configured framework, or {@link VexComplianceFramework#NONE} if unset.
+		 */
+		public VexComplianceFramework getVexComplianceFrameworkOrDefault() {
+			return vexComplianceFramework != null ? vexComplianceFramework : VexComplianceFramework.NONE;
 		}
 	}
 

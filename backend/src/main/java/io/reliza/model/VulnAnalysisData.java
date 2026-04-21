@@ -12,6 +12,8 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.Nulls;
 import com.fasterxml.jackson.core.type.TypeReference;
 
 import io.reliza.common.Utils;
@@ -43,6 +45,7 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 		private VulnerabilitySeverity severity;
 		
 		@JsonProperty("responses")
+		@JsonSetter(nulls = Nulls.AS_EMPTY)
 		private List<AnalysisResponse> responses = new LinkedList<>();
 		
 		@JsonProperty("recommendation")
@@ -195,6 +198,7 @@ public class VulnAnalysisData extends RelizaDataParent implements RelizaObject {
 	private VulnerabilitySeverity severity;
 	
 	@JsonProperty("responses")
+	@JsonSetter(nulls = Nulls.AS_EMPTY)
 	private List<AnalysisResponse> responses = new LinkedList<>();
 	
 	@JsonProperty("recommendation")

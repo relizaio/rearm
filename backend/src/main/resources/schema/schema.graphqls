@@ -451,6 +451,18 @@ type IgnoreViolation {
 type Settings {
 	justificationMandatory: Boolean
 	branchSuffixMode: BranchSuffixMode
+	vexComplianceFramework: VexComplianceFramework
+}
+
+"""
+VEX compliance framework layered on top of the CycloneDX baseline data model.
+NONE  = pure CycloneDX, no extra validation.
+CISA  = CISA VEX minimum requirements
+        (https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-vex-508c.pdf).
+"""
+enum VexComplianceFramework {
+	NONE
+	CISA
 }
 
 """
@@ -1430,7 +1442,7 @@ enum AnalysisState {
 	IN_TRIAGE
 	FALSE_POSITIVE
 	NOT_AFFECTED
-	FIXED
+	RESOLVED
 }
 
 # CycloneDX 1.7 analysis.response values - declares the supplier action
@@ -1601,6 +1613,7 @@ input IgnoreViolationInput {
 input SettingsInput {
 	justificationMandatory: Boolean
 	branchSuffixMode: BranchSuffixMode
+	vexComplianceFramework: VexComplianceFramework
 }
 
 input PermissionInput {

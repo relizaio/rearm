@@ -213,7 +213,7 @@ public class VulnAnalysisDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, createDto.getOrg(), ros, CallType.READ);
 		
 		// Org-level justificationMandatory: only meaningful when CISA expects a justification
-		// (state == NOT_AFFECTED). For IN_TRIAGE / FALSE_POSITIVE / FIXED / EXPLOITABLE the
+		// (state == NOT_AFFECTED). For IN_TRIAGE / FALSE_POSITIVE / RESOLVED / EXPLOITABLE the
 		// CISA VEX model has no justification requirement, so the blanket setting is skipped.
 		if (createDto.getState() == AnalysisState.NOT_AFFECTED
 				&& ood.isPresent() && Boolean.TRUE.equals(ood.get().getSettingsWithDefaults().getJustificationMandatory())
