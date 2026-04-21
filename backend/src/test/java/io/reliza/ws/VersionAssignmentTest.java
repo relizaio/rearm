@@ -330,6 +330,51 @@ public class VersionAssignmentTest
 		);
 	}
 
+	/**
+	 * Branch names with non-alphanumeric characters must produce hyphens in the
+	 * semver pre-release modifier, not underscores. SemVer 2.0.0 restricts
+	 * pre-release identifiers to [0-9A-Za-z-]; an underscore is invalid.
+	 */
+	@Test
+	public void testBranchSuffixUsesHyphenForSemver() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		Component comp = componentService.createComponent("testBranchSuffixHyphen_" + UUID_SHORT(),
+				org.getUuid(), ComponentType.COMPONENT, "semver", "semver", null,
+				WhoUpdated.getTestWhoUpdated());
+		Branch slash = createSemverFeatureBranch("feature/new-thing", comp);
+		Optional<VersionAssignment> v1 = versionAssignmetService.getSetNewVersion(slash.getUuid(), null, null, null, VersionTypeEnum.DEV);
+		Assertions.assertEquals("0.0.0-feature-new-thing", v1.get().getVersion());
+		Assertions.assertFalse(v1.get().getVersion().contains("_"),
+				"semver modifier must not contain underscore: " + v1.get().getVersion());
+
+		Branch under = createSemverFeatureBranch("feat_x.y", comp);
+		Optional<VersionAssignment> v2 = versionAssignmetService.getSetNewVersion(under.getUuid(), null, null, null, VersionTypeEnum.DEV);
+		Assertions.assertEquals("0.0.0-feat-x-y", v2.get().getVersion());
+		Assertions.assertFalse(v2.get().getVersion().contains("_"),
+				"semver modifier must not contain underscore: " + v2.get().getVersion());
+	}
+
+	/**
+	 * Round-trip the generated version through the versioning library's semver
+	 * matcher to confirm the produced suffix is a valid semver pre-release.
+	 */
+	@Test
+	public void testBranchSuffixVersionIsValidSemver() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		Component comp = componentService.createComponent("testBranchSuffixValid_" + UUID_SHORT(),
+				org.getUuid(), ComponentType.COMPONENT, "semver", "semver", null,
+				WhoUpdated.getTestWhoUpdated());
+		Branch br = createSemverFeatureBranch("my/weird_branch name", comp);
+		Optional<VersionAssignment> v1 = versionAssignmetService.getSetNewVersion(br.getUuid(), null, null, null, VersionTypeEnum.DEV);
+		String version = v1.get().getVersion();
+		Assertions.assertTrue(io.reliza.versioning.VersionUtils.isVersionMatchingSchema("semver", version),
+				"generated version must match semver schema: " + version);
+		// Strict semver regex from https://semver.org/
+		String semverRegex = "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$";
+		Assertions.assertTrue(version.matches(semverRegex),
+				"generated version must satisfy strict semver regex: " + version);
+	}
+
 	private static String UUID_SHORT() {
 		return java.util.UUID.randomUUID().toString().substring(0, 8);
 	}

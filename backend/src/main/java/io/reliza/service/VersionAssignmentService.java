@@ -354,7 +354,8 @@ public class VersionAssignmentService {
 			if (!shouldAppendBranchSuffix(bd)) {
 				return null;
 			}
-			return bd.getName().toLowerCase().replaceAll("[^a-z0-9]", "_");
+			// Hyphen (not underscore) — SemVer 2.0.0 pre-release identifiers allow only [0-9A-Za-z-].
+			return bd.getName().toLowerCase().replaceAll("[^a-z0-9]", "-");
 		}
 		return null;
 	}
