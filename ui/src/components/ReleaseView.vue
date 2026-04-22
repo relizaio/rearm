@@ -52,6 +52,19 @@
                                 </n-tooltip>
                             </span>
                         </n-radio-button>
+                        <n-radio-button value="VEX">
+                            <span style="display: inline-flex; align-items: center;">
+                                VEX
+                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    Vulnerability Exploitability eXchange - a machine-readable statement of which vulnerabilities do or do not affect this release. Includes the same component list as the VDR, filtered to decided analysis statements (IN_TRIAGE excluded by default, per CISA guidance).
+                                </n-tooltip>
+                            </span>
+                        </n-radio-button>
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
@@ -319,6 +332,144 @@
                             :disabled="bomExportPending || vdrPdfExportPending"
                             @click="vdrExportFormat === 'PDF' ? exportReleaseVdrPdf() : exportReleaseVdr()">
                             <span v-if="bomExportPending || vdrPdfExportPending" class="ml-2">Exporting...</span>
+                            <span v-else>Export</span>
+                        </n-button>
+                    </n-spin>
+                </n-form>
+                <n-form v-if="exportBomType === 'VEX'">
+                    <h3>Format: CycloneDX 1.6 VEX (JSON)</h3>
+                    <n-form-item>
+                        <span style="display: inline-flex; align-items: center;">
+                            Include Suppressed:<n-switch style="margin-left: 5px;" v-model:value="vdrIncludeSuppressed"/>
+                            <n-tooltip trigger="hover">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Include vulnerabilities marked NOT_AFFECTED / FALSE_POSITIVE / RESOLVED. Turn off to ship only currently-exploitable findings.
+                            </n-tooltip>
+                        </span>
+                    </n-form-item>
+                    <n-form-item>
+                        <span style="display: inline-flex; align-items: center;">
+                            Include In-Triage:<n-switch style="margin-left: 5px;" v-model:value="vexIncludeInTriage"/>
+                            <n-tooltip trigger="hover">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                Include vulnerabilities still under investigation (IN_TRIAGE) and findings without an analysis decision. CISA guidance recommends leaving this off for published VEX documents.
+                            </n-tooltip>
+                        </span>
+                    </n-form-item>
+                    <n-form-item label="Snapshot Type (optional)">
+                        <n-radio-group v-model:value="vdrSnapshotType" name="vexSnapshotType">
+                            <n-radio-button value="NONE">
+                                <span style="display: inline-flex; align-items: center;">
+                                    Current State
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Export the current set of VEX statements without any historical filtering.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="DATE">
+                                <span style="display: inline-flex; align-items: center;">
+                                    By Date
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Export VEX statements as they existed at a specific date and time.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button v-if="updatedRelease?.metrics?.firstScanned || updatedRelease?.metrics?.lastScanned" value="FIRST_SCANNED">
+                                <span style="display: inline-flex; align-items: center;">
+                                    First Scanned
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        <span v-if="updatedRelease?.metrics?.firstScanned">Export VEX statements as they existed when this release was first scanned.</span>
+                                        <span v-else>Estimated snapshot — exact first scan date not recorded; using release creation date + 6 hours as cutoff.</span>
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button value="LIFECYCLE">
+                                <span style="display: inline-flex; align-items: center;">
+                                    By Lifecycle
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Export VEX statements as they existed when the release reached a specific lifecycle stage.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                            <n-radio-button v-if="myUser && myUser.installationType && myUser.installationType !== 'OSS'" value="APPROVAL">
+                                <span style="display: inline-flex; align-items: center;">
+                                    By Approval
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <n-icon size="16" style="margin-left: 4px;">
+                                                <QuestionCircle20Regular />
+                                            </n-icon>
+                                        </template>
+                                        Export VEX statements as they existed when a specific approval was granted.
+                                    </n-tooltip>
+                                </span>
+                            </n-radio-button>
+                        </n-radio-group>
+                    </n-form-item>
+                    <n-form-item v-if="vdrSnapshotType === 'DATE'" label="Cut-off Date">
+                        <n-date-picker
+                            v-model:value="vdrCutoffDate"
+                            type="datetime"
+                            placeholder="Select date/time"
+                            clearable
+                            format="yyyy-MM-dd HH:mm"
+                            :is-date-disabled="(ts: number) => updatedRelease && updatedRelease.createdDate ? ts < new Date(updatedRelease.createdDate).setHours(0,0,0,0) : false"
+                        />
+                    </n-form-item>
+                    <n-form-item v-if="vdrSnapshotType === 'LIFECYCLE'" label="Lifecycle Stage">
+                        <n-select
+                            v-model:value="vdrTargetLifecycle"
+                            :options="vdrLifecycleSelectOptions"
+                            placeholder="Select lifecycle stage"
+                            clearable
+                            filterable
+                            style="max-width: 400px;"
+                        />
+                    </n-form-item>
+                    <n-form-item v-if="vdrSnapshotType === 'APPROVAL'" label="Approval Entry">
+                        <n-select
+                            v-model:value="vdrTargetApproval"
+                            :options="approvalEventSelectOptions"
+                            :placeholder="approvalEventSelectOptions.length === 0 ? 'No approval events available' : 'Select approval entry'"
+                            :disabled="approvalEventSelectOptions.length === 0"
+                            clearable
+                            filterable
+                            style="max-width: 400px;"
+                        />
+                    </n-form-item>
+                    <n-spin :show="bomExportPending" small style="margin-top: 5px;">
+                        <n-button type="success"
+                            :disabled="bomExportPending"
+                            @click="exportReleaseVex()">
+                            <span v-if="bomExportPending" class="ml-2">Exporting...</span>
                             <span v-else>Export</span>
                         </n-button>
                     </n-spin>
@@ -1323,6 +1474,8 @@ const vdrFirstScannedDate = computed<string | null>(() => {
 const vdrExportFormat: Ref<string> = ref('JSON')
 const vdrPdfExportPending: Ref<boolean> = ref(false)
 const vdrIncludeToolAttribution: Ref<boolean> = ref(true)
+// VEX: whether to include IN_TRIAGE + analysis-less statements. Default OFF per CISA guidance.
+const vexIncludeInTriage: Ref<boolean> = ref(false)
 const selectedBomStructureType: Ref<string> = ref('FLAT')
 const filterCoverageType: Ref<boolean> = ref(false)
 
@@ -2758,6 +2911,104 @@ function getSnapshotSuffix(): string {
         return '-snapshot-date'
     }
     return ''
+}
+
+async function exportReleaseVex () {
+    // Clone of exportReleaseVdr but routed through releaseCdxVexExport /
+    // releaseCdxVexExportWithApproval, threading includeInTriage and using a -vex.cdx.json filename.
+    // Shares snapshot-state refs (vdrSnapshotType / vdrCutoffDate / vdrTargetLifecycle /
+    // vdrTargetApproval / vdrIncludeSuppressed) with the VDR form by design — only one export
+    // flow is open at a time.
+    try {
+        bomExportPending.value = true
+
+        if (vdrSnapshotType.value === 'DATE' && !vdrCutoffDate.value) {
+            notify('warning', 'Validation Error', 'Please select a cut-off date')
+            return
+        }
+        if (vdrSnapshotType.value === 'LIFECYCLE' && !vdrTargetLifecycle.value) {
+            notify('warning', 'Validation Error', 'Please select a lifecycle stage')
+            return
+        }
+        if (vdrSnapshotType.value === 'APPROVAL' && !vdrTargetApproval.value) {
+            notify('warning', 'Validation Error', 'Please select an approval entry')
+            return
+        }
+        if (vdrSnapshotType.value === 'FIRST_SCANNED' && !vdrFirstScannedDate.value) {
+            notify('warning', 'Validation Error', 'First scanned date unavailable for this release')
+            return
+        }
+
+        const upToDateIso = vdrSnapshotType.value === 'FIRST_SCANNED'
+            ? vdrFirstScannedDate.value
+            : (vdrSnapshotType.value === 'DATE' && vdrCutoffDate.value
+                ? new Date(vdrCutoffDate.value).toISOString()
+                : null)
+        const targetLifecycle = vdrSnapshotType.value === 'LIFECYCLE' ? vdrTargetLifecycle.value : null
+        const targetApproval = vdrSnapshotType.value === 'APPROVAL' ? vdrTargetApproval.value : null
+
+        let gqlResp: any
+        let exportContent: string
+
+        if (vdrSnapshotType.value === 'APPROVAL') {
+            // SaaS-only mutation for approval snapshots.
+            gqlResp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseCdxVexExportWithApproval($release: ID!, $includeSuppressed: Boolean, $includeInTriage: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum, $targetApproval: String) {
+                        releaseCdxVexExportWithApproval(release: $release, includeSuppressed: $includeSuppressed, includeInTriage: $includeInTriage, upToDate: $upToDate, targetLifecycle: $targetLifecycle, targetApproval: $targetApproval)
+                    }
+                `,
+                variables: {
+                    release: updatedRelease.value.uuid,
+                    includeSuppressed: vdrIncludeSuppressed.value,
+                    includeInTriage: vexIncludeInTriage.value,
+                    upToDate: upToDateIso,
+                    targetLifecycle: targetLifecycle,
+                    targetApproval: targetApproval
+                },
+                fetchPolicy: 'no-cache'
+            })
+            exportContent = gqlResp.data.releaseCdxVexExportWithApproval
+        } else {
+            // CE-compatible mutation for date / lifecycle / current-state snapshots.
+            gqlResp = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation releaseCdxVexExport($release: ID!, $includeSuppressed: Boolean, $includeInTriage: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum) {
+                        releaseCdxVexExport(release: $release, includeSuppressed: $includeSuppressed, includeInTriage: $includeInTriage, upToDate: $upToDate, targetLifecycle: $targetLifecycle)
+                    }
+                `,
+                variables: {
+                    release: updatedRelease.value.uuid,
+                    includeSuppressed: vdrIncludeSuppressed.value,
+                    includeInTriage: vexIncludeInTriage.value,
+                    upToDate: upToDateIso,
+                    targetLifecycle: targetLifecycle
+                },
+                fetchPolicy: 'no-cache'
+            })
+            exportContent = gqlResp.data.releaseCdxVexExport
+        }
+        if (typeof exportContent !== 'string') {
+            exportContent = JSON.stringify(exportContent, null, 2)
+        }
+        const snapshotSuffix = getSnapshotSuffix()
+        const fileName = updatedRelease.value.uuid + '-vex' + snapshotSuffix + '.cdx.json'
+        const blob = new Blob([exportContent], { type: 'application/json' })
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = fileName
+        link.click()
+        window.URL.revokeObjectURL(link.href)
+        notify('info', 'Processing Download', 'Your VEX is being downloaded...')
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    } finally {
+        bomExportPending.value = false
+    }
 }
 
 async function exportReleaseVdr () {
