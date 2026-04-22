@@ -46,7 +46,7 @@ When a component matches both a dependency pattern and has a manual entry, the *
 Editing a pattern-matched dependency automatically creates a manual entry for that component, which then overrides the pattern-matched version. This effectively converts the pattern-matched dependency to manual while the pattern continues to exist and may match other components.
 
 ### Branch Suffix Mode
-When ReARM auto-integrates a non-base Feature Set, by default it appends the Feature Set name as a suffix to the resolved version (e.g., `1.2.3-feat_login`). *Branch Suffix Mode* controls this suffix behavior. It can be set at two levels:
+When ReARM auto-integrates a non-base Feature Set, by default it appends the Feature Set name as a suffix to the resolved version (e.g., `1.2.3-feat-login`). *Branch Suffix Mode* controls this suffix behavior. It can be set at two levels:
 
 1. **Organization level** - configured under `Admin Settings → Admin Settings → Branch Suffix Mode`. This sets the default for all Components in the organization.
 2. **Component / Product level** - configured on the Component or Product settings screen. Each Component or Product can override the organization default or inherit it.
