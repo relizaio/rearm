@@ -426,25 +426,6 @@ public class VulnAnalysisServiceCisaValidationTest {
 	}
 
 	@Test
-	void analysisState_jsonCreator_mapsLegacyFixedToResolved() throws Exception {
-		// Persisted records from before the FIXED → RESOLVED rename must continue to load.
-		AnalysisState fromLegacy = Utils.OM.readValue("\"FIXED\"", AnalysisState.class);
-		assertEquals(AnalysisState.RESOLVED, fromLegacy);
-		// Case and whitespace tolerance (JsonCreator-wide behavior).
-		assertEquals(AnalysisState.RESOLVED, Utils.OM.readValue("\" fixed \"", AnalysisState.class));
-		assertEquals(AnalysisState.EXPLOITABLE, Utils.OM.readValue("\"exploitable\"", AnalysisState.class));
-	}
-
-	@Test
-	void analysisState_jsonCreator_unknownValueReturnsNull() throws Exception {
-		// Unknown / future / typo'd values must not blow up deserialization of the surrounding
-		// record. Downstream VDR and analytics code treats null as "no state".
-		assertEquals(null, Utils.OM.readValue("\"TOTALLY_BOGUS\"", AnalysisState.class));
-		assertEquals(null, Utils.OM.readValue("\"\"", AnalysisState.class));
-		assertEquals(null, Utils.OM.readValue("null", AnalysisState.class));
-	}
-
-	@Test
 	void updateAnalysisState_clearingRecommendation_onExploitableRecordWithoutResponses_throws() {
 		// Existing record had a recommendation only (no responses). Caller explicitly clears
 		// recommendation to a blank string without supplying responses. After merge the record

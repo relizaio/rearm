@@ -1666,9 +1666,121 @@ public class ReleaseService {
 			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
 		return generateVdrInternal(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
 	}
-	
+
 	/**
-	 * Internal method to generate VDR with pre-computed cutoff date and snapshot metadata
+	 * Generate a CycloneDX 1.6 VEX (Vulnerability Exploitability eXchange) document for a release.
+	 * CE-compatible variant: supports DATE / LIFECYCLE snapshots. For SaaS approval snapshots use
+	 * the SaaS-layer delegate around {@link #generateCdxVexWithSnapshot}.
+	 *
+	 * <p>A VEX document is a VDR extension — structurally identical to the paired VDR except:
+	 * <ul>
+	 *   <li>{@code components[]} is retained so the VEX is self-contained; SBOM-level context
+	 *       carries through unchanged from the VDR.</li>
+	 *   <li>{@code vulnerabilities[]} is filtered to decided statements:
+	 *       {@code EXPLOITABLE}, {@code NOT_AFFECTED}, {@code RESOLVED}, {@code FALSE_POSITIVE}.
+	 *       {@code IN_TRIAGE} entries (and entries with no analysis block at all) are excluded
+	 *       unless {@code includeInTriage=true}. When surfaced, analysis-less entries are stamped
+	 *       with an explicit {@code analysis.state = IN_TRIAGE} so every retained vulnerability
+	 *       carries a valid VEX statement.</li>
+	 *   <li>{@code metadata.properties} carries {@code VEX_DOCUMENT=true} to distinguish VEX from VDR.</li>
+	 *   <li>{@code serialNumber} is derived from a VEX-specific seed so the same release's VDR and VEX
+	 *       receive distinct urn:uuid identifiers (they are separate documents).</li>
+	 * </ul>
+	 *
+	 * @param releaseData Release data
+	 * @param includeSuppressed Whether to include suppressed vulnerabilities (FALSE_POSITIVE, NOT_AFFECTED, RESOLVED)
+	 * @param includeInTriage Whether to include IN_TRIAGE statements; default false per CISA guidance
+	 * @param upToDate Optional explicit cutoff date
+	 * @param targetLifecycle Optional lifecycle to snapshot at
+	 * @return CycloneDX VEX JSON string
+	 */
+	public String generateCdxVex(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle) throws Exception {
+		ZonedDateTime cutOffDate = computeLifecycleCutoffDate(releaseData, upToDate, targetLifecycle);
+		VdrSnapshotType snapshotType = null;
+		String snapshotValue = null;
+		if (targetLifecycle != null) {
+			snapshotType = VdrSnapshotType.LIFECYCLE;
+			snapshotValue = targetLifecycle.name();
+		} else if (upToDate != null) {
+			snapshotType = VdrSnapshotType.DATE;
+		}
+		return generateCdxVexWithSnapshot(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType, snapshotValue);
+	}
+
+	/**
+	 * Generate a CycloneDX VEX document with pre-computed snapshot metadata. Used by the SaaS layer
+	 * for approval snapshots; mirrors {@link #generateVdrWithSnapshot}.
+	 */
+	public String generateCdxVexWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
+		Bom bom = buildVdrBom(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
+		transformVdrBomToCdxVex(bom, releaseData.getUuid(), includeInTriage, cutOffDate, snapshotType, snapshotValue, includeSuppressed);
+		BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
+		return generator.toJsonString();
+	}
+
+	/**
+	 * In-place transform of a VDR {@link Bom} into a CycloneDX VEX document.
+	 * Pure (no instance state, no collaborators) — kept static so tests can invoke it directly.
+	 * See {@link #generateCdxVex} for the emission contract.
+	 */
+	static void transformVdrBomToCdxVex(Bom bom, UUID releaseUuid, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, Boolean includeSuppressed) {
+		// 1. VEX documents identify themselves separately from VDRs: use a distinct urn:uuid.
+		bom.setSerialNumber(buildCdxVexSerialNumber(releaseUuid, snapshotType, snapshotValue,
+				cutOffDate, includeSuppressed, includeInTriage));
+
+		// 2. Keep components[] as-is — VEX is a VDR extension: same SBOM-level context, plus the
+		//    VEX_DOCUMENT marker, filtered vulnerabilities, and a distinct serialNumber. This makes
+		//    the VEX self-contained for consumers that can't join against a paired SBOM/VDR.
+
+		// 3. Filter vulnerabilities to decided statements.
+		List<Vulnerability> vulns = bom.getVulnerabilities();
+		if (vulns != null && !vulns.isEmpty()) {
+			boolean keepTriage = Boolean.TRUE.equals(includeInTriage);
+			List<Vulnerability> filtered = new ArrayList<>();
+			for (Vulnerability v : vulns) {
+				Vulnerability.Analysis a = v.getAnalysis();
+				if (a == null || a.getState() == null) {
+					// No analysis = implicitly in-triage; skip unless caller opted in.
+					if (keepTriage) {
+						// Stamp an explicit IN_TRIAGE statement so the entry is a valid VEX
+						// assertion ("under investigation") rather than a statement-less finding.
+						Vulnerability.Analysis synth = (a == null) ? new Vulnerability.Analysis() : a;
+						synth.setState(Vulnerability.Analysis.State.IN_TRIAGE);
+						v.setAnalysis(synth);
+						filtered.add(v);
+					}
+					continue;
+				}
+				Vulnerability.Analysis.State state = a.getState();
+				if (state == Vulnerability.Analysis.State.IN_TRIAGE && !keepTriage) {
+					continue;
+				}
+				filtered.add(v);
+			}
+			bom.setVulnerabilities(filtered);
+		}
+
+		// 4. Add VEX_DOCUMENT=true metadata marker.
+		Metadata metadata = bom.getMetadata();
+		if (metadata == null) {
+			metadata = new Metadata();
+			bom.setMetadata(metadata);
+		}
+		if (metadata.getProperties() == null) {
+			metadata.setProperties(new java.util.ArrayList<>());
+		}
+		Property vexMarker = new Property();
+		vexMarker.setName(VdrMetadataProperty.VEX_DOCUMENT.toString());
+		vexMarker.setValue("true");
+		metadata.getProperties().add(vexMarker);
+	}
+
+	/**
+	 * Internal method to generate VDR with pre-computed cutoff date and snapshot metadata.
+	 * Thin wrapper around {@link #buildVdrBom} that serializes the model to JSON.
 	 * @param releaseData Release data
 	 * @param includeSuppressed Whether to include suppressed vulnerabilities
 	 * @param cutOffDate Computed cutoff date
@@ -1677,6 +1789,19 @@ public class ReleaseService {
 	 * @return VDR JSON string
 	 */
 	private String generateVdrInternal(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
+		Bom bom = buildVdrBom(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
+		BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
+		return generator.toJsonString();
+	}
+
+	/**
+	 * Build the in-memory {@link Bom} that represents a VDR for a release snapshot.
+	 * Split out from {@link #generateVdrInternal} so that the CycloneDX VEX exporter can
+	 * reuse the exact same model and apply VEX-specific transformations (drop components,
+	 * filter vulnerabilities by analysis state, flip metadata property) without duplicating
+	 * ~250 lines of enrichment logic.
+	 */
+	private Bom buildVdrBom(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
 		Bom bom = new Bom();
 		// CISA/CDX VDRs SHOULD have a serial number (urn:uuid). Derive deterministically so that
 		// re-exporting the same logical snapshot yields the same serial (idempotent; referenceable
@@ -1923,9 +2048,7 @@ public class ReleaseService {
 			}
 		}
 		
-		// Generate JSON using CycloneDX 1.6
-		BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
-		return generator.toJsonString();
+		return bom;
 	}
 	
 	/**
@@ -2263,7 +2386,33 @@ public class ReleaseService {
 		UUID serialUuid = UUID.nameUUIDFromBytes(serialSeed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		return "urn:uuid:" + serialUuid;
 	}
-	
+
+	/**
+	 * Deterministic {@code serialNumber} generator for CycloneDX VEX documents. Mirrors
+	 * {@link #buildVdrSerialNumber} but prefixes the seed with {@code "VEX|"} and appends the
+	 * {@code includeInTriage} flag so that:
+	 * <ul>
+	 *   <li>A release's VDR and VEX for the same snapshot always receive distinct urn:uuids
+	 *       (two documents, two identities).</li>
+	 *   <li>Toggling {@code includeInTriage} produces a distinct VEX serial (because the
+	 *       statement set differs).</li>
+	 * </ul>
+	 * Seed shape is pinned by {@code ReleaseServiceVdrSerialTest} (alongside the VDR shape).
+	 */
+	static String buildCdxVexSerialNumber(UUID releaseUuid, VdrSnapshotType snapshotType, String snapshotValue,
+			ZonedDateTime cutOffDate, Boolean includeSuppressed, Boolean includeInTriage) {
+		String serialSeed = String.join("|",
+				"VEX",
+				String.valueOf(releaseUuid),
+				snapshotType != null ? snapshotType.name() : "LIVE",
+				snapshotValue != null ? snapshotValue : "",
+				cutOffDate != null ? cutOffDate.toInstant().toString() : "",
+				Boolean.TRUE.equals(includeSuppressed) ? "withSuppressed" : "noSuppressed",
+				Boolean.TRUE.equals(includeInTriage) ? "withTriage" : "noTriage");
+		UUID serialUuid = UUID.nameUUIDFromBytes(serialSeed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		return "urn:uuid:" + serialUuid;
+	}
+
 	/**
 	 * Map internal analysis state to CycloneDX analysis state. Internal names mirror CDX 1.6.
 	 */

@@ -317,7 +317,57 @@ public class ReleaseDatafetcher {
 		// CE-compatible: date or lifecycle snapshots only
 		return releaseService.generateVdr(rd, includeSuppressed, upToDate, targetLifecycle);
 	}
-	
+
+	/**
+	 * Generate a CycloneDX 1.6 VEX document with CE-compatible snapshot types (DATE, LIFECYCLE).
+	 * For approval-based snapshots (SaaS-only), a separate mutation will be added under B.1b.
+	 *
+	 * @param releaseUuid Release UUID
+	 * @param includeSuppressed Whether to include suppressed vulnerabilities (FALSE_POSITIVE, NOT_AFFECTED, RESOLVED)
+	 * @param includeInTriage Whether to include IN_TRIAGE statements; default false per CISA guidance
+	 * @param upToDate Optional explicit cutoff date
+	 * @param targetLifecycle Optional lifecycle to snapshot at
+	 * @return CycloneDX VEX JSON string
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "releaseCdxVexExport")
+	public String releaseCdxVexExport(
+			@InputArgument("release") UUID releaseUuid,
+			@InputArgument("includeSuppressed") Boolean includeSuppressed,
+			@InputArgument("includeInTriage") Boolean includeInTriage,
+			@InputArgument("upToDate") ZonedDateTime upToDate,
+			@InputArgument("targetLifecycle") ReleaseLifecycle targetLifecycle) throws Exception {
+
+		if (upToDate != null && targetLifecycle != null) {
+			throw new IllegalArgumentException("Only one cut-off date parameter (upToDate or targetLifecycle) can be specified at a time");
+		}
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+
+		RelizaObject ro = null;
+		if (null != releaseUuid) {
+			var rlzOpt = sharedReleaseService.getReleaseData(releaseUuid);
+			if (rlzOpt.isPresent()) {
+				ro = rlzOpt.get();
+			}
+		}
+
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
+		ReleaseData rd = (ReleaseData) ro;
+		WhoUpdated wuVex = WhoUpdated.getWhoUpdated(oud.get());
+		DownloadConfig vexConfig = DownloadConfig.builder()
+				.releaseUuid(releaseUuid)
+				.includeSuppressed(includeSuppressed)
+				.includeInTriage(includeInTriage)
+				.upToDate(upToDate)
+				.targetLifecycle(targetLifecycle != null ? targetLifecycle.name() : null)
+				.build();
+		downloadLogService.createDownloadLog(rd.getOrg(), DownloadType.VEX_EXPORT,
+				DownloadSubjectType.RELEASE, releaseUuid, wuVex, vexConfig);
+		return releaseService.generateCdxVex(rd, includeSuppressed, includeInTriage, upToDate, targetLifecycle);
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "releaseTagKeys")
 	public Set<String> getReleaseTagKeys(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {

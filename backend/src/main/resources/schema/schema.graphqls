@@ -240,6 +240,14 @@ type Mutation {
 	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType]): String
 	releaseVdrExport(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
 	releaseVdrExportWithApproval(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
+	"""
+	Generate a CycloneDX 1.6 VEX (Vulnerability Exploitability eXchange) document for a release.
+	Filters vulnerabilities[] to decided analysis statements (EXPLOITABLE, NOT_AFFECTED, RESOLVED, FALSE_POSITIVE);
+	IN_TRIAGE and analysis-less entries are excluded unless includeInTriage=true. The document is component-less
+	by design — consumers join by PURL / bom-ref against the paired VDR or SBOM. Marked with VEX_DOCUMENT=true
+	in metadata.properties. CE-compatible: supports DATE and LIFECYCLE snapshots.
+	"""
+	releaseCdxVexExport(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
 
 	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
 

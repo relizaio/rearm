@@ -26,7 +26,14 @@ public enum VdrMetadataProperty {
 	/**
 	 * The value associated with the snapshot type (lifecycle name or approval name)
 	 */
-	VDR_SNAPSHOT_VALUE;
+	VDR_SNAPSHOT_VALUE,
+
+	/**
+	 * Marks the document as a CycloneDX VEX (Vulnerability Exploitability eXchange) rather than a VDR.
+	 * Consumers can key off this metadata property to distinguish VEX from VDR output when both are emitted
+	 * from the same producer. Value is always "true" when present.
+	 */
+	VEX_DOCUMENT;
 	
 	
 	VdrMetadataProperty() {}

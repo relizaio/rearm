@@ -24,6 +24,7 @@ public class DownloadLogData extends RelizaDataParent implements RelizaObject {
 		ARTIFACT_DOWNLOAD,
 		RAW_ARTIFACT_DOWNLOAD,
 		VDR_EXPORT,
+		VEX_EXPORT,
 		SBOM_EXPORT
 	}
 
@@ -52,11 +53,14 @@ public class DownloadLogData extends RelizaDataParent implements RelizaObject {
 		private String mediaType;
 		private List<String> excludeCoverageTypes;
 
-		// VDR-specific
+		// VDR-specific / VEX-specific (shared snapshot controls)
 		private Boolean includeSuppressed;
 		private ZonedDateTime upToDate;
 		private String targetLifecycle;
 		private String targetApproval;
+
+		// VEX-specific: whether IN_TRIAGE statements are included in the exported VEX document.
+		private Boolean includeInTriage;
 
 	}
 
