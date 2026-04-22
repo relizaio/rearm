@@ -214,7 +214,18 @@ public class ApiKeyService {
 	}
 
 	/**
-	 * 
+	 * Resolve the org for an authenticated key by looking up the stored row.
+	 * Useful for key types whose auth header does not embed the org (FREEFORM).
+	 */
+	public UUID resolveOrgForKey(AuthHeaderParse ahp) {
+		if (ahp == null || ahp.getObjUuid() == null || ahp.getType() == null) return null;
+		return repository.findApiKeyByUuidAndTypeOnly(ahp.getObjUuid(), ahp.getType().toString(),
+				StringUtils.isEmpty(ahp.getKeyOrder()) ? null : ahp.getKeyOrder())
+				.map(ApiKey::getOrg).orElse(null);
+	}
+
+	/**
+	 *
 	 * @param ahp
 	 * @return UUID of matching API Key if matches, otherwise null
 	 */
@@ -225,6 +236,11 @@ public class ApiKeyService {
 			orgUuid = getComponentService.getComponentData(ahp.getObjUuid()).map(c -> c.getOrg()).orElse(null);
 		}
 		if (orgUuid == null && (ahp.getType() == ApiTypeEnum.INSTANCE || ahp.getType() == ApiTypeEnum.CLUSTER)) {
+			orgUuid = repository.findApiKeyByUuidAndTypeOnly(ahp.getObjUuid(), ahp.getType().toString(),
+					StringUtils.isEmpty(ahp.getKeyOrder()) ? null : ahp.getKeyOrder())
+					.map(ApiKey::getOrg).orElse(null);
+		}
+		if (orgUuid == null && ahp.getType() == ApiTypeEnum.FREEFORM) {
 			orgUuid = repository.findApiKeyByUuidAndTypeOnly(ahp.getObjUuid(), ahp.getType().toString(),
 					StringUtils.isEmpty(ahp.getKeyOrder()) ? null : ahp.getKeyOrder())
 					.map(ApiKey::getOrg).orElse(null);

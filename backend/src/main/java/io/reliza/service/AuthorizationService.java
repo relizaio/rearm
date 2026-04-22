@@ -44,6 +44,7 @@ import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.AuthorizationResponse;
+import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.model.dto.AuthorizationResponse.AllowType;
 import io.reliza.model.dto.AuthorizationResponse.ForbidType;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
@@ -90,8 +91,31 @@ public class AuthorizationService {
 		String remoteIp = servletWebRequest.getRequest().getRemoteAddr();
 		if (null != headers && headers.containsKey(HttpHeaders.AUTHORIZATION)) {
 			ahp = AuthHeaderParse.parseAuthHeader(headers, remoteIp);
-		} 
+		}
 		return ahp;
+	}
+
+	/**
+	 * Authenticate a programmatic request and resolve the effective org for the
+	 * authenticated key. Use this in preference to {@link #authenticateProgrammatic}
+	 * when the caller needs the org for a key type whose auth header does not
+	 * embed it (notably FREEFORM). The returned context wraps the parsed
+	 * {@link AuthHeaderParse} alongside the resolved org so callers do not need
+	 * to mutate the AHP itself.
+	 *
+	 * For key types that already populate {@code ahp.getOrgUuid()}
+	 * (ORGANIZATION/ORGANIZATION_RW), the context's {@code orgUuid()} matches
+	 * {@code ahp.getOrgUuid()}. For FREEFORM, the org is looked up from the
+	 * stored ApiKey row.
+	 */
+	public ProgrammaticAuthContext authenticateProgrammaticWithOrg (HttpHeaders headers, ServletWebRequest servletWebRequest) {
+		AuthHeaderParse ahp = authenticateProgrammatic(headers, servletWebRequest);
+		if (ahp == null) return new ProgrammaticAuthContext(null, null);
+		UUID orgUuid = ahp.getOrgUuid();
+		if (orgUuid == null && ahp.getType() == ApiTypeEnum.FREEFORM) {
+			orgUuid = apiKeyService.resolveOrgForKey(ahp);
+		}
+		return new ProgrammaticAuthContext(ahp, orgUuid);
 	}
 	
 //	public AuthPrincipal authenticate (HttpHeaders headers, HttpServletRequest request, 
@@ -662,6 +686,44 @@ public class AuthorizationService {
 					authorized = permissions.stream().anyMatch(x ->
 						doesPermissionAuthorize(x, org, function, objectType, objectUuid, CallType.READ));
 				}
+			}
+		}
+		if (!authorized)
+			throw new AccessDeniedException("FreeForm key not authorized for this resource");
+
+		apiKeyAccessService.recordApiKeyAccess(matchingKeyId, ahp.getRemoteIp(), orgUuid, ahp.getApiKeyId());
+		return new FreeformKeyVerification(
+			WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()), orgUuid, matchingKeyId);
+	}
+
+	/**
+	 * Single-object FREEFORM authorization with arbitrary CallType. Mirrors
+	 * {@link #isUserAuthorizedForObjectGraphQL(UserData, PermissionFunction, PermissionScope, UUID, Collection, CallType)}
+	 * but for FREEFORM API keys. Org is derived from {@code ros} via {@link #getMatchingOrg(Collection)},
+	 * which also enforces that all supplied RelizaObjects belong to the same org as the key.
+	 */
+	public FreeformKeyVerification isFreeformKeyAuthorizedForObjectGraphQL(AuthHeaderParse ahp,
+			@NonNull PermissionFunction function, PermissionScope objectType, UUID objectUuid,
+			Collection<RelizaObject> ros, CallType ct) throws RelizaException {
+		validateSystemOperational(ct);
+		if (ahp == null || ahp.getType() != ApiTypeEnum.FREEFORM)
+			throw new AccessDeniedException("FREEFORM API key required");
+		UUID matchingKeyId = apiKeyService.isMatchingApiKey(ahp);
+		if (matchingKeyId == null)
+			throw new AccessDeniedException("Invalid API key");
+		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(matchingKeyId);
+		if (oakd.isEmpty())
+			throw new AccessDeniedException("API key data not found");
+		ApiKeyData akd = oakd.get();
+		UUID orgUuid = akd.getOrg();
+
+		boolean authorized = false;
+		if (objectUuid != null) {
+			final UUID org = getMatchingOrg(ros);
+			if (org != null && org.equals(orgUuid)) {
+				var permissions = akd.getPermissions(orgUuid).getOrgPermissionsAsSet(orgUuid);
+				authorized = permissions.stream().anyMatch(x ->
+					doesPermissionAuthorize(x, org, function, objectType, objectUuid, ct));
 			}
 		}
 		if (!authorized)

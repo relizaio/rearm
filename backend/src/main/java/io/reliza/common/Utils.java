@@ -697,7 +697,9 @@ public class Utils {
 			if (null != suppliedComponentId && !componentId.equals(suppliedComponentId)) {
 				throw new AccessDeniedException("Component mismatch.");
 			}
-		} else if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
+		} else if (ApiTypeEnum.ORGANIZATION == ahp.getType()
+				|| ApiTypeEnum.ORGANIZATION_RW == ahp.getType()
+				|| ApiTypeEnum.FREEFORM == ahp.getType()) {
 			componentId = suppliedComponentId;
 		}
 		return componentId;

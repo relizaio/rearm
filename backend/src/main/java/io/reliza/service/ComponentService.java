@@ -44,6 +44,7 @@ import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.ComponentDto;
+import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.repositories.ComponentRepository;
 import lombok.NonNull;
 
@@ -572,23 +573,29 @@ public class ComponentService {
 	/**
 	 * Resolve component ID from input map, supporting both VCS-based and traditional resolution.
 	 * This is a convenience method for GraphQL datafetchers that handles both resolution strategies.
-	 * 
+	 * Takes a {@link ProgrammaticAuthContext} so the resolved org is available for VCS-based
+	 * lookups even with key types whose auth header does not embed it (FREEFORM).
+	 *
 	 * @param inputMap Map containing component resolution parameters (vcsUri, repoPath, component)
-	 * @param ahp Authentication header parse containing org UUID and API key context
+	 * @param authCtx Programmatic auth context (parsed AHP + resolved org)
 	 * @return UUID of the resolved component
 	 * @throws RelizaException if component resolution fails
 	 */
-	public UUID resolveComponentIdFromInput(Map<String, Object> inputMap, CommonVariables.AuthHeaderParse ahp) throws RelizaException {
+	public UUID resolveComponentIdFromInput(Map<String, Object> inputMap, ProgrammaticAuthContext authCtx) throws RelizaException {
+		CommonVariables.AuthHeaderParse ahp = authCtx == null ? null : authCtx.ahp();
+		UUID orgUuid = authCtx == null ? null : authCtx.orgUuid();
 		String vcsUri = Utils.normalizeVcsUri((String) inputMap.get("vcsUri"));
 		String repoPath = (String) inputMap.get("repoPath");
-		
+
 		UUID componentId = Utils.resolveProgrammaticComponentId((String) inputMap.get(CommonVariables.COMPONENT_FIELD), ahp);
 
 		if (null == componentId &&
-			!(ApiTypeEnum.ORGANIZATION_RW == ahp.getType() || ApiTypeEnum.ORGANIZATION == ahp.getType())) {
+			!(ApiTypeEnum.ORGANIZATION_RW == ahp.getType()
+				|| ApiTypeEnum.ORGANIZATION == ahp.getType()
+				|| ApiTypeEnum.FREEFORM == ahp.getType())) {
 			throw new RelizaException("Wrong Key Type");
 		}
-		
+
 		// If componentId is already resolved, use it directly
 		if (null != componentId) {
 			// If vcsUri is also provided, validate it matches the component's VCS
@@ -605,13 +612,14 @@ public class ComponentService {
 			}
 			return componentId;
 		}
-		
+
 		// Only attempt VCS-based resolution if componentId is not provided
 		if (vcsUri != null) {
-			ComponentData componentData = resolveComponentByVcsUriAndPath(ahp.getOrgUuid(), vcsUri, repoPath);
+			if (orgUuid == null) throw new RelizaException("Component not found");
+			ComponentData componentData = resolveComponentByVcsUriAndPath(orgUuid, vcsUri, repoPath);
 			return componentData.getUuid();
 		}
-		
+
 		throw new RelizaException("Component not found");
 	}
 	

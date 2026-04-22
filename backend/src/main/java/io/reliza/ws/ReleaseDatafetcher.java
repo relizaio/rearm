@@ -49,6 +49,7 @@ import java.time.ZonedDateTime;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.PerspectiveType;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -73,6 +74,8 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.saas.PerspectiveData;
+import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.UserPermission.PermissionFunction;
@@ -83,6 +86,7 @@ import io.reliza.model.changelog.entry.AggregationType;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CveSearchResultDto;
+import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
@@ -672,15 +676,17 @@ public class ReleaseDatafetcher {
 	public ReleaseData addReleaseProgrammatic(DgsDataFetchingEnvironment dfe) throws IOException, RelizaException, Exception {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
-		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
-		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
-		
+		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
+		var ahp = authCtx.ahp();
+		UUID authOrgUuid = authCtx.orgUuid();
+		if (null == ahp) throw new AccessDeniedException("Invalid authorization type");
+
 		Map<String, Object> progReleaseInput = dfe.getArgument("release");
-		
+
 		// First, try to resolve component normally
 		UUID componentId = null;
 		try {
-			componentId = componentService.resolveComponentIdFromInput(progReleaseInput, ahp);
+			componentId = componentService.resolveComponentIdFromInput(progReleaseInput, authCtx);
 		} catch (RelizaException e) {
 			Boolean createComponentIfMissing = (Boolean) progReleaseInput.get("createComponentIfMissing");
 			if (Boolean.TRUE.equals(createComponentIfMissing)) {
@@ -690,20 +696,67 @@ public class ReleaseDatafetcher {
 				throw new RelizaException("Component cannot be resolved: " + e.getMessage());
 			}
 		}
-		
+
+		// Optional perspective for component creation. Only meaningful when the component
+		// does not yet exist and createComponentIfMissing=true; otherwise it's ignored.
+		String perspectiveStr = (String) progReleaseInput.get("perspective");
+		UUID perspectiveUuid = StringUtils.isNotEmpty(perspectiveStr) ? UUID.fromString(perspectiveStr) : null;
+
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = (componentId != null) ? getComponentService.getComponentData(componentId) : Optional.empty();
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		
+
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
 		if (null != ro) {
-			ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+			// Existing component. Accept the historic key types (COMPONENT, ORGANIZATION_RW),
+			// or a FREEFORM key whose permissions cover this component (org/perspective/component scope).
+			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
+						ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT, ro.getUuid(),
+						List.of(ro), CallType.WRITE);
+				ar = AuthorizationResponse.initialize(InitType.ALLOW);
+				ar.setWhoUpdated(fkv.whoUpdated());
+			} else {
+				ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+			}
+		} else if (perspectiveUuid != null) {
+			// Component will be created and assigned to a perspective. Required scope on the
+			// API key is WRITE on the perspective (FREEFORM keys), or any broader scope that
+			// covers it. Only real perspectives are accepted.
+			if (authOrgUuid == null) throw new AccessDeniedException("Invalid authorization type");
+			PerspectiveData pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid)
+					.orElseThrow(() -> new RelizaException("Perspective not found"));
+			if (pd.getType() != PerspectiveType.PERSPECTIVE) {
+				throw new RelizaException("Cannot create component in a product-derived perspective");
+			}
+			OrganizationData od = getOrganizationService.getOrganizationData(authOrgUuid).get();
+			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
+						ahp, PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid,
+						List.of(od, pd), CallType.WRITE);
+				ar = AuthorizationResponse.initialize(InitType.ALLOW);
+				ar.setWhoUpdated(fkv.whoUpdated());
+			} else {
+				// Non-FREEFORM keys (ORGANIZATION_RW) keep working — they cover the perspective implicitly.
+				ar = authorizationService.isApiKeyAuthorized(ahp, List.of(ApiTypeEnum.ORGANIZATION_RW),
+						authOrgUuid, CallType.WRITE, od);
+			}
+			ro = od;
 		} else {
-			// Component doesn't exist yet - authorize against org for component creation
-			ro = getOrganizationService.getOrganizationData(ahp.getOrgUuid()).get();
-			ar = authorizationService.isApiKeyAuthorized(ahp, List.of(ApiTypeEnum.ORGANIZATION_RW), ahp.getOrgUuid(), CallType.WRITE, ro);
+			// Component doesn't exist yet, no perspective requested - authorize org-wide for creation.
+			if (authOrgUuid == null) throw new AccessDeniedException("Invalid authorization type");
+			ro = getOrganizationService.getOrganizationData(authOrgUuid).get();
+			if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
+						ahp, PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, authOrgUuid,
+						List.of(ro), CallType.WRITE);
+				ar = AuthorizationResponse.initialize(InitType.ALLOW);
+				ar.setWhoUpdated(fkv.whoUpdated());
+			} else {
+				ar = authorizationService.isApiKeyAuthorized(ahp, List.of(ApiTypeEnum.ORGANIZATION_RW), authOrgUuid, CallType.WRITE, ro);
+			}
 		}
-		
+
 		// If component was not resolved, create it now (authorization was done earlier)
 		if (componentId == null) {
 			String vcsUri = (String) progReleaseInput.get("vcsUri");
@@ -722,9 +775,14 @@ public class ReleaseDatafetcher {
 					vcsType = VcsType.resolveStringToType(vcsTypeStr);
 				}
 			}
-			ComponentData newComponent = componentService.createComponentFromVcsUri(ahp.getOrgUuid(), vcsUri, repoPath, vcsDisplayName, vcsType, versionSchema, featureBranchVersionSchema, componentNameOverride, ar.getWhoUpdated());
+			ComponentData newComponent = componentService.createComponentFromVcsUri(authOrgUuid, vcsUri, repoPath, vcsDisplayName, vcsType, versionSchema, featureBranchVersionSchema, componentNameOverride, ar.getWhoUpdated());
 			componentId = newComponent.getUuid();
-			ocd = Optional.of(newComponent);
+			if (perspectiveUuid != null) {
+				componentService.setPerspectives(componentId, List.of(perspectiveUuid), ar.getWhoUpdated());
+				ocd = getComponentService.getComponentData(componentId);
+			} else {
+				ocd = Optional.of(newComponent);
+			}
 		}
 		
 		BranchData bd = resolveAddReleaseProgrammaticBranchData(componentId, (String) progReleaseInput.get(CommonVariables.BRANCH_FIELD),

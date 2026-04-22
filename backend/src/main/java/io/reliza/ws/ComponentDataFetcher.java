@@ -59,6 +59,7 @@ import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.dto.ComponentDto;
+import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
@@ -217,15 +218,16 @@ public class ComponentDataFetcher {
 	public VersionResponse getNewVersionProgrammatic(DgsDataFetchingEnvironment dfe) throws IOException, RelizaException, Exception {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
-		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
+		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
+		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
-		
+
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
-		
+
 		// First, try to resolve component normally
 		UUID componentId = null;
 		try {
-			componentId = componentService.resolveComponentIdFromInput(getNewVersionInput, ahp);
+			componentId = componentService.resolveComponentIdFromInput(getNewVersionInput, authCtx);
 		} catch (RelizaException e) {
 			Boolean createComponentIfMissing = (Boolean) getNewVersionInput.get("createComponentIfMissing");
 			if (Boolean.TRUE.equals(createComponentIfMissing)) {

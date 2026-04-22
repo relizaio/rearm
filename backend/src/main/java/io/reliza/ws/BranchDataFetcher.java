@@ -48,6 +48,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.BranchDto;
+import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
@@ -295,12 +296,13 @@ public class BranchDataFetcher {
 	public Boolean synchronizeLiveBranches(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
-		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
+		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
+		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
-		
+
 		Map<String, Object> synchronizeBranchInput = dfe.getArgument("synchronizeBranchInput");
-		
-		UUID componentId = componentService.resolveComponentIdFromInput(synchronizeBranchInput, ahp);
+
+		UUID componentId = componentService.resolveComponentIdFromInput(synchronizeBranchInput, authCtx);
 		
 		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);

@@ -251,6 +251,13 @@ type Mutation {
 	addReleaseProgrammatic(release: ReleaseInputProg!): Release
 	addOutboundDeliverablesProgrammatic(deliverables: AddODeliverableInput!): Release
 	createComponentProgrammatic(component: CreateComponentInput!): Component
+	"""
+	Programmatic counterpart to createComponentInPerspective. Requires a FREEFORM API key
+	with WRITE permission on the supplied perspective (or a broader scope that covers it).
+	Only real perspectives (PerspectiveType.PERSPECTIVE) are accepted — product-derived
+	perspectives are rejected.
+	"""
+	createComponentInPerspectiveProgrammatic(component: CreateComponentInput!, perspectiveUuid: ID!): Component
 	addArtifactProgrammatic(artifactInput: AddArtifactInput): Release
 	approveReleaseProgrammatic(releaseApprovals: ReleaseApprovalProgrammaticInput!): Release
 	synchronizeLiveBranches(synchronizeBranchInput: SynchronizeBranchInput!): Boolean
@@ -1877,6 +1884,13 @@ input ReleaseInputProg {
 	createComponentName: String
 	createComponentVersionSchema: String
 	createComponentFeatureBranchVersionSchema: String
+	"""
+	Optional perspective UUID. When supplied together with createComponentIfMissing=true and
+	the component does not yet exist, the new component is created and assigned to this
+	perspective. Required scope on the API key is WRITE on the perspective (FREEFORM keys)
+	or any broader scope that covers it. Ignored when the component already exists.
+	"""
+	perspective: ID
 	rebuildRelease: Boolean
 }
 
