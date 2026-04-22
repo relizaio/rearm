@@ -74,7 +74,6 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
-import io.reliza.model.saas.PerspectiveData;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
@@ -724,7 +723,7 @@ public class ReleaseDatafetcher {
 			// API key is WRITE on the perspective (FREEFORM keys), or any broader scope that
 			// covers it. Only real perspectives are accepted.
 			if (authOrgUuid == null) throw new AccessDeniedException("Invalid authorization type");
-			PerspectiveData pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid)
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid)
 					.orElseThrow(() -> new RelizaException("Perspective not found"));
 			if (pd.getType() != PerspectiveType.PERSPECTIVE) {
 				throw new RelizaException("Cannot create component in a product-derived perspective");

@@ -685,7 +685,7 @@ public class OssReleaseService {
 						String branchSchema = trigBranch.getVersionSchema();
 						if (new ReleaseData.ReleaseVersionComparator(compSchema, branchSchema)
 								.compare(existingRd, triggeringRelease) < 0) {
-							log.debug("skipping out-of-order auto-integrate — existing {} ({}) in product is newer than triggering {} ({})",
+							log.debug("skipping out-of-order auto-integrate existing {} ({}) in product is newer than triggering {} ({})",
 								existingRd.getUuid(), existingRd.getVersion(), triggeringRelease.getUuid(), triggeringRelease.getVersion());
 							return false;
 						}

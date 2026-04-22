@@ -31,6 +31,7 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ConditionGroup;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
@@ -129,19 +130,20 @@ public class OssReleaseDatafetcher {
 	private Optional<ReleaseData> getLatestReleaseInternal(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
-		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
+		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
+		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
-		
+
 		Map<String, Object> latestReleaseInput = dfe.getArgument("release");
 		GetLatestReleaseInput glri = Utils.OM.convertValue(latestReleaseInput, GetLatestReleaseInput.class);
-		
+
 		// TODO respect tags
-		
+
 		String branch = glri.branch();
 		UUID productUuid = glri.product();
 		UUID orgId = null;
 		ComponentData cd;
-		UUID componentUuid = componentService.resolveComponentIdFromInput(latestReleaseInput, ahp);
+		UUID componentUuid = componentService.resolveComponentIdFromInput(latestReleaseInput, authCtx);
 		
 		if (ApiTypeEnum.ORGANIZATION == ahp.getType() || ApiTypeEnum.ORGANIZATION_RW == ahp.getType()) {
 			orgId = ahp.getObjUuid();
