@@ -1,16 +1,28 @@
 /**
- * SBOM component extraction.
+ * SBOM component + dependency extraction.
  *
- * Parses CycloneDX BOM component entries into a flat list suitable for
- * consumption by rearm-saas: one entry per component that carries a purl,
- * with the purl split into a canonical form (scheme + type + namespace +
- * name + version) and the original full purl (with any qualifiers or
- * subpath preserved).
+ * Parses a CycloneDX BOM into two structures consumed by rearm-saas:
  *
- * The canonical purl is what rearm-saas uses as the identity key for
- * the sbom_components table. The full purl preserves qualifier data so
- * that per-artifact participations can be recorded exactly as they
- * appeared in the upload.
+ *   - components: one entry per component (including the BOM's root from
+ *     metadata.component when it has a purl of its own) that carries a
+ *     purl. Each entry splits the purl into a canonical form (scheme +
+ *     type + namespace + name + version, qualifiers and subpath stripped)
+ *     and the original full purl (qualifiers preserved). Components
+ *     synthesised from metadata.component carry `isRoot: true` so that
+ *     the backend can flag them when upserting sbom_components.
+ *
+ *   - dependencies: one entry per edge declared in `bom.dependencies[]`.
+ *     Each bom-ref on either side is resolved through a bom-ref → purl
+ *     map built from the components scanned above. Edges whose source
+ *     or target cannot be resolved (either because the ref maps to a
+ *     component without a purl, or because it's an orphan ref) are
+ *     silently dropped — the backend is allowed to assume every edge
+ *     has a real component node on both ends.
+ *
+ * Purls are optional in SBOM specs; any component without a purl is
+ * excluded from the output, which means any dependency edge touching
+ * such a component is also excluded by virtue of unresolved ref lookup.
+ * That single rule covers both sides.
  */
 import { PackageURL } from 'packageurl-js';
 import { logger } from '../../logger';
@@ -22,6 +34,20 @@ export interface ParsedBomComponent {
 	group: string | null;
 	name: string | null;
 	version: string | null;
+	isRoot: boolean;
+}
+
+export interface ParsedBomDependency {
+	sourceCanonicalPurl: string;
+	sourceFullPurl: string;
+	targetCanonicalPurl: string;
+	targetFullPurl: string;
+	relationshipType: string;
+}
+
+export interface ParsedBom {
+	components: ParsedBomComponent[];
+	dependencies: ParsedBomDependency[];
 }
 
 /**
@@ -48,43 +74,120 @@ export function canonicalizePurl(rawPurl: string | undefined | null): string | n
 	}
 }
 
-/**
- * Extract flat list of parsed components from a CycloneDX BOM object.
- * Components without a purl are omitted — they have no identity we can
- * key on. Duplicates within a single BOM collapse on (canonicalPurl,
- * fullPurl) so the caller sees one row per distinct exact purl.
- */
-export function extractBomComponents(bom: any): ParsedBomComponent[] {
-	const out: ParsedBomComponent[] = [];
-	if (!bom || !Array.isArray(bom.components)) return out;
-
-	const seen = new Set<string>();
-	for (const component of bom.components) {
-		if (!component || typeof component !== 'object') continue;
-		const rawPurl = component.purl;
-		if (typeof rawPurl !== 'string' || rawPurl.length === 0) continue;
-		const canonicalPurl = canonicalizePurl(rawPurl);
-		if (!canonicalPurl) continue;
-
-		const dedupeKey = `${canonicalPurl}\u0000${rawPurl}`;
-		if (seen.has(dedupeKey)) continue;
-		seen.add(dedupeKey);
-
-		let parsed: PackageURL | null = null;
-		try {
-			parsed = PackageURL.fromString(rawPurl);
-		} catch (_) {
-			parsed = null;
-		}
-
-		out.push({
-			canonicalPurl,
-			fullPurl: rawPurl,
-			type: parsed?.type ?? null,
-			group: parsed?.namespace ?? (typeof component.group === 'string' ? component.group : null),
-			name: parsed?.name ?? (typeof component.name === 'string' ? component.name : null),
-			version: parsed?.version ?? (typeof component.version === 'string' ? component.version : null),
-		});
+function toParsedComponent(
+	rawPurl: string,
+	fallback: { group?: any; name?: any; version?: any } | undefined,
+	isRoot: boolean
+): ParsedBomComponent | null {
+	const canonicalPurl = canonicalizePurl(rawPurl);
+	if (!canonicalPurl) return null;
+	let parsed: PackageURL | null = null;
+	try {
+		parsed = PackageURL.fromString(rawPurl);
+	} catch (_) {
+		parsed = null;
 	}
+	return {
+		canonicalPurl,
+		fullPurl: rawPurl,
+		type: parsed?.type ?? null,
+		group:
+			parsed?.namespace ??
+			(typeof fallback?.group === 'string' ? fallback.group : null),
+		name:
+			parsed?.name ?? (typeof fallback?.name === 'string' ? fallback.name : null),
+		version:
+			parsed?.version ??
+			(typeof fallback?.version === 'string' ? fallback.version : null),
+		isRoot,
+	};
+}
+
+/**
+ * Parse components + dependencies out of a CycloneDX BOM in one pass.
+ * Safe to call with anything non-object / missing fields — always returns
+ * the two arrays (possibly empty).
+ */
+export function parseBom(bom: any): ParsedBom {
+	const out: ParsedBom = { components: [], dependencies: [] };
+	if (!bom || typeof bom !== 'object') return out;
+
+	// bom-ref → { canonicalPurl, fullPurl } index used for resolving edges.
+	const refMap = new Map<string, { canonicalPurl: string; fullPurl: string }>();
+	const seenCanonicalFull = new Set<string>();
+
+	const pushComponent = (pc: ParsedBomComponent | null, ref: string | undefined) => {
+		if (!pc) return;
+		const dedupeKey = `${pc.canonicalPurl}\u0000${pc.fullPurl}`;
+		if (!seenCanonicalFull.has(dedupeKey)) {
+			seenCanonicalFull.add(dedupeKey);
+			out.components.push(pc);
+		}
+		// Index by bom-ref (if present) and by the purl itself so that
+		// `dependencies[]` entries can resolve whichever ref flavour they use.
+		const record = { canonicalPurl: pc.canonicalPurl, fullPurl: pc.fullPurl };
+		if (ref && !refMap.has(ref)) refMap.set(ref, record);
+		if (!refMap.has(pc.fullPurl)) refMap.set(pc.fullPurl, record);
+	};
+
+	// Root from metadata.component — synthesised as a first-class node if it has a purl.
+	const rootMeta: any = bom?.metadata?.component;
+	if (rootMeta && typeof rootMeta.purl === 'string' && rootMeta.purl.length > 0) {
+		pushComponent(toParsedComponent(rootMeta.purl, rootMeta, true), rootMeta['bom-ref']);
+	}
+
+	if (Array.isArray(bom.components)) {
+		for (const component of bom.components) {
+			if (!component || typeof component !== 'object') continue;
+			const rawPurl = component.purl;
+			if (typeof rawPurl !== 'string' || rawPurl.length === 0) continue;
+			pushComponent(toParsedComponent(rawPurl, component, false), component['bom-ref']);
+		}
+	}
+
+	if (!Array.isArray(bom.dependencies)) return out;
+
+	const seenDepKey = new Set<string>();
+	for (const dep of bom.dependencies) {
+		if (!dep || typeof dep !== 'object') continue;
+		const sourceRef = dep.ref;
+		if (typeof sourceRef !== 'string') continue;
+		const sourceResolved = refMap.get(sourceRef);
+		if (!sourceResolved) continue;
+
+		const list = Array.isArray(dep.dependsOn) ? dep.dependsOn : [];
+		for (const targetRef of list) {
+			if (typeof targetRef !== 'string') continue;
+			const targetResolved = refMap.get(targetRef);
+			if (!targetResolved) continue;
+			// CDX 1.6 allows dependency.type; default to DEPENDS_ON when absent.
+			const relationshipType =
+				typeof dep.type === 'string' && dep.type.length > 0
+					? dep.type.toUpperCase()
+					: 'DEPENDS_ON';
+
+			const dedupeKey = [
+				sourceResolved.fullPurl,
+				targetResolved.fullPurl,
+				relationshipType,
+			].join('\u0000');
+			if (seenDepKey.has(dedupeKey)) continue;
+			seenDepKey.add(dedupeKey);
+
+			out.dependencies.push({
+				sourceCanonicalPurl: sourceResolved.canonicalPurl,
+				sourceFullPurl: sourceResolved.fullPurl,
+				targetCanonicalPurl: targetResolved.canonicalPurl,
+				targetFullPurl: targetResolved.fullPurl,
+				relationshipType,
+			});
+		}
+	}
+
 	return out;
+}
+
+/** @deprecated use {@link parseBom} — kept only to smooth older tests. */
+export function extractBomComponents(bom: any): ParsedBomComponent[] {
+	return parseBom(bom).components;
 }
