@@ -200,11 +200,7 @@ public class OrganizationDataFetcher {
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		String apiKey = null;
 		String keyId = null;
-		if (keyType == ApiTypeEnum.APPROVAL) {
-			UUID approvalUuid = UUID.randomUUID();
-			apiKey = apiKeyService.setObjectApiKey(approvalUuid, ApiTypeEnum.APPROVAL, od.get().getUuid(), null, notes, wu);
-			keyId = keyType.toString() + "__" + approvalUuid.toString();
-		} else if (keyType == ApiTypeEnum.FREEFORM || keyType == ApiTypeEnum.ORGANIZATION || keyType == ApiTypeEnum.ORGANIZATION_RW) {
+		if (keyType == ApiTypeEnum.FREEFORM || keyType == ApiTypeEnum.ORGANIZATION || keyType == ApiTypeEnum.ORGANIZATION_RW) {
 			String keyOrder = UUID.randomUUID().toString();
 			apiKey = apiKeyService.setObjectApiKey(od.get().getUuid(), keyType, od.get().getUuid(), keyOrder, notes, wu);
 			keyId = keyType.toString() + "__" + od.get().getUuid().toString() + "__ord__" + keyOrder;
