@@ -15,6 +15,7 @@ const typeDefs = gql`
     rawBomIdCsv(id: ID, org: ID): String
     bomBySerialNumberAndVersion(serialNumber: ID!, version: Int!, org: ID!, raw: Boolean): Object
     bomMetaBySerialNumber(serialNumber: ID!, org: ID!): [BomMeta]
+    bomComponentsById(id: ID!, org: ID!): [BomComponent]
     bomDiff(fromIds: [ID], toIds: [ID], org: ID!): BomDiffResult
     parseSarifContent(sarifContent: String!): [Weakness]
     parseCycloneDxContent(vdrContent: String!): [Vulnerability]
@@ -93,6 +94,15 @@ const typeDefs = gql`
   }
   type BomDiffComponent {
     purl: String
+    version: String
+  }
+
+  type BomComponent {
+    canonicalPurl: String!
+    fullPurl: String!
+    type: String
+    group: String
+    name: String
     version: String
   }
 
