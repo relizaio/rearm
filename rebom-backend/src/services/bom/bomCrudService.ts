@@ -4,7 +4,7 @@ import { BomNotFoundError, BomDataIntegrityError } from '../../types/errors';
 import { BomMapper } from './bomMapper';
 import { logger } from '../../logger';
 import { fetchFromOci, extractRepositoryNameFromBom, extractRepositoryNameFromSpdxOciResponse, fetchRawBomWithFallback } from '../oci';
-import { extractBomComponents, ParsedBomComponent } from './bomComponentExtractor';
+import { parseBom, ParsedBom, ParsedBomComponent } from './bomComponentExtractor';
 
 export async function findAllBoms(): Promise<BomDto[]> {
     const bomRecords = await BomRepository.findAllBoms();
@@ -57,17 +57,14 @@ export async function findBomObjectById(id: string, org: string): Promise<Object
 }
 
 /**
- * Return parsed SBOM components for a BOM identified by its UUID or serialNumber.
- * The BOM is fetched from OCI (same path as `findBomObjectById`) and run through
- * the component extractor. Returns an empty array if the BOM has no `components`
- * array; throws BomNotFoundError if the identifier does not resolve.
+ * Return parsed SBOM components + dependencies for a BOM identified by its UUID
+ * or serialNumber. The BOM is fetched from OCI (same path as `findBomObjectById`)
+ * and run through the combined parser. Returns an object with both arrays
+ * (possibly empty); throws BomNotFoundError if the identifier does not resolve.
  */
-export async function findBomComponentsById(id: string, org: string): Promise<ParsedBomComponent[]> {
+export async function parseBomById(id: string, org: string): Promise<ParsedBom> {
     const bom: any = await findBomObjectById(id, org);
-    if (!bom || !Array.isArray(bom.components)) {
-        return [];
-    }
-    return extractBomComponents(bom);
+    return parseBom(bom);
 }
 
 export async function findBomMetasBySerialNumber(serialNumber: string, org: string): Promise<BomMetaDto[]> {
