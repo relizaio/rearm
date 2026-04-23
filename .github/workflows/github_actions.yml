@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/rearm-helm-action@51e3cade2fd4cf3588bb0e43fdf276aed252c18c # v1.7.1
+        uses: relizaio/rearm-helm-action@78df5a44a0acaf31db2283d880057a73e3c60e8d # v1.7.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -49,6 +49,7 @@ jobs:
           path: deploy/helm/rearm-documentation-helm
           enable_sbom: true
           enable_public_cosign_sigstore: true
+          limit_to_branches: main
   build-landing-helm:
     permissions:
       contents: write
@@ -57,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Helm metadata action
-        uses: relizaio/rearm-helm-action@51e3cade2fd4cf3588bb0e43fdf276aed252c18c # v1.7.1
+        uses: relizaio/rearm-helm-action@78df5a44a0acaf31db2283d880057a73e3c60e8d # v1.7.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -69,6 +70,7 @@ jobs:
           path: deploy/helm/rearm-landing-helm
           enable_sbom: true
           enable_public_cosign_sigstore: true
+          limit_to_branches: main
   build-rearm-helm:
     permissions:
       contents: write
@@ -77,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Build And Submit ReARM Helm to ReARM
-        uses: relizaio/rearm-helm-action@51e3cade2fd4cf3588bb0e43fdf276aed252c18c # v1.7.1
+        uses: relizaio/rearm-helm-action@78df5a44a0acaf31db2283d880057a73e3c60e8d # v1.7.2
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -93,6 +95,7 @@ jobs:
           rearm_mirror_api_id: ${{ secrets.REARM_REARM_HELM_API_ID }}
           rearm_mirror_api_key: ${{ secrets.REARM_REARM_HELM_API_KEY }}
           rearm_mirror_api_url: https://demo.rearmhq.com
+          limit_to_branches: main
   build-ui:
     permissions:
       id-token: write
