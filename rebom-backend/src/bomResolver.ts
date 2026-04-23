@@ -47,6 +47,11 @@ const resolvers = {
 		},
 		bomBySerialNumberAndVersion: async (_:any, input: any): Promise<Object> => BomService.findBomBySerialNumberAndVersion(input.serialNumber, input.version, input.org, input.raw),
 		bomMetaBySerialNumber: async (_:any, input: any): Promise<Object> => BomService.findBomMetasBySerialNumber(input.serialNumber, input.org),
+		bomComponentsById: withErrorHandling(
+			async (_:any, input: { id: string, org: string }) =>
+				BomService.findBomComponentsById(input.id, input.org),
+			'bomComponentsById'
+		),
 		bomDiff: async (_:any, input: any): Promise<Object> => DiffService.bomDiff(input.fromIds, input.toIds, input.org),
 		// Excel endpoints
 		bomByIdExcel: async (_:any, input: any): Promise<string> => {

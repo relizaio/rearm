@@ -19,6 +19,7 @@
 export {
   findAllBoms,
   findBomObjectById,
+  findBomComponentsById,
   findBomMetasBySerialNumber,
   findBomBySerialNumberAndVersion,
   findBomsByIds,
