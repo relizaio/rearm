@@ -61,7 +61,7 @@
                                             <QuestionCircle20Regular />
                                         </n-icon>
                                     </template>
-                                    Vulnerability Exploitability eXchange - a machine-readable statement of which vulnerabilities do or do not affect this release. Includes the same component list as the VDR, filtered to decided analysis statements (IN_TRIAGE excluded by default, per CISA guidance).
+                                    Vulnerability Exploitability eXchange - a machine-readable statement of which vulnerabilities do or do not affect this release. Includes the same component list as the VDR, filtered to decided analysis statements. Suppressed statements (NOT_AFFECTED / FALSE_POSITIVE / RESOLVED) are always included so consumers see non-actionable decisions; IN_TRIAGE is excluded by default per CISA guidance.
                                 </n-tooltip>
                             </span>
                         </n-radio-button>
@@ -337,19 +337,11 @@
                     </n-spin>
                 </n-form>
                 <n-form v-if="exportBomType === 'VEX'">
-                    <h3>Format: CycloneDX 1.6 VEX (JSON)</h3>
-                    <n-form-item>
-                        <span style="display: inline-flex; align-items: center;">
-                            Include Suppressed:<n-switch style="margin-left: 5px;" v-model:value="vdrIncludeSuppressed"/>
-                            <n-tooltip trigger="hover">
-                                <template #trigger>
-                                    <n-icon size="16" style="margin-left: 4px;">
-                                        <QuestionCircle20Regular />
-                                    </n-icon>
-                                </template>
-                                Include vulnerabilities marked NOT_AFFECTED / FALSE_POSITIVE / RESOLVED. Turn off to ship only currently-exploitable findings.
-                            </n-tooltip>
-                        </span>
+                    <n-form-item label="Format">
+                        <n-radio-group v-model:value="vexFormat" name="vexFormat">
+                            <n-radio-button value="CDX">CycloneDX 1.6 VEX (JSON)</n-radio-button>
+                            <n-radio-button value="OPENVEX">OpenVEX 0.2.0 (JSON)</n-radio-button>
+                        </n-radio-group>
                     </n-form-item>
                     <n-form-item>
                         <span style="display: inline-flex; align-items: center;">
@@ -1476,6 +1468,8 @@ const vdrPdfExportPending: Ref<boolean> = ref(false)
 const vdrIncludeToolAttribution: Ref<boolean> = ref(true)
 // VEX: whether to include IN_TRIAGE + analysis-less statements. Default OFF per CISA guidance.
 const vexIncludeInTriage: Ref<boolean> = ref(false)
+// VEX: output format. 'CDX' → releaseCdxVexExport* (CycloneDX 1.6 VEX JSON), 'OPENVEX' → releaseOpenVexExport* (OpenVEX 0.2.0 JSON).
+const vexFormat: Ref<string> = ref('CDX')
 const selectedBomStructureType: Ref<string> = ref('FLAT')
 const filterCoverageType: Ref<boolean> = ref(false)
 
@@ -2914,11 +2908,11 @@ function getSnapshotSuffix(): string {
 }
 
 async function exportReleaseVex () {
-    // Clone of exportReleaseVdr but routed through releaseCdxVexExport /
-    // releaseCdxVexExportWithApproval, threading includeInTriage and using a -vex.cdx.json filename.
-    // Shares snapshot-state refs (vdrSnapshotType / vdrCutoffDate / vdrTargetLifecycle /
-    // vdrTargetApproval / vdrIncludeSuppressed) with the VDR form by design — only one export
-    // flow is open at a time.
+    // Routed through releaseCdxVexExport* / releaseOpenVexExport* depending on vexFormat,
+    // threading includeInTriage. Shares snapshot-state refs (vdrSnapshotType / vdrCutoffDate /
+    // vdrTargetLifecycle / vdrTargetApproval) with the VDR form by design — only one export
+    // flow is open at a time. includeSuppressed is hardcoded true for VEX: consumers need
+    // non-actionable decisions (NOT_AFFECTED / FALSE_POSITIVE / RESOLVED) in the document.
     try {
         bomExportPending.value = true
 
@@ -2947,52 +2941,50 @@ async function exportReleaseVex () {
         const targetLifecycle = vdrSnapshotType.value === 'LIFECYCLE' ? vdrTargetLifecycle.value : null
         const targetApproval = vdrSnapshotType.value === 'APPROVAL' ? vdrTargetApproval.value : null
 
-        let gqlResp: any
-        let exportContent: string
+        // Mutation name is computed from {format, approval-snapshot?}. Approval variants are
+        // SaaS-only and carry an extra targetApproval variable.
+        const isOpenVex = vexFormat.value === 'OPENVEX'
+        const isApproval = vdrSnapshotType.value === 'APPROVAL'
+        const mutationName = (isOpenVex ? 'releaseOpenVexExport' : 'releaseCdxVexExport')
+            + (isApproval ? 'WithApproval' : '')
 
-        if (vdrSnapshotType.value === 'APPROVAL') {
-            // SaaS-only mutation for approval snapshots.
-            gqlResp = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation releaseCdxVexExportWithApproval($release: ID!, $includeSuppressed: Boolean, $includeInTriage: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum, $targetApproval: String) {
-                        releaseCdxVexExportWithApproval(release: $release, includeSuppressed: $includeSuppressed, includeInTriage: $includeInTriage, upToDate: $upToDate, targetLifecycle: $targetLifecycle, targetApproval: $targetApproval)
-                    }
-                `,
-                variables: {
-                    release: updatedRelease.value.uuid,
-                    includeSuppressed: vdrIncludeSuppressed.value,
-                    includeInTriage: vexIncludeInTriage.value,
-                    upToDate: upToDateIso,
-                    targetLifecycle: targetLifecycle,
-                    targetApproval: targetApproval
-                },
-                fetchPolicy: 'no-cache'
-            })
-            exportContent = gqlResp.data.releaseCdxVexExportWithApproval
-        } else {
-            // CE-compatible mutation for date / lifecycle / current-state snapshots.
-            gqlResp = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation releaseCdxVexExport($release: ID!, $includeSuppressed: Boolean, $includeInTriage: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum) {
-                        releaseCdxVexExport(release: $release, includeSuppressed: $includeSuppressed, includeInTriage: $includeInTriage, upToDate: $upToDate, targetLifecycle: $targetLifecycle)
-                    }
-                `,
-                variables: {
-                    release: updatedRelease.value.uuid,
-                    includeSuppressed: vdrIncludeSuppressed.value,
-                    includeInTriage: vexIncludeInTriage.value,
-                    upToDate: upToDateIso,
-                    targetLifecycle: targetLifecycle
-                },
-                fetchPolicy: 'no-cache'
-            })
-            exportContent = gqlResp.data.releaseCdxVexExport
+        const approvalArgsSig = isApproval
+            ? ', $targetApproval: String'
+            : ''
+        const approvalFieldArgs = isApproval
+            ? ', targetApproval: $targetApproval'
+            : ''
+
+        const mutationDoc = gql`
+            mutation ${mutationName}($release: ID!, $includeSuppressed: Boolean, $includeInTriage: Boolean, $upToDate: DateTime, $targetLifecycle: ReleaseLifecycleEnum${approvalArgsSig}) {
+                ${mutationName}(release: $release, includeSuppressed: $includeSuppressed, includeInTriage: $includeInTriage, upToDate: $upToDate, targetLifecycle: $targetLifecycle${approvalFieldArgs})
+            }
+        `
+
+        const variables: any = {
+            release: updatedRelease.value.uuid,
+            includeSuppressed: true,
+            includeInTriage: vexIncludeInTriage.value,
+            upToDate: upToDateIso,
+            targetLifecycle: targetLifecycle
         }
+        if (isApproval) {
+            variables.targetApproval = targetApproval
+        }
+
+        const gqlResp: any = await graphqlClient.mutate({
+            mutation: mutationDoc,
+            variables,
+            fetchPolicy: 'no-cache'
+        })
+        let exportContent: string = gqlResp.data[mutationName]
+
         if (typeof exportContent !== 'string') {
             exportContent = JSON.stringify(exportContent, null, 2)
         }
         const snapshotSuffix = getSnapshotSuffix()
-        const fileName = updatedRelease.value.uuid + '-vex' + snapshotSuffix + '.cdx.json'
+        const formatSuffix = isOpenVex ? '.openvex.json' : '.cdx.json'
+        const fileName = updatedRelease.value.uuid + '-vex' + snapshotSuffix + formatSuffix
         const blob = new Blob([exportContent], { type: 'application/json' })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)

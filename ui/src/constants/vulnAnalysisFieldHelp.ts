@@ -13,7 +13,7 @@ export const FIELD_HELP: Record<string, string> = {
     state:
         'Your current determination about this finding. Maps to CycloneDX analysis.state.',
     justification:
-        'Why this vulnerability is NOT exploitable (e.g., code not reachable). Required by CISA VEX when state is NOT_AFFECTED unless Details are provided. Maps to CycloneDX analysis.justification.',
+        'Why this vulnerability is NOT exploitable (e.g., code not reachable). Required by CISA VEX when state is NOT_AFFECTED or FALSE_POSITIVE unless Details are provided. Maps to CycloneDX analysis.justification.',
     responses:
         'Planned or available actions (e.g., update, workaround_available). Required by CISA VEX when state is EXPLOITABLE unless a Recommendation is provided. Maps to CycloneDX analysis.response.',
     recommendation:
@@ -21,7 +21,7 @@ export const FIELD_HELP: Record<string, string> = {
     workaround:
         'Temporary mitigation steps. Maps to CycloneDX vulnerability.workaround.',
     details:
-        'Free-text details / impact statement. Required by CISA VEX when state is NOT_AFFECTED unless a Justification is provided. Maps to CycloneDX analysis.detail.',
+        'Free-text details / impact statement. Required by CISA VEX when state is NOT_AFFECTED or FALSE_POSITIVE unless a Justification is provided. Maps to CycloneDX analysis.detail.',
     severity:
         'Your assessment of severity; may differ from public advisories.',
     findingAliases:
@@ -37,7 +37,7 @@ export const STATE_GUIDANCE: Record<string, string> = {
     [AnalysisState.NOT_AFFECTED]:
         'CISA VEX impact statement: provide a Justification or a non-empty Details (impact statement).',
     [AnalysisState.FALSE_POSITIVE]:
-        'Not actually affected. No additional fields required.',
+        'CISA VEX impact statement: provide a Justification or a non-empty Details (impact statement).',
     [AnalysisState.RESOLVED]:
         'Remediated. No additional fields required.'
 }

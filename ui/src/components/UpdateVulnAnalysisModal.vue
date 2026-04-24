@@ -119,7 +119,7 @@
                 <n-input
                     v-model:value="formData.details"
                     type="textarea"
-                    :placeholder="formData.state === AnalysisState.NOT_AFFECTED ? 'Impact statement (required unless justification provided)' : 'Additional details (optional)'"
+                    :placeholder="(formData.state === AnalysisState.NOT_AFFECTED || formData.state === AnalysisState.FALSE_POSITIVE) ? 'Impact statement (required unless justification provided)' : 'Additional details (optional)'"
                     :rows="3"
                 />
             </n-form-item>
@@ -200,7 +200,9 @@ const stateGuidance = computed(() =>
 )
 
 // Per-state field visibility (CISA VEX).
-const showJustification = computed(() => formData.value.state === AnalysisState.NOT_AFFECTED)
+const showJustification = computed(() =>
+    formData.value.state === AnalysisState.NOT_AFFECTED
+    || formData.value.state === AnalysisState.FALSE_POSITIVE)
 const showResponses = computed(() =>
     formData.value.state === AnalysisState.EXPLOITABLE ||
     formData.value.state === AnalysisState.RESOLVED
@@ -209,7 +211,8 @@ const showRecommendation = computed(() => formData.value.state === AnalysisState
 const showWorkaround = computed(() => formData.value.state === AnalysisState.EXPLOITABLE)
 
 const justificationPlaceholder = computed(() => {
-    if (formData.value.state === AnalysisState.NOT_AFFECTED && !formData.value.details.trim()) {
+    const s = formData.value.state
+    if ((s === AnalysisState.NOT_AFFECTED || s === AnalysisState.FALSE_POSITIVE) && !formData.value.details.trim()) {
         return 'Select justification (required unless details provided)'
     }
     if (justificationMandatory.value) return 'Select justification (required by org settings)'
@@ -270,14 +273,15 @@ const rules = computed<FormRules>(() => {
             : []
     }
     if (cisaEnforced.value) {
-        // CISA VEX: NOT_AFFECTED requires justification OR details.
+        // CISA VEX: NOT_AFFECTED and FALSE_POSITIVE each require justification OR details.
         baseRules.details = [
             {
                 validator: (_rule: FormItemRule, value: string) => {
-                    if (formData.value.state !== AnalysisState.NOT_AFFECTED) return true
+                    const s = formData.value.state
+                    if (s !== AnalysisState.NOT_AFFECTED && s !== AnalysisState.FALSE_POSITIVE) return true
                     if (formData.value.justification) return true
                     if (value && value.trim().length > 0) return true
-                    return new Error('NOT_AFFECTED requires either a justification or an impact statement in details')
+                    return new Error(`${s} requires either a justification or an impact statement in details`)
                 },
                 trigger: ['blur', 'change']
             }

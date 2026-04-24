@@ -152,7 +152,7 @@
                 <n-input
                     v-model:value="formData.details"
                     type="textarea"
-                    :placeholder="formData.state === AnalysisState.NOT_AFFECTED ? 'Impact statement (required unless justification provided)' : 'Additional details (optional)'"
+                    :placeholder="(formData.state === AnalysisState.NOT_AFFECTED || formData.state === AnalysisState.FALSE_POSITIVE) ? 'Impact statement (required unless justification provided)' : 'Additional details (optional)'"
                     :rows="3"
                 />
             </n-form-item>
@@ -326,11 +326,12 @@ const vexFramework = computed<'NONE' | 'CISA'>(() => {
 })
 const cisaEnforced = computed(() => vexFramework.value === 'CISA')
 
-// CISA VEX: NOT_AFFECTED requires either a justification or an impact statement (details).
-// Only surfaced in the UI when the org opts into the CISA framework.
+// CISA VEX: NOT_AFFECTED and FALSE_POSITIVE each require either a justification or an
+// impact statement (details). Only surfaced in the UI when the org opts into the CISA framework.
 const justificationRequiredByCisa = computed(() =>
     cisaEnforced.value
-    && formData.value.state === AnalysisState.NOT_AFFECTED
+    && (formData.value.state === AnalysisState.NOT_AFFECTED
+        || formData.value.state === AnalysisState.FALSE_POSITIVE)
     && !formData.value.details.trim()
 )
 
@@ -339,7 +340,9 @@ const stateGuidance = computed(() =>
 )
 
 // Per-state field visibility (CISA VEX).
-const showJustification = computed(() => formData.value.state === AnalysisState.NOT_AFFECTED)
+const showJustification = computed(() =>
+    formData.value.state === AnalysisState.NOT_AFFECTED
+    || formData.value.state === AnalysisState.FALSE_POSITIVE)
 const showResponses = computed(() =>
     formData.value.state === AnalysisState.EXPLOITABLE ||
     formData.value.state === AnalysisState.RESOLVED
@@ -369,14 +372,15 @@ const rules = computed<FormRules>(() => {
     }
     // CISA VEX rules only apply when the org opts into the CISA framework.
     if (cisaEnforced.value) {
-        // NOT_AFFECTED requires justification OR details (impact statement).
+        // NOT_AFFECTED and FALSE_POSITIVE each require justification OR details (impact statement).
         baseRules.details = [
             {
                 validator: (_rule: FormItemRule, value: string) => {
-                    if (formData.value.state !== AnalysisState.NOT_AFFECTED) return true
+                    const s = formData.value.state
+                    if (s !== AnalysisState.NOT_AFFECTED && s !== AnalysisState.FALSE_POSITIVE) return true
                     if (formData.value.justification) return true
                     if (value && value.trim().length > 0) return true
-                    return new Error('NOT_AFFECTED requires either a justification or an impact statement in details')
+                    return new Error(`${s} requires either a justification or an impact statement in details`)
                 },
                 trigger: ['blur', 'change']
             }
@@ -426,6 +430,19 @@ const setDefaultScope = () => {
         formData.value.scopeUuid = props.orgUuid
     }
 }
+
+// Reset analysis-side fields when the modal is (re)opened so values from a previous
+// session don't leak into a fresh analysis. Finding-side fields (id, aliases, location,
+// severity) are (re)populated by the findingRow watcher below.
+watch(() => props.show, (nowShown) => {
+    if (!nowShown) return
+    formData.value.state = AnalysisState.IN_TRIAGE
+    formData.value.justification = null
+    formData.value.details = ''
+    formData.value.responses = []
+    formData.value.recommendation = ''
+    formData.value.workaround = ''
+})
 
 // Watch for changes in the finding row and populate form
 watch(() => props.findingRow, (newRow) => {
