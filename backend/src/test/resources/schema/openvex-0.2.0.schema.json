@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openvex.dev/ns/v0.2.0",
+  "title": "OpenVEX 0.2.0 document",
+  "description": "Focused JSON schema for OpenVEX 0.2.0 documents emitted by Reliza ReARM. Enforces the structural shape and enum contracts we care about (status, justification) without over-constraining optional fields. Mirrors the public OpenVEX spec schema at https://github.com/openvex/spec/blob/main/openvex_json_schema.json but is intentionally trimmed to what our producer emits.",
+  "type": "object",
+  "required": ["@context", "@id", "author", "timestamp", "version", "statements"],
+  "additionalProperties": true,
+  "properties": {
+    "@context": {
+      "type": "string",
+      "const": "https://openvex.dev/ns/v0.2.0"
+    },
+    "@id": {
+      "type": "string",
+      "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "author": { "type": "string", "minLength": 1 },
+    "role": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "last_updated": { "type": "string", "format": "date-time" },
+    "version": { "type": "integer", "minimum": 1 },
+    "tooling": { "type": "string" },
+    "supplier": { "type": "string" },
+    "statements": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/statement" }
+    }
+  },
+  "$defs": {
+    "statement": {
+      "type": "object",
+      "required": ["vulnerability", "products", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "@id": { "type": "string" },
+        "vulnerability": {
+          "type": "object",
+          "required": ["name"],
+          "additionalProperties": true,
+          "properties": {
+            "@id": { "type": "string" },
+            "name": { "type": "string", "minLength": 1 },
+            "description": { "type": "string" },
+            "aliases": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "last_updated": { "type": "string", "format": "date-time" },
+        "products": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["@id"],
+            "additionalProperties": true,
+            "properties": {
+              "@id": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["not_affected", "affected", "fixed", "under_investigation"]
+        },
+        "status_notes": { "type": "string" },
+        "justification": {
+          "type": "string",
+          "enum": [
+            "component_not_present",
+            "vulnerable_code_not_present",
+            "vulnerable_code_not_in_execute_path",
+            "vulnerable_code_cannot_be_controlled_by_adversary",
+            "inline_mitigations_already_exist"
+          ]
+        },
+        "impact_statement": { "type": "string" },
+        "action_statement": { "type": "string" },
+        "action_statement_timestamp": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

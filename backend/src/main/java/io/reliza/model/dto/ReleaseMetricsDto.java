@@ -157,8 +157,25 @@ public class ReleaseMetricsDto implements Cloneable {
 
 	public static record SeveritySourceDto (SeveritySource source, VulnerabilitySeverity severity) {}
 
+	/**
+	 * External reference on a CycloneDX vulnerability (advisory URL, patch link, etc). Mirrors
+	 * the shape of {@code org.cyclonedx.model.vulnerability.Vulnerability.Reference} so enrichment
+	 * plumbing can round-trip references straight through without a lossy intermediate type.
+	 */
+	public static record VulnerabilityReferenceDto (String id, String sourceName, String sourceUrl) {}
+
+	/**
+	 * Per-vulnerability findings row used throughout the ingestion → export pipeline.
+	 *
+	 * <p>The trailing five fields ({@code description}, {@code cwes}, {@code references},
+	 * {@code published}, {@code updated}) are nullable enrichment fields; the VDR emitter
+	 * populates the corresponding CDX {@link org.cyclonedx.model.vulnerability.Vulnerability}
+	 * fields iff they are non-null / non-empty, so callers that don't wire them preserve
+	 * existing behavior.
+	 */
 	public static record VulnerabilityDto (String purl, String vulnId, VulnerabilitySeverity severity,
-		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities, AnalysisState analysisState, ZonedDateTime analysisDate, ZonedDateTime attributedAt) {}
+		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities, AnalysisState analysisState, ZonedDateTime analysisDate, ZonedDateTime attributedAt,
+		String description, Set<Integer> cwes, Set<VulnerabilityReferenceDto> references, ZonedDateTime published, ZonedDateTime updated) {}
 
 	/**
 	 * We use weaknessDto to store findngs from SARIF parsing
@@ -432,7 +449,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					ZonedDateTime earlierDate = selectEarlierDate(existing.attributedAt(), newVuln.attributedAt());
 					updatedVulnerabilities.add(new VulnerabilityDto(
 						newVuln.purl(), newVuln.vulnId(), newVuln.severity(), newVuln.aliases(),
-						newVuln.sources(), newVuln.severities(), newVuln.analysisState(), newVuln.analysisDate(), earlierDate
+						newVuln.sources(), newVuln.severities(), newVuln.analysisState(), newVuln.analysisDate(), earlierDate,
+						newVuln.description(), newVuln.cwes(), newVuln.references(), newVuln.published(), newVuln.updated()
 					));
 				} else {
 					// New vulnerability - use as-is
@@ -532,7 +550,8 @@ public class ReleaseMetricsDto implements Cloneable {
 				if (vuln.attributedAt() == null) {
 					updatedVulnerabilities.add(new VulnerabilityDto(
 						vuln.purl(), vuln.vulnId(), vuln.severity(), vuln.aliases(),
-						vuln.sources(), vuln.severities(), vuln.analysisState(), vuln.analysisDate(), fallbackDate
+						vuln.sources(), vuln.severities(), vuln.analysisState(), vuln.analysisDate(), fallbackDate,
+						vuln.description(), vuln.cwes(), vuln.references(), vuln.published(), vuln.updated()
 					));
 				} else {
 					updatedVulnerabilities.add(vuln);
@@ -610,15 +629,16 @@ public class ReleaseMetricsDto implements Cloneable {
 				}
 				
 				VulnerabilityDto enrichedVuln = new VulnerabilityDto(
-					vuln.purl(), 
-					vuln.vulnId(), 
-					vuln.severity(), 
-					vuln.aliases(), 
+					vuln.purl(),
+					vuln.vulnId(),
+					vuln.severity(),
+					vuln.aliases(),
 					updatedSources,
 					vuln.severities(),
 					vuln.analysisState(),
 					vuln.analysisDate(),
-					vuln.attributedAt()
+					vuln.attributedAt(),
+					vuln.description(), vuln.cwes(), vuln.references(), vuln.published(), vuln.updated()
 				);
 				enrichedVulnerabilities.add(enrichedVuln);
 			}
@@ -763,15 +783,16 @@ public class ReleaseMetricsDto implements Cloneable {
 						: existing.severity();
 				
 				VulnerabilityDto merged = new VulnerabilityDto(
-					existing.purl(), 
-					existing.vulnId(), 
-					bestSeverity, 
-					combinedAliases, 
+					existing.purl(),
+					existing.vulnId(),
+					bestSeverity,
+					combinedAliases,
 					combinedSources,
 					combinedSeverities,
 					existing.analysisState(),
 					existing.analysisDate(),
-					selectEarlierDate(existing.attributedAt(), x.attributedAt())
+					selectEarlierDate(existing.attributedAt(), x.attributedAt()),
+					existing.description(), existing.cwes(), existing.references(), existing.published(), existing.updated()
 				);
 				vulnMap.put(xKey, merged);
 			} else {
@@ -980,7 +1001,8 @@ public class ReleaseMetricsDto implements Cloneable {
 				
 				// Return with cleaned aliases and recalculated severity if needed
 				if (singleVuln.aliases() == null || cleanedAliases.size() != singleVuln.aliases().size() || bestSeverity != singleVuln.severity()) {
-					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, bestSeverity, cleanedAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt());
+					return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, bestSeverity, cleanedAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt(),
+							singleVuln.description(), singleVuln.cwes(), singleVuln.references(), singleVuln.published(), singleVuln.updated());
 				} else {
 					return singleVuln;
 				}
@@ -994,7 +1016,8 @@ public class ReleaseMetricsDto implements Cloneable {
 				}
 			}
 			
-			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, bestSeverity, finalAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt());
+			return new VulnerabilityDto(singleVuln.purl(), bestPrimaryId, bestSeverity, finalAliases, singleVuln.sources(), singleVuln.severities(), singleVuln.analysisState(), singleVuln.analysisDate(), singleVuln.attributedAt(),
+					singleVuln.description(), singleVuln.cwes(), singleVuln.references(), singleVuln.published(), singleVuln.updated());
 		}
 		
 		// Collect all unique identifiers and find the best primary ID (CVE preferred)
@@ -1055,7 +1078,8 @@ public class ReleaseMetricsDto implements Cloneable {
 			earliestAttributedAt = selectEarlierDate(earliestAttributedAt, vuln.attributedAt());
 		}
 		
-		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate(), earliestAttributedAt);
+		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate(), earliestAttributedAt,
+				baseVuln.description(), baseVuln.cwes(), baseVuln.references(), baseVuln.published(), baseVuln.updated());
 	}
 	
 	/**

@@ -44,9 +44,9 @@ import io.reliza.repositories.VulnAnalysisRepository;
  * Unit tests for the CISA VEX validation rules in {@link VulnAnalysisService}.
  *
  * Rules tested:
- *   - NOT_AFFECTED requires either a justification OR a non-blank details/impact statement.
+ *   - NOT_AFFECTED and FALSE_POSITIVE each require either a justification OR a non-blank details/impact statement.
  *   - EXPLOITABLE requires at least one response OR a non-blank recommendation.
- *   - Other states (IN_TRIAGE, FALSE_POSITIVE, RESOLVED) have no additional CISA requirement.
+ *   - Other states (IN_TRIAGE, RESOLVED) have no additional CISA requirement.
  *
  * Also round-trips VulnAnalysisData with the new responses/recommendation/workaround
  * fields through the {@code addAnalysisHistoryEntry} and history-getter path.
@@ -86,6 +86,7 @@ public class VulnAnalysisServiceCisaValidationTest {
 				AnalysisJustification.class,
 				String.class,
 				List.class,
+				String.class,
 				String.class);
 		validateVexConstraints.setAccessible(true);
 		// Default: org→CISA framework so existing end-to-end update tests keep exercising
@@ -98,12 +99,19 @@ public class VulnAnalysisServiceCisaValidationTest {
 	}
 
 	/**
-	 * Invoke the validator under the CISA framework (legacy test surface — exercises the
-	 * CISA minimum-requirements branch).
+	 * Invoke the validator under the CISA framework — legacy 5-arg surface, passes null workaround.
 	 */
 	private void invoke(AnalysisState state, AnalysisJustification justification, String details,
 			List<AnalysisResponse> responses, String recommendation) throws Throwable {
-		invokeWithFramework(VexComplianceFramework.CISA, state, justification, details, responses, recommendation);
+		invoke(state, justification, details, responses, recommendation, null);
+	}
+
+	/**
+	 * Invoke the validator under the CISA framework with an explicit workaround.
+	 */
+	private void invoke(AnalysisState state, AnalysisJustification justification, String details,
+			List<AnalysisResponse> responses, String recommendation, String workaround) throws Throwable {
+		invokeWithFramework(VexComplianceFramework.CISA, state, justification, details, responses, recommendation, workaround);
 	}
 
 	/**
@@ -112,8 +120,17 @@ public class VulnAnalysisServiceCisaValidationTest {
 	private void invokeWithFramework(VexComplianceFramework framework, AnalysisState state,
 			AnalysisJustification justification, String details, List<AnalysisResponse> responses,
 			String recommendation) throws Throwable {
+		invokeWithFramework(framework, state, justification, details, responses, recommendation, null);
+	}
+
+	/**
+	 * Invoke the validator under an explicit framework with an explicit workaround.
+	 */
+	private void invokeWithFramework(VexComplianceFramework framework, AnalysisState state,
+			AnalysisJustification justification, String details, List<AnalysisResponse> responses,
+			String recommendation, String workaround) throws Throwable {
 		try {
-			validateVexConstraints.invoke(service, framework, state, justification, details, responses, recommendation);
+			validateVexConstraints.invoke(service, framework, state, justification, details, responses, recommendation, workaround);
 		} catch (InvocationTargetException ite) {
 			throw ite.getCause();
 		}
@@ -173,6 +190,36 @@ public class VulnAnalysisServiceCisaValidationTest {
 				null, null, null, "Upgrade to 4.2.1 or apply patch ABC-123."));
 	}
 
+	@Test
+	void exploitable_withWorkaroundOnly_passes() {
+		// workaround alone satisfies the action-statement rule, mirroring
+		// OpenVexService.deriveActionStatement which accepts CDX workaround as an
+		// action-oriented input.
+		assertDoesNotThrow(() -> invoke(AnalysisState.EXPLOITABLE,
+				null, null, null, null, "Disable JNDI lookups via log4j2.formatMsgNoLookups=true."));
+	}
+
+	@Test
+	void exploitable_withBlankWorkaroundAndOtherFieldsBlank_throws() {
+		// Blank workaround must not satisfy the rule — same discipline as blank recommendation.
+		RelizaException ex = assertThrows(RelizaException.class,
+				() -> invoke(AnalysisState.EXPLOITABLE, null, null, List.of(), "   ", "   "));
+		assertTrue(ex.getMessage().contains("workaround"),
+				"error message should enumerate workaround as a satisfying field");
+	}
+
+	@Test
+	void exploitable_errorMessage_enumerates_all_satisfying_fields() {
+		// Regression guard: future refactors must keep the error message listing response,
+		// recommendation, AND workaround so users know all three lanes exist.
+		RelizaException ex = assertThrows(RelizaException.class,
+				() -> invoke(AnalysisState.EXPLOITABLE, null, null, null, null, null));
+		String msg = ex.getMessage();
+		assertTrue(msg.contains("response"), "should mention response");
+		assertTrue(msg.contains("recommendation"), "should mention recommendation");
+		assertTrue(msg.contains("workaround"), "should mention workaround");
+	}
+
 	// ---- States with no CISA requirement ----
 
 	@Test
@@ -180,9 +227,31 @@ public class VulnAnalysisServiceCisaValidationTest {
 		assertDoesNotThrow(() -> invoke(AnalysisState.IN_TRIAGE, null, null, null, null));
 	}
 
+	// ---- FALSE_POSITIVE branch (mirrors NOT_AFFECTED) ----
+
 	@Test
-	void falsePositive_noExtraFieldsRequired() {
-		assertDoesNotThrow(() -> invoke(AnalysisState.FALSE_POSITIVE, null, null, null, null));
+	void falsePositive_withoutJustificationOrDetails_throws() {
+		RelizaException ex = assertThrows(RelizaException.class,
+				() -> invoke(AnalysisState.FALSE_POSITIVE, null, null, null, null));
+		assertTrue(ex.getMessage().contains("FALSE_POSITIVE"));
+	}
+
+	@Test
+	void falsePositive_withBlankDetailsAndNoJustification_throws() {
+		assertThrows(RelizaException.class,
+				() -> invoke(AnalysisState.FALSE_POSITIVE, null, "   ", null, null));
+	}
+
+	@Test
+	void falsePositive_withJustificationOnly_passes() {
+		assertDoesNotThrow(() -> invoke(AnalysisState.FALSE_POSITIVE,
+				AnalysisJustification.CODE_NOT_PRESENT, null, null, null));
+	}
+
+	@Test
+	void falsePositive_withDetailsOnly_passes() {
+		assertDoesNotThrow(() -> invoke(AnalysisState.FALSE_POSITIVE,
+				null, "Triaged: scanner mis-matched PURL against unused vendored copy.", null, null));
 	}
 
 	@Test

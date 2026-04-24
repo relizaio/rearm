@@ -9,6 +9,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -60,6 +61,7 @@ import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityReferenceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -1584,7 +1586,7 @@ public class ReleaseService {
 	 * @param targetLifecycle Lifecycle stage to snapshot at (finds first occurrence in history)
 	 * @return Computed cutoff date (earliest of provided dates), or null if none provided
 	 */
-	private ZonedDateTime computeLifecycleCutoffDate(ReleaseData releaseData, ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle) {
+	ZonedDateTime computeLifecycleCutoffDate(ReleaseData releaseData, ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle) {
 		ZonedDateTime cutOffDate = upToDate;
 
 		if (targetLifecycle != null) {
@@ -1714,10 +1716,21 @@ public class ReleaseService {
 	 */
 	public String generateCdxVexWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
 			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
-		Bom bom = buildVdrBom(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
-		transformVdrBomToCdxVex(bom, releaseData.getUuid(), includeInTriage, cutOffDate, snapshotType, snapshotValue, includeSuppressed);
+		Bom bom = buildCdxVexBom(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType, snapshotValue);
 		BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
 		return generator.toJsonString();
+	}
+
+	/**
+	 * Build a CycloneDX VEX {@link Bom} (enriched + filtered + stamped), without serializing.
+	 * Shared by {@link #generateCdxVexWithSnapshot} and {@code OpenVexService}, which consumes the
+	 * resulting {@code Vulnerability[]} to emit OpenVEX statements.
+	 */
+	Bom buildCdxVexBom(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
+		Bom bom = buildVdrBom(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
+		transformVdrBomToCdxVex(bom, releaseData.getUuid(), includeInTriage, cutOffDate, snapshotType, snapshotValue, includeSuppressed);
+		return bom;
 	}
 
 	/**
@@ -2151,7 +2164,35 @@ public class ReleaseService {
 			rating.setSeverity(mapVdrSeverity(vulnDto.severity()));
 			vuln.setRatings(List.of(rating));
 		}
-		
+
+		if (StringUtils.isNotBlank(vulnDto.description())) {
+			vuln.setDescription(vulnDto.description());
+		}
+		if (vulnDto.cwes() != null && !vulnDto.cwes().isEmpty()) {
+			vuln.setCwes(new ArrayList<>(vulnDto.cwes()));
+		}
+		if (vulnDto.references() != null && !vulnDto.references().isEmpty()) {
+			List<Vulnerability.Reference> refs = new ArrayList<>();
+			for (VulnerabilityReferenceDto refDto : vulnDto.references()) {
+				Vulnerability.Reference ref = new Vulnerability.Reference();
+				ref.setId(refDto.id());
+				if (refDto.sourceName() != null || refDto.sourceUrl() != null) {
+					Source refSource = new Source();
+					refSource.setName(refDto.sourceName());
+					refSource.setUrl(refDto.sourceUrl());
+					ref.setSource(refSource);
+				}
+				refs.add(ref);
+			}
+			vuln.setReferences(refs);
+		}
+		if (vulnDto.published() != null) {
+			vuln.setPublished(Date.from(vulnDto.published().toInstant()));
+		}
+		if (vulnDto.updated() != null) {
+			vuln.setUpdated(Date.from(vulnDto.updated().toInstant()));
+		}
+
 		// Build affects list - include both PURL and release bom-refs
 		List<Vulnerability.Affect> affects = new ArrayList<>();
 		

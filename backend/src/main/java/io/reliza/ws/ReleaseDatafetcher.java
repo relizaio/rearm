@@ -112,6 +112,7 @@ import io.reliza.service.GetOrganizationService;
 import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.IntegrationService;
 import io.reliza.service.IntegrationService.ComponentPurlToDtrackProject;
+import io.reliza.service.OpenVexService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
@@ -131,6 +132,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	private ReleaseService releaseService;
+
+	@Autowired
+	private OpenVexService openVexService;
 	
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
@@ -366,6 +370,49 @@ public class ReleaseDatafetcher {
 		downloadLogService.createDownloadLog(rd.getOrg(), DownloadType.VEX_EXPORT,
 				DownloadSubjectType.RELEASE, releaseUuid, wuVex, vexConfig);
 		return releaseService.generateCdxVex(rd, includeSuppressed, includeInTriage, upToDate, targetLifecycle);
+	}
+
+	/**
+	 * Generate an OpenVEX 0.2.0 document for a release. Reuses the CycloneDX VEX enrichment
+	 * + snapshot + filtering pipeline; see {@link OpenVexService#generateOpenVex}.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "releaseOpenVexExport")
+	public String releaseOpenVexExport(
+			@InputArgument("release") UUID releaseUuid,
+			@InputArgument("includeSuppressed") Boolean includeSuppressed,
+			@InputArgument("includeInTriage") Boolean includeInTriage,
+			@InputArgument("upToDate") ZonedDateTime upToDate,
+			@InputArgument("targetLifecycle") ReleaseLifecycle targetLifecycle) throws Exception {
+
+		if (upToDate != null && targetLifecycle != null) {
+			throw new IllegalArgumentException("Only one cut-off date parameter (upToDate or targetLifecycle) can be specified at a time");
+		}
+
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+
+		RelizaObject ro = null;
+		if (null != releaseUuid) {
+			var rlzOpt = sharedReleaseService.getReleaseData(releaseUuid);
+			if (rlzOpt.isPresent()) {
+				ro = rlzOpt.get();
+			}
+		}
+
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
+		ReleaseData rd = (ReleaseData) ro;
+		WhoUpdated wuOpenVex = WhoUpdated.getWhoUpdated(oud.get());
+		DownloadConfig openVexConfig = DownloadConfig.builder()
+				.releaseUuid(releaseUuid)
+				.includeSuppressed(includeSuppressed)
+				.includeInTriage(includeInTriage)
+				.upToDate(upToDate)
+				.targetLifecycle(targetLifecycle != null ? targetLifecycle.name() : null)
+				.build();
+		downloadLogService.createDownloadLog(rd.getOrg(), DownloadType.VEX_EXPORT,
+				DownloadSubjectType.RELEASE, releaseUuid, wuOpenVex, openVexConfig);
+		return openVexService.generateOpenVex(rd, includeSuppressed, includeInTriage, upToDate, targetLifecycle);
 	}
 
 	@PreAuthorize("isAuthenticated()")

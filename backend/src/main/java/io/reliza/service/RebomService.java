@@ -644,7 +644,8 @@ public class RebomService {
                     Set.of(severitySource),
                     null,
                     null,
-                    null
+                    null,
+                    null, null, null, null, null
                 );
             })
             .toList();

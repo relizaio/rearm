@@ -358,24 +358,31 @@ public class VulnAnalysisService {
 	 *   <li>{@link VexComplianceFramework#NONE} — no-op (pure CycloneDX baseline).</li>
 	 *   <li>{@link VexComplianceFramework#CISA} — CISA VEX minimum requirements
 	 *       (https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-vex-508c.pdf):
-	 *       NOT_AFFECTED requires a justification OR an impact statement (details);
-	 *       EXPLOITABLE requires an action statement (a response OR a recommendation).
-	 *       Other states have no additional requirement.</li>
+	 *       NOT_AFFECTED and FALSE_POSITIVE each require a justification OR an impact statement (details);
+	 *       EXPLOITABLE requires an action statement (a response, a non-blank recommendation, OR a
+	 *       non-blank workaround — mirroring the derivation inputs of
+	 *       {@code OpenVexService.deriveActionStatement}). Other states have no additional requirement.</li>
 	 * </ul>
+	 *
+	 * <p>Authoring-time validation is intentionally a proper subset of what the Strict OpenVEX
+	 * exporter can emit: the exporter falls back to {@code analysis.detail} and finally to a
+	 * neutral literal, but we do not accept those as satisfying the authoring-time rule — a
+	 * detail-only EXPLOITABLE record should be flagged to the user rather than silently exported
+	 * as "Contact vendor for remediation guidance."
 	 *
 	 * @param framework     active framework for the organization (never null; resolve with {@link #resolveVexFramework(UUID)})
 	 * @param state         post-merge analysis state being validated; null means "no state change" and is a no-op
 	 */
 	private void validateVexConstraints(VexComplianceFramework framework, AnalysisState state,
 			AnalysisJustification justification, String details, List<AnalysisResponse> responses,
-			String recommendation) throws RelizaException {
+			String recommendation, String workaround) throws RelizaException {
 		// Null state means "no state change" on an update — nothing to validate here.
 		// Create path guarantees non-null state via required GraphQL input + explicit check in createVulnAnalysis.
 		if (state == null || framework == null || framework == VexComplianceFramework.NONE) {
 			return;
 		}
 		switch (framework) {
-			case CISA -> validateCisaConstraints(state, justification, details, responses, recommendation);
+			case CISA -> validateCisaConstraints(state, justification, details, responses, recommendation, workaround);
 			default -> { /* no rules */ }
 		}
 	}
@@ -385,19 +392,20 @@ public class VulnAnalysisService {
 	 * {@link VexComplianceFramework#CISA}.
 	 */
 	private void validateCisaConstraints(AnalysisState state, AnalysisJustification justification,
-			String details, List<AnalysisResponse> responses, String recommendation) throws RelizaException {
+			String details, List<AnalysisResponse> responses, String recommendation, String workaround) throws RelizaException {
 		switch (state) {
-			case NOT_AFFECTED -> {
+			case NOT_AFFECTED, FALSE_POSITIVE -> {
 				if (justification == null && StringUtils.isBlank(details)) {
-					throw new RelizaException("NOT_AFFECTED analysis requires either a justification " +
+					throw new RelizaException(state + " analysis requires either a justification " +
 							"or an impact statement in details (CISA VEX requirement)");
 				}
 			}
 			case EXPLOITABLE -> {
 				boolean hasResponse = responses != null && !responses.isEmpty();
-				if (!hasResponse && StringUtils.isBlank(recommendation)) {
+				if (!hasResponse && StringUtils.isBlank(recommendation) && StringUtils.isBlank(workaround)) {
 					throw new RelizaException("EXPLOITABLE analysis requires an action statement: " +
-							"at least one response or a non-blank recommendation (CISA VEX requirement)");
+							"at least one response, a non-blank recommendation, or a non-blank workaround " +
+							"(CISA VEX requirement)");
 				}
 			}
 			default -> { /* no CISA requirement */ }
@@ -429,7 +437,8 @@ public class VulnAnalysisService {
 		// VEX constraint validation dispatched by org-configured framework (see resolveVexFramework).
 		VexComplianceFramework framework = resolveVexFramework(createDto.getOrg());
 		validateVexConstraints(framework, createDto.getState(), createDto.getJustification(),
-				createDto.getDetails(), createDto.getResponses(), createDto.getRecommendation());
+				createDto.getDetails(), createDto.getResponses(), createDto.getRecommendation(),
+				createDto.getWorkaround());
 		
 		// Minimize PURL if location type is PURL
 		String normalizedLocation = createDto.getLocation();
@@ -525,8 +534,9 @@ public class VulnAnalysisService {
 		String effDetails = details != null ? details : latestDetails(vad);
 		List<AnalysisResponse> effResponses = responses != null ? responses : vad.getResponses();
 		String effRecommendation = recommendation != null ? recommendation : vad.getRecommendation();
+		String effWorkaround = workaround != null ? workaround : vad.getWorkaround();
 		VexComplianceFramework framework = resolveVexFramework(vad.getOrg());
-		validateVexConstraints(framework, effectiveState, effJustification, effDetails, effResponses, effRecommendation);
+		validateVexConstraints(framework, effectiveState, effJustification, effDetails, effResponses, effRecommendation, effWorkaround);
 		
 		// Update finding aliases if provided
 		if (findingAliases != null) {
@@ -684,13 +694,15 @@ public class VulnAnalysisService {
 					combinedSeverities,
 					analysis.getAnalysisState(),
 					getLatestAnalysisDate(analysis),
-					vulnerability.attributedAt());
+					vulnerability.attributedAt(),
+					vulnerability.description(), vulnerability.cwes(), vulnerability.references(),
+					vulnerability.published(), vulnerability.updated());
 		}
-		
+
 		// No DB analysis found - compute primary state from sources if available
 		AnalysisState primaryState = computePrimaryAnalysisStateFromSources(vulnerability.sources());
 		ZonedDateTime primaryDate = computePrimaryAnalysisDateFromSources(vulnerability.sources(), primaryState);
-		
+
 		if (primaryState != null) {
 			return new ReleaseMetricsDto.VulnerabilityDto(
 					vulnerability.purl(),
@@ -701,9 +713,11 @@ public class VulnAnalysisService {
 					vulnerability.severities(),
 					primaryState,
 					primaryDate,
-					vulnerability.attributedAt());
+					vulnerability.attributedAt(),
+					vulnerability.description(), vulnerability.cwes(), vulnerability.references(),
+					vulnerability.published(), vulnerability.updated());
 		}
-		
+
 		return vulnerability; // No analysis found anywhere
 	}
 	

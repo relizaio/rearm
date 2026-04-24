@@ -7,11 +7,13 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Collection;
+import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -696,8 +698,27 @@ public class IntegrationService {
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackAliasRaw(String cveId, String ghsaId, String uuid) {}
 
+	/**
+	 * Subset of Dependency-Track's {@code Cwe} object. Jackson default-binds the numeric id under
+	 * the key {@code cweId}; the human-readable name isn't consumed today but is carried for
+	 * possible future use.
+	 */
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	private record DtrackVulnRaw (String vulnId, VulnerabilitySeverity severity, List<DtrackComponentRaw> components, List<DtrackAliasRaw> aliases) {}
+	private record DtrackCweRaw(Integer cweId, String name) {}
+
+	/**
+	 * Subset of DTrack's {@code /api/v1/vulnerability/project/{uuid}} vulnerability payload.
+	 *
+	 * <p>References are intentionally omitted: DTrack serializes them as a markdown-formatted
+	 * {@link String} rather than a structured list, and a safe parser is out of scope.
+	 *
+	 * <p>Dates are declared as {@link Date}; Jackson handles both ISO 8601 strings and epoch
+	 * millis transparently so we don't need to guess DT's on-the-wire representation.
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	private record DtrackVulnRaw (String vulnId, VulnerabilitySeverity severity,
+			List<DtrackComponentRaw> components, List<DtrackAliasRaw> aliases,
+			String description, List<DtrackCweRaw> cwes, Date published, Date updated) {}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
@@ -729,11 +750,28 @@ public class IntegrationService {
 				
 				// Create severity source based on the main vulnerability ID
 				SeveritySourceDto severitySource = Utils.createSeveritySourceDto(dvr.vulnId(), dvr.severity());
-				
+
+				// Compute per-vulnerability enrichment fields once; reused across the
+				// per-component fan-out below so we don't re-transform for each PURL.
+				Set<Integer> cwes = null;
+				if (dvr.cwes() != null && !dvr.cwes().isEmpty()) {
+					cwes = dvr.cwes().stream()
+							.map(DtrackCweRaw::cweId)
+							.filter(id -> id != null)
+							.collect(Collectors.toCollection(LinkedHashSet::new));
+					if (cwes.isEmpty()) cwes = null;
+				}
+				ZonedDateTime published = dvr.published() != null
+						? dvr.published().toInstant().atZone(ZoneOffset.UTC) : null;
+				ZonedDateTime updated = dvr.updated() != null
+						? dvr.updated().toInstant().atZone(ZoneOffset.UTC) : null;
+				final Set<Integer> cwesFinal = cwes;
+
 				dvr.components().forEach(c -> {
 					// Decode URL-encoded @ symbol in purl from DTrack
 					String purl = c.purl() != null ? c.purl().replace("%40", "@") : null;
-					VulnerabilityDto vdto = new VulnerabilityDto(purl, dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt);
+					VulnerabilityDto vdto = new VulnerabilityDto(purl, dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt,
+							dvr.description(), cwesFinal, null, published, updated);
 					pageResults.add(vdto);
 				});
 			}
