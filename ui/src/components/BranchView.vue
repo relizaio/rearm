@@ -396,6 +396,7 @@ import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColum
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
+import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
 
@@ -472,6 +473,20 @@ const notify = async function (type: NotificationType, title: string, content: s
 const orguuid = route.params.orguuid.toString()
 const myUser = store.getters.myuser
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+
+// Drives the per-row pending badge: when DTrack isn't wired up we fall
+// straight through to the existing vulnerability/violation circles instead
+// of pretending those columns are pending.
+const dtrackConfigured: Ref<boolean> = ref(false)
+isDtrackConfiguredForOrg(orguuid).then((c) => { dtrackConfigured.value = c })
+
+function renderPendingBadge (status: { label: string, title: string, kind: string }) {
+    const bg = status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
+    return h('span', {
+        title: status.title,
+        style: `display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${bg}; color: white; font-size: 0.8em; white-space: nowrap;`
+    }, status.label)
+}
 
 const branchUuid: Ref<string> = ref(props.branchUuidProp ? props.branchUuidProp.toString() : route.params.branchuuid ? route.params.branchuuid.toString() : '')
 const prNumber: Ref<string> = ref(props.prnumberprop ? props.prnumberprop.toString() : route.params.prnumber ? route.params.prnumber.toString() : '')
@@ -2104,6 +2119,8 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
         key: 'vulnerabilities',
         title: 'Vulnerabilities',
         render: (row: any) => {
+            const status = getReleaseScanStatus(row, dtrackConfigured.value)
+            if (status.kind !== 'ready') return [renderPendingBadge(status)]
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
                 const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, 'CRITICAL', 'Vulnerability')}, row.metrics.critical)
@@ -2121,6 +2138,8 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
         key: 'violations',
         title: 'Violations',
         render: (row: any) => {
+            const status = getReleaseScanStatus(row, dtrackConfigured.value)
+            if (status.kind !== 'ready') return [renderPendingBadge(status)]
             let els: any[] = []
             if (row.metrics && row.metrics.lastScanned) {
                 const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)

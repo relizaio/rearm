@@ -47,7 +47,12 @@
                             <span v-if="!props.showFullPageIcon" style="flex-shrink: 0;">&nbsp;·&nbsp;{{ formatDate(rel.createdDate) }}</span>
                             <span style="flex-shrink: 0;">&nbsp;·&nbsp;{{ rel.lifecycle }}</span>
                         </span>
-                        <n-space :size="1" v-if="rel.metrics?.lastScanned" style="flex-shrink: 0;">
+                        <span
+                            v-if="getPendingStatus(rel).kind !== 'ready'"
+                            :title="getPendingStatus(rel).title"
+                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', flexShrink: 0, background: getPendingStatus(rel).kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
+                        >{{ getPendingStatus(rel).label }}</span>
+                        <n-space :size="1" v-else-if="rel.metrics?.lastScanned" style="flex-shrink: 0;">
                             <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="openVulnModal(rel, 'CRITICAL', 'Vulnerability')">{{ rel.metrics.critical }}</span>
                             <span title="High Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.HIGH, cursor: 'pointer' }" @click="openVulnModal(rel, 'HIGH', 'Vulnerability')">{{ rel.metrics.high }}</span>
                             <span title="Medium Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer' }" @click="openVulnModal(rel, 'MEDIUM', 'Vulnerability')">{{ rel.metrics.medium }}</span>
@@ -100,6 +105,7 @@ import graphqlClient from '@/utils/graphql'
 import GqlQueries from '@/utils/graphqlQueries'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
+import { isDtrackConfiguredForOrg, getReleaseScanStatus, type ReleaseScanStatus } from '@/utils/releaseScanStatus'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const props = withDefaults(defineProps<{
@@ -116,6 +122,11 @@ const props = withDefaults(defineProps<{
 const notification = useNotification()
 const loading = ref(false)
 const releases: Ref<any[]> = ref([])
+const dtrackConfigured: Ref<boolean> = ref(false)
+
+function getPendingStatus (rel: any): ReleaseScanStatus {
+    return getReleaseScanStatus(rel, dtrackConfigured.value)
+}
 
 // Internal limit for home-page widget mode; overridden by props.limit on full-page
 const localLimit = ref(5)
@@ -219,7 +230,12 @@ watch(() => [props.startDate, props.endDate], () => fetchReleases())
 watch(() => props.limit, () => fetchReleases())
 watch(localLimit, () => fetchReleases())
 
-onMounted(() => fetchReleases())
+onMounted(async () => {
+    if (props.orgUuid) {
+        dtrackConfigured.value = await isDtrackConfiguredForOrg(props.orgUuid)
+    }
+    fetchReleases()
+})
 </script>
 
 <style scoped>
