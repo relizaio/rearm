@@ -587,6 +587,7 @@
                             style="margin-left:10px;"
                         ><Copy /></n-icon>
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
+                        <Icon v-if="isWritable" @click="reconcileReleaseSbom" class="clickable" :style="{ marginLeft: '10px', opacity: reconcileSbomPending ? 0.5 : 1, pointerEvents: reconcileSbomPending ? 'none' : 'auto' }" size="16" title="Reconcile SBOM components (rebuild aggregation)" ><Refresh/></Icon>
                     </n-gi>
                     <n-gi span="2">
                         <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
@@ -1976,6 +1977,26 @@ async function saveApprovedEnvOverride () {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     } finally {
         approvedEnvOverridePending.value = false
+    }
+}
+
+const reconcileSbomPending: Ref<boolean> = ref(false)
+async function reconcileReleaseSbom () {
+    if (reconcileSbomPending.value) return
+    reconcileSbomPending.value = true
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation reconcileReleaseSbomComponents($releaseUuid: ID!) {
+                    reconcileReleaseSbomComponents(releaseUuid: $releaseUuid)
+                }`,
+            variables: { releaseUuid: updatedRelease.value.uuid }
+        })
+        notify('success', 'Reconciled', 'SBOM components reconciled for this release.')
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        reconcileSbomPending.value = false
     }
 }
 
