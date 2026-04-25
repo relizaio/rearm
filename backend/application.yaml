@@ -27,7 +27,7 @@ spring:
       jakarta:
         persistence:
           query:
-            timeout: 70000
+            timeout: 120000
   security:
     oauth2:
       resourceserver:

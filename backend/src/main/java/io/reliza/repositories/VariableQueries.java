@@ -262,40 +262,47 @@ class VariableQueries {
 			SELECT DISTINCT jsonb_array_elements_text(r.record_data->'artifacts') as artifact_uuid
 			FROM rearm.releases r
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE b.record_data->>'status' != 'ARCHIVED' 
+			WHERE r.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'org' = :orgUuidAsString
+			AND b.record_data->>'status' != 'ARCHIVED'
 			AND r.record_data->'artifacts' IS NOT NULL
 		""";
-	
+
 	protected static final String LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_SOURCE_CODE_ENTRY = """
 			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
 			FROM rearm.source_code_entries sce
 			JOIN rearm.releases r ON r.record_data->>'sourceCodeEntry' = sce.uuid::text
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE b.record_data->>'status' != 'ARCHIVED' 
+			WHERE sce.record_data->>'org' = :orgUuidAsString
+			AND r.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'org' = :orgUuidAsString
+			AND b.record_data->>'status' != 'ARCHIVED'
 			AND sce.record_data->'artifacts' IS NOT NULL
 		""";
-	
+
 	protected static final String LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_COMMITS = """
 			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
 			FROM rearm.source_code_entries sce
 			JOIN rearm.releases r ON r.record_data->>'commits' IS NOT NULL
 				AND sce.uuid::text IN (SELECT jsonb_array_elements_text(r.record_data->'commits'))
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE b.record_data->>'status' != 'ARCHIVED' 
+			WHERE sce.record_data->>'org' = :orgUuidAsString
+			AND r.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'org' = :orgUuidAsString
+			AND b.record_data->>'status' != 'ARCHIVED'
 			AND sce.record_data->'artifacts' IS NOT NULL
 		""";
-	
+
 	protected static final String LIST_ACTIVE_DELIVERABLE_ARTIFACT_UUIDS = """
 			SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') as artifact_uuid
 			FROM rearm.deliverables d
 			JOIN rearm.variants v ON d.uuid::text IN (SELECT jsonb_array_elements_text(v.record_data->'outboundDeliverables'))
 			JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
 			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE b.record_data->>'status' != 'ARCHIVED' 
+			WHERE d.record_data->>'org' = :orgUuidAsString
+			AND r.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'org' = :orgUuidAsString
+			AND b.record_data->>'status' != 'ARCHIVED'
 			AND d.record_data->'artifacts' IS NOT NULL
 		""";
 	
