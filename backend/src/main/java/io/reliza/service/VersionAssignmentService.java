@@ -13,7 +13,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.BranchSuffixMode;
@@ -152,8 +154,40 @@ public class VersionAssignmentService {
 		return retVersion;
 	}
 	
+	/**
+	 * Same as {@link #getSetNewVersion} but retries up to 3 times when a concurrent
+	 * insert wins the unique-constraint race on (branch, version). Each underlying
+	 * call runs in its own transaction (REQUIRES_NEW on getSetNewVersion), so the
+	 * caller's transaction — if any — is not poisoned by the failed attempt.
+	 *
+	 * Use this from any path that may run concurrently for the same branch — most
+	 * notably the auto-integration flow, where two component releases reaching
+	 * ASSEMBLED at the same time can both compute the same next product version.
+	 */
+	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata) {
+		return getSetNewVersionWrapper(branchUuid, bumpAction, modifier, metadata, VersionTypeEnum.DEV);
+	}
+
+	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) {
+		Optional<VersionAssignment> va = Optional.empty();
+		int triesLeft = 3;
+		while (triesLeft > 0) {
+			try {
+				va = getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType);
+				return va;
+			} catch (DataIntegrityViolationException dae) {
+				--triesLeft;
+				log.warn("Collision when trying to obtain next version for branch = {}, triesLeft = {}", branchUuid, triesLeft);
+			}
+		}
+		log.error("Could not resolve version due to repeated collisions for branch = {}", branchUuid);
+		return va;
+	}
+
 	// TODO: add support for who updated
-	@Transactional
+	// REQUIRES_NEW so a duplicate-key collision on (branch, version) rolls back
+	// only this attempt's transaction, letting getSetNewVersionWrapper retry.
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public Optional<VersionAssignment> getSetNewVersion (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) {
 		Optional<VersionAssignment> retVersion = Optional.empty();
 		// retrieve branch and project to get their schemas

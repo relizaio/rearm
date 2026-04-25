@@ -825,8 +825,10 @@ public class OssReleaseService {
 			log.error("Error calculating version action for feature set " + featureSet.getUuid() + ": " + e1.getMessage());
 		}
 
-		// Get new version
-		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersion(
+		// Get new version. Wrapper retries on (branch, version) unique-constraint
+		// collisions — two concurrent auto-integrations on the same product feature
+		// set will otherwise both compute the same next version and one will fail.
+		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(
 			featureSet.getUuid(),
 			action,
 			null,
