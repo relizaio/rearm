@@ -18,6 +18,11 @@ const MULTI_RELEASE_GQL_DATA = `
             value
             removable
         }
+        enrichmentStatus
+        metrics {
+            dependencyTrackFullUri
+            dtrackSubmissionFailed
+        }
     }
     status
     lifecycle
