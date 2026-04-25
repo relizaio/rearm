@@ -293,7 +293,8 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
     internalBom {
         id
         belongsTo
-    }    
+    }
+    enrichmentStatus
     componentUuid
 `
 const RELEASE_COLLECTION_DATA = `
@@ -358,7 +359,8 @@ const ARTIFACT_DETAIL_DATA = `
     internalBom {
         id
         belongsTo
-    }    
+    }
+    enrichmentStatus
     componentUuid
     artifacts
     artifactDetails {
@@ -572,6 +574,7 @@ const singleReleaseDataNoParent = `
             dateActual
         }
     }
+    sbomReconcilePending
 `
 
 const singleReleaseDataParentLast = `
