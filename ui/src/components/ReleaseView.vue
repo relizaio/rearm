@@ -604,6 +604,14 @@
                     </n-gi>
                     <n-gi span="1">
                         <span class="lifecycle" style="float: right; margin-right: 80px;">
+                            <n-tag
+                                v-if="updatedRelease.sbomReconcilePending"
+                                type="warning"
+                                size="small"
+                                round
+                                style="margin-right: 8px;"
+                                title="SBOM components are scheduled for reconciliation; the every-minute scheduler will rebuild the inventory."
+                            >SBOM reconcile pending</n-tag>
                             <span v-if="canUpdateLifecycle">
                                 <n-dropdown v-if="updatedRelease.lifecycle" trigger="hover" :options="lifecycleOptions" @select="lifecycleChange">
                                     <n-tag type="success">{{ lifecycleOptions.find(lo => lo.key === updatedRelease.lifecycle)?.label }}</n-tag>
@@ -1051,7 +1059,7 @@ import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
-import { Component, ComputedRef, Ref, computed, h, onMounted, ref, watch } from 'vue'
+import { Component, ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
@@ -1308,8 +1316,14 @@ onMounted(async () => {
     isProductRelease.value = await detectIsProduct()
     await fetchRelease()
     await fetchReleaseKeys()
+    await loadDtrackConfigured()
+    if (hasPendingStatuses()) ensureStatusPolling()
     isLoading.value = false
     loadingBar.finish()
+})
+
+onUnmounted(() => {
+    stopStatusPolling()
 })
 
 const pullRequest: ComputedRef<any> = computed((): any => {
@@ -1993,12 +2007,83 @@ async function reconcileReleaseSbom () {
             variables: { releaseUuid: updatedRelease.value.uuid }
         })
         notify('success', 'Reconciled', 'SBOM components reconciled for this release.')
+        await fetchRelease()
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     } finally {
         reconcileSbomPending.value = false
     }
 }
+
+// DTrack integration is org-wide, fetched once on mount. Drives the per-artifact
+// DTrack status pill so we can show "Not configured" instead of a misleading
+// "Pending" when the org never wired the integration up.
+const dtrackConfigured: Ref<boolean> = ref(false)
+async function loadDtrackConfigured () {
+    const orgUuid = release.value?.orgDetails?.uuid || release.value?.org
+    if (!orgUuid) return
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query configuredBaseIntegrations($org: ID!) {
+                    configuredBaseIntegrations(org: $org)
+                }`,
+            variables: { org: orgUuid },
+            fetchPolicy: 'cache-first'
+        })
+        const list: string[] = resp.data?.configuredBaseIntegrations || []
+        dtrackConfigured.value = list.includes('DEPENDENCYTRACK')
+    } catch (err) {
+        // Non-fatal: integration list query failure shouldn't break the page.
+        console.error('Could not load configured integrations', err)
+    }
+}
+
+// Background poll while either the per-release SBOM reconcile or any artifact
+// is still pending — keeps the status pills live without forcing the user to
+// refresh manually. Cleared on unmount and once everything is settled.
+let statusPollHandle: ReturnType<typeof setInterval> | null = null
+function ensureStatusPolling () {
+    if (statusPollHandle) return
+    statusPollHandle = setInterval(async () => {
+        if (!hasPendingStatuses()) {
+            stopStatusPolling()
+            return
+        }
+        try {
+            await fetchRelease()
+        } catch (err) {
+            console.error('Status poll fetch failed', err)
+        }
+    }, 30_000)
+}
+function stopStatusPolling () {
+    if (statusPollHandle) {
+        clearInterval(statusPollHandle)
+        statusPollHandle = null
+    }
+}
+function hasPendingStatuses (): boolean {
+    if (release.value?.sbomReconcilePending) return true
+    const allArtifacts: any[] = [
+        ...(release.value?.artifactDetails || []),
+        ...((release.value?.sourceCodeEntryDetails?.artifactDetails) || []),
+        ...((release.value?.variantDetails || []).flatMap((v: any) => (v?.outboundDeliverableDetails || []).flatMap((d: any) => d?.artifactDetails || [])))
+    ]
+    return allArtifacts.some((a: any) => {
+        if (!a) return false
+        if (a.enrichmentStatus === 'PENDING') return true
+        if (a.type === 'BOM' && dtrackConfigured.value && !a.metrics?.dependencyTrackFullUri && !a.metrics?.dtrackSubmissionFailed) return true
+        return false
+    })
+}
+watch(release, () => {
+    if (hasPendingStatuses()) {
+        ensureStatusPolling()
+    } else {
+        stopStatusPolling()
+    }
+}, { deep: true })
 
 const approvalPending: Ref<boolean> = ref(false)
 const bomExportPending: Ref<boolean> = ref(false)
@@ -4087,10 +4172,63 @@ function renderArtifactDtrackActions (row: any, els: any[]) {
     }
 }
 
+/**
+ * Per-artifact status pills (Enrichment + DTrack). Hidden for non-BOM
+ * artifacts, since neither pipeline runs on them. DTrack pill respects the
+ * org-wide configured-integrations check: a "Pending" pill in an org that
+ * never wired DTrack up would be misleading, so we render "Not configured"
+ * (grey) instead.
+ */
+function renderArtifactStatusColumn (row: any) {
+    const pills: any[] = []
+    if (row?.type === 'BOM') {
+        pills.push(renderEnrichmentPill(row))
+        pills.push(renderDtrackPill(row))
+    }
+    if (!pills.length) return h('span', '—')
+    return h(NSpace, { size: 4, vertical: false, wrap: true }, () => pills)
+}
+
+function renderEnrichmentPill (row: any): any {
+    const status = row?.enrichmentStatus
+    if (!status) return null
+    let type: 'success' | 'warning' | 'error' | 'default' = 'default'
+    let label = 'Enrichment'
+    let title = 'BOM enrichment status'
+    switch (status) {
+        case 'COMPLETED': type = 'success'; label = 'Enriched'; title = 'BOM enrichment completed'; break
+        case 'PENDING': type = 'warning'; label = 'Enriching…'; title = 'BOM enrichment in progress'; break
+        case 'FAILED': type = 'error'; label = 'Enrichment failed'; title = 'BOM enrichment failed; check rebom logs'; break
+        case 'SKIPPED': type = 'default'; label = 'Enrichment skipped'; title = 'BOM enrichment skipped (excluded by config)'; break
+    }
+    return h(NTag, { type, size: 'small', round: true, title }, () => label)
+}
+
+function renderDtrackPill (row: any): any {
+    if (!dtrackConfigured.value) {
+        return h(NTag, {
+            type: 'default',
+            size: 'small',
+            round: true,
+            title: 'Dependency-Track integration is not configured for this organization'
+        }, () => 'DTrack: not configured')
+    }
+    const m = row?.metrics || {}
+    if (m.dtrackSubmissionFailed) {
+        const reason = m.dtrackSubmissionFailureReason ? `: ${m.dtrackSubmissionFailureReason}` : ''
+        return h(NTag, { type: 'error', size: 'small', round: true, title: `DependencyTrack submission failed${reason}` }, () => 'DTrack failed')
+    }
+    if (m.dependencyTrackFullUri) {
+        return h(NTag, { type: 'success', size: 'small', round: true, title: 'Submitted to Dependency-Track' }, () => 'DTrack done')
+    }
+    return h(NTag, { type: 'warning', size: 'small', round: true, title: 'Awaiting Dependency-Track submission' }, () => 'DTrack pending')
+}
+
 const artifactsTableFields: DataTableColumns<any> = [
     { key: 'type', title: 'Type', render: renderArtifactTypeColumn },
     { key: 'artBelongsTo', title: 'Belongs To', render: renderArtifactBelongsToColumn },
     { key: 'facts', title: 'Facts', render: renderArtifactFactsColumn },
+    { key: 'status', title: 'Status', render: renderArtifactStatusColumn },
     { key: 'vulnerabilities', title: 'Vulnerabilities & Weaknesses', render: renderArtifactVulnerabilitiesColumn },
     { key: 'violations', title: 'Policy Violations', render: renderArtifactViolationsColumn },
     {
@@ -4117,6 +4255,7 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
     { key: 'type', title: 'Type', render: renderArtifactTypeColumn },
     { key: 'artBelongsTo', title: 'Belongs To', render: renderArtifactBelongsToColumn },
     { key: 'facts', title: 'Facts', render: renderArtifactFactsColumn },
+    { key: 'status', title: 'Status', render: renderArtifactStatusColumn },
     { key: 'vulnerabilities', title: 'Vulnerabilities & Weaknesses', render: renderArtifactVulnerabilitiesColumn },
     { key: 'violations', title: 'Policy Violations', render: renderArtifactViolationsColumn },
     {
