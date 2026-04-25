@@ -253,24 +253,21 @@ public class ArtifactService {
 				.filter(StringUtils::isNotEmpty).toList());
 		log.info("[DTRACK-CLEANUP] Found {} active SCE artifacts via commits", activeSceArtifactsViaCommits.size());
 		
-		Set<String> activeDeliverableArtifacts = new HashSet<>(
-			repository.listActiveDeliverableArtifactUuids(orgUuidStr).stream()
-				.filter(StringUtils::isNotEmpty).toList());
-		log.info("[DTRACK-CLEANUP] Found {} active deliverable artifacts", activeDeliverableArtifacts.size());
-		
-		// Filter out projects that have any artifact in any of the active sets
+		// Filter out projects that have any artifact in any of the active sets.
+		// Deliverable activity is checked per-artifact via EXISTS to avoid materializing
+		// the org-wide deliverable->variant->release cross product.
 		List<String> orphanedProjects = new ArrayList<>();
 		for (String project : allProjects) {
 			// Get all artifacts for this dtrack project
 			List<Artifact> projectArtifacts = repository.findArtifactsByDtrackProjectAndOrg(orgUuidStr, project);
-			
+
 			boolean isActive = false;
 			for (Artifact artifact : projectArtifacts) {
 				String artifactUuid = artifact.getUuid().toString();
 				if (activeReleaseArtifacts.contains(artifactUuid) ||
 					activeSceArtifactsViaSourceCodeEntry.contains(artifactUuid) ||
 					activeSceArtifactsViaCommits.contains(artifactUuid) ||
-					activeDeliverableArtifacts.contains(artifactUuid)) {
+					repository.existsActiveDeliverableForArtifact(orgUuidStr, artifactUuid)) {
 					isActive = true;
 					break;
 				}

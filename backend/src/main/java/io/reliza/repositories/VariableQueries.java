@@ -293,17 +293,24 @@ class VariableQueries {
 			AND sce.record_data->'artifacts' IS NOT NULL
 		""";
 
-	protected static final String LIST_ACTIVE_DELIVERABLE_ARTIFACT_UUIDS = """
-			SELECT DISTINCT jsonb_array_elements_text(d.record_data->'artifacts') as artifact_uuid
+	protected static final String EXISTS_ACTIVE_DELIVERABLE_FOR_ARTIFACT = """
+			SELECT 1
 			FROM rearm.deliverables d
-			JOIN rearm.variants v ON d.uuid::text IN (SELECT jsonb_array_elements_text(v.record_data->'outboundDeliverables'))
-			JOIN rearm.releases r ON v.record_data->>'release' = r.uuid::text
-			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
+			JOIN rearm.variants v ON EXISTS (
+				SELECT 1 FROM jsonb_array_elements_text(v.record_data->'outboundDeliverables') AS del
+				WHERE del = d.uuid::text
+			)
+			JOIN rearm.releases r ON r.uuid::text = v.record_data->>'release'
+			JOIN rearm.branches b ON b.uuid::text = r.record_data->>'branch'
 			WHERE d.record_data->>'org' = :orgUuidAsString
 			AND r.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'status' != 'ARCHIVED'
-			AND d.record_data->'artifacts' IS NOT NULL
+			AND EXISTS (
+				SELECT 1 FROM jsonb_array_elements_text(d.record_data->'artifacts') AS art
+				WHERE art = :artifactUuid
+			)
+			LIMIT 1
 		""";
 	
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """

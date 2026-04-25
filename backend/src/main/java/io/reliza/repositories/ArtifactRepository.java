@@ -58,9 +58,15 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	List<String> listActiveSceArtifactUuidsViaCommits(@Param("orgUuidAsString") String orgUuidAsString);
 	
 	@Query(
-			value = VariableQueries.LIST_ACTIVE_DELIVERABLE_ARTIFACT_UUIDS,
+			value = VariableQueries.EXISTS_ACTIVE_DELIVERABLE_FOR_ARTIFACT,
 			nativeQuery = true)
-	List<String> listActiveDeliverableArtifactUuids(@Param("orgUuidAsString") String orgUuidAsString);
+	List<Integer> existsActiveDeliverableForArtifactRaw(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("artifactUuid") String artifactUuid);
+
+	default boolean existsActiveDeliverableForArtifact(String orgUuidAsString, String artifactUuid) {
+		return !existsActiveDeliverableForArtifactRaw(orgUuidAsString, artifactUuid).isEmpty();
+	}
 	
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_VULNERABILITY,
