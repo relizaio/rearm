@@ -13,6 +13,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -51,7 +52,17 @@ public class VersionAssignmentService {
 	
 	@Autowired
     private SharedReleaseService sharedReleaseService;
-	
+
+	/**
+	 * Self-injection so the non-transactional retry wrapper can call the
+	 * REQUIRES_NEW @Transactional getSetNewVersion through Spring's proxy.
+	 * Direct {@code this.*} calls bypass AOP, leaving the inner pessimistic-write
+	 * lock query running outside any transaction.
+	 */
+	@Autowired
+	@Lazy
+	private VersionAssignmentService self;
+
 	private static final Logger log = LoggerFactory.getLogger(VersionAssignmentService.class);
 			
 	private final VersionAssignmentRepository repository;
@@ -173,7 +184,7 @@ public class VersionAssignmentService {
 		int triesLeft = 3;
 		while (triesLeft > 0) {
 			try {
-				va = getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType);
+				va = self.getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType);
 				return va;
 			} catch (DataIntegrityViolationException dae) {
 				--triesLeft;
