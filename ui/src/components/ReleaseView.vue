@@ -797,6 +797,10 @@
                     <div class="container">
                         <n-space style="margin-bottom: 8px;" align="center">
                             <h3 style="margin: 0;">Release SBOM Components</h3>
+                            <n-radio-group v-model:value="sbomViewMode" size="small" @update:value="handleSbomViewModeChange">
+                                <n-radio-button value="list" label="List" />
+                                <n-radio-button value="tree" label="Tree" />
+                            </n-radio-group>
                             <n-button
                                 size="small"
                                 @click="loadSbomComponents(true)"
@@ -807,6 +811,18 @@
                                 </template>
                                 Refresh
                             </n-button>
+                            <n-button
+                                v-if="sbomViewMode === 'tree' && sbomGraphLoaded"
+                                size="small"
+                                @click="expandAllTreeNodes">
+                                Expand all
+                            </n-button>
+                            <n-button
+                                v-if="sbomViewMode === 'tree' && sbomGraphLoaded"
+                                size="small"
+                                @click="collapseAllTreeNodes">
+                                Collapse all
+                            </n-button>
                         </n-space>
                         <div v-if="sbomComponentsLoading && !sbomComponentsLoaded">
                             <n-spin size="medium" />
@@ -815,13 +831,25 @@
                         <div v-else-if="sbomComponentsLoaded && sbomComponents.length === 0">
                             <p>No SBOM components recorded for this release.</p>
                         </div>
-                        <div v-else-if="sbomComponentsLoaded">
+                        <div v-else-if="sbomComponentsLoaded && sbomViewMode === 'list'">
                             <n-data-table
                                 :data="sbomComponents"
                                 :columns="sbomComponentsTableFields"
                                 :row-key="(row: any) => row.uuid"
                                 :pagination="{ pageSize: 15 }"
                             />
+                        </div>
+                        <div v-else-if="sbomComponentsLoaded && sbomViewMode === 'tree'">
+                            <div v-if="sbomGraphLoading && !sbomGraphLoaded">
+                                <n-spin size="medium" />
+                                <p>Loading dependency graph (one full graph load per session)...</p>
+                            </div>
+                            <div v-else-if="sbomGraphLoaded && sbomTreeRoots.length === 0">
+                                <p>No root components found for this release.</p>
+                            </div>
+                            <div v-else-if="sbomGraphLoaded" class="sbom-tree-container">
+                                <SbomTreeView />
+                            </div>
                         </div>
                         <div v-else>
                             <p>Open this tab to load SBOM components.</p>
@@ -2370,6 +2398,117 @@ const sbomDependedOnByColumns: DataTableColumns<any> = [
         }
     }
 ]
+
+// Tree view (Dependency-Track-style horizontal tree). Renders from root components
+// outward, lazily expanded per node. Cycles in the dependency graph are detected via
+// an ancestors set passed down through recursion and rendered as a leaf with a marker.
+const sbomViewMode: Ref<'list' | 'tree'> = ref('list')
+const expandedTreeNodes: Ref<Set<string>> = ref(new Set())
+
+const sbomTreeRoots: ComputedRef<any[]> = computed((): any[] => {
+    if (!sbomGraphLoaded.value) return []
+    const all = Object.values(sbomGraphByUuid.value)
+    const declared = all.filter((r: any) => r.component?.isRoot)
+    if (declared.length) return declared
+    // Fallback: derive roots from the forward-edge graph. dependedOnBy isn't always
+    // populated symmetrically, so we scan every row's dependencies and treat anything
+    // that's never a target as a root.
+    const referencedAsTarget = new Set<string>()
+    all.forEach((r: any) => {
+        (r.dependencies || []).forEach((d: any) => {
+            if (d.target?.uuid) referencedAsTarget.add(d.target.uuid)
+        })
+    })
+    const orphans = all.filter((r: any) => !referencedAsTarget.has(r.uuid))
+    return orphans.length ? orphans : all
+})
+
+async function handleSbomViewModeChange (mode: 'list' | 'tree') {
+    sbomViewMode.value = mode
+    if (mode === 'tree') {
+        await ensureSbomGraphLoaded()
+        if (expandedTreeNodes.value.size === 0) {
+            const next = new Set<string>()
+            sbomTreeRoots.value.forEach((r: any) => next.add(r.uuid))
+            expandedTreeNodes.value = next
+        }
+    }
+}
+
+function toggleTreeNode (uuid: string) {
+    const next = new Set(expandedTreeNodes.value)
+    if (next.has(uuid)) next.delete(uuid)
+    else next.add(uuid)
+    expandedTreeNodes.value = next
+}
+
+function expandAllTreeNodes () {
+    const next = new Set<string>()
+    Object.keys(sbomGraphByUuid.value).forEach(u => next.add(u))
+    expandedTreeNodes.value = next
+}
+
+function collapseAllTreeNodes () {
+    expandedTreeNodes.value = new Set()
+}
+
+function nodeLabel (row: any): string {
+    const c = row?.component
+    if (!c) return row?.uuid || '—'
+    return c.canonicalPurl || `${c.name || ''}${c.version ? '@' + c.version : ''}` || row.uuid
+}
+
+function renderTreeNode (uuid: string, ancestors: Set<string>): any {
+    const row = sbomGraphByUuid.value[uuid]
+    if (!row) return null
+    const isCycle = ancestors.has(uuid)
+    const deps: any[] = isCycle ? [] : (row.dependencies || [])
+    const expanded = expandedTreeNodes.value.has(uuid)
+    const hasChildren = deps.length > 0
+    const childAncestors = new Set(ancestors)
+    childAncestors.add(uuid)
+
+    const expanderClass = ['sbom-tree-expander']
+    if (!hasChildren) expanderClass.push('is-leaf')
+    const expanderLabel = !hasChildren ? '·' : (expanded ? '−' : '+')
+
+    const boxClasses = ['sbom-tree-box']
+    if (row.component?.isRoot) boxClasses.push('is-root')
+    if (isCycle) boxClasses.push('is-cycle')
+
+    const boxChildren: any[] = [nodeLabel(row)]
+    if (isCycle) boxChildren.push(h('span', { class: 'sbom-tree-cycle-marker', title: 'Cycle — this component appears earlier in the path' }, '↻'))
+
+    const selfRow = h('div', { class: 'sbom-tree-self' }, [
+        h('span', { class: boxClasses.join(' '), onClick: () => openSbomComponentGraph(row), title: 'Open component details' }, boxChildren),
+        h('button', {
+            class: expanderClass.join(' '),
+            disabled: !hasChildren,
+            onClick: hasChildren ? () => toggleTreeNode(uuid) : undefined
+        }, expanderLabel)
+    ])
+
+    const childrenList = (expanded && hasChildren) ? h('div', { class: 'sbom-tree-children' },
+        deps.map((d: any) => {
+            const targetUuid = d.target?.uuid
+            if (!targetUuid) {
+                return h('div', { class: 'sbom-tree-item' }, [
+                    h('div', { class: 'sbom-tree-self' }, [
+                        h('span', { class: 'sbom-tree-box is-orphan', title: 'Target not present in this release\'s SBOM rows' },
+                            d.targetCanonicalPurl || '(unknown)')
+                    ])
+                ])
+            }
+            return h('div', { class: 'sbom-tree-item' }, [renderTreeNode(targetUuid, childAncestors)])
+        }).filter(Boolean)
+    ) : null
+
+    return h('div', { class: 'sbom-tree-node' }, [selfRow, childrenList].filter(Boolean))
+}
+
+const SbomTreeView = () => h('div', { class: 'sbom-tree-root' },
+    sbomTreeRoots.value.map((r: any) => h('div', { class: 'sbom-tree-item is-root-item', key: r.uuid }, [renderTreeNode(r.uuid, new Set())]))
+)
 
 // DTrack integration is org-wide, fetched once on mount. Drives the per-artifact
 // DTrack status pill so we can show "Not configured" instead of a misleading
@@ -5394,6 +5533,163 @@ async function handleTabSwitch(tabName: string) {
 .historyHeader {
     background-color: #f9dddd;
     font-weight: bold;
+}
+
+</style>
+
+<style lang="scss">
+/* Dependency tree (Dependency-Track style horizontal layout).
+   Intentionally NOT scoped: the tree is rendered via h() render functions, and
+   Vue's scoped CSS only injects data-v-* attributes into elements that come
+   from <template>, so scoped rules never match render-function output.
+   Keeping selectors prefixed with .sbom-tree- to avoid global pollution. */
+.sbom-tree-container {
+    overflow: auto;
+    padding: 8px 0;
+    max-height: 70vh;
+    border: 1px solid var(--n-border-color, rgba(255, 255, 255, 0.12));
+    border-radius: 4px;
+}
+
+.sbom-tree-root {
+    display: inline-block;
+    padding: 8px 16px;
+    min-width: 100%;
+}
+
+.sbom-tree-node {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
+.sbom-tree-self {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.sbom-tree-box {
+    display: inline-block;
+    padding: 3px 8px;
+    border: 1px solid #4ea8c8;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    font-family: monospace;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.sbom-tree-box:hover {
+    background: rgba(78, 168, 200, 0.12);
+}
+
+.sbom-tree-box.is-root {
+    border-color: #f0a020;
+    color: #f0a020;
+}
+
+.sbom-tree-box.is-cycle {
+    border-style: dashed;
+    border-color: #d03050;
+    color: #d03050;
+}
+
+.sbom-tree-box.is-orphan {
+    border-style: dashed;
+    opacity: 0.7;
+    cursor: default;
+}
+
+.sbom-tree-cycle-marker {
+    margin-left: 6px;
+    font-size: 11px;
+}
+
+.sbom-tree-expander {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin: 0 4px;
+    border: 1px solid #4ea8c8;
+    border-radius: 50%;
+    background: transparent;
+    color: #4ea8c8;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.sbom-tree-expander:hover:not(:disabled) {
+    background: rgba(78, 168, 200, 0.18);
+}
+
+.sbom-tree-expander.is-leaf {
+    visibility: hidden;
+}
+
+.sbom-tree-expander:disabled {
+    cursor: default;
+}
+
+.sbom-tree-children {
+    display: flex;
+    flex-direction: column;
+    margin-left: 4px;
+}
+
+.sbom-tree-item {
+    position: relative;
+    padding-left: 18px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+}
+
+/* Horizontal arm at this item's center, drawn for every (non-root) item. */
+.sbom-tree-item::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 14px;
+    height: 0;
+    border-top: 1px solid #4ea8c8;
+}
+
+/* Upward trunk segment — only drawn when there is a sibling ABOVE,
+   i.e. this item is not the first child. Goes from the item's top down to its center,
+   and (since border-top of this element is the trunk reaching the horizontal arm)
+   we keep the horizontal arm via border-bottom. */
+.sbom-tree-item:not(:first-child)::before {
+    top: 0;
+    height: 50%;
+    border-top: none;
+    border-left: 1px solid #4ea8c8;
+    border-bottom: 1px solid #4ea8c8;
+}
+
+/* Downward trunk segment — only drawn when there is a sibling BELOW. */
+.sbom-tree-item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    bottom: 0;
+    border-left: 1px solid #4ea8c8;
+}
+
+.sbom-tree-item.is-root-item {
+    padding-left: 0;
+}
+
+.sbom-tree-item.is-root-item::before,
+.sbom-tree-item.is-root-item::after {
+    display: none;
 }
 
 </style>
