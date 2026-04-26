@@ -663,57 +663,86 @@ class VariableQueries {
 		SELECT coalesce(max(cast (metrics->>'lastScanned' as float)), 0) FROM rearm.releases
 	""";
 	
+	/*
+	 * Pick releases whose metrics need recomputing because at least one artifact they
+	 * directly contain has been re-scanned more recently than the release was last
+	 * aggregated.
+	 *
+	 * Per-release comparison: art.lastScanned > THIS release's lastScanned.
+	 *
+	 * History: prior versions used a global :cutoffTimestamp parameter bound to
+	 * MAX(release.lastScanned) and filtered as art.lastScanned > MAX(release.lastScanned).
+	 * Whenever any release was recomputed (via this path or BY_UPDATE), the global max
+	 * jumped forward and stranded any artifact older than the new floor — even if the
+	 * release containing it was much older still. The V17 column-extraction commit
+	 * (f67d0292, 2026-03-30) compounded the issue by adding an outer WHERE on
+	 * release.metrics->>'lastScanned' that was definitionally empty
+	 * (release.lastScanned > MAX(release.lastScanned) cannot hold for any row).
+	 * Net effect: this scheduler path was a no-op since 2026-03-30, leaving releases
+	 * stuck whenever a DTrack refetch updated artifact metrics without also bumping
+	 * record_data (BY_UPDATE handles record_data-driven cases, BY_ARTIFACT_DIRECT was
+	 * the only path for artifact-only updates).
+	 *
+	 * Trade: per-row comparison can't use the artifact lastScanned index for filtering;
+	 * acceptable because the row count is bounded by releases-with-artifacts joined to
+	 * their own artifact list, and the scheduler dedup short-circuit drops no-op
+	 * recomputes anyway.
+	 */
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT = """
-		WITH
-		unprocessedArts AS (
-			SELECT ra.uuid 
-			FROM rearm.artifacts ra 
-			WHERE coalesce(cast (ra.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp
-		),
-		releases_with_artifacts AS (
-			SELECT rlzs.*, jsonb_array_elements_text(record_data->'artifacts')::uuid as artifact_uuid
-			FROM rearm.releases rlzs where rlzs.record_data->>'artifacts' != '[]'
+		WITH releases_with_artifacts AS (
+			SELECT rlzs.*,
+			       coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0) AS rel_last_scanned,
+			       jsonb_array_elements_text(record_data->'artifacts')::uuid AS artifact_uuid
+			FROM rearm.releases rlzs WHERE rlzs.record_data->>'artifacts' != '[]'
 		)
 		SELECT DISTINCT rwa.uuid, rwa.revision, rwa.metrics_revision, rwa.schema_version, rwa.created_date, rwa.last_updated_date, rwa.record_data, rwa.metrics, rwa.approval_events, rwa.update_events, rwa.flow_control
 		FROM releases_with_artifacts rwa
-		INNER JOIN unprocessedArts ua ON ua.uuid = rwa.artifact_uuid
-		WHERE coalesce(cast (rwa.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp
+		INNER JOIN rearm.artifacts a ON a.uuid = rwa.artifact_uuid
+		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) > rwa.rel_last_scanned
 		""";
-	
-	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
-	WITH
-	  unprocessedArts (uuid) AS (
-	    SELECT ra.uuid FROM rearm.artifacts ra 
-	    WHERE coalesce(cast(ra.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp
-	  ),
-	  unprocessedSces (uuid) AS (
-	    SELECT DISTINCT sce.uuid 
-	    FROM rearm.source_code_entries sce, jsonb_array_elements(sce.record_data->'artifacts') AS art
-	    WHERE (art->>'artifactUuid')::uuid IN (SELECT uuid FROM unprocessedArts)
-	  )
-	SELECT rlzs.* FROM unprocessedSces, rearm.releases rlzs
-	WHERE rlzs.record_data->>'sourceCodeEntry' = cast(unprocessedSces.uuid as text);
-	""";
 
+	/*
+	 * SCE variant of the above. Same per-release comparison, joined through the SCE link:
+	 * release.record_data->>'sourceCodeEntry' → sce.uuid → sce.record_data->'artifacts'[].artifactUuid.
+	 * See BY_ARTIFACT_DIRECT comment for why the global cutoff was dropped.
+	 */
+	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
+		WITH sce_artifacts AS (
+			SELECT sce.uuid AS sce_uuid,
+			       (art_element->>'artifactUuid')::uuid AS artifact_uuid
+			FROM rearm.source_code_entries sce,
+			     jsonb_array_elements(sce.record_data->'artifacts') AS art_element
+		)
+		SELECT DISTINCT rlzs.uuid, rlzs.revision, rlzs.metrics_revision, rlzs.schema_version, rlzs.created_date, rlzs.last_updated_date, rlzs.record_data, rlzs.metrics, rlzs.approval_events, rlzs.update_events, rlzs.flow_control
+		FROM rearm.releases rlzs
+		INNER JOIN sce_artifacts sa ON rlzs.record_data->>'sourceCodeEntry' = cast(sa.sce_uuid AS text)
+		INNER JOIN rearm.artifacts a ON a.uuid = sa.artifact_uuid
+		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) >
+		      coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0)
+		""";
+
+	/*
+	 * Outbound-deliverable variant. Same per-release comparison, joined through the
+	 * variant.outboundDeliverables → deliverable.artifacts chain back to the variant's
+	 * release. See BY_ARTIFACT_DIRECT comment for why the global cutoff was dropped.
+	 */
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES = """
-	WITH
-	  unprocessedArts (uuid) AS (
-	    SELECT ra.uuid FROM rearm.artifacts ra 
-	    WHERE coalesce(cast(ra.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp
-	  ),
-	  unprocessedDeliverables (uuid) AS (
-	    SELECT DISTINCT del.uuid 
-	    FROM rearm.deliverables del, jsonb_array_elements_text(del.record_data->'artifacts') AS art
-	    WHERE art::uuid IN (SELECT uuid FROM unprocessedArts)
-	  ),
-	  unprocessedRlzIds (uuid) AS (
-	    SELECT DISTINCT var.record_data->>'release' 
-	    FROM rearm.variants var, jsonb_array_elements_text(var.record_data->'outboundDeliverables') AS deliv
-	    WHERE deliv::uuid IN (SELECT uuid FROM unprocessedDeliverables)
-	  )
-	SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
-	WHERE rlzs.uuid = cast(unprocessedRlzIds.uuid as uuid);
-	""";
+		WITH release_outbound_arts AS (
+			SELECT (var.record_data->>'release')::uuid AS release_uuid,
+			       (art::uuid) AS artifact_uuid
+			FROM rearm.variants var,
+			     jsonb_array_elements_text(var.record_data->'outboundDeliverables') AS deliv,
+			     rearm.deliverables del,
+			     jsonb_array_elements_text(del.record_data->'artifacts') AS art
+			WHERE del.uuid = deliv::uuid
+		)
+		SELECT DISTINCT rlzs.uuid, rlzs.revision, rlzs.metrics_revision, rlzs.schema_version, rlzs.created_date, rlzs.last_updated_date, rlzs.record_data, rlzs.metrics, rlzs.approval_events, rlzs.update_events, rlzs.flow_control
+		FROM rearm.releases rlzs
+		INNER JOIN release_outbound_arts roa ON roa.release_uuid = rlzs.uuid
+		INNER JOIN rearm.artifacts a ON a.uuid = roa.artifact_uuid
+		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) >
+		      coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0)
+		""";
 
 	protected static final String FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE = """
 		WITH

@@ -1482,20 +1482,16 @@ public class ReleaseService {
 	
 	protected void computeMetricsForAllUnprocessedReleases () {
 		log.debug("[compute metrics scheduler]: start compute metrics run");
-		// Snapshot the cutoff timestamp at the start to ensure all artifact-based queries use the same stable value
-		Double cutoffTimestamp = repository.findMaxReleaseLastScannedTimestamp();
-		if (cutoffTimestamp == null) {
-			cutoffTimestamp = 0.0;
-		}
-		log.debug("Using cutoff timestamp {} for metrics computation", cutoffTimestamp);
-		
-		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect(cutoffTimestamp);
+		// The artifact-driven finders compare art.lastScanned against each release's own
+		// lastScanned (per-release, no global cutoff). See VariableQueries comments for
+		// why the prior global :cutoffTimestamp was wrong.
+		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect();
 		log.debug("[compute metrics scheduler]: releases by art size = " + releasesByArt.size());
 		for (var r : releasesByArt) log.debug("[compute metrics scheduler]: release by art uuid = " + r.getUuid());
-		var releasesBySce = repository.findReleasesForMetricsComputeBySce(cutoffTimestamp);
+		var releasesBySce = repository.findReleasesForMetricsComputeBySce();
 		log.debug("[compute metrics scheduler]: releases by sce size = " + releasesByArt.size());
 		for (var r : releasesBySce) log.debug("[compute metrics scheduler]: release by sce uuid = " + r.getUuid());
-		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables(cutoffTimestamp);
+		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables();
 		log.debug("[compute metrics scheduler]: releases by outbound del size = " + releasesByArt.size());
 		for (var r : releasesByOutboundDel) log.debug("[compute metrics scheduler]: release by od uuid = " + r.getUuid());
 		var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate();

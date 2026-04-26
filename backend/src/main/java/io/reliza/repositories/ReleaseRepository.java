@@ -208,17 +208,17 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByArtifactDirect(@Param("cutoffTimestamp") double cutoffTimestamp);
-	
+	List<Release> findReleasesForMetricsComputeByArtifactDirect();
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeBySce(@Param("cutoffTimestamp") double cutoffTimestamp);
-	
+	List<Release> findReleasesForMetricsComputeBySce();
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByOutboundDeliverables(@Param("cutoffTimestamp") double cutoffTimestamp);
+	List<Release> findReleasesForMetricsComputeByOutboundDeliverables();
 
 	@Query(
 			value = VariableQueries.FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE,
