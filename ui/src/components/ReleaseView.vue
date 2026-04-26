@@ -793,6 +793,41 @@
                         </ul>
                     </div>
                 </n-tab-pane>
+                <n-tab-pane name="sbomComponents" tab="SBOM Components">
+                    <div class="container">
+                        <n-space style="margin-bottom: 8px;" align="center">
+                            <h3 style="margin: 0;">Release SBOM Components</h3>
+                            <n-button
+                                size="small"
+                                @click="loadSbomComponents(true)"
+                                :loading="sbomComponentsLoading"
+                                :disabled="sbomComponentsLoading">
+                                <template #icon>
+                                    <n-icon><Refresh /></n-icon>
+                                </template>
+                                Refresh
+                            </n-button>
+                        </n-space>
+                        <div v-if="sbomComponentsLoading && !sbomComponentsLoaded">
+                            <n-spin size="medium" />
+                            <p>Loading SBOM components...</p>
+                        </div>
+                        <div v-else-if="sbomComponentsLoaded && sbomComponents.length === 0">
+                            <p>No SBOM components recorded for this release.</p>
+                        </div>
+                        <div v-else-if="sbomComponentsLoaded">
+                            <n-data-table
+                                :data="sbomComponents"
+                                :columns="sbomComponentsTableFields"
+                                :row-key="(row: any) => row.uuid"
+                                :pagination="{ pageSize: 15 }"
+                            />
+                        </div>
+                        <div v-else>
+                            <p>Open this tab to load SBOM components.</p>
+                        </div>
+                    </div>
+                </n-tab-pane>
                 <n-tab-pane name="compare" tab="Compare">
                     <div class="container">
                         <n-select style="width:50%;" placeholder="Select a version to compare" label="label" :options="releasesOptions" filterable @update:value="getComparison" />
@@ -1027,6 +1062,51 @@
                         <n-button @click="addArtifactTag">Add Tag</n-button>
                     </n-input-group>
                 </n-form>
+            </div>
+        </n-modal>
+        <n-modal
+            v-model:show="showSbomComponentGraphModal"
+            style="width: 90%; max-width: 1100px;"
+            preset="card"
+            :show-icon="false"
+            :title="sbomGraphModalTitle">
+            <div v-if="sbomGraphLoading">
+                <n-spin size="medium" />
+                <p>Loading dependency graph (this loads the full release SBOM once)...</p>
+            </div>
+            <div v-else-if="selectedSbomComponent">
+                <div style="margin-bottom: 12px;">
+                    <p style="margin: 4px 0;"><strong>Name:</strong> {{ selectedSbomComponent.component?.name || '—' }}</p>
+                    <p style="margin: 4px 0;"><strong>Version:</strong> {{ selectedSbomComponent.component?.version || '—' }}</p>
+                    <p style="margin: 4px 0;" v-if="selectedSbomComponent.component?.group"><strong>Group:</strong> {{ selectedSbomComponent.component.group }}</p>
+                    <p style="margin: 4px 0;"><strong>Type:</strong> {{ selectedSbomComponent.component?.type || '—' }}</p>
+                    <p style="margin: 4px 0; word-break: break-all;"><strong>Canonical purl:</strong> {{ selectedSbomComponent.component?.canonicalPurl || '—' }}</p>
+                    <p style="margin: 4px 0;" v-if="selectedSbomComponent.component?.isRoot">
+                        <n-tag type="info" size="small" round>Root component</n-tag>
+                    </p>
+                </div>
+                <h4 style="margin-bottom: 4px;">Dependencies ({{ (selectedSbomComponent.dependencies || []).length }})</h4>
+                <p v-if="!(selectedSbomComponent.dependencies && selectedSbomComponent.dependencies.length)" style="color: #999;">
+                    This component has no recorded dependencies in this release.
+                </p>
+                <n-data-table
+                    v-else
+                    :data="selectedSbomComponent.dependencies"
+                    :columns="sbomDependenciesColumns"
+                    :row-key="(row: any) => row.targetSbomComponentUuid + '::' + (row.relationshipType || '')"
+                    :pagination="{ pageSize: 10 }"
+                />
+                <h4 style="margin-top: 16px; margin-bottom: 4px;">Depended on by ({{ (selectedSbomComponent.dependedOnBy || []).length }})</h4>
+                <p v-if="!(selectedSbomComponent.dependedOnBy && selectedSbomComponent.dependedOnBy.length)" style="color: #999;">
+                    No other components in this release depend on this one.
+                </p>
+                <n-data-table
+                    v-else
+                    :data="selectedSbomComponent.dependedOnBy"
+                    :columns="sbomDependedOnByColumns"
+                    :row-key="(row: any) => row.uuid"
+                    :pagination="{ pageSize: 10 }"
+                />
             </div>
         </n-modal>
             </div>
@@ -2014,6 +2094,282 @@ async function reconcileReleaseSbom () {
         reconcileSbomPending.value = false
     }
 }
+
+// Release SBOM Components tab — list view query (cheap: no dependencies/dependedOnBy).
+// The detail modal lazy-loads the full graph (which is the expensive query) once per session.
+const sbomComponents: Ref<any[]> = ref([])
+const sbomComponentsLoading: Ref<boolean> = ref(false)
+const sbomComponentsLoaded: Ref<boolean> = ref(false)
+const sbomGraphLoading: Ref<boolean> = ref(false)
+const sbomGraphLoaded: Ref<boolean> = ref(false)
+const sbomGraphByUuid: Ref<Record<string, any>> = ref({})
+const showSbomComponentGraphModal: Ref<boolean> = ref(false)
+const selectedSbomComponent: Ref<any> = ref(null)
+const sbomGraphModalTitle: ComputedRef<string> = computed(() => {
+    const c = selectedSbomComponent.value?.component
+    if (!c) return 'SBOM Component Graph'
+    const v = c.version ? `@${c.version}` : ''
+    return `SBOM Component Graph — ${c.name || c.canonicalPurl || 'component'}${v}`
+})
+
+async function loadSbomComponents (forceRefresh: boolean = false) {
+    if (!updatedRelease.value?.uuid) return
+    if (sbomComponentsLoaded.value && !forceRefresh) return
+    sbomComponentsLoading.value = true
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query getReleaseSbomComponentsList($releaseUuid: ID!) {
+                    getReleaseSbomComponents(releaseUuid: $releaseUuid) {
+                        uuid
+                        sbomComponentUuid
+                        component {
+                            uuid
+                            canonicalPurl
+                            type
+                            group
+                            name
+                            version
+                            isRoot
+                        }
+                        artifactParticipations {
+                            artifact
+                            exactPurls
+                        }
+                    }
+                }`,
+            variables: { releaseUuid: updatedRelease.value.uuid },
+            fetchPolicy: 'no-cache'
+        })
+        sbomComponents.value = resp.data.getReleaseSbomComponents || []
+        sbomComponentsLoaded.value = true
+        // Refresh invalidates the cached deeper graph since rows may have changed.
+        if (forceRefresh) {
+            sbomGraphLoaded.value = false
+            sbomGraphByUuid.value = {}
+        }
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        sbomComponentsLoading.value = false
+    }
+}
+
+async function ensureSbomGraphLoaded () {
+    if (sbomGraphLoaded.value) return
+    if (!updatedRelease.value?.uuid) return
+    sbomGraphLoading.value = true
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query getReleaseSbomComponentsGraph($releaseUuid: ID!) {
+                    getReleaseSbomComponents(releaseUuid: $releaseUuid) {
+                        uuid
+                        sbomComponentUuid
+                        component {
+                            uuid
+                            canonicalPurl
+                            type
+                            group
+                            name
+                            version
+                            isRoot
+                        }
+                        dependencies {
+                            targetSbomComponentUuid
+                            targetCanonicalPurl
+                            relationshipType
+                            target {
+                                uuid
+                                sbomComponentUuid
+                                component { canonicalPurl name version }
+                            }
+                            declaringArtifacts {
+                                artifact
+                                sourceExactPurl
+                                targetExactPurl
+                            }
+                        }
+                        dependedOnBy {
+                            uuid
+                            sbomComponentUuid
+                            component { canonicalPurl name version }
+                        }
+                    }
+                }`,
+            variables: { releaseUuid: updatedRelease.value.uuid },
+            fetchPolicy: 'no-cache'
+        })
+        const rows: any[] = resp.data.getReleaseSbomComponents || []
+        const byUuid: Record<string, any> = {}
+        rows.forEach((r: any) => { byUuid[r.uuid] = r })
+        sbomGraphByUuid.value = byUuid
+        sbomGraphLoaded.value = true
+    } catch (err: any) {
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        sbomGraphLoading.value = false
+    }
+}
+
+async function openSbomComponentGraph (row: any) {
+    selectedSbomComponent.value = { ...row, dependencies: [], dependedOnBy: [] }
+    showSbomComponentGraphModal.value = true
+    await ensureSbomGraphLoaded()
+    const detail = sbomGraphByUuid.value[row.uuid]
+    if (detail) {
+        selectedSbomComponent.value = {
+            ...row,
+            dependencies: detail.dependencies || [],
+            dependedOnBy: detail.dependedOnBy || []
+        }
+    }
+}
+
+const sbomComponentsTableFields: DataTableColumns<any> = [
+    {
+        key: 'name',
+        title: 'Name',
+        render: (row: any) => {
+            const c = row.component || {}
+            const els: any[] = [h('span', c.name || '—')]
+            if (c.isRoot) els.push(h(NTag, { size: 'tiny', type: 'info', round: true, style: 'margin-left: 6px;' }, () => 'root'))
+            return h('div', els)
+        }
+    },
+    {
+        key: 'version',
+        title: 'Version',
+        render: (row: any) => row.component?.version || '—'
+    },
+    {
+        key: 'group',
+        title: 'Group',
+        render: (row: any) => row.component?.group || ''
+    },
+    {
+        key: 'type',
+        title: 'Type',
+        render: (row: any) => row.component?.type || ''
+    },
+    {
+        key: 'purl',
+        title: 'Canonical purl',
+        render: (row: any) => h('span', { style: 'word-break: break-all; font-family: monospace; font-size: 12px;' }, row.component?.canonicalPurl || '')
+    },
+    {
+        key: 'artifacts',
+        title: 'Artifacts',
+        render: (row: any) => {
+            const list: any[] = row.artifactParticipations || []
+            if (!list.length) return h('span', '0')
+            const tooltipContent = h('ul', { style: 'margin: 0; padding-left: 18px;' },
+                list.map((p: any) => h('li', { style: 'word-break: break-all;' }, [
+                    h('div', `artifact: ${p.artifact}`),
+                    p.exactPurls && p.exactPurls.length ? h('div', { style: 'font-size: 11px; color: #666;' }, `purls: ${p.exactPurls.join(', ')}`) : null
+                ]))
+            )
+            return h(NTooltip, {
+                trigger: 'hover',
+                contentStyle: 'max-width: 700px; white-space: normal; word-break: break-word;'
+            }, {
+                trigger: () => h('span', { class: 'clickable', style: 'text-decoration: underline dotted;' }, String(list.length)),
+                default: () => tooltipContent
+            })
+        }
+    },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => h(NButton, {
+            size: 'small',
+            onClick: () => openSbomComponentGraph(row)
+        }, () => 'View graph')
+    }
+]
+
+function renderSbomComponentRef (component: any, fallbackPurl?: string) {
+    if (!component && !fallbackPurl) return h('span', '—')
+    const name = component?.name
+    const version = component?.version
+    const purl = component?.canonicalPurl || fallbackPurl
+    const lines: any[] = []
+    if (name) lines.push(h('div', `${name}${version ? '@' + version : ''}`))
+    if (purl) lines.push(h('div', { style: 'font-family: monospace; font-size: 11px; color: #666; word-break: break-all;' }, purl))
+    if (!lines.length) lines.push(h('span', '—'))
+    return h('div', lines)
+}
+
+const sbomDependenciesColumns: DataTableColumns<any> = [
+    {
+        key: 'target',
+        title: 'Target',
+        render: (row: any) => renderSbomComponentRef(row.target?.component, row.targetCanonicalPurl)
+    },
+    {
+        key: 'relationshipType',
+        title: 'Relationship',
+        render: (row: any) => row.relationshipType || ''
+    },
+    {
+        key: 'declaringArtifacts',
+        title: 'Declared by',
+        render: (row: any) => {
+            const list: any[] = row.declaringArtifacts || []
+            if (!list.length) return h('span', '—')
+            const tooltipContent = h('ul', { style: 'margin: 0; padding-left: 18px;' },
+                list.map((d: any) => h('li', { style: 'word-break: break-all;' }, [
+                    h('div', `artifact: ${d.artifact}`),
+                    d.sourceExactPurl ? h('div', { style: 'font-size: 11px; color: #666;' }, `source: ${d.sourceExactPurl}`) : null,
+                    d.targetExactPurl ? h('div', { style: 'font-size: 11px; color: #666;' }, `target: ${d.targetExactPurl}`) : null
+                ]))
+            )
+            return h(NTooltip, {
+                trigger: 'hover',
+                contentStyle: 'max-width: 700px; white-space: normal; word-break: break-word;'
+            }, {
+                trigger: () => h('span', { class: 'clickable', style: 'text-decoration: underline dotted;' }, String(list.length)),
+                default: () => tooltipContent
+            })
+        }
+    },
+    {
+        key: 'actions',
+        title: '',
+        render: (row: any) => {
+            const targetUuid = row.target?.uuid
+            if (!targetUuid) return h('span', '')
+            const targetRow = sbomGraphByUuid.value[targetUuid]
+            if (!targetRow) return h('span', '')
+            return h(NButton, {
+                size: 'tiny',
+                tertiary: true,
+                onClick: () => openSbomComponentGraph(targetRow)
+            }, () => 'Open')
+        }
+    }
+]
+
+const sbomDependedOnByColumns: DataTableColumns<any> = [
+    {
+        key: 'parent',
+        title: 'Component',
+        render: (row: any) => renderSbomComponentRef(row.component)
+    },
+    {
+        key: 'actions',
+        title: '',
+        render: (row: any) => {
+            const parentRow = sbomGraphByUuid.value[row.uuid]
+            if (!parentRow) return h('span', '')
+            return h(NButton, {
+                size: 'tiny',
+                tertiary: true,
+                onClick: () => openSbomComponentGraph(parentRow)
+            }, () => 'Open')
+        }
+    }
+]
 
 // DTrack integration is org-wide, fetched once on mount. Drives the per-artifact
 // DTrack status pill so we can show "Not configured" instead of a misleading
@@ -4958,6 +5314,8 @@ async function handleTabSwitch(tabName: string) {
         await Promise.all([loadUsers(), loadAcollections()])
     } else if (tabName === "underlyingArtifacts" && isProductRelease.value) {
         await fetchProductArtifacts()
+    } else if (tabName === "sbomComponents") {
+        await loadSbomComponents()
     }
 }
 
