@@ -2180,22 +2180,8 @@ public class ReleaseService {
 		if (StringUtils.isNotBlank(vulnDto.description())) {
 			vuln.setDescription(vulnDto.description());
 		}
-		if (vulnDto.cwes() != null && !vulnDto.cwes().isEmpty()) {
-			// CDX 1.6 vulnerabilities[].cwes is List<Integer>; the DTO carries prefixed
-			// "CWE-<id>" strings to keep room for non-numeric taxonomies. Strip the prefix
-			// and parse; silently skip anything that doesn't fit (other taxonomy / typo).
-			List<Integer> cweInts = new ArrayList<>();
-			for (String cwe : vulnDto.cwes()) {
-				if (cwe == null) continue;
-				String trimmed = cwe.trim();
-				if (trimmed.regionMatches(true, 0, "CWE-", 0, 4)) {
-					try {
-						cweInts.add(Integer.parseInt(trimmed.substring(4)));
-					} catch (NumberFormatException ignored) { /* skip non-numeric */ }
-				}
-			}
-			if (!cweInts.isEmpty()) vuln.setCwes(cweInts);
-		}
+		List<Integer> cweInts = parseCwesToCdxIntegers(vulnDto.cwes());
+		if (!cweInts.isEmpty()) vuln.setCwes(cweInts);
 		if (vulnDto.references() != null && !vulnDto.references().isEmpty()) {
 			List<Vulnerability.Reference> refs = new ArrayList<>();
 			for (VulnerabilityReferenceDto refDto : vulnDto.references()) {
@@ -2477,6 +2463,32 @@ public class ReleaseService {
 				Boolean.TRUE.equals(includeInTriage) ? "withTriage" : "noTriage");
 		UUID serialUuid = UUID.nameUUIDFromBytes(serialSeed.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		return "urn:uuid:" + serialUuid;
+	}
+
+	/**
+	 * Convert the DTO's {@code cwes} set into the integer list CDX 1.6 expects on
+	 * {@code vulnerabilities[].cwes}.
+	 *
+	 * <p>Going forward the DTO stores prefixed strings like {@code "CWE-79"} (room for non-numeric
+	 * taxonomies in the future). Pre-{@code f67a1d16} artifact metrics, however, hold raw JSON
+	 * integer arrays — Jackson coerces those to bare numeric strings ({@code "79"}) when the field
+	 * type is {@code Set<String>}. Accept both shapes; silently skip anything else (other taxonomy,
+	 * typo, etc.). Returns an empty list when the input is null or has no parseable entries.
+	 */
+	static List<Integer> parseCwesToCdxIntegers(Set<String> cwes) {
+		List<Integer> out = new ArrayList<>();
+		if (cwes == null || cwes.isEmpty()) return out;
+		for (String cwe : cwes) {
+			if (cwe == null) continue;
+			String numericPart = cwe.trim();
+			if (numericPart.regionMatches(true, 0, "CWE-", 0, 4)) {
+				numericPart = numericPart.substring(4);
+			}
+			try {
+				out.add(Integer.parseInt(numericPart));
+			} catch (NumberFormatException ignored) { /* skip non-numeric */ }
+		}
+		return out;
 	}
 
 	/**
