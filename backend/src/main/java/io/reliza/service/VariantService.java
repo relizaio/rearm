@@ -97,6 +97,16 @@ public class VariantService {
 		var v = repository.findBaseVariantOfRelease(releaseId.toString()).get();
 		return VariantData.dataFromRecord(v);
 	}
+
+	/**
+	 * Same as {@link #getBaseVariantForRelease(UUID)} but returns {@link Optional#empty()} when
+	 * the release has no base variant, instead of throwing {@link java.util.NoSuchElementException}.
+	 * Use from background paths (scheduler reconciles, batch jobs) where a missing variant is a
+	 * skip-this-release condition rather than a programming error.
+	 */
+	public Optional<VariantData> findBaseVariantForRelease (UUID releaseId) {
+		return repository.findBaseVariantOfRelease(releaseId.toString()).map(VariantData::dataFromRecord);
+	}
 	
 	@Transactional
 	public Boolean addOutboundDeliverables(Collection<UUID> deliverableUuids, UUID variantUuid, WhoUpdated wu){

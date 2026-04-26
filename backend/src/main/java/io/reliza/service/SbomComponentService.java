@@ -284,13 +284,15 @@ public class SbomComponentService {
 		if (isProduct) {
 			Set<ReleaseData> dependencies = sharedReleaseService.unwindReleaseDependencies(rd);
 			dependencies.stream()
-					.map(variantService::getBaseVariantForRelease)
+					.map(dep -> variantService.findBaseVariantForRelease(dep.getUuid()))
+					.flatMap(Optional::stream)
 					.flatMap(v -> v.getOutboundDeliverables().stream())
 					.distinct()
 					.forEach(deliverableUuids::add);
 		} else {
 			if (rd.getInboundDeliverables() != null) deliverableUuids.addAll(rd.getInboundDeliverables());
-			deliverableUuids.addAll(variantService.getBaseVariantForRelease(rd).getOutboundDeliverables());
+			variantService.findBaseVariantForRelease(rd.getUuid())
+					.ifPresent(v -> deliverableUuids.addAll(v.getOutboundDeliverables()));
 		}
 		for (DeliverableData dd : getDeliverableService.getDeliverableDataList(deliverableUuids)) {
 			if (dd.getArtifacts() != null) artifactUuids.addAll(dd.getArtifacts());
