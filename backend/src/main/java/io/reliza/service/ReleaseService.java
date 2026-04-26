@@ -2185,7 +2185,20 @@ public class ReleaseService {
 			vuln.setDescription(vulnDto.description());
 		}
 		if (vulnDto.cwes() != null && !vulnDto.cwes().isEmpty()) {
-			vuln.setCwes(new ArrayList<>(vulnDto.cwes()));
+			// CDX 1.6 vulnerabilities[].cwes is List<Integer>; the DTO carries prefixed
+			// "CWE-<id>" strings to keep room for non-numeric taxonomies. Strip the prefix
+			// and parse; silently skip anything that doesn't fit (other taxonomy / typo).
+			List<Integer> cweInts = new ArrayList<>();
+			for (String cwe : vulnDto.cwes()) {
+				if (cwe == null) continue;
+				String trimmed = cwe.trim();
+				if (trimmed.regionMatches(true, 0, "CWE-", 0, 4)) {
+					try {
+						cweInts.add(Integer.parseInt(trimmed.substring(4)));
+					} catch (NumberFormatException ignored) { /* skip non-numeric */ }
+				}
+			}
+			if (!cweInts.isEmpty()) vuln.setCwes(cweInts);
 		}
 		if (vulnDto.references() != null && !vulnDto.references().isEmpty()) {
 			List<Vulnerability.Reference> refs = new ArrayList<>();

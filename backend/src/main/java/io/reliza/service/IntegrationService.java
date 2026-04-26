@@ -753,11 +753,14 @@ public class IntegrationService {
 
 				// Compute per-vulnerability enrichment fields once; reused across the
 				// per-component fan-out below so we don't re-transform for each PURL.
-				Set<Integer> cwes = null;
+				// CWEs are stored as "CWE-<id>" strings to leave room for non-numeric
+				// taxonomies; the VDR emitter parses them back to Integer for CDX.
+				Set<String> cwes = null;
 				if (dvr.cwes() != null && !dvr.cwes().isEmpty()) {
 					cwes = dvr.cwes().stream()
 							.map(DtrackCweRaw::cweId)
 							.filter(id -> id != null)
+							.map(id -> "CWE-" + id)
 							.collect(Collectors.toCollection(LinkedHashSet::new));
 					if (cwes.isEmpty()) cwes = null;
 				}
@@ -765,7 +768,7 @@ public class IntegrationService {
 						? dvr.published().toInstant().atZone(ZoneOffset.UTC) : null;
 				ZonedDateTime updated = dvr.updated() != null
 						? dvr.updated().toInstant().atZone(ZoneOffset.UTC) : null;
-				final Set<Integer> cwesFinal = cwes;
+				final Set<String> cwesFinal = cwes;
 
 				dvr.components().forEach(c -> {
 					// Decode URL-encoded @ symbol in purl from DTrack

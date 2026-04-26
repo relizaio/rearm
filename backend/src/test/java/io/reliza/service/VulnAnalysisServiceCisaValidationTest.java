@@ -38,6 +38,7 @@ import io.reliza.model.VexComplianceFramework;
 import io.reliza.model.VulnAnalysis;
 import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.VexValidationInput;
 import io.reliza.repositories.VulnAnalysisRepository;
 
 /**
@@ -82,12 +83,7 @@ public class VulnAnalysisServiceCisaValidationTest {
 		validateVexConstraints = VulnAnalysisService.class.getDeclaredMethod(
 				"validateVexConstraints",
 				VexComplianceFramework.class,
-				AnalysisState.class,
-				AnalysisJustification.class,
-				String.class,
-				List.class,
-				String.class,
-				String.class);
+				VexValidationInput.class);
 		validateVexConstraints.setAccessible(true);
 		// Default: org→CISA framework so existing end-to-end update tests keep exercising
 		// the CISA rules through resolveVexFramework.
@@ -130,7 +126,8 @@ public class VulnAnalysisServiceCisaValidationTest {
 			AnalysisJustification justification, String details, List<AnalysisResponse> responses,
 			String recommendation, String workaround) throws Throwable {
 		try {
-			validateVexConstraints.invoke(service, framework, state, justification, details, responses, recommendation, workaround);
+			validateVexConstraints.invoke(service, framework,
+					new VexValidationInput(state, justification, details, responses, recommendation, workaround));
 		} catch (InvocationTargetException ite) {
 			throw ite.getCause();
 		}

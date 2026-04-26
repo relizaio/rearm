@@ -172,10 +172,17 @@ public class ReleaseMetricsDto implements Cloneable {
 	 * populates the corresponding CDX {@link org.cyclonedx.model.vulnerability.Vulnerability}
 	 * fields iff they are non-null / non-empty, so callers that don't wire them preserve
 	 * existing behavior.
+	 *
+	 * <p>{@code cwes} carries weakness identifiers as prefixed strings (e.g. {@code "CWE-79"}).
+	 * Strings — not raw integers — because future taxonomies (CAPEC, CWE-CATEGORY, vendor codes)
+	 * may not be numeric, and the rest of the codebase already stores weaknesses prefixed.
+	 * The CDX emitter strips the {@code CWE-} prefix and parses to {@link Integer} for
+	 * {@code Vulnerability.setCwes(List&lt;Integer&gt;)}; non-numeric / non-{@code CWE-} entries
+	 * are silently dropped at emission time.
 	 */
 	public static record VulnerabilityDto (String purl, String vulnId, VulnerabilitySeverity severity,
 		Set<VulnerabilityAliasDto> aliases, Set<FindingSourceDto> sources, Set<SeveritySourceDto> severities, AnalysisState analysisState, ZonedDateTime analysisDate, ZonedDateTime attributedAt,
-		String description, Set<Integer> cwes, Set<VulnerabilityReferenceDto> references, ZonedDateTime published, ZonedDateTime updated) {}
+		String description, Set<String> cwes, Set<VulnerabilityReferenceDto> references, ZonedDateTime published, ZonedDateTime updated) {}
 
 	/**
 	 * We use weaknessDto to store findngs from SARIF parsing

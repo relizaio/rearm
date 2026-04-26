@@ -40,6 +40,7 @@ import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CreateVulnAnalysisDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.VexValidationInput;
 import io.reliza.repositories.VulnAnalysisRepository;
 import lombok.extern.slf4j.Slf4j;
 
@@ -373,16 +374,14 @@ public class VulnAnalysisService {
 	 * @param framework     active framework for the organization (never null; resolve with {@link #resolveVexFramework(UUID)})
 	 * @param state         post-merge analysis state being validated; null means "no state change" and is a no-op
 	 */
-	private void validateVexConstraints(VexComplianceFramework framework, AnalysisState state,
-			AnalysisJustification justification, String details, List<AnalysisResponse> responses,
-			String recommendation, String workaround) throws RelizaException {
+	private void validateVexConstraints(VexComplianceFramework framework, VexValidationInput input) throws RelizaException {
 		// Null state means "no state change" on an update — nothing to validate here.
 		// Create path guarantees non-null state via required GraphQL input + explicit check in createVulnAnalysis.
-		if (state == null || framework == null || framework == VexComplianceFramework.NONE) {
+		if (input.state() == null || framework == null || framework == VexComplianceFramework.NONE) {
 			return;
 		}
 		switch (framework) {
-			case CISA -> validateCisaConstraints(state, justification, details, responses, recommendation, workaround);
+			case CISA -> validateCisaConstraints(input);
 			default -> { /* no rules */ }
 		}
 	}
@@ -391,18 +390,17 @@ public class VulnAnalysisService {
 	 * CISA VEX minimum-requirements rules, applied only when the org selects
 	 * {@link VexComplianceFramework#CISA}.
 	 */
-	private void validateCisaConstraints(AnalysisState state, AnalysisJustification justification,
-			String details, List<AnalysisResponse> responses, String recommendation, String workaround) throws RelizaException {
-		switch (state) {
+	private void validateCisaConstraints(VexValidationInput input) throws RelizaException {
+		switch (input.state()) {
 			case NOT_AFFECTED, FALSE_POSITIVE -> {
-				if (justification == null && StringUtils.isBlank(details)) {
-					throw new RelizaException(state + " analysis requires either a justification " +
+				if (input.justification() == null && StringUtils.isBlank(input.details())) {
+					throw new RelizaException(input.state() + " analysis requires either a justification " +
 							"or an impact statement in details (CISA VEX requirement)");
 				}
 			}
 			case EXPLOITABLE -> {
-				boolean hasResponse = responses != null && !responses.isEmpty();
-				if (!hasResponse && StringUtils.isBlank(recommendation) && StringUtils.isBlank(workaround)) {
+				boolean hasResponse = input.responses() != null && !input.responses().isEmpty();
+				if (!hasResponse && StringUtils.isBlank(input.recommendation()) && StringUtils.isBlank(input.workaround())) {
 					throw new RelizaException("EXPLOITABLE analysis requires an action statement: " +
 							"at least one response, a non-blank recommendation, or a non-blank workaround " +
 							"(CISA VEX requirement)");
@@ -436,9 +434,9 @@ public class VulnAnalysisService {
 		}
 		// VEX constraint validation dispatched by org-configured framework (see resolveVexFramework).
 		VexComplianceFramework framework = resolveVexFramework(createDto.getOrg());
-		validateVexConstraints(framework, createDto.getState(), createDto.getJustification(),
-				createDto.getDetails(), createDto.getResponses(), createDto.getRecommendation(),
-				createDto.getWorkaround());
+		validateVexConstraints(framework, new VexValidationInput(createDto.getState(),
+				createDto.getJustification(), createDto.getDetails(), createDto.getResponses(),
+				createDto.getRecommendation(), createDto.getWorkaround()));
 		
 		// Minimize PURL if location type is PURL
 		String normalizedLocation = createDto.getLocation();
@@ -536,7 +534,8 @@ public class VulnAnalysisService {
 		String effRecommendation = recommendation != null ? recommendation : vad.getRecommendation();
 		String effWorkaround = workaround != null ? workaround : vad.getWorkaround();
 		VexComplianceFramework framework = resolveVexFramework(vad.getOrg());
-		validateVexConstraints(framework, effectiveState, effJustification, effDetails, effResponses, effRecommendation, effWorkaround);
+		validateVexConstraints(framework, new VexValidationInput(effectiveState, effJustification,
+				effDetails, effResponses, effRecommendation, effWorkaround));
 		
 		// Update finding aliases if provided
 		if (findingAliases != null) {
