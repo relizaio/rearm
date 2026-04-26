@@ -100,4 +100,15 @@ public class ReleaseServiceCweParseTest {
 		input.add("CWE-79");
 		assertEquals(List.of(79), ReleaseService.parseCwesToCdxIntegers(input));
 	}
+
+	@Test
+	void duplicateIntegerValues_dedupedInOutput() {
+		// Cross-format collision: union-merge can produce both "CWE-79" and "79" for the same
+		// CWE id when one source is post-Phase-1b (prefixed) and another is pre (bare). The
+		// emitter must collapse both to a single integer in the CDX output.
+		Set<String> input = new LinkedHashSet<>();
+		input.add("CWE-79");
+		input.add("79");
+		assertEquals(List.of(79), ReleaseService.parseCwesToCdxIntegers(input));
+	}
 }

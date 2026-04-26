@@ -788,7 +788,14 @@ public class ReleaseMetricsDto implements Cloneable {
 				VulnerabilitySeverity bestSeverity = !combinedSeverities.isEmpty()
 						? selectBestSeverity(combinedSeverities)
 						: existing.severity();
-				
+
+				// Union enrichment fields across both sources. Pre-fix this took the first
+				// occurrence's values, dropping data when the first artifact's metrics had
+				// nulls (Jackson coercion or pre-Phase-1b ingestion). For sets we union;
+				// for scalar fields (description/published/updated) we prefer non-null.
+				Set<String> combinedCwes = unionNullSafe(existing.cwes(), x.cwes());
+				Set<VulnerabilityReferenceDto> combinedRefs = unionNullSafe(existing.references(), x.references());
+
 				VulnerabilityDto merged = new VulnerabilityDto(
 					existing.purl(),
 					existing.vulnId(),
@@ -799,7 +806,11 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.analysisState(),
 					existing.analysisDate(),
 					selectEarlierDate(existing.attributedAt(), x.attributedAt()),
-					existing.description(), existing.cwes(), existing.references(), existing.published(), existing.updated()
+					firstNonBlank(existing.description(), x.description()),
+					combinedCwes.isEmpty() ? null : combinedCwes,
+					combinedRefs.isEmpty() ? null : combinedRefs,
+					firstNonNull(existing.published(), x.published()),
+					firstNonNull(existing.updated(), x.updated())
 				);
 				vulnMap.put(xKey, merged);
 			} else {
@@ -1084,9 +1095,52 @@ public class ReleaseMetricsDto implements Cloneable {
 		for (VulnerabilityDto vuln : vulnerabilities) {
 			earliestAttributedAt = selectEarlierDate(earliestAttributedAt, vuln.attributedAt());
 		}
-		
+
+		// Union enrichment fields across all alias-equivalent vulns. Same rationale as
+		// mergeVulnerabilityDtos: prior baseVuln-only behaviour silently dropped CWEs and
+		// references whenever the alias-collapse-base happened to lack them.
+		Set<String> mergedCwes = new LinkedHashSet<>();
+		Set<VulnerabilityReferenceDto> mergedRefs = new LinkedHashSet<>();
+		String mergedDescription = null;
+		ZonedDateTime mergedPublished = null;
+		ZonedDateTime mergedUpdated = null;
+		for (VulnerabilityDto vuln : vulnerabilities) {
+			if (vuln.cwes() != null) mergedCwes.addAll(vuln.cwes());
+			if (vuln.references() != null) mergedRefs.addAll(vuln.references());
+			if (mergedDescription == null && vuln.description() != null && !vuln.description().isBlank()) {
+				mergedDescription = vuln.description();
+			}
+			if (mergedPublished == null) mergedPublished = vuln.published();
+			if (mergedUpdated == null) mergedUpdated = vuln.updated();
+		}
+
 		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate(), earliestAttributedAt,
-				baseVuln.description(), baseVuln.cwes(), baseVuln.references(), baseVuln.published(), baseVuln.updated());
+				mergedDescription,
+				mergedCwes.isEmpty() ? null : mergedCwes,
+				mergedRefs.isEmpty() ? null : mergedRefs,
+				mergedPublished, mergedUpdated);
+	}
+
+	/**
+	 * Union two nullable sets into a {@link LinkedHashSet}; null inputs treated as empty.
+	 * Used by the per-vulnerability merge to preserve enrichment data across artifact sources
+	 * when one source has the field and the other has null.
+	 */
+	private static <T> Set<T> unionNullSafe(Set<T> a, Set<T> b) {
+		Set<T> out = new LinkedHashSet<>();
+		if (a != null) out.addAll(a);
+		if (b != null) out.addAll(b);
+		return out;
+	}
+
+	private static <T> T firstNonNull(T a, T b) {
+		return a != null ? a : b;
+	}
+
+	private static String firstNonBlank(String a, String b) {
+		if (a != null && !a.isBlank()) return a;
+		if (b != null && !b.isBlank()) return b;
+		return null;
 	}
 	
 	/**

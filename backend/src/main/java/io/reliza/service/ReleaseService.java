@@ -2476,8 +2476,11 @@ public class ReleaseService {
 	 * typo, etc.). Returns an empty list when the input is null or has no parseable entries.
 	 */
 	static List<Integer> parseCwesToCdxIntegers(Set<String> cwes) {
-		List<Integer> out = new ArrayList<>();
-		if (cwes == null || cwes.isEmpty()) return out;
+		if (cwes == null || cwes.isEmpty()) return new ArrayList<>();
+		// LinkedHashSet preserves insertion order while folding duplicates that arise when
+		// the union-merge holds both "CWE-79" and "79" for the same id (e.g. one artifact
+		// pre-Phase-1b, another post-).
+		java.util.LinkedHashSet<Integer> dedup = new java.util.LinkedHashSet<>();
 		for (String cwe : cwes) {
 			if (cwe == null) continue;
 			String numericPart = cwe.trim();
@@ -2485,10 +2488,10 @@ public class ReleaseService {
 				numericPart = numericPart.substring(4);
 			}
 			try {
-				out.add(Integer.parseInt(numericPart));
+				dedup.add(Integer.parseInt(numericPart));
 			} catch (NumberFormatException ignored) { /* skip non-numeric */ }
 		}
-		return out;
+		return new ArrayList<>(dedup);
 	}
 
 	/**
