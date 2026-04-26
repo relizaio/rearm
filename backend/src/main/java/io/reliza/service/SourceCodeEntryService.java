@@ -18,8 +18,11 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import io.reliza.common.CommonVariables.TableName;
 
@@ -64,7 +67,18 @@ public class SourceCodeEntryService {
 	
 	@Autowired
 	private VcsRepositoryService vcsRepositoryService;
-	
+
+	/**
+	 * Self-injection so the routine can call {@link #createSourceCodeEntry} through
+	 * the Spring proxy and pick up its REQUIRES_NEW propagation. A direct
+	 * {@code this.*} call bypasses AOP — a unique-violation in the create would
+	 * mark the routine's transaction rollback-only and prevent the catch-and-recover
+	 * merge path from completing.
+	 */
+	@Autowired
+	@Lazy
+	private SourceCodeEntryService self;
+
 	private final SourceCodeEntryRepository repository;
 	
 	SourceCodeEntryService(SourceCodeEntryRepository repository) {
@@ -85,7 +99,11 @@ public class SourceCodeEntryService {
 			BranchData bd = obd.get();
 			// check vs branch vcs and return error if doesn't match
 			UUID vcsUuidFromBranch = bd.getVcs();
-			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepositoryWriteLocked(vcsUuidFromBranch);
+			// Read-only lookup. SCE-level dedup that previously relied on this
+			// pessimistic lock is now enforced by the V26 unique index on
+			// source_code_entries (vcs, commit), with catch-and-recover in the
+			// routine handling the race for the loser.
+			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepository(vcsUuidFromBranch);
 			String vcsUri = sceDto.getUri();
 			if (StringUtils.isNotEmpty(vcsUri) && ovr.isPresent() && !Utils.uriEquals(vcsUri, VcsRepositoryData.dataFromRecord(ovr.get()).getUri())) {
 				throw new RelizaException("VCS repository mismatch: branch VCS does not match the supplied URI");
@@ -117,41 +135,52 @@ public class SourceCodeEntryService {
 	
 	@Transactional
 	private Optional<SourceCodeEntry> populateSourceCodeEntryByVcsAndCommitRoutine (SceDto sceDto, boolean createIfMissing, WhoUpdated wu) {
-		// log.info("getSourceCodeEntryByVcsAndCommit - createIfMissing: {}", createIfMissing);
 		Optional<SourceCodeEntry> osce = repository.findByCommitAndVcs(sceDto.getCommit(), sceDto.getVcs().toString());
 		if (osce.isEmpty() && createIfMissing) {
 			log.debug("osce is empty creating new ...");
-			osce = Optional.of(createSourceCodeEntry(sceDto, wu));
-		} else {
-			var sce = osce.get();
-			log.debug("Existing sce found, updating ...: {}", osce.get());
-			SourceCodeEntryData existingSceData = SourceCodeEntryData.dataFromRecord(sce);
-			SourceCodeEntryData sced = SourceCodeEntryData.scEntryDataFactory(sceDto);
-			if (null != existingSceData.getArtifacts() && !existingSceData.getArtifacts().isEmpty()) {
-				Set<String> dedupArts = new HashSet<>();
-				if (null != sced.getArtifacts() && !sced.getArtifacts().isEmpty()) {
-					var dedupList = sced.getArtifacts().stream()
-						.map(x -> x.artifactUuid().toString() + x.componentUuid()).toList();
-					dedupArts.addAll(dedupList);
-					for (var esda : existingSceData.getArtifacts()) {
-						String dedupKey = esda.artifactUuid().toString() + esda.componentUuid();
-						if (!dedupList.contains(dedupKey)) {
-							List<SCEArtifact> updArts = new ArrayList<>(sced.getArtifacts());
-							updArts.add(esda);
-							sced.setArtifacts(updArts);
-						}
-					}
-				} else {
-					sced.setArtifacts(existingSceData.getArtifacts());
-				}
+			try {
+				// REQUIRES_NEW via the proxy — keeps a unique-violation from the
+				// V26 (vcs, commit) index from poisoning this routine's tx.
+				return Optional.of(self.createSourceCodeEntry(sceDto, wu));
+			} catch (DataIntegrityViolationException dive) {
+				// Lost the race with a concurrent SCE create on the same (vcs, commit).
+				// Re-read the winner's row and fall through to the merge branch so the
+				// loser's incoming artifact list still lands on the canonical SCE.
+				osce = repository.findByCommitAndVcs(sceDto.getCommit(), sceDto.getVcs().toString());
+				if (osce.isEmpty()) throw dive;
+				log.info("SCE create raced for commit {} on vcs {}, merging into existing {}",
+						sceDto.getCommit(), sceDto.getVcs(), osce.get().getUuid());
 			}
-			Map<String,Object> recordData = Utils.dataToRecord(sced);
-			osce = Optional.of(saveSourceCodeEntry(sce, recordData, wu));
 		}
-		return osce;
+		var sce = osce.get();
+		log.debug("Existing sce found, updating ...: {}", sce);
+		SourceCodeEntryData existingSceData = SourceCodeEntryData.dataFromRecord(sce);
+		SourceCodeEntryData sced = SourceCodeEntryData.scEntryDataFactory(sceDto);
+		if (null != existingSceData.getArtifacts() && !existingSceData.getArtifacts().isEmpty()) {
+			Set<String> dedupArts = new HashSet<>();
+			if (null != sced.getArtifacts() && !sced.getArtifacts().isEmpty()) {
+				var dedupList = sced.getArtifacts().stream()
+					.map(x -> x.artifactUuid().toString() + x.componentUuid()).toList();
+				dedupArts.addAll(dedupList);
+				for (var esda : existingSceData.getArtifacts()) {
+					String dedupKey = esda.artifactUuid().toString() + esda.componentUuid();
+					if (!dedupList.contains(dedupKey)) {
+						List<SCEArtifact> updArts = new ArrayList<>(sced.getArtifacts());
+						updArts.add(esda);
+						sced.setArtifacts(updArts);
+					}
+				}
+			} else {
+				sced.setArtifacts(existingSceData.getArtifacts());
+			}
+		}
+		Map<String,Object> recordData = Utils.dataToRecord(sced);
+		return Optional.of(saveSourceCodeEntry(sce, recordData, wu));
 	}
 
-	@Transactional
+	// REQUIRES_NEW so a unique-violation on (vcs, commit) rolls back only this
+	// attempt's tx, letting the routine's catch-and-recover proceed.
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public SourceCodeEntry createSourceCodeEntry (SceDto sceDto, WhoUpdated wu) {
 		SourceCodeEntry sce = new SourceCodeEntry();
 		VcsRepositoryData vrd = vcsRepositoryService.getVcsRepositoryData(sceDto.getVcs()).get(); //must exist - TODO error handling

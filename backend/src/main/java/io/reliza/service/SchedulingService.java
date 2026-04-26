@@ -48,7 +48,11 @@ public class SchedulingService {
     
     @Autowired
     IntegrationService integrationService;
-    
+
+    @Autowired
+    SbomComponentService sbomComponentService;
+
+
     @Value("${relizaprops.enableDtrackCleanupScheduler}")
     private boolean enableDtrackCleanupScheduler;
     
@@ -104,6 +108,13 @@ public class SchedulingService {
 		}
     }
     
+    /**
+     * Every-minute drain. Originally just dependency-track work, now also
+     * runs the SBOM-component reconcile queue — both kinds of work share
+     * the {@code RESOLVE_DEPENDENCY_TRACK_STATUS} advisory lock so that at
+     * most one replica processes them at any moment, and they run serially
+     * within a tick.
+     */
     @Scheduled(fixedRateString = "PT1M")
     public void scheduleResolveDependencyTrackStatus () {
         try {
@@ -115,6 +126,7 @@ public class SchedulingService {
 					artifactService.submitPendingArtifactsToDependencyTrack();
 					artifactService.initialProcessArtifactsOnDependencyTrack();
 					releaseService.computeMetricsForAllUnprocessedReleases();
+					sbomComponentService.processPendingReconciles(50);
 				} catch (Exception e) {
 					log.error("Exception in resolving dependency track", e);
 				} finally {

@@ -239,6 +239,9 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	private ReleaseMetricsDto metrics = new ReleaseMetricsDto();
 
 	@JsonIgnore
+	private Boolean sbomReconcilePending = Boolean.FALSE;
+
+	@JsonIgnore
 	public Set<UUID> getCoreParentReleases () {
 		return getParentReleases().stream().map(x -> x.getRelease()).collect(Collectors.toSet());
 	}
@@ -323,6 +326,8 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 				.map(m -> Utils.OM.convertValue(m, ReleaseUpdateEvent.class))
 				.collect(java.util.stream.Collectors.toCollection(LinkedList::new)));
 		}
+		FlowControl fc = r.getFlowControl();
+		rd.setSbomReconcilePending(fc != null && fc.sbomReconcileRequestedAt() != null);
 		return rd;
 	}
 	

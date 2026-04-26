@@ -167,6 +167,27 @@ public class ArtifactDataFetcher {
 		return artList;
 	}
 
+	/**
+	 * Surface the rebom-side enrichment status so the UI can render a per-artifact
+	 * pending/failed/done indicator without hitting rebom directly. Returns null
+	 * for artifacts that have no internalBom (non-BOM types or BOMs that never
+	 * landed in rebom) — the UI hides the badge in that case.
+	 */
+	@DgsData(parentType = "Artifact", field = "enrichmentStatus")
+	public RebomService.EnrichmentStatus enrichmentStatusOfArtifact(DgsDataFetchingEnvironment dfe) {
+		ArtifactData ad = dfe.getSource();
+		if (ad == null || ad.getInternalBom() == null || ad.getInternalBom().id() == null) {
+			return null;
+		}
+		try {
+			RebomService.BomMeta meta = rebomService.getBomMetadataById(ad.getInternalBom().id(), ad.getOrg());
+			return meta == null ? null : meta.enrichmentStatus();
+		} catch (Exception e) {
+			log.debug("Could not resolve enrichmentStatus for artifact {}: {}", ad.getUuid(), e.getMessage());
+			return null;
+		}
+	}
+
 	// @Transactional
 	// @PreAuthorize("isAuthenticated()")
 	// @DgsData(parentType = "Mutation", field = "updateArtifactManual")

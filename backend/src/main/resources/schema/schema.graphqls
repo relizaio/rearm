@@ -47,6 +47,12 @@ type Query {
 	
 	# Artifact Collections
 	getAcollectionsOfRelease(releaseUuid: ID!): [AcollectionData]
+
+	# Detailed SBOM components aggregated across all BOM artifacts of a release.
+	# Each entry is keyed by the canonical purl (purl with qualifiers stripped);
+	# artifactParticipations carries the list of artifacts that referenced this
+	# component and the exact (qualifier-carrying) purls each one used.
+	getReleaseSbomComponents(releaseUuid: ID!): [ReleaseSbomComponent]
 	
 	configuredBaseIntegrations(org: ID!): [IntegrationType]
 	ciIntegrations(org: ID!): [CiIntegration]
@@ -249,7 +255,12 @@ type Mutation {
 	and LIFECYCLE snapshots.
 	"""
 	releaseCdxVexExport(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
-	
+	"""
+	SaaS-only. Generate a CycloneDX 1.6 VEX document with approval-snapshot support.
+	Precedence: targetLifecycle > targetApproval > upToDate. Same filtering and metadata contract
+	as releaseCdxVexExport.
+	"""
+	releaseCdxVexExportWithApproval(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
 	"""
 	Generate an OpenVEX 0.2.0 document for a release. Reuses the same enrichment + snapshot +
 	filtering pipeline as releaseCdxVexExport; each retained vulnerability is emitted as one
@@ -258,8 +269,20 @@ type Mutation {
 	IN_TRIAGE→under_investigation. CE-compatible: supports DATE and LIFECYCLE snapshots.
 	"""
 	releaseOpenVexExport(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
-	
+	"""
+	SaaS-only. Generate an OpenVEX 0.2.0 document with approval-snapshot support.
+	Precedence: targetLifecycle > targetApproval > upToDate. Same status-mapping contract as
+	releaseOpenVexExport.
+	"""
+	releaseOpenVexExportWithApproval(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
+
 	createFeatureSetFromRelease(featureSetName: String!, releaseUuid: ID!): Branch
+
+	# Synchronously rebuild the SBOM component / dependency aggregation for a single release.
+	# Operator escape hatch when a release is left with stale or empty release_sbom_components rows
+	# (e.g. an earlier async reconcile failed). Returns true on success; throws on failure so the
+	# caller sees the underlying error.
+	reconcileReleaseSbomComponents(releaseUuid: ID!): Boolean
 
 	# Programmatic
 	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
@@ -1032,6 +1055,10 @@ type Release {
 	identifiers: [Identifier]
 	releaseCollection: ReleaseCollection
 	intermediateFailedReleases: [IntermediateFailedRelease]
+	# True if the release has been queued for SBOM-component reconciliation
+	# but the every-minute scheduler hasn't drained it yet. Use to surface a
+	# "reconcile pending" indicator in the UI.
+	sbomReconcilePending: Boolean
 }
 
 type IntermediateFailedRelease {
@@ -1175,6 +1202,18 @@ type Artifact {
 	componentUuid: ID
 	artifacts: [ID]
 	artifactDetails: [Artifact]
+	# Rebom-side enrichment status for this artifact's BOM. Null for artifacts
+	# without an internalBom (non-BOM types, or BOMs that failed to land in
+	# rebom). The UI uses this to render PENDING / COMPLETED / FAILED / SKIPPED
+	# pills next to the artifact row.
+	enrichmentStatus: EnrichmentStatus
+}
+
+enum EnrichmentStatus {
+	PENDING
+	COMPLETED
+	FAILED
+	SKIPPED
 }
 
 type SyncDtrackStatusResponse {
@@ -3058,6 +3097,61 @@ enum CollectionUpdateReasonType {
 	ARTIFACT_UPDATED
 	ARTIFACT_ADDED
 	ARTIFACT_REMOVED
+}
+
+# Canonical SBOM component identity shared across releases. canonicalPurl is
+# the purl with qualifiers and subpath stripped; name / group / version /
+# type are cached from the purl for quick display and filtering. isRoot is
+# true when at least one uploaded BOM had this component as its
+# metadata.component (the "subject" of the BOM).
+type SbomComponent {
+	uuid: ID!
+	canonicalPurl: String!
+	type: String
+	group: String
+	name: String
+	version: String
+	isRoot: Boolean
+}
+
+# One row per (release, canonical component). artifactParticipations lists
+# every artifact inside this release whose BOM referenced the component,
+# together with the exact (qualifier-carrying) purls that artifact used.
+# Edges are persisted as in-edges (parents) for fast impact-analysis lookups;
+# dependedOnBy is therefore a direct read of the persisted parents column,
+# while dependencies is reconstructed in memory by inverting parents across
+# all rows of the same release. Each forward edge records the resolved
+# target plus per-artifact declarations (preserving exact source/target
+# purls).
+type ReleaseSbomComponent {
+	uuid: ID!
+	releaseUuid: ID!
+	sbomComponentUuid: ID!
+	component: SbomComponent
+	artifactParticipations: [SbomArtifactParticipation]
+	dependencies: [ReleaseSbomDependency]
+	dependedOnBy: [ReleaseSbomComponent]
+	createdDate: DateTime
+	lastUpdatedDate: DateTime
+}
+
+type SbomArtifactParticipation {
+	artifact: ID!
+	exactPurls: [String]
+}
+
+type ReleaseSbomDependency {
+	targetSbomComponentUuid: ID!
+	targetCanonicalPurl: String!
+	relationshipType: String!
+	target: ReleaseSbomComponent
+	declaringArtifacts: [SbomDependencyDeclaration]
+}
+
+type SbomDependencyDeclaration {
+	artifact: ID!
+	sourceExactPurl: String!
+	targetExactPurl: String!
 }
 
 type DownloadLog {

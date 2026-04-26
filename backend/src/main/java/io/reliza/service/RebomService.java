@@ -34,6 +34,7 @@ import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.WeaknessDto;
+import io.reliza.model.tea.Rebom.ParsedBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -284,6 +285,34 @@ public class RebomService {
         var br = response.get("bomById");
         JsonNode bomJson = Utils.OM.valueToTree(br);
         return bomJson;
+    }
+
+    /**
+     * Fetch parsed SBOM components and dependencies for a BOM identified by
+     * UUID or serialNumber. A single round trip returns both arrays so the
+     * backend can ingest components and edges from the same payload.
+     */
+    public ParsedBom parseBom(UUID bomSerialNumber, UUID org) {
+        String query = """
+            query parseBomById ($id: ID!, $org: ID!) {
+                parseBomById(id: $id, org: $org) {
+                    components {
+                        canonicalPurl fullPurl type group name version isRoot
+                    }
+                    dependencies {
+                        sourceCanonicalPurl sourceFullPurl
+                        targetCanonicalPurl targetFullPurl
+                        relationshipType
+                    }
+                }
+            }""";
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("id", bomSerialNumber.toString());
+        variables.put("org", org.toString());
+        Map<String, Object> response = executeGraphQLQuery(query, variables).block();
+        Object raw = response.get("parseBomById");
+        if (raw == null) return new ParsedBom(List.of(), List.of());
+        return Utils.OM.convertValue(raw, ParsedBom.class);
     }
 
     /**

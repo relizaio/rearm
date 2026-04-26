@@ -269,48 +269,52 @@ class VariableQueries {
 		""";
 
 	protected static final String LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_SOURCE_CODE_ENTRY = """
-			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
-			FROM rearm.source_code_entries sce
-			JOIN rearm.releases r ON r.record_data->>'sourceCodeEntry' = sce.uuid::text
-			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE sce.record_data->>'org' = :orgUuidAsString
-			AND r.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'org' = :orgUuidAsString
+			SELECT DISTINCT (art_elem->>'artifactUuid') AS artifact_uuid
+			FROM rearm.branches b
+			JOIN rearm.releases r ON r.record_data->>'branch' = b.uuid::text
+			JOIN rearm.source_code_entries sce ON sce.uuid::text = r.record_data->>'sourceCodeEntry'
+			CROSS JOIN LATERAL jsonb_array_elements(
+				CASE WHEN jsonb_typeof(sce.record_data->'artifacts') = 'array'
+					THEN sce.record_data->'artifacts' ELSE '[]'::jsonb END
+			) AS art_elem
+			WHERE b.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'status' != 'ARCHIVED'
-			AND sce.record_data->'artifacts' IS NOT NULL
+			AND r.record_data->>'sourceCodeEntry' IS NOT NULL
 		""";
 
 	protected static final String LIST_ACTIVE_SCE_ARTIFACT_UUIDS_VIA_COMMITS = """
-			SELECT DISTINCT jsonb_array_elements(sce.record_data->'artifacts')->>'artifactUuid' as artifact_uuid
-			FROM rearm.source_code_entries sce
-			JOIN rearm.releases r ON r.record_data->>'commits' IS NOT NULL
-				AND sce.uuid::text IN (SELECT jsonb_array_elements_text(r.record_data->'commits'))
-			JOIN rearm.branches b ON r.record_data->>'branch' = b.uuid::text
-			WHERE sce.record_data->>'org' = :orgUuidAsString
-			AND r.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'org' = :orgUuidAsString
+			SELECT DISTINCT (art_elem->>'artifactUuid') AS artifact_uuid
+			FROM rearm.branches b
+			JOIN rearm.releases r ON r.record_data->>'branch' = b.uuid::text
+			CROSS JOIN LATERAL jsonb_array_elements_text(
+				CASE WHEN jsonb_typeof(r.record_data->'commits') = 'array'
+					THEN r.record_data->'commits' ELSE '[]'::jsonb END
+			) AS commit_uuid
+			JOIN rearm.source_code_entries sce ON sce.uuid::text = commit_uuid
+			CROSS JOIN LATERAL jsonb_array_elements(
+				CASE WHEN jsonb_typeof(sce.record_data->'artifacts') = 'array'
+					THEN sce.record_data->'artifacts' ELSE '[]'::jsonb END
+			) AS art_elem
+			WHERE b.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'status' != 'ARCHIVED'
-			AND sce.record_data->'artifacts' IS NOT NULL
 		""";
 
-	protected static final String EXISTS_ACTIVE_DELIVERABLE_FOR_ARTIFACT = """
-			SELECT 1
-			FROM rearm.deliverables d
-			JOIN rearm.variants v ON EXISTS (
-				SELECT 1 FROM jsonb_array_elements_text(v.record_data->'outboundDeliverables') AS del
-				WHERE del = d.uuid::text
-			)
-			JOIN rearm.releases r ON r.uuid::text = v.record_data->>'release'
-			JOIN rearm.branches b ON b.uuid::text = r.record_data->>'branch'
-			WHERE d.record_data->>'org' = :orgUuidAsString
-			AND r.record_data->>'org' = :orgUuidAsString
-			AND b.record_data->>'org' = :orgUuidAsString
+	protected static final String LIST_ACTIVE_DELIVERABLE_ARTIFACT_UUIDS = """
+			SELECT DISTINCT art AS artifact_uuid
+			FROM rearm.branches b
+			JOIN rearm.releases r ON r.record_data->>'branch' = b.uuid::text
+			JOIN rearm.variants v ON v.record_data->>'release' = r.uuid::text
+			CROSS JOIN LATERAL jsonb_array_elements_text(
+				CASE WHEN jsonb_typeof(v.record_data->'outboundDeliverables') = 'array'
+					THEN v.record_data->'outboundDeliverables' ELSE '[]'::jsonb END
+			) AS od
+			JOIN rearm.deliverables d ON d.uuid::text = od
+			CROSS JOIN LATERAL jsonb_array_elements_text(
+				CASE WHEN jsonb_typeof(d.record_data->'artifacts') = 'array'
+					THEN d.record_data->'artifacts' ELSE '[]'::jsonb END
+			) AS art
+			WHERE b.record_data->>'org' = :orgUuidAsString
 			AND b.record_data->>'status' != 'ARCHIVED'
-			AND EXISTS (
-				SELECT 1 FROM jsonb_array_elements_text(d.record_data->'artifacts') AS art
-				WHERE art = :artifactUuid
-			)
-			LIMIT 1
 		""";
 	
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """
@@ -670,7 +674,7 @@ class VariableQueries {
 			SELECT rlzs.*, jsonb_array_elements_text(record_data->'artifacts')::uuid as artifact_uuid
 			FROM rearm.releases rlzs where rlzs.record_data->>'artifacts' != '[]'
 		)
-		SELECT DISTINCT rwa.uuid, rwa.revision, rwa.metrics_revision, rwa.schema_version, rwa.created_date, rwa.last_updated_date, rwa.record_data, rwa.metrics, rwa.approval_events, rwa.update_events
+		SELECT DISTINCT rwa.uuid, rwa.revision, rwa.metrics_revision, rwa.schema_version, rwa.created_date, rwa.last_updated_date, rwa.record_data, rwa.metrics, rwa.approval_events, rwa.update_events, rwa.flow_control
 		FROM releases_with_artifacts rwa
 		INNER JOIN unprocessedArts ua ON ua.uuid = rwa.artifact_uuid
 		WHERE coalesce(cast (rwa.metrics->>'lastScanned' as float), 0) > :cutoffTimestamp

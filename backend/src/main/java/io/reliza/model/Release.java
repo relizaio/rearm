@@ -64,7 +64,15 @@ public class Release implements Serializable, RelizaEntity {
 	@Type(JsonBinaryType.class)
 	@Column(name = "update_events", columnDefinition = ModelProperties.JSONB)
 	private List<Map<String,Object>> updateEvents;
-	
+
+	/**
+	 * Per-release scheduling state for async flows. Today's only consumer is
+	 * the SBOM-component reconcile queue. See {@link FlowControl}.
+	 */
+	@Type(JsonBinaryType.class)
+	@Column(name = "flow_control", columnDefinition = ModelProperties.JSONB)
+	private FlowControl flowControl;
+
 	@Override
 	public UUID getUuid() {
 		return uuid;
@@ -141,6 +149,14 @@ public class Release implements Serializable, RelizaEntity {
 
 	public void setUpdateEvents(List<Map<String,Object>> updateEvents) {
 		this.updateEvents = updateEvents;
+	}
+
+	public FlowControl getFlowControl() {
+		return flowControl;
+	}
+
+	public void setFlowControl(FlowControl flowControl) {
+		this.flowControl = flowControl;
 	}
 
 	@Override

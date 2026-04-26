@@ -164,6 +164,10 @@ public class ReleaseService {
 	@Autowired
 	private VulnAnalysisService vulnAnalysisService;
 
+	@Autowired
+	@org.springframework.context.annotation.Lazy
+	private SbomComponentService sbomComponentService;
+
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
 	private final ReleaseRepository repository;
@@ -1193,7 +1197,8 @@ public class ReleaseService {
 						null, null, artifactUuid, ZonedDateTime.now(), wu);
 				rd.addUpdateEvent(rue);
 				ossReleaseService.saveRelease(rOpt.get(), rd, wu);
-				added = true;			
+				added = true;
+				sbomComponentService.requestReconcile(releaseUuid);
 		}
 		return added;
 	}
@@ -1349,7 +1354,8 @@ public class ReleaseService {
 						null, null, artifactUuid, ZonedDateTime.now(), wu);
 				rd.addUpdateEvent(rue);
 				ossReleaseService.saveRelease(rOpt.get(), rd, wu);
-				added = true;			
+				added = true;
+				sbomComponentService.requestReconcile(releaseUuid);
 		}
 		return added;
 	}
@@ -1557,6 +1563,16 @@ public class ReleaseService {
 						log.error("Exception on reconcileMergedSbomRoutine: {}", e);
 					}
 				}
+			}
+		}
+		// Mirror the merged-SBOM reconcile for the detailed per-component tables.
+		// Covers deliverable-scoped and SCE-scoped artifact changes that don't flow
+		// through addArtifact/replaceArtifact. Pass the source release plus all
+		// greedy-located products so a dep change propagates upward.
+		sbomComponentService.requestReconcile(rd.getUuid());
+		for (ReleaseData r : rds) {
+			if (!r.getUuid().equals(rd.getUuid())) {
+				sbomComponentService.requestReconcile(r.getUuid());
 			}
 		}
 		log.info("Reconcile Routine end");

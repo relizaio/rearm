@@ -329,4 +329,62 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<String> listReleaseUuidsByComponents(Collection<String> componentUuids);
 
+	/**
+	 * Mark the release as needing SBOM-component reconciliation. First-write
+	 * wins on the timestamp so FIFO drain order is preserved when several
+	 * triggers fire close together; subsequent calls are no-ops until the
+	 * scheduler clears the sbomReconcile* keys on flow_control.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{sbomReconcileRequestedAt}', to_jsonb(now()), true) "
+			+ "WHERE uuid = :uuid AND (flow_control->>'sbomReconcileRequestedAt') IS NULL", nativeQuery = true)
+	void markSbomReconcileRequested(@Param("uuid") UUID uuid);
+
+	/**
+	 * Picked up by the every-minute dependency-track scheduler. Excludes rows
+	 * still in failure-backoff. Oldest-first to drain backed-up work fairly.
+	 */
+	@Query(value = "SELECT * FROM rearm.releases r "
+			+ "WHERE r.flow_control->>'sbomReconcileRequestedAt' IS NOT NULL "
+			+ "AND (r.flow_control->>'sbomReconcileSkipUntil' IS NULL "
+			+ "     OR (r.flow_control->>'sbomReconcileSkipUntil')::timestamptz < now()) "
+			+ "ORDER BY (r.flow_control->>'sbomReconcileRequestedAt')::timestamptz ASC "
+			+ "LIMIT :batchLimit", nativeQuery = true)
+	List<Release> findReleasesPendingSbomReconcile(@Param("batchLimit") int batchLimit);
+
+	/**
+	 * Clear the queue marker after a successful reconcile. Strips just the
+	 * sbomReconcile* keys (preserves any future flow keys that may be
+	 * sharing the column) and collapses an emptied object back to NULL.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = NULLIF("
+			+ "    flow_control - 'sbomReconcileRequestedAt' - 'sbomReconcileSkipUntil' - 'sbomReconcileFailureCount', "
+			+ "    '{}'::jsonb) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	void clearSbomReconcileRequested(@Param("uuid") UUID uuid);
+
+	/**
+	 * Record a reconcile failure: bump the counter and push the next attempt
+	 * out by {@code skipSeconds}. Leaves the requested-at timestamp in place
+	 * so the row stays queued and retains FIFO position.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set("
+			+ "    jsonb_set(coalesce(flow_control, '{}'::jsonb), "
+			+ "              '{sbomReconcileFailureCount}', "
+			+ "              to_jsonb(coalesce((flow_control->>'sbomReconcileFailureCount')::int, 0) + 1), "
+			+ "              true), "
+			+ "    '{sbomReconcileSkipUntil}', "
+			+ "    to_jsonb((now() + (:skipSeconds || ' seconds')::interval)::text), "
+			+ "    true) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	void recordSbomReconcileFailure(@Param("uuid") UUID uuid, @Param("skipSeconds") int skipSeconds);
+
 }

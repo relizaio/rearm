@@ -73,12 +73,51 @@ public class Rebom {
     }
 
     public record RebomResponse(
-        UUID uuid, 
-        OASResponseDto bom, 
-        RebomOptions meta, 
+        UUID uuid,
+        OASResponseDto bom,
+        RebomOptions meta,
         Boolean duplicate
     ) {}
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record InternalBom (UUID id, ArtifactBelongsTo belongsTo){}
+
+    /**
+     * Parsed SBOM component as returned by rebom's parseBomById query.
+     * canonicalPurl is the purl with qualifiers + subpath stripped; fullPurl
+     * preserves the original purl exactly as it appeared in the BOM.
+     * isRoot is true for the node synthesised from bom.metadata.component.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ParsedBomComponent(
+        String canonicalPurl,
+        String fullPurl,
+        String type,
+        String group,
+        String name,
+        String version,
+        Boolean isRoot
+    ) {}
+
+    /**
+     * One declared dependency edge as returned by rebom's parseBomById query.
+     * Both endpoints have been resolved through a bom-ref → purl index, so
+     * every edge is guaranteed to name components that will be present in
+     * the components list above.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ParsedBomDependency(
+        String sourceCanonicalPurl,
+        String sourceFullPurl,
+        String targetCanonicalPurl,
+        String targetFullPurl,
+        String relationshipType
+    ) {}
+
+    /** Combined response of rebom's parseBomById query. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ParsedBom(
+        java.util.List<ParsedBomComponent> components,
+        java.util.List<ParsedBomDependency> dependencies
+    ) {}
 
 }
