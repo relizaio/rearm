@@ -934,16 +934,16 @@ async function executeSbomSearchBatch(queries: { name: string; version?: string 
     }
     const response = await graphqlClient.query({
         query: gql`
-            query sbomComponentSearch($orgUuid: ID!, $queries: [SbomComponentSearchInput!]!, $perspectiveUuid: ID) {
-                sbomComponentSearch(orgUuid: $orgUuid, queries: $queries, perspectiveUuid: $perspectiveUuid) {
+            query sbomComponentSearchNative($orgUuid: ID!, $queries: [SbomComponentSearchInput!]!, $perspectiveUuid: ID) {
+                sbomComponentSearchNative(orgUuid: $orgUuid, queries: $queries, perspectiveUuid: $perspectiveUuid) {
                     purl
-                    projects
+                    sbomComponents
                 }
             }`,
         variables,
         fetchPolicy: 'no-cache'
     })
-    return response.data.sbomComponentSearch
+    return (response.data as any).sbomComponentSearchNative
 }
 
 async function searchSbomComponent (e: Event) {
@@ -996,21 +996,21 @@ async function searchSbomComponent (e: Event) {
     }
 }
 
-async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
+async function searchReleasesBySbomComponents (sbomComponentUuids: string[]) {
     document.body.style.cursor = 'wait'
     dtrackReleasesLoading.value = true
     try {
         const variables: any = {
             orgUuid: myorg.value.uuid,
-            dtrackProjects
+            sbomComponentUuids
         }
         if (currentPerspectiveUuid.value && currentPerspectiveUuid.value !== 'default') {
             variables.perspectiveUuid = currentPerspectiveUuid.value
         }
         const response = await graphqlClient.query({
             query: gql`
-                query releasesByDtrackProjects($orgUuid: ID!, $dtrackProjects: [ID], $perspectiveUuid: ID) {
-                    releasesByDtrackProjects(orgUuid: $orgUuid, dtrackProjects: $dtrackProjects, perspectiveUuid: $perspectiveUuid) {
+                query releasesBySbomComponents($orgUuid: ID!, $sbomComponentUuids: [ID]!, $perspectiveUuid: ID) {
+                    releasesBySbomComponents(orgUuid: $orgUuid, sbomComponentUuids: $sbomComponentUuids, perspectiveUuid: $perspectiveUuid) {
                         uuid
                         name
                         type
@@ -1034,7 +1034,7 @@ async function searchReleasesByDtrackProjects (dtrackProjects: string[]) {
             variables,
             fetchPolicy: 'no-cache'
         })
-        dtrackSearchReleases.value = (response.data as any).releasesByDtrackProjects || []
+        dtrackSearchReleases.value = (response.data as any).releasesBySbomComponents || []
     } catch (err: any) {
         Swal.fire(
             'Error!',
@@ -1203,7 +1203,10 @@ const dtrackSearchResultRows = [
 
 async function handlePurlSearchClick (row: any) {
     selectedPurl.value = row.purl
-    searchReleasesByDtrackProjects(row.projects)
+    // sbomComponents is the canonical sbom_components.uuid array (typically length 1
+    // since canonical purls are deduplicated globally; the array shape is preserved
+    // for parity with the legacy projects field).
+    searchReleasesBySbomComponents(row.sbomComponents || [])
 }
 
 // Removed dtrackSearchReleaseRows - now using ComponentBranchesTable component

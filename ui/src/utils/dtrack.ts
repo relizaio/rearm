@@ -23,3 +23,28 @@ export async function searchDtrackComponentByPurl(
   }
   return dtrackComponent
 }
+
+// Native canonical-purl lookup. Returns rearm.sbom_components.uuid (the same
+// identity used by releasesBySbomComponents and the sbomComponentUuid field on
+// ReleaseSbomComponent). PURL canonicalization is server-side, so callers can
+// pass the raw purl as ingested.
+export async function searchSbomComponentByPurl(
+  orgUuid: string,
+  purl: string
+): Promise<string | undefined> {
+  try {
+    const resp = await graphqlClient.query({
+      query: gql`
+        query searchSbomComponentByPurl($orgUuid: ID!, $purl: String!) {
+          searchSbomComponentByPurl(orgUuid: $orgUuid, purl: $purl)
+        }
+      `,
+      variables: { orgUuid, purl },
+      fetchPolicy: 'no-cache'
+    })
+    return (resp.data as any)?.searchSbomComponentByPurl ?? undefined
+  } catch (error) {
+    console.error('Error searching SBOM component by purl:', error)
+    return undefined
+  }
+}
