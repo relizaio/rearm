@@ -1092,51 +1092,14 @@
                 </n-form>
             </div>
         </n-modal>
-        <n-modal
+        <ReleaseSbomComponentGraph
             v-model:show="showSbomComponentGraphModal"
-            style="width: 90%; max-width: 1100px;"
-            preset="card"
-            :show-icon="false"
-            :title="sbomGraphModalTitle">
-            <div v-if="sbomGraphLoading">
-                <n-spin size="medium" />
-                <p>Loading dependency graph (this loads the full release SBOM once)...</p>
-            </div>
-            <div v-else-if="selectedSbomComponent">
-                <div style="margin-bottom: 12px;">
-                    <p style="margin: 4px 0;"><strong>Name:</strong> {{ selectedSbomComponent.component?.name || '—' }}</p>
-                    <p style="margin: 4px 0;"><strong>Version:</strong> {{ selectedSbomComponent.component?.version || '—' }}</p>
-                    <p style="margin: 4px 0;" v-if="selectedSbomComponent.component?.group"><strong>Group:</strong> {{ selectedSbomComponent.component.group }}</p>
-                    <p style="margin: 4px 0;"><strong>Type:</strong> {{ selectedSbomComponent.component?.type || '—' }}</p>
-                    <p style="margin: 4px 0; word-break: break-all;"><strong>Canonical purl:</strong> {{ selectedSbomComponent.component?.canonicalPurl || '—' }}</p>
-                    <p style="margin: 4px 0;" v-if="selectedSbomComponent.component?.isRoot">
-                        <n-tag type="info" size="small" round>Root component</n-tag>
-                    </p>
-                </div>
-                <h4 style="margin-bottom: 4px;">Dependencies ({{ (selectedSbomComponent.dependencies || []).length }})</h4>
-                <p v-if="!(selectedSbomComponent.dependencies && selectedSbomComponent.dependencies.length)" style="color: #999;">
-                    This component has no recorded dependencies in this release.
-                </p>
-                <n-data-table
-                    v-else
-                    :data="selectedSbomComponent.dependencies"
-                    :columns="sbomDependenciesColumns"
-                    :row-key="(row: any) => row.targetSbomComponentUuid + '::' + (row.relationshipType || '')"
-                    :pagination="{ pageSize: 10 }"
-                />
-                <h4 style="margin-top: 16px; margin-bottom: 4px;">Depended on by ({{ (selectedSbomComponent.dependedOnBy || []).length }})</h4>
-                <p v-if="!(selectedSbomComponent.dependedOnBy && selectedSbomComponent.dependedOnBy.length)" style="color: #999;">
-                    No other components in this release depend on this one.
-                </p>
-                <n-data-table
-                    v-else
-                    :data="selectedSbomComponent.dependedOnBy"
-                    :columns="sbomDependedOnByColumns"
-                    :row-key="(row: any) => row.uuid"
-                    :pagination="{ pageSize: 10 }"
-                />
-            </div>
-        </n-modal>
+            :release-uuid="updatedRelease?.uuid || ''"
+            :org-uuid="updatedRelease?.orgDetails?.uuid || ''"
+            :sbom-component-uuid="sbomGraphSelectedRowUuid"
+            :purl="sbomGraphPurl"
+            ref="sbomGraphRef"
+        />
             </div>
     </div>
 
@@ -1153,6 +1116,7 @@ import CreateArtifact from '@/components/CreateArtifact.vue'
 import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
+import ReleaseSbomComponentGraph from '@/components/ReleaseSbomComponentGraph.vue'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { fetchWithAuth, fetchArrayBufferWithAuth } from '../utils/fetchClient'
 import gql from 'graphql-tag'
@@ -1173,7 +1137,6 @@ import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
-import { searchDtrackComponentByPurl as searchDtrackComponentByPurlUtil } from '@/utils/dtrack'
 import { processMetricsData } from '@/utils/metrics'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
 import { PackageURL } from 'packageurl-js'
@@ -2124,21 +2087,22 @@ async function reconcileReleaseSbom () {
 }
 
 // Release SBOM Components tab — list view query (cheap: no dependencies/dependedOnBy).
-// The detail modal lazy-loads the full graph (which is the expensive query) once per session.
+// The detail modal (ReleaseSbomComponentGraph) loads the deeper graph on demand;
+// both queries hit Apollo cache-first so the tree view and the modal share results.
 const sbomComponents: Ref<any[]> = ref([])
 const sbomComponentsLoading: Ref<boolean> = ref(false)
 const sbomComponentsLoaded: Ref<boolean> = ref(false)
 const sbomGraphLoading: Ref<boolean> = ref(false)
 const sbomGraphLoaded: Ref<boolean> = ref(false)
 const sbomGraphByUuid: Ref<Record<string, any>> = ref({})
+// When true, the next ensureSbomGraphLoaded() will hit the network instead of
+// using Apollo's cache. Set by the Refresh button so the tree view re-pulls
+// after reconcile changes.
+const sbomGraphDirty: Ref<boolean> = ref(false)
 const showSbomComponentGraphModal: Ref<boolean> = ref(false)
-const selectedSbomComponent: Ref<any> = ref(null)
-const sbomGraphModalTitle: ComputedRef<string> = computed(() => {
-    const c = selectedSbomComponent.value?.component
-    if (!c) return 'SBOM Component Graph'
-    const v = c.version ? `@${c.version}` : ''
-    return `SBOM Component Graph — ${c.name || c.canonicalPurl || 'component'}${v}`
-})
+const sbomGraphSelectedRowUuid: Ref<string> = ref('')
+const sbomGraphPurl: Ref<string> = ref('')
+const sbomGraphRef: Ref<any> = ref(null)
 
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (!updatedRelease.value?.uuid) return
@@ -2167,14 +2131,18 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
                     }
                 }`,
             variables: { releaseUuid: updatedRelease.value.uuid },
-            fetchPolicy: 'no-cache'
+            fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
         })
-        sbomComponents.value = resp.data.getReleaseSbomComponents || []
+        sbomComponents.value = (resp.data as any).getReleaseSbomComponents || []
         sbomComponentsLoaded.value = true
-        // Refresh invalidates the cached deeper graph since rows may have changed.
+        // Refresh invalidates the deeper graph too — rows may have changed.
         if (forceRefresh) {
             sbomGraphLoaded.value = false
             sbomGraphByUuid.value = {}
+            sbomGraphDirty.value = true
+            if (sbomGraphRef.value && typeof sbomGraphRef.value.invalidateCache === 'function') {
+                sbomGraphRef.value.invalidateCache()
+            }
         }
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
@@ -2183,9 +2151,10 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
     }
 }
 
-async function ensureSbomGraphLoaded () {
-    if (sbomGraphLoaded.value) return
+async function ensureSbomGraphLoaded (forceRefresh: boolean = false) {
+    if (sbomGraphLoaded.value && !forceRefresh) return
     if (!updatedRelease.value?.uuid) return
+    const useNetworkOnly = forceRefresh || sbomGraphDirty.value
     sbomGraphLoading.value = true
     try {
         const resp = await graphqlClient.query({
@@ -2226,13 +2195,14 @@ async function ensureSbomGraphLoaded () {
                     }
                 }`,
             variables: { releaseUuid: updatedRelease.value.uuid },
-            fetchPolicy: 'no-cache'
+            fetchPolicy: useNetworkOnly ? 'network-only' : 'cache-first'
         })
-        const rows: any[] = resp.data.getReleaseSbomComponents || []
+        const rows: any[] = (resp.data as any).getReleaseSbomComponents || []
         const byUuid: Record<string, any> = {}
         rows.forEach((r: any) => { byUuid[r.uuid] = r })
         sbomGraphByUuid.value = byUuid
         sbomGraphLoaded.value = true
+        sbomGraphDirty.value = false
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     } finally {
@@ -2240,18 +2210,16 @@ async function ensureSbomGraphLoaded () {
     }
 }
 
-async function openSbomComponentGraph (row: any) {
-    selectedSbomComponent.value = { ...row, dependencies: [], dependedOnBy: [] }
+function openSbomComponentGraph (row: any) {
+    sbomGraphPurl.value = ''
+    sbomGraphSelectedRowUuid.value = row?.uuid || ''
     showSbomComponentGraphModal.value = true
-    await ensureSbomGraphLoaded()
-    const detail = sbomGraphByUuid.value[row.uuid]
-    if (detail) {
-        selectedSbomComponent.value = {
-            ...row,
-            dependencies: detail.dependencies || [],
-            dependedOnBy: detail.dependedOnBy || []
-        }
-    }
+}
+
+async function openSbomComponentGraphByPurl (purl: string) {
+    sbomGraphSelectedRowUuid.value = ''
+    sbomGraphPurl.value = purl
+    showSbomComponentGraphModal.value = true
 }
 
 const sbomComponentsTableFields: DataTableColumns<any> = [
@@ -2313,89 +2281,6 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
             size: 'small',
             onClick: () => openSbomComponentGraph(row)
         }, () => 'View graph')
-    }
-]
-
-function renderSbomComponentRef (component: any, fallbackPurl?: string) {
-    if (!component && !fallbackPurl) return h('span', '—')
-    const name = component?.name
-    const version = component?.version
-    const purl = component?.canonicalPurl || fallbackPurl
-    const lines: any[] = []
-    if (name) lines.push(h('div', `${name}${version ? '@' + version : ''}`))
-    if (purl) lines.push(h('div', { style: 'font-family: monospace; font-size: 11px; color: #666; word-break: break-all;' }, purl))
-    if (!lines.length) lines.push(h('span', '—'))
-    return h('div', lines)
-}
-
-const sbomDependenciesColumns: DataTableColumns<any> = [
-    {
-        key: 'target',
-        title: 'Target',
-        render: (row: any) => renderSbomComponentRef(row.target?.component, row.targetCanonicalPurl)
-    },
-    {
-        key: 'relationshipType',
-        title: 'Relationship',
-        render: (row: any) => row.relationshipType || ''
-    },
-    {
-        key: 'declaringArtifacts',
-        title: 'Declared by',
-        render: (row: any) => {
-            const list: any[] = row.declaringArtifacts || []
-            if (!list.length) return h('span', '—')
-            const tooltipContent = h('ul', { style: 'margin: 0; padding-left: 18px;' },
-                list.map((d: any) => h('li', { style: 'word-break: break-all;' }, [
-                    h('div', `artifact: ${d.artifact}`),
-                    d.sourceExactPurl ? h('div', { style: 'font-size: 11px; color: #666;' }, `source: ${d.sourceExactPurl}`) : null,
-                    d.targetExactPurl ? h('div', { style: 'font-size: 11px; color: #666;' }, `target: ${d.targetExactPurl}`) : null
-                ]))
-            )
-            return h(NTooltip, {
-                trigger: 'hover',
-                contentStyle: 'max-width: 700px; white-space: normal; word-break: break-word;'
-            }, {
-                trigger: () => h('span', { class: 'clickable', style: 'text-decoration: underline dotted;' }, String(list.length)),
-                default: () => tooltipContent
-            })
-        }
-    },
-    {
-        key: 'actions',
-        title: '',
-        render: (row: any) => {
-            const targetUuid = row.target?.uuid
-            if (!targetUuid) return h('span', '')
-            const targetRow = sbomGraphByUuid.value[targetUuid]
-            if (!targetRow) return h('span', '')
-            return h(NButton, {
-                size: 'tiny',
-                tertiary: true,
-                onClick: () => openSbomComponentGraph(targetRow)
-            }, () => 'Open')
-        }
-    }
-]
-
-const sbomDependedOnByColumns: DataTableColumns<any> = [
-    {
-        key: 'parent',
-        title: 'Component',
-        render: (row: any) => renderSbomComponentRef(row.component)
-    },
-    {
-        key: 'actions',
-        title: '',
-        render: (row: any) => {
-            const parentRow = sbomGraphByUuid.value[row.uuid]
-            if (!parentRow) return h('span', '')
-            return h(NButton, {
-                size: 'tiny',
-                tertiary: true,
-                onClick: () => openSbomComponentGraph(parentRow)
-            }, () => 'Open')
-        }
     }
 ]
 
@@ -5209,48 +5094,16 @@ const changelogTableFields: DataTableColumns<any> = [
         sorter: (a: any, b: any) => (a.newPurl || '').localeCompare(b.newPurl || ''),
         render: (row: any) => {
             const purlText = row.newPurl || ''
-            if (!purlText) return ''
-            
-            if (hasKnownDependencyTrackIntegration.value) {
-                return h('a', {
-                    href: '#',
-                    style: 'color: #337ab7; cursor: pointer; text-decoration: underline;',
-                    onClick: async (e: Event) => {
-                        e.preventDefault()
-                        const dtrackComponent = await searchDtrackComponentByPurlUtil(
-                            release.value.orgDetails.uuid,
-                            purlText,
-                            dtrackProjectUuids.value
-                        )
-                        if (dtrackComponent) {
-                            // Get base URL from first artifact with dependencyTrackFullUri
-                            const firstArtifactWithDtrack = artifacts.value.find((artifact: any) => 
-                                artifact.metrics && artifact.metrics.dependencyTrackFullUri
-                            )
-                            if (firstArtifactWithDtrack) {
-                                const baseUrl = firstArtifactWithDtrack.metrics.dependencyTrackFullUri.split('/projects')[0]
-                                const componentUrl = `${baseUrl}/components/${dtrackComponent}`
-                                // Open in new window
-                                window.open(componentUrl, '_blank')
-                            } else {
-                                await Swal.fire({
-                                    icon: 'warning',
-                                    title: 'Not Found',
-                                    text: 'Purl not found in known SBOMs'
-                                })
-                            }
-                        } else {
-                            await Swal.fire({
-                                icon: 'warning',
-                                title: 'Not Found',
-                                text: 'Purl not found in known SBOMs'
-                            })
-                        }
-                    }
-                }, purlText)
-            } else {
-                return purlText
-            }
+            if (!purlText || !purlText.startsWith('pkg:')) return purlText
+            return h('a', {
+                href: '#',
+                style: 'color: #337ab7; cursor: pointer; text-decoration: underline;',
+                title: 'Open dependency graph for this purl in this release',
+                onClick: (e: Event) => {
+                    e.preventDefault()
+                    openSbomComponentGraphByPurl(purlText)
+                }
+            }, purlText)
         }
     },
     {

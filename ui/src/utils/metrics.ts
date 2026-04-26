@@ -158,6 +158,10 @@ export function buildVulnerabilityColumns(
     getArtifacts?: () => any[]
     getOrgUuid?: () => string
     getDtrackProjectUuids?: () => string[]
+    // Preferred deep-link: caller opens our native ReleaseSbomComponentGraph
+    // modal for the clicked purl. When provided, this overrides the
+    // Dependency-Track deep-link flow.
+    onPurlClick?: (purl: string) => void
     onEditFinding?: (row: any) => void
     onViewAnalysis?: (row: any) => void
     initialSeverityFilter?: string
@@ -169,7 +173,22 @@ export function buildVulnerabilityColumns(
     return (row: any) => {
       const purlText = row.purl || ''
       if (!purlText) return ''
-      if (!options || !options.hasKnownDependencyTrackIntegration || !options.hasKnownDependencyTrackIntegration() || !purlText.startsWith('pkg:')) {
+      if (!purlText.startsWith('pkg:')) return purlText
+
+      const onPurlClick = options?.onPurlClick
+      if (onPurlClick) {
+        return h('a', {
+          href: '#',
+          style: 'color: #337ab7; cursor: pointer; text-decoration: underline;',
+          title: 'Open dependency graph for this purl',
+          onClick: (e: Event) => {
+            e.preventDefault()
+            onPurlClick(purlText)
+          }
+        }, purlText)
+      }
+
+      if (!options || !options.hasKnownDependencyTrackIntegration || !options.hasKnownDependencyTrackIntegration()) {
         return purlText
       }
       return h('a', {

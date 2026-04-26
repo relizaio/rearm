@@ -40,7 +40,9 @@ export async function searchSbomComponentByPurl(
         }
       `,
       variables: { orgUuid, purl },
-      fetchPolicy: 'no-cache'
+      // Canonical purl→uuid is a stable mapping; cache-first lets repeated
+      // deep-link clicks for the same purl skip the round-trip.
+      fetchPolicy: 'cache-first'
     })
     return (resp.data as any)?.searchSbomComponentByPurl ?? undefined
   } catch (error) {

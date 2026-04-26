@@ -941,7 +941,7 @@ async function executeSbomSearchBatch(queries: { name: string; version?: string 
                 }
             }`,
         variables,
-        fetchPolicy: 'no-cache'
+        fetchPolicy: 'cache-first'
     })
     return (response.data as any).sbomComponentSearchNative
 }
@@ -1032,7 +1032,7 @@ async function searchReleasesBySbomComponents (sbomComponentUuids: string[]) {
                 }
             `,
             variables,
-            fetchPolicy: 'no-cache'
+            fetchPolicy: 'cache-first'
         })
         dtrackSearchReleases.value = (response.data as any).releasesBySbomComponents || []
     } catch (err: any) {
