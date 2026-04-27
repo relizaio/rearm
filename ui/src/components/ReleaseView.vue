@@ -795,7 +795,14 @@
                 <n-tab-pane name="sbomComponents" tab="SBOM Components">
                     <div class="container">
                         <n-space style="margin-bottom: 8px;" align="center">
-                            <h3 style="margin: 0;">Release SBOM Components</h3>
+                            <n-input
+                                v-if="sbomViewMode === 'list'"
+                                v-model:value="sbomSearchQueryInput"
+                                placeholder="Search SBOM components (name, version, group, type, purl)"
+                                clearable
+                                size="small"
+                                style="width: 480px;"
+                            />
                             <n-radio-group v-model:value="sbomViewMode" size="small" @update:value="handleSbomViewModeChange">
                                 <n-radio-button value="list" label="List" />
                                 <n-radio-button value="tree" label="Tree" />
@@ -834,7 +841,7 @@
                         </div>
                         <div v-else-if="sbomComponentsLoaded && sbomViewMode === 'list'">
                             <n-data-table
-                                :data="sbomComponents"
+                                :data="filteredSbomComponents"
                                 :columns="sbomComponentsTableFields"
                                 :row-key="(row: any) => row.uuid"
                                 :pagination="{ pageSize: 15 }"
@@ -2109,6 +2116,21 @@ const sbomGraphByUuid: Ref<Record<string, any>> = ref({})
 // after reconcile changes.
 const sbomGraphDirty: Ref<boolean> = ref(false)
 
+// Client-side filter for the list view. Matches against any of name, version,
+// group, type, or canonical purl (case-insensitive substring).
+const sbomSearchQueryInput: Ref<string> = ref('')
+const filteredSbomComponents: ComputedRef<any[]> = computed((): any[] => {
+    const q = (sbomSearchQueryInput.value || '').trim().toLowerCase()
+    if (!q) return sbomComponents.value
+    return sbomComponents.value.filter((row: any) => {
+        const c = row.component || {}
+        const haystack = [
+            c.name, c.version, c.group, c.type, c.canonicalPurl
+        ].filter(Boolean).join(' ').toLowerCase()
+        return haystack.includes(q)
+    })
+})
+
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (!updatedRelease.value?.uuid) return
     if (sbomComponentsLoaded.value && !forceRefresh) return
@@ -2238,6 +2260,7 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
     {
         key: 'name',
         title: 'Name',
+        sorter: (a: any, b: any) => (a.component?.name || '').localeCompare(b.component?.name || ''),
         render: (row: any) => {
             const c = row.component || {}
             const els: any[] = [h('span', c.name || '—')]
@@ -2258,6 +2281,7 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
     {
         key: 'type',
         title: 'Type',
+        sorter: (a: any, b: any) => (a.component?.type || '').localeCompare(b.component?.type || ''),
         render: (row: any) => row.component?.type || ''
     },
     {
