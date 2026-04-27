@@ -264,15 +264,15 @@
             </n-space>
         </div>
 
-        <!-- Per-Cluster Permissions (scope=INSTANCE on a CLUSTER row) -->
-        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && clusters.length">
+        <!-- Per-Cluster Permissions (scope=INSTANCE on a CLUSTER row). SAAS-only. -->
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="isSaas && orgPermission.type !== 'ADMIN' && clusters.length">
             <n-h5>
                 <n-text depth="1">
                     Per-Cluster Permissions:
                 </n-text>
             </n-h5>
         </n-space>
-        <div v-if="orgPermission.type !== 'ADMIN' && clusters.length">
+        <div v-if="isSaas && orgPermission.type !== 'ADMIN' && clusters.length">
             <n-space vertical>
                 <n-card v-for="sp in scopedClusterPermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
                     <n-space align="center" justify="space-between" style="width: 100%;">
@@ -281,14 +281,14 @@
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center">
                         <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
-                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                        <n-radio-group :value="sp.type" size="small" @update:value="(t: string) => onInstancePermissionTypeUpdate(t, sp)">
                             <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
                         </n-radio-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                            <n-checkbox v-for="f in instanceFunctionsFor(sp.type)" :key="f" :value="f" :title="translateFunctionName(f)">
                                 {{ translateFunctionName(f) }}
                             </n-checkbox>
                         </n-checkbox-group>
@@ -308,15 +308,15 @@
             </n-space>
         </div>
 
-        <!-- Per-Instance Permissions (scope=INSTANCE on a STANDALONE_INSTANCE / CLUSTER_INSTANCE row) -->
-        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && instances.length">
+        <!-- Per-Instance Permissions (scope=INSTANCE on a STANDALONE_INSTANCE / CLUSTER_INSTANCE row). SAAS-only. -->
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="isSaas && orgPermission.type !== 'ADMIN' && instances.length">
             <n-h5>
                 <n-text depth="1">
                     Per-Instance Permissions:
                 </n-text>
             </n-h5>
         </n-space>
-        <div v-if="orgPermission.type !== 'ADMIN' && instances.length">
+        <div v-if="isSaas && orgPermission.type !== 'ADMIN' && instances.length">
             <n-space vertical>
                 <n-card v-for="sp in scopedInstancePermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
                     <n-space align="center" justify="space-between" style="width: 100%;">
@@ -325,14 +325,14 @@
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center">
                         <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
-                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                        <n-radio-group :value="sp.type" size="small" @update:value="(t: string) => onInstancePermissionTypeUpdate(t, sp)">
                             <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
                         </n-radio-group>
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                            <n-checkbox v-for="f in instanceFunctionsFor(sp.type)" :key="f" :value="f" :title="translateFunctionName(f)">
                                 {{ translateFunctionName(f) }}
                             </n-checkbox>
                         </n-checkbox-group>
@@ -425,8 +425,36 @@ const installationType = computed(() => store.getters.myuser?.installationType)
 const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
 const permissionFunctions: string[] = constants.PermissionFunctions
-const orgPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'RESOURCE' && (props.showSbomProbing || f !== 'SBOM_PROBING') && (!props.showSbomProbing || f !== 'LIFECYCLE_UPDATE')))
-const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f => f !== 'RESOURCE' && f !== 'FINDING_ANALYSIS_WRITE' && (props.showSbomProbing || f !== 'SBOM_PROBING') && (!props.showSbomProbing || f !== 'LIFECYCLE_UPDATE')))
+const isSaas = computed(() => installationType.value === 'SAAS')
+
+// DevOps Read/Write only make sense (and are only honored by the backend) for
+// SAAS installations; everywhere else they're hidden.
+const orgPermissionFunctions = computed(() => permissionFunctions.filter(f =>
+    f !== 'RESOURCE' &&
+    (props.showSbomProbing || f !== 'SBOM_PROBING') &&
+    (!props.showSbomProbing || f !== 'LIFECYCLE_UPDATE') &&
+    (isSaas.value || (f !== 'DEVOPS_READ' && f !== 'DEVOPS_WRITE'))
+))
+
+// Perspective / Product / Component scopes never expose DEVOPS_*: those grants
+// belong on cluster / instance scopes.
+const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f =>
+    f !== 'RESOURCE' &&
+    f !== 'FINDING_ANALYSIS_WRITE' &&
+    f !== 'DEVOPS_READ' &&
+    f !== 'DEVOPS_WRITE' &&
+    (props.showSbomProbing || f !== 'SBOM_PROBING') &&
+    (!props.showSbomProbing || f !== 'LIFECYCLE_UPDATE')
+))
+
+// Cluster / instance grants are DevOps-only. The visible function set tracks
+// the radio's permission type: READ_ONLY exposes (and pre-selects) DEVOPS_READ,
+// READ_WRITE exposes (and pre-selects) both. NONE hides the section.
+function instanceFunctionsFor (type: string): string[] {
+    if (type === 'READ_ONLY') return ['DEVOPS_READ']
+    if (type === 'READ_WRITE') return ['DEVOPS_READ', 'DEVOPS_WRITE']
+    return []
+}
 
 const newPerspectiveId = ref<string | null>(null)
 const newProductId = ref<string | null>(null)
@@ -568,6 +596,15 @@ function onFunctionsUpdate(val: string[], sp: ScopedPermission) {
     emitUpdate()
 }
 
+// Cluster / instance grants auto-track DevOps functions to the chosen
+// permission type. NONE clears them; READ_ONLY pre-selects DEVOPS_READ;
+// READ_WRITE pre-selects DEVOPS_READ + DEVOPS_WRITE.
+function onInstancePermissionTypeUpdate(type: string, sp: ScopedPermission) {
+    sp.type = type
+    sp.functions = instanceFunctionsFor(type)
+    emitUpdate()
+}
+
 function addScopedPermission(scope: string) {
     let id: string | null = null
     let source: any[] = []
@@ -600,12 +637,16 @@ function addScopedPermission(scope: string) {
     if (scope === 'PRODUCT') wireScope = 'COMPONENT'
     else if (scope === 'CLUSTER') wireScope = 'INSTANCE'
 
+    // Cluster / instance grants seed DEVOPS_READ at creation so the radio's
+    // initial READ_ONLY state matches what the user sees in the function row.
+    const initialFunctions = wireScope === 'INSTANCE' ? instanceFunctionsFor('READ_ONLY') : []
+
     scopedPermissions.value.push({
         scope: wireScope,
         objectId: id,
         objectName: obj.name || obj.uri || obj.uuid,
         type: 'READ_ONLY',
-        functions: [],
+        functions: initialFunctions,
         approvals: []
     })
 
