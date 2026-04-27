@@ -2,7 +2,7 @@
     <n-modal
         :show="show"
         @update:show="(v: boolean) => emit('update:show', v)"
-        style="width: 90%; max-width: 1100px;"
+        style="width: 95%; max-width: 1800px;"
         preset="card"
         :show-icon="false"
         :title="modalTitle">
@@ -52,7 +52,7 @@
                 </p>
             </div>
 
-            <h4 style="margin-top: 16px; margin-bottom: 4px;">Direct dependencies ({{ (selected.dependencies || []).length }})</h4>
+            <h4 style="margin-top: 16px; margin-bottom: 4px;">Direct Children (Dependencies - {{ (selected.dependencies || []).length }})</h4>
             <p v-if="!(selected.dependencies && selected.dependencies.length)" style="color: #999;">
                 This component has no recorded dependencies in this release.
             </p>
@@ -60,11 +60,11 @@
                 v-else
                 :data="selected.dependencies"
                 :columns="dependenciesColumns"
-                :row-key="(row: any) => (row.targetSbomComponentUuid || '') + '::' + (row.relationshipType || '')"
+                :row-key="(row: any) => (row.targetSbomComponentUuid || '')"
                 :pagination="{ pageSize: 10 }"
             />
 
-            <h4 style="margin-top: 16px; margin-bottom: 4px;">Direct dependedOnBy ({{ (selected.dependedOnBy || []).length }})</h4>
+            <h4 style="margin-top: 16px; margin-bottom: 4px;">Direct Parents (Depended On By - {{ (selected.dependedOnBy || []).length }})</h4>
             <p v-if="!(selected.dependedOnBy && selected.dependedOnBy.length)" style="color: #999;">
                 No other components in this release depend on this one.
             </p>
@@ -333,11 +333,6 @@ const dependenciesColumns: DataTableColumns<any> = [
         render: (row: any) => renderRowRef(row.target?.component, row.targetCanonicalPurl)
     },
     {
-        key: 'relationshipType',
-        title: 'Relationship',
-        render: (row: any) => row.relationshipType || ''
-    },
-    {
         key: 'declaringArtifacts',
         title: 'Declared by',
         render: (row: any) => {
@@ -446,7 +441,7 @@ defineExpose({
     border: 1px solid #4ea8c8;
     border-radius: 3px;
     font-family: monospace;
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
     white-space: nowrap;
     max-width: 360px;
@@ -459,8 +454,8 @@ defineExpose({
 }
 
 .path-box.is-root {
-    border-color: #f0a020;
-    color: #f0a020;
+    border-color: #5c4624;
+    color: #5c4624;
 }
 
 .path-box.is-self {
