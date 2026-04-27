@@ -150,7 +150,20 @@ const CONTENT_TYPES = [
 
 const PERMISSION_TYPES: string[] = ['NONE', 'READ_ONLY', 'READ_WRITE']
 const PERMISSION_TYPES_WITH_ADMIN: string[] = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE', 'ADMIN']
-const PERMISSION_FUNCTIONS: string[] = ['FINDING_ANALYSIS_READ', 'FINDING_ANALYSIS_WRITE', 'ARTIFACT_DOWNLOAD', 'LIFECYCLE_UPDATE', 'SBOM_PROBING']
+const PERMISSION_FUNCTIONS: string[] = [
+    'FINDING_ANALYSIS_READ',
+    'FINDING_ANALYSIS_WRITE',
+    'ARTIFACT_DOWNLOAD',
+    'LIFECYCLE_UPDATE',
+    'SBOM_PROBING',
+    // DEVOPS_READ / DEVOPS_WRITE gate every instance and cluster
+    // surface (mirrors the backend PermissionFunction enum). Required
+    // for both manual auth and FREEFORM keys; INSTANCE / CLUSTER api
+    // keys keep their object-bound semantics and don't need
+    // function-level grants.
+    'DEVOPS_READ',
+    'DEVOPS_WRITE'
+]
 const ARTIFACT_COVERAGE_TYPES = [
     {label: 'Dev', value: 'DEV'},
     {label: 'Test', value: 'TEST'},

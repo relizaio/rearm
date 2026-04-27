@@ -22,6 +22,8 @@ function translateFunctionName(fn: string): string {
         case 'ARTIFACT_DOWNLOAD': return 'Artifact Download'
         case 'LIFECYCLE_UPDATE': return 'Lifecycle Update'
         case 'SBOM_PROBING': return 'SBOM Probing'
+        case 'DEVOPS_READ': return 'DevOps Read'
+        case 'DEVOPS_WRITE': return 'DevOps Write'
         default: return fn
     }
 }
