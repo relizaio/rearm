@@ -343,8 +343,8 @@ const dependenciesColumns: DataTableColumns<any> = [
             const tooltip = h('ul', { style: 'margin: 0; padding-left: 18px;' },
                 list.map((d: any) => h('li', { style: 'word-break: break-all;' }, [
                     h('div', `artifact: ${d.artifact}`),
-                    d.sourceExactPurl ? h('div', { style: 'font-size: 11px; color: #666;' }, `source: ${d.sourceExactPurl}`) : null,
-                    d.targetExactPurl ? h('div', { style: 'font-size: 11px; color: #666;' }, `target: ${d.targetExactPurl}`) : null
+                    d.sourceExactPurl ? h('div', { style: 'font-size: 11px; color: pink;' }, `source: ${d.sourceExactPurl}`) : null,
+                    d.targetExactPurl ? h('div', { style: 'font-size: 11px; color: pink;' }, `target: ${d.targetExactPurl}`) : null
                 ]))
             )
             return h(NTooltip, {
