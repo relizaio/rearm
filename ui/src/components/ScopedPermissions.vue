@@ -263,6 +263,94 @@
                 </n-space>
             </n-space>
         </div>
+
+        <!-- Per-Cluster Permissions (scope=INSTANCE on a CLUSTER row) -->
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && clusters.length">
+            <n-h5>
+                <n-text depth="1">
+                    Per-Cluster Permissions:
+                </n-text>
+            </n-h5>
+        </n-space>
+        <div v-if="orgPermission.type !== 'ADMIN' && clusters.length">
+            <n-space vertical>
+                <n-card v-for="sp in scopedClusterPermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
+                    <n-space align="center" justify="space-between" style="width: 100%;">
+                        <n-text strong>{{ sp.objectName }}</n-text>
+                        <n-icon class="clickable" size="18" @click="removeScopedPermission('INSTANCE', sp.objectId)"><CloseIcon /></n-icon>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center">
+                        <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
+                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                            <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
+                        </n-radio-group>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
+                        <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
+                        <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                                {{ translateFunctionName(f) }}
+                            </n-checkbox>
+                        </n-checkbox-group>
+                    </n-space>
+                </n-card>
+                <n-space align="center">
+                    <n-select
+                        v-model:value="newClusterId"
+                        :options="availableClusterOptions"
+                        placeholder="Add cluster..."
+                        style="min-width: 250px;"
+                        filterable
+                        clearable
+                    />
+                    <n-button size="small" type="primary" :disabled="!newClusterId" @click="addScopedPermission('CLUSTER')">Add</n-button>
+                </n-space>
+            </n-space>
+        </div>
+
+        <!-- Per-Instance Permissions (scope=INSTANCE on a STANDALONE_INSTANCE / CLUSTER_INSTANCE row) -->
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && instances.length">
+            <n-h5>
+                <n-text depth="1">
+                    Per-Instance Permissions:
+                </n-text>
+            </n-h5>
+        </n-space>
+        <div v-if="orgPermission.type !== 'ADMIN' && instances.length">
+            <n-space vertical>
+                <n-card v-for="sp in scopedInstancePermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
+                    <n-space align="center" justify="space-between" style="width: 100%;">
+                        <n-text strong>{{ sp.objectName }}</n-text>
+                        <n-icon class="clickable" size="18" @click="removeScopedPermission('INSTANCE', sp.objectId)"><CloseIcon /></n-icon>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center">
+                        <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
+                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                            <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
+                        </n-radio-group>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
+                        <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
+                        <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
+                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                                {{ translateFunctionName(f) }}
+                            </n-checkbox>
+                        </n-checkbox-group>
+                    </n-space>
+                </n-card>
+                <n-space align="center">
+                    <n-select
+                        v-model:value="newInstanceId"
+                        :options="availableInstanceOptions"
+                        placeholder="Add instance..."
+                        style="min-width: 250px;"
+                        filterable
+                        clearable
+                    />
+                    <n-button size="small" type="primary" :disabled="!newInstanceId" @click="addScopedPermission('INSTANCE')">Add</n-button>
+                </n-space>
+            </n-space>
+        </div>
     </n-flex>
 </template>
 
@@ -307,6 +395,18 @@ interface Props {
     perspectives: any[]
     products: any[]
     components: any[]
+    /**
+     * STANDALONE_INSTANCE + CLUSTER_INSTANCE rows. Only used for the
+     * "Per-Instance Permissions" section. Pass an empty array to hide it.
+     */
+    instances?: any[]
+    /**
+     * CLUSTER rows. Only used for the "Per-Cluster Permissions" section.
+     * Granting on a cluster cascades to every CLUSTER_INSTANCE under it
+     * (server-side, via SaasAuthorizationService.isUserAuthorizedForInstance
+     * cluster→child fallback).
+     */
+    clusters?: any[]
     showSbomProbing?: boolean
     modelValue: {
         orgPermission: OrgPermission
@@ -314,7 +414,10 @@ interface Props {
     }
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+    instances: () => [],
+    clusters: () => [],
+})
 const emit = defineEmits(['update:modelValue'])
 const store = useStore()
 const installationType = computed(() => store.getters.myuser?.installationType)
@@ -328,6 +431,8 @@ const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f =>
 const newPerspectiveId = ref<string | null>(null)
 const newProductId = ref<string | null>(null)
 const newComponentId = ref<string | null>(null)
+const newInstanceId = ref<string | null>(null)
+const newClusterId = ref<string | null>(null)
 
 const orgPermission = ref<OrgPermission>({
     type: 'NONE',
@@ -367,6 +472,20 @@ const scopedComponentPermissions = computed(() =>
     scopedPermissions.value.filter(sp => sp.scope === 'COMPONENT' && !productIds.value.has(sp.objectId))
 )
 
+// INSTANCE-scoped grants split into two visual buckets keyed off the
+// underlying object's instanceType: per-instance (STANDALONE_INSTANCE,
+// CLUSTER_INSTANCE) and per-cluster (CLUSTER). Both are scope=INSTANCE
+// on the wire.
+const clusterIds = computed(() => new Set(props.clusters.map((c: any) => c.uuid)))
+
+const scopedInstancePermissions = computed(() =>
+    scopedPermissions.value.filter(sp => sp.scope === 'INSTANCE' && !clusterIds.value.has(sp.objectId))
+)
+
+const scopedClusterPermissions = computed(() =>
+    scopedPermissions.value.filter(sp => sp.scope === 'INSTANCE' && clusterIds.value.has(sp.objectId))
+)
+
 const availablePerspectiveOptions = computed(() => {
     const usedIds = new Set(scopedPerspectivePermissions.value.map(sp => sp.objectId))
     return props.perspectives
@@ -387,6 +506,36 @@ const availableComponentOptions = computed(() => {
         .filter(c => !usedIds.has(c.uuid))
         .map(c => ({ label: c.name, value: c.uuid }))
 })
+
+const availableInstanceOptions = computed(() => {
+    const usedIds = new Set(scopedInstancePermissions.value.map(sp => sp.objectId))
+    return props.instances
+        .filter(i => !usedIds.has(i.uuid))
+        .map(i => ({
+            label: instanceLabel(i),
+            value: i.uuid,
+        }))
+})
+
+const availableClusterOptions = computed(() => {
+    const usedIds = new Set(scopedClusterPermissions.value.map(sp => sp.objectId))
+    return props.clusters
+        .filter(c => !usedIds.has(c.uuid))
+        .map(c => ({ label: c.name || c.uri || c.uuid, value: c.uuid }))
+})
+
+function instanceLabel(inst: any): string {
+    // Show a human-readable label. STANDALONE_INSTANCE has a uri,
+    // CLUSTER_INSTANCE has a parent cluster (we look it up by walking
+    // the clusters prop since the row itself doesn't carry the cluster
+    // name) and a namespace.
+    if (inst.instanceType === 'CLUSTER_INSTANCE') {
+        const parent = props.clusters.find((c: any) => Array.isArray(c.instances) && c.instances.includes(inst.uuid))
+        const parentName = parent ? parent.name : '(cluster)'
+        return `${parentName} / ${inst.namespace || inst.uuid}`
+    }
+    return inst.uri || inst.name || inst.uuid
+}
 
 function translatePermissionName(type: string): string {
     return commonFunctions.translatePermissionName(type)
@@ -428,6 +577,12 @@ function addScopedPermission(scope: string) {
     } else if (scope === 'PRODUCT') {
         id = newProductId.value
         source = props.products
+    } else if (scope === 'INSTANCE') {
+        id = newInstanceId.value
+        source = props.instances
+    } else if (scope === 'CLUSTER') {
+        id = newClusterId.value
+        source = props.clusters
     } else {
         id = newComponentId.value
         source = props.components
@@ -437,10 +592,18 @@ function addScopedPermission(scope: string) {
     const obj = source.find((o: any) => o.uuid === id)
     if (!obj) return
 
+    // PRODUCT and INSTANCE/CLUSTER are visual buckets; on the wire
+    // PRODUCT goes through scope=COMPONENT and CLUSTER goes through
+    // scope=INSTANCE (with the cluster's UUID). The grouping computed
+    // refs split them back out by checking the underlying object pool.
+    let wireScope = scope
+    if (scope === 'PRODUCT') wireScope = 'COMPONENT'
+    else if (scope === 'CLUSTER') wireScope = 'INSTANCE'
+
     scopedPermissions.value.push({
-        scope: scope === 'PRODUCT' ? 'COMPONENT' : scope,
+        scope: wireScope,
         objectId: id,
-        objectName: obj.name,
+        objectName: obj.name || obj.uri || obj.uuid,
         type: 'READ_ONLY',
         functions: [],
         approvals: []
@@ -450,6 +613,10 @@ function addScopedPermission(scope: string) {
         newPerspectiveId.value = null
     } else if (scope === 'PRODUCT') {
         newProductId.value = null
+    } else if (scope === 'INSTANCE') {
+        newInstanceId.value = null
+    } else if (scope === 'CLUSTER') {
+        newClusterId.value = null
     } else {
         newComponentId.value = null
     }

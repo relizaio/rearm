@@ -281,6 +281,8 @@
                                 :perspectives="perspectives"
                                 :products="orgProducts"
                                 :components="orgComponents"
+                                :instances="orgInstances"
+                                :clusters="orgClusters"
                             />
                             <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
                                 <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
@@ -402,6 +404,8 @@
                                 :perspectives="perspectives"
                                 :products="orgProducts"
                                 :components="orgComponents"
+                                :instances="orgInstances"
+                                :clusters="orgClusters"
                             />
                         </n-flex>
                         <n-space style="margin-top: 20px;">
@@ -479,6 +483,8 @@
                                 :perspectives="perspectives"
                                 :products="orgProducts"
                                 :components="orgComponents"
+                                :instances="orgInstances"
+                                :clusters="orgClusters"
                                 :show-sbom-probing="true"
                             />
                             <n-space style="margin-top: 20px;">
@@ -1749,6 +1755,20 @@ const userGroupPermissionsDirty = computed(() => {
 const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
 const orgProducts = computed(() => store.getters.productsOfOrg(orgResolved.value) || [])
 const allComponents = computed(() => [...orgComponents.value, ...orgProducts.value])
+
+// Instance + cluster lists used by the ScopedPermissions component to
+// expose per-instance and per-cluster permission sections (replaces
+// the old UI's userInstancePermissionColumns / userClusterPermissionColumns
+// data tables).
+const orgInstancesAndClusters = computed(() => {
+    const all = (store.getters.instancesOfOrg(orgResolved.value) || [])
+    return all.filter((x: any) => x.revision === -1 && (x.status === 'ACTIVE' || !x.status))
+})
+const orgInstances = computed(() => orgInstancesAndClusters.value
+    .filter((x: any) => x.instanceType === constants.InstanceType.STANDALONE_INSTANCE
+        || x.instanceType === constants.InstanceType.CLUSTER_INSTANCE))
+const orgClusters = computed(() => orgInstancesAndClusters.value
+    .filter((x: any) => x.instanceType === constants.InstanceType.CLUSTER))
 const newUserGroup: Ref<any> = ref({
     name: '',
     description: '',
