@@ -87,6 +87,14 @@ type Query {
 	releasesByDtrackProjects(orgUuid: ID!, dtrackProjects: [ID], perspectiveUuid: ID): [ComponentWithBranches]
 	sbomComponentSearch(orgUuid: ID!, queries: [SbomComponentSearchInput!]!, perspectiveUuid: ID): [ComponentPurlToDtrack]
 	searchDtrackComponentByPurlAndProjects(orgUuid: ID!, purl: String!, dtrackProjects: [ID]!): ID
+
+	# Native (non-DependencyTrack) SBOM-component analogues of the three queries
+	# above. Search and grouping run against rearm.sbom_components /
+	# rearm.release_sbom_components instead of dtrack — same shapes, sbom_component
+	# UUIDs in place of dtrack project UUIDs. See SbomComponentDataFetcher.
+	releasesBySbomComponents(orgUuid: ID!, sbomComponentUuids: [ID]!, perspectiveUuid: ID): [ComponentWithBranches]
+	sbomComponentSearchNative(orgUuid: ID!, queries: [SbomComponentSearchInput!]!, perspectiveUuid: ID): [ComponentPurlToSbom]
+	searchSbomComponentByPurl(orgUuid: ID!, purl: String!): ID
 	
 	getAllOrganizations: [Organization]
 	
@@ -1639,6 +1647,15 @@ type Condition {
 type ComponentPurlToDtrack {
 	purl: String
 	projects: [ID]
+}
+
+# Native SBOM analogue of ComponentPurlToDtrack. Each canonical purl maps to
+# exactly one sbom_components row today, so sbomComponents typically has length
+# 1 — kept as a list for shape parity and to leave room for future
+# canonicalization changes.
+type ComponentPurlToSbom {
+	purl: String
+	sbomComponents: [ID]
 }
 
 input ApprovalPolicyInput {

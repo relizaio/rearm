@@ -14,6 +14,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.Type;
 
 import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
@@ -27,6 +28,14 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Entity
+// @DynamicUpdate so flushes only touch dirty columns. Without it, every
+// release UPDATE rewrites every column from the in-memory entity snapshot —
+// which silently overwrites flow_control whenever an artifact mutation calls
+// markSbomReconcileRequested via @Modifying SQL inside the same transaction
+// as ossReleaseService.saveRelease (the in-memory flow_control is still
+// NULL from when the entity was loaded, and the all-columns flush wins
+// over the SQL UPDATE).
+@DynamicUpdate
 @Table(schema=ModelProperties.DB_SCHEMA, name="releases")
 public class Release implements Serializable, RelizaEntity {
 	private static final long serialVersionUID = 234734;

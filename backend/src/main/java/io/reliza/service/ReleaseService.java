@@ -606,32 +606,6 @@ public class ReleaseService {
 				.collect(Collectors.toList());
 	}
 	
-	/**
-	 * Inverse of unwindReleaseDependencies - instead of unwinding dependencies
-	 * this method recursively locates all products of which this release is part of
-	 * and products that include those products
-	 * @param rd
-	 * @param setToBreakCircles - initialize to empty hash set - makes sure that products are accounted at max once
-	 * @return
-	 */
-	public Set<ReleaseData> locateAllProductsOfRelease (ReleaseData rd, Set<UUID> setToBreakCircles) {
-		Set<ReleaseData> products = new LinkedHashSet<>();
-		List<Release> wipProducts = this.repository.findProductsByRelease(rd.getOrg().toString(),
-				rd.getUuid().toString());
-		if (!wipProducts.isEmpty()) {
-			products = wipProducts.stream().map(ReleaseData::dataFromRecord).collect(Collectors.toSet());
-		}
-		if (!products.isEmpty()) {
-			for (ReleaseData brd : products) {
-				if (!setToBreakCircles.contains(brd.getUuid())) {
-					setToBreakCircles.add(brd.getUuid());
-					products.addAll(locateAllProductsOfRelease(brd, setToBreakCircles));
-				}
-			}
-		}
-		return products;
-	}
-
 	public JsonNode exportReleaseAsObom(UUID releaseUuid) {
 		JsonNode output = null;
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);

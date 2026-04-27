@@ -19,7 +19,12 @@ public interface ReleaseSbomComponentRepository extends CrudRepository<ReleaseSb
 
 	List<ReleaseSbomComponent> findByReleaseUuid(UUID releaseUuid);
 
+	List<ReleaseSbomComponent> findByReleaseUuidIn(Collection<UUID> releaseUuids);
+
 	Optional<ReleaseSbomComponent> findByReleaseUuidAndSbomComponentUuid(UUID releaseUuid, UUID sbomComponentUuid);
+
+	@Query("SELECT DISTINCT r.releaseUuid FROM ReleaseSbomComponent r WHERE r.sbomComponentUuid IN :sbomComponentUuids")
+	List<UUID> findDistinctReleaseUuidsBySbomComponentUuidIn(Collection<UUID> sbomComponentUuids);
 
 	@Modifying
 	@Transactional

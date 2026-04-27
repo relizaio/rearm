@@ -813,7 +813,7 @@ public class Utils {
 	/**
 	 * Minimizes a PURL by stripping all qualifiers while keeping the core components
 	 * (type, namespace, name, version, subpath).
-	 * 
+	 *
 	 * @param purl The PURL string to minimize
 	 * @return Minimized PURL string without qualifiers, or null if input is null or invalid
 	 */
@@ -821,11 +821,11 @@ public class Utils {
 		if (purl == null || purl.isEmpty() || !purl.startsWith("pkg:")) {
 			return null;
 		}
-		
+
 		try {
 			// Parse the PURL
 			PackageURL packageUrl = new PackageURL(purl);
-			
+
 			// Build a new PURL with the same components but without qualifiers
 			PackageURLBuilder builder = PackageURLBuilder.aPackageURL()
 					.withType(packageUrl.getType())
@@ -834,10 +834,34 @@ public class Utils {
 					.withVersion(packageUrl.getVersion())
 					.withSubpath(packageUrl.getSubpath());
 			// Note: Not setting qualifiers - they will be empty
-			
+
 			return builder.build().toString();
 		} catch (MalformedPackageURLException e) {
 			log.warn("Failed to parse PURL for minimization: {}", purl, e);
+			return null;
+		}
+	}
+
+	/**
+	 * Canonicalizes a PURL by stripping qualifiers AND subpath, matching the
+	 * canonical-purl form computed by rebom and persisted in
+	 * {@code sbom_components.canonical_purl}. Use this before looking up an
+	 * sbom_components row by purl supplied from outside.
+	 */
+	public static String canonicalizePurl(String purl) {
+		if (purl == null || purl.isEmpty() || !purl.startsWith("pkg:")) {
+			return null;
+		}
+		try {
+			PackageURL packageUrl = new PackageURL(purl);
+			return PackageURLBuilder.aPackageURL()
+					.withType(packageUrl.getType())
+					.withNamespace(packageUrl.getNamespace())
+					.withName(packageUrl.getName())
+					.withVersion(packageUrl.getVersion())
+					.build().toString();
+		} catch (MalformedPackageURLException e) {
+			log.warn("Failed to parse PURL for canonicalization: {}", purl, e);
 			return null;
 		}
 	}

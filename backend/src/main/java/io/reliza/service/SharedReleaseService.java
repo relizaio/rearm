@@ -524,7 +524,35 @@ public class SharedReleaseService {
 	}
 	
 	/**
-	 * 
+	 * Inverse of {@link #unwindReleaseDependencies(ReleaseData)} — recursively
+	 * locates every product release that bundles {@code rd}, then every
+	 * product that bundles those, and so on. Mirrors the dropped helper that
+	 * used to live on ReleaseService; lives here so callers in lower-tier
+	 * services (e.g. {@code SbomComponentService}) can reach it without a
+	 * circular dependency on ReleaseService.
+	 *
+	 * @param rd starting release
+	 * @param setToBreakCircles mutable visited set; pass an empty set on
+	 *        external entry, or a shared one when fanning out across many
+	 *        seeds to dedupe across calls.
+	 * @return all transitive product releases, deduplicated by uuid.
+	 */
+	public Set<ReleaseData> locateAllProductsOfRelease(ReleaseData rd, Set<UUID> setToBreakCircles) {
+		Set<ReleaseData> products = new LinkedHashSet<>(
+				greedylocateProductsOfRelease(rd, null, false));
+		if (products.isEmpty()) return products;
+		List<ReleaseData> ancestors = new ArrayList<>();
+		for (ReleaseData direct : products) {
+			if (setToBreakCircles.add(direct.getUuid())) {
+				ancestors.addAll(locateAllProductsOfRelease(direct, setToBreakCircles));
+			}
+		}
+		products.addAll(ancestors);
+		return products;
+	}
+
+	/**
+	 *
 	 * @param rd
 	 * @param myOrg - used in case we're dealing with external organization to pin to our org
 	 * @return
@@ -1017,6 +1045,20 @@ public class SharedReleaseService {
 		return findReleasesBySce(sce,org).stream().map(ReleaseData::dataFromRecord).toList();
 	}
 	
+	/**
+	 * Group a precomputed set of release UUIDs into {@code ComponentWithBranches}.
+	 * Mirrors the tail of {@link #findReleaseDatasByDtrackProjects} so callers
+	 * that already know which releases to surface (e.g. the SBOM-component
+	 * search path that walks {@code release_sbom_components}) can reuse the
+	 * same component/branch grouping without going through dtrack.
+	 */
+	public List<ComponentWithBranches> findReleaseDatasByReleaseIds(Collection<UUID> releaseIds, final UUID org) {
+		if (releaseIds == null || releaseIds.isEmpty()) return List.of();
+		Set<UUID> ids = (releaseIds instanceof Set<?>) ? (Set<UUID>) releaseIds : new HashSet<>(releaseIds);
+		var releaseDatas = getReleaseDataList(ids, org);
+		return convertReleasesToComponentWithBranches(releaseDatas, org, null);
+	}
+
 	public List<ComponentWithBranches> findReleaseDatasByDtrackProjects(Collection<UUID> dtrackProjects, final UUID org) {
 		log.debug("dtrack project size = {}", dtrackProjects.size());
 		long startTime = System.currentTimeMillis();
