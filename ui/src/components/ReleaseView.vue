@@ -1092,14 +1092,6 @@
                 </n-form>
             </div>
         </n-modal>
-        <ReleaseSbomComponentGraph
-            v-model:show="showSbomComponentGraphModal"
-            :release-uuid="updatedRelease?.uuid || ''"
-            :org-uuid="updatedRelease?.orgDetails?.uuid || ''"
-            :sbom-component-uuid="sbomGraphSelectedRowUuid"
-            :purl="sbomGraphPurl"
-            ref="sbomGraphRef"
-        />
             </div>
     </div>
 
@@ -1116,7 +1108,6 @@ import CreateArtifact from '@/components/CreateArtifact.vue'
 import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
-import ReleaseSbomComponentGraph from '@/components/ReleaseSbomComponentGraph.vue'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { fetchWithAuth, fetchArrayBufferWithAuth } from '../utils/fetchClient'
 import gql from 'graphql-tag'
@@ -2099,10 +2090,6 @@ const sbomGraphByUuid: Ref<Record<string, any>> = ref({})
 // using Apollo's cache. Set by the Refresh button so the tree view re-pulls
 // after reconcile changes.
 const sbomGraphDirty: Ref<boolean> = ref(false)
-const showSbomComponentGraphModal: Ref<boolean> = ref(false)
-const sbomGraphSelectedRowUuid: Ref<string> = ref('')
-const sbomGraphPurl: Ref<string> = ref('')
-const sbomGraphRef: Ref<any> = ref(null)
 
 async function loadSbomComponents (forceRefresh: boolean = false) {
     if (!updatedRelease.value?.uuid) return
@@ -2140,9 +2127,6 @@ async function loadSbomComponents (forceRefresh: boolean = false) {
             sbomGraphLoaded.value = false
             sbomGraphByUuid.value = {}
             sbomGraphDirty.value = true
-            if (sbomGraphRef.value && typeof sbomGraphRef.value.invalidateCache === 'function') {
-                sbomGraphRef.value.invalidateCache()
-            }
         }
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
@@ -2211,15 +2195,25 @@ async function ensureSbomGraphLoaded (forceRefresh: boolean = false) {
 }
 
 function openSbomComponentGraph (row: any) {
-    sbomGraphPurl.value = ''
-    sbomGraphSelectedRowUuid.value = row?.uuid || ''
-    showSbomComponentGraphModal.value = true
+    if (!updatedRelease.value?.uuid || !row?.uuid) return
+    const href = router.resolve({
+        name: 'SbomComponentGraph',
+        params: { releaseUuid: updatedRelease.value.uuid, componentUuid: row.uuid }
+    }).href
+    window.open(href, '_blank')
 }
 
-async function openSbomComponentGraphByPurl (purl: string) {
-    sbomGraphSelectedRowUuid.value = ''
-    sbomGraphPurl.value = purl
-    showSbomComponentGraphModal.value = true
+function openSbomComponentGraphByPurl (purl: string) {
+    if (!updatedRelease.value?.uuid) return
+    const href = router.resolve({
+        name: 'SbomComponentGraph',
+        params: { releaseUuid: updatedRelease.value.uuid },
+        query: {
+            purl,
+            org: updatedRelease.value.orgDetails?.uuid || ''
+        }
+    }).href
+    window.open(href, '_blank')
 }
 
 const sbomComponentsTableFields: DataTableColumns<any> = [

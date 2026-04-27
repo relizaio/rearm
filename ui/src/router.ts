@@ -89,6 +89,17 @@ const routes : any[] = [
         component: () => import('@/components/ReleaseView.vue')
     },
     {
+        path: '/release/:releaseUuid/sbomComponentGraph/:componentUuid?',
+        name: 'SbomComponentGraph',
+        component: () => import('@/components/ReleaseSbomComponentGraph.vue'),
+        props: route => ({
+            releaseUuid: route.params.releaseUuid as string,
+            componentUuid: (route.params.componentUuid as string) || '',
+            purl: (route.query.purl as string) || '',
+            orgUuid: (route.query.org as string) || ''
+        })
+    },
+    {
         path: '/changelog/:orgprop/:release1prop/:release2prop/:componenttypeprop/:isrouterlink',
         name: 'ChangelogView',
         component: () => import('@/components/ChangelogView.vue'),

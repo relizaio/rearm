@@ -1,20 +1,24 @@
 <template>
-    <n-modal
-        :show="show"
-        @update:show="(v: boolean) => emit('update:show', v)"
-        style="width: 95%; max-width: 1800px;"
-        preset="card"
-        :show-icon="false"
-        :title="modalTitle">
-        <div v-if="loading">
+    <div class="sbom-graph-page">
+        <div class="page-header">
+            <div>
+                <RouterLink :to="{ name: 'ReleaseView', params: { uuid: releaseUuid } }" class="back-link">
+                    &larr; Back to release
+                </RouterLink>
+                <h2 style="margin: 4px 0 0;">{{ pageTitle }}</h2>
+            </div>
+            <n-button v-if="releaseUuid" size="small" @click="reload" :loading="loading">Refresh</n-button>
+        </div>
+
+        <div v-if="loading" style="padding: 24px;">
             <n-spin size="medium" />
             <p>{{ loadingMessage }}</p>
         </div>
-        <div v-else-if="errorMessage">
+        <div v-else-if="errorMessage" style="padding: 16px;">
             <p style="color: #d03050;">{{ errorMessage }}</p>
         </div>
-        <div v-else-if="selected">
-            <div style="margin-bottom: 12px;">
+        <div v-else-if="selected" class="page-body">
+            <div class="component-summary">
                 <p style="margin: 4px 0;"><strong>Name:</strong> {{ selected.component?.name || '—' }}</p>
                 <p style="margin: 4px 0;"><strong>Version:</strong> {{ selected.component?.version || '—' }}</p>
                 <p v-if="selected.component?.group" style="margin: 4px 0;"><strong>Group:</strong> {{ selected.component.group }}</p>
@@ -42,7 +46,7 @@
                             class="path-box"
                             :class="{ 'is-root': node.component?.isRoot, 'is-self': nodeIdx === 0 }"
                             :title="node.component?.canonicalPurl || ''"
-                            @click="selectByUuid(node.uuid)">
+                            @click="navigateToRow(node.uuid)">
                             {{ nodeLabel(node) }}
                         </span>
                     </template>
@@ -76,7 +80,7 @@
                 :pagination="{ pageSize: 10 }"
             />
         </div>
-    </n-modal>
+    </div>
 </template>
 
 <script lang="ts">
@@ -88,25 +92,23 @@ import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import { searchSbomComponentByPurl } from '@/utils/dtrack'
 import { computed, h, ref, watch, type Ref, type ComputedRef } from 'vue'
-import { NButton, NDataTable, NModal, NSpin, NTag, NTooltip, type DataTableColumns } from 'naive-ui'
+import { RouterLink, useRouter } from 'vue-router'
+import { NButton, NDataTable, NSpin, NTag, NTooltip, type DataTableColumns } from 'naive-ui'
 
 interface Props {
-    show: boolean
     releaseUuid: string
-    orgUuid?: string
-    sbomComponentUuid?: string
+    componentUuid?: string
     purl?: string
+    orgUuid?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    orgUuid: '',
-    sbomComponentUuid: '',
-    purl: ''
+    componentUuid: '',
+    purl: '',
+    orgUuid: ''
 })
 
-const emit = defineEmits<{
-    'update:show': [value: boolean]
-}>()
+const router = useRouter()
 
 const MAX_PATHS = 50
 
@@ -114,9 +116,6 @@ const loading: Ref<boolean> = ref(false)
 const loadingMessage: Ref<string> = ref('Loading dependency graph...')
 const errorMessage: Ref<string> = ref('')
 // Per-release cache of the loaded graph: releaseUuid -> { byUuid }.
-// Apollo's cache-first policy backs this on the network side, but we also keep
-// a local map so the in-memory traversal helpers (paths, lookups) don't re-walk
-// the response on every navigation between rows in the same modal session.
 const graphCache: Ref<Record<string, { byUuid: Record<string, any> }>> = ref({})
 const currentReleaseUuid: Ref<string> = ref('')
 const selectedUuid: Ref<string> = ref('')
@@ -127,7 +126,7 @@ const byUuid: ComputedRef<Record<string, any>> = computed(() =>
 
 const selected: ComputedRef<any> = computed(() => byUuid.value[selectedUuid.value] || null)
 
-const modalTitle: ComputedRef<string> = computed(() => {
+const pageTitle: ComputedRef<string> = computed(() => {
     const c = selected.value?.component
     if (!c) return 'SBOM Component Graph'
     const v = c.version ? `@${c.version}` : ''
@@ -140,8 +139,6 @@ function nodeLabel (row: any): string {
     return c.canonicalPurl || `${c.name || ''}${c.version ? '@' + c.version : ''}` || row.uuid
 }
 
-// Releases marked here are forced to bypass Apollo cache on the next load —
-// set when invalidateCache(releaseUuid) is called from the parent.
 const forceRefetchReleases: Ref<Set<string>> = ref(new Set())
 
 async function ensureGraphLoaded (releaseUuid: string): Promise<boolean> {
@@ -199,7 +196,6 @@ async function ensureGraphLoaded (releaseUuid: string): Promise<boolean> {
 
 async function resolveSelection () {
     errorMessage.value = ''
-    if (!props.show) return
     if (!props.releaseUuid) {
         errorMessage.value = 'No release context provided.'
         return
@@ -208,7 +204,7 @@ async function resolveSelection () {
     const loaded = await ensureGraphLoaded(props.releaseUuid)
     if (!loaded) return
 
-    let targetUuid = props.sbomComponentUuid
+    let targetUuid = props.componentUuid
     if (!targetUuid && props.purl) {
         loading.value = true
         loadingMessage.value = 'Resolving purl...'
@@ -235,9 +231,7 @@ async function resolveSelection () {
     }
 
     // The release_sbom_components row UUID and the canonical sbom_components.uuid
-    // are different. The list query keys rows by the release-row UUID; the
-    // searchSbomComponentByPurl call returns the canonical UUID. Match by either
-    // so callers can pass whichever they have.
+    // are different. Match by either so callers can pass whichever they have.
     let row = byUuid.value[targetUuid]
     if (!row) {
         row = Object.values(byUuid.value).find((r: any) =>
@@ -252,15 +246,28 @@ async function resolveSelection () {
     selectedUuid.value = row.uuid
 }
 
-function selectByUuid (rowUuid: string) {
-    if (byUuid.value[rowUuid]) selectedUuid.value = rowUuid
+function navigateToRow (rowUuid: string) {
+    if (!byUuid.value[rowUuid]) return
+    router.push({
+        name: 'SbomComponentGraph',
+        params: { releaseUuid: props.releaseUuid, componentUuid: rowUuid }
+    })
 }
 
-watch(() => [props.show, props.releaseUuid, props.sbomComponentUuid, props.purl] as const, ([showing]) => {
-    if (showing) {
-        selectedUuid.value = ''
-        resolveSelection()
-    }
+function reload () {
+    if (!props.releaseUuid) return
+    const next = new Set(forceRefetchReleases.value)
+    next.add(props.releaseUuid)
+    forceRefetchReleases.value = next
+    const evicted = { ...graphCache.value }
+    delete evicted[props.releaseUuid]
+    graphCache.value = evicted
+    resolveSelection()
+}
+
+watch(() => [props.releaseUuid, props.componentUuid, props.purl, props.orgUuid] as const, () => {
+    selectedUuid.value = ''
+    resolveSelection()
 }, { immediate: true })
 
 // Upstream paths: walk dependedOnBy upward to find each distinct path that
@@ -275,7 +282,6 @@ const upstreamPaths: ComputedRef<any[][]> = computed((): any[][] => {
 
     const map = byUuid.value
     const paths: any[][] = []
-    // DFS with explicit stack: each frame is (currentRow, pathSoFar, ancestorsInPath)
     const stack: { row: any; path: any[]; ancestors: Set<string> }[] = [
         { row: start, path: [start], ancestors: new Set([start.uuid]) }
     ]
@@ -289,15 +295,11 @@ const upstreamPaths: ComputedRef<any[][]> = computed((): any[][] => {
             paths.push(frame.path)
             continue
         }
-        if (noParents) {
-            // start node with no parents and not a root → emit nothing
-            continue
-        }
+        if (noParents) continue
         for (const p of parents) {
             const parentRow = map[p.uuid]
             if (!parentRow) continue
             if (frame.ancestors.has(parentRow.uuid)) {
-                // cycle — emit the path up to the cycle point
                 paths.push([...frame.path, parentRow])
                 continue
             }
@@ -363,7 +365,7 @@ const dependenciesColumns: DataTableColumns<any> = [
             return h(NButton, {
                 size: 'tiny',
                 tertiary: true,
-                onClick: () => selectByUuid(targetUuid)
+                onClick: () => navigateToRow(targetUuid)
             }, () => 'Open')
         }
     }
@@ -383,42 +385,49 @@ const dependedOnByColumns: DataTableColumns<any> = [
             return h(NButton, {
                 size: 'tiny',
                 tertiary: true,
-                onClick: () => selectByUuid(row.uuid)
+                onClick: () => navigateToRow(row.uuid)
             }, () => 'Open')
         }
     }
 ]
-
-function invalidateCache (releaseUuid?: string) {
-    const refetch = new Set(forceRefetchReleases.value)
-    if (releaseUuid) {
-        const next = { ...graphCache.value }
-        delete next[releaseUuid]
-        graphCache.value = next
-        refetch.add(releaseUuid)
-    } else {
-        graphCache.value = {}
-        Object.keys(graphCache.value).forEach(k => refetch.add(k))
-        if (currentReleaseUuid.value) refetch.add(currentReleaseUuid.value)
-    }
-    forceRefetchReleases.value = refetch
-    if (props.show) {
-        resolveSelection()
-    }
-}
-
-defineExpose({
-    selectByUuid,
-    invalidateCache
-})
 </script>
 
 <style scoped>
+.sbom-graph-page {
+    padding: 16px 24px;
+    max-width: 100%;
+}
+
+.page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    gap: 16px;
+}
+
+.back-link {
+    color: #4ea8c8;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.back-link:hover {
+    text-decoration: underline;
+}
+
+.component-summary {
+    margin-bottom: 16px;
+    padding: 12px;
+    border: 1px solid var(--n-border-color, rgba(128, 128, 128, 0.2));
+    border-radius: 4px;
+}
+
 .upstream-paths {
-    max-height: 240px;
+    max-height: 320px;
     overflow: auto;
     padding: 6px 4px;
-    border: 1px solid var(--n-border-color, rgba(255, 255, 255, 0.12));
+    border: 1px solid var(--n-border-color, rgba(128, 128, 128, 0.2));
     border-radius: 4px;
 }
 
