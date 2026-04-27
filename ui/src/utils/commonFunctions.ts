@@ -24,6 +24,7 @@ function translateFunctionName(fn: string): string {
         case 'SBOM_PROBING': return 'SBOM Probing'
         case 'DEVOPS_READ': return 'DevOps Read'
         case 'DEVOPS_WRITE': return 'DevOps Write'
+        case 'VERSION_FEATURESET': return 'Version Feature Set'
         default: return fn
     }
 }

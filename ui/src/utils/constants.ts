@@ -162,7 +162,12 @@ const PERMISSION_FUNCTIONS: string[] = [
     // keys keep their object-bound semantics and don't need
     // function-level grants.
     'DEVOPS_READ',
-    'DEVOPS_WRITE'
+    'DEVOPS_WRITE',
+    // Authorises a FREEFORM key (or user) to spin up a new feature
+    // set on a PRODUCT with selected dependency-branch overrides
+    // applied on top of the BASE feature set's dep config. Granted
+    // at PermissionScope.COMPONENT on the product.
+    'VERSION_FEATURESET'
 ]
 const ARTIFACT_COVERAGE_TYPES = [
     {label: 'Dev', value: 'DEV'},
