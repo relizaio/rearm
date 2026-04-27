@@ -587,7 +587,6 @@
                             style="margin-left:10px;"
                         ><Copy /></n-icon>
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
-                        <Icon v-if="isWritable" @click="reconcileReleaseSbom" class="clickable" :style="{ marginLeft: '10px', opacity: reconcileSbomPending ? 0.5 : 1, pointerEvents: reconcileSbomPending ? 'none' : 'auto' }" size="16" title="Reconcile SBOM components (rebuild aggregation)" ><Refresh/></Icon>
                     </n-gi>
                     <n-gi span="2">
                         <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
@@ -802,14 +801,16 @@
                                 <n-radio-button value="tree" label="Tree" />
                             </n-radio-group>
                             <n-button
+                                v-if="isWritable"
                                 size="small"
-                                @click="loadSbomComponents(true)"
-                                :loading="sbomComponentsLoading"
-                                :disabled="sbomComponentsLoading">
+                                @click="reconcileSbomFromTab"
+                                :loading="reconcileSbomPending"
+                                :disabled="reconcileSbomPending"
+                                title="Schedule a reconcile to rebuild this release's SBOM component inventory.">
                                 <template #icon>
                                     <n-icon><Refresh /></n-icon>
                                 </template>
-                                Refresh
+                                Reconcile
                             </n-button>
                             <n-button
                                 v-if="sbomViewMode === 'tree' && sbomGraphLoaded"
@@ -2077,6 +2078,23 @@ async function reconcileReleaseSbom () {
     }
 }
 
+// SBOM Components tab Reconcile button — schedules the reconcile and busts the
+// local list/graph caches so the next render picks up the rebuilt inventory
+// once the every-minute scheduler completes (visible via the "reconcile pending"
+// tag in the meantime).
+async function reconcileSbomFromTab () {
+    await reconcileReleaseSbom()
+    sbomComponentsLoaded.value = false
+    sbomGraphLoaded.value = false
+    sbomGraphByUuid.value = {}
+    sbomGraphDirty.value = true
+    if (sbomViewMode.value === 'list') {
+        await loadSbomComponents(true)
+    } else if (sbomViewMode.value === 'tree') {
+        await ensureSbomGraphLoaded(true)
+    }
+}
+
 // Release SBOM Components tab — list view query (cheap: no dependencies/dependedOnBy).
 // The detail modal (ReleaseSbomComponentGraph) loads the deeper graph on demand;
 // both queries hit Apollo cache-first so the tree view and the modal share results.
@@ -2256,7 +2274,7 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
             const tooltipContent = h('ul', { style: 'margin: 0; padding-left: 18px;' },
                 list.map((p: any) => h('li', { style: 'word-break: break-all;' }, [
                     h('div', `artifact: ${p.artifact}`),
-                    p.exactPurls && p.exactPurls.length ? h('div', { style: 'font-size: 11px; color: #666;' }, `purls: ${p.exactPurls.join(', ')}`) : null
+                    p.exactPurls && p.exactPurls.length ? h('div', { style: 'font-size: 11px; color: pink;' }, `purls: ${p.exactPurls.join(', ')}`) : null
                 ]))
             )
             return h(NTooltip, {
