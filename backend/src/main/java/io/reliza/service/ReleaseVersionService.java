@@ -15,7 +15,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.VersionResponse;
 import io.reliza.common.Utils;
@@ -60,8 +59,16 @@ public class ReleaseVersionService {
 	
 	@Autowired
     private GetSourceCodeEntryService getSourceCodeEntryService;
-	
-	@Transactional
+
+	/**
+	 * Intentionally NOT @Transactional. The branch may be auto-created during
+	 * resolution (when getversion is called with a brand-new branch name), and
+	 * {@link VersionAssignmentService#getSetNewVersion} runs in REQUIRES_NEW —
+	 * an outer transaction here would leave the branch insert pending, so the
+	 * inner REQUIRES_NEW transaction could not see it and version assignment
+	 * would fail with "Failed to retrieve next version" → "Not authorized".
+	 * Each underlying step manages its own transaction.
+	 */
 	public VersionResponse getNewVersionWrapper(GetNewVersionDto getNewVersionDto, WhoUpdated wu) throws Exception{
 		VersionResponse vr = null;
 		UUID projectId = getNewVersionDto.project();
