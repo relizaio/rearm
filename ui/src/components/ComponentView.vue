@@ -422,6 +422,30 @@
                                                     <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
                                                         <n-input v-model:value="outputTrigger.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
                                                     </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Choose Validation Integration" path="integration">
+                                                        <n-select
+                                                            v-model:value="outputTrigger.integration"
+                                                            placeholder="Select GitHub Validate Integration"
+                                                            :options="validationIntegrationsForSelect" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="VCS Repository" path="vcs">
+                                                        <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>
+                                                        <span v-if="!selectNewIntegrationRepo && !outputTrigger.vcs">Not Set</span>
+                                                        <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
+                                                        <n-icon v-if="!selectNewIntegrationRepo" class="clickable" @click="async () => {selectNewIntegrationRepo = true;}" title="Select VCS Repository" size="20"><Edit /></n-icon>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Conclusion" path="eventType">
+                                                        <n-select v-model:value="outputTrigger.eventType" required :options="externalValidationConclusionOptions" placeholder="Select check-run conclusion" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Optional Output JSON (title / summary / text)" path="clientPayload">
+                                                        <n-input v-model:value="outputTrigger.clientPayload" placeholder='{"title":"...","summary":"...","text":"..."}' />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Dynamic output (CEL string expression)" path="celClientPayload">
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
+                                                    </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
                                                         <n-select v-model:value="outputTrigger.users" tag multiple required :options="users" />
                                                     </n-form-item>
@@ -900,8 +924,18 @@ const genApiKey = function (type : string) {
 }
 
 const ciIntegrations: Ref<any[]> = ref([])
+// INTEGRATION_TRIGGER picker — exclude GITHUB_VALIDATE since those are
+// only valid targets for the EXTERNAL_VALIDATION event type.
 const ciIntegrationsForSelect: ComputedRef<any[]> = computed((): any => {
-    return ciIntegrations.value.map((x: any) => {return {label: x.note, value: x.uuid}})
+    return ciIntegrations.value
+        .filter((x: any) => x.type !== 'GITHUB_VALIDATE')
+        .map((x: any) => {return {label: x.note, value: x.uuid}})
+})
+// EXTERNAL_VALIDATION picker — only GITHUB_VALIDATE integrations.
+const validationIntegrationsForSelect: ComputedRef<any[]> = computed((): any => {
+    return ciIntegrations.value
+        .filter((x: any) => x.type === 'GITHUB_VALIDATE')
+        .map((x: any) => {return {label: x.note, value: x.uuid}})
 })
 const selectedCiIntegration: ComputedRef<any> = computed((): any => {
     return ciIntegrations.value.find((x: any) => x.uuid === outputTrigger.value.integration)
@@ -1419,9 +1453,18 @@ const outputTriggerTypeOptions = [
     {label: 'Release Lifecycle Change', value: 'RELEASE_LIFECYCLE_CHANGE'},
     {label: 'Marketing Release Lifecycle Change', value: 'MARKETING_RELEASE_LIFECYCLE_CHANGE'},
     {label: 'External Integration', value: 'INTEGRATION_TRIGGER'},
+    {label: 'External Validation', value: 'EXTERNAL_VALIDATION'},
     {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'},
     {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'},
     {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'}
+]
+
+const externalValidationConclusionOptions = [
+    {label: 'Success', value: 'success'},
+    {label: 'Failure', value: 'failure'},
+    {label: 'Neutral', value: 'neutral'},
+    {label: 'Skipped', value: 'skipped'},
+    {label: 'Cancelled', value: 'cancelled'}
 ]
 
 // Global Input Event Refs management

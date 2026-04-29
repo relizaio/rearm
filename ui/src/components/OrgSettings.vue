@@ -175,19 +175,20 @@
                             <n-form-item label="CI Type" path="createIntegrationObject.type">
                                 <n-radio-group v-model:value="createIntegrationObject.type" name="ciIntegrationType">
                                     <n-radio-button label="GitHub" value="GITHUB" />
+                                    <n-radio-button label="GitHub Validate" value="GITHUB_VALIDATE" />
                                     <n-radio-button label="GitLab" value="GITLAB" />
                                     <n-radio-button label="Jenkins" value="JENKINS" />
                                     <n-radio-button label="Azure DevOps" value="ADO" />
                                 </n-radio-group>
                             </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" id="org_settings_create_github_integration_secret_group" label="GitHub Private Key DER Base64"
+                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB' || createIntegrationObject.type === 'GITHUB_VALIDATE'" id="org_settings_create_github_integration_secret_group" label="GitHub Private Key DER Base64"
                                 label-for="org_settings_create_github_integration_secret"
                                 description="GitHub Private Key DER Base64">
                                 <n-input type="textarea" id="org_settings_create_github_integration_secret"
                                     v-model:value="createIntegrationObject.secret" required
                                     placeholder="Enter GitHub Private Key Base64, use 'openssl pkcs8 -topk8 -inform PEM -outform DER -in private-key.pem -out key.der -nocrypt | base64 -w 0 key.der' to obtain" />
                             </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
+                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB' || createIntegrationObject.type === 'GITHUB_VALIDATE'" id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
                                 label-for="org_settings_create_github_integration_appid"
                                 description="GitHub Application ID">
                                 <n-input type="number" id="org_settings_create_github_integration_appid"
@@ -620,6 +621,21 @@
                                     </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
                                         <n-input v-model:value="globalOutputEvent.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Choose Validation Integration" path="integration">
+                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select GitHub Validate Integration" :options="validationIntegrationsForGlobalSelect" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Conclusion" path="eventType">
+                                        <n-select v-model:value="globalOutputEvent.eventType" required :options="externalValidationConclusionOptions" placeholder="Select check-run conclusion" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Optional Output JSON (title / summary / text)" path="clientPayload">
+                                        <n-input v-model:value="globalOutputEvent.clientPayload" placeholder='{"title":"...","summary":"...","text":"..."}' />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Dynamic output (CEL string expression)" path="celClientPayload">
+                                        <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
                                     </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Dynamic client payload (CEL string expression)" path="celClientPayload">
                                         <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"refs/tags/" + release.version' />
@@ -5454,9 +5470,18 @@ const outputTriggerTypeOptions = [
     {label: 'Release Lifecycle Change', value: 'RELEASE_LIFECYCLE_CHANGE'},
     {label: 'Marketing Release Lifecycle Change', value: 'MARKETING_RELEASE_LIFECYCLE_CHANGE'},
     {label: 'External Integration', value: 'INTEGRATION_TRIGGER'},
+    {label: 'External Validation', value: 'EXTERNAL_VALIDATION'},
     {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'},
     {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'},
     {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'}
+]
+
+const externalValidationConclusionOptions = [
+    {label: 'Success', value: 'success'},
+    {label: 'Failure', value: 'failure'},
+    {label: 'Neutral', value: 'neutral'},
+    {label: 'Skipped', value: 'skipped'},
+    {label: 'Cancelled', value: 'cancelled'}
 ]
 
 const outputTriggerLifecycleOptions = constants.LifecycleValueOptions
@@ -5464,9 +5489,19 @@ const outputTriggerLifecycleOptions = constants.LifecycleValueOptions
 const lifecycleOptions = constants.LifecycleOptions.map((lo: any) => {return {label: lo.label, value: lo.key}})
 
 const ciIntegrationsForGlobalSelect = computed((): any => {
-    return ciIntegrations.value.map((ci: any) => {
-        return { label: ci.note + ' (' + ci.type + ')', value: ci.uuid }
-    })
+    return ciIntegrations.value
+        .filter((ci: any) => ci.type !== 'GITHUB_VALIDATE')
+        .map((ci: any) => {
+            return { label: ci.note + ' (' + ci.type + ')', value: ci.uuid }
+        })
+})
+
+const validationIntegrationsForGlobalSelect = computed((): any => {
+    return ciIntegrations.value
+        .filter((ci: any) => ci.type === 'GITHUB_VALIDATE')
+        .map((ci: any) => {
+            return { label: ci.note, value: ci.uuid }
+        })
 })
 
 const selectedGlobalCiIntegration = computed((): any => {
