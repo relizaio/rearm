@@ -4662,8 +4662,11 @@ function renderDtrackPill (row: any): any {
         const reason = m.dtrackSubmissionFailureReason ? `: ${m.dtrackSubmissionFailureReason}` : ''
         return h(NTag, { type: 'error', size: 'small', round: true, title: `DependencyTrack submission failed${reason}` }, () => 'DTrack failed')
     }
+    if (m.firstScanned) {
+        return h(NTag, { type: 'success', size: 'small', round: true, title: 'Dependency-Track scan complete' }, () => 'DTrack done')
+    }
     if (m.dependencyTrackFullUri) {
-        return h(NTag, { type: 'success', size: 'small', round: true, title: 'Submitted to Dependency-Track' }, () => 'DTrack done')
+        return h(NTag, { type: 'warning', size: 'small', round: true, title: 'Submitted to Dependency-Track, awaiting scan results' }, () => 'DTrack scanning…')
     }
     return h(NTag, { type: 'warning', size: 'small', round: true, title: 'Awaiting Dependency-Track submission' }, () => 'DTrack pending')
 }

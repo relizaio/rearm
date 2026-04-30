@@ -279,6 +279,7 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
     metrics {
         dependencyTrackFullUri
         lastScanned
+        firstScanned
         dtrackSubmissionFailed
         dtrackSubmissionAttempts
         dtrackSubmissionFailureReason
