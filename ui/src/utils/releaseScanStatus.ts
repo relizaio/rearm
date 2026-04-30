@@ -34,7 +34,7 @@ export async function isDtrackConfiguredForOrg (orgUuid: string): Promise<boolea
     }
 }
 
-export type ReleaseScanStatusKind = 'enrichment-pending' | 'dtrack-pending' | 'ready'
+export type ReleaseScanStatusKind = 'enrichment-pending' | 'dtrack-pending' | 'scan-pending' | 'ready'
 
 export interface ReleaseScanStatus {
     kind: ReleaseScanStatusKind
@@ -49,7 +49,11 @@ export interface ReleaseScanStatus {
  *  enrichment-pending  any BOM artifact still being enriched in rebom
  *  dtrack-pending      DTrack is configured but at least one BOM artifact
  *                      hasn't been submitted yet (no project UUID, no failure)
- *  ready               nothing pending — caller renders the existing circles
+ *  scan-pending        no firstScanned on the release yet — initial scan has
+ *                      not completed across all scannable inputs (artifacts +
+ *                      child releases for products). Catches PENDING-lifecycle
+ *                      releases and product releases waiting on a child.
+ *  ready               firstScanned is set — caller renders the existing circles
  */
 export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): ReleaseScanStatus {
     const artifacts: any[] = collectArtifactsForStatus(release)
@@ -69,6 +73,13 @@ export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): 
                 label: 'DTrack pending',
                 title: 'Awaiting Dependency-Track submission for at least one BOM'
             }
+        }
+    }
+    if (!release?.metrics?.firstScanned) {
+        return {
+            kind: 'scan-pending',
+            label: 'Scan pending',
+            title: 'Initial scan has not completed for this release yet'
         }
     }
     return { kind: 'ready', label: '', title: '' }

@@ -603,8 +603,13 @@
                         <Icon @click="showExportSBOMModal=true" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                     </n-gi>
                     <n-gi span="2">
-                        <n-space :size="1" v-if="updatedRelease.metrics.lastScanned">
-                            <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.critical }}</span>    
+                        <span
+                            v-if="releaseScanStatus.kind !== 'ready'"
+                            :title="releaseScanStatus.title"
+                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', background: releaseScanStatus.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
+                        >{{ releaseScanStatus.label }}</span>
+                        <n-space :size="1" v-else>
+                            <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.critical }}</span>
                             <span title="High Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.HIGH, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'HIGH', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.high }}</span>
                             <span title="Medium Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'MEDIUM', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.medium }}</span>
                             <span title="Low Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.LOW, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'LOW', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.low }}</span>
@@ -1150,6 +1155,7 @@ import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
+import { getReleaseScanStatus, isDtrackConfiguredForOrg } from '@/utils/releaseScanStatus'
 import { processMetricsData } from '@/utils/metrics'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
 import { PackageURL } from 'packageurl-js'
@@ -2472,6 +2478,10 @@ async function loadDtrackConfigured () {
         console.error('Could not load configured integrations', err)
     }
 }
+
+// Drives the header circles vs. "Scan pending"/"Enriching"/"DTrack pending"
+// badge: ready means firstScanned is set and no per-artifact stage is mid-flight.
+const releaseScanStatus = computed(() => getReleaseScanStatus(updatedRelease.value, dtrackConfigured.value))
 
 // Background poll while either the per-release SBOM reconcile or any artifact
 // is still pending — keeps the status pills live without forcing the user to
