@@ -181,12 +181,21 @@
                                     <n-radio-button label="Azure DevOps" value="ADO" />
                                 </n-radio-group>
                             </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB' || createIntegrationObject.type === 'GITHUB_VALIDATE'" id="org_settings_create_github_integration_secret_group" label="GitHub Private Key DER Base64"
+                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB' || createIntegrationObject.type === 'GITHUB_VALIDATE'" id="org_settings_create_github_integration_secret_group" label="GitHub Private Key"
                                 label-for="org_settings_create_github_integration_secret"
-                                description="GitHub Private Key DER Base64">
-                                <n-input type="textarea" id="org_settings_create_github_integration_secret"
-                                    v-model:value="createIntegrationObject.secret" required
-                                    placeholder="Enter GitHub Private Key Base64, use 'openssl pkcs8 -topk8 -inform PEM -outform DER -in private-key.pem -out key.der -nocrypt | base64 -w 0 key.der' to obtain" />
+                                description="Paste the .pem GitHub provides, upload the file directly, or paste a pre-converted DER base64 blob. Backend normalizes all three.">
+                                <n-space vertical>
+                                    <n-radio-group v-model:value="secretInputMode" name="githubSecretInputMode">
+                                        <n-radio-button label="Paste" value="paste" />
+                                        <n-radio-button label="Upload .pem" value="upload" />
+                                    </n-radio-group>
+                                    <n-input v-if="secretInputMode === 'paste'" type="textarea" id="org_settings_create_github_integration_secret"
+                                        v-model:value="createIntegrationObject.secret" required
+                                        placeholder="Paste the contents of the .pem file (-----BEGIN RSA PRIVATE KEY----- ...) or DER base64." />
+                                    <n-upload v-else :default-upload="false" :max="1" accept=".pem,.txt,.key" @change="onSecretFileChange">
+                                        <n-button>Choose .pem file</n-button>
+                                    </n-upload>
+                                </n-space>
                             </n-form-item>
                             <n-form-item v-if="createIntegrationObject.type === 'GITHUB' || createIntegrationObject.type === 'GITHUB_VALIDATE'" id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
                                 label-for="org_settings_create_github_integration_appid"
@@ -1832,6 +1841,19 @@ const createIntegrationObject: Ref<any> = ref({
     client: '',
     schedule: ''
 })
+
+// Toggles between pasting the GitHub App private key into a textarea
+// and uploading the .pem file GitHub provides directly. Default is
+// 'paste' so the form looks the same as before for keyboard users.
+// Backend normalizes PEM and DER-base64 to the same canonical form.
+const secretInputMode: Ref<'paste' | 'upload'> = ref('paste')
+
+async function onSecretFileChange (options: any) {
+    const fileInfo = options.file
+    if (fileInfo && fileInfo.file) {
+        createIntegrationObject.value.secret = await fileInfo.file.text()
+    }
+}
 
 function resetCreateIntegrationObject() {
     createIntegrationObject.value = {
