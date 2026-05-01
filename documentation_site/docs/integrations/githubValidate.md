@@ -86,8 +86,8 @@ External Validation can be configured per-component (described here) or at the p
    - `failure` — block the merge.
    - `neutral` — informational, doesn't block by itself.
    - `skipped` / `cancelled` — same as the GitHub semantics.
-9. **Optional Output JSON** (free-form `title` / `summary` / `text` for the check-run): can be left empty — ReARM provides sensible defaults.
-10. **Dynamic output (CEL)**: optional CEL expression to compute the output JSON at fire time.
+9. **Optional Output JSON** (free-form `title` / `summary` / `text` for the check-run): can be left empty — ReARM provides sensible defaults. See [Customising the check-run output](#customising-the-check-run-output) below for samples.
+10. **Dynamic output (CEL)**: optional CEL expression to compute the output JSON at fire time. Same section covers the available CEL bindings.
 11. Click **Save**.
 
 Repeat for each conclusion you want to drive — typically one trigger that posts `success` on approval and one that posts `failure` on rejection — and wire each into the appropriate input trigger / approval state.
@@ -144,6 +144,91 @@ For reference, both rearm-actions and the CLI are released:
 When a PR closes or merges, ReARM's `syncbranches` job archives the corresponding source branch (if it has been deleted upstream) and flips any open `pullRequestData` entries on that branch from `OPEN` to `CLOSED`. Re-runs of CI on a closed PR also explicitly set `--pr-state CLOSED` if the workflow detects a closed event.
 
 No additional configuration is needed — just make sure your CI pipeline runs on `pull_request` close events if you want closure events to be recorded in real time (otherwise `syncbranches` catches up on its own schedule).
+
+## Customising the check-run output
+
+The check-run that ReARM posts to GitHub has an `output` block with three fields — `title`, `summary`, and `text` (markdown). The trigger form exposes two ways to control it: **Optional Output JSON** (`clientPayload`) and **Dynamic output** (`celClientPayload`).
+
+### Precedence
+
+```
+celClientPayload  (CEL expression evaluated against the release)
+    │ result string overwrites clientPayload for this dispatch
+    ▼
+clientPayload     (static JSON: {"title": ..., "summary": ..., "text": ...})
+    │ if non-empty AND parses as JSON, replaces the entire default output
+    ▼
+default output    (computed server-side at fire time)
+```
+
+Either field, when set, **replaces the entire default output** — there is no field-level merge. If you set `clientPayload` to `{"text": "my note"}` you lose the default title and summary too. To customise just one field, copy the full default JSON into the form (use the **Use template** button next to each field) and edit from there.
+
+### Default output
+
+When both `clientPayload` and `celClientPayload` are empty, ReARM posts an `output` block roughly shaped like this — the `text` body is a markdown summary of the release's pre-aggregated metrics, so the developer reading the blocked PR sees what's wrong without leaving GitHub:
+
+```json
+{
+  "title": "ReARM verdict: failure",
+  "summary": "Release version: 1.2.3.",
+  "text": "### Vulnerabilities (47)\n\n| Severity | Count |\n|---|---|\n| Critical | 3 |\n| High | 9 |\n| Medium | 27 |\n| Low | 6 |\n| Unassigned | 2 |\n\n### Policy Violations (5)\n\n| Type | Total | Unaudited |\n|---|---|---|\n| Security | 4 | 2 |\n| License | 1 | 0 |\n| Operational | 0 | 0 |\n\n### Components\n- Scanned: 142\n- Vulnerable: 18\n- Findings: 50 audited / 7 unaudited / 12 suppressed\n\n_Last scanned: 2026-04-30T17:14:09Z_"
+}
+```
+
+The empty-state path (release not yet scanned) returns a single line so the absence of a table doesn't read as "all clear":
+
+```
+_No release metrics available — release has not been scanned yet._
+```
+
+### Sample `clientPayload` (static)
+
+A minimal static override. Useful when every fired check-run should carry the same custom message — e.g. linking to your own internal runbook:
+
+```json
+{
+  "title": "ReARM verdict: blocked",
+  "summary": "This release does not meet the org-wide policy gate.",
+  "text": "Open the [release page](https://your-rearm-instance.example.com/release/show/<release-uuid>) for full details, or see the [internal runbook](https://wiki.example.com/runbooks/rearm-blocked-pr).\n\n_To override per release, switch to the Dynamic output (CEL) field._"
+}
+```
+
+Notes:
+- The string has to be valid JSON; the form accepts a multi-line textarea but the value is parsed as a single JSON document.
+- `text` accepts GitHub-flavored markdown — tables, links, code fences, lists.
+
+### Sample `celClientPayload` (CEL expression)
+
+CEL expression evaluated server-side at fire time. The result must be a string that itself parses as JSON with `title` / `summary` / `text` keys. Useful when you want live release values in the output:
+
+```cel
+'{"title":"ReARM verdict: ' + release.lifecycle + '","summary":"Release ' + release.version + ' — ' + string(release.criticalVulns) + ' critical, ' + string(release.highVulns) + ' high","text":"Edit this CEL to customise per-release output. See bindings table below."}'
+```
+
+#### CEL bindings available on `release`
+
+| Binding | Type | Description |
+|---|---|---|
+| `release.version` | string | Release version |
+| `release.lifecycle` | string | `DRAFT` / `GENERAL_AVAILABILITY` / `END_OF_*` etc. |
+| `release.component` | string | Component UUID |
+| `release.branchType` | string | Branch type (`MAIN`, `FEATURE`, etc.) |
+| `release.firstScanned` | bool | True if the release has been scanned at least once |
+| `release.criticalVulns` | int | Count of CRITICAL-severity vulnerabilities |
+| `release.highVulns` | int | Count of HIGH-severity vulnerabilities |
+| `release.mediumVulns` | int | Count of MEDIUM-severity vulnerabilities |
+| `release.lowVulns` | int | Count of LOW-severity vulnerabilities |
+| `release.unassignedVulns` | int | Count of UNASSIGNED-severity vulnerabilities |
+| `release.securityViolations` | int | Count of policy violations of type SECURITY |
+| `release.licenseViolations` | int | Count of policy violations of type LICENSE |
+| `release.operationalViolations` | int | Count of policy violations of type OPERATIONAL |
+| `release.approvals[uuid]` | string | `APPROVED` / `DISAPPROVED` / `UNSET` per approval entry |
+
+CEL integers are 64-bit, so use `string(release.criticalVulns)` to interpolate counts into a JSON string.
+
+::: tip Use template buttons
+The trigger form has a **Use template** button next to each field that pre-fills a starting template you can edit. Clicking it overwrites whatever is currently in the field — clear the field first if you want to start fresh, or copy your work elsewhere before refilling.
+:::
 
 ## Troubleshooting
 

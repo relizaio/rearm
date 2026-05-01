@@ -485,11 +485,41 @@
                                                     <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Conclusion" path="eventType">
                                                         <n-select v-model:value="outputTrigger.eventType" required :options="externalValidationConclusionOptions" placeholder="Select check-run conclusion" />
                                                     </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Optional Output JSON (title / summary / text)" path="clientPayload">
-                                                        <n-input v-model:value="outputTrigger.clientPayload" placeholder='{"title":"...","summary":"...","text":"..."}' />
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" path="clientPayload">
+                                                        <template #label>
+                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                                Optional Output JSON (title / summary / text)
+                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                                    <template #trigger>
+                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                                    </template>
+                                                                    Static JSON. When set, ReARM sends this as the GitHub check-run "output" verbatim — title, summary and text fields all replace ReARM's defaults (including the auto metrics summary). Leave empty to keep defaults. Use the Dynamic CEL field below if you need per-release values.
+                                                                </n-tooltip>
+                                                                <n-button text type="primary" size="tiny" @click="populateOutputTriggerClientPayloadDefault">
+                                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
+                                                                    Use template
+                                                                </n-button>
+                                                            </span>
+                                                        </template>
+                                                        <n-input v-model:value="outputTrigger.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder='{"title":"...","summary":"...","text":"..."}' />
                                                     </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Dynamic output (CEL string expression)" path="celClientPayload">
-                                                        <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" path="celClientPayload">
+                                                        <template #label>
+                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                                Dynamic output (CEL string expression)
+                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                                    <template #trigger>
+                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                                    </template>
+                                                                    CEL expression evaluated at fire time against the release. Result must be a JSON string with title / summary / text — it overwrites the Optional Output JSON above for this dispatch. Available bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.
+                                                                </n-tooltip>
+                                                                <n-button text type="primary" size="tiny" @click="populateOutputTriggerCelClientPayloadDefault">
+                                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
+                                                                    Use template
+                                                                </n-button>
+                                                            </span>
+                                                        </template>
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
                                                         <n-input v-model:value="outputTrigger.checkName" :placeholder="'Defaults to rearm/' + (updatedComponent.name || '<component>')" />
@@ -1537,6 +1567,30 @@ function resetOutputTrigger () {
         checkName: null,
     }
     snapshotMode.value = 'NONE'
+}
+
+// Sample templates the user can pre-fill into the EXTERNAL_VALIDATION
+// output JSON / CEL fields and edit. The actual ReARM defaults are
+// computed server-side at fire time (see SaasIntegrationService) — we
+// can't preview them exactly here because they include the live
+// release version + a metrics summary block. These templates are
+// starting points that mirror the *shape* of the default and document
+// the available CEL bindings inline.
+const EXTERNAL_VALIDATION_CLIENT_PAYLOAD_TEMPLATE = JSON.stringify({
+    title: 'ReARM verdict',
+    summary: 'Edit this static JSON to fully override ReARM\u2019s default check-run output.',
+    text: 'Replace this body with markdown describing your custom output.\n\nNote: setting this field disables ReARM\u2019s automatic metrics summary. Use the Dynamic CEL field below if you need live per-release values.'
+}, null, 2)
+
+const EXTERNAL_VALIDATION_CEL_PAYLOAD_TEMPLATE =
+    "'{\"title\":\"ReARM verdict: ' + release.lifecycle + '\",\"summary\":\"Release ' + release.version + ' \u2014 ' + string(release.criticalVulns) + ' critical, ' + string(release.highVulns) + ' high\",\"text\":\"Edit this CEL to customise per-release output. Bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.\"}'"
+
+function populateOutputTriggerClientPayloadDefault () {
+    outputTrigger.value.clientPayload = EXTERNAL_VALIDATION_CLIENT_PAYLOAD_TEMPLATE
+}
+
+function populateOutputTriggerCelClientPayloadDefault () {
+    outputTrigger.value.celClientPayload = EXTERNAL_VALIDATION_CEL_PAYLOAD_TEMPLATE
 }
 
 const inputTrigger: Ref<InputTriggerEvent> = ref({
