@@ -941,6 +941,31 @@ const storeObject : any = {
                     .map((s: any) => (s ?? '').toString().trim())
                     .filter((s: string) => s.length > 0)
                 : null
+            // The read query returns `scope` and Apollo adds `__typename` to triggers;
+            // neither field exists on the matching Input types, so the mutation rejects
+            // with 400 if we send them through. Strip on every save path here, not just
+            // in saveTriggers, so non-trigger updates (e.g. assigning an approval policy
+            // while local triggers exist) don't fail.
+            const stripTriggerFields = (triggers: any[]) => {
+                if (!Array.isArray(triggers)) return triggers
+                return triggers.map((t: any) => {
+                    const c: any = { ...t }
+                    delete c.__typename
+                    delete c.scope
+                    // Client-side `temp-…` UUIDs track unsaved triggers; server assigns real ones.
+                    if (typeof c.uuid === 'string' && c.uuid.startsWith('temp-')) c.uuid = ''
+                    if (Array.isArray(c.outputEvents)) {
+                        c.outputEvents = c.outputEvents.map((oe: any) => {
+                            if (typeof oe === 'string') return oe
+                            const co = { ...oe }
+                            delete co.__typename
+                            delete co.scope
+                            return co
+                        })
+                    }
+                    return c
+                })
+            }
             const compUpdObject = {
                 uuid: component.uuid,
                 name: component.name,
@@ -953,8 +978,8 @@ const storeObject : any = {
                 versionType: component.versionType,
                 branchSuffixMode: component.branchSuffixMode || 'INHERIT',
                 approvalPolicy: component.approvalPolicy,
-                outputTriggers: component.outputTriggers,
-                releaseInputTriggers: component.releaseInputTriggers,
+                outputTriggers: stripTriggerFields(component.outputTriggers),
+                releaseInputTriggers: stripTriggerFields(component.releaseInputTriggers),
                 globalInputEventRefs: component.globalInputEventRefs?.map(({ uuid, overrideOutputEventsLocally, outputEventsOverride }: any) => ({ uuid, overrideOutputEventsLocally, outputEventsOverride })),
                 identifiers: component.identifiers?.map(({ idType, idValue }: any) => ({ idType, idValue })),
                 authentication: component.authentication ? { login: component.authentication.login, password: component.authentication.password, type: component.authentication.type } : null,
