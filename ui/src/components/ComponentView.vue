@@ -32,13 +32,25 @@
             <n-gi span="3">
                 <div class="componentTop">
                     <div class="componentSummary">
-                        <h5 v-if="componentData">{{ words.componentFirstUpper }}: {{componentData.name}}</h5>
+                        <h5 v-if="componentData">
+                            {{ words.componentFirstUpper }}: {{componentData.name}}
+                            <n-tag
+                                v-if="componentData?.effectiveLifecycle"
+                                size="small"
+                                round
+                                :title="'Effective ' + words.componentFirstUpper + ' lifecycle (synthesised from releases)'"
+                                :type="effectiveLifecycleTagType"
+                                style="margin-left: 8px;"
+                            >{{ effectiveLifecycleLabel }}</n-tag>
+                        </h5>
                         <div class="componentIconsAndSettings">
                             <n-space v-cloak>
                                 <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
                                 <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Settings'" @click="openComponentSettings" size="24"><Tool /></n-icon>
                                 <n-icon v-if="words.componentFirstUpper" class="clickable icons" :title="words.componentFirstUpper + ' Changelog'" @click="showComponentChangelogModal = true" size="24"><List /></n-icon>
                                 <n-icon v-if="componentData" class="clickable icons" :title="'Feature Sets Including This ' + words.componentFirstUpper" @click="showFeatureSetParticipationModal = true" size="24"><Eye /></n-icon>
+                                <n-icon v-if="componentData && isWritable" class="clickable icons" title="Bulk-advance release lifecycles" @click="showBulkLifecycleModal = true" size="24"><Calendar /></n-icon>
+                                <n-icon v-if="componentData" class="clickable icons" title="Export CLE document" @click="exportComponentCle" size="24"><Download /></n-icon>
                                 <n-tooltip trigger="hover" v-if="componentData && componentData.uuid">
                                     <template #trigger>
                                         <n-icon class="icons" size="24"><InfoCircle /></n-icon>
@@ -98,6 +110,39 @@
                                     :componentUuid="componentData.uuid"
                                     :componentName="componentData.name"
                                 />
+                            </n-modal>
+                            <n-modal
+                                v-model:show="showBulkLifecycleModal"
+                                preset="dialog"
+                                :show-icon="false"
+                                style="max-width: 480px;"
+                            >
+                                <h2>Bulk-advance release lifecycles</h2>
+                                <p style="margin-top: 8px;">
+                                    Every release of this {{ words.component }} whose lifecycle is at or past
+                                    <strong>Shipped</strong> but below the target will be bumped to the target.
+                                    Pre-Shipped and terminal-state releases are not affected.
+                                </p>
+                                <p v-if="componentData?.effectiveLifecycle" style="margin-top: 4px;">
+                                    Current effective lifecycle:
+                                    <strong>{{ effectiveLifecycleLabel }}</strong>
+                                </p>
+                                <n-form-item label="Target lifecycle" style="margin-top: 16px;">
+                                    <n-select
+                                        v-model:value="bulkLifecycleTarget"
+                                        :options="bulkLifecycleTargetOptions"
+                                        placeholder="Select target lifecycle"
+                                    />
+                                </n-form-item>
+                                <n-space justify="end" style="margin-top: 16px;">
+                                    <n-button @click="showBulkLifecycleModal = false" :disabled="bulkLifecycleProcessing">Cancel</n-button>
+                                    <n-button
+                                        type="primary"
+                                        :loading="bulkLifecycleProcessing"
+                                        :disabled="!bulkLifecycleTarget"
+                                        @click="runBulkLifecycle"
+                                    >Apply</n-button>
+                                </n-space>
                             </n-modal>
                             <n-modal
                                 v-model:show="showAddBranchModal"
@@ -744,7 +789,7 @@ import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
 import Swal from 'sweetalert2'
 import { SwalData } from '@/utils/commonFunctions'
-import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle, Star, Eye, QuestionMark } from '@vicons/tabler'
+import { Link as LinkIcon, Copy, CirclePlus, Trash, Edit, LockOpen, Tool, List, InfoCircle, Clipboard, GitMerge, ExternalLink, Check, X, AlertCircle, Star, Eye, QuestionMark, Calendar, Download } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import { BugOutlined } from '@vicons/antd'
@@ -947,6 +992,104 @@ const showComponentChangelogModal : Ref<boolean> = ref(false)
 const showFeatureSetParticipationModal : Ref<boolean> = ref(false)
 const showAddBranchModal : Ref<boolean> = ref(false)
 const showComponentSettingsModal: Ref<boolean> = ref(false)
+const showBulkLifecycleModal : Ref<boolean> = ref(false)
+const bulkLifecycleTarget : Ref<string | null> = ref(null)
+const bulkLifecycleProcessing : Ref<boolean> = ref(false)
+
+// Bulk-target dropdown is restricted to lifecycles strictly past
+// GENERAL_AVAILABILITY (= "Shipped") via ordinal comparison so the rule
+// survives any future CLE-driven enum additions without code changes.
+const bulkLifecycleTargetOptions = computed(() => {
+    const opts = constants.LifecycleOptions
+    const gaIdx = opts.findIndex((lo: any) => lo.key === 'GENERAL_AVAILABILITY')
+    if (gaIdx < 0) return []
+    return opts.slice(gaIdx + 1).map((lo: any) => ({ label: lo.label, value: lo.key }))
+})
+
+const effectiveLifecycleLabel = computed((): string => {
+    const k = (componentData.value as any)?.effectiveLifecycle
+    if (!k) return ''
+    const opt = constants.LifecycleOptions.find((lo: any) => lo.key === k)
+    return opt ? opt.label : k
+})
+
+const effectiveLifecycleTagType = computed((): string => {
+    // Past-GA states colour-coded warning/error so the timeline stage is
+    // visually distinct from the green "Shipped" state. Pre-GA / null fall
+    // back to the default neutral tag.
+    const k = (componentData.value as any)?.effectiveLifecycle
+    if (!k) return 'default'
+    if (k === 'GENERAL_AVAILABILITY') return 'success'
+    if (k === 'END_OF_LIFE') return 'error'
+    if (k === 'END_OF_SUPPORT' || k === 'END_OF_DISTRIBUTION' || k === 'END_OF_MARKETING') return 'warning'
+    return 'default'
+})
+
+async function runBulkLifecycle () {
+    if (!bulkLifecycleTarget.value || !componentData.value?.uuid) return
+    bulkLifecycleProcessing.value = true
+    try {
+        const response = await graphqlClient.mutate({
+            mutation: gql`
+                mutation bulkUpdateComponentReleaseLifecycle($componentUuid: ID!, $targetLifecycle: ReleaseLifecycleEnum!) {
+                    bulkUpdateComponentReleaseLifecycle(componentUuid: $componentUuid, targetLifecycle: $targetLifecycle) {
+                        releasesBumped
+                        releaseUuids
+                    }
+                }`,
+            variables: {
+                componentUuid: componentData.value.uuid,
+                targetLifecycle: bulkLifecycleTarget.value
+            }
+        })
+        const result = response.data?.bulkUpdateComponentReleaseLifecycle
+        notify('success', 'Lifecycle advanced',
+            (result?.releasesBumped || 0) + ' release(s) moved to ' +
+            (constants.LifecycleOptions.find((lo: any) => lo.key === bulkLifecycleTarget.value)?.label || bulkLifecycleTarget.value))
+        showBulkLifecycleModal.value = false
+        bulkLifecycleTarget.value = null
+        // Refresh component data so the effectiveLifecycle badge reflects
+        // the new state without a manual page reload.
+        await store.dispatch('fetchComponent', componentData.value.uuid)
+        componentData.value = commonFunctions.deepCopy(updatedComponent.value)
+    } catch (err: any) {
+        notify('error', 'Bulk lifecycle update failed',
+            commonFunctions.parseGraphQLError(err.message || String(err)))
+    } finally {
+        bulkLifecycleProcessing.value = false
+    }
+}
+
+async function exportComponentCle () {
+    if (!componentData.value?.uuid) return
+    try {
+        const response = await graphqlClient.query({
+            query: gql`
+                query exportComponentCleManual($componentUuid: ID!) {
+                    exportComponentCleManual(componentUuid: $componentUuid)
+                }`,
+            variables: { componentUuid: componentData.value.uuid },
+            fetchPolicy: 'no-cache'
+        })
+        const json = response.data?.exportComponentCleManual
+        if (!json) {
+            notify('warning', 'Empty CLE', 'No lifecycle events recorded for this component yet.')
+            return
+        }
+        const blob = new Blob([json], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = (componentData.value.name || 'component') + '.cle.json'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    } catch (err: any) {
+        notify('error', 'CLE export failed',
+            commonFunctions.parseGraphQLError(err.message || String(err)))
+    }
+}
 
 // componentSettingsView route param is handled in onMounted after data is loaded
 const showCreateOutputTriggerModal: Ref<boolean> = ref(false)
