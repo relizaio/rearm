@@ -65,6 +65,19 @@
                                 </n-tooltip>
                             </span>
                         </n-radio-button>
+                        <n-radio-button value="CLE">
+                            <span style="display: inline-flex; align-items: center;">
+                                CLE
+                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                    <template #trigger>
+                                        <n-icon size="16" style="margin-left: 4px;">
+                                            <QuestionCircle20Regular />
+                                        </n-icon>
+                                    </template>
+                                    Common Lifecycle Enumeration document for this release - the merged history of release / end-of-marketing / end-of-distribution / end-of-support / end-of-life events that apply to this release.
+                                </n-tooltip>
+                            </span>
+                        </n-radio-button>
                     </n-radio-group>
                 </n-form-item>
                 <n-form v-if="exportBomType === 'SBOM'">
@@ -465,6 +478,15 @@
                             <span v-else>Export</span>
                         </n-button>
                     </n-spin>
+                </n-form>
+                <n-form v-if="exportBomType === 'CLE'">
+                    <h3>Format: CLE 1.0.0 (JSON)</h3>
+                    <n-button type="success"
+                        :disabled="bomExportPending"
+                        @click.prevent="exportReleaseCle">
+                        <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                        <span v-else>Export</span>
+                    </n-button>
                 </n-form>
             </n-modal>
             <n-modal
@@ -3426,6 +3448,44 @@ async function exportReleaseObom () {
         link.download = fileName
         link.click()
         notify('info', 'Processing Download', 'Your artifact is being downloaded...')
+    } catch (err: any) {
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(err.message),
+            'error'
+        )
+    } finally {
+        bomExportPending.value = false
+    }
+}
+
+async function exportReleaseCle () {
+    try {
+        bomExportPending.value = true
+        const gqlResp: any = await graphqlClient.query({
+            query: gql`
+                query exportReleaseCleManual($releaseUuid: ID!) {
+                    exportReleaseCleManual(releaseUuid: $releaseUuid)
+                }
+            `,
+            variables: {
+                releaseUuid: updatedRelease.value.uuid
+            },
+            fetchPolicy: 'no-cache'
+        })
+        const json = gqlResp.data?.exportReleaseCleManual
+        if (!json) {
+            notify('warning', 'Empty CLE', 'No lifecycle events recorded for this release yet.')
+            return
+        }
+        const versionLabel = (updatedRelease.value.version || updatedRelease.value.uuid).toString().replace(/[^a-zA-Z0-9\-._]/g, '_')
+        const fileName = `${versionLabel}.cle.json`
+        const blob = new Blob([json], { type: 'application/json' })
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = fileName
+        link.click()
+        notify('info', 'Processing Download', 'Your CLE document is being downloaded...')
     } catch (err: any) {
         Swal.fire(
             'Error!',
