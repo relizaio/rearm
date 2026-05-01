@@ -171,7 +171,7 @@ When both `clientPayload` and `celClientPayload` are empty, ReARM posts an `outp
 {
   "title": "ReARM verdict: failure",
   "summary": "Release version: 1.2.3.",
-  "text": "### Vulnerabilities (47)\n\n| Severity | Count |\n|---|---|\n| Critical | 3 |\n| High | 9 |\n| Medium | 27 |\n| Low | 6 |\n| Unassigned | 2 |\n\n### Policy Violations (5)\n\n| Type | Total | Unaudited |\n|---|---|---|\n| Security | 4 | 2 |\n| License | 1 | 0 |\n| Operational | 0 | 0 |\n\n### Components\n- Scanned: 142\n- Vulnerable: 18\n- Findings: 50 audited / 7 unaudited / 12 suppressed\n\n_Last scanned: 2026-04-30T17:14:09Z_"
+  "text": "### Vulnerabilities (47)\n\n| Severity | Count |\n|---|---|\n| Critical | 3 |\n| High | 9 |\n| Medium | 27 |\n| Low | 6 |\n| Unassigned | 2 |\n\n### Policy Violations (5)\n\n| Type | Count |\n|---|---|\n| Security | 4 |\n| License | 1 |\n| Operational | 0 |\n\n_Last scanned: 2026-04-30T17:14:09Z_"
 }
 ```
 
