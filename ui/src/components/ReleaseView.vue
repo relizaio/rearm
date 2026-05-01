@@ -4484,7 +4484,7 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                 'onUpdate:value': (v: string) => { approvalRowComments.value[row.uuid] = v },
                 type: 'textarea',
                 placeholder: 'Optional comment (sanitised, ≤4000 chars)',
-                autosize: { minRows: 1, maxRows: 4 },
+                autosize: { minRows: 2, maxRows: 4 },
                 maxlength: 4000,
                 showCount: true
             })
