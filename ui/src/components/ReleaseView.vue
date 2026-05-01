@@ -4648,6 +4648,18 @@ function renderEnrichmentPill (row: any): any {
     return h(NTag, { type, size: 'small', round: true, title }, () => label)
 }
 
+function renderChildScanStatusBadge (status: { label: string, title: string, kind: string }): any {
+    // Same color rule as the home-page widgets and BranchView: orange for the
+    // BOM-enrichment stage, yellow for everything else (DTrack-pending,
+    // scan-pending). Keeps the parent-release table's pre-scan child rows in
+    // sync with the rest of the UI instead of falling back to zeroed circles.
+    const bg = status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
+    return h('span', {
+        title: status.title,
+        style: `display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${bg}; color: white; font-size: 0.8em; white-space: nowrap;`
+    }, status.label)
+}
+
 function renderDtrackPill (row: any): any {
     if (!dtrackConfigured.value) {
         return h(NTag, {
@@ -4915,13 +4927,17 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
         key: 'vulnerabilities',
         title: 'Vulnerabilities',
         render: (row: any) => {
+            const child = row?.releaseDetails
+            if (!child) return [h('div'), 'N/A']
+            const status = getReleaseScanStatus(child, dtrackConfigured.value)
+            if (status.kind !== 'ready') return [renderChildScanStatusBadge(status)]
             let els: any[] = []
-            if (row.releaseDetails && row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
-                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'CRITICAL', ['Vulnerability', 'Weakness'])}, row.releaseDetails.metrics.critical)
-                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'HIGH', ['Vulnerability', 'Weakness'])}, row.releaseDetails.metrics.high)
-                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'MEDIUM', ['Vulnerability', 'Weakness'])}, row.releaseDetails.metrics.medium)
-                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'LOW', ['Vulnerability', 'Weakness'])}, row.releaseDetails.metrics.low)
-                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'UNASSIGNED', ['Vulnerability', 'Weakness'])}, row.releaseDetails.metrics.unassigned)
+            if (child.metrics) {
+                const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'CRITICAL', ['Vulnerability', 'Weakness'])}, child.metrics.critical)
+                const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'HIGH', ['Vulnerability', 'Weakness'])}, child.metrics.high)
+                const medEl = h('div', {title: 'Medium Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.MEDIUM}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'MEDIUM', ['Vulnerability', 'Weakness'])}, child.metrics.medium)
+                const lowEl = h('div', {title: 'Low Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.LOW}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'LOW', ['Vulnerability', 'Weakness'])}, child.metrics.low)
+                const unassignedEl = h('div', {title: 'Vulnerabilities with Unassigned Severity', class: 'circle', style: `background: ${constants.VulnerabilityColors.UNASSIGNED}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, 'UNASSIGNED', ['Vulnerability', 'Weakness'])}, child.metrics.unassigned)
                 els = [h(NSpace, {size: 1}, () => [criticalEl, highEl, medEl, lowEl, unassignedEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
@@ -4932,11 +4948,15 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
         key: 'violations',
         title: 'Violations',
         render: (row: any) => {
+            const child = row?.releaseDetails
+            if (!child) return [h('div'), 'N/A']
+            const status = getReleaseScanStatus(child, dtrackConfigured.value)
+            if (status.kind !== 'ready') return [renderChildScanStatusBadge(status)]
             let els: any[] = []
-            if (row.releaseDetails && row.releaseDetails.metrics && row.releaseDetails.metrics.lastScanned) {
-                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsLicenseTotal)
-                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsSecurityTotal)
-                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, row.releaseDetails.metrics.policyViolationsOperationalTotal)
+            if (child.metrics) {
+                const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, child.metrics.policyViolationsLicenseTotal)
+                const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, child.metrics.policyViolationsSecurityTotal)
+                const operationalEl = h('div', {title: 'Operational Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.OPERATIONAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilitiesForRelease(row.release, '', 'Violation')}, child.metrics.policyViolationsOperationalTotal)
                 els = [h(NSpace, {size: 1}, () => [licenseEl, securityEl, operationalEl])]
             }
             if (!els.length) els = [h('div'), 'N/A']
