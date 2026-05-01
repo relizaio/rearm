@@ -523,6 +523,7 @@ const singleReleaseDataNoParent = `
         approvalRoleId
         state
         date
+        comment
         wu {
             createdType
             lastUpdatedBy
@@ -924,6 +925,7 @@ const singleReleaseProductNoParent = `
         approvalRoleId
         state
         date
+        comment
         wu {
             createdType
             lastUpdatedBy

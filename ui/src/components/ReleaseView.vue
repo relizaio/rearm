@@ -1459,6 +1459,13 @@ const availableApprovalIds: Ref<any> = ref({})
 
 const approvalMatrixCheckboxes: Ref<any> = ref({})
 
+// Free-form comment per approval-entry row in the approval matrix.
+// One comment applies to every pending role change in that row at save
+// time — the row is the natural workflow unit (most users only flip one
+// role per row at a time; if they need different comments per role, save
+// twice). Server sanitises via jsoup Safelist.basic(), caps at 4000 chars.
+const approvalRowComments: Ref<Record<string, string>> = ref({})
+
 const givenApprovals: Ref<any> = ref({})
 
 const words: Ref<any> = ref({})
@@ -1797,18 +1804,19 @@ async function triggerApproval() {
 function resetApprovals() {
     // Restore givenApprovals from original release data (clears admin overrides)
     givenApprovals.value = computeGivenApprovalsFromRelease()
-    
+
     // Reset all approval checkboxes based on givenApprovals
     Object.keys(approvalMatrixCheckboxes.value).forEach((entryId: string) => {
         Object.keys(approvalMatrixCheckboxes.value[entryId]).forEach((roleId: string) => {
             let checkBoxValue = 'UNSET'
-            if (givenApprovals.value[entryId] && (givenApprovals.value[entryId][roleId] === 'APPROVED' || 
+            if (givenApprovals.value[entryId] && (givenApprovals.value[entryId][roleId] === 'APPROVED' ||
                 givenApprovals.value[entryId][roleId] === 'DISAPPROVED')) {
                 checkBoxValue = givenApprovals.value[entryId][roleId]
             }
             approvalMatrixCheckboxes.value[entryId][roleId] = checkBoxValue
         })
     })
+    approvalRowComments.value = {}
 }
 
 type WhoUpdated = {
@@ -1820,6 +1828,7 @@ type ApprovalInput = {
     approvalEntry: string;
     approvalRoleId: string;
     state: string;
+    comment?: string;
 }
 
 type ApprovalEvent = {
@@ -1827,6 +1836,7 @@ type ApprovalEvent = {
     approvalRoleId: string;
     state: string;
     date: string;
+    comment?: string;
     wu: WhoUpdated;
 }
 
@@ -1861,10 +1871,12 @@ function computeApprovals () : ApprovalInput[] {
     Object.keys(approvalMatrixCheckboxes.value).forEach((x: any) => {
         Object.keys(approvalMatrixCheckboxes.value[x]).forEach(y => {
             if (approvalMatrixCheckboxes.value[x][y] !== 'UNSET' && (!givenApprovals.value[x] || !givenApprovals.value[x][y])) {
+                const rowComment = approvalRowComments.value[x]?.trim()
                 const approvalInput: ApprovalInput = {
                     approvalEntry: x,
                     approvalRoleId: y,
-                    state: approvalMatrixCheckboxes.value[x][y]
+                    state: approvalMatrixCheckboxes.value[x][y],
+                    ...(rowComment ? { comment: rowComment } : {})
                 }
                 approvals.push(approvalInput)
             }
@@ -1879,6 +1891,7 @@ async function approve(approvals: ApprovalInput[]) {
         approvals
     }
     store.dispatch('approveRelease', approvalProps).then(response => {
+        approvalRowComments.value = {}
         fetchRelease()
         notify('success', 'Saved', 'Approvals Saved.')
     }).catch(error => {
@@ -4231,6 +4244,18 @@ const approvalHistoryFields = computed(() => [
     {
         key: 'state',
         title: 'Approval State'
+    },
+    {
+        key: 'comment',
+        title: 'Comment',
+        render(row: any) {
+            // Server has already sanitised via jsoup Safelist.basic(). Render
+            // as plain text rather than v-html as defence-in-depth — if the
+            // sanitiser ever regresses, the worst case is a comment that
+            // looks ugly, not one that runs script.
+            if (!row.comment) return ''
+            return h('span', { style: 'white-space: pre-wrap;' }, row.comment)
+        }
     }
 ])
 
@@ -4441,6 +4466,29 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                 }
             }
         })
+    })
+    fields.push({
+        key: 'comment',
+        title: 'Comment (optional)',
+        width: 280,
+        render: (row: any) => {
+            // Only show the comment editor when at least one role in this row
+            // has a pending change — otherwise the textarea is dead weight.
+            const matrixForRow = approvalMatrixCheckboxes.value[row.uuid] || {}
+            const givenForRow = givenApprovals.value[row.uuid] || {}
+            const hasPending = Object.keys(matrixForRow).some(rid =>
+                matrixForRow[rid] !== 'UNSET' && !givenForRow[rid])
+            if (!hasPending) return h('span', { style: 'color:#999; font-size: 12px;' }, '—')
+            return h(NInput, {
+                value: approvalRowComments.value[row.uuid] || '',
+                'onUpdate:value': (v: string) => { approvalRowComments.value[row.uuid] = v },
+                type: 'textarea',
+                placeholder: 'Optional comment (sanitised, ≤4000 chars)',
+                autosize: { minRows: 1, maxRows: 4 },
+                maxlength: 4000,
+                showCount: true
+            })
+        }
     })
     return fields
 })
