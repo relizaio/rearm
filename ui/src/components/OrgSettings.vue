@@ -653,6 +653,9 @@
                                     <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Dynamic output (CEL string expression)" path="celClientPayload">
                                         <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
                                     </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
+                                        <n-input v-model:value="globalOutputEvent.checkName" placeholder="Defaults to rearm/<componentName>; override e.g. rearm/policy" />
+                                    </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Dynamic client payload (CEL string expression)" path="celClientPayload">
                                         <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"refs/tags/" + release.version' />
                                     </n-form-item>
@@ -5480,7 +5483,8 @@ const globalOutputEvent = ref({
     celClientPayload: '' as string | null,
     snapshotApprovalEntry: null as string | null,
     snapshotLifecycle: null as string | null,
-    approvedEnvironment: null as string | null
+    approvedEnvironment: null as string | null,
+    checkName: null as string | null
 })
 
 const globalSnapshotMode = ref<'NONE' | 'APPROVAL' | 'LIFECYCLE'>('NONE')
@@ -5502,7 +5506,8 @@ function resetGlobalOutputEvent () {
         celClientPayload: '',
         snapshotApprovalEntry: null,
         snapshotLifecycle: null,
-        approvedEnvironment: null
+        approvedEnvironment: null,
+        checkName: null
     }
     globalSnapshotMode.value = 'NONE'
 }
@@ -5646,6 +5651,7 @@ async function fetchApprovalPolicies () {
                         snapshotApprovalEntry
                         snapshotLifecycle
                         approvedEnvironment
+                        checkName
                     }
                 }
             }`,
@@ -5697,7 +5703,8 @@ async function saveGlobalOutputEvents () {
                 celClientPayload: e.celClientPayload || undefined,
                 snapshotApprovalEntry: e.snapshotApprovalEntry || undefined,
                 snapshotLifecycle: e.snapshotLifecycle || undefined,
-                approvedEnvironment: e.approvedEnvironment || undefined
+                approvedEnvironment: e.approvedEnvironment || undefined,
+                checkName: e.checkName || undefined
             }
             return ev
         })
@@ -5722,6 +5729,8 @@ async function saveGlobalOutputEvents () {
                             celClientPayload
                             snapshotApprovalEntry
                             snapshotLifecycle
+                            approvedEnvironment
+                            checkName
                         }
                     }
                 }`,

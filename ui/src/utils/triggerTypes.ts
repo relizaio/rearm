@@ -24,4 +24,5 @@ export type OutputTriggerEvent = {
     snapshotApprovalEntry?: string | null;
     snapshotLifecycle?: string | null;
     approvedEnvironment?: string | null;
+    checkName?: string | null;
 }

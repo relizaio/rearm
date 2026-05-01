@@ -446,6 +446,9 @@
                                                     <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Dynamic output (CEL string expression)" path="celClientPayload">
                                                         <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
                                                     </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
+                                                        <n-input v-model:value="outputTrigger.checkName" :placeholder="'Defaults to rearm/' + (updatedComponent.name || '<component>')" />
+                                                    </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
                                                         <n-select v-model:value="outputTrigger.users" tag multiple required :options="users" />
                                                     </n-form-item>
@@ -1366,6 +1369,7 @@ const outputTrigger = ref({
     snapshotApprovalEntry: null as string | null,
     snapshotLifecycle: null as string | null,
     approvedEnvironment: null as string | null,
+    checkName: null as string | null,
 })
 const snapshotMode = ref<'NONE' | 'APPROVAL' | 'LIFECYCLE'>('NONE')
 
@@ -1387,6 +1391,7 @@ function resetOutputTrigger () {
         snapshotApprovalEntry: null,
         snapshotLifecycle: null,
         approvedEnvironment: null,
+        checkName: null,
     }
     snapshotMode.value = 'NONE'
 }

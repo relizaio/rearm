@@ -702,6 +702,7 @@ const COMPONENT_FULL_DATA = `
             snapshotApprovalEntry
             snapshotLifecycle
             approvedEnvironment
+            checkName
             scope
         }
     }
@@ -721,6 +722,7 @@ const COMPONENT_FULL_DATA = `
         snapshotApprovalEntry
         snapshotLifecycle
         approvedEnvironment
+        checkName
         scope
     }
     releaseInputTriggers {
