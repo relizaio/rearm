@@ -3134,10 +3134,10 @@ const defaultApprovalEvidenceColumns: DataTableColumns<any> = [
 ]
 
 const showPopulateApprovalDefaultsButton = computed((): boolean => {
-    return !!isWritable.value &&
-        (myorg.value?.approvalRoles?.length || 0) === 0 &&
-        orgApprovalEntries.value.length === 0 &&
-        approvalPoliciesFullData.value.length === 0
+    // Available any time (not just on a fresh org). populateApprovalDefaults
+    // skips per-item when the role / entry / policy already exists by name,
+    // so re-running it is safe — adds anything missing, leaves what's there.
+    return !!isWritable.value
 })
 
 async function gqlCreateApprovalEntryDirect (approvalName: string, approvalRoles: string[]) {
@@ -3200,10 +3200,45 @@ async function gqlCreateApprovalPolicyDirect (policyName: string, approvalEntrie
     return data.createApprovalPolicy
 }
 
+function buildPredefinedCelExpression (event: any): string {
+    // Predefined input-event templates use the policy-aware macros exposed
+    // by CelEvaluatorService instead of expanding individual approval-entry
+    // UUIDs. The macros pull from the wrapped approvals map seeded with
+    // every entry on the policy, so the templates stay correct as the
+    // policy's entry list changes (no need to regenerate the CEL string
+    // when a new entry is added/removed).
+    //
+    // (state, matchOperator) → macro mapping:
+    //   DISAPPROVED + OR  → release.anyDisapproved
+    //   APPROVED    + OR  → release.anyApproved
+    //   APPROVED    + AND → approvals.all(k, approvals[k] == "APPROVED")
+    //   DISAPPROVED + AND → approvals.all(k, approvals[k] == "DISAPPROVED")
+    const lifecyclePart = `release.lifecycle in [${event.lifecycleStates.map((s: string) => `"${s}"`).join(', ')}]`
+    let approvalExpression = ''
+    if (event.matchOperator === 'OR') {
+        approvalExpression = event.approvalState === 'DISAPPROVED'
+            ? 'release.anyDisapproved'
+            : 'release.anyApproved'
+    } else {
+        // AND — every entry must match the requested state. all() iterates
+        // over the seeded keys (every policy entry) so this is true only
+        // when no UNSET / mismatched entries remain.
+        approvalExpression = `approvals.all(k, approvals[k] == "${event.approvalState}")`
+    }
+    return `${lifecyclePart} && ${approvalExpression}`
+}
+
 async function populateApprovalDefaults () {
     populateApprovalDefaultsProcessing.value = true
     try {
+        // Collect existing role ids so we don't try to recreate roles a user
+        // may already have set up manually. addApprovalRole would otherwise
+        // 4xx on duplicates and abort the whole population step.
+        const existingRoleIds = new Set<string>(
+            (myorg.value?.approvalRoles || []).map((r: any) => r.id)
+        )
         for (const role of defaultApprovalSetup.roles) {
+            if (existingRoleIds.has(role.id)) continue
             await store.dispatch('addApprovalRole', {
                 orgUuid: orgResolved.value,
                 approvalRole: role
@@ -3212,18 +3247,26 @@ async function populateApprovalDefaults () {
 
         await fetchApprovalEntries()
 
+        const existingEntryNames = new Set<string>(
+            (orgApprovalEntries.value || []).map((e: any) => e.approvalName)
+        )
         for (const entry of defaultApprovalSetup.entries) {
+            if (existingEntryNames.has(entry.approvalName)) continue
             await gqlCreateApprovalEntryDirect(entry.approvalName, entry.approvalRoles)
         }
 
         await fetchApprovalEntries()
 
-        const approvalEntryIdByName: Record<string, string> = {}
-        orgApprovalEntries.value.forEach((entry: any) => {
-            approvalEntryIdByName[entry.approvalName] = entry.uuid
-        })
+        // Existing policy names by lower-cased value — case-insensitive
+        // dedupe avoids "Internal Component" colliding with "internal
+        // component" while still letting users type cosmetically different
+        // names by hand if they really want.
+        const existingPolicyNames = new Set<string>(
+            (approvalPoliciesFullData.value || []).map((p: any) => (p.policyName || '').toLowerCase())
+        )
 
         for (const policy of defaultApprovalSetup.policies) {
+            if (existingPolicyNames.has(policy.policyName.toLowerCase())) continue
             const createdPolicy = await gqlCreateApprovalPolicyDirect(
                 policy.policyName,
                 policy.approvalEntries
@@ -3243,25 +3286,11 @@ async function populateApprovalDefaults () {
                 outputEventIdByName[event.name] = event.uuid
             })
 
-            globalInputEvents.value = getDefaultPolicyInputEvents(policy.approvalEntries).map((event: any) => {
-                const celOp = event.matchOperator === 'OR' ? ' || ' : ' && '
-                const lifecyclePart = `release.lifecycle in [${event.lifecycleStates.map((s: string) => `"${s}"`).join(', ')}]`
-                const approvalUuids = event.approvalEntries
-                    .map((entryName: string) => approvalEntryIdByName[entryName])
-                    .filter(Boolean)
-                const approvalParts = approvalUuids.map((uuid: string) => `release.approvals["${uuid}"] == "${event.approvalState}"`)
-                const approvalExpression = approvalParts.length > 1
-                    ? `(${approvalParts.join(celOp)})`
-                    : (approvalParts[0] || 'true')
-                const celExpression = approvalParts.length > 0
-                    ? `${lifecyclePart} && ${approvalExpression}`
-                    : lifecyclePart
-                return {
-                    name: event.name,
-                    celExpression,
-                    outputEvents: event.outputEvents.map((outputEventName: string) => outputEventIdByName[outputEventName]).filter(Boolean)
-                }
-            })
+            globalInputEvents.value = getDefaultPolicyInputEvents(policy.approvalEntries).map((event: any) => ({
+                name: event.name,
+                celExpression: buildPredefinedCelExpression(event),
+                outputEvents: event.outputEvents.map((outputEventName: string) => outputEventIdByName[outputEventName]).filter(Boolean)
+            }))
             await saveGlobalInputEvents()
         }
 
