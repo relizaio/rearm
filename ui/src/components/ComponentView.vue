@@ -449,11 +449,19 @@
                                                     <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
                                                         <n-input type="number" v-model:value="outputTrigger.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
                                                     </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && (selectedCiIntegration.type === 'GITHUB' || selectedCiIntegration.type === 'GITLAB')" label="CI Repository" path="vcs">
-                                                        <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>
-                                                        <span v-if="!selectNewIntegrationRepo && !outputTrigger.vcs">Not Set</span>
-                                                        <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
-                                                        <n-icon v-if="!selectNewIntegrationRepo" class="clickable" @click="async () => {selectNewIntegrationRepo = true;}" title="Select New Integration Repository" size="20"><Edit /></n-icon>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && (selectedCiIntegration.type === 'GITHUB' || selectedCiIntegration.type === 'GITLAB')" label="CI Repository (override)" path="vcs">
+                                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                                                            <n-select :options="vcsRepos" v-model:value="outputTrigger.vcs" placeholder="Leave empty to use the component's VCS" clearable />
+                                                            <span v-if="outputTrigger.vcs" style="font-size: 12px; color: #888;">
+                                                                Override active. Component VCS will not be used for this trigger.
+                                                            </span>
+                                                            <span v-else-if="updatedComponent.vcs" style="font-size: 12px; color: #888;">
+                                                                Will use component's VCS at fire time: {{ getVcsRepoObjById(updatedComponent.vcs)?.uri || updatedComponent.vcs }}
+                                                            </span>
+                                                            <span v-else style="font-size: 12px; color: #c95900;">
+                                                                ⚠ Component has no VCS configured — pick an override here, or set a VCS on the component, otherwise this trigger cannot be saved.
+                                                            </span>
+                                                        </div>
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
                                                         <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
@@ -476,11 +484,19 @@
                                                     <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
                                                         <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
                                                     </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="VCS Repository" path="vcs">
-                                                        <span v-if="!selectNewIntegrationRepo && outputTrigger.vcs">{{ getVcsRepoObjById(outputTrigger.vcs).uri }} </span>
-                                                        <span v-if="!selectNewIntegrationRepo && !outputTrigger.vcs">Not Set</span>
-                                                        <n-select v-if="selectNewIntegrationRepo" :options="vcsRepos" required v-model:value="outputTrigger.vcs" />
-                                                        <n-icon v-if="!selectNewIntegrationRepo" class="clickable" @click="async () => {selectNewIntegrationRepo = true;}" title="Select VCS Repository" size="20"><Edit /></n-icon>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="VCS Repository (override)" path="vcs">
+                                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                                                            <n-select :options="vcsRepos" v-model:value="outputTrigger.vcs" placeholder="Leave empty to use the component's VCS" clearable />
+                                                            <span v-if="outputTrigger.vcs" style="font-size: 12px; color: #888;">
+                                                                Override active. Component VCS will not be used for this trigger.
+                                                            </span>
+                                                            <span v-else-if="updatedComponent.vcs" style="font-size: 12px; color: #888;">
+                                                                Will use component's VCS at fire time: {{ getVcsRepoObjById(updatedComponent.vcs)?.uri || updatedComponent.vcs }}
+                                                            </span>
+                                                            <span v-else style="font-size: 12px; color: #c95900;">
+                                                                ⚠ Component has no VCS configured — pick an override here, or set a VCS on the component, otherwise this trigger cannot be saved.
+                                                            </span>
+                                                        </div>
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Conclusion" path="eventType">
                                                         <n-select v-model:value="outputTrigger.eventType" required :options="externalValidationConclusionOptions" placeholder="Select check-run conclusion" />
@@ -2505,7 +2521,21 @@ async function addOutputTrigger () {
         notify('error', 'Validation Error', validation.error!)
         return
     }
-    
+
+    // VCS-required check for SCM-bound output triggers. Backend dispatcher
+    // silently skips when neither the trigger override nor the component
+    // carries a vcs — that's the right runtime behaviour for global events,
+    // but here on the component editor it would mean a configured trigger
+    // never fires with no signal to the user. Block save instead.
+    const isSCMTrigger = outputTriggerToPush.type === 'EXTERNAL_VALIDATION' ||
+        (outputTriggerToPush.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration.value &&
+            (selectedCiIntegration.value.type === 'GITHUB' || selectedCiIntegration.value.type === 'GITLAB'))
+    if (isSCMTrigger && !outputTriggerToPush.vcs && !updatedComponent.value.vcs) {
+        notify('error', 'VCS required',
+            'This trigger needs a VCS Repository: either pick one as override on the trigger, or set a VCS on the component itself.')
+        return
+    }
+
     if (outputTriggerToPush.uuid) {
         // Check if trigger with this UUID already exists
         const existingIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === outputTriggerToPush.uuid)
