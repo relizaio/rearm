@@ -614,6 +614,9 @@
                                     <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
                                         <n-select v-model:value="globalOutputEvent.integration" placeholder="Select Integration" :options="ciIntegrationsForGlobalSelect" />
                                     </n-form-item>
+                                    <n-alert v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && (selectedGlobalCiIntegration.type === 'GITHUB' || selectedGlobalCiIntegration.type === 'GITLAB')" type="info" :show-icon="false" style="font-size: 12px; margin-bottom: 8px;">
+                                        Policy-wide events use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this trigger is silently skipped for that component.
+                                    </n-alert>
                                     <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
                                         <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
                                     </n-form-item>
@@ -641,6 +644,9 @@
                                     <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Choose Validation Integration" path="integration">
                                         <n-select v-model:value="globalOutputEvent.integration" placeholder="Select GitHub Validate Integration" :options="validationIntegrationsForGlobalSelect" />
                                     </n-form-item>
+                                    <n-alert v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" type="info" :show-icon="false" style="font-size: 12px; margin-bottom: 8px;">
+                                        Policy-wide events use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this trigger is silently skipped for that component.
+                                    </n-alert>
                                     <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
                                         <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
                                     </n-form-item>
