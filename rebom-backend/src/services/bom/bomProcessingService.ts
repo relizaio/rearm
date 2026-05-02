@@ -670,6 +670,17 @@ export async function enrichBomAsync(bomUuid: string, bom: any, org: string, exi
     return;
   }
 
+  // Defensive shim: an artifact uploaded *before* the addCycloneDxBom shim
+  // deployed has its canonical OCI copy stored at an unsupported spec
+  // (e.g. 1.7), and the enrichment scheduler re-queries FAILED rows every
+  // cycle — without this line the BEAR call would fail "invalid
+  // specification version" forever and the FAILED→retry→FAILED loop never
+  // clears. Applying the shim here means one successful cycle rewrites the
+  // canonical OCI copy at the supported spec, so the next scheduler run
+  // sees a 1.6 BOM and the loop self-heals. No-op when the BOM is already
+  // at a supported spec (covers new uploads that were shimmed on ingest).
+  downgradeCycloneDxSpecIfNeeded(bom);
+
   // Perform enrichment
   const result = await enrichCycloneDxBom(bom, credentials.bearUri, credentials.bearApiKey, credentials.skipPatterns, bomUuid);
   
