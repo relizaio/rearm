@@ -829,6 +829,16 @@ const BRANCH_GQL_DATA = `
         type
         createdType
     }
+    pullRequests {
+        number
+        state
+        title
+        endpoint
+        targetBranch
+        createdDate
+        closedDate
+        mergedDate
+    }
 `
 
 const SINGLE_RELEASE_GQL = gql`
