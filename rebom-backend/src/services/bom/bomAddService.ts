@@ -12,6 +12,7 @@ import {
   extractRepositoryNameFromBom
 } from '../oci';
 import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync } from './bomProcessingService';
+import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
 import { runQuery } from '../../utils';
@@ -98,7 +99,16 @@ async function findBomByRawDigest(serialNumber: string, rawDigest: string, org: 
 async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   // Step 1: Process and validate BOM
   const rawBom = bomInput.bomInput.bom;
-  const processedBom = await processBomObj(rawBom);
+  // CycloneDX 1.7 is published upstream but no library in our stack
+  // (cyclonedx-go used by rearm-cli for BEAR enrichment, cyclonedx-core-java
+  // used by rearm-saas for SBOM-component parsing, cyclonedx-javascript-library
+  // used here for validation) supports it yet. Deep-clone the raw BOM and
+  // downgrade the clone's specVersion to 1.6 in place so all downstream sees
+  // a recognised spec. The original bytes are still stored verbatim under the
+  // `<uuid>-raw` OCI key below — once libraries catch up, that raw copy can
+  // be re-augmented at the new spec.
+  const inputForProcessing = downgradeCycloneDxSpecIfNeeded(structuredClone(rawBom));
+  const processedBom = await processBomObj(inputForProcessing);
 
   await validateBom(processedBom); // throws BomValidationError on failure
 
