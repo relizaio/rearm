@@ -16,6 +16,7 @@ import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { getBearCredentials, getBearIntegration } from '../integrationService';
 import { SpdxService } from '../spdx';
+import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -905,11 +906,18 @@ async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> 
     const storedRepositoryName = extractRepositoryNameFromBom(bomRecord);
     const expectedDigest = bomRecord.meta?.originalFileDigest;
     const rawBom = await fetchRawBomWithFallback(bomRecord.uuid, storedRepositoryName, fetchFromOci, expectedDigest);
-    
+
+    // Apply the same 1.7→1.6 downgrade shim that addCycloneDxBom uses on
+    // ingest. Forced re-enrichment is the recovery path for artifacts that
+    // were uploaded *before* the shim deployed and got stuck in the
+    // FAILED-enrichment loop because their canonical copy is still 1.7.
+    // Mutating in place is safe — `rawBom` was just fetched fresh from OCI.
+    downgradeCycloneDxSpecIfNeeded(rawBom);
+
     // Re-augment the BOM with component context
     const rebomOptions = bomRecord.meta;
     const augmentedBom = augmentBomForStorage(rawBom, rebomOptions, new Date());
-    
+
     logger.debug({ bomUuid: bomRecord.uuid }, 'CycloneDX BOM reprocessed (augmented)');
     return augmentedBom;
     
