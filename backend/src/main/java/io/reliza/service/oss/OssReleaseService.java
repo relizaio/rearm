@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +76,7 @@ import io.reliza.service.GetSourceCodeEntryService;
 import io.reliza.service.NotificationService;
 import io.reliza.dto.ChangelogRecords.CommitRecord;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.SbomComponentService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.VariantService;
@@ -129,6 +131,9 @@ public class OssReleaseService {
 	@Autowired
 	private ArtifactService artifactService;
 			
+	@Autowired
+	@Lazy
+	private SbomComponentService sbomComponentService;
 	private final ReleaseRepository repository;
 	
 	OssReleaseService(ReleaseRepository repository) {
@@ -1418,8 +1423,6 @@ public class OssReleaseService {
 		}
 		if (rData.getLifecycle() == ReleaseLifecycle.ASSEMBLED ) {
 			autoIntegrateProducts(rData);
-			updateFollow(rData);
-			instanceService.updateFollowInstancesForFeatureSet(rData.getOrg(), rData.getBranch(), wu);
 		}
 		// Queue SBOM-component reconciliation for any release that came in with
 		// artifacts attached (e.g. addReleaseProgrammatic / addReleaseManual
