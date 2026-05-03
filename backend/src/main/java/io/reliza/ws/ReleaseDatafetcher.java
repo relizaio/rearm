@@ -1406,10 +1406,22 @@ public class ReleaseDatafetcher {
 
 		UUID componentId = rd.getComponent();
 
-		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
 		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		AuthorizationResponse ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+
+		// FREEFORM keys carry their own scope/function permission tuples;
+		// route them through isFreeformKeyAuthorizedForObjectGraphQL — the
+		// same shape addReleaseProgrammatic uses, so a key that can mint a
+		// release on this component can also finalize it. Other key types
+		// continue through the legacy supportedApiTypes path.
+		if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+			authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
+					ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
+					componentId, List.of(ro), CallType.WRITE);
+		} else {
+			List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
+			authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
+		}
 
 		releaseFinalizerService.scheduleFinalizeRelease(rd.getUuid());
 		return true;
