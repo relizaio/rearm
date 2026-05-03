@@ -1418,8 +1418,42 @@ public class OssReleaseService {
 		}
 		if (rData.getLifecycle() == ReleaseLifecycle.ASSEMBLED ) {
 			autoIntegrateProducts(rData);
+			updateFollow(rData);
+			instanceService.updateFollowInstancesForFeatureSet(rData.getOrg(), rData.getBranch(), wu);
+		}
+		// Queue SBOM-component reconciliation for any release that came in with
+		// artifacts attached (e.g. addReleaseProgrammatic / addReleaseManual
+		// passing them on the create payload). The post-creation addArtifact
+		// path already calls requestReconcile per artifact, so this only fills
+		// the gap for create-with-artifacts. Idempotent — markSbomReconcileRequested
+		// no-ops if a request is already pending.
+		//
+		// Source-code-entry-only releases (the `--scearts` fs-bom CI flow)
+		// used to slip through this gate because their BOM lives on the
+		// SCE rather than on the release — resulting in 0-component
+		// inventories until something else (a later addArtifact, a
+		// deliverable add) triggered reconcile.
+		// SbomComponentService.collectBomArtifactUuids already walks SCE
+		// artifacts at reconcile time, so the only fix needed is to
+		// extend the trigger gate. Outbound deliverables are not checked
+		// here because they're materialised post-`ensureBaseVariantForRelease`
+		// via a separate code path that has its own reconcile trigger;
+		// the deliverable-add mutation surface invokes requestReconcile
+		// directly.
+		if (hasArtifactsRequiringReconcile(rData)) {
+			sbomComponentService.requestReconcile(r.getUuid());
 		}
 		return r;
+	}
+
+	private boolean hasArtifactsRequiringReconcile (ReleaseData rd) {
+		if (rd.getArtifacts() != null && !rd.getArtifacts().isEmpty()) return true;
+		if (rd.getSourceCodeEntry() != null) {
+			return getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry())
+					.map(sce -> sce.getArtifacts() != null && !sce.getArtifacts().isEmpty())
+					.orElse(false);
+		}
+		return false;
 	}
 
 	private void handleNewReleaseNotifications(ReleaseData rData, BranchData bd) {
