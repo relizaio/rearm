@@ -129,20 +129,6 @@
                 <n-input v-if="isWritable" id="vcsBranch" v-model:value="modifiedBranch.vcsBranch" />
                 <n-input v-else type="text" id="vcsBranch" name="vcsBranch" :value="modifiedBranch.vcsBranch" readonly/>
             </div>
-            <div class="pullRequestsBlock mt-3" v-if="branchPullRequests && branchPullRequests.length">
-                <p>
-                    <strong>Pull Requests </strong>
-                    <n-tooltip trigger="hover">
-                        <template #trigger>
-                            <n-icon size="16" style="cursor: help;">
-                                <QuestionMark />
-                            </n-icon>
-                        </template>
-                        PR metadata captured from CI when a release is minted on this branch via <code>--pr-*</code> flags. Updated each time a release fires for the same PR number.
-                    </n-tooltip>
-                </p>
-                <n-data-table :data="branchPullRequests" :columns="pullRequestColumns" :row-key="(row: any) => row.number" />
-            </div>
             <n-button
                 v-if="isWritable && modifiedBranch && !modifiedBranch.vcs && !isLinkVcsRepo && branchData.componentDetails === 'COMPONENT'"
                 @click="isLinkVcsRepo = true">
@@ -1179,71 +1165,6 @@ const isPatternNew = function (row: any): boolean {
     if (!branchData.value.dependencyPatterns) return true
     return !branchData.value.dependencyPatterns.some((p: any) => p.uuid === row.uuid)
 }
-
-const branchPullRequests: ComputedRef<any[]> = computed((): any[] => {
-    return modifiedBranch.value?.pullRequests || []
-})
-
-const formatPrDate = (raw: string | null | undefined): string => {
-    if (!raw) return '—'
-    const d = new Date(raw)
-    if (Number.isNaN(d.getTime())) return '—'
-    return d.toLocaleDateString('en-CA') + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-const resolveBranchName = (branchUuid: string | null | undefined): string => {
-    if (!branchUuid) return '—'
-    const bd = store.getters.branchById(branchUuid)
-    return bd?.name || branchUuid
-}
-
-const pullRequestColumns: DataTableColumns<any> = [
-    {
-        title: '#',
-        key: 'number',
-        width: 60,
-        render: (row: any) => h('span', { style: 'font-family: monospace;' }, '#' + row.number)
-    },
-    {
-        title: 'Title',
-        key: 'title',
-        render: (row: any) => row.title || '—'
-    },
-    {
-        title: 'State',
-        key: 'state',
-        width: 90,
-        render: (row: any) => {
-            const tagType = row.state === 'OPEN' ? 'success' : (row.state === 'CLOSED' ? 'default' : 'info')
-            return h(NTag, { type: tagType, size: 'small', bordered: false }, { default: () => row.state || '—' })
-        }
-    },
-    {
-        title: 'Target Branch',
-        key: 'targetBranch',
-        render: (row: any) => resolveBranchName(row.targetBranch)
-    },
-    {
-        title: 'Endpoint',
-        key: 'endpoint',
-        render: (row: any) => {
-            if (!row.endpoint) return '—'
-            return h('a', { href: row.endpoint, target: '_blank', rel: 'noopener' }, row.endpoint.replace(/^https?:\/\//, ''))
-        }
-    },
-    {
-        title: 'Created',
-        key: 'createdDate',
-        width: 150,
-        render: (row: any) => formatPrDate(row.createdDate)
-    },
-    {
-        title: 'Closed',
-        key: 'closedDate',
-        width: 150,
-        render: (row: any) => formatPrDate(row.closedDate)
-    }
-]
 
 const patternTableFields: DataTableColumns<any> = [
     {

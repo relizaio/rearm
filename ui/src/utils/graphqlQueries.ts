@@ -470,12 +470,6 @@ const singleReleaseDataNoParent = `
         uuid
         name
         vcs
-        pullRequests {
-            endpoint
-            number
-            commits
-            title
-        }
     }
     componentDetails {
         uuid
@@ -636,12 +630,6 @@ const SINGLE_RELEASE_GQL_DATA_LIGHT = `
     branchDetails {
         uuid
         name
-        pullRequests {
-            endpoint
-            number
-            commits
-            title
-        }
     }
     componentDetails {
         uuid
@@ -828,16 +816,6 @@ const BRANCH_GQL_DATA = `
         uri
         type
         createdType
-    }
-    pullRequests {
-        number
-        state
-        title
-        endpoint
-        targetBranch
-        createdDate
-        closedDate
-        mergedDate
     }
 `
 

@@ -19,9 +19,24 @@ const routes : any[] = [
         component: () => import('@/components/SystemSettings.vue')
     },
     {
-        path: '/componentsOfOrg/:orguuid/:compuuid?/:branchuuid?/:prnumber?',
+        path: '/componentsOfOrg/:orguuid/:compuuid?/:branchuuid?',
         name: 'ComponentsOfOrg',
         component: () => import('@/components/ComponentsOfOrg.vue')
+    },
+    {
+        path: '/pullRequestsOfOrg/:orguuid',
+        name: 'PullRequestsOfOrg',
+        component: () => import('@/components/PullRequestsOfOrg.vue')
+    },
+    {
+        path: '/pullRequest/show/:uuid',
+        name: 'PullRequestView',
+        component: () => import('@/components/PullRequestView.vue')
+    },
+    {
+        path: '/vcsRepository/:uuid',
+        name: 'VcsRepository',
+        component: () => import('@/components/VcsRepository.vue')
     },
     {
         path: '/productsOfOrg/:orguuid/:compuuid?/:branchuuid?',
