@@ -1110,6 +1110,18 @@ const storeObject : any = {
                             org
                             uri
                             type
+                            outputTriggers {
+                                uuid
+                                name
+                                type
+                                integration
+                                vcs
+                                schedule
+                                eventType
+                                clientPayload
+                                celClientPayload
+                                checkName
+                            }
                         }
                     }`,
                 variables: {
@@ -1119,6 +1131,104 @@ const storeObject : any = {
             })
             context.commit('ADD_VCS_REPO', response.data.vcsRepository)
             return response.data.vcsRepository
+        },
+        async setVcsRepoOutputTriggers (context: any, payload: { vcsUuid: string, triggers: any[] }) {
+            const data = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setVcsRepositoryOutputTriggers($vcsUuid: ID!, $triggers: [ReleaseOutputEventInput!]!) {
+                        setVcsRepositoryOutputTriggers(vcsUuid: $vcsUuid, triggers: $triggers) {
+                            uuid
+                            name
+                            org
+                            uri
+                            type
+                            outputTriggers {
+                                uuid
+                                name
+                                type
+                                integration
+                                vcs
+                                schedule
+                                eventType
+                                clientPayload
+                                celClientPayload
+                                checkName
+                            }
+                        }
+                    }`,
+                variables: {
+                    vcsUuid: payload.vcsUuid,
+                    triggers: payload.triggers
+                }
+            })
+            context.commit('ADD_VCS_REPO', data.data.setVcsRepositoryOutputTriggers)
+            return data.data.setVcsRepositoryOutputTriggers
+        },
+        async fetchPullRequestsOfOrg (context: any, org: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query pullRequestsOfOrg($orgUuid: ID!) {
+                        pullRequestsOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            org
+                            targetVcsRepository
+                            sourceVcsRepository
+                            identity
+                            state
+                            title
+                            sourceBranchName
+                            targetBranchName
+                            endpoint
+                            commits
+                            prCreatedDate
+                            closedDate
+                            mergedDate
+                            createdDate
+                        }
+                    }`,
+                variables: { orgUuid: org },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.pullRequestsOfOrg
+        },
+        async fetchPullRequest (context: any, prUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query pullRequest($prUuid: ID!) {
+                        pullRequest(prUuid: $prUuid) {
+                            uuid
+                            org
+                            targetVcsRepository
+                            sourceVcsRepository
+                            identity
+                            state
+                            title
+                            sourceBranchName
+                            targetBranchName
+                            endpoint
+                            commits
+                            prCreatedDate
+                            closedDate
+                            mergedDate
+                            createdDate
+                            prValidationEvents {
+                                date
+                                validationState
+                                comment
+                                sourceCodeEntry
+                                attributedReleases
+                            }
+                            releaseValidationEvents {
+                                release
+                                date
+                                validationResult
+                            }
+                        }
+                    }`,
+                variables: { prUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.pullRequest
         },
         async updateVcsRepo (context: any, vcsRepoProps: any) {
             const data = await graphqlClient.mutate({
