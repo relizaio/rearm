@@ -24,7 +24,7 @@
 
             <div v-if="!editing && currentTrigger" class="trigger-summary">
                 <p><strong>Name:</strong> {{ currentTrigger.name || '—' }}</p>
-                <p><strong>Integration:</strong> {{ currentTrigger.integration || '—' }}</p>
+                <p><strong>Integration:</strong> {{ integrationLabel(currentTrigger.integration) }}</p>
                 <p><strong>Installation ID:</strong> {{ currentTrigger.schedule || '—' }}</p>
                 <p><strong>Check name override:</strong> {{ currentTrigger.checkName || '(default)' }}</p>
                 <n-space>
@@ -37,17 +37,20 @@
                 <n-form-item label="Name" required>
                     <n-input v-model:value="draft.name" placeholder="e.g. PR validation"/>
                 </n-form-item>
-                <n-form-item label="Integration UUID (GITHUB_VALIDATE)" required>
-                    <n-input v-model:value="draft.integration" placeholder="UUID of the GitHub validation integration"/>
+                <n-form-item label="Choose Validation Integration" required>
+                    <n-select
+                        v-model:value="draft.integration"
+                        placeholder="Select GitHub Validate Integration"
+                        :options="validationIntegrationsForSelect" />
                 </n-form-item>
-                <n-form-item label="GitHub installation ID">
-                    <n-input v-model:value="draft.schedule" placeholder="(optional) GitHub App installation id"/>
+                <n-form-item label="GitHub Installation ID" required>
+                    <n-input v-model:value="draft.schedule" placeholder="GitHub App installation id"/>
                 </n-form-item>
                 <n-form-item label="Check name override">
                     <n-input v-model:value="draft.checkName" placeholder="(optional) defaults to rearm/pr/<identity>"/>
                 </n-form-item>
                 <n-space>
-                    <n-button type="primary" :disabled="!draft.name || !draft.integration" @click="saveTrigger">Save</n-button>
+                    <n-button type="primary" :disabled="!canSave" @click="saveTrigger">Save</n-button>
                     <n-button @click="cancelEdit">Cancel</n-button>
                 </n-space>
             </n-form>
@@ -59,8 +62,10 @@
 import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { NButton, NForm, NFormItem, NIcon, NInput, NSpace, NTooltip, useNotification } from 'naive-ui'
+import { NButton, NForm, NFormItem, NIcon, NInput, NSelect, NSpace, NTooltip, useNotification } from 'naive-ui'
 import { QuestionMark } from '@vicons/tabler'
+import gql from 'graphql-tag'
+import graphqlClient from '@/utils/graphql'
 
 const store = useStore()
 const route = useRoute()
@@ -68,6 +73,7 @@ const notification = useNotification()
 
 const vcsRepoUuid = computed(() => route.params.uuid as string)
 const editing = ref(false)
+const ciIntegrations = ref<any[]>([])
 const draft = reactive({
     uuid: '',
     name: '',
@@ -85,6 +91,22 @@ const currentTrigger = computed(() => {
     const triggers = vcsRepo.value?.outputTriggers
     return triggers && triggers.length > 0 ? triggers[0] : null
 })
+
+// Mirror ComponentView: only GITHUB_VALIDATE integrations are valid
+// targets for an EXTERNAL_VALIDATION trigger.
+const validationIntegrationsForSelect = computed(() => {
+    return ciIntegrations.value
+        .filter((x: any) => x.type === 'GITHUB_VALIDATE')
+        .map((x: any) => ({ label: x.note || x.identifier || x.uuid, value: x.uuid }))
+})
+
+const canSave = computed(() => !!(draft.name && draft.integration && draft.schedule))
+
+const integrationLabel = (uuid: string) => {
+    if (!uuid) return '—'
+    const found = ciIntegrations.value.find((x: any) => x.uuid === uuid)
+    return found ? (found.note || found.identifier || uuid) : uuid
+}
 
 const startEdit = () => {
     if (currentTrigger.value) {
@@ -118,13 +140,14 @@ const startEdit = () => {
 const cancelEdit = () => { editing.value = false }
 
 const saveTrigger = async () => {
+    if (!canSave.value) return
     try {
         const trigger = {
             uuid: draft.uuid || undefined,
             name: draft.name,
             type: 'EXTERNAL_VALIDATION',
             integration: draft.integration,
-            schedule: draft.schedule || null,
+            schedule: draft.schedule,
             checkName: draft.checkName || null,
             eventType: draft.eventType || null,
             clientPayload: draft.clientPayload || null,
@@ -153,15 +176,39 @@ const clearTrigger = async () => {
     }
 }
 
-onMounted(() => {
-    if (vcsRepoUuid.value) {
-        store.dispatch('fetchVcsRepo', vcsRepoUuid.value)
+async function fetchCiIntegrations(orgUuid: string) {
+    try {
+        const resp = await graphqlClient.query({
+            query: gql`
+                query ciIntegrations($org: ID!) {
+                    ciIntegrations(org: $org) {
+                        uuid
+                        identifier
+                        org
+                        isEnabled
+                        type
+                        note
+                    }
+                }`,
+            variables: { org: orgUuid },
+            fetchPolicy: 'network-only'
+        })
+        if (resp.data && resp.data.ciIntegrations) {
+            ciIntegrations.value = resp.data.ciIntegrations
+        }
+    } catch (err) {
+        console.error(err)
     }
-})
+}
 
-watch(vcsRepoUuid, (uuid) => {
-    if (uuid) store.dispatch('fetchVcsRepo', uuid)
-})
+async function loadAll() {
+    if (!vcsRepoUuid.value) return
+    const fresh = await store.dispatch('fetchVcsRepo', vcsRepoUuid.value)
+    if (fresh?.org) await fetchCiIntegrations(fresh.org)
+}
+
+onMounted(loadAll)
+watch(vcsRepoUuid, loadAll)
 </script>
 
 <style scoped lang="scss">
