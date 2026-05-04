@@ -71,7 +71,8 @@ import { NInput, NModal, NCard, NDataTable, useNotification, NotificationType, N
 import { ComputedRef, h, ref, Ref, computed, Component, reactive, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, Trash, Search } from '@vicons/tabler'
+import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, Trash, Search, Settings } from '@vicons/tabler'
+import { useRouter } from 'vue-router'
 import { Icon } from '@vicons/utils'
 import CreateVcsRepository from '@/components/CreateVcsRepository.vue'
 import commonFunctions from '@/utils/commonFunctions'
@@ -79,6 +80,7 @@ import { Info20Regular, Copy20Regular } from '@vicons/fluent'
 import Swal from 'sweetalert2'
 
 const route = useRoute()
+const router = useRouter()
 const store = useStore()
 
 const myorg: ComputedRef<string> = computed((): any => store.getters.myorg)
@@ -372,13 +374,22 @@ const vcsRepoFields: any[] = [
                         )
                     ]),
                     h(
-                        NIcon, 
+                        NIcon,
+                        {
+                            title: 'Open VCS settings (PR validation trigger)',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => router.push({ name: 'VcsRepository', params: { uuid: row.uuid } })
+                        },
+                        () => h(Settings)),
+                    h(
+                        NIcon,
                         {
                             title: 'View Connected Components',
                             class: 'icons clickable',
                             size: 25,
                             onClick: () => showConnectedComponentsModal(row.uuid)
-                        }, 
+                        },
                         () => h(Eye)),
                     h(
                         NTooltip, {

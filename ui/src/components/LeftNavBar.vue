@@ -44,7 +44,7 @@ import { ref, h, Component, ComputedRef, computed, Ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
-import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar } from '@vicons/tabler'
+import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest } from '@vicons/tabler'
 
 
 function renderIcon (icon: Component) {
@@ -113,6 +113,21 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                 ),
             key: 'vcsRepos',
             icon: renderIcon(BrandGit)
+        },
+        {
+            label: () =>
+                h(
+                    RouterLink,
+                    {
+                        to: {
+                            name: 'PullRequestsOfOrg',
+                            params: {orguuid: org}
+                        }
+                    },
+                    { default: () => 'Pull Requests' }
+                ),
+            key: 'pullRequests',
+            icon: renderIcon(GitPullRequest)
         },
 
     ]
@@ -222,6 +237,9 @@ const routeToMenuKey: Record<string, string> = {
     'ComponentsOfOrg': 'components',
     'ProductsOfOrg': 'products',
     'VcsReposOfOrg': 'vcsRepos',
+    'VcsRepository': 'vcsRepos',
+    'PullRequestsOfOrg': 'pullRequests',
+    'PullRequestView': 'pullRequests',
     'InstancesOfOrg': 'instances',
     'Instance': 'instances',
     'SecretsOfOrg': 'secrets',
