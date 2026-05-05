@@ -382,27 +382,73 @@ describe('BOM Processing Service - Unit Tests', () => {
             const originalVersion = bom.version;
             const originalComponentCount = bom.components.length;
             const originalDependencyCount = bom.dependencies?.length || 0;
-            
+
             const rebomOptions: any = { name: 'test', group: 'com.test', version: '1.0.0' };
             const timestamp = new Date().toISOString();
-            
+
             const overriddenBom = BomProcessingService.overrideRootComponent(bom, rebomOptions, timestamp);
-            
+
             // Validate core BOM fields unchanged
             expect(overriddenBom.bomFormat).toBe(originalBomFormat);
             expect(overriddenBom.specVersion).toBe(originalSpecVersion);
             expect(overriddenBom.serialNumber).toBe(originalSerialNumber);
             expect(overriddenBom.version).toBe(originalVersion);
-            
+
             // Validate components array unchanged
             expect(overriddenBom.components).toEqual(bom.components);
             expect(overriddenBom.components.length).toBe(originalComponentCount);
-            
+
             // Validate dependencies unchanged if present
             if (bom.dependencies) {
                 expect(overriddenBom.dependencies).toEqual(bom.dependencies);
                 expect(overriddenBom.dependencies.length).toBe(originalDependencyCount);
             }
+        });
+
+        // Real-world regression: scanners that emit no metadata.component
+        // (or one missing the `type` field) used to slip through
+        // augmentation untouched and then fail downstream Dependency-Track
+        // schema validation with `$.metadata.component.type: does not have
+        // a value in the enumeration [...]`. The augmenter now stamps
+        // `type: 'application'` as a default so the augmented BOM is
+        // self-sufficient.
+        it('should default metadata.component.type to "application" when input BOM has no metadata.component', () => {
+            const bom: any = {
+                bomFormat: 'CycloneDX',
+                specVersion: '1.5',
+                serialNumber: 'urn:uuid:00000000-0000-0000-0000-000000000001',
+                version: 1,
+                metadata: { timestamp: '2026-01-01T00:00:00Z' },
+                components: []
+            };
+            const rebomOptions: any = { name: 'no-meta-app', group: 'com.example', version: '1.2.3' };
+            const augmented = BomProcessingService.augmentBomWithComponentContext(bom, rebomOptions);
+            expect(augmented.metadata.component).toBeDefined();
+            expect(augmented.metadata.component.type).toBe('application');
+            expect(augmented.metadata.component.name).toBe('no-meta-app');
+            expect(augmented.metadata.component.version).toBe('1.2.3');
+            expect(augmented.metadata.component.group).toBe('com.example');
+        });
+
+        it('should preserve an existing metadata.component.type rather than overriding it', () => {
+            const bom: any = {
+                bomFormat: 'CycloneDX',
+                specVersion: '1.5',
+                serialNumber: 'urn:uuid:00000000-0000-0000-0000-000000000002',
+                version: 1,
+                metadata: {
+                    timestamp: '2026-01-01T00:00:00Z',
+                    component: { type: 'library', name: 'pre-existing', version: '0.1.0' }
+                },
+                components: []
+            };
+            const rebomOptions: any = { name: 'override', group: 'com.example', version: '1.2.3' };
+            const augmented = BomProcessingService.augmentBomWithComponentContext(bom, rebomOptions);
+            // Existing type wins — augmenter only fills the default when missing.
+            expect(augmented.metadata.component.type).toBe('library');
+            // Other fields still get overridden by rebomOptions per the
+            // documented augmenter contract.
+            expect(augmented.metadata.component.name).toBe('override');
         });
     });
 

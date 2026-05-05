@@ -263,8 +263,18 @@ export function augmentBomWithComponentContext(bom: any, componentDetails: Rebom
   const newPurl = establishPurl(origPurl, componentDetails);
   logger.debug(`established purl: ${newPurl}`);
 
+  // metadata.component.type is required by CycloneDX. Some scanners
+  // emit a BOM with no metadata.component at all (or with one missing
+  // the type field) — without this fallback those BOMs fail downstream
+  // schema validation, e.g. Dependency-Track rejects with
+  // `$.metadata.component.type: does not have a value in the
+  // enumeration [...]`. Existing type wins; "application" is the
+  // safest default for a release-level BOM (the BOM identifies a
+  // component the org ships, not a library it consumes).
+  const existingType = (bom.metadata && bom.metadata.component && bom.metadata.component.type) || undefined;
   newMetadata.component = {
     ...newMetadata.component,
+    type: existingType || 'application',
     purl: newPurl,
     ['bom-ref']: newPurl,
     name: componentDetails.name,
