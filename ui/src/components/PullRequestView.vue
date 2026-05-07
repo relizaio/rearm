@@ -98,6 +98,7 @@ const stateTag = (s: string) => s === 'OPEN' ? 'success' : (s === 'MERGED' ? 'in
 const validationTag = (v: string) => {
     if (v === 'SUCCESS') return 'success'
     if (v === 'FAILURE' || v === 'CANCELLED') return 'error'
+    if (v === 'PENDING') return 'warning'
     return 'default'
 }
 
