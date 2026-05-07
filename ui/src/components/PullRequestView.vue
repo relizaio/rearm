@@ -19,8 +19,7 @@
                 <p v-if="pr.sourceBranchName"><strong>Source branch:</strong> {{ pr.sourceBranchName }}</p>
                 <p v-if="pr.targetBranchName"><strong>Target branch:</strong> {{ pr.targetBranchName }}</p>
                 <p v-if="pr.endpoint">
-                    <strong>SCM:</strong>
-                    <a :href="pr.endpoint" target="_blank" rel="noopener">{{ pr.endpoint }}</a>
+                    <strong>SCM:</strong>&nbsp;<a :href="pr.endpoint" target="_blank" rel="noopener">{{ pr.endpoint }}</a>
                 </p>
                 <p><strong>Commits attributed:</strong> {{ (pr.commits || []).length }}</p>
                 <p v-if="headSce">
@@ -59,7 +58,7 @@
             <n-data-table
                 v-if="(pr.prValidationEvents || []).length"
                 :columns="prEventCols"
-                :data="pr.prValidationEvents"/>
+                :data="prEventsDesc"/>
             <p v-else class="empty">None recorded yet.</p>
 
             <h3 class="mt-4">Release validation events
@@ -74,7 +73,7 @@
             <n-data-table
                 v-if="(pr.releaseValidationEvents || []).length"
                 :columns="releaseEventCols"
-                :data="pr.releaseValidationEvents"/>
+                :data="releaseEventsDesc"/>
             <p v-else class="empty">None recorded yet.</p>
         </div>
     </div>
@@ -112,6 +111,16 @@ const headSce = computed(() => {
     const cd = pr.value?.commitDetails
     return cd && cd.length ? cd[cd.length - 1] : null
 })
+
+// Both event lists are appended in arrival order on the backend; flip
+// to descending so the newest verdict is at the top of the table.
+const sortByDateDesc = (rows: any[]) => [...rows].sort((a, b) => {
+    const ta = a?.date ? new Date(a.date).getTime() : 0
+    const tb = b?.date ? new Date(b.date).getTime() : 0
+    return tb - ta
+})
+const prEventsDesc = computed(() => sortByDateDesc(pr.value?.prValidationEvents || []))
+const releaseEventsDesc = computed(() => sortByDateDesc(pr.value?.releaseValidationEvents || []))
 
 const shortSha = (sha: string) => sha ? sha.slice(0, 12) : '—'
 
@@ -246,7 +255,12 @@ const releaseEventCols: DataTableColumns<any> = [
         title: 'Release',
         key: 'release',
         render: (row) => {
-            const matched = (pr.value?.attributedReleases || []).find((r: any) => r.uuid === row.release)
+            // Prefer the historical superset (validatedReleaseDetails) so
+            // events for releases superseded by newer-per-component still
+            // resolve to a name; fall back to attributedReleases to
+            // tolerate older backends that don't ship the new resolver.
+            const lookup = pr.value?.validatedReleaseDetails || pr.value?.attributedReleases || []
+            const matched = lookup.find((r: any) => r.uuid === row.release)
             const label = matched
                 ? `${matched.componentDetails?.name || ''} ${matched.version || ''}`.trim()
                 : (row.release || '').slice(0, 8)

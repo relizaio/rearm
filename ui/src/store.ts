@@ -1245,6 +1245,15 @@ const storeObject : any = {
                                 }
                                 createdDate
                             }
+                            validatedReleaseDetails {
+                                uuid
+                                version
+                                component
+                                componentDetails {
+                                    uuid
+                                    name
+                                }
+                            }
                         }
                     }`,
                 variables: { prUuid },
