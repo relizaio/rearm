@@ -5602,7 +5602,8 @@ const outputTriggerTypeOptions = [
     {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'},
     {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'},
     {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'},
-    {label: 'Validate Pull Request', value: 'VALIDATE_PR'}
+    {label: 'Validate Pull Request', value: 'VALIDATE_PR'},
+    {label: 'Invalidate Pull Request', value: 'INVALIDATE_PR'}
 ]
 
 const externalValidationConclusionOptions = [
