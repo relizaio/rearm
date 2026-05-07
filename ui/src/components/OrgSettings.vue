@@ -692,6 +692,18 @@
                                     <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
                                         <n-input v-model:value="globalOutputEvent.checkName" placeholder="Defaults to rearm/<componentName>; override e.g. rearm/policy" />
                                     </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Choose Validation Integration" path="integration">
+                                        <n-select v-model:value="globalOutputEvent.integration" placeholder="Select GitHub Validate Integration" :options="validationIntegrationsForGlobalSelect" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Installation ID" path="schedule">
+                                        <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Optional Comment Suffix (markdown)" path="clientPayload">
+                                        <n-input v-model:value="globalOutputEvent.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder="### See also&#10;- [Runbook](https://...)" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'PR_COMMENT'" label="Dynamic Comment Suffix (CEL string expression)" path="celClientPayload">
+                                        <n-input v-model:value="globalOutputEvent.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"_Triggered for release " + release.version + "._"' />
+                                    </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER'" label="Dynamic client payload (CEL string expression)" path="celClientPayload">
                                         <n-input v-model:value="globalOutputEvent.celClientPayload" style="font-family: monospace;" placeholder='"refs/tags/" + release.version' />
                                     </n-form-item>
@@ -5603,7 +5615,8 @@ const outputTriggerTypeOptions = [
     {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'},
     {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'},
     {label: 'Validate Pull Request', value: 'VALIDATE_PR'},
-    {label: 'Invalidate Pull Request', value: 'INVALIDATE_PR'}
+    {label: 'Invalidate Pull Request', value: 'INVALIDATE_PR'},
+    {label: 'Pull Request Comment', value: 'PR_COMMENT'}
 ]
 
 const externalValidationConclusionOptions = [

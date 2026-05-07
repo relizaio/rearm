@@ -540,6 +540,43 @@
                                                     <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
                                                         <n-input v-model:value="outputTrigger.checkName" :placeholder="'Defaults to rearm/' + (updatedComponent.name || '<component>')" />
                                                     </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" label="Choose Validation Integration" path="integration">
+                                                        <n-select
+                                                            v-model:value="outputTrigger.integration"
+                                                            placeholder="Select GitHub Validate Integration"
+                                                            :options="validationIntegrationsForSelect" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" label="Installation ID" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" path="clientPayload">
+                                                        <template #label>
+                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                                Optional Comment Suffix (markdown)
+                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                                    <template #trigger>
+                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                                    </template>
+                                                                    Static markdown appended to ReARM's auto-generated PR comment body (header / metrics / PR conditions are kept). Use this for organisation-wide footers — links to runbooks, escalation contacts, etc. Leave empty to use the default body unchanged.
+                                                                </n-tooltip>
+                                                            </span>
+                                                        </template>
+                                                        <n-input v-model:value="outputTrigger.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder="### See also&#10;- [Runbook](https://...)" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" path="celClientPayload">
+                                                        <template #label>
+                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                                Dynamic Comment Suffix (CEL string expression)
+                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                                    <template #trigger>
+                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                                    </template>
+                                                                    CEL expression evaluated at fire time. Result must be a markdown string. Appended to the auto-generated body — additive, not a replacement (contrast with External Validation, which substitutes). Available bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.
+                                                                </n-tooltip>
+                                                            </span>
+                                                        </template>
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"_Triggered for release " + release.version + "._"' />
+                                                    </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
                                                         <n-select v-model:value="outputTrigger.users" tag multiple required :options="users" />
                                                     </n-form-item>
@@ -1676,7 +1713,8 @@ const outputTriggerTypeOptions = [
     {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'},
     {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'},
     {label: 'Validate Pull Request', value: 'VALIDATE_PR'},
-    {label: 'Invalidate Pull Request', value: 'INVALIDATE_PR'}
+    {label: 'Invalidate Pull Request', value: 'INVALIDATE_PR'},
+    {label: 'Pull Request Comment', value: 'PR_COMMENT'}
 ]
 
 const externalValidationConclusionOptions = [
