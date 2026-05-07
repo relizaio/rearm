@@ -115,7 +115,7 @@ const filtered = computed(() => {
 
 onMounted(async () => {
     if (orgUuid.value) {
-        await store.dispatch('fetchVcsReposOfOrganization', orgUuid.value)
+        await store.dispatch('fetchVcsRepos', orgUuid.value)
         prs.value = (await store.dispatch('fetchPullRequestsOfOrg', orgUuid.value)) || []
     }
 })

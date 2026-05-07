@@ -1312,6 +1312,11 @@ async function loadTabSpecificData (tabName: string) {
     } else if (tabName === "approvalPolicies") {
         fetchApprovalEntries()
         fetchApprovalPolicies()
+        // Approval-policy global output events include EXTERNAL_VALIDATION
+        // and INTEGRATION_TRIGGER types, both of which need ciIntegrations
+        // populated to render their dropdowns. Without this load, the
+        // form opens with empty integration selects.
+        if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
     } else if (tabName === "perspectives") {
         loadPerspectives()
     } else if (tabName === "adminSettings") {
@@ -5596,7 +5601,8 @@ const outputTriggerTypeOptions = [
     {label: 'External Validation', value: 'EXTERNAL_VALIDATION'},
     {label: 'Email Notification', value: 'EMAIL_NOTIFICATION'},
     {label: 'VDR Snapshot Artifact', value: 'VDR_SNAPSHOT_ARTIFACT'},
-    {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'}
+    {label: 'Add Approved Environment', value: 'ADD_APPROVED_ENVIRONMENT'},
+    {label: 'Validate Pull Request', value: 'VALIDATE_PR'}
 ]
 
 const externalValidationConclusionOptions = [

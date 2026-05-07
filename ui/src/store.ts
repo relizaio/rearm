@@ -1223,6 +1223,28 @@ const storeObject : any = {
                                 date
                                 validationResult
                             }
+                            commitDetails {
+                                uuid
+                                commit
+                                commitMessage
+                                commitAuthor
+                                commitEmail
+                                vcs
+                                vcsBranch
+                                dateActual
+                            }
+                            attributedReleases {
+                                uuid
+                                version
+                                lifecycle
+                                component
+                                componentDetails {
+                                    uuid
+                                    name
+                                    type
+                                }
+                                createdDate
+                            }
                         }
                     }`,
                 variables: { prUuid },
