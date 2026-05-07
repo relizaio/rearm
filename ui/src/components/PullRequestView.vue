@@ -8,9 +8,13 @@
             <p v-if="pr.title" class="title-line">{{ pr.title }}</p>
 
             <div class="meta">
-                <p><strong>Target VCS:</strong> {{ vcsName(pr.targetVcsRepository) }}</p>
+                <p>
+                    <strong>Target VCS:</strong> {{ vcsName(pr.targetVcsRepository) }}
+                    <component :is="renderUuidTooltip" :uuid="pr.targetVcsRepository" :label="'Target VCS UUID'" />
+                </p>
                 <p v-if="pr.sourceVcsRepository && pr.sourceVcsRepository !== pr.targetVcsRepository">
                     <strong>Source VCS (cross-repo):</strong> {{ vcsName(pr.sourceVcsRepository) }}
+                    <component :is="renderUuidTooltip" :uuid="pr.sourceVcsRepository" :label="'Source VCS UUID'" />
                 </p>
                 <p v-if="pr.sourceBranchName"><strong>Source branch:</strong> {{ pr.sourceBranchName }}</p>
                 <p v-if="pr.targetBranchName"><strong>Target branch:</strong> {{ pr.targetBranchName }}</p>
@@ -19,11 +23,29 @@
                     <a :href="pr.endpoint" target="_blank" rel="noopener">{{ pr.endpoint }}</a>
                 </p>
                 <p><strong>Commits attributed:</strong> {{ (pr.commits || []).length }}</p>
-                <p v-if="(pr.commits || []).length">
-                    <strong>Head SCE:</strong>
-                    <code>{{ pr.commits[pr.commits.length - 1] }}</code>
+                <p v-if="headSce">
+                    <strong>Head SHA:</strong>
+                    <code>{{ headSce.commit ? shortSha(headSce.commit) : '—' }}</code>
+                    <component :is="renderUuidTooltip" :uuid="headSce.uuid" :label="'Head SCE UUID'" />
+                    <span v-if="headSce.commitMessage" class="commit-msg">— {{ headSce.commitMessage }}</span>
                 </p>
             </div>
+
+            <h3 class="mt-4">
+                Releases at PR head
+                <n-tooltip trigger="hover">
+                    <template #trigger>
+                        <n-icon size="16" style="cursor: help;"><QuestionMark/></n-icon>
+                    </template>
+                    Releases whose primary source-code-entry is one of this PR's commits, scoped to the PR's org.
+                    Same set the aggregator uses to compute the PR-level verdict.
+                </n-tooltip>
+            </h3>
+            <n-data-table
+                v-if="(pr.attributedReleases || []).length"
+                :columns="attributedReleaseCols"
+                :data="pr.attributedReleases"/>
+            <p v-else class="empty">No releases attributed yet.</p>
 
             <h3 class="mt-4">PR validation events
                 <n-tooltip trigger="hover">
@@ -59,14 +81,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { useStore } from 'vuex'
-import { useRoute } from 'vue-router'
-import { NDataTable, NIcon, NTag, NTooltip, DataTableColumns } from 'naive-ui'
+import { useRoute, RouterLink } from 'vue-router'
+import { NDataTable, NIcon, NTag, NTooltip, useNotification, DataTableColumns } from 'naive-ui'
 import { QuestionMark } from '@vicons/tabler'
+import { Info20Regular, Copy20Regular } from '@vicons/fluent'
 
 const store = useStore()
 const route = useRoute()
+const notification = useNotification()
 const prUuid = computed(() => route.params.uuid as string)
 const pr = ref<any>(null)
 
@@ -83,12 +107,93 @@ const vcsName = (uuid: string) => {
     return repo?.name || uuid
 }
 
+const headSce = computed(() => {
+    const cd = pr.value?.commitDetails
+    return cd && cd.length ? cd[cd.length - 1] : null
+})
+
+const shortSha = (sha: string) => sha ? sha.slice(0, 12) : '—'
+
+const fmtDate = (raw: string | null | undefined) => {
+    if (!raw) return '—'
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) return '—'
+    return d.toLocaleDateString('en-CA')
+}
+
 const fmtDateTime = (raw: string | null | undefined) => {
     if (!raw) return '—'
     const d = new Date(raw)
     if (Number.isNaN(d.getTime())) return '—'
     return d.toLocaleDateString('en-CA') + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
+
+async function copyUuid (text: string, label: string) {
+    try {
+        await navigator.clipboard.writeText(text)
+        notification.info({ title: 'Copied', content: `${label}: ${text}`, duration: 3000 })
+    } catch (e) {
+        console.error(e)
+    }
+}
+
+// Reusable Info icon with hover tooltip showing UUID + a copy button.
+// Mirrors the pattern in VcsReposOfOrg.vue. Defined as a render component
+// so it can be dropped into the template via <component :is>.
+const renderUuidTooltip = defineComponent({
+    props: { uuid: { type: String, default: '' }, label: { type: String, default: 'UUID' } },
+    setup (props) {
+        return () => {
+            if (!props.uuid) return null
+            return h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h(NIcon, { size: 16, style: 'cursor: help; vertical-align: middle; margin-left: 4px;' },
+                    { default: () => h(Info20Regular) }),
+                default: () => [
+                    h('span', { style: 'font-family: monospace; font-size: 12px;' }, `${props.label}: ${props.uuid}`),
+                    h(NIcon, {
+                        size: 16,
+                        class: 'clickable',
+                        style: 'cursor: pointer; vertical-align: middle; margin-left: 6px;',
+                        onClick: () => copyUuid(props.uuid, props.label)
+                    }, { default: () => h(Copy20Regular) })
+                ]
+            })
+        }
+    }
+})
+
+const attributedReleaseCols: DataTableColumns<any> = [
+    {
+        title: 'Component',
+        key: 'component',
+        render: (row) => row.componentDetails?.name || row.component?.slice(0, 8) || '—'
+    },
+    {
+        title: 'Version',
+        key: 'version',
+        render: (row) => h(RouterLink as any,
+            { to: { name: 'ReleaseView', params: { uuid: row.uuid } } },
+            { default: () => row.version || '—' })
+    },
+    {
+        title: 'Lifecycle',
+        key: 'lifecycle',
+        width: 140,
+        render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.lifecycle || '—' })
+    },
+    {
+        title: 'Created',
+        key: 'createdDate',
+        width: 110,
+        render: (row) => fmtDate(row.createdDate)
+    },
+    {
+        title: '',
+        key: 'uuidInfo',
+        width: 50,
+        render: (row) => h(renderUuidTooltip, { uuid: row.uuid, label: 'Release UUID' })
+    }
+]
 
 const prEventCols: DataTableColumns<any> = [
     {
@@ -105,13 +210,21 @@ const prEventCols: DataTableColumns<any> = [
             { default: () => row.validationState })
     },
     {
-        title: 'Head SCE',
+        title: 'Head SHA',
         key: 'sourceCodeEntry',
-        render: (row) => h('code', {}, (row.sourceCodeEntry || '').slice(0, 8))
+        render: (row) => {
+            const sce = (pr.value?.commitDetails || []).find((c: any) => c.uuid === row.sourceCodeEntry)
+            const display = sce?.commit ? shortSha(sce.commit) : (row.sourceCodeEntry || '').slice(0, 8)
+            return h('span', {}, [
+                h('code', {}, display),
+                h(renderUuidTooltip, { uuid: row.sourceCodeEntry, label: 'SCE UUID' })
+            ])
+        }
     },
     {
         title: 'Releases',
         key: 'attributedReleases',
+        width: 90,
         render: (row) => (row.attributedReleases || []).length
     },
     {
@@ -131,7 +244,16 @@ const releaseEventCols: DataTableColumns<any> = [
     {
         title: 'Release',
         key: 'release',
-        render: (row) => h('code', {}, (row.release || '').slice(0, 8))
+        render: (row) => {
+            const matched = (pr.value?.attributedReleases || []).find((r: any) => r.uuid === row.release)
+            const label = matched
+                ? `${matched.componentDetails?.name || ''} ${matched.version || ''}`.trim()
+                : (row.release || '').slice(0, 8)
+            return h('span', {}, [
+                h('code', {}, label),
+                h(renderUuidTooltip, { uuid: row.release, label: 'Release UUID' })
+            ])
+        }
     },
     {
         title: 'Outcome',
@@ -146,7 +268,7 @@ async function load () {
     if (prUuid.value) {
         pr.value = await store.dispatch('fetchPullRequest', prUuid.value)
         if (pr.value?.org) {
-            await store.dispatch('fetchVcsReposOfOrganization', pr.value.org)
+            await store.dispatch('fetchVcsRepos', pr.value.org)
         }
     }
 }
@@ -165,6 +287,7 @@ watch(prUuid, load)
     border-radius: 4px;
     p { margin: 0.25rem 0; }
 }
+.commit-msg { color: #555; margin-left: 0.5rem; }
 .empty { color: #888; font-style: italic; }
 .mt-4 { margin-top: 1.25rem; }
 </style>
