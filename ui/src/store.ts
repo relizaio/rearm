@@ -1229,7 +1229,7 @@ const storeObject : any = {
                                 commitMessage
                                 commitAuthor
                                 commitEmail
-                                vcs
+                                vcsUuid
                                 vcsBranch
                                 dateActual
                             }
