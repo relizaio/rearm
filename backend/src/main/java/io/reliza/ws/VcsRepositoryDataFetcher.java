@@ -128,6 +128,32 @@ public class VcsRepositoryDataFetcher {
 	}
 	
 	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setVcsRepositoryOutputTriggers")
+	public VcsRepositoryData setVcsRepositoryOutputTriggers(
+			@InputArgument("vcsUuid") UUID vcsUuid,
+			DgsDataFetchingEnvironment dfe) throws RelizaException, com.fasterxml.jackson.core.JsonProcessingException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsUuid);
+		RelizaObject ro = ovrd.isPresent() ? ovrd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		List<Map<String, Object>> rawTriggers = dfe.getArgument("triggers");
+		List<io.reliza.model.ComponentData.ReleaseOutputEvent> triggers = new java.util.ArrayList<>();
+		if (rawTriggers != null) {
+			for (Map<String, Object> ti : rawTriggers) {
+				io.reliza.model.dto.UpdateComponentDto.ReleaseOutputEventInput input =
+						io.reliza.common.Utils.OM.convertValue(ti,
+								io.reliza.model.dto.UpdateComponentDto.ReleaseOutputEventInput.class);
+				triggers.add(io.reliza.model.dto.UpdateComponentDto.convertReleaseOutputEventFromInput(input, null));
+			}
+		}
+		return VcsRepositoryData.dataFromRecord(
+				vcsRepositoryService.setVcsRepositoryOutputTriggers(vcsUuid, triggers, wu));
+	}
+
+	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "archiveVcsRepository")
 	public Boolean archiveVcsRepository(@InputArgument("vcsUuid") String vcsUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();

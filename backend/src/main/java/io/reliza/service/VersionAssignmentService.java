@@ -180,11 +180,40 @@ public class VersionAssignmentService {
 	}
 
 	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) {
+		// Existing commit-less callers never trigger the dedup path and so
+		// can't see a RelizaException — wrap as unchecked to keep the
+		// historic signature (no `throws`) for them.
+		try {
+			return getSetNewVersionWrapper(branchUuid, bumpAction, modifier, metadata, versionType, null, false);
+		} catch (RelizaException re) {
+			throw new IllegalStateException("Unexpected RelizaException from commit-less getSetNewVersionWrapper", re);
+		}
+	}
+
+	/**
+	 * Commit-keyed dedup variant. When {@code commit} is non-null and a
+	 * VA already exists for {@code (component, branch, commit)}:
+	 *   - {@code rebuild == true} → return the existing VA so the caller
+	 *     reuses the same version (intentional re-issuance).
+	 *   - {@code rebuild == false} → throw {@link RelizaException} so the
+	 *     caller's CI fails fast with a clear error rather than minting a
+	 *     second version on the same head.
+	 *
+	 * The (component, branch, commit) partial unique index serializes the
+	 * actual insert too — if two flows race past the lookup, the loser's
+	 * insert hits {@link DataIntegrityViolationException}, the existing
+	 * retry wrapper re-enters, finds the winner via the lookup, and
+	 * applies the rebuild branch. {@code commit == null} preserves
+	 * today's behaviour exactly (manual mints, marketing assignments,
+	 * commit-less callers).
+	 */
+	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction, String modifier,
+			String metadata, VersionTypeEnum versionType, String commit, boolean rebuild) throws RelizaException {
 		Optional<VersionAssignment> va = Optional.empty();
 		int triesLeft = 3;
 		while (triesLeft > 0) {
 			try {
-				va = self.getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType);
+				va = self.getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType, commit, rebuild);
 				return va;
 			} catch (DataIntegrityViolationException dae) {
 				--triesLeft;
@@ -199,29 +228,55 @@ public class VersionAssignmentService {
 	// REQUIRES_NEW so a duplicate-key collision on (branch, version) rolls back
 	// only this attempt's transaction, letting getSetNewVersionWrapper retry.
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public Optional<VersionAssignment> getSetNewVersion (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) {
+	public Optional<VersionAssignment> getSetNewVersion (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) throws RelizaException {
+		return getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType, null, false);
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public Optional<VersionAssignment> getSetNewVersion (UUID branchUuid, ActionEnum bumpAction, String modifier,
+			String metadata, VersionTypeEnum versionType, String commit, boolean rebuild) throws RelizaException {
 		Optional<VersionAssignment> retVersion = Optional.empty();
 		// retrieve branch and project to get their schemas
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		if(obd.isEmpty())
 			return retVersion;
-		
+
 		BranchData bd = obd.get();
 		ComponentData pd = getComponentService.getComponentData(bd.getComponent()).get();
 		String projectSchema = pd.getVersionSchema();
 		String branchSchema = bd.getVersionSchema();
 		// we require both project versioning schema and branch versioning schema to exist to generate a new version
 		if (StringUtils.isEmpty(projectSchema) && StringUtils.isEmpty(branchSchema)) {
-			log.warn("Cannot generate version, since versioning schemas not set, branch uuid = " + branchUuid);	
+			log.warn("Cannot generate version, since versioning schemas not set, branch uuid = " + branchUuid);
 			return retVersion;
 		}
-			
+
+		// Commit-keyed dedup. Only DEV versions go through the per-commit
+		// uniqueness gate — marketing versions are independent of git
+		// state. Two CI flows on the same head race here: the lookup
+		// covers the common case, the partial unique index covers the
+		// race that loses the lookup.
+		if (StringUtils.isNotEmpty(commit) && versionType == VersionTypeEnum.DEV) {
+			Optional<VersionAssignment> existing = repository
+					.findByComponentAndBranchAndCommit(bd.getComponent(), branchUuid, commit);
+			if (existing.isPresent()) {
+				if (rebuild) {
+					log.info("getversion rebuild: reusing existing version {} for commit {} on branch {}",
+							existing.get().getVersion(), commit, branchUuid);
+					return existing;
+				}
+				throw new RelizaException("Commit " + commit + " already has version "
+						+ existing.get().getVersion() + " on branch " + branchUuid
+						+ "; pass --rebuild to reuse it");
+			}
+		}
+
 		if (null == bumpAction) {
 			bumpAction = ActionEnum.BUMP;
-		}	
-		
+		}
+
 		VersionAssignment va = new VersionAssignment();
-		
+
 		Optional<VersionAssignment> openOva = getNextVersion(branchUuid, versionType);
 
 		if(openOva.isPresent()){
@@ -250,8 +305,11 @@ public class VersionAssignmentService {
 		va.setBranchSchema(branchSchema);
 		va.setOrg(bd.getOrg());
 		va.setVersionType(VersionTypeEnum.DEV);
+		if (StringUtils.isNotEmpty(commit) && versionType == VersionTypeEnum.DEV) {
+			va.setCommit(commit);
+		}
 		retVersion = Optional.of(repository.save(va));
-		
+
 		return retVersion;
 	}
 
@@ -591,6 +649,7 @@ public class VersionAssignmentService {
 		Boolean onlyVersion,
 		SceDto sourceCodeEntry,
 		List<SceDto> commits,
-		VersionTypeEnum versionType
+		VersionTypeEnum versionType,
+		Boolean rebuild
 	) {}
 }

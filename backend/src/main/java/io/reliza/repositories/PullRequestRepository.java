@@ -1,0 +1,107 @@
+/**
+* Copyright Reliza Incorporated. 2019 - 2026. Licensed under the terms of AGPL-3.0-only.
+*/
+package io.reliza.repositories;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
+
+import io.reliza.model.PullRequest;
+import jakarta.persistence.LockModeType;
+
+public interface PullRequestRepository extends CrudRepository<PullRequest, UUID> {
+
+	@Transactional
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query(value = "SELECT pr FROM PullRequest pr WHERE uuid = :uuid")
+	Optional<PullRequest> findByIdWriteLocked(UUID uuid);
+
+	/**
+	 * Upsert lookup. (targetVcsRepository, identity) is the unique key —
+	 * matches the partial unique index from V30. Used by the
+	 * addReleaseProgrammatic --pr-* path to find-or-create.
+	 */
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'targetVcsRepository' = :targetRepoUuidAsString "
+			+ "AND pr.record_data->>'identity' = :identity",
+			nativeQuery = true)
+	Optional<PullRequest> findByTargetRepoAndIdentity(@Param("targetRepoUuidAsString") String targetRepoUuidAsString,
+			@Param("identity") String identity);
+
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'org' = :orgUuidAsString "
+			+ "ORDER BY pr.created_date DESC",
+			nativeQuery = true)
+	List<PullRequest> findByOrg(@Param("orgUuidAsString") String orgUuidAsString);
+
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'targetVcsRepository' = :targetRepoUuidAsString "
+			+ "ORDER BY pr.created_date DESC",
+			nativeQuery = true)
+	List<PullRequest> findByTargetRepository(@Param("targetRepoUuidAsString") String targetRepoUuidAsString);
+
+	/**
+	 * Find open PRs in a target repo whose commits list contains the given
+	 * SCE. The aggregator calls this whenever a release is added/updated
+	 * to determine which PRs should be re-aggregated.
+	 *
+	 * jsonb_contains on `commits` matches the pattern used in
+	 * FIND_RELEASES_BY_SCE_AND_ORG; PostgreSQL can use a GIN index on
+	 * record_data if one is added later for hot loads.
+	 */
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'targetVcsRepository' = :targetRepoUuidAsString "
+			+ "AND pr.record_data->>'state' = 'OPEN' "
+			+ "AND jsonb_contains(pr.record_data->'commits', jsonb_build_array(:sceUuidAsString))",
+			nativeQuery = true)
+	List<PullRequest> findOpenByTargetRepoAndCommit(@Param("targetRepoUuidAsString") String targetRepoUuidAsString,
+			@Param("sceUuidAsString") String sceUuidAsString);
+
+	/**
+	 * Append a single validation event to the appropriate jsonb column.
+	 * Implemented as native SQL to avoid the @DynamicUpdate aliasing
+	 * documented on Release.java — concurrent appends from different
+	 * transactions stay correct because the read-modify-write happens
+	 * inside Postgres on the row.
+	 *
+	 * {@code clearAutomatically = true} flushes Hibernate's L1 cache
+	 * after the update so a subsequent {@code findById} in the same
+	 * transaction reloads the row and sees the freshly appended event
+	 * (the native SQL bypasses the entity proxy and would otherwise
+	 * leave a stale cached PullRequest in place).
+	 */
+	@Transactional
+	@Modifying(clearAutomatically = true)
+	@Query(value = "UPDATE rearm.pull_requests "
+			+ "SET pr_validation_events = pr_validation_events || CAST(:event AS jsonb), "
+			+ "    last_updated_date = now() "
+			+ "WHERE uuid = :uuid",
+			nativeQuery = true)
+	void appendPrValidationEvent(@Param("uuid") UUID uuid, @Param("event") String eventJson);
+
+	@Transactional
+	@Modifying(clearAutomatically = true)
+	@Query(value = "UPDATE rearm.pull_requests "
+			+ "SET release_validation_events = release_validation_events || CAST(:event AS jsonb), "
+			+ "    last_updated_date = now() "
+			+ "WHERE uuid = :uuid",
+			nativeQuery = true)
+	void appendReleaseValidationEvent(@Param("uuid") UUID uuid, @Param("event") String eventJson);
+
+	@Transactional
+	@Modifying(clearAutomatically = true)
+	@Query(value = "UPDATE rearm.pull_requests "
+			+ "SET update_events = update_events || CAST(:event AS jsonb), "
+			+ "    last_updated_date = now() "
+			+ "WHERE uuid = :uuid",
+			nativeQuery = true)
+	void appendUpdateEvent(@Param("uuid") UUID uuid, @Param("event") String eventJson);
+}

@@ -224,7 +224,6 @@ public class CommonVariables {
 	public static final String WEBHOOK_ID_FIELD = "webhookId";
 	public static final String SUMMARY_FIELD = "summary";
 	public static final String NUMBER_FIELD = "number";
-	public static final String PULL_REQUEST_DATA_FEILD = "pullRequestData";
 	public static final String TITLE_FIELD = "title";
 	public static final String CLOSED_DATE_FIELD = "closedDate";
 	public static final String MERGED_DATE_FIELD = "mergedDate";
@@ -447,6 +446,7 @@ public class CommonVariables {
 		ORCHESTRATORS("orchestrators"),
 		ORGANIZATIONS("organizations"),
 		PROPERTIES(CommonVariables.PROPERTIES_FIELD),
+		PULL_REQUESTS("pull_requests"),
 		RELEASES(CommonVariables.RELEASES_FIELD),
 		RELEASE_REBOMS("release_reboms"),
 		TICKETS(CommonVariables.TICKETS_FIELD),

@@ -71,6 +71,7 @@ import io.reliza.model.ComponentData.InputConditionGroup;
 import io.reliza.model.Deliverable;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.PullRequestData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -199,6 +200,15 @@ public class ReleaseDatafetcher {
 
 	@Autowired
 	private DownloadLogService downloadLogService;
+
+	@Autowired
+	private io.reliza.service.PullRequestService pullRequestService;
+
+	@Autowired
+	private io.reliza.service.oss.OssPullRequestAggregatorService pullRequestAggregatorService;
+
+	@Autowired
+	private io.reliza.service.VcsRepositoryService vcsRepositoryService;
 
 	@Autowired
 	private io.reliza.service.tea.TeaTransformerService teaTransformerService;
@@ -436,7 +446,6 @@ public class ReleaseDatafetcher {
 	 * @param orgFilter
 	 * @param releaseFilter
 	 * @param numRecords
-	 * @param pullRequest
 	 * @return
 	 */
 	@PreAuthorize("isAuthenticated()")
@@ -445,8 +454,7 @@ public class ReleaseDatafetcher {
 			@InputArgument("branchFilter") UUID branchFilter,
 			@InputArgument("orgFilter") UUID orgFilter,
 			@InputArgument("releaseFilter") List<UUID> releaseFilter,
-			@InputArgument("numRecords") Integer numRecords, 
-			@InputArgument("pullRequestFilter") Integer pullRequest) throws RelizaException
+			@InputArgument("numRecords") Integer numRecords) throws RelizaException
 	{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -476,7 +484,7 @@ public class ReleaseDatafetcher {
 		if (null != branchFilter) {
 			log.debug("num of release records in get releases dto = " + numRecords);
 			
-			retRel = sharedReleaseService.listReleaseDataOfBranch(branchFilter, pullRequest, numRecords, true);
+			retRel = sharedReleaseService.listReleaseDataOfBranch(branchFilter, numRecords, true);
 			// TODO: combination of branchfilter and releasefilter
 		} else if (null != orgFilter) {
 			if (null != releaseFilter) {
@@ -836,51 +844,39 @@ public class ReleaseDatafetcher {
 	}
 
 	/**
-	 * Parse an optional {@code pullRequest} field on a programmatic
-	 * release / version-bump call and apply it via the existing
-	 * {@code setPRDataOnBranch} path so the source branch's
-	 * {@code pullRequestData} stays in sync with the upstream SCM.
-	 * Tolerant of missing/malformed input — logs a warning and
-	 * returns. The {@code targetBranch} string in the input is
-	 * resolved to a Branch UUID on the same component as {@code bd};
-	 * if not found, stored as {@code null}.
+	 * Parse an optional {@code pullRequest} field on a programmatic release
+	 * call and upsert it as a first-class PullRequest entity, advancing the
+	 * PR's head to the just-created release's SCE. The PR is keyed by
+	 * (targetVcsRepository, identity) so a single PR receives appended
+	 * commits across many releases (the monorepo case).
+	 *
+	 * Expected input shape:
+	 *   identity         (string, required)        — SCM-side PR id
+	 *   state            (string, required)        — OPEN | CLOSED | MERGED
+	 *   title            (string, optional)
+	 *   endpoint         (string, optional)        — SCM URL
+	 *   sourceBranchName (string, optional)
+	 *   targetBranchName (string, optional)
+	 *
+	 * Tolerant of missing input — returns without touching the PR table.
+	 * Warns rather than throws on malformed input so a misformatted PR
+	 * field doesn't fail the release create itself.
 	 */
-	private void applyPullRequestInputIfPresent (Map<String, Object> inputMap, BranchData bd, WhoUpdated wu) {
-		if (bd == null) return;
+	private void applyPullRequestInputIfPresent (Map<String, Object> inputMap, BranchData bd, ReleaseData rd, WhoUpdated wu) {
+		if (bd == null || rd == null) return;
 		@SuppressWarnings("unchecked")
 		Map<String, Object> prInput = (Map<String, Object>) inputMap.get("pullRequest");
-		if (prInput == null || prInput.get("number") == null) return;
-		try {
-			Integer prNumber = ((Number) prInput.get("number")).intValue();
-			String stateStr = (String) prInput.get("state");
-			if (StringUtils.isEmpty(stateStr)) {
-				log.warn("pullRequest input on branch {} missing required 'state' — skipping", bd.getUuid());
-				return;
-			}
-			io.reliza.common.CommonVariables.PullRequestState prState =
-					io.reliza.common.CommonVariables.PullRequestState.valueOf(StringUtils.upperCase(stateStr));
-			UUID targetBranchUuid = null;
-			String targetBranchName = (String) prInput.get("targetBranch");
-			if (StringUtils.isNotEmpty(targetBranchName)) {
-				targetBranchUuid = branchService.findBranchByComponentAndName(bd.getComponent(), targetBranchName)
-						.map(BranchData::getUuid).orElse(null);
-			}
-			URI prEndpoint = null;
-			String endpointStr = (String) prInput.get("endpoint");
-			if (StringUtils.isNotEmpty(endpointStr)) {
-				try { prEndpoint = URI.create(endpointStr); } catch (Exception ignored) {}
-			}
-			io.reliza.model.dto.PullRequestDto prDto = io.reliza.model.dto.PullRequestDto.builder()
-					.number(prNumber)
-					.state(prState)
-					.title((String) prInput.get("title"))
-					.targetBranch(targetBranchUuid)
-					.endpoint(prEndpoint)
-					.build();
-			branchService.setPRDataOnBranch(prDto, bd.getUuid(), wu);
-		} catch (Exception e) {
-			log.warn("Failed to apply pullRequest input on branch {}: {}", bd.getUuid(), e.getMessage());
-		}
+		if (prInput == null) return;
+		// Component-level VCS is a fallback for releases that have no SCE
+		// yet (rare for PR flows but tolerated).
+		UUID componentVcsFallback = getComponentService.getComponentData(bd.getComponent())
+				.map(ComponentData::getVcs).orElse(null);
+		Optional<PullRequestData> oPrd = pullRequestService.applyFromInput(prInput, rd.getOrg(),
+				rd.getSourceCodeEntry(), componentVcsFallback, wu);
+		// applyFromInput may have advanced the PR head to this release's
+		// SCE; the saveRelease hook ran before commits[] was updated, so
+		// re-run aggregation now that the new head is on the row.
+		oPrd.ifPresent(prd -> pullRequestAggregatorService.recomputeForPr(prd.getUuid(), wu));
 	}
 
 
@@ -1000,14 +996,6 @@ public class ReleaseDatafetcher {
 		
 		BranchData bd = resolveAddReleaseProgrammaticBranchData(componentId, (String) progReleaseInput.get(CommonVariables.BRANCH_FIELD),
 				ar.getWhoUpdated());
-
-		// Optional PR-data attachment: keeps the source branch's
-		// pullRequestData in sync with the upstream SCM without a
-		// dedicated webhook channel. Routed through the existing
-		// setPRDataOnBranch path so the auto-clone / autoIntegrate-on-
-		// close behaviour applies the same way as the ADO webhook
-		// would have applied it.
-		applyPullRequestInputIfPresent(progReleaseInput, bd, ar.getWhoUpdated());
 
 		@SuppressWarnings("unchecked")
 		var inboundDeliverablesList = (List<Map<String,Object>>) progReleaseInput.get("inboundDeliverables");
@@ -1129,6 +1117,10 @@ public class ReleaseDatafetcher {
 						.prepareListofDeliverables(outboundDeliverablesList, bd.getUuid(), version, ar.getWhoUpdated());
 				variantService.addOutboundDeliverables(outboundDeliverables, vd.getUuid(), ar.getWhoUpdated());
 			}
+			// PR upsert + head advance after the release exists so the SCE
+			// UUID is available; the aggregator picks up this PR via SCE
+			// matching when the release subsequently fires VALIDATE_PR.
+			applyPullRequestInputIfPresent(progReleaseInput, bd, rd, ar.getWhoUpdated());
 			return rd;
 		} catch (RelizaException re) {
 			log.warn("addReleaseProgrammatic failed for component={}, branch={}, version={}: {}",

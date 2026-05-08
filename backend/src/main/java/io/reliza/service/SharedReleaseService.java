@@ -287,27 +287,26 @@ public class SharedReleaseService {
 	public List<ReleaseData> listReleaseDataOfBranch (UUID branchUuid) {
 		return listReleaseDataOfBranch(branchUuid, false);
 	}
+
+	/**
+	 * Look up a release by (component, version). Releases.component is a
+	 * denormalised field on record_data; the unique index covers
+	 * (component, version) so this is a direct read. Used by the
+	 * getNewVersion → PR-upsert path where the caller has only the
+	 * version string the wrapper just returned.
+	 */
+	public Optional<Release> findReleaseByComponentAndVersion (UUID componentUuid, String version) {
+		if (componentUuid == null || version == null) return Optional.empty();
+		return repository.findByComponentAndVersion(componentUuid.toString(), version);
+	}
 	
 	public List<ReleaseData> listReleaseDataOfBranch (UUID branchUuid, boolean sorted) {
 		return listReleaseDataOfBranch(branchUuid, 300, sorted);
 	}
 	
 	public List<ReleaseData> listReleaseDataOfBranch (UUID branchUuid, Integer numRecords, boolean sorted) {
-		return listReleaseDataOfBranch(branchUuid, null, numRecords, sorted);
-	}
-
-	public List<ReleaseData> listReleaseDataOfBranch (UUID branchUuid, Integer prNumber, Integer numRecords, boolean sorted) {
 		if (null == numRecords || 0 == numRecords) numRecords = DEFAULT_NUM_RELEASES;
-		List<Release> releases = new ArrayList<>();
-		List<UUID> sces = null;
-		if(prNumber != null && prNumber > 0){
-			BranchData bd = branchService.getBranchData(branchUuid).orElseThrow();
-			sces = bd.getPullRequestData().get(prNumber).getCommits();
-			log.info("sces: {}", sces);
-			releases = listReleasesOfBranchWhereInSces(branchUuid, sces, numRecords, 0);
-		} else 
-			releases = listReleasesOfBranch(branchUuid, numRecords, 0);
-			
+		List<Release> releases = listReleasesOfBranch(branchUuid, numRecords, 0);
 		List<ReleaseData> rdList = releases
 										.stream()
 										.map(ReleaseData::dataFromRecord)
@@ -357,28 +356,6 @@ public class SharedReleaseService {
 		return repository.findReleasesOfBranch(branchUuid.toString(), limitAsStr, offsetAsStr);
 	}
 
-	private List<Release> listReleasesOfBranchWhereInSces (UUID branchUuid, List<UUID> sces, Integer limit, Integer offset) {
-		String limitAsStr = null;
-		if (null == limit || limit < 1) {
-			limitAsStr = "ALL";
-		} else {
-			limitAsStr = limit.toString();
-		}
-		String offsetAsStr = null;
-		if (null == offset || offset < 0) {
-			offsetAsStr = "0";
-		} else {
-			offsetAsStr = offset.toString();
-		}
-
-		List<Release> releases = new ArrayList<>();
-		if(sces != null && sces.size()>0){
-			List<String> scesString = sces.stream().map(sce -> sce.toString()).collect(Collectors.toList());
-			releases =  repository.findReleasesOfBranchWhereInSce(branchUuid.toString(), scesString, limitAsStr, offsetAsStr);
-		}
-		return releases;
-	}
-	
 	public List<ReleaseData> listReleaseDatasOfComponent (UUID componentUuid, Integer limit, Integer offset) {
 		String limitAsStr = null;
 		if (null == limit || limit < 1) {

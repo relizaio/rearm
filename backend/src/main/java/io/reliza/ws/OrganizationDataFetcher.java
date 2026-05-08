@@ -382,6 +382,30 @@ public class OrganizationDataFetcher {
 		return apiKeyService.setPermissionsOnApiKey(apiKeyUuid, permissionType, convertedPermissions, wu);
 	}
 
+	/**
+	 * Edit just the {@code notes} field on an API key. Admin auth on
+	 * the key's owning org — same gate as setPermissionsOnFreeformApiKey
+	 * — so a notes-only edit doesn't require the caller to round-trip
+	 * the full permissions list. Works for any key type, not only
+	 * FREEFORM (notes is a generic field on api_keys recordData).
+	 */
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setNotesOnApiKey")
+	public ApiKeyDto setNotesOnApiKey(
+			@InputArgument("apiKeyUuid") UUID apiKeyUuid,
+			@InputArgument("notes") String notes
+		) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var oakd = apiKeyService.getApiKeyData(apiKeyUuid);
+		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.ADMIN);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		return apiKeyService.setNotesOnApiKey(apiKeyUuid, notes, wu);
+	}
+
 	private void validateRegexPatterns(List<String> patterns, String fieldName) throws RelizaException {
 		if (patterns == null) {
 			return;

@@ -128,6 +128,18 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	Optional<Release> findLatestReleaseBySce(String sceUuidAsString, String orgUuidAsString);
 
+	/**
+	 * Find every release whose primary sourceCodeEntry is one of the given
+	 * SCE UUIDs in a single round-trip. Hits the
+	 * {@code releases_source_code_entry} expression index added in V30.
+	 * Used by the PR aggregator to fan-in attributed releases for a PR's
+	 * commits list.
+	 */
+	@Query(value = "SELECT * FROM rearm.releases r "
+			+ "WHERE r.record_data->>'sourceCodeEntry' IN (:scesAsStrings)",
+			nativeQuery = true)
+	List<Release> findReleasesBySces(@Param("scesAsStrings") Collection<String> scesAsStrings);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASE_BY_COMPONENT_AND_VERSION,
 			nativeQuery = true)

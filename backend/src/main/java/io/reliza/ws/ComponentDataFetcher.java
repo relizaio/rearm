@@ -121,6 +121,12 @@ public class ComponentDataFetcher {
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
 
+	@Autowired
+	private io.reliza.service.PullRequestService pullRequestService;
+
+	@Autowired
+	private io.reliza.service.oss.OssPullRequestAggregatorService pullRequestAggregatorService;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "component")
 	public ComponentData getComponent(@InputArgument("componentUuid") String componentUuidStr) throws RelizaException {
@@ -355,69 +361,47 @@ public class ComponentDataFetcher {
 		
 		List<SceDto> commits = null;
 		if (getNewVersionInput.containsKey(CommonVariables.COMMITS_FIELD)) {
-			var commitsPrep = ((List<Map<String, Object>>) getNewVersionInput.get(CommonVariables.COMMITS_FIELD)).stream().map(x -> 
+			var commitsPrep = ((List<Map<String, Object>>) getNewVersionInput.get(CommonVariables.COMMITS_FIELD)).stream().map(x ->
 					Utils.OM.convertValue(x, SceDto.class)).toList();
 			commits = new LinkedList<>(commitsPrep);
 		}
 
-		GetNewVersionDto getNewVersionDto = new GetNewVersionDto(componentId, branchStr, modifier, action, metadata, setVersionPin, lifecycleResolved, onlyVersionFlag, sourceCodeEntry, commits, VersionTypeEnum.DEV);
+		Boolean rebuildFlag = (Boolean) getNewVersionInput.get("rebuild");
+
+		GetNewVersionDto getNewVersionDto = new GetNewVersionDto(componentId, branchStr, modifier, action, metadata,
+				setVersionPin, lifecycleResolved, onlyVersionFlag, sourceCodeEntry, commits, VersionTypeEnum.DEV,
+				rebuildFlag);
 
 		VersionResponse vr = releaseVersionService.getNewVersionWrapper(getNewVersionDto, ar.getWhoUpdated());
 
-		// Optional PR-data attachment: keeps the source branch's
-		// pullRequestData in sync with the upstream SCM. The branch is
-		// resolved/auto-created during getNewVersionWrapper above, so by
-		// now lookup-by-name on this component returns the persisted
-		// branch — apply PR state through the same setPRDataOnBranch
-		// path that an inbound webhook would use.
-		applyPullRequestInputIfPresent(getNewVersionInput, componentId, branchStr, ar.getWhoUpdated());
+		// PR upsert at getNewVersion: gated on (PR input present AND
+		// SCE-or-commits input present AND onlyVersion=false). When all
+		// three hold, getNewVersionWrapper has just persisted an SCE and
+		// created/matched a release that owns it — we resolve the
+		// release by (component, version) and advance the PR head to its
+		// SCE. Without those preconditions the upsert is silently skipped
+		// (defer to the addrelease path).
+		@SuppressWarnings("unchecked")
+		Map<String, Object> prInput = (Map<String, Object>) getNewVersionInput.get("pullRequest");
+		boolean hasSceInput = sourceCodeEntry != null || (commits != null && !commits.isEmpty());
+		if (prInput != null && hasSceInput && !onlyVersionFlag) {
+			Optional<io.reliza.model.Release> oRel =
+					sharedReleaseService.findReleaseByComponentAndVersion(componentId, vr.version());
+			UUID headSce = oRel
+					.map(io.reliza.model.ReleaseData::dataFromRecord)
+					.map(io.reliza.model.ReleaseData::getSourceCodeEntry)
+					.orElse(null);
+			UUID componentVcsFallback = ocd.map(ComponentData::getVcs).orElse(null);
+			WhoUpdated wuPr = ar.getWhoUpdated();
+			Optional<io.reliza.model.PullRequestData> oPrd = pullRequestService.applyFromInput(prInput,
+					ocd.get().getOrg(), headSce, componentVcsFallback, wuPr);
+			// Recompute aggregation now that the head has been advanced —
+			// saveRelease's hook ran before commits[] was updated.
+			oPrd.ifPresent(prd -> pullRequestAggregatorService.recomputeForPr(
+					prd.getUuid(), wuPr));
+		}
 
 		return vr;
-	}
-
-	private void applyPullRequestInputIfPresent (Map<String, Object> inputMap, UUID componentId,
-			String branchStr, WhoUpdated wu) {
-		if (componentId == null || StringUtils.isEmpty(branchStr)) return;
-		@SuppressWarnings("unchecked")
-		Map<String, Object> prInput = (Map<String, Object>) inputMap.get("pullRequest");
-		if (prInput == null || prInput.get("number") == null) return;
-		Optional<BranchData> obd = branchService.findBranchByComponentAndName(componentId, branchStr);
-		if (obd.isEmpty()) {
-			log.warn("pullRequest input supplied but branch '{}' not found on component {}; skipping",
-					branchStr, componentId);
-			return;
-		}
-		try {
-			Integer prNumber = ((Number) prInput.get("number")).intValue();
-			String stateStr = (String) prInput.get("state");
-			if (StringUtils.isEmpty(stateStr)) {
-				log.warn("pullRequest input on branch {} missing required 'state' — skipping", obd.get().getUuid());
-				return;
-			}
-			io.reliza.common.CommonVariables.PullRequestState prState =
-					io.reliza.common.CommonVariables.PullRequestState.valueOf(StringUtils.upperCase(stateStr));
-			UUID targetBranchUuid = null;
-			String targetBranchName = (String) prInput.get("targetBranch");
-			if (StringUtils.isNotEmpty(targetBranchName)) {
-				targetBranchUuid = branchService.findBranchByComponentAndName(componentId, targetBranchName)
-						.map(BranchData::getUuid).orElse(null);
-			}
-			java.net.URI prEndpoint = null;
-			String endpointStr = (String) prInput.get("endpoint");
-			if (StringUtils.isNotEmpty(endpointStr)) {
-				try { prEndpoint = java.net.URI.create(endpointStr); } catch (Exception ignored) {}
-			}
-			io.reliza.model.dto.PullRequestDto prDto = io.reliza.model.dto.PullRequestDto.builder()
-					.number(prNumber)
-					.state(prState)
-					.title((String) prInput.get("title"))
-					.targetBranch(targetBranchUuid)
-					.endpoint(prEndpoint)
-					.build();
-			branchService.setPRDataOnBranch(prDto, obd.get().getUuid(), wu);
-		} catch (Exception e) {
-			log.warn("Failed to apply pullRequest input on branch {}: {}", obd.get().getUuid(), e.getMessage());
-		}
 	}
 	
 	@DgsData(parentType = "Mutation", field = "createComponentProgrammatic")

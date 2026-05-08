@@ -87,6 +87,18 @@ public class VersionAssignment implements Serializable, Comparable<VersionAssign
 
 	@Column(nullable = false)
 	private String versionType;
+
+	/**
+	 * Git commit SHA this version was minted for. Populated only when the
+	 * caller of {@code getversion} supplied a source-code-entry / commit;
+	 * commit-less callers (manual version mints, marketing assignments)
+	 * leave it null. The {@code (component, branch, commit) WHERE commit
+	 * IS NOT NULL} partial unique index serializes concurrent getversion
+	 * calls for the same commit so two CI flows on the same head can't
+	 * each spawn a release.
+	 */
+	@Column(nullable = true)
+	private String commit;
 	
 	public UUID getUuid() {
 		return uuid;
@@ -190,6 +202,14 @@ public class VersionAssignment implements Serializable, Comparable<VersionAssign
 
 	public void setVersionType(VersionTypeEnum versionType) {
 		this.versionType = versionType.toString();
+	}
+
+	public String getCommit() {
+		return commit;
+	}
+
+	public void setCommit(String commit) {
+		this.commit = commit;
 	}
 
 	@JsonIgnore

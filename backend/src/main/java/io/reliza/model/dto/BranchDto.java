@@ -5,7 +5,6 @@
 package io.reliza.model.dto;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -17,7 +16,6 @@ import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.BranchData.DependencyPattern;
 import io.reliza.model.BranchData.FindingAnalyticsParticipation;
-import io.reliza.model.BranchData.PullRequestData;
 import lombok.Builder;
 import lombok.Data;
 
@@ -40,7 +38,6 @@ public class BranchDto {
 	private List<DependencyPattern> dependencyPatterns;
 	private AutoIntegrateState autoIntegrate;
 	private BranchType type;
-	private Map<Integer, PullRequestData> pullRequestData;
 	@JsonProperty("findingAnalyticsParticipation")
 	private FindingAnalyticsParticipation findingAnalyticsParticipation;
 }

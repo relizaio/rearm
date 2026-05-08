@@ -179,6 +179,36 @@ public class VcsRepositoryService {
 		return vcsRepo;
 	}
 
+	/**
+	 * Replace the VCS repository's outputTriggers list with the supplied
+	 * one. Validates the ≤1 / EXTERNAL_VALIDATION-only invariant before
+	 * persisting; an empty list clears the trigger entirely.
+	 */
+	@Transactional
+	public VcsRepository setVcsRepositoryOutputTriggers(UUID vcsUuid,
+			java.util.List<io.reliza.model.ComponentData.ReleaseOutputEvent> triggers, WhoUpdated wu)
+			throws RelizaException {
+		Optional<VcsRepository> vOpt = getVcsRepository(vcsUuid);
+		if (vOpt.isEmpty()) {
+			throw new RelizaException("VCS repository not found: " + vcsUuid);
+		}
+		VcsRepositoryData.validateOutputTriggers(triggers);
+		// Assign UUIDs to any new triggers so the policy/event audit trail
+		// can reference them by stable id (mirrors ComponentData behaviour).
+		java.util.List<io.reliza.model.ComponentData.ReleaseOutputEvent> normalized =
+				new java.util.LinkedList<>();
+		if (triggers != null) {
+			for (var t : triggers) {
+				if (t.getUuid() == null) t.setUuid(UUID.randomUUID());
+				normalized.add(t);
+			}
+		}
+		VcsRepositoryData vrd = VcsRepositoryData.dataFromRecord(vOpt.get());
+		vrd.setOutputTriggers(normalized);
+		Map<String, Object> recordData = Utils.dataToRecord(vrd);
+		return saveVcsRepository(vOpt.get(), recordData, wu);
+	}
+
 //	public void moveVcsToNewOrg(UUID vcsRepository, UUID orgUuid, WhoUpdated wu) {
 //		VcsRepository vcsr = getVcsRepository(vcsRepository).get();
 //		VcsRepositoryData vcsrd = VcsRepositoryData.dataFromRecord(vcsr);

@@ -1426,6 +1426,23 @@ public class ReleaseService {
 	public void saveAll(List<Release> releases){
 		repository.saveAll(releases);
 	}
+	/**
+	 * Manual-trigger entry point for auto-integrate (the "Trigger Auto
+	 * Integrate" button on the feature-set settings UI). Annotated
+	 * {@code @Transactional} so the entire downstream chain — version
+	 * assignment, product release create, post-save side-effects
+	 * (triggers, env approval, follow-instance update) — runs in a
+	 * single tx. Without this, the chain runs tx-less:
+	 * {@code createProductRelease → this.createRelease} is a same-class
+	 * call so {@code createRelease}'s own {@code @Transactional} is
+	 * bypassed by the proxy, and downstream {@code findByIdWriteLocked}
+	 * (pessimistic lock) calls in InstanceService blow up with
+	 * "Query requires transaction be in progress". The
+	 * auto-integrate-from-child path doesn't hit this because it runs
+	 * inside the child release's createRelease tx, which propagates
+	 * through the same-class chain via thread-local.
+	 */
+	@Transactional
 	public Optional<UUID> autoIntegrateFeatureSetOnDemand (BranchData bd) {
 		// check that status of this child project is not ignored
 		log.info("PSDEBUG: autointegrate feature set on demand for bd = " + bd.getUuid());

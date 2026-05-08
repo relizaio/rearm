@@ -49,6 +49,16 @@ public interface VersionAssignmentRepository extends CrudRepository<VersionAssig
 	@Query(value = "SELECT va from VersionAssignment va WHERE branch = :branchUuid AND assignmentType = 'OPEN' AND versionType = :versionType")
 	Optional<VersionAssignment> findOPENVersionAssignmentByBranch(UUID branchUuid, String versionType);
 
+	/**
+	 * Lookup for the commit-keyed dedup at getversion time. Returns the
+	 * existing version assignment for {@code (component, branch, commit)}
+	 * if any — caller decides whether to surface it (rebuild) or fail
+	 * with a duplicate error.
+	 */
+	@Query(value = "SELECT va FROM VersionAssignment va "
+			+ "WHERE component = :componentUuid AND branch = :branchUuid AND commit = :commit")
+	Optional<VersionAssignment> findByComponentAndBranchAndCommit(UUID componentUuid, UUID branchUuid, String commit);
+
 	@Query(
 		value = VariableQueries.FIND_ALL_VERSION_ASSIGNMENTS_BY_ORG,
 		nativeQuery = true)

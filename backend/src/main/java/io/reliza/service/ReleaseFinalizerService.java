@@ -102,7 +102,7 @@ public class ReleaseFinalizerService {
                 try {
                     branchCount++;
                     // Get all releases for this branch (no limit), sorted by version descending
-                    List<ReleaseData> releasesDesc = sharedReleaseService.listReleaseDataOfBranch(bd.getUuid(), null, null, true);
+                    List<ReleaseData> releasesDesc = sharedReleaseService.listReleaseDataOfBranch(bd.getUuid(), (Integer) null, true);
                     int totalReleases = releasesDesc.size();
                     // Filter out CANCELLED and REJECTED releases, reverse to ascending version order
                     List<ReleaseData> releases = new ArrayList<>(releasesDesc.size());

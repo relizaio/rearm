@@ -3,11 +3,8 @@
 */
 package io.reliza.service;
 
-import static io.reliza.common.LambdaExceptionWrappers.handlingConsumerWrapper;
-
 import java.time.ZonedDateTime;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.HashSet;
@@ -19,7 +16,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -30,7 +26,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
-import io.reliza.common.CommonVariables.PullRequestState;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
@@ -40,12 +35,10 @@ import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
-import io.reliza.model.BranchData.PullRequestData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.BranchDto;
-import io.reliza.model.dto.PullRequestDto;
 import io.reliza.repositories.BranchRepository;
 import io.reliza.versioning.VersionType;
 import lombok.extern.slf4j.Slf4j;
@@ -434,9 +427,6 @@ public class BranchService {
 				}
 				bd.setDependencyPatterns(branchDto.getDependencyPatterns());
 			}
-			if(null !=  branchDto.getPullRequestData()){
-					bd.setPullRequestData(branchDto.getPullRequestData());
-				}
 				// don't convert from base to regular, only allow make base functionality
 			if (BranchType.BASE == branchDto.getType()) {
 				// Get the old base branch BEFORE setting the new one
@@ -568,24 +558,6 @@ public class BranchService {
 				throw new RelizaException("Cannot archive base branch");
 			}
 			bd.setStatus(StatusEnum.ARCHIVED);
-			// Treat any still-OPEN PR records on this branch as CLOSED
-			// when the branch itself is archived. This is the close-side
-			// of the no-webhook PR-data flow: syncbranches archives a
-			// branch whose source ref is no longer live in the SCM, and
-			// any PRs left in OPEN state are by definition no longer
-			// open. Without this flip, the branch's persisted
-			// pullRequestData stays OPEN forever — orphan state on an
-			// archived branch.
-			if (null != bd.getPullRequestData() && !bd.getPullRequestData().isEmpty()) {
-				bd.getPullRequestData().forEach((number, pr) -> {
-					if (pr != null && pr.getState() == PullRequestState.OPEN) {
-						pr.setState(PullRequestState.CLOSED);
-						if (pr.getClosedDate() == null) {
-							pr.setClosedDate(ZonedDateTime.now());
-						}
-					}
-				});
-			}
 			Map<String,Object> recordData = Utils.dataToRecord(bd);
 			saveBranch(obr.get(), recordData, wu);
 			archived = true;
@@ -664,90 +636,6 @@ public class BranchService {
 		
 		Map<String,Object> recordData = Utils.dataToRecord(bd);
 		return saveBranch(b, recordData, wu);
-	}
-
-	public BranchData setPRDataOnBranch(PullRequestDto prDto, UUID branchUuid, WhoUpdated wu) throws RelizaException {
-		BranchData bd = getBranchData(branchUuid).orElseThrow(
-			() -> new RelizaException("Branch " + branchUuid + " not found"));
-		var branchPrData = bd.getPullRequestData();
-		if (branchPrData.containsKey(prDto.getNumber())) {
-			var existingPrData = branchPrData.get(prDto.getNumber());
-			var prDtoCommits = prDto.getCommits();
-			if (prDtoCommits != null) {
-				prDtoCommits.addAll(existingPrData.getCommits());
-				prDto.setCommits(prDtoCommits);
-			}
-		}
-
-		var prData = PullRequestData.builder()
-				.state(prDto.getState())
-				.targetBranch(prDto.getTargetBranch())
-				.number(prDto.getNumber())
-				.endpoint(prDto.getEndpoint())
-				.title(prDto.getTitle())
-				.createdDate(prDto.getCreatedDate())
-				.closedDate(prDto.getClosedDate())
-				.mergedDate(prDto.getMergedDate())
-				.commits(prDto.getCommits() != null ? new ArrayList<>(prDto.getCommits()) : new ArrayList<>())
-				.build();
-
-		return setPRDataOnBranch(bd, prData, wu);
-	}
-
-	public BranchData setPRDataOnBranch(BranchData branchData, PullRequestData pullRequestData, WhoUpdated wu) throws RelizaException {
-		var branchPRData = branchData.getPullRequestData();
-		if(branchPRData.containsKey(pullRequestData.getNumber())){
-			branchPRData.remove(pullRequestData.getNumber());
-		}
-		branchPRData.put(pullRequestData.getNumber(), pullRequestData);
-		
-		if(pullRequestData.getState().equals(PullRequestState.OPEN)){
-			//create new fs for this branch
-			ChildComponent dependecyOverride = ChildComponent.builder().branch(branchData.getUuid())
-			.uuid(branchData.getComponent())
-			.status(StatusEnum.REQUIRED)
-			.build();
-			List<BranchData> existingFSs = findFeatureSetDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), branchData.getUuid());
-			final Map<String, BranchData> existingFSsNameMap = existingFSs.stream().collect(Collectors.toMap(BranchData::getName, Function.identity()));
-			List<BranchData> targetFSs = findFeatureSetDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), pullRequestData.getTargetBranch())
-			.stream()
-			.filter(fs -> fs.getAutoIntegrate().equals(AutoIntegrateState.ENABLED) && !fs.getType().equals(BranchType.PULL_REQUEST))
-			.collect(Collectors.toList());
-		
-			if(targetFSs.size()> 0){
-				targetFSs.stream()
-					.forEach(
-						handlingConsumerWrapper(fs -> {
-							String name = fs.getName().replaceAll(" ", "_") + "-" +pullRequestData.getTitle().replaceAll(" ", "_");
-							BranchData existingFSwithSameName = existingFSsNameMap.get(name);
-							if(existingFSwithSameName == null || !existingFSwithSameName.getComponent().equals(fs.getComponent()))
-								cloneBranch(fs, name, VersionType.FEATURE_BRANCH.getSchema(), BranchType.PULL_REQUEST, wu, dependecyOverride);
-						},RelizaException.class)
-					);
-			}
-		
-			
-					
-		}else if(pullRequestData.getState().equals(PullRequestState.CLOSED)){
-			//disable autointegrate
-			List<BranchData> existingFSs = findFeatureSetDataByChildComponentBranch(branchData.getOrg(), branchData.getComponent(), branchData.getUuid());
-			existingFSs.stream().forEach(
-				handlingConsumerWrapper(
-				fs -> {
-				BranchDto branchDto = BranchDto.builder()
-								.uuid(fs.getUuid())
-								.autoIntegrate(AutoIntegrateState.DISABLED)
-								.build();
-				updateBranch(branchDto, wu);
-			}, RelizaException.class));
-		}
-		// save
-		BranchDto branchDto = BranchDto.builder()
-								.uuid(branchData.getUuid())
-								.pullRequestData(branchPRData)
-								.build();
-		
-		return updateBranch(branchDto, wu);
 	}
 
 	public void saveAll(List<Branch> branches){

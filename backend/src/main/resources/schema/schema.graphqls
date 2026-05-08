@@ -14,10 +14,13 @@ type Query {
 	components(orgUuid:ID!, componentType:ComponentType!, perspective:ID): [Component]
 	branch(branchUuid:ID!): Branch
 	branchesOfComponent(componentUuid:ID!): [Branch]
-	releases(branchFilter:ID, orgFilter:ID, releaseFilter:[ID], numRecords:Int, pullRequestFilter:Int): [Release]
+	releases(branchFilter:ID, orgFilter:ID, releaseFilter:[ID], numRecords:Int): [Release]
 	getNextVersion(branchUuid:ID!, versionType: VersionType): String
 	vcsRepository(vcs:ID!): VcsRepository
 	listVcsReposOfOrganization(orgUuid:ID!): [VcsRepository]
+	pullRequest(prUuid: ID!): PullRequest
+	pullRequestsOfOrg(orgUuid: ID!): [PullRequest]
+	pullRequestsOfVcs(vcs: ID!): [PullRequest]
 	vcsRepositoryTypes: [String]
 	sourceCodeEntry(sceUuid:ID!): SourceCodeEntry
 	artifact(artifactUuid: ID!): Artifact
@@ -255,6 +258,30 @@ type Mutation {
 	
 	createVcsRepository(vcsRepository: VcsRepositoryInput!): VcsRepository
 	updateVcsRepository(vcsUuid: ID!, name: String, uri: String): VcsRepository
+	"""
+	Replace the VCS repository's output triggers. Constraint: at most one
+	entry, and (if present) must be of type EXTERNAL_VALIDATION. Pass an
+	empty list to clear.
+	"""
+	setVcsRepositoryOutputTriggers(vcsUuid: ID!, triggers: [ReleaseOutputEventInput!]!): VcsRepository
+	"""
+	Programmatic (API-key) upsert of a PullRequest. CI registers the PR
+	row independently of release creation so the registration survives
+	push/pull_request races and DO_BUILD=false short-circuits.
+	Idempotent on (targetVcsRepository, identity) — safe to call
+	multiple times per CI run (e.g. once per component in a monorepo).
+	When `commit` is supplied and an SCE already exists for
+	(targetVcs, commit), the head is advanced to that SCE in the same
+	call; otherwise the PR row is registered without a head and the
+	subsequent addReleaseProgrammatic call (which carries the same PR
+	input) will advance the head once the SCE is persisted.
+	Resolves the target VCS by `vcsUri`+`repoPath` (FREEFORM or
+	ORGANIZATION_RW key) or by `component` UUID (COMPONENT,
+	FREEFORM, or ORGANIZATION_RW key). Accepts COMPONENT, FREEFORM,
+	or ORGANIZATION_RW API keys; other ORGANIZATION_* types are
+	rejected.
+	"""
+	upsertPullRequestProgrammatic(input: PullRequestUpsertProgrammaticInput!): PullRequest
 	archiveVcsRepository(vcsUuid: ID!): Boolean
 	getNewVersionManual(branchUuid: ID!, action: ActionEnum): Version
 	createSourceCodeEntry(sourceCodeEntry: SourceCodeEntryInput!): SourceCodeEntry
@@ -350,6 +377,14 @@ type Mutation {
 	# Programmatic
 	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
 	setPermissionsOnFreeformApiKey(apiKeyUuid: ID!, permissionType: PermissionType, permissions: [PermissionInput]): ApiKey
+	"""
+	Edit just the notes field on an API key. Admin auth on the owning
+	org — paired with setPermissionsOnFreeformApiKey so a notes-only
+	UI tab doesn't have to round-trip the full permissions list. Notes
+	is a generic field on the api_keys recordData jsonb, so works for
+	any key type (FREEFORM is the primary consumer today).
+	"""
+	setNotesOnApiKey(apiKeyUuid: ID!, notes: String): ApiKey
 	deleteApiKey(apiKeyUuid: ID!): Boolean
 	getNewVersionProgrammatic(newVersionInput: GetNewVersionInput!): Version
 	addReleaseProgrammatic(release: ReleaseInputProg!): Release
@@ -1074,6 +1109,95 @@ type VcsRepository {
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
+	"""
+	Pull-request-level output triggers for this VCS repository. Currently
+	constrained to ≤1 entry of type EXTERNAL_VALIDATION — used by the PR
+	aggregator to dispatch the aggregated check-run verdict to the SCM.
+	"""
+	outputTriggers: [ReleaseOutputEvent]
+}
+
+"""
+First-class PullRequest entity. Owns its own identity at the SCM level
+(target VCS + identity string), its own commit list (SCE UUIDs), and
+both inbound (release_validation_events) and outbound
+(pr_validation_events) event streams.
+"""
+type PullRequest {
+	uuid: ID
+	org: ID
+	targetVcsRepository: ID
+	sourceVcsRepository: ID
+	identity: String
+	state: String
+	title: String
+	sourceBranchName: String
+	targetBranchName: String
+	endpoint: String
+	commits: [ID]
+	prCreatedDate: DateTime
+	closedDate: DateTime
+	mergedDate: DateTime
+	createdDate: DateTime
+	prValidationEvents: [PullRequestValidationEvent]
+	releaseValidationEvents: [ReleaseValidationEvent]
+	"""
+	Releases currently attributed to this PR — every release whose
+	primary sourceCodeEntry is one of the PR's commits, scoped to
+	the PR's org. Same logic the aggregator uses to compute the
+	PR-level verdict (no dispatch is triggered). Empty when the PR
+	has no commits or no releases have been minted against any of
+	them yet.
+	"""
+	attributedReleases: [Release]
+	"""
+	Hydrated commit list — SCE rows for every entry in `commits`.
+	Order matches `commits` (head is the last element). Used by the
+	UI to render the actual git commit SHA / message / author
+	instead of just the SCE UUID. Missing SCEs (e.g. one that was
+	since archived) are silently dropped.
+	"""
+	commitDetails: [SourceCodeEntry]
+	"""
+	Releases referenced by any release_validation_event in this PR's
+	history — superset of attributedReleases. Required so the UI can
+	display release names for events whose release has since been
+	superseded (newest-per-component attribution drops the older
+	release from attributedReleases but its event row remains).
+	Distinct on UUID; missing releases (archived) are silently dropped.
+	"""
+	validatedReleaseDetails: [Release]
+}
+
+type PullRequestValidationEvent {
+	date: DateTime
+	validationState: ValidationState
+	comment: String
+	sourceCodeEntry: ID
+	attributedReleases: [ID]
+}
+
+type ReleaseValidationEvent {
+	release: ID
+	date: DateTime
+	validationResult: ValidationState
+}
+
+enum ValidationState {
+	SUCCESS
+	FAILURE
+	NEUTRAL
+	SKIPPED
+	CANCELLED
+	"""
+	Internal "verdict not yet computable" state — recorded on
+	pr_validation_events when at least one release attributed to the
+	PR has no validation event yet. Never dispatched to the SCM
+	(GitHub doesn't have a matching check-run conclusion); the prior
+	terminal verdict's check-run stays in place until a new terminal
+	verdict supersedes it.
+	"""
+	PENDING
 }
 
 type Branch {
@@ -1100,7 +1224,6 @@ type Branch {
 	createdDate: DateTime
 	autoIntegrate: AutoIntegrateState
 	vcsRepositoryDetails: VcsRepository
-	pullRequests: [PullRequestData]
 	findingAnalyticsParticipation: FindingAnalyticsParticipation
 }
 
@@ -1327,18 +1450,6 @@ type SourceCodeEntry {
 	createdDate: DateTime
 	artifacts: [ID]
 	artifactDetails: [Artifact]
-}
-
-type PullRequestData {
-	state: String
-	targetBranch: String
-	endpoint: String
-	number: Int
-	title: String
-	createdDate: DateTime
-	closedDate: DateTime
-	mergedDate: DateTime
-	commits: [ID]
 }
 
 type DigestRecord{
@@ -2183,11 +2294,27 @@ input GetNewVersionInput {
 	"""
 	perspective: ID
 	"""
-	Optional PR metadata bundled with the call. When supplied, the source
-	branch's pullRequestData is updated with this PR's state — same path
-	the existing setPRDataOnBranch logic uses. No GitHub webhook required.
+	Optional PR metadata bundled with the call. When supplied on
+	addReleaseProgrammatic, a first-class PullRequest entity is upserted
+	by (targetVcsRepository, identity) and its head is advanced to the
+	release's SCE. The PR aggregator picks up the release on subsequent
+	VALIDATE_PR firings. Ignored on calls that do not create a release.
 	"""
 	pullRequest: PullRequestInfoInput
+	"""
+	Opt-in dedup override for the commit-keyed gate on
+	(component, branch, commit). When a version_assignment already
+	exists for the supplied commit on this branch:
+	  - rebuild = false (default) → mutation fails with an error so the
+	    duplicate CI run can fail fast instead of minting a second
+	    release on the same head.
+	  - rebuild = true → return the existing version assignment so the
+	    caller intentionally reuses the same version (e.g. a re-issue
+	    of an artifact for the same commit).
+	No effect when no commit is supplied (manual mints, marketing
+	versions, commit-less callers).
+	"""
+	rebuild: Boolean
 }
 
 input ReleaseInputProg {
@@ -2219,33 +2346,66 @@ input ReleaseInputProg {
 	perspective: ID
 	rebuildRelease: Boolean
 	"""
-	Optional PR metadata bundled with the call. When supplied, the source
-	branch's pullRequestData is updated with this PR's state — same path
-	the existing setPRDataOnBranch logic uses. No GitHub webhook required.
+	Optional PR metadata bundled with the call. When supplied on
+	addReleaseProgrammatic, a first-class PullRequest entity is upserted
+	by (targetVcsRepository, identity) and its head is advanced to the
+	release's SCE. The PR aggregator picks up the release on subsequent
+	VALIDATE_PR firings. Ignored on calls that do not create a release.
 	"""
 	pullRequest: PullRequestInfoInput
 }
 
+input PullRequestUpsertProgrammaticInput {
+	identity: String!
+	state: String!
+	title: String
+	sourceBranchName: String
+	targetBranchName: String
+	endpoint: String
+	"""
+	Target VCS resolution. With a COMPONENT API key the component is
+	implicit (the key identifies it) — `component` / `vcsUri` are not
+	needed. With an ORGANIZATION_RW or FREEFORM key, supply either
+	`component` (UUID of the target component, whose VCS is used) or
+	the (`vcsUri`, `repoPath`) pair plus optionally `vcsDisplayName`.
+	When both are present, `component` wins and vcsUri/repoPath are
+	ignored.
+	"""
+	component: ID
+	vcsUri: String
+	repoPath: String
+	vcsDisplayName: String
+	"""
+	When supplied, the backend looks up the SCE for (targetVcs, commit)
+	and advances the PR head to it if found. If no SCE exists yet for
+	that commit, the PR row is registered without a head — the
+	subsequent addReleaseProgrammatic call carrying the same PR input
+	will advance the head once the SCE is persisted.
+	"""
+	commit: String
+}
+
 """
-PR metadata supplied by CI alongside a release/version creation. The
-caller (rearm-actions or any CI integration) populates these fields
-from the SCM event context. The server resolves targetBranch by name
-on the same component as the release's branch.
+PR metadata supplied by CI alongside an addReleaseProgrammatic call.
+The caller (rearm-actions or any CI integration) populates these fields
+from the SCM event context. Identity is opaque string ((targetVcs,
+identity) is the uniqueness boundary) — supports GitHub PR numbers as
+strings, GitLab MR iids, and Gerrit change-IDs uniformly.
 """
 input PullRequestInfoInput {
-	number: Int!
 	"""
-	"OPEN" or "CLOSED". Case-insensitive — converted to PullRequestState
-	server-side.
+	SCM-side PR / MR / change-list identity (e.g. GitHub PR number "42",
+	GitLab MR iid "42", Gerrit change-id). Required.
+	"""
+	identity: String!
+	"""
+	"OPEN", "CLOSED", or "MERGED". Case-insensitive — converted to
+	PullRequestState server-side.
 	"""
 	state: String!
 	title: String
-	"""
-	Target branch name (e.g., "main"). Server resolves to a Branch UUID
-	on the same component if the named branch exists; otherwise stored
-	as null.
-	"""
-	targetBranch: String
+	sourceBranchName: String
+	targetBranchName: String
 	"""
 	Link back to the PR in the upstream SCM (e.g., GitHub PR URL).
 	"""
@@ -2515,6 +2675,9 @@ enum EventType {
 	VDR_SNAPSHOT_ARTIFACT
 	ADD_APPROVED_ENVIRONMENT
 	EXTERNAL_VALIDATION
+	VALIDATE_PR
+	INVALIDATE_PR
+	PR_COMMENT
 }
 
 enum EventScope {

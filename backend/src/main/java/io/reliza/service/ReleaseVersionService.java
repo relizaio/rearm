@@ -81,12 +81,18 @@ public class ReleaseVersionService {
 		BranchData bd = branchService.getBranchDataFromBranchString(getNewVersionDto.branch(), projectId, wu);
 		UUID branchUuid = bd.getUuid();
 
-		// Check if source code entry commit is already attached to a release on this branch
-		// If found, return the existing version instead of generating a new one
+		// Check if source code entry commit is already attached to a release on this branch.
+		// rebuild=true → return the existing version idempotently (same as today).
+		// rebuild=false → throw RelizaException so the duplicate caller fails fast,
+		// matching the version-assignment-level dedup gate in getSetNewVersionWrapper.
+		// Without this guard, a duplicate getversion would silently return the
+		// existing release's version, the caller would proceed to addrelease,
+		// and the conflict would surface with a less clear error one step later.
+		boolean rebuildFlag = Boolean.TRUE.equals(getNewVersionDto.rebuild());
 		SceDto sourceCodeEntry = getNewVersionDto.sourceCodeEntry();
 		if (null == sourceCodeEntry && null != getNewVersionDto.commits() && !getNewVersionDto.commits().isEmpty()) {
 			sourceCodeEntry = getNewVersionDto.commits().get(0);
-		} 
+		}
 		if (sourceCodeEntry != null && StringUtils.isNotEmpty(sourceCodeEntry.getCommit())) {
 			UUID vcsUuid = bd.getVcs();
 			if (vcsUuid != null) {
@@ -101,9 +107,14 @@ public class ReleaseVersionService {
 							.findFirst();
 					if (matchingRelease.isPresent()) {
 						String existingVersion = matchingRelease.get().getVersion();
-						log.info("Found existing release {} for commit {} on branch {}", 
+						if (!rebuildFlag) {
+							throw new RelizaException("Commit " + sourceCodeEntry.getCommit()
+									+ " already has version " + existingVersion + " on branch "
+									+ getNewVersionDto.branch() + "; pass --rebuild to reuse it");
+						}
+						log.info("Found existing release {} for commit {} on branch {} (rebuild)",
 								existingVersion, sourceCodeEntry.getCommit(), getNewVersionDto.branch());
-						return new VersionResponse(existingVersion, 
+						return new VersionResponse(existingVersion,
 								Utils.dockerTagSafeVersion(existingVersion), null, true);
 					}
 				}
@@ -123,8 +134,16 @@ public class ReleaseVersionService {
 		versionAssignmentService.checkAndUpdateVersionPinOnBranch(pd, bd, getNewVersionDto.versionSchema(), wu);
 
 		ActionEnum bumpAction = getBumpAction(getNewVersionDto.action(), getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), bd, pd);
-		
-		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(branchUuid, bumpAction, getNewVersionDto.modifier(), getNewVersionDto.modifier(), getNewVersionDto.versionType());
+
+		// Resolve a commit SHA from the input — head SCE preferred, first
+		// commits[] entry as fallback. Drives the (component, branch, commit)
+		// dedup gate inside getSetNewVersionWrapper. Stays null on
+		// commit-less calls (manual mints, marketing version requests).
+		String commitForVersionAssignment = sourceCodeEntry != null ? sourceCodeEntry.getCommit() : null;
+		boolean rebuild = Boolean.TRUE.equals(getNewVersionDto.rebuild());
+		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(branchUuid, bumpAction,
+				getNewVersionDto.modifier(), getNewVersionDto.modifier(), getNewVersionDto.versionType(),
+				commitForVersionAssignment, rebuild);
 		if(ova.isEmpty()) {
 			throw new AccessDeniedException("Failed to retrieve next version");
 		}

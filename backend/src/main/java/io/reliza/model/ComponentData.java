@@ -84,7 +84,33 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		//   schedule     → installation ID (consistent with GITHUB integration)
 		//   vcs          → VCS repository UUID (resolves to owner/repo)
 		//   clientPayload / celClientPayload → JSON {title, summary, text}
-		EXTERNAL_VALIDATION;
+		EXTERNAL_VALIDATION,
+		// VALIDATE_PR is an internal (non-integration) signal: a release
+		// that finished validating asks the PR aggregator to (re-)compute
+		// PR-level state for any open PR whose head commit equals this
+		// release's source code entry. Dispatch to the SCM happens from
+		// the aggregator, not from this trigger directly — the integration
+		// field is unused.
+		VALIDATE_PR,
+		// INVALIDATE_PR is the failure-side companion to VALIDATE_PR —
+		// fired on disapproval / rejection input events. Records a
+		// release_validation_event with state FAILURE on every open PR
+		// whose commits include this release's SCE. Same dispatch path
+		// as VALIDATE_PR, no integration field used.
+		INVALIDATE_PR,
+		// PR_COMMENT posts a per-release comment to every open PR whose
+		// commits[] includes this release's SCE. Independent from the
+		// PR-level check-run aggregation: one comment per (release, PR,
+		// fire) — never edited in place. Routed through the same
+		// GITHUB_VALIDATE integration the EXTERNAL_VALIDATION trigger
+		// uses (App credentials), but POSTs to issues/comments rather
+		// than check-runs.
+		// Output event fields used:
+		//   integration  → IntegrationData UUID (must be GITHUB_VALIDATE)
+		//   clientPayload / celClientPayload → markdown string appended
+		//     to the auto-generated body (additive, not replacement —
+		//     contrast with EXTERNAL_VALIDATION)
+		PR_COMMENT;
 	}
 	
 	public enum EventScope {

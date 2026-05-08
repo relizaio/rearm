@@ -317,6 +317,26 @@ public class ApiKeyService {
 		return ApiKeyDto.fromApiKey(ak);
 	}
 
+	/**
+	 * Edit just the {@code notes} field on an API key — independent of
+	 * the permissions edit path so a notes-only update doesn't have to
+	 * round-trip the full permissions list. Caller is expected to be an
+	 * org admin (the ws-layer datafetcher enforces that). Works for
+	 * any key type, not only FREEFORM, since notes is a generic field
+	 * on the api_keys recordData jsonb.
+	 */
+	@Transactional
+	public ApiKeyDto setNotesOnApiKey(UUID keyUuid, String notes, WhoUpdated wu) throws RelizaException {
+		Optional<ApiKey> oak = getApiKey(keyUuid);
+		if (oak.isEmpty()) throw new RelizaException("API key not found");
+		ApiKey ak = oak.get();
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		akd.setNotes(notes);
+		Map<String, Object> recordData = Utils.dataToRecord(akd);
+		ak = saveApiKey(ak, recordData, wu);
+		return ApiKeyDto.fromApiKey(ak);
+	}
+
 	@Transactional
 	private ApiKey saveApiKey (ApiKey ak, Map<String,Object> recordData, WhoUpdated wu) {
 		// TODO: add validation

@@ -4,9 +4,6 @@
 
 package io.reliza.model;
 
-import java.net.URI;
-import java.time.ZonedDateTime;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +15,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
-import io.reliza.common.CommonVariables.PullRequestState;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import lombok.Builder;
@@ -149,51 +145,9 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty("findingAnalyticsParticipation")
 	private FindingAnalyticsParticipation findingAnalyticsParticipation;
 
-	@Builder
-	@Data
-	public static class PullRequestData {
-		@JsonProperty(CommonVariables.STATE_FIELD)
-		private PullRequestState state;
-		
-		@JsonProperty(CommonVariables.TARGET_BRANCH_FIELD)
-		private UUID targetBranch; // Branch UUID of the target for this PR
-
-		@JsonProperty(CommonVariables.NUMBER_FIELD)
-		private Integer number; // Number for this PR
-
-		@JsonProperty(CommonVariables.ENDPOINT_FIELD)
-		private URI endpoint; // Endpoint if this PR
-
-		@JsonProperty(CommonVariables.TITLE_FIELD)
-		private String title; // Endpoint if this PR
-
-		@JsonProperty(CommonVariables.CREATED_DATE_FIELD)
-		private ZonedDateTime createdDate; // Endpoint if this PR
-
-		@JsonProperty(CommonVariables.CLOSED_DATE_FIELD)
-		private ZonedDateTime closedDate; // Endpoint if this PR
-
-		@JsonProperty(CommonVariables.MERGED_DATE_FIELD)
-		private ZonedDateTime mergedDate; // Endpoint if this PR
-
-		@JsonProperty(CommonVariables.COMMITS_FIELD)
-		private List<UUID> commits;
-		
-	}
-	
-	@JsonProperty(CommonVariables.PULL_REQUEST_DATA_FEILD)
-	private Map<Integer, PullRequestData> pullRequestData = new LinkedHashMap<>();
-	
 	private BranchData () {}
-	
-	public void setPullRequestData(Map<Integer, PullRequestData> pullRequestData) {
-		if(null != pullRequestData && !pullRequestData.isEmpty())
-			this.pullRequestData = new LinkedHashMap<>(pullRequestData);
-		else
-			this.pullRequestData = new LinkedHashMap<>();
-	}
-	
-	
+
+
 	public Optional<ChildComponent> getFollowedVersionComponent () {
 		Optional<ChildComponent> followedVersionComponent = Optional.empty();
 		if (null != this.dependencies && !this.dependencies.isEmpty()) {
