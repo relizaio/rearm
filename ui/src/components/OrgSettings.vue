@@ -3873,6 +3873,30 @@ async function resolveScopedObjectName(scope: string, objectId: string): Promise
         return resolved
     }
 
+    if (scope === 'INSTANCE') {
+        // INSTANCE scope covers both clusters and per-namespace instances.
+        // Use the same display shape ScopedPermissions.vue's `instanceLabel`
+        // produces so the loaded perm matches what "Add instance"/"Add cluster"
+        // would have created.
+        const obj = orgInstancesAndClusters.value.find((x: any) => x.uuid === objectId)
+        if (!obj) {
+            scopedObjectNameCache.set(cacheKey, objectId)
+            return objectId
+        }
+        let resolved: string
+        if (obj.instanceType === constants.InstanceType.CLUSTER_INSTANCE) {
+            const parent = orgClusters.value.find((c: any) => Array.isArray(c.instances) && c.instances.includes(obj.uuid))
+            const parentName = parent ? parent.name : '(cluster)'
+            resolved = `${parentName} / ${obj.namespace || obj.uuid}`
+        } else if (obj.instanceType === constants.InstanceType.CLUSTER) {
+            resolved = obj.name || obj.uri || obj.uuid
+        } else {
+            resolved = obj.uri || obj.name || obj.uuid
+        }
+        scopedObjectNameCache.set(cacheKey, resolved)
+        return resolved
+    }
+
     const knownComponent = allComponents.value.find((c: any) => c.uuid === objectId)
     if (knownComponent) {
         scopedObjectNameCache.set(cacheKey, knownComponent.name)
@@ -3983,7 +4007,7 @@ async function editFreeFormKey(key: any) {
     for (const up of (selectedFreeFormKey.value.permissions?.permissions || [])) {
         if (up.scope === 'ORGANIZATION' && up.org === orgResolved.value) {
             orgPerm = { type: up.type, functions: up.functions || [], approvals: up.approvals || [] }
-        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT') && up.org === orgResolved.value) {
+        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT' || up.scope === 'INSTANCE') && up.org === orgResolved.value) {
             const objectName = await resolveScopedObjectName(up.scope, up.object)
             scopedPerms.push({
                 scope: up.scope,
@@ -4445,7 +4469,7 @@ async function editUserGroup(groupUuid: string) {
                         functions: p.functions || [],
                         approvals: p.approvals || []
                     }
-                } else if ((p.scope === 'PERSPECTIVE' || p.scope === 'COMPONENT') && p.org === orgResolved.value) {
+                } else if ((p.scope === 'PERSPECTIVE' || p.scope === 'COMPONENT' || p.scope === 'INSTANCE') && p.org === orgResolved.value) {
                     const objectName = await resolveScopedObjectName(p.scope, p.object)
                     scopedPerms.push({
                         scope: p.scope,
