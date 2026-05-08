@@ -5390,9 +5390,14 @@ const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
     })
 })
 const computedFreeFormKeys: ComputedRef<any> = computed((): any => {
-    return programmaticAccessKeys.value
-        .filter((k: any) => k.type === 'FREEFORM')
-        .map((k: any) => formatValuesForApiKeys(k))
+    // Don't re-run formatValuesForApiKeys — load-time format already
+    // localized createdDate / accessDate, and a second pass on the
+    // localized strings parses as Invalid Date. Users are loaded
+    // before the keys (see loadTabSpecificData('freeFormKeys')) so
+    // updatedByName is also already resolved at load time. The
+    // computed exists only so the table re-renders if the underlying
+    // ref mutates (post-edit reload).
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM')
 })
 const imageRegistry: ComputedRef<any> = computed((): any => {
     let content = '### OCI Container Images (Suitable for Docker and Helm):\n'
