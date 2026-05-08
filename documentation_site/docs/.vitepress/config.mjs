@@ -21,7 +21,8 @@ function sidebar() {
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'},
           {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'},
-          {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'}
+          {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'},
+          {text: 'Pull Requests', link: '/workflows/pull-requests'}
         ]},
         {text: 'Configure', link: '/configure/', items: [
           {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'}

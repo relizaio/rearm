@@ -1,20 +1,26 @@
 # GitHub Pull Request Validation (GitHub Validate)
 
 ::: warning ReARM Pro only
-This functionality is part of ReARM Pro and is not available in ReARM Community Edition.
+The integrations on this page (posting check-runs and PR comments to GitHub) are part of ReARM Pro and are not available in ReARM Community Edition.
+
+The underlying [Pull Request entity, release attribution, and PR-level aggregation](../workflows/pull-requests) are part of the shared ReARM codebase and run on **both editions** — only the *push back to the upstream SCM* is gated to Pro.
 :::
 
 ::: info Private repositories
 Posting check-runs against **private** repositories requires a GitHub Enterprise subscription on the customer side, since branch protection on private repos is gated behind GitHub's Enterprise tier.
 :::
 
-GitHub Validate lets ReARM block a Pull Request from being merged until ReARM has verified the release that the PR's head commit produced. ReARM posts a [GitHub check-run](https://docs.github.com/en/rest/checks/runs) on the PR's head SHA, and a branch-protection rule on the target branch makes that check required for merge.
+GitHub Validate lets ReARM block a Pull Request from being merged until ReARM has verified the release(s) attributed to the PR. ReARM posts a [GitHub check-run](https://docs.github.com/en/rest/checks/runs) on the PR's head SHA, and a branch-protection rule on the target branch makes that check required for merge. Optionally, ReARM also posts a markdown comment on the PR when a release fires a `PR_COMMENT` event.
 
 The end-to-end flow is:
 
-1. CI builds the PR head commit and calls ReARM (`getversion` / `addrelease`) with the PR head SHA, the source branch (`head_ref`), and the new `--pr-*` flags so ReARM tracks the PR and updates `pullRequestData` on the source branch.
-2. The component (or its policy) has an **External Validation** output event configured. When the release transitions through the configured lifecycle / approval state, ReARM mints an installation token from your GitHub App and posts a check-run with the configured conclusion (e.g. `success`, `failure`, `neutral`).
-3. The branch-protection rule on `main` (or your target branch) lists the ReARM check-run name as a required status check, so the PR cannot be merged until the check posts a passing conclusion.
+1. **CI** builds the PR head commit and calls ReARM (`getversion` / `addrelease`) with the PR head SHA, the source branch (`head_ref`), and the `--pr-*` flags so ReARM upserts the [first-class Pull Request entity](../workflows/pull-requests) and links the build's commit to it.
+2. **The PR aggregator** folds release-level outcomes into a single PR-level verdict (SUCCESS / FAILURE / PENDING / NEUTRAL) — see [Aggregation and verdicts](../workflows/pull-requests#aggregation-and-verdicts).
+3. **ReARM mints an installation token** from your GitHub App and dispatches one of the configured event types:
+   - `EXTERNAL_VALIDATION` → posts a GitHub check-run (PR-level after aggregation, or per-release).
+   - `PR_COMMENT` → posts a markdown comment on every open PR whose commits include the firing release's SCE.
+   - `INVALIDATE_PR` → internal signal that contributes FAILURE to PR aggregation on rejection / disapproval; the actual SCM push happens via the aggregator's `EXTERNAL_VALIDATION` trigger.
+4. **A branch-protection rule** on `main` (or your target branch) lists the ReARM check-run name as a required status check, so the PR cannot be merged until the check posts a passing conclusion.
 
 ## GitHub Part
 
@@ -27,7 +33,7 @@ Follow the upstream guide for [registering a GitHub App](https://docs.github.com
 - **Webhook**: uncheck **Active** (ReARM is CI-driven, no inbound webhook).
 - **Repository permissions**:
   - **Checks** → **Read and write** (required to post the check-run).
-  - **Pull requests** → **Read** (required so the App can resolve PR head SHA when needed).
+  - **Pull requests** → **Read and write** (Read is required so the App can resolve PR head SHA; Write is required to post `PR_COMMENT` comments via the issues/comments endpoint).
   - **Metadata** → **Read** (mandatory for any App that touches a repo).
 
 Choose whether to allow installation only on your account or on any account based on your needs.
@@ -68,11 +74,43 @@ The integration is now stored, with the private key encrypted at rest.
 
 ### 2. Make sure the VCS repository is registered
 
-In ReARM, register the GitHub repository whose PRs you want to gate (either via Component creation, or via the **VCS** menu item and the plus-circle icon). The repository's `vcsuri` must contain `github.com/<org>/<repo>` — ReARM uses this to build the check-run URL.
+In ReARM, register the GitHub repository whose PRs you want to gate (either via Component creation, or via the **VCS** menu item and the plus-circle icon). The repository's `vcsuri` must contain `github.com/<org>/<repo>` — ReARM uses this to build the check-run and comment URLs.
 
-### 3. Configure the External Validation output event (component-level)
+### 3. Choose where to attach the trigger
 
-External Validation can be configured per-component (described here) or at the policy-wide level (next section).
+Three different event types drive different SCM outcomes. They live in different places in the UI:
+
+| Event type | Where configured | What it does |
+|---|---|---|
+| [`EXTERNAL_VALIDATION` (PR-level)](#external_validation--per-pr-aggregated-check-run) | **VCS Repository** → Output Triggers | Posts a single check-run summarising the *aggregated* PR verdict across all attributed releases. Recommended for monorepos. |
+| [`EXTERNAL_VALIDATION` (per-release)](#external_validation--per-release-check-run-legacy) | **Component** or **Approval Policy** → Output Events | Posts a check-run for one specific release. Suitable when CI builds a single component per PR. |
+| [`PR_COMMENT`](#pr_comment--comment-on-the-pr) | **Component** or **Approval Policy** → Output Events | Posts a markdown comment to every open PR whose commits include the firing release's SCE. |
+| [`INVALIDATE_PR`](#invalidate_pr-and-validate_pr--feeding-the-aggregator) / `VALIDATE_PR` | **Component** or **Approval Policy** → Output Events | Internal signals that feed the PR aggregator on approval / rejection. No direct SCM call — the SCM push happens via the VCS-level `EXTERNAL_VALIDATION` trigger. |
+
+::: info VCS-level vs component-level `EXTERNAL_VALIDATION`
+A given PR can be gated by either the VCS-level (PR-aggregated) or component-level (per-release) check-run, not usually both. The VCS-level model is the recommended starting point because it handles monorepos correctly and keeps the GitHub UI clean (one ReARM check per PR, not one per component).
+:::
+
+### EXTERNAL_VALIDATION — per-PR aggregated check-run
+
+This is the recommended setup. ReARM posts one check-run per PR; its conclusion follows the [aggregated verdict](../workflows/pull-requests#aggregation-and-verdicts) computed across every release attributed to the PR's commits.
+
+1. Open the VCS repository under the **VCS** menu item.
+2. Open the **Output Triggers** section. Click the plus-circle icon (Add Output Trigger).
+3. **Name**: e.g. `PR check-run (rearm)`. The check-run reported to GitHub is named `rearm/<componentName>` by default; override via the **Check Name** field if you want a stable label across components in a monorepo (recommended — see "Wire up GitHub branch protection" below).
+4. **Type**: choose **External Validation**.
+5. **Choose Validation Integration**: select the GitHub Validate integration you registered.
+6. **Installation ID**: paste the Installation ID from step 4 of the GitHub part.
+7. **Optional Output JSON** / **Dynamic output (CEL)**: see [Customising the check-run output](#customising-the-check-run-output). The CEL bindings include PR-level fields like `pr.attributedReleases` in addition to release-level fields.
+8. Click **Save**.
+
+::: tip One trigger per VCS repo
+The VCS-level outputTriggers list accepts at most one `EXTERNAL_VALIDATION` entry. The conclusion is derived from the aggregated verdict, so you don't need a separate trigger for "success" and "failure".
+:::
+
+### EXTERNAL_VALIDATION — per-release check-run (legacy)
+
+Use this when CI builds exactly one component per PR and you want a check-run that maps directly to that release's lifecycle (rather than to the PR-level aggregate). Per-release `EXTERNAL_VALIDATION` is configured per-component (described here) or at the policy-wide level (next section).
 
 1. Open the component you want to gate. Click the tool icon to toggle component settings.
 2. Open the **Output Events** tab. Click the plus-circle icon (Add Output Trigger).
@@ -86,19 +124,52 @@ External Validation can be configured per-component (described here) or at the p
    - `failure` — block the merge.
    - `neutral` — informational, doesn't block by itself.
    - `skipped` / `cancelled` — same as the GitHub semantics.
-9. **Optional Output JSON** (free-form `title` / `summary` / `text` for the check-run): can be left empty — ReARM provides sensible defaults. See [Customising the check-run output](#customising-the-check-run-output) below for samples.
-10. **Dynamic output (CEL)**: optional CEL expression to compute the output JSON at fire time. Same section covers the available CEL bindings.
+9. **Optional Output JSON** (free-form `title` / `summary` / `text` for the check-run): can be left empty — ReARM provides sensible defaults. See [Customising the check-run output](#customising-the-check-run-output).
+10. **Dynamic output (CEL)**: optional CEL expression to compute the output JSON at fire time.
 11. Click **Save**.
 
 Repeat for each conclusion you want to drive — typically one trigger that posts `success` on approval and one that posts `failure` on rejection — and wire each into the appropriate input trigger / approval state.
 
-### 3 (alternative). Configure as a policy-wide global event
+#### Configure as a policy-wide global event
 
-If you want every component bound to a given Approval Policy to post check-runs the same way, define the External Validation event on the **policy** instead of on each component:
+If you want every component bound to a given Approval Policy to post check-runs the same way, define the per-release `EXTERNAL_VALIDATION` event on the **policy** instead of on each component:
 
 1. Open **Approval Policies** → select your policy.
 2. Find **Policy-Wide Output Events** → click the plus-circle icon.
 3. Fill in the same fields described above. (The global form does not expose **VCS Repository** — the repo is resolved from each component's own VCS at fire time.)
+
+### PR_COMMENT — comment on the PR
+
+`PR_COMMENT` posts a per-release markdown comment to every open PR whose `commits[]` includes the firing release's SCE. New comment per fire — never edited in place. Independent from the PR-level check-run aggregation; you can use one, the other, or both.
+
+Configure it as a release output event on a component (or policy-wide):
+
+1. Open the component. Click the tool icon → **Output Events** → plus-circle.
+2. **Type**: choose **PR Comment**.
+3. **Choose Validation Integration**: same `GITHUB_VALIDATE` integration you used for `EXTERNAL_VALIDATION`.
+4. **Optional Output JSON** (`clientPayload`): a JSON object with a `body` string (markdown). When set, ReARM **appends** it to the auto-generated body — contrast with `EXTERNAL_VALIDATION`, where `clientPayload` *replaces* the default output.
+5. **Dynamic output (CEL)** (`celClientPayload`): optional CEL expression. The result is appended to the auto-generated body just like `clientPayload`. Useful when you want live release values in the comment (e.g. critical vuln count, license posture).
+6. Click **Save**.
+
+::: warning Pull Requests permission must be Read and write
+Posting comments uses the issues/comments endpoint, which requires the GitHub App's **Pull requests** permission to be **Read and write** (not just Read). If your App was registered before `PR_COMMENT` existed, regenerate it or update the permission and re-install on the affected repositories.
+:::
+
+### INVALIDATE_PR and VALIDATE_PR — feeding the aggregator
+
+Both are **internal signals** with no direct SCM call. They tell the PR aggregator how the firing release should contribute to the PR-level verdict:
+
+- `VALIDATE_PR` — fires when a release transitions to a successful validation state (e.g. approval granted). Asks the aggregator to fold this release's outcome into any open PR whose commits include its SCE.
+- `INVALIDATE_PR` — the failure-side companion. Fires on disapproval / rejection input events. Always contributes `FAILURE` to PR aggregation regardless of the release's lifecycle.
+
+The actual GitHub check-run is posted by the [VCS-level `EXTERNAL_VALIDATION` trigger](#external_validation--per-pr-aggregated-check-run) when the aggregated verdict reaches a terminal state.
+
+Configuration is the same as any other release output event (component-level or policy-wide). They take no `clientPayload` — they're pure signals. You typically wire:
+
+- `VALIDATE_PR` to your "approval granted" or "lifecycle = GENERAL_AVAILABILITY" output trigger.
+- `INVALIDATE_PR` to your "disapproved" or "rejected" output trigger.
+
+If you only want the per-release `EXTERNAL_VALIDATION` model (legacy), you can ignore `VALIDATE_PR` / `INVALIDATE_PR` entirely — they exist purely to drive the PR-aggregated path.
 
 ## Wire up GitHub branch protection
 
@@ -107,7 +178,7 @@ Posting a check-run on its own does not block a merge — you have to tell GitHu
 1. In your GitHub repository go to **Settings** → **Branches** (or **Settings** → **Rules** if your org uses Rulesets).
 2. Add a branch protection rule (or ruleset) for `main` (or whichever branch you want gated).
 3. Enable **Require status checks to pass before merging**.
-4. In the search box, find and select the ReARM check-run name. By default ReARM names the check `rearm/<componentName>`.
+4. In the search box, find and select the ReARM check-run name. The default is `rearm/<componentName>`. For VCS-level `EXTERNAL_VALIDATION`, override the **Check Name** field to a stable string (e.g. `rearm/pr-validation`) — branch protection requires an exact match, and a stable name avoids breakage when components are added or renamed.
 
    ::: tip Check name must have run once first
    GitHub only autocompletes status check names that have already appeared on at least one commit. Open a throwaway PR first so the check posts once, then come back here and add it as required.
@@ -130,18 +201,18 @@ The official [`relizaio/rearm-actions`](https://github.com/relizaio/rearm-action
   ```
 
 - The source branch it sends is `github.head_ref` on `pull_request` events, falling back to `github.ref` on push events, so the release lands on the PR's source branch instead of the synthetic `pull/N/merge` ref.
-- It forwards `--pr-number`, `--pr-state`, `--pr-title`, `--pr-target-branch`, and `--pr-endpoint` to `addrelease` / `getversion`, which causes ReARM to update `pullRequestData` on the source branch without an inbound SCM webhook.
+- It forwards `--pr-identity`, `--pr-state`, `--pr-title`, `--pr-source-branch-name`, `--pr-target-branch-name`, and `--pr-endpoint` to `addrelease` / `getversion`, which causes ReARM to upsert the [first-class Pull Request entity](../workflows/pull-requests) and link the build's commit to it.
 
 If you build your own workflow with the bare ReARM CLI, mirror those rules — the check-run will land on the wrong SHA otherwise and branch protection will treat it as missing.
 
-For reference, both rearm-actions and the CLI are released:
-
-- `relizaio/rearm-actions` ≥ commit with [`fix(initialize): proper env var for branch resolution`](https://github.com/relizaio/rearm-actions/commit/6604005)
-- `rearm-cli` ≥ `26.04.9` (adds the `--pr-*` flags).
+For pipelines that need to record a PR independently of a release (e.g. on `pull_request: opened` before any build runs, or to record `MERGED` on `pull_request: closed`), use the standalone `rearm-cli pullrequest upsert` command. See [Pull Requests › Standalone PR upsert](../workflows/pull-requests#standalone-pr-upsert-no-release).
 
 ## Closing the loop on PR close / merge
 
-When a PR closes or merges, ReARM's `syncbranches` job archives the corresponding source branch (if it has been deleted upstream) and flips any open `pullRequestData` entries on that branch from `OPEN` to `CLOSED`. Re-runs of CI on a closed PR also explicitly set `--pr-state CLOSED` if the workflow detects a closed event.
+When a PR closes or merges, two paths converge:
+
+- Your CI (or `rearm-cli pullrequest upsert`) sends `--pr-state CLOSED` or `--pr-state MERGED`, transitioning the PR entity in real time. The aggregator stops re-evaluating the PR on incoming releases.
+- The `syncbranches` job conservatively marks any open PR `CLOSED` when its upstream source branch is deleted. It does not infer `MERGED` — to record a merge, the CI workflow must send the explicit signal.
 
 No additional configuration is needed — just make sure your CI pipeline runs on `pull_request` close events if you want closure events to be recorded in real time (otherwise `syncbranches` catches up on its own schedule).
 
@@ -152,7 +223,7 @@ The check-run that ReARM posts to GitHub has an `output` block with three fields
 ### Precedence
 
 ```
-celClientPayload  (CEL expression evaluated against the release)
+celClientPayload  (CEL expression evaluated against the release / PR)
     │ result string overwrites clientPayload for this dispatch
     ▼
 clientPayload     (static JSON: {"title": ..., "summary": ..., "text": ...})
@@ -161,7 +232,9 @@ clientPayload     (static JSON: {"title": ..., "summary": ..., "text": ...})
 default output    (computed server-side at fire time)
 ```
 
-Either field, when set, **replaces the entire default output** — there is no field-level merge. If you set `clientPayload` to `{"text": "my note"}` you lose the default title and summary too. To customise just one field, copy the full default JSON into the form (use the **Use template** button next to each field) and edit from there.
+Either field, when set, **replaces the entire default output** for `EXTERNAL_VALIDATION` — there is no field-level merge. To customise just one field, copy the full default JSON into the form (use the **Use template** button next to each field) and edit from there.
+
+For `PR_COMMENT` the semantics are different — `clientPayload.body` (or the CEL result) is **appended** to the auto-generated comment body, not used as a replacement.
 
 ### Default output
 
@@ -199,7 +272,7 @@ Notes:
 
 ### Sample `celClientPayload` (CEL expression)
 
-CEL expression evaluated server-side at fire time. The result must be a string that itself parses as JSON with `title` / `summary` / `text` keys. Useful when you want live release values in the output:
+CEL expression evaluated server-side at fire time. The result must be a string that itself parses as JSON with `title` / `summary` / `text` keys (for `EXTERNAL_VALIDATION`) or a string with a `body` field (for `PR_COMMENT`). Useful when you want live release values in the output:
 
 ```cel
 '{"title":"ReARM verdict: ' + release.lifecycle + '","summary":"Release ' + release.version + ' — ' + string(release.criticalVulns) + ' critical, ' + string(release.highVulns) + ' high","text":"Edit this CEL to customise per-release output. See bindings table below."}'
@@ -233,7 +306,13 @@ The trigger form has a **Use template** button next to each field that pre-fills
 ## Troubleshooting
 
 - **Check posts but doesn't block merge.** Branch protection rule isn't requiring it. See "Wire up GitHub branch protection" above; especially the "must have run once first" note.
-- **Check lands on the wrong SHA.** Your CI is sending `github.sha` (the merge commit) instead of `github.event.pull_request.head.sha`. Either upgrade `rearm-actions` to the version above, or fix your inline workflow.
+- **Check lands on the wrong SHA.** Your CI is sending `github.sha` (the merge commit) instead of `github.event.pull_request.head.sha`. Either upgrade `rearm-actions` to a recent version, or fix your inline workflow.
 - **Release lands on `pull/N/merge` instead of your feature branch.** Same root cause — your CI is using `github.ref` instead of `github.head_ref`.
+- **PR-level check-run conclusion stays PENDING and never dispatches.** PR aggregation is `PENDING` while at least one per-component-latest release has not been validated. See [PR aggregation verdicts](../workflows/pull-requests#aggregation-and-verdicts).
+- **`PR_COMMENT` returns 403 from GitHub.** The App's **Pull requests** permission is `Read` only. Update it to `Read and write` and re-install on the affected repositories.
 - **Token errors on the ReARM side ("could not obtain installation token").** Most often the App is not installed on the repository, or the Installation ID in the trigger config is wrong. Double-check the Installation ID in the GitHub URL after install.
-- **`GITHUB_VALIDATE` integration shows up in the regular "External Integration" picker.** Upgrade to the UI release that filters integration pickers by type — INTEGRATION_TRIGGER excludes GITHUB_VALIDATE; EXTERNAL_VALIDATION only lists GITHUB_VALIDATE.
+- **`GITHUB_VALIDATE` integration shows up in the regular "External Integration" picker.** Upgrade to the UI release that filters integration pickers by type — `INTEGRATION_TRIGGER` excludes `GITHUB_VALIDATE`; `EXTERNAL_VALIDATION` and `PR_COMMENT` only list `GITHUB_VALIDATE`.
+
+## See also
+
+- [Pull Requests](../workflows/pull-requests) — first-class PR entity, attribution, and aggregation rules (CE + Pro).
