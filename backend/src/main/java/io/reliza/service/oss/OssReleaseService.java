@@ -134,6 +134,11 @@ public class OssReleaseService {
 	@Autowired
 	@Lazy
 	private SbomComponentService sbomComponentService;
+
+	@Autowired
+	@Lazy
+	private OssPullRequestAggregatorService pullRequestAggregatorService;
+
 	private final ReleaseRepository repository;
 	
 	OssReleaseService(ReleaseRepository repository) {
@@ -218,6 +223,12 @@ public class OssReleaseService {
 		r = (Release) WhoUpdated.injectWhoUpdatedData(r, wu);
 		r = repository.save(r);
 		if (acollectionMode == AcollectionMode.RESOLVE) acollectionService.resolveReleaseCollection(r.getUuid(), wu);
+		try {
+			ReleaseData savedRd = ReleaseData.dataFromRecord(r);
+			pullRequestAggregatorService.recomputeForReleaseSce(savedRd, wu);
+		} catch (Exception e) {
+			log.warn("PR aggregator recompute failed after release save {}: {}", r.getUuid(), e.getMessage());
+		}
 		return r;
 	}
 	
@@ -661,7 +672,10 @@ public class OssReleaseService {
 			notificationService.processReleaseEvent(rData, ReleaseEventType.RELEASE_REJECTED);
 		} else if (curLifecycle == ReleaseLifecycle.ASSEMBLED) {
 			notificationService.processReleaseEvent(rData, ReleaseEventType.RELEASE_ASSEMBLED);
-			autoIntegrateProducts(rData);
+			// Best-effort — must not fail the lifecycle-update transaction
+			// if a downstream feature-set integration trips over.
+			try { autoIntegrateProducts(rData); }
+			catch (Exception e) { log.error("autoIntegrateProducts failed on lifecycle change for release {}", rData.getUuid(), e); }
 		}
 	}
 	
@@ -968,7 +982,10 @@ public class OssReleaseService {
 			Release created = createRelease(releaseDto, WhoUpdated.getAutoWhoUpdated());
 			return created != null ? Optional.of(created.getUuid()) : Optional.empty();
 		} catch (Exception e) {
-			log.error("Exception on creating programmatic release, feature set = " + featureSet.getUuid());
+			// Pass `e` so the stack trace lands in production logs —
+			// pre-fix the swallowed message hid the actual cause.
+			log.error("Exception on creating programmatic release, feature set = "
+					+ featureSet.getUuid(), e);
 			return Optional.empty();
 		}
 	}
@@ -1421,8 +1438,17 @@ public class OssReleaseService {
 			versionAssignmentService.createNewVersionAssignment(rData.getBranch(), rData.getVersion(), r.getUuid());
 			handleNewReleaseNotifications(rData, bdOpt.get());
 		}
+		// Post-save side-effect: feature-set auto-integrate for any
+		// downstream product whose dependency list includes this
+		// component+branch. Best-effort and isolated from the
+		// release-create transaction — pre-fix, an exception here
+		// (e.g. concurrent state, malformed dep config) propagated up
+		// through createRelease and the surrounding caller saw a null
+		// return even though the row had already been written.
 		if (rData.getLifecycle() == ReleaseLifecycle.ASSEMBLED ) {
-			autoIntegrateProducts(rData);
+			final ReleaseData postSaveRd = rData;
+			try { autoIntegrateProducts(postSaveRd); }
+			catch (Exception e) { log.error("autoIntegrateProducts failed for release {}", postSaveRd.getUuid(), e); }
 		}
 		// Queue SBOM-component reconciliation for any release that came in with
 		// artifacts attached (e.g. addReleaseProgrammatic / addReleaseManual

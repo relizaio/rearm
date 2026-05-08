@@ -178,7 +178,6 @@ public class AutoIntegrateProductsTest {
 			.dependencies(featureSetData.getDependencies())
 			.autoIntegrate(featureSetData.getAutoIntegrate())
 			.type(featureSetData.getType())
-			.pullRequestData(featureSetData.getPullRequestData())
 			.build();
 		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
 		
@@ -332,7 +331,6 @@ public class AutoIntegrateProductsTest {
 			.dependencies(featureSetData.getDependencies())
 			.autoIntegrate(featureSetData.getAutoIntegrate())
 			.type(featureSetData.getType())
-			.pullRequestData(featureSetData.getPullRequestData())
 			.build();
 		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
 		
@@ -488,7 +486,6 @@ public class AutoIntegrateProductsTest {
 			.dependencies(featureSetData.getDependencies())
 			.autoIntegrate(featureSetData.getAutoIntegrate())
 			.type(featureSetData.getType())
-			.pullRequestData(featureSetData.getPullRequestData())
 			.build();
 		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
 		
@@ -595,7 +592,6 @@ public class AutoIntegrateProductsTest {
 			.dependencies(featureSetData.getDependencies())
 			.autoIntegrate(featureSetData.getAutoIntegrate())
 			.type(featureSetData.getType())
-			.pullRequestData(featureSetData.getPullRequestData())
 			.build();
 		branchService.updateBranch(branchDto, WhoUpdated.getTestWhoUpdated());
 		
