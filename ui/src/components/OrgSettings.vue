@@ -491,23 +491,40 @@
                         @update:show="(v) => { if (!v) showFreeFormKeyPermissionsModal = false }"
                         @after-enter="blurActiveElement"
                     >
-                        <template #header>Permissions for key {{ selectedFreeFormKey.keyOrder }}</template>
+                        <template #header>Edit key {{ selectedFreeFormKey.keyOrder }}</template>
                         <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
-                            <ScopedPermissions
-                                v-model="freeFormKeyScopedPermissions"
-                                :org-uuid="orgResolved"
-                                :approval-roles="myorg.approvalRoles || []"
-                                :perspectives="perspectives"
-                                :products="orgProducts"
-                                :components="orgComponents"
-                                :instances="orgInstances"
-                                :clusters="orgClusters"
-                                :show-sbom-probing="true"
-                            />
-                            <n-space style="margin-top: 20px;">
-                                <n-button type="success" @click="updateFreeFormKeyPermissions">Save Permissions</n-button>
-                                <n-button @click="showFreeFormKeyPermissionsModal = false">Cancel</n-button>
-                            </n-space>
+                            <n-tabs v-model:value="freeFormKeyEditTab" type="line" animated>
+                                <n-tab-pane name="permissions" tab="Permissions">
+                                    <ScopedPermissions
+                                        v-model="freeFormKeyScopedPermissions"
+                                        :org-uuid="orgResolved"
+                                        :approval-roles="myorg.approvalRoles || []"
+                                        :perspectives="perspectives"
+                                        :products="orgProducts"
+                                        :components="orgComponents"
+                                        :instances="orgInstances"
+                                        :clusters="orgClusters"
+                                        :show-sbom-probing="true"
+                                    />
+                                    <n-space style="margin-top: 20px;">
+                                        <n-button type="success" @click="updateFreeFormKeyPermissions">Save Permissions</n-button>
+                                        <n-button @click="showFreeFormKeyPermissionsModal = false">Cancel</n-button>
+                                    </n-space>
+                                </n-tab-pane>
+                                <n-tab-pane name="notes" tab="Notes">
+                                    <p style="color: #555; margin-top: 0;">
+                                        Free-text notes for this key. Visible only to org admins on the Free Form Keys tab.
+                                    </p>
+                                    <n-input v-model:value="freeFormKeyNotes"
+                                        type="textarea"
+                                        :autosize="{ minRows: 4, maxRows: 16 }"
+                                        placeholder="What this key is used for, who owns it, expiry, etc." />
+                                    <n-space style="margin-top: 20px;">
+                                        <n-button type="success" @click="updateFreeFormKeyNotes">Save Notes</n-button>
+                                        <n-button @click="showFreeFormKeyPermissionsModal = false">Cancel</n-button>
+                                    </n-space>
+                                </n-tab-pane>
+                            </n-tabs>
                         </div>
                     </n-modal>
                 </div>
@@ -1319,6 +1336,13 @@ async function loadTabSpecificData (tabName: string) {
         if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
     } else if (tabName === "freeFormKeys") {
+        // Same as programmaticAccess — formatValuesForApiKeys() resolves
+        // the Updated By column against users.value, so the user list
+        // must be loaded *before* the keys are formatted; otherwise
+        // formatValuesForApiKeys is skipped (loadProgrammaticAccessKeys
+        // only formats when both lists are non-empty) and the column
+        // ends up blank for FREEFORM rows.
+        await loadUsers()
         if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
     } else if (tabName === "approvalPolicies") {
@@ -1345,6 +1369,8 @@ const showOrgSettingsUserPermissionsModal = ref(false)
 
 const showFreeFormKeyPermissionsModal = ref(false)
 const selectedFreeFormKey = ref<any>({})
+const freeFormKeyEditTab = ref<'permissions' | 'notes'>('permissions')
+const freeFormKeyNotes = ref<string>('')
 const freeFormKeyScopedPermissions = ref<any>({
     orgPermission: { type: 'NONE', functions: [], approvals: [] },
     scopedPermissions: []
@@ -3973,6 +3999,8 @@ async function editFreeFormKey(key: any) {
         orgPermission: orgPerm,
         scopedPermissions: scopedPerms
     }
+    freeFormKeyNotes.value = key.notes || ''
+    freeFormKeyEditTab.value = 'permissions'
     showFreeFormKeyPermissionsModal.value = true
 }
 
@@ -4038,6 +4066,40 @@ async function updateFreeFormKeyPermissions() {
         notify('error', 'Error', 'Failed to save key permissions. Please retry or contact support.')
     }
 
+    showFreeFormKeyPermissionsModal.value = false
+    selectedFreeFormKey.value = {}
+}
+
+async function updateFreeFormKeyNotes() {
+    if (!selectedFreeFormKey.value || !selectedFreeFormKey.value.uuid) {
+        notify('error', 'Error', 'No key selected.')
+        return
+    }
+    try {
+        const resp = await graphqlClient.mutate({
+            mutation: gql`
+                mutation setNotesOnApiKey($apiKeyUuid: ID!, $notes: String) {
+                    setNotesOnApiKey(apiKeyUuid: $apiKeyUuid, notes: $notes) {
+                        uuid notes
+                    }
+                }`,
+            variables: {
+                apiKeyUuid: selectedFreeFormKey.value.uuid,
+                notes: freeFormKeyNotes.value
+            }
+        })
+        if (!resp.data.setNotesOnApiKey || !resp.data.setNotesOnApiKey.uuid) {
+            notify('error', 'Error', 'Failed to save notes.')
+            return
+        }
+        notify('success', 'Saved', 'Saved key notes successfully!')
+        await loadProgrammaticAccessKeys(false)
+    } catch (error: any) {
+        console.error(error)
+        const errorMsg = commonFunctions.parseGraphQLError(error.message)
+        notify('error', 'Error', `Failed to save key notes: ${errorMsg}`)
+        return
+    }
     showFreeFormKeyPermissionsModal.value = false
     selectedFreeFormKey.value = {}
 }
@@ -4754,11 +4816,15 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
             },
             fetchPolicy: cachePolicy
         })
-    if (users.value.length && resp.data.apiKeys.length) {
-        programmaticAccessKeys.value = resp.data.apiKeys.map((key: any) => formatValuesForApiKeys(key))
-    } else if (resp.data.apiKeys.length) {
-        programmaticAccessKeys.value = resp.data.apiKeys
-    }
+    // Always run the formatter — formatValuesForApiKeys handles an
+    // empty users.value gracefully (updatedByName falls back to '').
+    // The previous skip-when-empty branch left raw rows in
+    // programmaticAccessKeys, which the FREEFORM table's computed
+    // could later re-format once users loaded but the Programmatic
+    // Access table never could because its computed doesn't re-run
+    // formatValuesForApiKeys.
+    programmaticAccessKeys.value = (resp.data.apiKeys || [])
+        .map((key: any) => formatValuesForApiKeys(key))
 }
 
 async function handleTabSwitch(tabName: string) {
