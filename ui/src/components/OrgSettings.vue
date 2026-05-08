@@ -491,7 +491,7 @@
                         @update:show="(v) => { if (!v) showFreeFormKeyPermissionsModal = false }"
                         @after-enter="blurActiveElement"
                     >
-                        <template #header>Edit key {{ selectedFreeFormKey.keyOrder }}</template>
+                        <template #header>Edit key {{ selectedFreeFormKey.uuid }}</template>
                         <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
                             <n-tabs v-model:value="freeFormKeyEditTab" type="line" animated>
                                 <n-tab-pane name="permissions" tab="Permissions">
