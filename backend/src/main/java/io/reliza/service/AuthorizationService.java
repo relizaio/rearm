@@ -291,10 +291,10 @@ public class AuthorizationService {
 			return true;
 		}
 		
-		return doesPermissionScopeContainObject(permission, org, objectType, objectUuid);
-		
+		return doesPermissionScopeContainObject(permission, org, objectType, objectUuid, resolvedPt);
+
 	}
-	
+
 	/**
 	 * Checks if a permission's scope covers a given release, ignoring functions and permission type.
 	 * Org-wide permissions always cover any release in that org.
@@ -316,17 +316,30 @@ public class AuthorizationService {
 		if (permission.getScope() == PermissionScope.RELEASE && permission.getObject().equals(releaseUuid)) {
 			return true;
 		}
-		return doesPermissionScopeContainObject(permission, org, PermissionScope.RELEASE, releaseUuid);
+		return doesPermissionScopeContainObject(permission, org, PermissionScope.RELEASE, releaseUuid, null);
 	}
-	
+
 	/**
-	 * We currently consider only COMPONENT and PERSPECTIVE as permission scopes
-	 * @param permission
-	 * @param objectType
-	 * @param objectUuid
-	 * @return
+	 * Resolve the components covered by a permission for a given call.
+	 *
+	 * scope=PERSPECTIVE always cascades through the perspective's members
+	 * (and, when the perspective UUID is itself a PRODUCT, through the
+	 * product's dependency tree) regardless of call type — the perspective
+	 * scope's whole purpose is to grant joint management.
+	 *
+	 * scope=COMPONENT pointing at a PRODUCT-typed component is more
+	 * restrictive: read calls still see the dependency cascade (so
+	 * granting product-READ lets you read every component the product
+	 * pulls in), but write/admin calls only authorize the product itself.
+	 * Cascading WRITE through dependencies would let a product-write
+	 * grant edit access to shared components owned by other teams; users
+	 * who want that should grant via PERSPECTIVE scope instead.
+	 *
+	 * resolvedPt may be null (e.g. {@link #doesPermissionCoverRelease}
+	 * which ignores permission type by design) — null is treated as a
+	 * read-equivalent and gets the full cascade.
 	 */
-	private boolean doesPermissionScopeContainObject (UserPermission permission, UUID org, PermissionScope objectType, UUID objectUuid) {
+	private boolean doesPermissionScopeContainObject (UserPermission permission, UUID org, PermissionScope objectType, UUID objectUuid, PermissionType resolvedPt) {
 		List<ComponentData> authorizedComponents = new LinkedList<>();
 		if (permission.getScope() == PermissionScope.PERSPECTIVE) {
 			var opd = ossPerspectiveService.getPerspectiveData(permission.getObject());
@@ -344,8 +357,13 @@ public class AuthorizationService {
 				return false;
 			}
 			authorizedComponents.add(ocd.get());
-			var childCompList = getComponentService.listComponentsByProduct(permission.getObject());
-			authorizedComponents.addAll(childCompList);
+			boolean isProduct = ocd.get().getType() == ComponentData.ComponentType.PRODUCT;
+			boolean writeOrAdminCall = resolvedPt != null
+					&& resolvedPt.ordinal() >= PermissionType.READ_WRITE.ordinal();
+			if (!(isProduct && writeOrAdminCall)) {
+				var childCompList = getComponentService.listComponentsByProduct(permission.getObject());
+				authorizedComponents.addAll(childCompList);
+			}
 		}
 		return doComponentsContainObject(authorizedComponents, org, objectType, objectUuid);
 	}

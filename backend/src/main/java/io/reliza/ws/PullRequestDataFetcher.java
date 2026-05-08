@@ -175,15 +175,42 @@ public class PullRequestDataFetcher {
 		} else if (StringUtils.isNotBlank(vcsUri)) {
 			if (authOrgUuid == null) throw new AccessDeniedException("Org-scoped key required to resolve VCS by URI");
 			resolvedOrg = authOrgUuid;
-			// authorize org-wide before touching VCS state (createIfMissing
-			// can write). Pre-auth check uses the org as the RelizaObject.
-			OrganizationData od = getOrganizationService.getOrganizationData(authOrgUuid)
-					.orElseThrow(() -> new RelizaException("Org not found"));
-			AuthorizationResponse arPre = authorizeProgrammatic(ahp, od, authOrgUuid);
-			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepositoryByUri(
-					authOrgUuid, vcsUri, vcsDisplayName, VcsType.GIT, true, arPre.getWhoUpdated());
-			VcsRepository vr = ovr.orElseThrow(() -> new RelizaException("Failed to resolve VCS for uri " + vcsUri));
-			targetVcs = vr.getUuid();
+			// Try resolve the VCS without creating it. If it exists and
+			// has at least one component the key authorizes against, hoist
+			// that component into resolvedComponent so the post-auth at
+			// the caller does per-component auth — that lets COMPONENT- or
+			// PERSPECTIVE-scope FREEFORM keys (which can't authorize the
+			// whole org) drive PR upserts for VCS attached to components
+			// they cover. Falls back to org-wide auth + auto-create when
+			// no VCS exists yet, since auto-creating a VCS row is itself
+			// an org-wide write that no narrower scope can authorize.
+			Optional<VcsRepositoryData> ovd = vcsRepositoryService
+					.getVcsRepositoryDataByUri(authOrgUuid, vcsUri);
+			if (ovd.isPresent()) {
+				targetVcs = ovd.get().getUuid();
+				List<ComponentData> compsOnVcs = StringUtils.isNotBlank(repoPath)
+						? getComponentService.listComponentDataByVcsAndPath(targetVcs, authOrgUuid, repoPath)
+						: getComponentService.listComponentDataByVcs(targetVcs);
+				for (ComponentData cd : compsOnVcs) {
+					try {
+						authorizeProgrammatic(ahp, cd, cd.getOrg());
+						resolvedComponent = cd;
+						break;
+					} catch (AccessDeniedException ignored) { /* try the next candidate */ }
+				}
+			}
+			if (resolvedComponent == null) {
+				// Either no VCS yet, no components on the VCS, or none the
+				// key was authorized for — fall back to org-wide auth (the
+				// only scope that can authorize a fresh VCS create).
+				OrganizationData od = getOrganizationService.getOrganizationData(authOrgUuid)
+						.orElseThrow(() -> new RelizaException("Org not found"));
+				AuthorizationResponse arPre = authorizeProgrammatic(ahp, od, authOrgUuid);
+				Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepositoryByUri(
+						authOrgUuid, vcsUri, vcsDisplayName, VcsType.GIT, true, arPre.getWhoUpdated());
+				VcsRepository vr = ovr.orElseThrow(() -> new RelizaException("Failed to resolve VCS for uri " + vcsUri));
+				targetVcs = vr.getUuid();
+			}
 		} else {
 			throw new RelizaException("Either --component (or a COMPONENT key) or --vcsuri is required");
 		}

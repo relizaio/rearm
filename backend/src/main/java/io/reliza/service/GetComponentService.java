@@ -120,6 +120,29 @@ public class GetComponentService {
 		return getListOfComponentData(allComponentUuids);
 	}
 	
+	/**
+	 * Components attached to the given VCS UUID, no path filter. Used by
+	 * the PR-upsert auth flow to find components a FREEFORM key might
+	 * cover when the caller supplies --vcsuri rather than --component.
+	 */
+	public List<ComponentData> listComponentDataByVcs (UUID vcsUuid) {
+		return repository.findComponentsByVcs(vcsUuid.toString()).stream()
+				.map(ComponentData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+
+	/**
+	 * Components attached to (vcsUuid, repoPath) within an org. Non-throwing
+	 * counterpart to {@link ComponentService#findComponentDataByVcsAndPath} —
+	 * returns the empty list rather than throwing on no-match, so auth flows
+	 * can iterate candidates without treating "no component" as an error.
+	 */
+	public List<ComponentData> listComponentDataByVcsAndPath (UUID vcsUuid, UUID orgUuid, String repoPath) {
+		return repository.findAllComponentsByVcsAndPath(vcsUuid.toString(), orgUuid.toString(), repoPath).stream()
+				.map(ComponentData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+
 	public List<ComponentData> listComponentsByProduct (UUID productUuid) {
 		Set<UUID> allComponentUuids = new LinkedHashSet<>();
 		allComponentUuids.add(productUuid);
