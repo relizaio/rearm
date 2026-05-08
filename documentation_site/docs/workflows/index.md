@@ -9,4 +9,5 @@ sidebarDepth: 2
 - [Auditing Findings](./auditing-findings)
 - [Supply Chain Forensics](./supply-chain-forensics)
 - [Exporting Compliance Artifacts](./exporting-compliance-artifacts)
+- [Pull Requests](./pull-requests)
 
