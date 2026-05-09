@@ -285,24 +285,10 @@
                                     </n-checkbox-group>
                                 </n-form-item>
 
-                                <template v-if="editCiIntegrationObject.webhook">
-                                    <h6 style="margin-bottom: 0;">Webhook configuration</h6>
-                                    <n-form-item label="Webhook slug"
-                                        description="Lowercase a-z, 0-9, and hyphens. 4–63 chars, no leading/trailing hyphen. Changing this also changes the public URL — re-register on the GitHub App side at the same time.">
-                                        <n-input v-model:value="editCiIntegrationObject.webhook.slug" />
-                                    </n-form-item>
-                                    <n-form-item label="Rotate webhook secret"
-                                        description="Leave empty to keep the existing secret. If set, also paste the same value into the GitHub App's Webhook secret field — signature verification will fail until both sides match.">
-                                        <n-input v-model:value="editCiIntegrationObject.webhook.secret"
-                                            type="password" show-password-on="click" placeholder="(unchanged)" />
-                                    </n-form-item>
-                                </template>
-                                <template v-else>
-                                    <n-text depth="3" style="font-size: 13px;">
-                                        No webhook configured for this integration. Tick the WEBHOOK capability and use
-                                        the Webhooks section below to add one.
-                                    </n-text>
-                                </template>
+                                <n-text depth="3" style="font-size: 13px;">
+                                    To add or modify the inbound webhook (slug, secret) attached to this integration,
+                                    use the Webhooks (inbound) section below.
+                                </n-text>
 
                                 <n-space>
                                     <n-button :loading="editCiIntegrationLoading" @click="saveEditCiIntegration" type="success">Save</n-button>
@@ -2036,69 +2022,32 @@ function resetCreateIntegrationObject() {
 }
 
 // ---- Edit GitHub CI Integration --------------------------------------------
-// Capabilities are user-editable; if a Webhook is wired to this integration,
-// the modal also exposes the webhook's slug + secret-rotate inline (one form,
-// one Save, two mutations). The existing secret is never read back — empty
-// secret input means "keep what's there".
+// Only capabilities are editable from this modal. Webhook fields (slug,
+// secret) are deliberately scoped to the Webhook entity itself — see the
+// Webhooks (inbound) section's edit flow.
 const editCiIntegrationObject: Ref<any> = ref({
     uuid: '',
     type: '',
     note: '',
-    capabilities: [] as string[],
-    // Mirrored from the matching Webhook row when one exists; null otherwise.
-    webhook: null as null | {
-        uuid: string,
-        slug: string,
-        secret: string  // write-only; never populated on open
-    }
+    capabilities: [] as string[]
 })
 const showEditCiIntegrationModal: Ref<boolean> = ref(false)
 const editCiIntegrationLoading: Ref<boolean> = ref(false)
 
-async function openEditCiIntegrationModal(row: any) {
-    editCiIntegrationLoading.value = true
-    showEditCiIntegrationModal.value = true
+function openEditCiIntegrationModal(row: any) {
     editCiIntegrationObject.value = {
         uuid: row.uuid,
         type: row.type,
         note: row.note,
-        capabilities: [...(row.capabilities || [])],
-        webhook: null
+        capabilities: [...(row.capabilities || [])]
     }
-    // Look up an existing webhook for this integration. There's no dedicated
-    // "by integration" query in the GraphQL surface — we list all webhooks
-    // for the org and filter client-side, which is fine at the org-config
-    // scale (handful of webhooks, not millions).
-    try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                query webhooks($orgUuid: ID!) {
-                    webhooks(orgUuid: $orgUuid) { uuid integration slug }
-                }`,
-            variables: { orgUuid: orgResolved.value },
-            fetchPolicy: 'no-cache'
-        })
-        const wh = (resp.data?.webhooks || []).find((w: any) => w.integration === row.uuid)
-        if (wh) {
-            editCiIntegrationObject.value.webhook = {
-                uuid: wh.uuid,
-                slug: wh.slug,
-                secret: ''
-            }
-        }
-    } catch (e: any) {
-        console.error(e)
-    } finally {
-        editCiIntegrationLoading.value = false
-    }
+    showEditCiIntegrationModal.value = true
 }
 
 async function saveEditCiIntegration() {
     const obj = editCiIntegrationObject.value
+    editCiIntegrationLoading.value = true
     try {
-        // 1. Update integration capabilities. Always called — server is
-        //    idempotent on equal lists, and skipping a noop here would mean
-        //    re-checking equality client-side, which isn't worth it.
         await graphqlClient.mutate({
             mutation: gql`
                 mutation updateIntegrationCapabilities($uuid: ID!, $capabilities: [IntegrationCapability!]!) {
@@ -2109,42 +2058,14 @@ async function saveEditCiIntegration() {
             variables: { uuid: obj.uuid, capabilities: obj.capabilities },
             fetchPolicy: 'no-cache'
         })
-
-        // 2. If a webhook exists and the user changed slug or set a new
-        //    secret, push that through too. updateWebhook accepts both in
-        //    the same call so it's one mutation per logical change.
-        if (obj.webhook) {
-            const input: any = { uuid: obj.webhook.uuid }
-            // Slug only surfaces as a change when it actually differs from
-            // what we loaded — guards against re-validating an unchanged
-            // slug on the server.
-            const original = ciIntegrations.value.find((c: any) => c.uuid === obj.uuid)
-            const originalSlug = obj.webhook.slug
-            if (obj.webhook.slug && obj.webhook.slug !== originalSlug) input.slug = obj.webhook.slug
-            // secret is write-only — non-empty means rotate.
-            if (obj.webhook.secret && obj.webhook.secret.trim().length > 0) input.secret = obj.webhook.secret.trim()
-            // Always send the (possibly-edited) slug to be safe; backend
-            // skips the rename branch if it's equal.
-            input.slug = obj.webhook.slug
-            // Only call when there's at least one mutable change.
-            if (input.slug || input.secret) {
-                await graphqlClient.mutate({
-                    mutation: gql`
-                        mutation updateWebhook($webhook: WebhookUpdateInput!) {
-                            updateWebhook(webhook: $webhook) { uuid slug }
-                        }`,
-                    variables: { webhook: input },
-                    fetchPolicy: 'no-cache'
-                })
-            }
-        }
-
         showEditCiIntegrationModal.value = false
         await loadCiIntegrations(false)
     } catch (e: any) {
         const msg = e?.message || String(e)
         alert('Failed to save integration: ' + msg)
         console.error(e)
+    } finally {
+        editCiIntegrationLoading.value = false
     }
 }
 

@@ -58,6 +58,10 @@
         <n-modal v-model:show="showEditModal" preset="dialog" :show-icon="false">
             <n-card style="width: 700px" size="huge" :title="'Edit Webhook - ' + (webhookToEdit.slug || '')" :borderd="false" role="dialog" aria-modal="true">
                 <n-form :model="webhookToEdit">
+                    <n-form-item label="Slug"
+                        description="Lowercase a-z, 0-9, and hyphens. 4–63 chars, no leading/trailing hyphen. Renaming changes the public URL — re-register on the GitHub App side at the same time.">
+                        <n-input v-model:value="webhookToEdit.slug" />
+                    </n-form-item>
                     <n-form-item label="Webhook URL">
                         <n-input :value="previewUrl(webhookToEdit.slug)" readonly />
                     </n-form-item>
@@ -305,11 +309,18 @@ async function createWebhook() {
 
 async function updateWebhook() {
     try {
+        // Slug validation client-side — matches the server regex so we don't
+        // round-trip a doomed mutation. Server still enforces uniqueness.
+        if (webhookToEdit.value.slug && !SLUG_REGEX.test(webhookToEdit.value.slug)) {
+            notify('error', 'Invalid slug', 'Lowercase a-z, 0-9, hyphen; 4–63 chars; no leading/trailing hyphen')
+            return
+        }
         const input: any = {
             uuid: webhookToEdit.value.uuid,
             note: webhookToEdit.value.note || null,
             status: webhookToEdit.value.status,
-            installation: webhookToEdit.value.installation || ''
+            installation: webhookToEdit.value.installation || '',
+            slug: webhookToEdit.value.slug
         }
         if (webhookToEdit.value.secret && webhookToEdit.value.secret.trim().length > 0) {
             input.secret = webhookToEdit.value.secret.trim()
