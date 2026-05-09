@@ -157,6 +157,10 @@
                         <h5>CI Integrations</h5>
                         <n-data-table :columns="ciIntegrationTableFields" :data="ciIntegrations" :row-key="dataTableRowKey"></n-data-table>
                         <n-button @click="showCIIntegrationModal=true">Add CI Integration</n-button>
+
+                        <div style="margin-top: 24px;">
+                            <WebhooksOfOrg :orguuid="orgResolved" />
+                        </div>
                     </template>
                 </div>
                 <n-modal
@@ -175,13 +179,22 @@
                             <n-form-item label="CI Type" path="createIntegrationObject.type">
                                 <n-radio-group v-model:value="createIntegrationObject.type" name="ciIntegrationType">
                                     <n-radio-button label="GitHub" value="GITHUB" />
-                                    <n-radio-button label="GitHub Validate" value="GITHUB_VALIDATE" />
                                     <n-radio-button label="GitLab" value="GITLAB" />
                                     <n-radio-button label="Jenkins" value="JENKINS" />
                                     <n-radio-button label="Azure DevOps" value="ADO" />
                                 </n-radio-group>
                             </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB' || createIntegrationObject.type === 'GITHUB_VALIDATE'" id="org_settings_create_github_integration_secret_group" label="GitHub Private Key"
+                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" label="Capabilities"
+                                description="What this GitHub App is wired up to do. PR_VALIDATE: post check-runs / PR comments. WEBHOOK: receive inbound pull_request events. WORKFLOW_DISPATCH: trigger repository_dispatch.">
+                                <n-checkbox-group v-model:value="createIntegrationObject.capabilities">
+                                    <n-space>
+                                        <n-checkbox value="WORKFLOW_DISPATCH" label="Workflow Dispatch" />
+                                        <n-checkbox value="PR_VALIDATE" label="PR Validate" />
+                                        <n-checkbox value="WEBHOOK" label="Webhook (inbound)" />
+                                    </n-space>
+                                </n-checkbox-group>
+                            </n-form-item>
+                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" id="org_settings_create_github_integration_secret_group" label="GitHub Private Key"
                                 label-for="org_settings_create_github_integration_secret"
                                 description="Paste the .pem GitHub provides, upload the file directly, or paste a pre-converted DER base64 blob. Backend normalizes all three.">
                                 <n-space vertical style="width: 100%;">
@@ -204,7 +217,7 @@
                                     </n-text>
                                 </n-space>
                             </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB' || createIntegrationObject.type === 'GITHUB_VALIDATE'" id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
+                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
                                 label-for="org_settings_create_github_integration_appid"
                                 description="GitHub Application ID">
                                 <n-input type="number" id="org_settings_create_github_integration_appid"
@@ -1286,6 +1299,7 @@ import DownloadLogView from './DownloadLogView.vue'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
+import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 
@@ -1928,7 +1942,8 @@ const createIntegrationObject: Ref<any> = ref({
     note: '',
     tenant: '',
     client: '',
-    schedule: ''
+    schedule: '',
+    capabilities: []
 })
 
 // Toggles between uploading the GitHub-provided .pem file directly
@@ -1956,7 +1971,8 @@ function resetCreateIntegrationObject() {
         note: '',
         tenant: '',
         client: '',
-        schedule: ''
+        schedule: '',
+        capabilities: []
     }
     uploadedSecretFileName.value = ''
 }
@@ -3036,6 +3052,14 @@ const ciIntegrationTableFields = [
     {
         key: 'type',
         title: 'Type'
+    },
+    {
+        key: 'capabilities',
+        title: 'Capabilities',
+        render: (row: any) => {
+            const caps = (row.capabilities || []) as string[]
+            return caps.length === 0 ? '—' : caps.join(', ')
+        }
     }
 ]
 
@@ -4674,6 +4698,7 @@ async function loadCiIntegrations(useCache: boolean) {
                                     isEnabled
                                     type
                                     note
+                                    capabilities
                               }
                           }`,
             variables: {
@@ -5726,17 +5751,29 @@ const outputTriggerLifecycleOptions = constants.LifecycleValueOptions
 
 const lifecycleOptions = constants.LifecycleOptions.map((lo: any) => {return {label: lo.label, value: lo.key}})
 
+// All non-validation integrations — the workflow-trigger picker shows
+// these. GitHub integrations whose ONLY capability is PR_VALIDATE
+// (i.e. App credentials reserved for posting check-runs back to GitHub)
+// are excluded so they don't show up as workflow-dispatch targets.
 const ciIntegrationsForGlobalSelect = computed((): any => {
     return ciIntegrations.value
-        .filter((ci: any) => ci.type !== 'GITHUB_VALIDATE')
+        .filter((ci: any) => {
+            if (ci.type !== 'GITHUB') return true
+            const caps: string[] = ci.capabilities || []
+            // Has WORKFLOW_DISPATCH explicitly, or no capabilities asserted
+            // (legacy / pre-capabilities rows fall back to "show it everywhere").
+            return caps.length === 0 || caps.includes('WORKFLOW_DISPATCH')
+        })
         .map((ci: any) => {
             return { label: ci.note + ' (' + ci.type + ')', value: ci.uuid }
         })
 })
 
+// Integrations that can post check-runs / PR comments back to GitHub —
+// must be GITHUB-typed with the PR_VALIDATE capability.
 const validationIntegrationsForGlobalSelect = computed((): any => {
     return ciIntegrations.value
-        .filter((ci: any) => ci.type === 'GITHUB_VALIDATE')
+        .filter((ci: any) => ci.type === 'GITHUB' && (ci.capabilities || []).includes('PR_VALIDATE'))
         .map((ci: any) => {
             return { label: ci.note, value: ci.uuid }
         })

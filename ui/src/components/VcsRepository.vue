@@ -92,11 +92,12 @@ const currentTrigger = computed(() => {
     return triggers && triggers.length > 0 ? triggers[0] : null
 })
 
-// Mirror ComponentView: only GITHUB_VALIDATE integrations are valid
-// targets for an EXTERNAL_VALIDATION trigger.
+// Mirror ComponentView: GITHUB integrations with the PR_VALIDATE
+// capability are the only valid targets for an EXTERNAL_VALIDATION
+// trigger.
 const validationIntegrationsForSelect = computed(() => {
     return ciIntegrations.value
-        .filter((x: any) => x.type === 'GITHUB_VALIDATE')
+        .filter((x: any) => x.type === 'GITHUB' && (x.capabilities || []).includes('PR_VALIDATE'))
         .map((x: any) => ({ label: x.note || x.identifier || x.uuid, value: x.uuid }))
 })
 
@@ -188,6 +189,7 @@ async function fetchCiIntegrations(orgUuid: string) {
                         isEnabled
                         type
                         note
+                        capabilities
                     }
                 }`,
             variables: { org: orgUuid },

@@ -1055,17 +1055,25 @@ const genApiKey = function (type : string) {
 }
 
 const ciIntegrations: Ref<any[]> = ref([])
-// INTEGRATION_TRIGGER picker — exclude GITHUB_VALIDATE since those are
-// only valid targets for the EXTERNAL_VALIDATION event type.
+// INTEGRATION_TRIGGER picker — exclude GitHub integrations whose ONLY
+// capability is PR_VALIDATE, since those App credentials are reserved
+// for the EXTERNAL_VALIDATION event type (posting check-runs back to
+// GitHub) and shouldn't show up as workflow-dispatch targets.
 const ciIntegrationsForSelect: ComputedRef<any[]> = computed((): any => {
     return ciIntegrations.value
-        .filter((x: any) => x.type !== 'GITHUB_VALIDATE')
+        .filter((x: any) => {
+            if (x.type !== 'GITHUB') return true
+            const caps: string[] = x.capabilities || []
+            return caps.length === 0 || caps.includes('WORKFLOW_DISPATCH')
+        })
         .map((x: any) => {return {label: x.note, value: x.uuid}})
 })
-// EXTERNAL_VALIDATION picker — only GITHUB_VALIDATE integrations.
+// EXTERNAL_VALIDATION picker — GitHub integrations with the PR_VALIDATE
+// capability are the only valid targets for posting check-runs / PR
+// comments back to GitHub.
 const validationIntegrationsForSelect: ComputedRef<any[]> = computed((): any => {
     return ciIntegrations.value
-        .filter((x: any) => x.type === 'GITHUB_VALIDATE')
+        .filter((x: any) => x.type === 'GITHUB' && (x.capabilities || []).includes('PR_VALIDATE'))
         .map((x: any) => {return {label: x.note, value: x.uuid}})
 })
 const selectedCiIntegration: ComputedRef<any> = computed((): any => {
@@ -1385,6 +1393,7 @@ async function fetchCiIntegrations() {
                                     isEnabled
                                     type
                                     note
+                                    capabilities
                               }
                           }`,
             variables: {
