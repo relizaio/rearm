@@ -1186,6 +1186,7 @@ const storeObject : any = {
                             closedDate
                             mergedDate
                             createdDate
+                            currentValidationState
                         }
                     }`,
                 variables: { orgUuid: org, states },

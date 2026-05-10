@@ -54,6 +54,23 @@ const vcsFilter = ref<string[]>([])
 
 const stateTagType = (s: string) => s === 'OPEN' ? 'success' : (s === 'MERGED' ? 'info' : 'default')
 
+// Maps the ValidationState enum onto the Naive tag palette. null and
+// PENDING are both "not yet decided" — render as warning so they pop
+// against terminal verdicts. SKIPPED / CANCELLED are terminal but not
+// pass/fail; rendered neutral.
+type ValidationDisplay = { label: string, type: 'success' | 'error' | 'warning' | 'info' | 'default' }
+const validationDisplay = (v: string | null | undefined): ValidationDisplay => {
+    switch (v) {
+        case 'SUCCESS': return { label: 'Success', type: 'success' }
+        case 'FAILURE': return { label: 'Failure', type: 'error' }
+        case 'PENDING': return { label: 'Pending', type: 'warning' }
+        case 'NEUTRAL': return { label: 'Neutral', type: 'default' }
+        case 'SKIPPED': return { label: 'Skipped', type: 'default' }
+        case 'CANCELLED': return { label: 'Cancelled', type: 'default' }
+        default: return { label: 'Pending', type: 'warning' }
+    }
+}
+
 // Calendar-day display (en-CA → ISO yyyy-mm-dd) for the cell, plus a
 // second-granularity tooltip so operators can see exact times without
 // the column getting unreadably wide.
@@ -127,6 +144,15 @@ const columns = computed<DataTableColumns<any>>(() => [
         width: 100,
         render: (row) => h(NTag, { type: stateTagType(row.state), size: 'small', bordered: false },
             { default: () => row.state || '—' })
+    },
+    {
+        title: 'Validation',
+        key: 'currentValidationState',
+        width: 110,
+        render: (row) => {
+            const d = validationDisplay(row.currentValidationState)
+            return h(NTag, { type: d.type, size: 'small', bordered: false }, { default: () => d.label })
+        }
     },
     {
         title: 'Target VCS',
