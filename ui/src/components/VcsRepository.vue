@@ -1,7 +1,20 @@
 <template>
     <div class="vcsRepoView">
         <div v-if="vcsRepo">
-            <h1>VCS Repository — {{ vcsRepo.name }}</h1>
+            <div class="title-row">
+                <h1>VCS Repository — {{ vcsRepo.name }}</h1>
+                <n-tooltip trigger="hover">
+                    <template #trigger>
+                        <n-icon
+                            size="28"
+                            class="pr-link"
+                            @click="goToPullRequests">
+                            <GitPullRequest/>
+                        </n-icon>
+                    </template>
+                    View Pull Requests for this VCS Repository
+                </n-tooltip>
+            </div>
             <div class="meta">URI: {{ vcsRepo.uri }}</div>
 
             <h3 class="mt-4">
@@ -61,14 +74,15 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { NButton, NForm, NFormItem, NIcon, NInput, NSelect, NSpace, NTooltip, useNotification } from 'naive-ui'
-import { QuestionMark } from '@vicons/tabler'
+import { QuestionMark, GitPullRequest } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 
 const store = useStore()
 const route = useRoute()
+const router = useRouter()
 const notification = useNotification()
 
 const vcsRepoUuid = computed(() => route.params.uuid as string)
@@ -209,6 +223,15 @@ async function loadAll() {
     if (fresh?.org) await fetchCiIntegrations(fresh.org)
 }
 
+const goToPullRequests = () => {
+    if (!vcsRepo.value?.org) return
+    router.push({
+        name: 'PullRequestsOfOrg',
+        params: { orguuid: vcsRepo.value.org },
+        query: { vcs: vcsRepoUuid.value }
+    })
+}
+
 onMounted(loadAll)
 watch(vcsRepoUuid, loadAll)
 </script>
@@ -216,6 +239,17 @@ watch(vcsRepoUuid, loadAll)
 <style scoped lang="scss">
 .vcsRepoView {
     padding: 1rem;
+}
+.title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    h1 { margin: 0; }
+}
+.pr-link {
+    cursor: pointer;
+    color: #4a89dc;
+    &:hover { color: #2c6bc4; }
 }
 .meta {
     color: #555;

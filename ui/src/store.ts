@@ -1164,11 +1164,13 @@ const storeObject : any = {
             context.commit('ADD_VCS_REPO', data.data.setVcsRepositoryOutputTriggers)
             return data.data.setVcsRepositoryOutputTriggers
         },
-        async fetchPullRequestsOfOrg (context: any, org: NonNullable<string>) {
+        async fetchPullRequestsOfOrg (context: any, payload: string | { org: string, states?: string[] }) {
+            const org = typeof payload === 'string' ? payload : payload.org
+            const states = typeof payload === 'string' ? undefined : payload.states
             const response = await graphqlClient.query({
                 query: gql`
-                    query pullRequestsOfOrg($orgUuid: ID!) {
-                        pullRequestsOfOrg(orgUuid: $orgUuid) {
+                    query pullRequestsOfOrg($orgUuid: ID!, $states: [String!]) {
+                        pullRequestsOfOrg(orgUuid: $orgUuid, states: $states) {
                             uuid
                             org
                             targetVcsRepository
@@ -1186,7 +1188,7 @@ const storeObject : any = {
                             createdDate
                         }
                     }`,
-                variables: { orgUuid: org },
+                variables: { orgUuid: org, states },
                 fetchPolicy: 'no-cache'
             })
             return response.data.pullRequestsOfOrg
