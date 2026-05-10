@@ -908,6 +908,10 @@
                 <OrgGlobalPrValidationRules :orgUuid="orgResolved" :isWritable="isWritable"/>
             </n-tab-pane>
 
+            <n-tab-pane name="globalApprovalPolicyRules" tab="Global Approval Policies" v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
+                <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
+            </n-tab-pane>
+
             <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
                 <div class="terminologyBlock mt-4">
                     <h5>Custom Terminology</h5>
@@ -1349,6 +1353,7 @@ import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
+import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 
