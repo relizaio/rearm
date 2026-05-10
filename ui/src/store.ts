@@ -1164,6 +1164,92 @@ const storeObject : any = {
             context.commit('ADD_VCS_REPO', data.data.setVcsRepositoryOutputTriggers)
             return data.data.setVcsRepositoryOutputTriggers
         },
+        async fetchOrgApprovalPolicyRules (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query orgApprovalPolicyRules {
+                        organizations {
+                            uuid
+                            globalApprovalPolicyRules {
+                                name
+                                namePattern
+                                componentType
+                                approvalPolicy
+                                approvalPolicyDetails {
+                                    uuid
+                                    policyName
+                                    status
+                                }
+                            }
+                        }
+                    }`,
+                fetchPolicy: 'no-cache'
+            })
+            const orgs = response.data.organizations || []
+            const found = orgs.find((o: any) => o.uuid === orgUuid)
+            return found?.globalApprovalPolicyRules || []
+        },
+        async setGlobalApprovalPolicyRules (context: any, payload: { orgUuid: string, rules: any[] }) {
+            const data = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setGlobalApprovalPolicyRules($orgUuid: ID!, $rules: [GlobalApprovalPolicyRuleInput!]!) {
+                        setGlobalApprovalPolicyRules(orgUuid: $orgUuid, rules: $rules) {
+                            uuid
+                            globalApprovalPolicyRules {
+                                name
+                                namePattern
+                                componentType
+                                approvalPolicy
+                                approvalPolicyDetails {
+                                    uuid
+                                    policyName
+                                    status
+                                }
+                            }
+                        }
+                    }`,
+                variables: { orgUuid: payload.orgUuid, rules: payload.rules }
+            })
+            return data.data.setGlobalApprovalPolicyRules.globalApprovalPolicyRules || []
+        },
+        async fetchEffectiveApprovalPolicy (context: any, componentUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query component($componentUuid: ID!) {
+                        component(componentUuid: $componentUuid) {
+                            uuid
+                            effectiveApprovalPolicy {
+                                source
+                                approvalPolicy
+                                ruleName
+                                alsoMatchedRuleNames
+                                perComponentPolicyArchived
+                                approvalPolicyDetails {
+                                    uuid
+                                    policyName
+                                    status
+                                }
+                            }
+                        }
+                    }`,
+                variables: { componentUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.component?.effectiveApprovalPolicy || null
+        },
+        async listApprovalPoliciesOfOrg (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query approvalPoliciesOfOrg($orgUuid: ID!) {
+                        approvalPoliciesOfOrg(orgUuid: $orgUuid) {
+                            uuid policyName status
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'network-only'
+            })
+            return response.data.approvalPoliciesOfOrg || []
+        },
         async fetchPullRequestsOfOrg (context: any, payload: string | { org: string, states?: string[] }) {
             const org = typeof payload === 'string' ? payload : payload.org
             const states = typeof payload === 'string' ? undefined : payload.states
