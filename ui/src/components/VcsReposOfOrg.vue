@@ -71,7 +71,7 @@ import { NInput, NModal, NCard, NDataTable, useNotification, NotificationType, N
 import { ComputedRef, h, ref, Ref, computed, Component, reactive, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, Trash, Search, Settings } from '@vicons/tabler'
+import { CirclePlus, Edit as EditIcon, ExternalLink, Eye, Check, X, Trash, Search, Settings, GitPullRequest } from '@vicons/tabler'
 import { useRouter } from 'vue-router'
 import { Icon } from '@vicons/utils'
 import CreateVcsRepository from '@/components/CreateVcsRepository.vue'
@@ -382,6 +382,19 @@ const vcsRepoFields: any[] = [
                             onClick: () => router.push({ name: 'VcsRepository', params: { uuid: row.uuid } })
                         },
                         () => h(Settings)),
+                    h(
+                        NIcon,
+                        {
+                            title: 'View Pull Requests for this VCS Repository',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => router.push({
+                                name: 'PullRequestsOfOrg',
+                                params: { orguuid: orguuid.value },
+                                query: { vcs: row.uuid }
+                            })
+                        },
+                        () => h(GitPullRequest)),
                     h(
                         NIcon,
                         {
