@@ -17,6 +17,28 @@
             </div>
             <div class="meta">URI: {{ vcsRepo.uri }}</div>
 
+            <div v-if="effective" class="provenance" :class="provenanceClass">
+                <div class="provenance-line">
+                    <strong>Effective trigger:</strong>
+                    <span v-if="effective.source === 'PER_VCS'">configured directly on this repository</span>
+                    <span v-else-if="effective.source === 'ORG_RULE'">
+                        inherited from org rule
+                        <code>{{ effective.ruleName }}</code>
+                    </span>
+                    <span v-else>none — the aggregator will not dispatch a check-run for this repository</span>
+                </div>
+                <div v-if="effective.alsoMatchedRuleNames && effective.alsoMatchedRuleNames.length" class="provenance-warn">
+                    Other org rules also match this URI:
+                    <code v-for="(n, i) in effective.alsoMatchedRuleNames" :key="n">{{ i ? ', ' : '' }}{{ n }}</code>.
+                    The first match wins; reorder rules in
+                    <em>Org Settings &rarr; Global PR Validation</em> to change priority.
+                </div>
+                <div v-if="effective.staleRuleNames && effective.staleRuleNames.length" class="provenance-warn">
+                    Org rules with broken integrations were skipped:
+                    <code v-for="(n, i) in effective.staleRuleNames" :key="n">{{ i ? ', ' : '' }}{{ n }}</code>.
+                </div>
+            </div>
+
             <h3 class="mt-4">
                 Pull-request validation
                 <n-tooltip trigger="hover">
@@ -172,6 +194,7 @@ const saveTrigger = async () => {
             vcsUuid: vcsRepoUuid.value,
             triggers: [trigger]
         })
+        await fetchEffective()
         notification.success({ title: 'Saved', content: 'PR validation trigger updated.', duration: 3500 })
         editing.value = false
     } catch (e: any) {
@@ -185,6 +208,7 @@ const clearTrigger = async () => {
             vcsUuid: vcsRepoUuid.value,
             triggers: []
         })
+        await fetchEffective()
         notification.success({ title: 'Removed', content: 'PR validation trigger cleared.', duration: 3500 })
     } catch (e: any) {
         notification.error({ title: 'Remove failed', content: e?.message || 'Unknown error', duration: 5000 })
@@ -217,10 +241,29 @@ async function fetchCiIntegrations(orgUuid: string) {
     }
 }
 
+const effective = ref<any>(null)
+
+const provenanceClass = computed(() => {
+    if (!effective.value) return ''
+    if (effective.value.source === 'NONE') return 'provenance-none'
+    return 'provenance-ok'
+})
+
+async function fetchEffective() {
+    if (!vcsRepoUuid.value) return
+    try {
+        effective.value = await store.dispatch('fetchEffectivePrValidationTrigger', vcsRepoUuid.value)
+    } catch (err) {
+        console.error(err)
+        effective.value = null
+    }
+}
+
 async function loadAll() {
     if (!vcsRepoUuid.value) return
     const fresh = await store.dispatch('fetchVcsRepo', vcsRepoUuid.value)
     if (fresh?.org) await fetchCiIntegrations(fresh.org)
+    await fetchEffective()
 }
 
 const goToPullRequests = () => {
@@ -267,6 +310,29 @@ watch(vcsRepoUuid, loadAll)
     border-radius: 4px;
     p { margin: 0.25rem 0; }
 }
+.provenance {
+    border-radius: 4px;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid;
+    font-size: 0.95em;
+    code { background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 3px; }
+}
+.provenance-ok {
+    background: #f4f8fc;
+    border-color: #cfe0ee;
+    color: #2c3e50;
+}
+.provenance-none {
+    background: #fff7e6;
+    border-color: #ffcf80;
+    color: #6b4500;
+}
+.provenance-warn {
+    margin-top: 0.4rem;
+    color: #b25400;
+}
+.provenance-line { margin-bottom: 0; }
 .mt-3 { margin-top: 0.75rem; }
 .mt-4 { margin-top: 1rem; }
 </style>
