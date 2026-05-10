@@ -1164,6 +1164,84 @@ const storeObject : any = {
             context.commit('ADD_VCS_REPO', data.data.setVcsRepositoryOutputTriggers)
             return data.data.setVcsRepositoryOutputTriggers
         },
+        async fetchOrgValidationTriggerRules (context: any, orgUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query org($orgUuid: ID!) {
+                        organizations {
+                            uuid
+                            globalPrValidationTriggerRules {
+                                name
+                                uriPattern
+                                trigger {
+                                    uuid
+                                    name
+                                    type
+                                    integration
+                                    schedule
+                                    checkName
+                                }
+                            }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            const orgs = response.data.organizations || []
+            const found = orgs.find((o: any) => o.uuid === orgUuid)
+            return found?.globalPrValidationTriggerRules || []
+        },
+        async setGlobalPrValidationTriggerRules (context: any, payload: { orgUuid: string, rules: any[] }) {
+            const data = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setGlobalPrValidationTriggerRules($orgUuid: ID!, $rules: [GlobalPrValidationTriggerRuleInput!]!) {
+                        setGlobalPrValidationTriggerRules(orgUuid: $orgUuid, rules: $rules) {
+                            uuid
+                            globalPrValidationTriggerRules {
+                                name
+                                uriPattern
+                                trigger {
+                                    uuid
+                                    name
+                                    type
+                                    integration
+                                    schedule
+                                    checkName
+                                }
+                            }
+                        }
+                    }`,
+                variables: { orgUuid: payload.orgUuid, rules: payload.rules }
+            })
+            return data.data.setGlobalPrValidationTriggerRules.globalPrValidationTriggerRules || []
+        },
+        async fetchEffectivePrValidationTrigger (context: any, vcsUuid: NonNullable<string>) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query vcsRepository($vcs: ID!) {
+                        vcsRepository(vcs: $vcs) {
+                            uuid
+                            effectivePrValidationTrigger {
+                                source
+                                ruleName
+                                alsoMatchedRuleNames
+                                staleRuleNames
+                                trigger {
+                                    uuid
+                                    name
+                                    type
+                                    integration
+                                    schedule
+                                    checkName
+                                }
+                            }
+                        }
+                    }`,
+                variables: { vcs: vcsUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.vcsRepository?.effectivePrValidationTrigger || null
+        },
         async fetchPullRequestsOfOrg (context: any, payload: string | { org: string, states?: string[] }) {
             const org = typeof payload === 'string' ? payload : payload.org
             const states = typeof payload === 'string' ? undefined : payload.states

@@ -904,6 +904,10 @@
                 </n-modal>
             </n-tab-pane>
 
+            <n-tab-pane name="globalPrValidation" tab="Global PR Validation" v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
+                <OrgGlobalPrValidationRules :orgUuid="orgResolved" :isWritable="isWritable"/>
+            </n-tab-pane>
+
             <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
                 <div class="terminologyBlock mt-4">
                     <h5>Custom Terminology</h5>
@@ -1344,6 +1348,7 @@ import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import WebhooksOfOrg from './WebhooksOfOrg.vue'
+import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 
