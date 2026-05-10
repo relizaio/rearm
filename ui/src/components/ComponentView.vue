@@ -372,6 +372,29 @@
                                                 v-if="isWritable"
                                                 :options="approvalPolicies" v-model:value="updatedComponent.approvalPolicy" />
                                             <div v-else>{{ resolvedVisibilityLabel }}</div>
+                                            <div v-if="effectiveApprovalPolicy" class="provenance" :class="provenanceClass" style="margin-top: 8px;">
+                                                <div class="provenance-line">
+                                                    <strong>Effective policy:</strong>
+                                                    <span v-if="effectiveApprovalPolicy.source === 'PER_COMPONENT'">
+                                                        <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
+                                                        (per-component, this row)
+                                                    </span>
+                                                    <span v-else-if="effectiveApprovalPolicy.source === 'ORG_RULE'">
+                                                        <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
+                                                        — inherited from org rule <code>{{ effectiveApprovalPolicy.ruleName }}</code>
+                                                    </span>
+                                                    <span v-else>none — no per-component reference and no matching org rule</span>
+                                                </div>
+                                                <div v-if="effectiveApprovalPolicy.perComponentPolicyArchived" class="provenance-warn">
+                                                    The per-component approval-policy reference points to an archived or
+                                                    missing policy; resolution fell through to the org-wide rule list.
+                                                </div>
+                                                <div v-if="effectiveApprovalPolicy.alsoMatchedRuleNames && effectiveApprovalPolicy.alsoMatchedRuleNames.length" class="provenance-warn">
+                                                    Other org rules also match this component:
+                                                    <code v-for="(n, i) in effectiveApprovalPolicy.alsoMatchedRuleNames" :key="n">{{ i ? ', ' : '' }}{{ n }}</code>.
+                                                    First-match-wins; reorder in <em>Org Settings &rarr; Global Approval Policies</em> to change priority.
+                                                </div>
+                                            </div>
                                         </div>
                                         <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable" style="margin-top: 20px;">
                                             <n-space>
@@ -1207,6 +1230,32 @@ const resourceGroups: ComputedRef<any> = computed((): any => {
 
 const approvalPolicies : Ref<any[]> = ref([])
 
+// Snapshot of the resolved approval policy for this component:
+// per-component reference vs inherited from a Global Approval Policy
+// rule vs none. Used to render the provenance card in the Core
+// Settings tab. Refetched after a save so a freshly-saved per-component
+// reference is reflected immediately.
+const effectiveApprovalPolicy : Ref<any> = ref(null)
+const provenanceClass = computed(() => {
+    if (!effectiveApprovalPolicy.value) return ''
+    if (effectiveApprovalPolicy.value.source === 'NONE') return 'provenance-none'
+    if (effectiveApprovalPolicy.value.perComponentPolicyArchived) return 'provenance-warn-bg'
+    return 'provenance-ok'
+})
+
+async function fetchEffectiveApprovalPolicy () {
+    if (myUser.installationType === 'OSS' || !componentData.value?.uuid) {
+        effectiveApprovalPolicy.value = null
+        return
+    }
+    try {
+        effectiveApprovalPolicy.value = await store.dispatch('fetchEffectiveApprovalPolicy', componentData.value.uuid)
+    } catch (err) {
+        console.error(err)
+        effectiveApprovalPolicy.value = null
+    }
+}
+
 async function fetchApprovalPolicies () {
     if (myUser.installationType !== 'OSS') {
         const response = await graphqlClient.query({
@@ -1233,6 +1282,7 @@ async function fetchApprovalPolicies () {
 
 const openComponentSettings = async function() {
     await fetchApprovalPolicies()
+    await fetchEffectiveApprovalPolicy()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     showComponentSettingsModal.value = true
     
@@ -1907,6 +1957,10 @@ async function save () {
     updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', updatedComponent.value))
     // Update originalComponent to match current state so hasComponentChanges() returns false
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
+    // Refresh the effective-policy snapshot so the provenance card
+    // reflects whatever the operator just saved (or cleared, in which
+    // case the resolver may now fall through to an org rule).
+    await fetchEffectiveApprovalPolicy()
     notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
 }
 
@@ -3117,5 +3171,33 @@ projSettingsCollapse {
 .componentIconsAndSettings {
     margin-bottom: 5px;
 }
+
+.provenance {
+    border-radius: 4px;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid;
+    font-size: 0.9em;
+    code { background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 3px; }
+}
+.provenance-ok {
+    background: #f4f8fc;
+    border-color: #cfe0ee;
+    color: #2c3e50;
+}
+.provenance-none {
+    background: #fff7e6;
+    border-color: #ffcf80;
+    color: #6b4500;
+}
+.provenance-warn-bg {
+    background: #fff7e6;
+    border-color: #ffcf80;
+    color: #6b4500;
+}
+.provenance-warn {
+    margin-top: 0.4rem;
+    color: #b25400;
+}
+.provenance-line { margin-bottom: 0; }
 
 </style>
