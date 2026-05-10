@@ -81,16 +81,20 @@ const fmtDate = (raw: string | null | undefined) => {
     return d.toLocaleDateString('en-CA')
 }
 
+const pad = (n: number) => n.toString().padStart(2, '0')
+
+// yyyy-mm-dd HH:MM:SS, formatted by hand so the local row matches the
+// UTC row's shape — Intl.DateTimeFormat would render mm/dd/yyyy or a
+// locale-specific separator depending on the user's browser settings.
 const fmtFull = (raw: string | null | undefined) => {
     if (!raw) return null
     const d = new Date(raw)
     if (Number.isNaN(d.getTime())) return null
-    const utc = d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC')
-    const local = d.toLocaleString(undefined, {
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-    })
-    return `${utc}\nlocal: ${local}`
+    const utc = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} `
+        + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`
+    const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
+        + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} local`
+    return `${utc}\n${local}`
 }
 
 const renderDateCell = (raw: string | null | undefined) => {
