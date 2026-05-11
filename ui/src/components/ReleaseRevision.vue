@@ -110,15 +110,66 @@ import { ref, Ref, ComputedRef, computed } from 'vue'
 import { useStore } from 'vuex'
 import { NModal, NTooltip, NIcon, useNotification, NotificationType } from 'naive-ui'
 import { Download, GitCommit, ExternalLink, Box } from '@vicons/tabler'
+import gql from 'graphql-tag'
+import graphqlClient from '@/utils/graphql'
 import ReleaseView from '@/components/ReleaseView.vue'
 
 import commonFunctions from '@/utils/commonFunctions'
+
+// Slim queries used by the diff view. The full SingleReleaseGql /
+// MultiReleaseGqlData fetches pulled in artifactDetails (with metrics/tags/
+// enrichment), inboundDeliverableDetails, commitsDetails, inProducts,
+// approvalEvents, updateEvents, variantDetails, metrics, releaseCollection,
+// intermediateFailedReleases, and recursive parent payloads — none of which
+// this template renders. For a product release with many components those
+// payloads dominate the right-pane load time.
+const RELEASE_DIFF_QUERY = gql`
+    query FetchReleaseForDiff($releaseID: ID!, $orgID: ID) {
+        release(releaseUuid: $releaseID, orgUuid: $orgID) {
+            uuid
+            version
+            org
+            type
+            componentDetails { uuid name type resourceGroup }
+            branchDetails { uuid name }
+            parentReleases {
+                release
+                artifact
+                type
+                namespace
+                state
+            }
+        }
+    }
+`
+
+const PARENT_RELEASES_DIFF_QUERY = gql`
+    query FetchParentReleasesForDiff($orgId: ID!, $releaseIds: [ID]) {
+        releases(orgFilter: $orgId, releaseFilter: $releaseIds) {
+            uuid
+            version
+            type
+            componentDetails { uuid name type resourceGroup }
+            branchDetails { uuid name }
+            sourceCodeEntryDetails {
+                commit
+                vcsRepository { uri }
+            }
+            artifactDetails {
+                uuid
+                displayIdentifier
+                digestRecords { algo digest }
+            }
+        }
+    }
+`
 
 const props = defineProps<{
     releaseUuid: String,
     otherInstanceUuid: String,
     otherRevision: Number,
-    otherRevisionType: String
+    otherRevisionType: String,
+    orgprop?: String
 }>()
 
 const store = useStore()
@@ -127,6 +178,11 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 
 const release: any = ref({})
+
+// Parent releases for this diff view, keyed by release UUID. Kept local so the
+// slim payload doesn't overwrite full release rows in the Vuex store that
+// other components (ReleaseView, ReleaseEl, etc.) depend on.
+const parentReleasesMap: Ref<Map<string, any>> = ref(new Map())
 
 const showReleaseViewModal = ref(false)
 
@@ -139,7 +195,7 @@ const deployedReleases: ComputedRef<any> = computed((): any => {
     let deployedRls: any[] = []
     if (release.value && release.value.parentReleases && release.value.parentReleases.length) {
         release.value.parentReleases.forEach((rl: any, index: number) => {
-            let deployedRl = store.getters.releaseById(rl.release)
+            let deployedRl = parentReleasesMap.value.get(rl.release)
             if(!deployedRl){
                 deployedRl = store.getters.getProxyRelease(rl.release)
             }
@@ -252,36 +308,30 @@ const notify = async function (type: NotificationType, title: string, content: s
 }
 
 const onCreate = async function () {
-    const rlzFetchObj: any = {
-        release: props.releaseUuid
-    }
-    if (props.orgprop) {
-        rlzFetchObj.org = props.orgprop
-    }
-    release.value = await store.dispatch('fetchReleaseById', rlzFetchObj)
-    if (release.value) releaseUuid.value = release.value.uuid
+    const variables: any = { releaseID: props.releaseUuid }
+    if (props.orgprop) variables.orgID = props.orgprop
+    const resp = await graphqlClient.query({
+        query: RELEASE_DIFF_QUERY,
+        variables,
+        fetchPolicy: 'no-cache'
+    })
+    release.value = (resp.data as any)?.release || {}
+    if (release.value && release.value.uuid) releaseUuid.value = release.value.uuid
     if (!release.value.type) release.value.type = 'REGULAR'
-    let rlzUuidsToFetch: any[] = []
-    // fetch parent releases
+
     if (release.value.parentReleases && release.value.parentReleases.length) {
-        rlzUuidsToFetch = rlzUuidsToFetch.concat(release.value.parentReleases.map((rl: any) => rl.release))
-    }
-    if (rlzUuidsToFetch.length) {
-        let fetchRlzParams = {
-            org: release.value.org,
-            releases: rlzUuidsToFetch
-        }
-        await store.dispatch('fetchReleasesByOrgUuids', fetchRlzParams)
-        release.value.parentReleases.forEach(async(rl: any, index: number) => {
-            const deployedRl = store.getters.releaseById(rl.release)
-            if(!deployedRl){
-                await store.dispatch('fetchReleaseById', {release: rl.release, org: release.value.org})
-            }
+        const releaseIds = release.value.parentReleases.map((rl: any) => rl.release)
+        const parentsResp = await graphqlClient.query({
+            query: PARENT_RELEASES_DIFF_QUERY,
+            variables: { orgId: release.value.org, releaseIds },
+            fetchPolicy: 'no-cache'
         })
-        parentRlzLoaded.value = true
-    } else {
-        parentRlzLoaded.value = true
+        const map = new Map<string, any>()
+        const rows = ((parentsResp.data as any)?.releases) || []
+        rows.forEach((r: any) => map.set(r.uuid, r))
+        parentReleasesMap.value = map
     }
+    parentRlzLoaded.value = true
 }
 
 await onCreate()
