@@ -134,10 +134,6 @@ const RELEASE_DIFF_QUERY = gql`
             branchDetails { uuid name }
             parentReleases {
                 release
-                artifact
-                type
-                namespace
-                state
             }
         }
     }
