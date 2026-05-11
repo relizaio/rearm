@@ -1167,7 +1167,7 @@ const storeObject : any = {
         async fetchOrgValidationTriggerRules (context: any, orgUuid: NonNullable<string>) {
             const response = await graphqlClient.query({
                 query: gql`
-                    query org($orgUuid: ID!) {
+                    query orgValidationTriggerRules {
                         organizations {
                             uuid
                             globalPrValidationTriggerRules {
@@ -1184,7 +1184,6 @@ const storeObject : any = {
                             }
                         }
                     }`,
-                variables: { orgUuid },
                 fetchPolicy: 'no-cache'
             })
             const orgs = response.data.organizations || []

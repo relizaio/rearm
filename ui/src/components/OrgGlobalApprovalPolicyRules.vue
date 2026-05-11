@@ -1,7 +1,7 @@
 <template>
     <div class="global-approval-policy-rules">
         <div class="header">
-            <h4>Global Approval Policy Assignments</h4>
+            <h4>Global Policy Assignment</h4>
             <n-tooltip trigger="hover">
                 <template #trigger>
                     <n-icon size="16" style="cursor: help;"><QuestionMark/></n-icon>
