@@ -265,7 +265,11 @@ const onComponentChange = function (componentId: string) {
 
 const onBranchChange = async function (branchId: string) {
     isReleasesLoading.value = true
-    // need to fetch releases here as store releases are unreliable in this case and also too bulky
+    // The previous cap (10 000) made this query slow for branches with long
+    // release histories — the dropdown is filterable but renders the whole
+    // list, so the cost is paid up front. Most "pick a release" flows surface
+    // recent releases; cap to 500 most recent and rely on client-side sort
+    // below so users still see newest first regardless of server ordering.
     const branchRlzResponse = await graphqlClient.query({
         query: gql`
             query FetchReleases($branchID: ID!, $numRecords: Int) {
@@ -275,18 +279,19 @@ const onBranchChange = async function (branchId: string) {
                     version
                 }
             }`,
-        variables: { branchID: branchId, numRecords: 10000 },
+        variables: { branchID: branchId, numRecords: 500 },
         fetchPolicy: 'no-cache'
     })
 
-    let srMap: any[] = []
-    srMap = branchRlzResponse.data.releases.map((r: any) => {
-        const rObj = {
-            label: r.version + " - " + (new Date(r.createdDate)).toLocaleString('en-CA'),
-            value: r.uuid
-        }
-        return rObj
+    const releases = (branchRlzResponse.data.releases || []).slice().sort((a: any, b: any) => {
+        const ad = new Date(a.createdDate).getTime()
+        const bd = new Date(b.createdDate).getTime()
+        return bd - ad
     })
+    const srMap: any[] = releases.map((r: any) => ({
+        label: r.version + " - " + (new Date(r.createdDate)).toLocaleString('en-CA'),
+        value: r.uuid
+    }))
     if (!props.disallowCreateRelease) {
         srMap.push({
             label: 'Add new release',
@@ -342,12 +347,18 @@ const onSubmit = async function () {
 const onCreate = async function () {
     if (!release.value.org) {
         store.dispatch('fetchMyOrganizations')
-    } else {
+    } else if (!props.inputComponent && !props.inputBranch) {
+        // Component / product picker is only rendered when neither input is
+        // provided (see template). Skip the org-wide component & product
+        // fetches when the caller has already pinned the context, e.g. the
+        // "Set Target Release" / "Change Feature Set" modals.
         store.dispatch('fetchComponents', release.value.org)
         store.dispatch('fetchProducts', release.value.org)
     }
 
-    if (props.inputComponent) {
+    if (props.inputComponent && !props.inputBranch) {
+        // Branch picker is hidden when inputBranch is already set, so the
+        // branches list is unused in that case.
         store.dispatch('fetchBranches', props.inputComponent)
     }
     if (props.inputBranch) {
