@@ -370,6 +370,8 @@
                                             <label>Approval Policy</label>
                                             <n-select
                                                 v-if="isWritable"
+                                                clearable
+                                                placeholder="Select an approval policy (or clear to remove)"
                                                 :options="approvalPolicies" v-model:value="updatedComponent.approvalPolicy" />
                                             <div v-else>{{ resolvedVisibilityLabel }}</div>
                                             <div v-if="effectiveApprovalPolicy" class="provenance" :class="provenanceClass" style="margin-top: 8px;">
@@ -377,22 +379,22 @@
                                                     <strong>Effective policy:</strong>
                                                     <span v-if="effectiveApprovalPolicy.source === 'PER_COMPONENT'">
                                                         <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
-                                                        (set directly on this component)
+                                                        (set directly on this {{ words.component }})
                                                     </span>
                                                     <span v-else-if="effectiveApprovalPolicy.source === 'ORG_RULE'">
                                                         <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
                                                         — inherited from org rule <code>{{ effectiveApprovalPolicy.ruleName }}</code>
                                                     </span>
-                                                    <span v-else>none — no per-component reference and no matching org rule</span>
+                                                    <span v-else>none — no per-{{ words.component }} reference and no matching org rule</span>
                                                 </div>
                                                 <div v-if="effectiveApprovalPolicy.perComponentPolicyArchived" class="provenance-warn">
-                                                    The per-component approval-policy reference points to an archived or
+                                                    The per-{{ words.component }} approval-policy reference points to an archived or
                                                     missing policy; resolution fell through to the org-wide rule list.
                                                 </div>
                                                 <div v-if="effectiveApprovalPolicy.alsoMatchedRuleNames && effectiveApprovalPolicy.alsoMatchedRuleNames.length" class="provenance-warn">
-                                                    Other org rules also match this component:
+                                                    Other org rules also match this {{ words.component }}:
                                                     <code v-for="(n, i) in effectiveApprovalPolicy.alsoMatchedRuleNames" :key="n">{{ i ? ', ' : '' }}{{ n }}</code>.
-                                                    First-match-wins; reorder in <em>Org Settings &rarr; Global Approval Policies</em> to change priority.
+                                                    First-match-wins; reorder in <em>Org Settings &rarr; Policies &rarr; Global Policy Assignment</em> to change priority.
                                                 </div>
                                             </div>
                                         </div>
@@ -1954,7 +1956,16 @@ const fetchVcsRepos = async function () : Promise<any[]> {
 }
 
 async function save () {
-    updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', updatedComponent.value))
+    // approvalPolicy is sent as null both for "leave unchanged" (server
+    // convention) and "clear" (UI operator hit the clearable X). We
+    // disambiguate by setting an explicit clearApprovalPolicy flag when
+    // the prior saved value was non-null and the in-memory value has
+    // gone to null — the server then knows to actually clear it.
+    const payload: any = { ...updatedComponent.value }
+    if (componentData.value?.approvalPolicy && !updatedComponent.value.approvalPolicy) {
+        payload.clearApprovalPolicy = true
+    }
+    updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', payload))
     // Update originalComponent to match current state so hasComponentChanges() returns false
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     // Refresh the effective-policy snapshot so the provenance card
