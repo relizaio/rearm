@@ -978,6 +978,7 @@ const storeObject : any = {
                 versionType: component.versionType,
                 branchSuffixMode: component.branchSuffixMode || 'INHERIT',
                 approvalPolicy: component.approvalPolicy,
+                clearApprovalPolicy: component.clearApprovalPolicy || false,
                 outputTriggers: stripTriggerFields(component.outputTriggers),
                 releaseInputTriggers: stripTriggerFields(component.releaseInputTriggers),
                 globalInputEventRefs: component.globalInputEventRefs?.map(({ uuid, overrideOutputEventsLocally, outputEventsOverride }: any) => ({ uuid, overrideOutputEventsLocally, outputEventsOverride })),
