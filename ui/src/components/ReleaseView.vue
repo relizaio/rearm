@@ -735,9 +735,18 @@
                         </h3>
                         <n-data-table :data="inboundDeliverables" :columns="deliverableTableFields" :row-key="artifactsRowKey" />
                     </div>
-                    <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT'">
-                        <h3>Part of Products</h3>
-                        <n-data-table :data="updatedRelease.inProducts" :columns="inProductsTableFields" :row-key="artifactsRowKey" />
+                </n-tab-pane>
+                <n-tab-pane v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'COMPONENT'" name="partOfProducts" tab="Part of Products">
+                    <div class="container" v-if="inProductsLoading">
+                        <n-spin size="large" />
+                        <p>Loading products that ship this release…</p>
+                    </div>
+                    <div class="container" v-else-if="inProductsLoaded">
+                        <n-data-table v-if="inProductsList.length" :data="inProductsList" :columns="inProductsTableFields" :row-key="artifactsRowKey" />
+                        <p v-else>This release isn't part of any product release.</p>
+                    </div>
+                    <div class="container" v-else>
+                        <p>Open this tab to load the list of product releases that include this release.</p>
                     </div>
                 </n-tab-pane>
                 <n-tab-pane v-if="isProductRelease" name="underlyingArtifacts" tab="Underlying Artifacts">
@@ -1474,6 +1483,14 @@ const isLoading: Ref<boolean> = ref(true)
 const isProductRelease: Ref<boolean> = ref(false)
 const productArtifactsLoaded: Ref<boolean> = ref(false)
 const productArtifactsLoading: Ref<boolean> = ref(false)
+
+// "Part of Products" is fetched lazily — the resolver scans every release
+// that lists this one as a parent, which is expensive for components that
+// ship across many product releases (the original symptom that prompted
+// pulling this out of the main FetchRelease payload).
+const inProductsLoaded: Ref<boolean> = ref(false)
+const inProductsLoading: Ref<boolean> = ref(false)
+const inProductsList: Ref<any[]> = ref([])
 
 async function detectIsProduct (): Promise<boolean> {
     // Check if release is already in store with component type info
@@ -5494,6 +5511,22 @@ async function fetchProductArtifacts () {
     }
 }
 
+async function fetchInProducts () {
+    if (inProductsLoaded.value || inProductsLoading.value) return
+    inProductsLoading.value = true
+    try {
+        const rlzFetchObj: any = { release: releaseUuid.value }
+        if (props.orgprop) rlzFetchObj.org = props.orgprop
+        inProductsList.value = await store.dispatch('fetchReleaseInProducts', rlzFetchObj)
+        inProductsLoaded.value = true
+    } catch (e: any) {
+        console.error('Failed to fetch inProducts:', e)
+        notify('error', 'Error', 'Failed to load products that ship this release.')
+    } finally {
+        inProductsLoading.value = false
+    }
+}
+
 async function handleTabSwitch(tabName: string) {
     if (tabName === "compare") {
         await fetchReleases()
@@ -5503,6 +5536,8 @@ async function handleTabSwitch(tabName: string) {
         await fetchProductArtifacts()
     } else if (tabName === "sbomComponents") {
         await loadSbomComponents()
+    } else if (tabName === "partOfProducts") {
+        await fetchInProducts()
     }
 }
 

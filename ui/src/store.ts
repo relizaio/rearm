@@ -784,6 +784,14 @@ const storeObject : any = {
             })
             return response.data.release
         },
+        async fetchReleaseInProducts (context: any, params: any) {
+            const response = await graphqlClient.query({
+                query: graphqlQueries.FetchReleaseInProductsGql,
+                variables: { releaseID: params.release, orgID: params.org },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.release?.inProducts || []
+        },
         async updateBranch (context: any, brProps: any) {
             let dependencies = []
             if (brProps.dependencies && brProps.dependencies.length) {
