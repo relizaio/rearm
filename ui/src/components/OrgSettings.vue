@@ -587,14 +587,16 @@
                 </div>
             </n-tab-pane>
 
-            <n-tab-pane name="approvalPolicies" tab="Approval Policies" v-if="myUser.installationType !== 'OSS'">
+            <n-tab-pane name="policies" tab="Policies" v-if="myUser.installationType !== 'OSS'">
                 <div class="programmaticAccessBlock mt-4">
                     <n-space v-if="showPopulateApprovalDefaultsButton" style="margin-bottom: 16px;">
                         <n-button type="primary" @click="showPopulateApprovalDefaultsModal = true">
                             Populate Default Approval Setup
                         </n-button>
                     </n-space>
-                    <h4>Approval Roles:                        
+                    <n-tabs type="line" default-value="approvalRoles" animated>
+                    <n-tab-pane name="approvalRoles" tab="Approval Roles">
+                    <h4>Approval Roles:
                         <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Role" @click="showCreateApprovalRole = true">
                             <CirclePlus/>
                         </Icon>
@@ -622,6 +624,9 @@
                         </n-form>
                     </n-modal>
 
+                    </n-tab-pane>
+
+                    <n-tab-pane name="approvalEntries" tab="Approval Entries">
                     <h4>Approval Entries:
                         <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Entry" @click="showCreateApprovalEntry = true">
                             <CirclePlus/>
@@ -640,6 +645,9 @@
                             :isHideTitle="true" 
                             @approvalEntryCreated="approvalEntryCreated"/>
                     </n-modal>
+                    </n-tab-pane>
+
+                    <n-tab-pane name="approvalPoliciesInner" tab="Approval Policies">
                     <h4>Approval Policies:
                         <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Policy" @click="showCreateApprovalPolicy = true">
                             <CirclePlus/>
@@ -660,12 +668,16 @@
                             @approvalPolicyCreated="approvalPolicyCreated"/>
                     </n-modal>
 
+                    <div v-if="!selectedPolicyUuid" class="text-muted" style="margin-top: 12px;">
+                        Click an approval policy row above to manage its rules and actions.
+                    </div>
+                    <template v-if="selectedPolicyUuid">
                     <h4>Policy-Wide Actions:
-                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Action" @click="resetGlobalOutputEvent(); loadEnvironmentTypesForOutputEvents(); showCreateGlobalOutputEventModal = true">
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Policy-Wide Action" @click="resetGlobalOutputEvent(); loadEnvironmentTypesForOutputEvents(); showCreateGlobalOutputEventModal = true">
                             <CirclePlus/>
                         </Icon>
                     </h4>
-                    <div v-if="selectedPolicyUuid">
+                    <div>
                         <n-data-table :data="globalOutputEvents" :columns="globalOutputEventTableFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
                         <n-modal
                             v-model:show="showCreateGlobalOutputEventModal"
@@ -813,11 +825,11 @@
                     </div>
 
                     <h4>Policy-Wide Rules:
-                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Rule" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
+                        <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Add Policy-Wide Rule" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
                             <CirclePlus/>
                         </Icon>
                     </h4>
-                    <div v-if="selectedPolicyUuid">
+                    <div>
                         <n-data-table :data="globalInputEvents" :columns="globalInputEventTableFields" :row-key="dataTableRowKey" :pagination="globalEventsPagination" />
                         <n-modal
                             v-model:show="showCreateGlobalInputEventModal"
@@ -847,7 +859,17 @@
                             </n-form>
                         </n-modal>
                     </div>
-                    <div v-else class="text-muted">Click an approval policy row above to manage its global events.</div>
+                    </template>
+                    </n-tab-pane>
+
+                    <n-tab-pane name="globalPrValidation" tab="Global PR Validation" v-if="isOrgAdmin">
+                        <OrgGlobalPrValidationRules :orgUuid="orgResolved" :isWritable="isWritable"/>
+                    </n-tab-pane>
+
+                    <n-tab-pane name="globalPolicyAssignment" tab="Global Policy Assignment" v-if="isOrgAdmin">
+                        <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
+                    </n-tab-pane>
+                    </n-tabs>
                 </div>
                 <n-modal
                     v-model:show="showPopulateApprovalDefaultsModal"
@@ -902,14 +924,6 @@
                         </n-space>
                     </n-card>
                 </n-modal>
-            </n-tab-pane>
-
-            <n-tab-pane name="globalPrValidation" tab="Global PR Validation" v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
-                <OrgGlobalPrValidationRules :orgUuid="orgResolved" :isWritable="isWritable"/>
-            </n-tab-pane>
-
-            <n-tab-pane name="globalApprovalPolicyRules" tab="Global Approval Policies" v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
-                <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
             </n-tab-pane>
 
             <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
@@ -1413,7 +1427,7 @@ async function loadTabSpecificData (tabName: string) {
         await loadUsers()
         if (myUser.value.installationType === 'SAAS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
-    } else if (tabName === "approvalPolicies") {
+    } else if (tabName === "policies") {
         fetchApprovalEntries()
         fetchApprovalPolicies()
         // Approval-policy global output events include EXTERNAL_VALIDATION
@@ -1628,7 +1642,7 @@ const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
 })
 
 // Tab management with router integration
-const defaultTab = isOrgAdmin.value ? 'integrations' : 'approvalPolicies'
+const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 const currentTab = ref(route.query.tab as string || defaultTab)
 
 const approvalRoleFields: any[] = [
