@@ -981,7 +981,7 @@ const storeObject : any = {
                 clearApprovalPolicy: component.clearApprovalPolicy || false,
                 outputTriggers: stripTriggerFields(component.outputTriggers),
                 releaseInputTriggers: stripTriggerFields(component.releaseInputTriggers),
-                globalInputEventRefs: component.globalInputEventRefs?.map(({ uuid, overrideOutputEventsLocally, outputEventsOverride }: any) => ({ uuid, overrideOutputEventsLocally, outputEventsOverride })),
+                globalInputEventRefs: component.globalInputEventRefs?.map(({ uuid, disabled, overrideOutputEventsLocally, outputEventsOverride }: any) => ({ uuid, disabled: disabled || false, overrideOutputEventsLocally: overrideOutputEventsLocally || false, outputEventsOverride: outputEventsOverride || [] })),
                 identifiers: component.identifiers?.map(({ idType, idValue }: any) => ({ idType, idValue })),
                 authentication: component.authentication ? { login: component.authentication.login, password: component.authentication.password, type: component.authentication.type } : null,
                 // INHERIT explicitly clears any prior override (server normalizes to null).
@@ -1291,6 +1291,11 @@ const storeObject : any = {
             return data.data.setGlobalApprovalPolicyRules.globalApprovalPolicyRules || []
         },
         async fetchEffectiveApprovalPolicy (context: any, componentUuid: NonNullable<string>) {
+            // Rules section in ComponentView renders from this payload when
+            // the policy is assigned via an org rule (no
+            // updatedComponent.approvalPolicyDetails). Mirror the fields the
+            // tab needs so users can opt-out of rules / override actions
+            // without a separate query.
             const response = await graphqlClient.query({
                 query: gql`
                     query component($componentUuid: ID!) {
@@ -1306,6 +1311,17 @@ const storeObject : any = {
                                     uuid
                                     policyName
                                     status
+                                    globalInputEvents {
+                                        uuid
+                                        name
+                                        celExpression
+                                        outputEvents
+                                    }
+                                    globalOutputEvents {
+                                        uuid
+                                        name
+                                        type
+                                    }
                                 }
                             }
                         }
