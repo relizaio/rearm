@@ -1,4 +1,4 @@
-FROM ghcr.io/cyclonedx/cdxgen:v12.2.0@sha256:2bec9267cdffa2f8ecfadcfc186f9a2d25e89c4088f79b5a683ec33171ef1fc3 AS sbom-stage
+FROM ghcr.io/cyclonedx/cdxgen:v12.3.3@sha256:9696cf075974cca979da8c11d20211e0097585382be4ea617a2a23b364798eaa AS sbom-stage
 ARG VERSION
 USER root
 RUN mkdir /sbom && chown cyclonedx:cyclonedx /sbom
