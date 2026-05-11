@@ -2814,7 +2814,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
     },
     {
         key: 'outputTriggers',
-        title: 'Actions',
+        title: 'Policy Actions',
         render: (row: any) => {
             let outTriggers = ''
             if (row.outputEvents && row.outputEvents.length) {

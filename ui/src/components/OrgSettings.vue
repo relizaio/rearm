@@ -6325,7 +6325,7 @@ const globalInputEventTableFields: DataTableColumns<any> = [
     },
     {
         key: 'outputTriggers',
-        title: 'Actions',
+        title: 'Policy Actions',
         minWidth: 153,
         render: (row: any) => {
             let outNames = ''
