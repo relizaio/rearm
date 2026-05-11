@@ -30,7 +30,7 @@ export function validateInputTrigger(trigger: any): TriggerValidationResult {
     }
 
     if (!trigger.outputEvents || trigger.outputEvents.length === 0) {
-        return { valid: false, error: 'At least one output event must be selected.' }
+        return { valid: false, error: 'At least one action must be selected.' }
     }
 
     return { valid: true }

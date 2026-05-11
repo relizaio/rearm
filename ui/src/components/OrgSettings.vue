@@ -660,8 +660,8 @@
                             @approvalPolicyCreated="approvalPolicyCreated"/>
                     </n-modal>
 
-                    <h4>Policy-Wide Output Events:
-                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Output Event" @click="resetGlobalOutputEvent(); loadEnvironmentTypesForOutputEvents(); showCreateGlobalOutputEventModal = true">
+                    <h4>Policy-Wide Actions:
+                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Action" @click="resetGlobalOutputEvent(); loadEnvironmentTypesForOutputEvents(); showCreateGlobalOutputEventModal = true">
                             <CirclePlus/>
                         </Icon>
                     </h4>
@@ -674,7 +674,7 @@
                             style="width: 90%"
                         >
                             <n-form :model="globalOutputEvent">
-                                <h2>{{ globalOutputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Output Event</h2>
+                                <h2>{{ globalOutputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Action</h2>
                                 <n-space vertical size="large">
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="globalOutputEvent.name" required placeholder="Enter name" />
@@ -689,7 +689,7 @@
                                         <n-select v-model:value="globalOutputEvent.integration" placeholder="Select Integration" :options="ciIntegrationsForGlobalSelect" />
                                     </n-form-item>
                                     <n-alert v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && (selectedGlobalCiIntegration.type === 'GITHUB' || selectedGlobalCiIntegration.type === 'GITLAB')" type="info" :show-icon="false" style="font-size: 12px; margin-bottom: 8px;">
-                                        Policy-wide events use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this trigger is silently skipped for that component.
+                                        Policy-wide actions use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this action is silently skipped for that component.
                                     </n-alert>
                                     <n-form-item v-if="globalOutputEvent.type === 'INTEGRATION_TRIGGER' && selectedGlobalCiIntegration && selectedGlobalCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
                                         <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
@@ -719,7 +719,7 @@
                                         <n-select v-model:value="globalOutputEvent.integration" placeholder="Select GitHub Validate Integration" :options="validationIntegrationsForGlobalSelect" />
                                     </n-form-item>
                                     <n-alert v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" type="info" :show-icon="false" style="font-size: 12px; margin-bottom: 8px;">
-                                        Policy-wide events use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this trigger is silently skipped for that component.
+                                        Policy-wide actions use the <strong>component's VCS</strong> at fire time. If a participating component has no VCS configured, this action is silently skipped for that component.
                                     </n-alert>
                                     <n-form-item v-if="globalOutputEvent.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
                                         <n-input v-model:value="globalOutputEvent.schedule" required placeholder="Enter GitHub Installation ID" />
@@ -812,8 +812,8 @@
                         </n-modal>
                     </div>
 
-                    <h4>Policy-Wide Input Events:
-                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Input Event" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
+                    <h4>Policy-Wide Rules:
+                        <Icon v-if="isWritable && selectedPolicyUuid" class="clickable addIcon" size="25" title="Add Policy-Wide Rule" @click="resetGlobalInputEvent(); showCreateGlobalInputEventModal = true">
                             <CirclePlus/>
                         </Icon>
                     </h4>
@@ -826,7 +826,7 @@
                             style="width: 90%"
                         >
                             <n-form :model="globalInputEvent">
-                                <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Input Event</h2>
+                                <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Rule</h2>
                                 <n-space vertical size="large">
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
@@ -838,7 +838,7 @@
                                             :error="globalCelExpressionError"
                                         />
                                     </n-form-item>
-                                    <n-form-item label="Output Events" path="globalInputEvent.outputEvents">
+                                    <n-form-item label="Actions" path="globalInputEvent.outputEvents">
                                         <n-select v-model:value="globalInputEvent.outputEvents" 
                                         :options="globalOutputEventsForInputForm" multiple />
                                     </n-form-item>
@@ -877,9 +877,9 @@
                                 <div v-for="policy in defaultApprovalSetup.policies" :key="policy.policyName" style="margin-bottom: 12px;">
                                     <div>{{ policy.policyName }}</div>
                                     <div>Entries: {{ policy.approvalEntries.join(', ') }}</div>
-                                    <div>Output Events:</div>
+                                    <div>Actions:</div>
                                     <div v-for="event in defaultApprovalSetup.outputEvents" :key="`${policy.policyName}-${event.name}`">{{ event.name }} - {{ outputTriggerLifecycleOptions.find((opt: any) => opt.value === event.toReleaseLifecycle)?.label || event.toReleaseLifecycle }}</div>
-                                    <div>Input Events:</div>
+                                    <div>Rules:</div>
                                     <div v-for="event in getDefaultPolicyInputEvents(policy.approvalEntries)" :key="`${policy.policyName}-${event.name}`">{{ event.name }}</div>
                                 </div>
                             </div>
@@ -6075,7 +6075,7 @@ async function saveGlobalOutputEvents () {
                 approvalPoliciesFullData.value[policyIndex].globalOutputEvents = globalOutputEvents.value
             }
         }
-        notify('success', 'Success', 'Policy-wide output events saved.')
+        notify('success', 'Success', 'Policy-wide actions saved.')
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
@@ -6115,7 +6115,7 @@ async function saveGlobalInputEvents () {
                 approvalPoliciesFullData.value[policyIndex].globalInputEvents = globalInputEvents.value
             }
         }
-        notify('success', 'Success', 'Policy-wide input events saved.')
+        notify('success', 'Success', 'Policy-wide rules saved.')
     } catch (err: any) {
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
@@ -6187,7 +6187,7 @@ async function deleteGlobalOutputEvent (uuid: string, name?: string) {
     // Check if any global input event references this output event
     const referencedBy = globalInputEvents.value.find((ie: any) => ie.outputEvents && ie.outputEvents.includes(uuid))
     if (referencedBy) {
-        notify('error', 'Error', 'Cannot delete: this output event is referenced by a policy-wide input event.')
+        notify('error', 'Error', 'Cannot delete: this action is referenced by a policy-wide rule.')
         return
     }
     const onSwalConfirm = async () => {
@@ -6195,14 +6195,14 @@ async function deleteGlobalOutputEvent (uuid: string, name?: string) {
         if (idx > -1) {
             globalOutputEvents.value.splice(idx, 1)
             saveGlobalOutputEvents()
-            notify('success', 'Deleted', 'Policy-wide output event deleted.')
+            notify('success', 'Deleted', 'Policy-wide action deleted.')
         }
     }
     const displayName = name || uuid
     const swalData: SwalData = {
-        questionText: `Are you sure you want to delete policy-wide output event ${displayName}?`,
+        questionText: `Are you sure you want to delete policy-wide action ${displayName}?`,
         successTitle: 'Deleted!',
-        successText: `Policy-wide output event ${displayName} has been deleted.`,
+        successText: `Policy-wide action ${displayName} has been deleted.`,
         dismissText: 'Delete has been cancelled.'
     }
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
@@ -6247,14 +6247,14 @@ async function deleteGlobalInputEvent (uuid: string, name?: string) {
         if (idx > -1) {
             globalInputEvents.value.splice(idx, 1)
             saveGlobalInputEvents()
-            notify('success', 'Deleted', 'Policy-wide input event deleted.')
+            notify('success', 'Deleted', 'Policy-wide rule deleted.')
         }
     }
     const displayName = name || uuid
     const swalData: SwalData = {
-        questionText: `Are you sure you want to delete policy-wide input event ${displayName}?`,
+        questionText: `Are you sure you want to delete policy-wide rule ${displayName}?`,
         successTitle: 'Deleted!',
-        successText: `Policy-wide input event ${displayName} has been deleted.`,
+        successText: `Policy-wide rule ${displayName} has been deleted.`,
         dismissText: 'Delete has been cancelled.'
     }
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
@@ -6289,13 +6289,13 @@ const globalOutputEventTableFields: DataTableColumns<any> = [
             let els: any[] = []
             if (isWritable.value) {
                 const editEl = h(NIcon, {
-                    title: 'Edit Output Event',
+                    title: 'Edit Action',
                     class: 'icons clickable',
                     size: 20,
                     onClick: () => editGlobalOutputEvent(row)
                 }, () => h(EditIcon))
                 const deleteEl = h(NIcon, {
-                    title: 'Delete Output Event',
+                    title: 'Delete Action',
                     class: 'icons clickable',
                     size: 20,
                     onClick: () => deleteGlobalOutputEvent(row.uuid, row.name)
@@ -6318,14 +6318,14 @@ const globalInputEventTableFields: DataTableColumns<any> = [
         title: 'Condition',
         render: (row: any) => {
             if (!row.celExpression) {
-                return h(NAlert, { type: 'warning', style: 'font-size: 12px;' }, { default: () => 'No CEL expression — trigger will not fire. Edit to add a condition.' })
+                return h(NAlert, { type: 'warning', style: 'font-size: 12px;' }, { default: () => 'No CEL expression — rule will not fire. Edit to add a condition.' })
             }
             return h('code', { style: 'font-size: 12px;' }, row.celExpression)
         }
     },
     {
         key: 'outputTriggers',
-        title: 'Output Events',
+        title: 'Actions',
         minWidth: 153,
         render: (row: any) => {
             let outNames = ''
@@ -6347,13 +6347,13 @@ const globalInputEventTableFields: DataTableColumns<any> = [
             let els: any[] = []
             if (isWritable.value) {
                 const editEl = h(NIcon, {
-                    title: 'Edit Input Event',
+                    title: 'Edit Rule',
                     class: 'icons clickable',
                     size: 20,
                     onClick: () => editGlobalInputEvent(row)
                 }, () => h(EditIcon))
                 const deleteEl = h(NIcon, {
-                    title: 'Delete Input Event',
+                    title: 'Delete Rule',
                     class: 'icons clickable',
                     size: 20,
                     onClick: () => deleteGlobalInputEvent(row.uuid, row.name)

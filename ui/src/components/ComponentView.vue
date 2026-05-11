@@ -413,9 +413,9 @@
                                             </n-space>
                                         </div>
                                     </n-tab-pane>
-                                    <n-tab-pane name="outputTriggers" tab="Output Events" v-if="myUser.installationType !== 'OSS'">
+                                    <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS'">
                                         <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Output Event" @click="resetOutputTrigger(); loadEnvTypes(); showCreateOutputTriggerModal = true">
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Action" @click="resetOutputTrigger(); loadEnvTypes(); showCreateOutputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
                                         <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
@@ -441,7 +441,7 @@
                                             style="width: 90%"
                                         >
                                             <n-form :model="outputTrigger">
-                                                <h2>Add or Update Output Event</h2>
+                                                <h2>Add or Update Action</h2>
                                                 <n-space vertical size="large">
                                                     <n-form-item label="Name" path="name">
                                                         <n-input v-model:value="outputTrigger.name" required placeholder="Enter name" />
@@ -640,9 +640,9 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
-                                    <n-tab-pane name="Input Events" v-if="myUser.installationType !== 'OSS'">
+                                    <n-tab-pane name="Input Events" tab="Rules" v-if="myUser.installationType !== 'OSS'">
                                         <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
-                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Input Event" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
+                                        <Icon v-if="isWritable" class="clickable" size="25" title="Add Rule" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
                                         <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
@@ -680,7 +680,7 @@
                                                             :error="celExpressionError"
                                                         />
                                                     </n-form-item>
-                                                    <n-form-item label="Output Events" path="inputTrigger.outputEvents">
+                                                    <n-form-item label="Actions" path="inputTrigger.outputEvents">
                                                         <n-select v-model:value="inputTrigger.outputEvents" 
                                                         :options="outputTriggersForInputForm" multiple />
                                                     </n-form-item>
@@ -691,12 +691,12 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
-                                    <n-tab-pane name="globalTriggerEvents" tab="Policy-Wide Input Events" v-if="myUser.installationType !== 'OSS' && updatedComponent.approvalPolicy">
+                                    <n-tab-pane name="globalTriggerEvents" tab="Policy-Wide Rules" v-if="myUser.installationType !== 'OSS' && updatedComponent.approvalPolicy">
                                         <div v-if="policyGlobalInputEvents.length === 0" class="text-muted mt-2">
-                                            No policy-wide input events defined on the approval policy.
+                                            No policy-wide rules defined on the approval policy.
                                         </div>
                                         <div v-else>
-                                            <p class="text-muted">Select policy-wide input events from the approval policy to apply to this component. You can optionally override their output events.</p>
+                                            <p class="text-muted">Select policy-wide rules from the approval policy to apply to this component. You can optionally override their actions.</p>
                                             <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;">
                                                 <div style="display: flex; align-items: center; gap: 8px;">
                                                     <n-checkbox
@@ -706,7 +706,7 @@
                                                     />
                                                     <strong>{{ gie.name }}</strong>
                                                     <span class="text-muted" style="font-size: 0.85em;">
-                                                        ({{ gie.outputEvents?.length || 0 }} default output event{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
+                                                        ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
                                                     </span>
                                                 </div>
                                                 <div v-if="isGlobalInputEventEnabled(gie.uuid)" style="margin-left: 28px; margin-top: 8px;">
@@ -716,7 +716,7 @@
                                                             @update:value="(val: boolean) => toggleOverrideOutputEvents(gie.uuid, val)"
                                                             :disabled="!isWritable"
                                                         />
-                                                        <span>Override output events locally</span>
+                                                        <span>Override actions locally</span>
                                                         <n-button v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally"
                                                             size="tiny" quaternary type="warning"
                                                             @click="resetGlobalInputEventOverride(gie.uuid)"
@@ -725,13 +725,13 @@
                                                         </n-button>
                                                     </div>
                                                     <div v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally" style="margin-top: 8px;">
-                                                        <span style="color: #f0a020; font-size: 0.85em; font-weight: bold;">⚠ Output events are overridden locally</span>
+                                                        <span style="color: #f0a020; font-size: 0.85em; font-weight: bold;">⚠ Actions are overridden locally</span>
                                                         <n-select
                                                             :value="getGlobalInputEventRef(gie.uuid)?.outputEventsOverride || []"
                                                             @update:value="(val: string[]) => updateOutputEventsOverride(gie.uuid, val)"
                                                             :options="allOutputEventsForOverride"
                                                             multiple
-                                                            placeholder="Select output events to use instead"
+                                                            placeholder="Select actions to use instead"
                                                             :disabled="!isWritable"
                                                             style="margin-top: 4px;"
                                                         />
@@ -2678,7 +2678,7 @@ async function deleteOutputTrigger (uuid: string) {
         inputTriggerIndex = updatedComponent.value.releaseInputTriggers.findIndex((rit: any) => rit.outputEvents.includes(uuid))
     }
     if (inputTriggerIndex > -1) {
-        notify('error', 'Error', `Unable to delete because this event is used in one or more input events!`)
+        notify('error', 'Error', `Unable to delete because this action is used by one or more rules!`)
     } else {
         const triggerIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === uuid)
         if (triggerIndex > -1) {
@@ -2814,7 +2814,7 @@ const inputTriggerTableFields: DataTableColumns<any> = [
     },
     {
         key: 'outputTriggers',
-        title: 'Output Events',
+        title: 'Actions',
         render: (row: any) => {
             let outTriggers = ''
             if (row.outputEvents && row.outputEvents.length) {
