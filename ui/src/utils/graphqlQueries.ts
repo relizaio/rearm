@@ -492,19 +492,6 @@ const singleReleaseDataNoParent = `
             }
         }
     }
-    inProducts {
-        uuid
-        version
-        component
-        componentDetails {
-            uuid
-            name
-        }
-        branchDetails {
-            name
-        }
-        lifecycle
-    }
     tags {
         key
         value
@@ -845,6 +832,30 @@ query FetchRelease($releaseID: ID!, $orgID: ID) {
     }
 }`
 
+// Slim selection used by ReleaseView's lazy "Part of Products" tab.
+// Stripped from the main SingleReleaseGql payload because the inProducts
+// resolver walks every release that lists this one as a parent, which
+// blows up page load for components that ship across many product releases.
+const FETCH_RELEASE_IN_PRODUCTS_GQL = gql`
+query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
+    release(releaseUuid: $releaseID, orgUuid: $orgID) {
+        uuid
+        inProducts {
+            uuid
+            version
+            component
+            componentDetails {
+                uuid
+                name
+            }
+            branchDetails {
+                name
+            }
+            lifecycle
+        }
+    }
+}`
+
 const singleReleaseProductNoParent = `
     createdDate
     org
@@ -888,19 +899,6 @@ const singleReleaseProductNoParent = `
                 }
             }
         }
-    }
-    inProducts {
-        uuid
-        version
-        component
-        componentDetails {
-            uuid
-            name
-        }
-        branchDetails {
-            name
-        }
-        lifecycle
     }
     tags {
         key
@@ -1255,6 +1253,7 @@ export default {
     SingleReleaseGqlLight: SINGLE_RELEASE_GQL_LIGHT,
     SingleReleaseProductGql: SINGLE_RELEASE_PRODUCT_GQL,
     SingleReleaseTypeDetectGql: SINGLE_RELEASE_TYPE_DETECT_GQL,
+    FetchReleaseInProductsGql: FETCH_RELEASE_IN_PRODUCTS_GQL,
     ComponentFullData: COMPONENT_FULL_DATA,
     ComponentMutate: COMPONENT_MUTATE,
     ReleaseGqlMutate: RELEASE_GQL_MUTATE,
