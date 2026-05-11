@@ -377,7 +377,7 @@
                                                     <strong>Effective policy:</strong>
                                                     <span v-if="effectiveApprovalPolicy.source === 'PER_COMPONENT'">
                                                         <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
-                                                        (per-component, this row)
+                                                        (set directly on this component)
                                                     </span>
                                                     <span v-else-if="effectiveApprovalPolicy.source === 'ORG_RULE'">
                                                         <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
