@@ -1965,14 +1965,31 @@ async function save () {
     if (componentData.value?.approvalPolicy && !updatedComponent.value.approvalPolicy) {
         payload.clearApprovalPolicy = true
     }
-    updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', payload))
-    // Update originalComponent to match current state so hasComponentChanges() returns false
-    originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
-    // Refresh the effective-policy snapshot so the provenance card
-    // reflects whatever the operator just saved (or cleared, in which
-    // case the resolver may now fall through to an org rule).
-    await fetchEffectiveApprovalPolicy()
-    notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
+    try {
+        updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', payload))
+        // Update originalComponent to match current state so hasComponentChanges() returns false
+        originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
+        // Refresh the effective-policy snapshot so the provenance card
+        // reflects whatever the operator just saved (or cleared, in which
+        // case the resolver may now fall through to an org rule).
+        await fetchEffectiveApprovalPolicy()
+        notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
+    } catch (err: any) {
+        // RelizaException surfaces as BAD_REQUEST with the actual
+        // domain message (e.g. "Cannot clear approval policy while
+        // component references global events…"). Otherwise it's a
+        // generic backend error — still better to show the message
+        // than fail silently to the console.
+        const msg = err?.message || ''
+        // Defer CEL errors to saveTriggers' specialised formatter so we
+        // don't double-notify the operator when triggers fail.
+        if (!msg.includes('Invalid CEL expression')) {
+            notify('error', 'Save failed', commonFunctions.parseGraphQLError(msg || 'Unknown error'))
+        }
+        // Re-throw so callers that wrap save() (e.g. saveTriggers)
+        // can still react to it.
+        throw err
+    }
 }
 
 function stripGraphQLMetadata(triggers: any[], stripScope: boolean = false) {
@@ -2011,11 +2028,12 @@ async function saveTriggers() {
         await save()
         componentData.value = commonFunctions.deepCopy(updatedComponent.value)
     } catch (error: any) {
+        // save() already surfaced the underlying error via notify; we
+        // only need to handle here when CEL needs the specialised
+        // formatting (which save's generic parse won't catch).
         const msg: string = error?.message || ''
         if (msg.includes('Invalid CEL expression')) {
             notify('error', 'Invalid CEL Expression', msg.replace(/^.*Invalid CEL expression[:\s]*/i, 'Invalid CEL expression: '))
-        } else {
-            notify('error', 'Error', 'Failed to save triggers. Please retry or contact support.')
         }
     }
 }
