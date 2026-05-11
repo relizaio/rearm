@@ -723,6 +723,7 @@ const COMPONENT_FULL_DATA = `
     }
     globalInputEventRefs {
         uuid
+        disabled
         overrideOutputEventsLocally
         outputEventsOverride
     }

@@ -693,17 +693,17 @@
                                             </n-form>
                                         </n-modal>
                                     </n-tab-pane>
-                                    <n-tab-pane name="globalTriggerEvents" tab="Policy-Wide Rules" v-if="myUser.installationType !== 'OSS' && updatedComponent.approvalPolicy">
+                                    <n-tab-pane name="globalTriggerEvents" tab="Policy-Wide Rules" v-if="myUser.installationType !== 'OSS' && hasEffectivePolicy">
                                         <div v-if="policyGlobalInputEvents.length === 0" class="text-muted mt-2">
                                             No policy-wide rules defined on the approval policy.
                                         </div>
                                         <div v-else>
-                                            <p class="text-muted">Select policy-wide rules from the approval policy to apply to this component. You can optionally override their actions.</p>
+                                            <p class="text-muted">Policy-wide rules apply to this {{ words.component }} by default. Toggle a rule off to opt out, or override its actions locally.</p>
                                             <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;">
                                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                                    <n-checkbox
-                                                        :checked="isGlobalInputEventEnabled(gie.uuid)"
-                                                        @update:checked="(val: boolean) => toggleGlobalInputEventRef(gie.uuid, val)"
+                                                    <n-switch
+                                                        :value="isGlobalInputEventEnabled(gie.uuid)"
+                                                        @update:value="(val: boolean) => toggleGlobalInputEventRef(gie.uuid, val)"
                                                         :disabled="!isWritable"
                                                     />
                                                     <strong>{{ gie.name }}</strong>
@@ -1786,26 +1786,43 @@ const externalValidationConclusionOptions = [
     {label: 'Cancelled', value: 'cancelled'}
 ]
 
-// Global Input Event Refs management
+// Global Input Event Refs management — opt-out semantics.
+//
+// Rules from the effective approval policy apply to the component by default.
+// A per-component ref now means "this component has per-rule configuration"
+// (a disable flag, output-override, or both). Absence of a ref means "use
+// policy defaults" — equivalent to ref { disabled:false, override:false }.
+//
+// The same UI works whether the policy was assigned per-component
+// (updatedComponent.approvalPolicyDetails populated) or via an org rule
+// (effectiveApprovalPolicy.approvalPolicyDetails populated). We fall back
+// across the two so org-rule-assigned components show the same controls.
+
+const effectivePolicyDetails = computed((): any | null => {
+    return updatedComponent.value?.approvalPolicyDetails
+        || effectiveApprovalPolicy.value?.approvalPolicyDetails
+        || null
+})
+
+const hasEffectivePolicy = computed((): boolean => {
+    return !!effectivePolicyDetails.value
+})
+
 const policyGlobalInputEvents = computed((): any[] => {
-    if (!updatedComponent.value.approvalPolicyDetails) return []
-    return updatedComponent.value.approvalPolicyDetails.globalInputEvents || []
+    return effectivePolicyDetails.value?.globalInputEvents || []
 })
 
 const policyGlobalOutputEvents = computed((): any[] => {
-    if (!updatedComponent.value.approvalPolicyDetails) return []
-    return updatedComponent.value.approvalPolicyDetails.globalOutputEvents || []
+    return effectivePolicyDetails.value?.globalOutputEvents || []
 })
 
 const allOutputEventsForOverride = computed((): any[] => {
     const options: any[] = []
-    // Local output triggers
     if (updatedComponent.value.outputTriggers) {
         updatedComponent.value.outputTriggers.forEach((ot: any) => {
             options.push({ label: ot.name + ' (Local)', value: ot.uuid })
         })
     }
-    // Global output events from the policy
     policyGlobalOutputEvents.value.forEach((oe: any) => {
         options.push({ label: oe.name + ' (Global)', value: oe.uuid })
     })
@@ -1813,8 +1830,8 @@ const allOutputEventsForOverride = computed((): any[] => {
 })
 
 function isGlobalInputEventEnabled (uuid: string): boolean {
-    if (!updatedComponent.value.globalInputEventRefs) return false
-    return updatedComponent.value.globalInputEventRefs.some((ref: any) => ref.uuid === uuid)
+    const ref = getGlobalInputEventRef(uuid)
+    return !ref || !ref.disabled
 }
 
 function getGlobalInputEventRef (uuid: string): any {
@@ -1822,46 +1839,63 @@ function getGlobalInputEventRef (uuid: string): any {
     return updatedComponent.value.globalInputEventRefs.find((ref: any) => ref.uuid === uuid)
 }
 
-function toggleGlobalInputEventRef (uuid: string, enabled: boolean) {
+function ensureGlobalInputEventRef (uuid: string): any {
     if (!updatedComponent.value.globalInputEventRefs) {
         updatedComponent.value.globalInputEventRefs = []
     }
-    if (enabled) {
-        updatedComponent.value.globalInputEventRefs.push({
-            uuid,
-            overrideOutputEventsLocally: false,
-            outputEventsOverride: []
-        })
-    } else {
+    let ref = updatedComponent.value.globalInputEventRefs.find((r: any) => r.uuid === uuid)
+    if (!ref) {
+        ref = { uuid, disabled: false, overrideOutputEventsLocally: false, outputEventsOverride: [] }
+        updatedComponent.value.globalInputEventRefs.push(ref)
+    }
+    return ref
+}
+
+function pruneGlobalInputEventRefIfDefault (uuid: string) {
+    // A ref with disabled=false and no override has no meaning under opt-out
+    // semantics — drop it so the saved record stays clean.
+    const ref = getGlobalInputEventRef(uuid)
+    if (!ref) return
+    if (!ref.disabled && !ref.overrideOutputEventsLocally) {
         updatedComponent.value.globalInputEventRefs = updatedComponent.value.globalInputEventRefs.filter(
-            (ref: any) => ref.uuid !== uuid
+            (r: any) => r.uuid !== uuid
         )
     }
 }
 
-function toggleOverrideOutputEvents (uuid: string, override: boolean) {
-    const ref = getGlobalInputEventRef(uuid)
-    if (ref) {
-        ref.overrideOutputEventsLocally = override
-        if (!override) {
-            ref.outputEventsOverride = []
+function toggleGlobalInputEventRef (uuid: string, enabled: boolean) {
+    if (enabled) {
+        const ref = getGlobalInputEventRef(uuid)
+        if (ref) {
+            ref.disabled = false
+            pruneGlobalInputEventRefIfDefault(uuid)
         }
+    } else {
+        const ref = ensureGlobalInputEventRef(uuid)
+        ref.disabled = true
+    }
+}
+
+function toggleOverrideOutputEvents (uuid: string, override: boolean) {
+    const ref = ensureGlobalInputEventRef(uuid)
+    ref.overrideOutputEventsLocally = override
+    if (!override) {
+        ref.outputEventsOverride = []
+        pruneGlobalInputEventRefIfDefault(uuid)
     }
 }
 
 function updateOutputEventsOverride (uuid: string, outputEvents: string[]) {
-    const ref = getGlobalInputEventRef(uuid)
-    if (ref) {
-        ref.outputEventsOverride = outputEvents
-    }
+    const ref = ensureGlobalInputEventRef(uuid)
+    ref.outputEventsOverride = outputEvents
 }
 
 function resetGlobalInputEventOverride (uuid: string) {
     const ref = getGlobalInputEventRef(uuid)
-    if (ref) {
-        ref.overrideOutputEventsLocally = false
-        ref.outputEventsOverride = []
-    }
+    if (!ref) return
+    ref.overrideOutputEventsLocally = false
+    ref.outputEventsOverride = []
+    pruneGlobalInputEventRefIfDefault(uuid)
 }
 
 const defaultCloneBrProps = {
