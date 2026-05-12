@@ -38,7 +38,7 @@ What happens to each statement after parsing.
 
 | Mode | Behaviour |
 |---|---|
-| **Auto-accept** (default) | Each parsed statement immediately becomes a Finding Analysis (or a Mitigation Attestation when conditional). The trust gate may still demote individual statements to STAGE if their issuer class warrants it. |
+| **Auto-accept** (default) | Each parsed statement immediately becomes a Finding Analysis (or a Mitigation Attestation when conditional). The trust gate may still demote individual statements to STAGE if their issuer class warrants it, and so does the [severity resolver](#severity) when a statement has no rating and no fallback. |
 | **Stage for review** | Every statement lands as a `PENDING` proposal in the VEX Proposals inbox; you accept or reject each one. |
 | **Reject** | Used for malformed-batch testing — every statement is rejected without writing anything. |
 
@@ -60,7 +60,21 @@ The VEX document gets parsed (CycloneDX-VEX or OpenVEX, auto-detected from conte
 
 Statements that don't match any release in your inventory are reported as `unmatched` and don't produce proposals. Doc-level parse errors abort the whole import.
 
-The VEX Proposals inbox (left nav → **VEX Proposals**) shows every staged proposal across the org; per-release proposals also appear in the **VEX** tab on the release page.
+The VEX Proposals inbox lives as a tab on the **Finding Analysis** page (left nav → **Finding Analysis** → **VEX Statement Proposals** tab) and shows every staged proposal across the org. Per-release proposals also appear in the **VEX** tab on the release page; click the eye icon to review one — it opens in a new browser tab so you can keep the queue open while triaging.
+
+## Severity
+
+Severity is **required** on every Finding Analysis row, so every accepted VEX proposal needs one. ReARM resolves it from three sources, taking the first non-null:
+
+1. **The inbound `ratings[]` array** in the VEX statement. CycloneDX `ratings[].severity` is mapped to ReARM's bucket (`critical` → CRITICAL, `high` → HIGH, `medium` → MEDIUM, `low` → LOW, `info` / `none` / `unknown` → UNASSIGNED). When multiple ratings are present (e.g., CVSS-v2 alongside CVSS-v3) ReARM picks the **highest** — a vendor's worst-case call is the safer default for the reviewer to accept or override. OpenVEX 0.2.0 has no severity in its spec, so OpenVEX statements always reach the next step.
+
+2. **Existing Finding Analysis rows** for the same `(org, location, findingId)`. The narrowest-scope match wins (RELEASE → BRANCH → COMPONENT → ORG). If you've already triaged this CVE on a sibling release, that decision's severity carries over.
+
+3. **The canonical vulnerability record** for the CVE in your org's vulnerability table. ReARM merges severity across upstream sources (GitHub > OSV > NVD > VULNDB) into a single per-org row that's available to the lookup.
+
+If all three come up empty (a CycloneDX VEX with no ratings, no prior analysis at any scope, and no canonical vuln record for the org) and your import mode is **Auto-accept**, ReARM demotes the statement to **STAGE** with a `SEVERITY_MISSING` demotion banner on the proposal. The reviewer fills in severity via **Modify** before accepting. (STAGE and REJECT import modes are unaffected — they were going to surface to a reviewer anyway.)
+
+A null severity at accept time is rejected at the service boundary with a clear error — the Accept button on the review pane disables when severity isn't set, with a hint pointing at the Modify form.
 
 ## Conditional mitigations
 
@@ -96,4 +110,23 @@ Imported VEX statements are preserved verbatim on the proposal as `sourceStateme
 
 ## Programmatic import
 
-Direct API import isn't currently exposed as a separate mutation — every VEX import goes through the artifact-upload path (`addArtifactManual` / `addArtifactProgrammatic` with `type: VEX`). For CI pipelines, the [rearm-cli](https://github.com/relizaio/rearm-cli)'s `addrelease` command and the GitHub Actions wrappers cover this: upload the VEX file as an artifact with `type: VEX` and the import pipeline triggers automatically.
+Direct API import isn't exposed as a separate mutation — every VEX import goes through the artifact-upload path. Both the **multipart manual** (`addArtifactManual`, used by the UI) and the **programmatic** (`addArtifactProgrammatic`, used by [rearm-cli](https://github.com/relizaio/rearm-cli) and CI integrations) paths trigger the import pipeline when the artifact's `type` is `VEX`.
+
+CI example:
+
+```sh
+rearm-cli addartifact \
+  --component "$COMPONENT_UUID" \
+  --version "$RELEASE_VERSION" \
+  --artifacts '[{
+    "filePath": "vex.cdx.json",
+    "type": "VEX",
+    "bomFormat": "CYCLONEDX",
+    "storedIn": "REARM",
+    "displayIdentifier": "vendor-vex-1"
+  }]'
+```
+
+Or fold it into the `addrelease` call via `--releasearts`. The GitHub Actions wrapper [`relizaio/rearm-actions`](https://github.com/relizaio/rearm-actions) does this for you when a VEX file is on the build's artifact list.
+
+**Precondition:** the release must already have at least one SBOM artifact (so the VEX matcher has an inventory to match against). The upload fails loud with *"Cannot import VEX: release has no SBOM components yet"* if you try to import VEX into an SBOM-less release.
