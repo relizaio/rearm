@@ -20,6 +20,7 @@ function sidebar() {
           {text: 'Bundling & Auto-Integrate', link: '/workflows/bundling'},
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'},
+          {text: 'Importing VEX', link: '/workflows/importing-vex'},
           {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'},
           {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'},
           {text: 'Pull Requests', link: '/workflows/pull-requests'}
