@@ -5127,7 +5127,11 @@ const partOfProductsComponentRows: ComputedRef<any[]> = computed((): any[] => {
                 name: bd.name,
                 status: bd.status,
                 versionSchema: bd.versionSchema,
-                latestReleaseVersion: bd.latestReleaseVersion,
+                // Branch type (vs BranchWithReleases) doesn't expose
+                // latestReleaseVersion; the Part of Products tab doesn't enable
+                // the "latest" column anyway. Leave undefined — table's
+                // isLatest derivation safely defaults to false.
+                latestReleaseVersion: undefined,
                 releases: []
             }
             comp.branches.set(bd.uuid, branch)

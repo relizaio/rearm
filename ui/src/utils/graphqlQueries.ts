@@ -862,7 +862,6 @@ query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
                 name
                 status
                 versionSchema
-                latestReleaseVersion
             }
             metrics {
                 critical
