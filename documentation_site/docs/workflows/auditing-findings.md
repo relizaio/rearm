@@ -8,7 +8,7 @@ ReARM aggregates security and compliance findings from your release artifacts an
 - **Violation** - a policy violation (license, security, or operational) detected by Dependency-Track
 - **Weakness** - an integration or a code-level weakness identified for example by a SAST or DAST tool (CWE-based)
 
-This page covers how to view, triage, and manage all finding types. For license-specific setup and viewing, see [License Compliance](./license-compliance).
+This page covers how to view, triage, and manage all finding types. For license-specific setup and viewing, see [License Compliance](./license-compliance). For bulk-applying triage decisions from VEX (Vulnerability Exploitability eXchange) documents — vendor-supplied or self-authored — see [Importing VEX](./importing-vex).
 
 ## Where Findings Appear
 

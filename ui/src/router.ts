@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, Router } from 'vue-router'
+import type { RouteLocationNormalized } from 'vue-router'
 import AppHome from '@/components/AppHome.vue'
 import UserProfile from '@/components/UserProfile.vue'
 
@@ -107,7 +108,7 @@ const routes : any[] = [
         path: '/release/:releaseUuid/sbomComponentGraph/:sbomComponentUuid?',
         name: 'SbomComponentGraph',
         component: () => import('@/components/ReleaseSbomComponentGraph.vue'),
-        props: route => ({
+        props: (route: RouteLocationNormalized) => ({
             releaseUuid: route.params.releaseUuid as string,
             sbomComponentUuid: (route.params.sbomComponentUuid as string) || '',
             purl: (route.query.purl as string) || '',
@@ -134,6 +135,26 @@ const routes : any[] = [
         path: '/downloadArtifact/:arttype/:artuuid',
         name: 'DownloadTeaArtifact',
         component: () => import('@/components/DownloadTeaArtifactView.vue')
+    },
+    {
+        path: '/vexProposalsOfOrg/:orguuid',
+        name: 'VexProposalsInbox',
+        component: () => import('@/components/VexProposalsInbox.vue')
+    },
+    {
+        path: '/vexProposal/:orguuid/:uuid',
+        name: 'VexProposalReview',
+        component: () => import('@/components/VexProposalReview.vue')
+    },
+    {
+        path: '/mitigationAttestationsOfOrg/:orguuid',
+        name: 'MitigationAttestationsInbox',
+        component: () => import('@/components/MitigationAttestationsInbox.vue')
+    },
+    {
+        path: '/mitigationAttestation/:orguuid/:uuid',
+        name: 'MitigationAttestationReview',
+        component: () => import('@/components/MitigationAttestationReview.vue')
     },
     // {
     //     path: '/jira-integration',

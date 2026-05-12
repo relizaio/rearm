@@ -44,7 +44,7 @@
                         required
                         placeholder="Enter artifact display identifier, i.e. this can be URI" />
             </n-form-item>
-            <n-form-item 
+            <n-form-item
                         path="type"
                         label="Artifact Type">
                 <n-select
@@ -52,6 +52,74 @@
                         filterable
                         :options="artifactTypes" />
             </n-form-item>
+            <n-card v-if="artifact.type === 'VEX'"
+                title="VEX import settings"
+                size="small"
+                :bordered="true"
+                style="margin: 8px 0 16px 0;">
+                <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 12px;">
+                    Defaults work for most uploads — leave them alone unless the heuristics don't match your situation. Hover ⓘ for details.
+                </n-text>
+
+                <n-form-item>
+                    <template #label>
+                        <n-tooltip trigger="hover" placement="top" :style="{ maxWidth: '360px' }">
+                            <template #trigger>
+                                <span>Scope <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
+                            </template>
+                            How broadly this VEX claim applies. Organization is the safe default — most VEX statements apply across every release containing the affected component. Pick a narrower scope only when the claim is build-specific.
+                        </n-tooltip>
+                    </template>
+                    <n-select v-model:value="artifact.vexScope" :options="vexScopeOptions" />
+                </n-form-item>
+
+                <n-form-item>
+                    <template #label>
+                        <n-tooltip trigger="hover" placement="top" :style="{ maxWidth: '360px' }">
+                            <template #trigger>
+                                <span>Import mode <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
+                            </template>
+                            What to do with each parsed statement. Hover each option for details.
+                        </n-tooltip>
+                    </template>
+                    <n-radio-group v-model:value="artifact.vexImportMode">
+                        <n-radio value="AUTO_ACCEPT">
+                            <n-tooltip trigger="hover" placement="bottom" :style="{ maxWidth: '360px' }">
+                                <template #trigger><span>Auto-accept</span></template>
+                                Each statement is applied as a finding-analysis decision immediately. The trust gate may still stage some statements (e.g., a vendor's "not affected" claim) — those land in the VEX inbox for manual review.
+                            </n-tooltip>
+                        </n-radio>
+                        <n-radio value="STAGE">
+                            <n-tooltip trigger="hover" placement="bottom" :style="{ maxWidth: '360px' }">
+                                <template #trigger><span>Stage all for review</span></template>
+                                Every statement lands in the VEX Proposals inbox as PENDING, regardless of issuer. Use this when reviewing a new vendor for the first time, or when you want full control over which decisions apply.
+                            </n-tooltip>
+                        </n-radio>
+                        <n-radio value="REJECT">
+                            <n-tooltip trigger="hover" placement="bottom" :style="{ maxWidth: '360px' }">
+                                <template #trigger><span>Reject all</span></template>
+                                Records the upload as an audit artifact but discards every parsed statement. Use this for malformed-batch testing or when you want to keep the file on record without applying any of its decisions.
+                            </n-tooltip>
+                        </n-radio>
+                    </n-radio-group>
+                </n-form-item>
+
+                <n-form-item>
+                    <template #label>
+                        <n-tooltip trigger="hover" placement="top" :style="{ maxWidth: '420px' }">
+                            <template #trigger>
+                                <span>Issuer class <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
+                            </template>
+                            Who is making this VEX claim. <strong>Vendor</strong> is the cautious default (quiet "not affected" claims get staged for review, loud "exploitable" claims auto-accept). Pick <strong>Self</strong> when you wrote this VEX about your own software. Pick <strong>Third party</strong> for fully untrusted sources — everything stages.
+                        </n-tooltip>
+                    </template>
+                    <n-select
+                        v-model:value="artifact.userIssuerClassOverride"
+                        :options="issuerClassOptions"
+                        clearable
+                        placeholder="Auto-detect from binding" />
+                </n-form-item>
+            </n-card>
             <n-form-item
                         path="version"
                         label="Artifact Version">
@@ -126,7 +194,8 @@ export default {
 <script lang="ts" setup>
 import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
-import { FormInst, NButton, NDynamicInput, NForm, NFormItem, NInput, NInputNumber, NRadioButton, NRadioGroup, NSelect, NTooltip, NUpload } from 'naive-ui'
+import { FormInst, NButton, NCard, NDynamicInput, NForm, NFormItem, NIcon, NInput, NInputNumber, NRadio, NRadioButton, NRadioGroup, NSelect, NText, NTooltip, NUpload } from 'naive-ui'
+import { QuestionCircle20Regular } from '@vicons/fluent'
 import { computed, ComputedRef, ref, Ref } from 'vue'
 import { useStore } from 'vuex'
 import { Tag, DownloadLink } from '@/utils/commonTypes'
@@ -198,7 +267,22 @@ const artifact: Ref<any>= ref({
     storedIn: props.isUpdateExistingBom ? 'REARM' : '',
     status: 'ANY',
     version: '',
+    vexScope: 'COMPONENT',
+    vexImportMode: 'AUTO_ACCEPT',
+    userIssuerClassOverride: 'VENDOR',
 })
+
+const vexScopeOptions = [
+    { label: 'Component (default — this release\'s component, all branches)', value: 'COMPONENT' },
+    { label: 'Organization (every release in the org)', value: 'ORG' },
+    { label: 'Branch (this release\'s branch only)', value: 'BRANCH' },
+    { label: 'Release (only this specific release)', value: 'RELEASE' },
+]
+const issuerClassOptions = [
+    { label: 'Vendor — vendor-supplied (default)', value: 'VENDOR' },
+    { label: 'Self — my own software', value: 'SELF' },
+    { label: 'Third party — external/untrusted', value: 'THIRD_PARTY' },
+]
 if(props.isUpdateExistingBom && props.updateArtifact){
     artifact.value.storedIn = 'REARM'
 }
@@ -315,6 +399,16 @@ const onSubmit = async () => {
                 fetchPolicy: 'no-cache'
             })
             emit('addArtifact')
+        }
+
+        if (artifact.value.type === 'VEX') {
+            Swal.fire({
+                icon: 'success',
+                title: 'VEX uploaded',
+                text: 'Statements are being processed in the background. Open the VEX tab on this release (or the org-wide VEX Proposals inbox) to review proposals.',
+                timer: 6000,
+                showConfirmButton: true,
+            })
         }
 
     }   catch (err: any) {

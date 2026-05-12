@@ -1,7 +1,7 @@
 <template>
     <div class="app-wrapper">
         <n-config-provider>
-            <n-loading-bar-provider><n-notification-provider placement="bottom-right">
+            <n-loading-bar-provider><n-notification-provider placement="bottom-right"><n-message-provider>
                 <div class="main-content" v-if="!showSignUpFlow">
                     <div class="content-area">
                         <n-layout>
@@ -35,7 +35,7 @@
                 <sign-up-flow v-if="showSignUpFlow === 'signup'" />
                 <verify-email v-if="showSignUpFlow === 'verifyEmail'" />
                 <join-organization v-if="showSignUpFlow === 'joinOrganization'" />
-            </n-notification-provider></n-loading-bar-provider>
+            </n-message-provider></n-notification-provider></n-loading-bar-provider>
         </n-config-provider>
     </div>
 </template>
@@ -46,7 +46,7 @@ export default {
 </script>
 <script lang="ts" setup>
 import { Ref, ref, ComputedRef, computed } from 'vue'
-import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider, NLoadingBarProvider, NDivider } from 'naive-ui'
+import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider, NLoadingBarProvider, NMessageProvider, NDivider } from 'naive-ui'
 import TopNavBar from './TopNavBar.vue'
 import LeftNavBar from './LeftNavBar.vue'
 import { useStore } from 'vuex'

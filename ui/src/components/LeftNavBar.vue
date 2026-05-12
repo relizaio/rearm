@@ -44,7 +44,7 @@ import { ref, h, Component, ComputedRef, computed, Ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
-import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest } from '@vicons/tabler'
+import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest, Inbox, ShieldCheck } from '@vicons/tabler'
 
 
 function renderIcon (icon: Component) {
@@ -202,6 +202,36 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                     RouterLink,
                     {
                         to: {
+                            name: 'VexProposalsInbox',
+                            params: {orguuid: org}
+                        }
+                    },
+                    { default: () => 'VEX Proposals' }
+                ),
+            key: 'vexProposals',
+            icon: renderIcon(Inbox)
+        },
+        {
+            label: () =>
+                h(
+                    RouterLink,
+                    {
+                        to: {
+                            name: 'MitigationAttestationsInbox',
+                            params: {orguuid: org}
+                        }
+                    },
+                    { default: () => 'Mitigation Attestations' }
+                ),
+            key: 'mitigationAttestations',
+            icon: renderIcon(ShieldCheck)
+        },
+        {
+            label: () =>
+                h(
+                    RouterLink,
+                    {
+                        to: {
                             name: 'OrgSettings',
                             params: {orguuid: org}
                         }
@@ -245,6 +275,10 @@ const routeToMenuKey: Record<string, string> = {
     'SecretsOfOrg': 'secrets',
     'AnalyticsOfOrg': 'analytics',
     'VulnerabilityAnalysis': 'vulnerabilityAnalysis',
+    'VexProposalsInbox': 'vexProposals',
+    'VexProposalReview': 'vexProposals',
+    'MitigationAttestationsInbox': 'mitigationAttestations',
+    'MitigationAttestationReview': 'mitigationAttestations',
     'OrgSettings': 'orgsettings'
 }
 

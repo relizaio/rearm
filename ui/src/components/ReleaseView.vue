@@ -953,6 +953,21 @@
                     <h3>Approval History</h3>
                     <n-data-table :columns="approvalHistoryFields" :data="approvalHistoryEvents" class="table-hover" />
                 </n-tab-pane>
+                <n-tab-pane name="vex" tab="VEX">
+                    <n-space vertical>
+                        <h3>VEX Statement Proposals for this Release</h3>
+                        <n-text depth="3" style="font-size: 12px;">
+                            Showing the latest accept per (scope, finding, component). Earlier accepts collapse into the row's audit trail — click ▶ to expand.
+                        </n-text>
+                        <n-data-table
+                            :columns="releaseVexColumns"
+                            :data="releaseVexGrouped"
+                            :loading="releaseVexLoading"
+                            :row-key="(row: any) => row.uuid"
+                            :pagination="{ pageSize: 25 }"
+                        />
+                    </n-space>
+                </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
                     <div class="container">
                         <div>
@@ -1176,15 +1191,16 @@ import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { fetchWithAuth, fetchArrayBufferWithAuth } from '../utils/fetchClient'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
+import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { CirclePlus, ClipboardCheck, Copy, Download, Edit, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
+import { CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular } from '@vicons/fluent'
 import { SecurityScanOutlined, UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
+import { NBadge, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { Component, ComputedRef, Ref, computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -1467,6 +1483,126 @@ const pullRequest: ComputedRef<any> = computed((): any => {
 const releaseUuid: Ref<string> = ref(props.uuidprop ?? route.params.uuid.toString())
 const release: Ref<any> = ref({})
 const updatedRelease: Ref<any> = ref({})
+
+const releaseVexProposals: Ref<any[]> = ref([])
+const releaseVexLoading: Ref<boolean> = ref(false)
+
+// Group proposals by 5-tuple (scope, scopeUuid, location, findingId, findingType).
+// Head selection within a group: any PENDING proposal wins (it needs review and shouldn't
+// hide under an ACCEPTED). Otherwise, the most-recently-acted proposal is the head; older
+// proposals (any status) fall into the expandable audit trail.
+// Outer ordering: groups whose head is PENDING sort first (review-needed at top), then by
+// head's actedAt descending.
+function actableRank (p: any): number {
+    if (p.status === 'PENDING') return 3
+    if (p.status === 'ACCEPTED') return 2
+    return 1
+}
+function compareInGroup (a: any, b: any): number {
+    const r = actableRank(b) - actableRank(a)
+    if (r !== 0) return r
+    return (b.actedAt ?? '').localeCompare(a.actedAt ?? '')
+}
+const releaseVexGrouped = computed(() => {
+    const groups = new Map<string, any[]>()
+    for (const p of releaseVexProposals.value) {
+        const key = `${p.scope}|${p.scopeUuid}|${p.location}|${p.findingId}|${p.findingType}`
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key)!.push(p)
+    }
+    const out: any[] = []
+    for (const list of groups.values()) {
+        list.sort(compareInGroup)
+        const head = { ...list[0], history: list.slice(1) }
+        out.push(head)
+    }
+    out.sort((a, b) => {
+        const r = actableRank(b) - actableRank(a)
+        if (r !== 0) return r
+        return (b.actedAt ?? '').localeCompare(a.actedAt ?? '')
+    })
+    return out
+})
+
+const releaseVexColumns = [
+    {
+        type: 'expand' as const,
+        expandable: (row: any) => row.history && row.history.length > 0,
+        renderExpand: (row: any) => h('div', { style: 'padding: 8px 16px; background: #fafafa;' }, [
+            h('div', { style: 'font-weight: 600; margin-bottom: 6px;' }, `${row.history.length} earlier accept${row.history.length === 1 ? '' : 's'} for this finding+scope (audit trail)`),
+            ...row.history.map((h_: any) => h('div', { style: 'font-family: monospace; font-size: 12px; color: #555;' },
+                `${new Date(h_.actedAt).toLocaleString()} — state=${h_.analysisState} — issuer=${h_.issuerClass ?? '—'} — artifact=${(h_.sourceArtifact ?? '').substring(0, 8)} — proposal=${(h_.uuid ?? '').substring(0, 8)}`
+            )),
+        ]),
+    },
+    {
+        title: 'Acted at',
+        key: 'actedAt',
+        defaultSortOrder: 'descend' as const,
+        sorter: (a: any, b: any) => (a.actedAt ?? '').localeCompare(b.actedAt ?? ''),
+        render: (row: any) => row.actedAt ? new Date(row.actedAt).toLocaleString() : '—',
+    },
+    {
+        title: 'Finding',
+        key: 'findingId',
+        sorter: (a: any, b: any) => (a.findingId ?? '').localeCompare(b.findingId ?? ''),
+    },
+    { title: 'Component', key: 'location' },
+    { title: 'State', key: 'analysisState' },
+    {
+        title: 'Scope',
+        key: 'scope',
+        render: (r: any) => `${r.scope}${r.demotionReason ? ' ⚠' : ''}`,
+    },
+    {
+        title: 'Status',
+        key: 'status',
+        render: (r: any) => {
+            const type = r.status === 'ACCEPTED' ? 'success'
+                : r.status === 'PENDING' ? 'warning'
+                : r.status === 'REJECTED' ? 'error'
+                : 'default'
+            return h(NTag, { type, size: 'small', round: true }, () => r.status)
+        },
+    },
+    {
+        title: 'Earlier',
+        key: 'earlier',
+        render: (r: any) => r.history?.length ? `${r.history.length} earlier` : '—',
+    },
+    {
+        title: 'Actions',
+        key: 'actions',
+        width: 80,
+        render (row: any) {
+            return h(NButton, {
+                size: 'small',
+                type: 'info',
+                title: 'Review proposal',
+                onClick: () => router.push({
+                    name: 'VexProposalReview',
+                    params: { orguuid: release.value.org, uuid: row.uuid }
+                })
+            }, { default: () => h(NIcon, null, { default: () => h(Eye) }) })
+        }
+    }
+]
+async function fetchReleaseVexProposals () {
+    if (!release.value?.org || !releaseUuid.value) return
+    releaseVexLoading.value = true
+    try {
+        const r = await graphqlClient.query({
+            query: GET_VEX_PROPOSALS_BY_RELEASE,
+            variables: { org: release.value.org, release: releaseUuid.value },
+            fetchPolicy: 'network-only'
+        })
+        releaseVexProposals.value = r.data?.getVexStatementProposalsByRelease ?? []
+    } catch (e) {
+        console.warn('Failed to load VEX proposals for release', e)
+    } finally {
+        releaseVexLoading.value = false
+    }
+}
 
 const instances: Ref<any[]> = ref([])
 const instanceUriNameMap: Ref<any[]> = ref([])
@@ -5567,6 +5703,8 @@ async function handleTabSwitch(tabName: string) {
         await loadSbomComponents()
     } else if (tabName === "partOfProducts") {
         await fetchInProducts()
+    } else if (tabName === "vex") {
+        await fetchReleaseVexProposals()
     }
 }
 
