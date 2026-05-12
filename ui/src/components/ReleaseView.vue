@@ -4673,7 +4673,13 @@ function renderArtifactFactsColumn (row: any) {
 
 function renderArtifactVulnerabilitiesColumn (row: any) {
     let els: any[] = []
-    if (row.metrics && row.metrics.lastScanned) {
+    // Gate on firstScanned (not lastScanned) so the circles agree with the
+    // DTrack badge from renderDtrackPill. lastScanned was the legacy gate,
+    // but pre-firstScanned-bridge artifact rows (last polled before commit
+    // 7fe729c7) have lastScanned set with firstScanned null — the badge
+    // says "Scanning…" while the circles rendered zeros, which read as
+    // "scan complete, no findings" instead of "scan not yet complete".
+    if (row.metrics && row.metrics.firstScanned) {
         const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
         const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', ['Vulnerability', 'Weakness'])}, row.metrics.critical)
         const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', ['Vulnerability', 'Weakness'])}, row.metrics.high)
@@ -4688,7 +4694,8 @@ function renderArtifactVulnerabilitiesColumn (row: any) {
 
 function renderArtifactViolationsColumn (row: any) {
     let els: any[] = []
-    if (row.metrics && row.metrics.lastScanned) {
+    // Same gate as renderArtifactVulnerabilitiesColumn — see comment there.
+    if (row.metrics && row.metrics.firstScanned) {
         const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
         const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
         const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
