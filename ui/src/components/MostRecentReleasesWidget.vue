@@ -7,6 +7,13 @@
                 style="display: inline-block; width: 80px;"
                 :min="1"
             />
+            <n-select
+                v-if="props.showFullPageIcon"
+                v-model:value="localComponentType"
+                :options="componentTypeOptions"
+                style="display: inline-block; width: 130px;"
+                title="Filter by component type"
+            />
             <span v-if="props.showFullPageIcon">Most Recent Releases</span>
             <h3 v-else style="margin: 0;">Most Recent Releases</h3>
             <n-icon class="clickable" size="20" title="Refresh" @click="fetchReleases">
@@ -98,7 +105,7 @@ export default {
 
 <script lang="ts" setup>
 import { ref, Ref, computed, watch, onMounted } from 'vue'
-import { NIcon, NSpin, NSpace, NInputNumber, NTooltip, useNotification } from 'naive-ui'
+import { NIcon, NSpin, NSpace, NInputNumber, NSelect, NTooltip, useNotification } from 'naive-ui'
 import { ArrowExpand20Regular } from '@vicons/fluent'
 import { Refresh } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
@@ -115,8 +122,18 @@ const props = withDefaults(defineProps<{
     limit?: number
     startDate?: Date
     endDate?: Date
+    /**
+     * Optional ComponentType filter — `'COMPONENT'`, `'PRODUCT'`, or null
+     * (== Any). When the widget is hosted on the home page (no inline
+     * selector — `showFullPageIcon=true`, parent doesn't pass `componentType`),
+     * the internal `localComponentType` defaults to null so the home view
+     * matches the pre-filter behaviour. The full-page wrapper passes
+     * `componentType` in to keep the URL the source of truth.
+     */
+    componentType?: 'COMPONENT' | 'PRODUCT' | null
 }>(), {
-    showFullPageIcon: true
+    showFullPageIcon: true,
+    componentType: null
 })
 
 const notification = useNotification()
@@ -131,6 +148,22 @@ function getPendingStatus (rel: any): ReleaseScanStatus {
 // Internal limit for home-page widget mode; overridden by props.limit on full-page
 const localLimit = ref(5)
 const effectiveLimit = computed(() => props.limit ?? localLimit.value)
+
+// Type selector — visible alongside the limit input when the widget is in
+// home-page mode (showFullPageIcon=true). When the parent passes a
+// componentType prop (full-page wrapper sourcing from URL), we mirror it
+// into the local value so the selector shows the current state.
+const componentTypeOptions = [
+    { label: 'Any', value: null },
+    { label: 'Component', value: 'COMPONENT' },
+    { label: 'Product', value: 'PRODUCT' }
+]
+const localComponentType: Ref<'COMPONENT' | 'PRODUCT' | null> = ref(props.componentType ?? null)
+const effectiveComponentType = computed<'COMPONENT' | 'PRODUCT' | null>(() =>
+    props.componentType !== undefined && props.componentType !== null
+        ? props.componentType
+        : localComponentType.value
+)
 
 const showVulnModal = ref(false)
 const vulnModalRelease: Ref<any> = ref(null)
@@ -170,7 +203,8 @@ async function fetchReleases() {
                     perspectiveUuid: props.perspectiveUuid,
                     startDate: startDate.toISOString(),
                     endDate: endDate.toISOString(),
-                    limit: effectiveLimit.value
+                    limit: effectiveLimit.value,
+                    componentType: effectiveComponentType.value
                 },
                 fetchPolicy: 'no-cache'
             })
@@ -182,7 +216,8 @@ async function fetchReleases() {
                     org: props.orgUuid,
                     startDate: startDate.toISOString(),
                     endDate: endDate.toISOString(),
-                    limit: effectiveLimit.value
+                    limit: effectiveLimit.value,
+                    componentType: effectiveComponentType.value
                 },
                 fetchPolicy: 'no-cache'
             })
@@ -228,7 +263,12 @@ function formatDate(dateStr: string): string {
 watch(() => props.perspectiveUuid, () => fetchReleases())
 watch(() => [props.startDate, props.endDate], () => fetchReleases())
 watch(() => props.limit, () => fetchReleases())
+watch(() => props.componentType, (val) => {
+    if (val !== undefined) localComponentType.value = val
+    fetchReleases()
+})
 watch(localLimit, () => fetchReleases())
+watch(localComponentType, () => fetchReleases())
 
 onMounted(async () => {
     if (props.orgUuid) {

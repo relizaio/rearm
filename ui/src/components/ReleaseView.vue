@@ -736,19 +736,6 @@
                         <n-data-table :data="inboundDeliverables" :columns="deliverableTableFields" :row-key="artifactsRowKey" />
                     </div>
                 </n-tab-pane>
-                <n-tab-pane v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'COMPONENT'" name="partOfProducts" tab="Part of Products">
-                    <div class="container" v-if="inProductsLoading">
-                        <n-spin size="large" />
-                        <p>Loading products that ship this release…</p>
-                    </div>
-                    <div class="container" v-else-if="inProductsLoaded">
-                        <n-data-table v-if="inProductsList.length" :data="inProductsList" :columns="inProductsTableFields" :row-key="artifactsRowKey" />
-                        <p v-else>This release isn't part of any product release.</p>
-                    </div>
-                    <div class="container" v-else>
-                        <p>Open this tab to load the list of product releases that include this release.</p>
-                    </div>
-                </n-tab-pane>
                 <n-tab-pane v-if="isProductRelease" name="underlyingArtifacts" tab="Underlying Artifacts">
                     <div class="container" v-if="productArtifactsLoading">
                         <n-spin size="large" />
@@ -820,6 +807,24 @@
                                 Reset Approvals
                             </n-button>
                         </n-space>
+                    </div>
+                </n-tab-pane>
+                <n-tab-pane v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'COMPONENT'" name="partOfProducts" tab="Part of Products">
+                    <div class="container" v-if="inProductsLoading">
+                        <n-spin size="large" />
+                        <p>Loading products that ship this release…</p>
+                    </div>
+                    <div class="container" v-else-if="inProductsLoaded">
+                        <component-branches-table
+                            v-if="partOfProductsComponentRows.length"
+                            :data="partOfProductsComponentRows"
+                            :org-uuid="updatedRelease.org"
+                            :feature-set-label="featureSetLabel"
+                        />
+                        <p v-else>This release isn't part of any product release.</p>
+                    </div>
+                    <div class="container" v-else>
+                        <p>Open this tab to load the list of product releases that include this release.</p>
                     </div>
                 </n-tab-pane>
                 <n-tab-pane v-if="false" name="tickets" tab="Tickets">
@@ -1162,6 +1167,7 @@ export default {
 </script>
 <script lang="ts" setup>
 import ChangelogView from '@/components/ChangelogView.vue'
+import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
 import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
@@ -1207,6 +1213,10 @@ const notify = async function (type: NotificationType, title: string, content: s
 
 const myUser = store.getters.myuser
 const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
+
+// Label shown on the "Branch / <label>" column in ComponentBranchesTable
+// for product releases. Org terminology can override the default.
+const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 
 const users: Ref<any[]> = ref([])
 const acollections: Ref<any[]> = ref([])
@@ -4950,46 +4960,58 @@ const deliverableTableFields: DataTableColumns<any> = [
     }
 ]
 
-const inProductsTableFields: ComputedRef<DataTableColumns<any>> = computed((): DataTableColumns<any> => [
-    {
-        key: 'productName',
-        title: 'Product',
-        render(row: any) {
-            return h(RouterLink, 
-                {to: {name: 'ProductsOfOrg',
-                    params: {orguuid: release.value.org, compuuid: row.componentDetails.uuid}},
-                style: "text-decoration: none;"},
-                () => row.componentDetails.name )
+// Group the flat inProducts release list into the 3-level
+// (component → branch → releases) shape that ComponentBranchesTable
+// renders — same display the "Releases for day" widget uses, so the two
+// surfaces stay consistent. Releases without resolved componentDetails
+// or branchDetails are dropped (no anchor for the table's hierarchy).
+const partOfProductsComponentRows: ComputedRef<any[]> = computed((): any[] => {
+    const list: any[] = inProductsList.value || []
+    if (!list.length) return []
+    const byComponent = new Map<string, any>()
+    for (const rel of list) {
+        const cd = rel?.componentDetails
+        const bd = rel?.branchDetails
+        if (!cd?.uuid || !bd?.uuid) continue
+        let comp = byComponent.get(cd.uuid)
+        if (!comp) {
+            comp = {
+                uuid: cd.uuid,
+                name: cd.name,
+                type: cd.type,
+                versionSchema: cd.versionSchema,
+                branches: new Map<string, any>()
+            }
+            byComponent.set(cd.uuid, comp)
         }
-    },
-    {
-        key: 'featureSetName',
-        title: words.value.branchFirstUpper || 'Feature Set',
-        render(row: any) {
-            return h(RouterLink, 
-                {to: {name: 'ProductsOfOrg',
-                    params: {orguuid: release.value.org, compuuid: row.componentDetails.uuid,
-                        branchuuid: row.branchDetails.uuid
-                    }},
-                style: "text-decoration: none;"},
-                () => row.branchDetails.name )
+        let branch = comp.branches.get(bd.uuid)
+        if (!branch) {
+            branch = {
+                uuid: bd.uuid,
+                name: bd.name,
+                status: bd.status,
+                versionSchema: bd.versionSchema,
+                latestReleaseVersion: bd.latestReleaseVersion,
+                releases: []
+            }
+            comp.branches.set(bd.uuid, branch)
         }
-    },
-    {
-        key: 'version',
-        title: 'Version',
-        render(row: any) {
-            return h(RouterLink, 
-                {to: {name: 'ReleaseView', params: {uuid: row.uuid}},
-                    style: "text-decoration: none;"},
-                () => row.version )
-        }
-    },
-    {
-        key: 'lifecycle',
-        title: 'Lifecycle'
+        branch.releases.push({
+            uuid: rel.uuid,
+            version: rel.version,
+            createdDate: rel.createdDate,
+            lifecycle: rel.lifecycle,
+            metrics: rel.metrics
+        })
     }
-])
+    return Array.from(byComponent.values()).map(c => ({
+        uuid: c.uuid,
+        name: c.name,
+        type: c.type,
+        versionSchema: c.versionSchema,
+        branches: Array.from(c.branches.values())
+    }))
+})
 
 const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed((): DataTableColumns<any> => [
     {

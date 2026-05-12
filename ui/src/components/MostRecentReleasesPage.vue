@@ -26,6 +26,12 @@
                     style="width: 100px;"
                     placeholder="Custom"
                 />
+                <span>Type:</span>
+                <n-select
+                    v-model:value="componentTypeValue"
+                    :options="componentTypeOptions"
+                    style="width: 140px;"
+                />
             </n-space>
         </div>
         <div class="widget-container">
@@ -37,6 +43,7 @@
                 :limit="effectiveLimit"
                 :start-date="dateFrom"
                 :end-date="dateTo"
+                :component-type="componentTypeValue"
             />
         </div>
     </div>
@@ -93,11 +100,23 @@ function onLimitPresetChange(val: number | 'custom') {
     if (val !== 'custom') customLimit.value = val as number
 }
 
+const componentTypeOptions = [
+    { label: 'Any', value: null },
+    { label: 'Component', value: 'COMPONENT' },
+    { label: 'Product', value: 'PRODUCT' }
+]
+const componentTypeValue = ref<'COMPONENT' | 'PRODUCT' | null>(null)
+
 function syncUrl() {
     const q: Record<string, string> = { ...route.query as Record<string, string> }
     if (startDateValue.value) q.fromDate = new Date(startDateValue.value).toISOString().split('T')[0]
     if (endDateValue.value) q.toDate = new Date(endDateValue.value).toISOString().split('T')[0]
     q.limit = String(effectiveLimit.value)
+    if (componentTypeValue.value) {
+        q.type = componentTypeValue.value
+    } else {
+        delete q.type
+    }
     router.replace({ query: q })
 }
 
@@ -121,9 +140,13 @@ onMounted(() => {
             }
         }
     }
+    const urlType = route.query.type as string | undefined
+    if (urlType === 'COMPONENT' || urlType === 'PRODUCT') {
+        componentTypeValue.value = urlType
+    }
 })
 
-watch([startDateValue, endDateValue, effectiveLimit], syncUrl)
+watch([startDateValue, endDateValue, effectiveLimit, componentTypeValue], syncUrl)
 </script>
 
 <style scoped lang="scss">

@@ -836,6 +836,11 @@ query FetchRelease($releaseID: ID!, $orgID: ID) {
 // Stripped from the main SingleReleaseGql payload because the inProducts
 // resolver walks every release that lists this one as a parent, which
 // blows up page load for components that ship across many product releases.
+//
+// Field set mirrors what ComponentBranchesTable consumes after the
+// (release → component → branch → releases) transform in
+// ReleaseView.partOfProductsComponentRows — we group the flat inProducts
+// list back into the 3-level shape the table renders.
 const FETCH_RELEASE_IN_PRODUCTS_GQL = gql`
 query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
     release(releaseUuid: $releaseID, orgUuid: $orgID) {
@@ -844,14 +849,31 @@ query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
             uuid
             version
             component
+            createdDate
+            lifecycle
             componentDetails {
                 uuid
                 name
+                type
+                versionSchema
             }
             branchDetails {
+                uuid
                 name
+                status
+                versionSchema
+                latestReleaseVersion
             }
-            lifecycle
+            metrics {
+                critical
+                high
+                medium
+                low
+                unassigned
+                policyViolationsLicenseTotal
+                policyViolationsSecurityTotal
+                policyViolationsOperationalTotal
+            }
         }
     }
 }`
@@ -1227,15 +1249,15 @@ query EnvironmentTypes($orgUuid: ID!) {
 }`
 
 const RELEASES_BY_DATE_RANGE_GQL = gql`
-query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int) {
-    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit) {
+query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType) {
+    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType) {
         ${MULTI_RELEASE_GQL_DATA}
     }
 }`
 
 const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL = gql`
-query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int) {
-    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit) {
+query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType) {
+    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType) {
         ${MULTI_RELEASE_GQL_DATA}
     }
 }`
