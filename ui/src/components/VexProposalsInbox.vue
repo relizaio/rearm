@@ -92,11 +92,19 @@ const columns = computed(() => {
         key: 'actions',
         width: 80,
         render (row: any) {
+            // Open in a new tab so reviewers can keep the inbox open while triaging — they
+            // typically work through a queue of proposals and bouncing back to the inbox after
+            // each one breaks the cadence. window.open over <a target=_blank> because the
+            // click target is an NButton, not a plain anchor.
+            const href = router.resolve({
+                name: 'VexProposalReview',
+                params: { orguuid: orgUuid.value, uuid: row.uuid }
+            }).href
             return h(NButton, {
                 size: 'small',
                 type: 'info',
-                title: 'Review proposal',
-                onClick: () => router.push({ name: 'VexProposalReview', params: { orguuid: orgUuid.value, uuid: row.uuid } })
+                title: 'Review proposal (opens in new tab)',
+                onClick: () => window.open(href, '_blank', 'noopener')
             }, { default: () => h(NIcon, null, { default: () => h(Eye) }) })
         }
     })

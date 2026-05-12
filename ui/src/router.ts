@@ -77,7 +77,7 @@ const routes : any[] = [
     {
         path: '/vulnerabilityAnalysis/:orguuid',
         name: 'VulnerabilityAnalysis',
-        component: () => import('@/components/VulnerabilityAnalysis.vue')
+        component: () => import('@/components/FindingAnalysisPage.vue')
     },
     {
         path: '/orgSettings/:orguuid',
@@ -137,9 +137,14 @@ const routes : any[] = [
         component: () => import('@/components/DownloadTeaArtifactView.vue')
     },
     {
+        // Retired in 2026-05: VEX Proposals now lives as a tab inside the Finding Analysis page.
+        // Redirect preserves any bookmarks/links from the v1.2 dogfood period.
         path: '/vexProposalsOfOrg/:orguuid',
-        name: 'VexProposalsInbox',
-        component: () => import('@/components/VexProposalsInbox.vue')
+        redirect: (to: RouteLocationNormalized) => ({
+            name: 'VulnerabilityAnalysis',
+            params: { orguuid: to.params.orguuid },
+            query: { tab: 'vex' }
+        })
     },
     {
         path: '/vexProposal/:orguuid/:uuid',
@@ -147,9 +152,13 @@ const routes : any[] = [
         component: () => import('@/components/VexProposalReview.vue')
     },
     {
+        // Same as above — Mitigation Attestations is now a tab in Finding Analysis.
         path: '/mitigationAttestationsOfOrg/:orguuid',
-        name: 'MitigationAttestationsInbox',
-        component: () => import('@/components/MitigationAttestationsInbox.vue')
+        redirect: (to: RouteLocationNormalized) => ({
+            name: 'VulnerabilityAnalysis',
+            params: { orguuid: to.params.orguuid },
+            query: { tab: 'attestations' }
+        })
     },
     {
         path: '/mitigationAttestation/:orguuid/:uuid',
