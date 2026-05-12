@@ -17,6 +17,7 @@ import * as SpdxRepository from '../../spdxRepository';
 import { getBearCredentials, getBearIntegration } from '../integrationService';
 import { SpdxService } from '../spdx';
 import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
+import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -429,6 +430,72 @@ export function attachRebomToolToBom(finalBom: any): any {
 export function augmentBomForStorage(bom: any, componentDetails: RebomOptions, lastUpdatedDate?: string | Date): any {
   const augmentedBom = augmentBomWithComponentContext(bom, componentDetails, lastUpdatedDate);
   return attachRebomToolToBom(augmentedBom);
+}
+
+/**
+ * Fix the narrow case where an upstream source (notably npm) emits a license
+ * name like "CC BY-SA 4.0" inside `{expression: ...}` alongside the properly
+ * resolved `{license: {id: "CC-BY-SA-4.0"}}`. The CycloneDX `licenses`
+ * `oneOf` accepts an array of license-objects OR a single expression — never
+ * a mix — so the BOM fails both branches.
+ *
+ * Convert any expression that resolves to a known SPDX id via fixupSpdxId
+ * (retried with whitespace-to-dash for the npm variant) into a license
+ * object, then dedupe by `license.id`. We deliberately do NOT touch
+ * compound expressions ("MIT OR Apache-2.0"), do NOT dedupe by `name`
+ * (freeform — siblings may differ in url/text), and do NOT try to reconcile
+ * mixed expression+license arrays beyond what dedupe-by-id resolves.
+ * Anything ambiguous falls through to validation as before.
+ */
+export function normalizeLicenses(licenses: any): any[] | undefined {
+  if (!Array.isArray(licenses) || licenses.length === 0) return licenses;
+
+  const converted = licenses.map((entry: any) => {
+    if (entry && typeof entry === 'object' && typeof entry.expression === 'string') {
+      const expr = entry.expression;
+      const fixedId = CDXSpdx.fixupSpdxId(expr) ?? CDXSpdx.fixupSpdxId(expr.replace(/\s+/g, '-'));
+      if (fixedId) return { license: { id: fixedId } };
+    }
+    return entry;
+  });
+
+  const seenIds = new Set<string>();
+  const out: any[] = [];
+  for (const entry of converted) {
+    const id = entry?.license?.id;
+    if (typeof id === 'string') {
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
+export function normalizeLicensesInBom(bom: any): any {
+  if (!bom || typeof bom !== 'object') return bom;
+
+  const walkComponents = (comps: any) => {
+    if (!Array.isArray(comps)) return;
+    for (const c of comps) {
+      if (!c || typeof c !== 'object') continue;
+      if (c.licenses) c.licenses = normalizeLicenses(c.licenses);
+      if (c.components) walkComponents(c.components);
+    }
+  };
+
+  walkComponents(bom.components);
+  walkComponents(bom.services);
+  if (bom.metadata?.component) {
+    if (bom.metadata.component.licenses) {
+      bom.metadata.component.licenses = normalizeLicenses(bom.metadata.component.licenses);
+    }
+    walkComponents(bom.metadata.component.components);
+  }
+  if (bom.metadata?.licenses) {
+    bom.metadata.licenses = normalizeLicenses(bom.metadata.licenses);
+  }
+  return bom;
 }
 
 function extractComponentIdentity(components: any[]): any[] {

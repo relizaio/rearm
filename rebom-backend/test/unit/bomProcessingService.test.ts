@@ -526,4 +526,99 @@ describe('BOM Processing Service - Unit Tests', () => {
             }
         });
     });
+
+    describe('normalizeLicenses / normalizeLicensesInBom', () => {
+        it('converts an SPDX-id-like expression with spaces into a license object', () => {
+            const out = BomProcessingService.normalizeLicenses([{ expression: 'CC BY-SA 4.0' }]);
+            expect(out).toEqual([{ license: { id: 'CC-BY-SA-4.0' } }]);
+        });
+
+        it('drops a redundant bad expression when the resolved license object is also present', () => {
+            const out = BomProcessingService.normalizeLicenses([
+                { expression: 'CC BY-SA 4.0' },
+                { license: { id: 'CC-BY-SA-4.0' } },
+            ]);
+            expect(out).toEqual([{ license: { id: 'CC-BY-SA-4.0' } }]);
+        });
+
+        it('leaves a compound SPDX expression untouched (operators are valid)', () => {
+            const out = BomProcessingService.normalizeLicenses([{ expression: 'MIT OR Apache-2.0' }]);
+            expect(out).toEqual([{ expression: 'MIT OR Apache-2.0' }]);
+        });
+
+        it('does not silently reconcile a mixed expression+license array when the expression is not a redundant SPDX id', () => {
+            const input = [
+                { expression: 'MIT OR Apache-2.0' },
+                { license: { id: 'MIT' } },
+            ];
+            const out = BomProcessingService.normalizeLicenses(input);
+            expect(out).toEqual(input);
+        });
+
+        it('dedupes identical license-id entries but preserves freeform-name siblings', () => {
+            const idDedup = BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT' } },
+                { license: { id: 'MIT' } },
+            ]);
+            expect(idDedup).toEqual([{ license: { id: 'MIT' } }]);
+
+            const nameKept = BomProcessingService.normalizeLicenses([
+                { license: { name: 'Custom EULA', url: 'https://a.example/eula' } },
+                { license: { name: 'Custom EULA', url: 'https://b.example/eula' } },
+            ]);
+            expect(nameKept).toEqual([
+                { license: { name: 'Custom EULA', url: 'https://a.example/eula' } },
+                { license: { name: 'Custom EULA', url: 'https://b.example/eula' } },
+            ]);
+        });
+
+        it('walks components, services, and metadata.component recursively', () => {
+            const bom: any = {
+                metadata: {
+                    component: {
+                        licenses: [{ expression: 'CC BY-SA 4.0' }, { license: { id: 'CC-BY-SA-4.0' } }],
+                        components: [
+                            { licenses: [{ expression: 'Apache 2.0' }] },
+                        ],
+                    },
+                    licenses: [{ expression: 'MIT' }, { license: { id: 'MIT' } }],
+                },
+                components: [
+                    { licenses: [{ expression: 'CC BY-SA 4.0' }, { license: { id: 'CC-BY-SA-4.0' } }] },
+                ],
+                services: [{ licenses: [{ expression: 'apache-2.0' }] }],
+            };
+            BomProcessingService.normalizeLicensesInBom(bom);
+            expect(bom.metadata.component.licenses).toEqual([{ license: { id: 'CC-BY-SA-4.0' } }]);
+            expect(bom.metadata.component.components[0].licenses).toEqual([{ license: { id: 'Apache-2.0' } }]);
+            expect(bom.metadata.licenses).toEqual([{ license: { id: 'MIT' } }]);
+            expect(bom.components[0].licenses).toEqual([{ license: { id: 'CC-BY-SA-4.0' } }]);
+            expect(bom.services[0].licenses).toEqual([{ license: { id: 'Apache-2.0' } }]);
+        });
+
+        it('produces a CycloneDX-valid licenses array for the failing case', async () => {
+            const validateBom = (await import('../../src/validateBom')).default;
+            const bom: any = {
+                bomFormat: 'CycloneDX',
+                specVersion: '1.6',
+                serialNumber: 'urn:uuid:c1c0e0e0-0000-0000-0000-000000000000',
+                version: 1,
+                metadata: { timestamp: '2026-05-11T00:00:00Z' },
+                components: [
+                    {
+                        type: 'library',
+                        name: 'broken-license-pkg',
+                        version: '1.0.0',
+                        'bom-ref': 'pkg:npm/broken-license-pkg@1.0.0',
+                        licenses: [
+                            { expression: 'CC BY-SA 4.0' },
+                            { license: { id: 'CC-BY-SA-4.0' } },
+                        ],
+                    },
+                ],
+            };
+            BomProcessingService.normalizeLicensesInBom(bom);
+            await expect(validateBom(bom)).resolves.toBe(true);
+        });
+    });
 });

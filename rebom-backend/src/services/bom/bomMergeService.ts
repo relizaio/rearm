@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, establishPurl, attachRebomToolToBom } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
 
@@ -190,9 +190,11 @@ async function processBomObj(bom: any): Promise<any> {
     'git+https://github': 'ssh://git@github',
   })
 
+  normalizeLicensesInBom(processedBom);
+
   // NOTE: rearm-cli 26.01.12+ bomutils merge-boms now handles dependency deduplication.
   // This is lightweight defensive validation for BOMs from other sources or legacy versions.
-  
+
   // Ensure dependsOn is always an array (defensive validation)
   if (processedBom.dependencies && Array.isArray(processedBom.dependencies)) {
     let fixedCount = 0;

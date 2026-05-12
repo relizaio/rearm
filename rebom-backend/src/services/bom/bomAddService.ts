@@ -11,7 +11,7 @@ import {
   validateOciPushResult,
   extractRepositoryNameFromBom
 } from '../oci';
-import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync } from './bomProcessingService';
+import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom } from './bomProcessingService';
 import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
@@ -474,6 +474,8 @@ async function processBomObj(bom: any): Promise<any> {
     ':git@github': ':ssh://git@github',
     'git+https://github': 'ssh://git@github',
   })
+
+  normalizeLicensesInBom(processedBom);
 
   // Fix dependencies structure BEFORE validation - ensure dependsOn is always an array
   if (processedBom.dependencies && Array.isArray(processedBom.dependencies)) {
