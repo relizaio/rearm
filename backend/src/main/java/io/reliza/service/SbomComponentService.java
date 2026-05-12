@@ -556,6 +556,15 @@ public class SbomComponentService {
 	}
 
 	/**
+	 * Whether the given release has any rows in release_sbom_components.
+	 * VEX import precondition guard — a release with no SBOM has no inventory to match against.
+	 */
+	public boolean releaseHasSbomComponents(UUID releaseUuid, UUID orgUuid) {
+		if (orgUuid == null || releaseUuid == null) return false;
+		return releaseSbomComponentRepository.existsByOrgAndReleaseUuid(orgUuid, releaseUuid);
+	}
+
+	/**
 	 * Distinct release UUIDs (within {@code orgUuid}) whose inventory
 	 * references any of the given canonical sbom_components. Returns both
 	 * (a) component releases that directly carry the component in

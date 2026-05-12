@@ -1410,12 +1410,38 @@ public class SharedReleaseService {
 	}
 
 	public List<ReleaseData> listReleaseDataOfOrgBetweenDates(UUID orgUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit) {
+		return listReleaseDataOfOrgBetweenDates(orgUuid, startDate, endDate, limit, null);
+	}
+
+	/**
+	 * Same as the 4-arg variant but with an optional {@code componentType}
+	 * filter applied before the limit cap. Components are looked up
+	 * in-memory per release — fine for the typical UI limit (≤100) and
+	 * avoids a SQL join through release.record_data → component table
+	 * that would defeat the existing JSONB index on org.
+	 *
+	 * <p>Passing null for {@code componentType} matches every type
+	 * (back-compat with the 4-arg path). Filter sits before
+	 * {@code stream.limit} so we don't undercount when the first N
+	 * releases happen to be of the unwanted type.
+	 */
+	public List<ReleaseData> listReleaseDataOfOrgBetweenDates(UUID orgUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit,
+			io.reliza.model.ComponentData.ComponentType componentType) {
 		var stream = repository.findReleasesOfOrgBetweenDates(orgUuid.toString(), startDate, endDate)
 				.stream()
 				.map(ReleaseData::dataFromRecord)
 				.sorted(new ReleaseData.ReleaseDateComparator());
+		if (componentType != null) {
+			stream = stream.filter(rd -> matchesComponentType(rd, componentType));
+		}
 		if (limit != null) stream = stream.limit(limit);
 		return stream.collect(Collectors.toList());
+	}
+
+	private boolean matchesComponentType(ReleaseData rd, io.reliza.model.ComponentData.ComponentType componentType) {
+		if (rd == null || rd.getComponent() == null) return false;
+		var ocd = getComponentService.getComponentData(rd.getComponent());
+		return ocd.isPresent() && componentType.equals(ocd.get().getType());
 	}
 
 	public List<ReleaseData> listReleaseDataOfComponentBetweenDates(UUID componentUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit) {

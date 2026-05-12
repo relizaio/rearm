@@ -121,6 +121,7 @@ import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
+import io.reliza.service.VexImportService;
 import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.service.RebomService.BomMediaType;
@@ -212,6 +213,9 @@ public class ReleaseDatafetcher {
 
 	@Autowired
 	private io.reliza.service.tea.TeaTransformerService teaTransformerService;
+
+	@Autowired
+	private VexImportService vexImportService;
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "release")
@@ -1238,6 +1242,10 @@ public class ReleaseDatafetcher {
 			throw new RelizaException(validationErrors.stream().collect(Collectors.joining(", ")));
 		}
 
+		if (ArtifactType.VEX.equals(artDto.getType()) && multipartFile != null) {
+			vexImportService.verifyDispatchPreconditions(rd);
+		}
+
 		UUID artId = null;
 
 		String purl = null;
@@ -1301,9 +1309,20 @@ public class ReleaseDatafetcher {
 			}
 			
 			releaseService.reconcileMergedSbomRoutine(rd, wu);
+
+			if (ArtifactType.VEX.equals(artDto.getType()) && multipartFile != null) {
+				try {
+					vexImportService.dispatchFromArtifact(
+						artId, artDto, rd, belongsTo,
+						multipartFile.getBytes(), wu);
+				} catch (Exception e) {
+					log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
+						artId, rd.getUuid(), e.getMessage());
+				}
+			}
 		}
 
-		
+
 		return sharedReleaseService.getReleaseData(ord.get().getUuid()).get();
 		// TODO
 		// return releaseService.addArtifacts(ord.get(), addArtifactDto.getArtifacts(), wu);
@@ -2062,13 +2081,14 @@ public class ReleaseDatafetcher {
 			@InputArgument("org") UUID orgUuid,
 			@InputArgument("startDate") ZonedDateTime startDate,
 			@InputArgument("endDate") ZonedDateTime endDate,
-			@InputArgument("limit") Integer limit) throws RelizaException {
+			@InputArgument("limit") Integer limit,
+			@InputArgument("componentType") io.reliza.model.ComponentData.ComponentType componentType) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
-		return sharedReleaseService.listReleaseDataOfOrgBetweenDates(orgUuid, startDate, endDate, limit);
+		return sharedReleaseService.listReleaseDataOfOrgBetweenDates(orgUuid, startDate, endDate, limit, componentType);
 	}
 
 	@PreAuthorize("isAuthenticated()")

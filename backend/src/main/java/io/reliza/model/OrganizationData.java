@@ -122,6 +122,101 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		private List<String> operationalViolationRegexIgnore = new LinkedList<>();
 	}
 	
+	/**
+	 * Org-wide PR-validation trigger rule. When a VCS repository in this
+	 * org has no per-repo {@code outputTriggers} set, the resolver walks
+	 * this list in order and the first rule whose {@code uriPattern}
+	 * fully matches the repo's URI contributes its {@link #trigger} as
+	 * the effective EXTERNAL_VALIDATION trigger. Per-repo triggers
+	 * always win when present. The list itself is the priority order —
+	 * earlier rules win over later ones, and the loser names are
+	 * surfaced in the per-VCS provenance UI so operators can clean up
+	 * accidental overlap.
+	 *
+	 * SAAS-only feature: the resolver and write paths live in
+	 * {@code service.saas.*}. The model field stays in this shared
+	 * class so CE doesn't fork the schema; CE rows simply carry an
+	 * empty list.
+	 */
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class GlobalPrValidationTriggerRule {
+		/** Display name; unique within the org. */
+		@JsonProperty
+		private String name;
+		/**
+		 * Java regex matched against {@code VcsRepositoryData.uri} via
+		 * {@code Pattern.matcher(uri).matches()} — fully anchored, same
+		 * convention as {@code DependencyPatternService}. Operators
+		 * write {@code github.com/myorg/.*} (no leading {@code ^},
+		 * no trailing {@code $}) and the engine anchors automatically.
+		 */
+		@JsonProperty
+		private String uriPattern;
+		/**
+		 * Trigger spec. Same shape as a per-VCS trigger; must be of
+		 * type {@code EXTERNAL_VALIDATION} and reference an existing
+		 * GITHUB integration with the {@code PR_VALIDATE} capability.
+		 * Validation happens in {@code OrgValidationTriggerService}
+		 * on write.
+		 */
+		@JsonProperty
+		private ComponentData.ReleaseOutputEvent trigger;
+	}
+
+	/**
+	 * Org-wide approval-policy assignment rule. When a component in this
+	 * org has no per-component {@code approvalPolicy} set (or its
+	 * per-component reference points to an archived/missing policy),
+	 * the resolver walks this list in order and the first rule whose
+	 * {@code namePattern} fully matches the component's name AND whose
+	 * {@code componentType} filter accepts the component's
+	 * {@code type} contributes its {@link #approvalPolicy} as the
+	 * effective approval policy. Per-component references always win
+	 * when the referenced policy still exists.
+	 *
+	 * The filter {@code componentType} value {@code ANY} matches both
+	 * {@code COMPONENT} and {@code PRODUCT} (there is no {@code ANY}-
+	 * typed component entity itself — it's only a rule-side filter
+	 * value).
+	 *
+	 * SAAS-only feature: the resolver and write paths live in
+	 * {@code service.saas.*}. The model field stays in this shared
+	 * class so CE doesn't fork the schema; CE rows simply carry an
+	 * empty list.
+	 */
+	@Data
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static class GlobalApprovalPolicyRule {
+		/** Display name; unique within the org. */
+		@JsonProperty
+		private String name;
+		/**
+		 * Java regex matched against {@code ComponentData.name} via
+		 * {@code Pattern.matcher(name).matches()} — fully anchored,
+		 * same convention as {@code DependencyPatternService}.
+		 * Operators write {@code frontend-.*} (no leading {@code ^},
+		 * no trailing {@code $}) and the engine anchors automatically.
+		 */
+		@JsonProperty
+		private String namePattern;
+		/**
+		 * Type filter. {@code COMPONENT} / {@code PRODUCT} restrict
+		 * the match; {@code ANY} (the default when null) matches both
+		 * concrete types.
+		 */
+		@JsonProperty
+		private ComponentData.ComponentType componentType;
+		/**
+		 * Referenced approval policy UUID. Validation rejects rules
+		 * whose target policy doesn't exist or doesn't belong to this
+		 * org at write time; the resolver re-checks at read time and
+		 * surfaces a stale marker on the per-component UI.
+		 */
+		@JsonProperty
+		private UUID approvalPolicy;
+	}
+
 	public static class InvitedObject {
 		@JsonProperty(CommonVariables.SECRET_FIELD)
 		private String secret;
@@ -168,6 +263,23 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	private IgnoreViolation ignoreViolation;
 	@JsonProperty
 	private Settings settings;
+	/**
+	 * Org-wide PR-validation trigger rules — see
+	 * {@link GlobalPrValidationTriggerRule}. Empty/null means "no
+	 * org-wide rules"; per-repo triggers behave exactly as before.
+	 * The list itself is the priority order (first match wins).
+	 */
+	@JsonProperty
+	private List<GlobalPrValidationTriggerRule> globalPrValidationTriggerRules = new LinkedList<>();
+	/**
+	 * Org-wide approval-policy assignment rules — see
+	 * {@link GlobalApprovalPolicyRule}. Empty/null means "no org-wide
+	 * assignments"; per-component approvalPolicy references behave
+	 * exactly as before. List order is the priority order (first match
+	 * wins).
+	 */
+	@JsonProperty
+	private List<GlobalApprovalPolicyRule> globalApprovalPolicyRules = new LinkedList<>();
 
 
 	public void removeInvitee(String email, UUID whoInvited){

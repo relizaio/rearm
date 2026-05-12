@@ -69,6 +69,11 @@ import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.IntegrationType;
 import io.reliza.model.TextPayload;
+import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.VulnerabilityRecordData.CweEntry;
+import io.reliza.model.VulnerabilityRecordData.Fetcher;
+import io.reliza.model.VulnerabilityRecordData.UpstreamSource;
+import io.reliza.model.VulnerabilityRecordData.VulnSourceSnapshot;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.IntegrationWebDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
@@ -107,7 +112,11 @@ public class IntegrationService {
 	@Autowired
 	@Lazy
 	private DTrackService dtrackService;
-	
+
+	@Autowired
+	@Lazy
+	private VulnerabilityRecordService vulnerabilityRecordService;
+
 	@Autowired
 	private GetOrganizationService getOrganizationService;
 	
@@ -282,7 +291,7 @@ public class IntegrationService {
 			throws JsonMappingException, JsonProcessingException {
 		Integration i = new Integration();
 		String secret = tii.getSecret();
-		if (tii.getType() == IntegrationType.GITHUB || tii.getType() == IntegrationType.GITHUB_VALIDATE) {
+		if (tii.getType() == IntegrationType.GITHUB) {
 			secret = normalizeGithubAppPrivateKey(secret);
 		}
 		String encryptedSecret = encryptionService.encrypt(secret);
@@ -292,6 +301,7 @@ public class IntegrationService {
 		id.setType(tii.getType());
 		id.setSecret(encryptedSecret);
 		id.setNote(tii.getNote());
+		id.setCapabilities(tii.getCapabilities());
 		if (StringUtils.isNotEmpty(tii.getSchedule())) id.setSchedule(tii.getSchedule());
 		if (StringUtils.isNotEmpty(tii.getUri())) {
 			URI uri = null;
@@ -311,7 +321,22 @@ public class IntegrationService {
 		}
 		return saveIntegration(i, Utils.dataToRecord(id), wu);
 	}
-	
+
+	/**
+	 * Replace the asserted capabilities on an Integration. Idempotent,
+	 * preserves all other record_data fields. Caller is responsible for
+	 * authorization (org-admin).
+	 */
+	@Transactional
+	public Integration updateCapabilities(UUID uuid,
+			List<IntegrationData.IntegrationCapability> capabilities, WhoUpdated wu) {
+		Integration i = repository.findById(uuid)
+				.orElseThrow(() -> new IllegalArgumentException("Integration not found: " + uuid));
+		IntegrationData id = IntegrationData.dataFromRecord(i);
+		id.setCapabilities(capabilities == null ? List.of() : capabilities);
+		return saveIntegration(i, Utils.dataToRecord(id), wu);
+	}
+
 	@Transactional
 	private Integration saveIntegration (Integration i, Map<String,Object> recordData, WhoUpdated wu) {
 		// let's add some validation here
@@ -666,7 +691,7 @@ public class IntegrationService {
 		String dtrackProject = ad.getMetrics().getDependencyTrackProject();
 		DependencyTrackIntegration dti = new DependencyTrackIntegration();
 		List<VulnerabilityDto> vulnerabilityDetails = fetchDependencyTrackVulnerabilityDetails(
-				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), lastScanned);
+				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), ad.getOrg(), lastScanned);
 		List<ViolationDto> violationDetails = fetchDependencyTrackViolationDetails(
 				dtrackBaseUri, apiToken, dtrackProject, ad.getUuid(), ad.getOrg(), lastScanned);
 		dti.setVulnerabilityDetails(vulnerabilityDetails);
@@ -713,77 +738,206 @@ public class IntegrationService {
 	/**
 	 * Subset of DTrack's {@code /api/v1/vulnerability/project/{uuid}} vulnerability payload.
 	 *
-	 * <p>References are intentionally omitted: DTrack serializes them as a markdown-formatted
-	 * {@link String} rather than a structured list, and a safe parser is out of scope.
+	 * <p>DTrack returns one row per upstream feed for each vulnerability — e.g. a CVE
+	 * is repeated as one NVD row and one GITHUB row, linked through {@link #aliases}.
+	 * The {@link #source} field is what tells us which upstream feed contributed the
+	 * description / CWEs / CVSS scoring on this particular row. {@link #title} only
+	 * appears on some sources (GHSA usually carries one; NVD typically doesn't).
+	 *
+	 * <p>{@link #references} is a markdown-formatted blob (one bullet per advisory URL)
+	 * — kept as a string here and union-deduped in the merger.
 	 *
 	 * <p>Dates are declared as {@link Date}; Jackson handles both ISO 8601 strings and epoch
 	 * millis transparently so we don't need to guess DT's on-the-wire representation.
+	 *
+	 * <p>{@link #uuid} is DTrack's internal vulnerability UUID — opaque, but useful as the
+	 * {@code fetcherRef} when re-fetching a single record without re-listing a project.
 	 */
 	@JsonIgnoreProperties(ignoreUnknown = true)
-	private record DtrackVulnRaw (String vulnId, VulnerabilitySeverity severity,
+	private record DtrackVulnRaw (String vulnId, String source, String title,
+			VulnerabilitySeverity severity,
 			List<DtrackComponentRaw> components, List<DtrackAliasRaw> aliases,
-			String description, List<DtrackCweRaw> cwes, Date published, Date updated) {}
+			String description, List<DtrackCweRaw> cwes, String references,
+			Double cvssV3BaseScore, String cvssV3Vector,
+			Double cvssV3ImpactSubScore, Double cvssV3ExploitabilitySubScore,
+			Double cvssV4Score, String cvssV4Vector,
+			Double epssScore, Double epssPercentile,
+			String uuid, Date published, Date updated) {}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
 	
 	protected List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		// Use lastScanned (DTrack scan time) as attributedAt so findings are included in First Scanned VDR
 		// snapshots. Using ZonedDateTime.now() would set attributedAt after lastScanned/firstScanned,
 		// causing all findings to be filtered out when the cutoff equals firstScanned.
 		final ZonedDateTime attributedAt = lastScanned != null ? lastScanned : ZonedDateTime.now();
-		
-		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
+		final String fetcherEndpoint = dtrackBaseUri.toString();
+
+		// Per-fetch context for the vulnerability_records upsert pass that runs
+		// after pagination completes. We bucket raw rows by canonical primary id
+		// (CVE-X preferred over GHSA-Y, etc.) so the multiple per-source rows
+		// DTrack hands us for the same vuln land on one canonical record.
+		Map<String, List<DtrackVulnRaw>> rowsByCanonical = new java.util.LinkedHashMap<>();
+		Map<String, Set<String>> aliasesByCanonical = new java.util.LinkedHashMap<>();
+
+		List<VulnerabilityDto> all = executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "", rawPage -> {
 			List<VulnerabilityDto> pageResults = new ArrayList<>();
 			for (Object vd : rawPage) {
 				DtrackVulnRaw dvr = Utils.OM.convertValue(vd, DtrackVulnRaw.class);
 				Set<VulnerabilityAliasDto> aliases = new LinkedHashSet<>();
+				Set<String> aliasStrings = new LinkedHashSet<>();
+				if (dvr.vulnId() != null) aliasStrings.add(dvr.vulnId());
 				if (null != dvr.aliases() && !dvr.aliases().isEmpty()) {
 					dvr.aliases().forEach(a -> {
 						if (a.cveId() != null && !a.cveId().trim().isEmpty()) {
 							aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.CVE, a.cveId()));
+							aliasStrings.add(a.cveId());
 						}
 						if (a.ghsaId() != null && !a.ghsaId().trim().isEmpty()) {
 							aliases.add(new VulnerabilityAliasDto(VulnerabilityAliasType.GHSA, a.ghsaId()));
+							aliasStrings.add(a.ghsaId());
 						}
 					});
 				}
-				
+
 				// Create severity source based on the main vulnerability ID
 				SeveritySourceDto severitySource = Utils.createSeveritySourceDto(dvr.vulnId(), dvr.severity());
 
-				// Compute per-vulnerability enrichment fields once; reused across the
-				// per-component fan-out below so we don't re-transform for each PURL.
-				// CWEs are stored as "CWE-<id>" strings to leave room for non-numeric
-				// taxonomies; the VDR emitter parses them back to Integer for CDX.
-				Set<String> cwes = null;
-				if (dvr.cwes() != null && !dvr.cwes().isEmpty()) {
-					cwes = dvr.cwes().stream()
-							.map(DtrackCweRaw::cweId)
-							.filter(id -> id != null)
-							.map(id -> "CWE-" + id)
-							.collect(Collectors.toCollection(LinkedHashSet::new));
-					if (cwes.isEmpty()) cwes = null;
+				// Bucket the raw row for post-pagination upsert. Canonical id is
+				// CVE-preferred to mirror the merger's pickPrimaryVulnId rule, so
+				// every (NVD CVE-X, GITHUB GHSA-Y) pair lands on the same key.
+				String canonical = VulnerabilityRecordData.pickPrimaryVulnId(aliasStrings);
+				if (canonical != null) {
+					rowsByCanonical.computeIfAbsent(canonical, k -> new ArrayList<>()).add(dvr);
+					aliasesByCanonical.computeIfAbsent(canonical, k -> new LinkedHashSet<>()).addAll(aliasStrings);
 				}
-				ZonedDateTime published = dvr.published() != null
-						? dvr.published().toInstant().atZone(ZoneOffset.UTC) : null;
-				ZonedDateTime updated = dvr.updated() != null
-						? dvr.updated().toInstant().atZone(ZoneOffset.UTC) : null;
-				final Set<String> cwesFinal = cwes;
 
 				dvr.components().forEach(c -> {
 					// Decode URL-encoded @ symbol in purl from DTrack
 					String purl = c.purl() != null ? c.purl().replace("%40", "@") : null;
+					// description / cwes / references / published / updated were
+					// previously baked into each finding row, ballooning the
+					// release.metrics column with paragraphs of advisory text per
+					// CVE per release. Those fields now live in
+					// rearm.vulnerability_records (one row per (org, primary
+					// vuln id)) and are nulled here. VDR / openvex exporters
+					// resolve them from the new table at export time.
 					VulnerabilityDto vdto = new VulnerabilityDto(purl, dvr.vulnId(), dvr.severity(), aliases, Set.of(source), Set.of(severitySource), null, null, attributedAt,
-							dvr.description(), cwesFinal, null, published, updated);
+							null, null, null, null, null);
 					pageResults.add(vdto);
 				});
 			}
 			return pageResults;
 		});
+
+		// After pagination: refresh vulnerability_records for today-attributed
+		// findings only. Older attributedAt dates represent point-in-time
+		// captures we deliberately don't recheck — the next scan that brings
+		// a vuln back into scope picks up upstream changes naturally.
+		if (orgUuid != null && attributedAt.toLocalDate().equals(java.time.LocalDate.now(ZoneOffset.UTC))) {
+			refreshVulnerabilityRecords(orgUuid, rowsByCanonical, aliasesByCanonical, fetcherEndpoint);
+		}
+
+		return all;
+	}
+
+	/**
+	 * Merge fresh DTrack rows into {@code rearm.vulnerability_records}.
+	 * One canonical row per primary vuln id; rows from different DTrack
+	 * upstream feeds (NVD / GITHUB / OSV) for the same vuln are folded
+	 * into the same canonical record as separate entries in
+	 * {@link VulnerabilityRecordData#getSources()}.
+	 *
+	 * <p>Best-effort: a single bad row or an isolated upsert failure must
+	 * not poison the rest of the DTrack ingest path — we log and continue.
+	 */
+	private void refreshVulnerabilityRecords(UUID orgUuid,
+			Map<String, List<DtrackVulnRaw>> rowsByCanonical,
+			Map<String, Set<String>> aliasesByCanonical,
+			String fetcherEndpoint) {
+		if (rowsByCanonical.isEmpty()) return;
+		WhoUpdated wu = WhoUpdated.getAutoWhoUpdated();
+		for (var entry : rowsByCanonical.entrySet()) {
+			String canonical = entry.getKey();
+			List<DtrackVulnRaw> rows = entry.getValue();
+			Set<String> aliases = aliasesByCanonical.getOrDefault(canonical, Set.of());
+			try {
+				List<VulnSourceSnapshot> snapshots = new ArrayList<>(rows.size());
+				for (DtrackVulnRaw dvr : rows) {
+					VulnSourceSnapshot snap = toSnapshot(dvr, fetcherEndpoint);
+					if (snap != null) snapshots.add(snap);
+				}
+				if (snapshots.isEmpty()) continue;
+				vulnerabilityRecordService.upsertFromSnapshots(orgUuid, aliases, snapshots, wu);
+			} catch (Exception e) {
+				log.error("Failed to upsert vulnerability_record for org={} canonical={}: {}",
+						orgUuid, canonical, e.getMessage());
+			}
+		}
+	}
+
+	/**
+	 * Convert one DTrack row into a per-source snapshot. Returns null if
+	 * the row is missing the bits we need to identify the source (e.g.
+	 * no {@code source} field at all — bookkeeping rows DTrack occasionally
+	 * emits).
+	 */
+	private static VulnSourceSnapshot toSnapshot(DtrackVulnRaw dvr, String fetcherEndpoint) {
+		if (dvr.vulnId() == null) return null;
+		VulnSourceSnapshot s = new VulnSourceSnapshot();
+		s.setUpstreamSource(mapUpstreamSource(dvr.source()));
+		s.setUpstreamVulnId(dvr.vulnId());
+		s.setFetcher(Fetcher.DEPENDENCY_TRACK);
+		s.setFetcherRef(dvr.uuid());
+		s.setFetcherEndpoint(fetcherEndpoint);
+		s.setTitle(dvr.title());
+		s.setDescription(dvr.description());
+		s.setSeverity(dvr.severity());
+		s.setCvssV3BaseScore(dvr.cvssV3BaseScore());
+		s.setCvssV3Vector(dvr.cvssV3Vector());
+		s.setCvssV3ImpactSubScore(dvr.cvssV3ImpactSubScore());
+		s.setCvssV3ExploitabilitySubScore(dvr.cvssV3ExploitabilitySubScore());
+		s.setCvssV4Score(dvr.cvssV4Score());
+		s.setCvssV4Vector(dvr.cvssV4Vector());
+		s.setEpssScore(dvr.epssScore());
+		s.setEpssPercentile(dvr.epssPercentile());
+		s.setReferences(dvr.references());
+		if (dvr.published() != null) s.setPublished(dvr.published().toInstant().atZone(ZoneOffset.UTC));
+		if (dvr.updated() != null) s.setUpdated(dvr.updated().toInstant().atZone(ZoneOffset.UTC));
+		List<CweEntry> cwes = new ArrayList<>();
+		if (dvr.cwes() != null) {
+			for (DtrackCweRaw raw : dvr.cwes()) {
+				if (raw == null || raw.cweId() == null) continue;
+				CweEntry e = new CweEntry();
+				e.setCweId(raw.cweId());
+				e.setName(raw.name());
+				cwes.add(e);
+			}
+		}
+		s.setCwes(cwes);
+		return s;
+	}
+
+	/**
+	 * Translate DTrack's free-form {@code source} string into our enum.
+	 * DTrack canonicalises to upper-case ({@code NVD} / {@code GITHUB} /
+	 * {@code OSV} / {@code VULNDB}); anything else falls into
+	 * {@link UpstreamSource#OTHER} so a future DTrack version that adds
+	 * a new feed doesn't drop the snapshot on the floor.
+	 */
+	private static UpstreamSource mapUpstreamSource(String dtrackSource) {
+		if (dtrackSource == null) return UpstreamSource.OTHER;
+		switch (dtrackSource.toUpperCase()) {
+			case "GITHUB":  return UpstreamSource.GITHUB;
+			case "OSV":     return UpstreamSource.OSV;
+			case "NVD":     return UpstreamSource.NVD;
+			case "VULNDB":  return UpstreamSource.VULNDB;
+			default:        return UpstreamSource.OTHER;
+		}
 	}
 	
 	protected List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,

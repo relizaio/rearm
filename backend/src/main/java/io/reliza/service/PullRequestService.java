@@ -30,6 +30,7 @@ import io.reliza.model.PullRequestData.PullRequestUpdateEvent;
 import io.reliza.model.PullRequestData.PullRequestUpdateScope;
 import io.reliza.model.PullRequestData.PullRequestValidationEvent;
 import io.reliza.model.PullRequestData.ReleaseValidationEvent;
+import io.reliza.model.ValidationState;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.PullRequestRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -84,16 +85,120 @@ public class PullRequestService {
 				.collect(Collectors.toList());
 	}
 
+	/**
+	 * State-filtered variant of {@link #listByOrg}. Empty/null
+	 * {@code states} falls back to the unfiltered call so callers don't
+	 * have to special-case "no filter". Unknown state strings are
+	 * dropped; if every input is invalid the result is empty.
+	 */
+	public List<PullRequestData> listByOrg(UUID orgUuid, List<String> states) {
+		List<String> normalized = normalizeStates(states);
+		if (normalized == null) return listByOrg(orgUuid);
+		if (normalized.isEmpty()) return List.of();
+		return repository.findByOrgAndStates(orgUuid.toString(), normalized).stream()
+				.map(PullRequestData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+
 	public List<PullRequestData> listByTargetRepository(UUID targetRepoUuid) {
 		return repository.findByTargetRepository(targetRepoUuid.toString()).stream()
 				.map(PullRequestData::dataFromRecord)
 				.collect(Collectors.toList());
 	}
 
+	public List<PullRequestData> listByTargetRepository(UUID targetRepoUuid, List<String> states) {
+		List<String> normalized = normalizeStates(states);
+		if (normalized == null) return listByTargetRepository(targetRepoUuid);
+		if (normalized.isEmpty()) return List.of();
+		return repository.findByTargetRepositoryAndStates(targetRepoUuid.toString(), normalized).stream()
+				.map(PullRequestData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+
+	/**
+	 * Normalize a caller-supplied state filter: returns null when the
+	 * caller wants every state (so the ORM picks the unfiltered query),
+	 * an empty list when the caller passed only invalid state names
+	 * (callers short-circuit to an empty result), or a deduplicated list
+	 * of valid {@link PullRequestState} names otherwise.
+	 */
+	private static List<String> normalizeStates(List<String> states) {
+		if (states == null || states.isEmpty()) return null;
+		LinkedHashSet<String> valid = new LinkedHashSet<>();
+		for (String s : states) {
+			if (StringUtils.isBlank(s)) continue;
+			try {
+				valid.add(PullRequestState.valueOf(StringUtils.upperCase(s)).name());
+			} catch (IllegalArgumentException ignored) {
+				// drop unknown values — surfaced empty rather than a 500
+			}
+		}
+		return new LinkedList<>(valid);
+	}
+
 	public List<PullRequestData> findOpenByTargetRepoAndCommit(UUID targetRepoUuid, UUID sceUuid) {
 		return repository.findOpenByTargetRepoAndCommit(targetRepoUuid.toString(), sceUuid.toString()).stream()
 				.map(PullRequestData::dataFromRecord)
 				.collect(Collectors.toList());
+	}
+
+	public List<PullRequestData> listOpenByTargetRepository(UUID targetRepoUuid) {
+		return repository.findOpenByTargetRepository(targetRepoUuid.toString()).stream()
+				.map(PullRequestData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+
+	/**
+	 * Close every still-OPEN PR on the given VCS whose
+	 * {@code sourceBranchName} is no longer in the SCM-live list. Called
+	 * from {@code synchronizeLiveBranches}: when CI tells us the
+	 * authoritative branch list for a repo, any PR rooted on a branch that
+	 * no longer exists must have been closed/merged upstream — there is
+	 * no SCM webhook in CE/SAAS to drive this otherwise, so the user's
+	 * own sync call has to be the trigger.
+	 *
+	 * Conservative state choice: CLOSED, not MERGED. Branch deletion is
+	 * the typical post-merge artifact, but we can't distinguish a clean
+	 * merge from a rejected close from this signal alone. Callers that
+	 * have authoritative info (a webhook, a `gh pr view --json state`
+	 * lookup) can still upsert an explicit MERGED via the programmatic
+	 * mutation; those overrides keep working because this path skips
+	 * any PR already in a terminal state.
+	 *
+	 * Branch-name comparison mirrors {@code findDeadBranches}: cleaned
+	 * via {@link Utils#cleanBranch} and lower-cased so refs/heads/foo,
+	 * Foo, and foo collapse to the same key.
+	 */
+	@Transactional
+	public int closeStalePrsForVcs(UUID vcsUuid, List<String> liveBranchNames, WhoUpdated wu) {
+		if (vcsUuid == null) return 0;
+		java.util.Set<String> live = (liveBranchNames == null ? List.<String>of() : liveBranchNames).stream()
+				.filter(StringUtils::isNotBlank)
+				.map(Utils::cleanBranch)
+				.map(String::toLowerCase)
+				.collect(Collectors.toSet());
+		List<PullRequestData> openPrs = listOpenByTargetRepository(vcsUuid);
+		int closed = 0;
+		for (PullRequestData prd : openPrs) {
+			String src = prd.getSourceBranchName();
+			if (StringUtils.isBlank(src)) continue;
+			String key = Utils.cleanBranch(src).toLowerCase();
+			if (live.contains(key)) continue;
+			try {
+				prd.setState(PullRequestState.CLOSED);
+				if (prd.getClosedDate() == null) prd.setClosedDate(ZonedDateTime.now());
+				updatePullRequest(prd, wu);
+				recordUpdateEvent(prd.getUuid(), PullRequestUpdateScope.STATE,
+						PullRequestUpdateAction.CHANGED,
+						PullRequestState.OPEN.name(), PullRequestState.CLOSED.name(),
+						null, wu);
+				closed++;
+			} catch (Exception e) {
+				log.warn("syncbranches: failed to close stale PR {} on VCS {}: {}",
+						prd.getUuid(), vcsUuid, e.getMessage());
+			}
+		}
+		return closed;
 	}
 
 	/**
@@ -117,6 +222,18 @@ public class PullRequestService {
 		}
 		if (seed.getState() == null) {
 			seed.setState(PullRequestState.OPEN);
+		}
+		// Terminal-state defaulting on the create path only. Webhook intake
+		// already passes merged_at / closed_at; CLI upsert does not, so a
+		// CLI-driven PR that is born in a terminal state still ends up with
+		// the correct timestamp populated. Existing-row updates handle the
+		// state-transition case in {@link #applyFromInput} and don't reset
+		// a date that was already recorded.
+		if (seed.getState() == PullRequestState.MERGED && seed.getMergedDate() == null) {
+			seed.setMergedDate(ZonedDateTime.now());
+		}
+		if (seed.getState() == PullRequestState.CLOSED && seed.getClosedDate() == null) {
+			seed.setClosedDate(ZonedDateTime.now());
 		}
 		PullRequest pr = new PullRequest();
 		Map<String, Object> recordData = Utils.dataToRecord(seed);
@@ -171,6 +288,8 @@ public class PullRequestService {
 			if (StringUtils.isNotBlank(endpointStr)) {
 				try { prEndpoint = java.net.URI.create(endpointStr); } catch (Exception ignored) {}
 			}
+			ZonedDateTime mergedDate = parseDate(prInput.get("mergedDate"));
+			ZonedDateTime closedDate = parseDate(prInput.get("closedDate"));
 			PullRequestData seed = new PullRequestData();
 			seed.setOrg(orgUuid);
 			seed.setTargetVcsRepository(targetVcs);
@@ -180,6 +299,8 @@ public class PullRequestService {
 			seed.setSourceBranchName((String) prInput.get("sourceBranchName"));
 			seed.setTargetBranchName((String) prInput.get("targetBranchName"));
 			seed.setEndpoint(prEndpoint);
+			seed.setMergedDate(mergedDate);
+			seed.setClosedDate(closedDate);
 
 			PullRequestData prd = upsertByIdentity(seed, wu);
 			// upsertByIdentity returns the existing row untouched when one
@@ -187,11 +308,25 @@ public class PullRequestService {
 			// caller's mutable-field updates (state / title / branch names /
 			// endpoint) so downstream readers don't lag behind the SCM.
 			boolean changed = false;
-			if (prd.getState() != seed.getState()) { prd.setState(seed.getState()); changed = true; }
+			if (prd.getState() != seed.getState()) {
+				prd.setState(seed.getState());
+				// Default the terminal-state timestamp to "now" if the
+				// caller didn't provide one (CLI flow has no merged_at /
+				// closed_at parity with the GitHub webhook payload).
+				if (seed.getState() == PullRequestState.MERGED && mergedDate == null && prd.getMergedDate() == null) {
+					mergedDate = ZonedDateTime.now();
+				}
+				if (seed.getState() == PullRequestState.CLOSED && closedDate == null && prd.getClosedDate() == null) {
+					closedDate = ZonedDateTime.now();
+				}
+				changed = true;
+			}
 			if (seed.getTitle() != null && !seed.getTitle().equals(prd.getTitle())) { prd.setTitle(seed.getTitle()); changed = true; }
 			if (seed.getEndpoint() != null && !seed.getEndpoint().equals(prd.getEndpoint())) { prd.setEndpoint(seed.getEndpoint()); changed = true; }
 			if (seed.getSourceBranchName() != null && !seed.getSourceBranchName().equals(prd.getSourceBranchName())) { prd.setSourceBranchName(seed.getSourceBranchName()); changed = true; }
 			if (seed.getTargetBranchName() != null && !seed.getTargetBranchName().equals(prd.getTargetBranchName())) { prd.setTargetBranchName(seed.getTargetBranchName()); changed = true; }
+			if (mergedDate != null && !mergedDate.equals(prd.getMergedDate())) { prd.setMergedDate(mergedDate); changed = true; }
+			if (closedDate != null && !closedDate.equals(prd.getClosedDate())) { prd.setClosedDate(closedDate); changed = true; }
 			if (changed) prd = updatePullRequest(prd, wu);
 
 			if (headSce != null) {
@@ -276,6 +411,41 @@ public class PullRequestService {
 			repository.appendUpdateEvent(prUuid, Utils.OM.writeValueAsString(ev));
 		} catch (JsonProcessingException e) {
 			log.error("Failed to serialize PullRequestUpdateEvent for PR {}", prUuid, e);
+		}
+	}
+
+	/**
+	 * Latest pr_validation_event whose sourceCodeEntry matches the PR's
+	 * current head SCE. Mirrors the aggregator's
+	 * {@code findLatestForHead} so the resolver field and the dispatch
+	 * path read the verdict the same way. Returns null when the PR has
+	 * no commits yet, no events at all, or no event for the current
+	 * head — UI treats null as "pending / not validated yet".
+	 */
+	public ValidationState getCurrentValidationState(PullRequestData prd) {
+		if (prd == null) return null;
+		List<UUID> commits = prd.getCommits();
+		if (commits == null || commits.isEmpty()) return null;
+		UUID head = commits.get(commits.size() - 1);
+		List<PullRequestValidationEvent> events = prd.getPrValidationEvents();
+		if (events == null || events.isEmpty()) return null;
+		ValidationState latest = null;
+		for (PullRequestValidationEvent ev : events) {
+			if (head.equals(ev.sourceCodeEntry())) latest = ev.validationState();
+		}
+		return latest;
+	}
+
+	private static ZonedDateTime parseDate(Object raw) {
+		if (raw == null) return null;
+		if (raw instanceof ZonedDateTime zdt) return zdt;
+		String s = raw.toString();
+		if (StringUtils.isBlank(s)) return null;
+		try {
+			return ZonedDateTime.parse(s);
+		} catch (Exception e) {
+			log.warn("Could not parse date {}: {}", s, e.getMessage());
+			return null;
 		}
 	}
 

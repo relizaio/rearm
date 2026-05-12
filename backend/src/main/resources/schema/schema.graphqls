@@ -19,8 +19,21 @@ type Query {
 	vcsRepository(vcs:ID!): VcsRepository
 	listVcsReposOfOrganization(orgUuid:ID!): [VcsRepository]
 	pullRequest(prUuid: ID!): PullRequest
-	pullRequestsOfOrg(orgUuid: ID!): [PullRequest]
-	pullRequestsOfVcs(vcs: ID!): [PullRequest]
+	"""
+	List PullRequests for an org. {@code states} narrows the result to
+	the supplied {@link PullRequestState} values (case-insensitive); pass
+	null/empty to fetch every state. The UI defaults to {@code [OPEN]}
+	so terminal-state PRs aren't loaded until the user opts in via the
+	state filter.
+	"""
+	pullRequestsOfOrg(orgUuid: ID!, states: [String!]): [PullRequest]
+	"""
+	List PullRequests targeting a given VCS repository. {@code states}
+	narrows the result by {@link PullRequestState}; pass null/empty for
+	all states. Mirrors the {@code pullRequestsOfOrg} default of {@code
+	[OPEN]} on the UI side.
+	"""
+	pullRequestsOfVcs(vcs: ID!, states: [String!]): [PullRequest]
 	vcsRepositoryTypes: [String]
 	sourceCodeEntry(sceUuid:ID!): SourceCodeEntry
 	artifact(artifactUuid: ID!): Artifact
@@ -68,6 +81,11 @@ type Query {
 
 	configuredBaseIntegrations(org: ID!): [IntegrationType]
 	ciIntegrations(org: ID!): [CiIntegration]
+
+	# Inbound webhook reception. {org}/{slug} forms the public URL path
+	# the GitHub App is configured to POST to.
+	webhook(uuid: ID!): Webhook
+	webhooks(orgUuid: ID!): [Webhook]
 	
 	# Analytics
 	mostActiveComponentsOverTime(activeComponentsInput: ActiveComponentsInput!): [ReleasesPerComponent]
@@ -140,7 +158,14 @@ type Query {
 	getVulnAnalysisByRelease(releaseUuid: ID!): [VulnAnalysisWebDto]
 	getVulnAnalysisByLocationAndFinding(org: ID!, location: String!, findingId: String!, findingType: FindingType!): [VulnAnalysisWebDto]
 	getVulnAnalysisByPerspective(perspectiveUuid: ID!): [VulnAnalysisWebDto]
-	
+	getVexStatementProposals(org: ID!, status: ProposalStatus): [VexStatementProposalWebDto]
+	getVexStatementProposal(uuid: ID!): VexStatementProposalWebDto
+	getVexStatementProposalsBySourceArtifact(artifact: ID!): [VexStatementProposalWebDto]
+	getVexStatementProposalsByRelease(org: ID!, release: ID!): [VexStatementProposalWebDto]
+	getMitigationAttestations(org: ID!, status: AttestationStatus): [MitigationAttestationWebDto]
+	getMitigationAttestation(uuid: ID!): MitigationAttestationWebDto
+	getMitigationAttestationsByAssignee(assignee: ID!, status: AttestationStatus): [MitigationAttestationWebDto]
+
 	# Perspectives
 	perspectives(org: ID!): [Perspective]
 	componentsOfPerspective(perspectiveUuid: ID!): [Component]
@@ -155,10 +180,10 @@ type Query {
 	searchReleasesByTimeFrameAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
 	searchReleasesByTimeFrameAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
 	# Date Range Queries - return flat [Release] list
-	releasesByDateRange(org: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
+	releasesByDateRange(org: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int, componentType: ComponentType): [Release]
 	releasesByDateRangeAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
 	releasesByDateRangeAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
-	releasesByDateRangeAndPerspective(perspectiveUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
+	releasesByDateRangeAndPerspective(perspectiveUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int, componentType: ComponentType): [Release]
 	# Pattern Preview
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
 
@@ -230,6 +255,14 @@ type Mutation {
 	createIntegration(integration: IntegrationInput!): Integration
 	createTriggerIntegration(integration: IntegrationInput!): Integration
 	deleteBaseIntegration(org: ID!, type: IntegrationType!): Boolean
+	# Replace the capabilities asserted on an Integration. Org-admin
+	# authorized; idempotent; preserves all other fields.
+	updateIntegrationCapabilities(uuid: ID!, capabilities: [IntegrationCapability!]!): Integration
+
+	# webhooks (inbound)
+	createWebhook(webhook: WebhookInput!): Webhook
+	updateWebhook(webhook: WebhookUpdateInput!): Webhook
+	deleteWebhook(uuid: ID!): Boolean
 	refetchDependencyTrackMetrics(artifact: ID!): Boolean
 	requestRefreshDependencyTrackMetrics(artifact: ID!): Boolean
 	syncDtrackStatus(orgUuid: ID!): SyncDtrackStatusResponse
@@ -264,6 +297,28 @@ type Mutation {
 	empty list to clear.
 	"""
 	setVcsRepositoryOutputTriggers(vcsUuid: ID!, triggers: [ReleaseOutputEventInput!]!): VcsRepository
+	"""
+	Replace the org's global PR-validation trigger rules atomically.
+	Each input rule must (a) carry a non-blank, org-unique {@code name},
+	(b) compile as a valid Java regex, (c) supply a trigger of type
+	EXTERNAL_VALIDATION whose {@code integration} resolves to a GITHUB
+	integration in the same org with the PR_VALIDATE capability. Pass
+	an empty list to clear all rules. SAAS-only — the SAAS DataFetcher
+	guards on installation type. List order is the priority order;
+	send the rules in the order you want first-match-wins to honour.
+	"""
+	setGlobalPrValidationTriggerRules(orgUuid: ID!, rules: [GlobalPrValidationTriggerRuleInput!]!): Organization
+	"""
+	Replace the org's global approval-policy assignment rules
+	atomically. Each input rule must (a) carry a non-blank, org-unique
+	{@code name}, (b) compile as a valid Java regex in
+	{@code namePattern}, (c) supply an {@code approvalPolicy} UUID
+	that resolves to an existing policy in the same org. Pass an empty
+	list to clear all rules. SAAS-only — the SAAS DataFetcher guards on
+	installation type. List order is the priority order; send the
+	rules in the order you want first-match-wins to honour.
+	"""
+	setGlobalApprovalPolicyRules(orgUuid: ID!, rules: [GlobalApprovalPolicyRuleInput!]!): Organization
 	"""
 	Programmatic (API-key) upsert of a PullRequest. CI registers the PR
 	row independently of release creation so the registration survives
@@ -422,7 +477,12 @@ type Mutation {
 	# Vulnerability Analysis
 	createVulnAnalysis(analysis: CreateVulnAnalysisInput!): VulnAnalysisWebDto
 	updateVulnAnalysis(analysis: UpdateVulnAnalysisInput!): VulnAnalysisWebDto
-	
+	acceptVexStatementProposal(uuid: ID!, comment: String): VexStatementProposalWebDto
+	rejectVexStatementProposal(uuid: ID!, reason: String): VexStatementProposalWebDto
+	updateVexStatementProposal(uuid: ID!, updates: VexProposalUpdateInput!): VexStatementProposalWebDto
+	attestMitigation(uuid: ID!, evidence: String!): MitigationAttestationWebDto
+	waiveMitigation(uuid: ID!, reason: String!): MitigationAttestationWebDto
+
 	# Perspectives
 	createPerspective(org: ID!, name: String!): Perspective
 	updatePerspective(uuid: ID!, name: String!): Perspective
@@ -566,6 +626,22 @@ type Component {
 	visibilitySetting: VisibilitySetting
 	approvalPolicy: ID
 	approvalPolicyDetails: ApprovalPolicy
+	"""
+	Resolved approval policy for this component. Per-component
+	{@code approvalPolicy} wins when present AND still references an
+	existing policy. Otherwise the org-wide rule list is walked in
+	order; the first rule whose {@code namePattern} matches the
+	component's name AND whose {@code componentType} accepts the
+	component's type contributes its policy. {@code source} discriminates
+	between the cases; {@code ruleName} is set only when source =
+	ORG_RULE; {@code alsoMatchedRuleNames} carries any later-list rules
+	whose pattern + type-filter also matched; {@code perComponentPolicyArchived}
+	is true when the component carried a per-component reference but
+	the referenced policy was archived/missing, so resolution fell
+	through to org rules (signals a stale reference for the UI to
+	warn about).
+	"""
+	effectiveApprovalPolicy: EffectiveApprovalPolicy
 	releaseInputTriggers: [ReleaseInputEvent]
 	outputTriggers: [ReleaseOutputEvent]
 	identifiers: [Identifier]
@@ -641,6 +717,115 @@ type Organization {
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
+	"""
+	Org-wide PR-validation trigger rules. Each rule maps a regex over
+	{@code VcsRepository.uri} (matched fully-anchored, see {@link
+	GlobalPrValidationTriggerRule.uriPattern}) to an EXTERNAL_VALIDATION
+	trigger that should apply when a VCS in the org has no per-repo
+	override. List order is the priority order — the first matching
+	rule wins, and the per-VCS resolver surfaces the losing rule names
+	for operator clean-up. SAAS-only.
+	"""
+	globalPrValidationTriggerRules: [GlobalPrValidationTriggerRule]
+	"""
+	Org-wide approval-policy assignment rules. Each rule maps a regex
+	over {@code Component.name} (matched fully-anchored) plus a
+	{@code componentType} filter to an approval-policy UUID. When a
+	component has no per-component policy reference (or it points to
+	an archived/missing policy), the resolver walks this list in order
+	and the first matching rule's policy becomes the effective policy.
+	List order is the priority order — first match wins; the per-
+	Component resolver surfaces the losing rule names for operator
+	clean-up. SAAS-only.
+	"""
+	globalApprovalPolicyRules: [GlobalApprovalPolicyRule]
+}
+
+"""
+Org-wide PR-validation trigger rule. See
+{@link Organization.globalPrValidationTriggerRules} for the priority
+contract; see {@link VcsRepository.effectivePrValidationTrigger} for
+how rules are resolved per repo.
+"""
+type GlobalPrValidationTriggerRule {
+	"""Display name; unique within the org."""
+	name: String
+	"""
+	Java regex matched against {@code VcsRepositoryData.uri} via
+	{@code Pattern.matcher(uri).matches()} — fully anchored. Operators
+	write {@code github.com/myorg/.*} (no leading {@code ^}, no
+	trailing {@code $}) and the engine anchors automatically.
+	"""
+	uriPattern: String
+	"""
+	Trigger spec. Same shape as a per-VCS trigger; must be of type
+	EXTERNAL_VALIDATION and reference a GITHUB integration with the
+	PR_VALIDATE capability in the same org.
+	"""
+	trigger: ReleaseOutputEvent
+}
+
+input GlobalPrValidationTriggerRuleInput {
+	name: String!
+	uriPattern: String!
+	trigger: ReleaseOutputEventInput!
+}
+
+"""
+Org-wide approval-policy assignment rule. See
+{@link Organization.globalApprovalPolicyRules} for the priority
+contract and {@link Component.effectiveApprovalPolicy} for how rules
+are resolved per component.
+"""
+type GlobalApprovalPolicyRule {
+	"""Display name; unique within the org."""
+	name: String
+	"""
+	Java regex matched against {@code Component.name} via
+	{@code Pattern.matcher(name).matches()} — fully anchored. Operators
+	write {@code frontend-.*} (no leading {@code ^}, no trailing
+	{@code $}) and the engine anchors automatically.
+	"""
+	namePattern: String
+	"""
+	Type filter. {@code COMPONENT} / {@code PRODUCT} restrict the
+	match; {@code ANY} (also the default when null) matches both
+	concrete component types.
+	"""
+	componentType: ComponentType
+	"""Referenced approval policy UUID."""
+	approvalPolicy: ID
+	"""Hydrated approval policy. Null when the referenced policy is missing/archived."""
+	approvalPolicyDetails: ApprovalPolicy
+}
+
+input GlobalApprovalPolicyRuleInput {
+	name: String!
+	namePattern: String!
+	componentType: ComponentType
+	approvalPolicy: ID!
+}
+
+"""
+Resolved approval policy snapshot for a Component. See
+{@link Component.effectiveApprovalPolicy}.
+"""
+type EffectiveApprovalPolicy {
+	source: ApprovalPolicySource
+	approvalPolicy: ID
+	approvalPolicyDetails: ApprovalPolicy
+	ruleName: String
+	alsoMatchedRuleNames: [String]
+	perComponentPolicyArchived: Boolean
+}
+
+enum ApprovalPolicySource {
+	"""Per-component approvalPolicy reference is set and the policy still exists."""
+	PER_COMPONENT
+	"""Inherited from an org-wide GlobalApprovalPolicyRule."""
+	ORG_RULE
+	"""Neither per-component nor any matching org rule — no approval policy is in effect."""
+	NONE
 }
 
 type Terminology {
@@ -1115,6 +1300,39 @@ type VcsRepository {
 	aggregator to dispatch the aggregated check-run verdict to the SCM.
 	"""
 	outputTriggers: [ReleaseOutputEvent]
+	"""
+	Resolved PR-validation trigger for this repo. Per-repo
+	{@code outputTriggers} always wins; otherwise the org-wide rule
+	list is walked in order and the first match's trigger is returned.
+	{@code source} discriminates between the two; {@code ruleName} is
+	set only when source = ORG_RULE; {@code alsoMatchedRuleNames}
+	carries any later-list rules whose pattern also matched (for the
+	provenance UI's "rules X, Y also match; X wins" warning);
+	{@code staleRuleNames} flags rules that matched but reference a
+	missing/archived integration and were therefore skipped.
+	"""
+	effectivePrValidationTrigger: EffectivePrValidationTrigger
+}
+
+"""
+Resolved PR-validation trigger snapshot for a VCS repository. See
+{@link VcsRepository.effectivePrValidationTrigger}.
+"""
+type EffectivePrValidationTrigger {
+	source: PrValidationTriggerSource
+	trigger: ReleaseOutputEvent
+	ruleName: String
+	alsoMatchedRuleNames: [String]
+	staleRuleNames: [String]
+}
+
+enum PrValidationTriggerSource {
+	"""Per-repo trigger configured directly on this VCS row."""
+	PER_VCS
+	"""Inherited from an org-wide GlobalPrValidationTriggerRule."""
+	ORG_RULE
+	"""Neither per-repo nor any matching org rule — no verdict will be dispatched."""
+	NONE
 }
 
 """
@@ -1167,6 +1385,15 @@ type PullRequest {
 	Distinct on UUID; missing releases (archived) are silently dropped.
 	"""
 	validatedReleaseDetails: [Release]
+	"""
+	Latest pr_validation_event verdict whose sourceCodeEntry matches
+	the PR's current head commit. Mirrors the aggregator's
+	"latest-for-head" lookup so this resolver and the SCM dispatch
+	read the same value. {@code null} when the PR has no commits, no
+	validation events, or no event for the current head — UI should
+	render that as "pending / not yet validated".
+	"""
+	currentValidationState: ValidationState
 }
 
 type PullRequestValidationEvent {
@@ -1702,6 +1929,7 @@ type Integration {
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
+	capabilities: [IntegrationCapability!]
 }
 
 type CiIntegration {
@@ -1711,6 +1939,7 @@ type CiIntegration {
 	isEnabled: Boolean
 	type: IntegrationType
 	note: String
+	capabilities: [IntegrationCapability!]
 }
 
 type BearIntegration {
@@ -1756,6 +1985,12 @@ type ReleaseOutputEvent {
 
 type GlobalInputEventRef {
 	uuid: ID
+	"""
+	Opt-out flag — under the opt-out semantics introduced May 2026, every
+	policy rule fires for every component using the policy unless the
+	component has a ref with disabled=true. See ComponentData.GlobalInputEventRef.
+	"""
+	disabled: Boolean
 	overrideOutputEventsLocally: Boolean
 	outputEventsOverride: [ID]
 }
@@ -2080,6 +2315,17 @@ input UpdateComponentInput {
 	featureBranchVersioning: String
 	vcs: ID
 	approvalPolicy: ID
+	"""
+	Explicitly clear the per-component approvalPolicy reference. The
+	default {@code null} on {@code approvalPolicy} means "leave the
+	existing value alone" (server-side leave-unchanged convention), so
+	a separate flag is needed to express "actually remove the assigned
+	policy". When {@code true}, the server unsets the reference; the
+	same guard as the change-policy path still applies (the component
+	must not still reference globalInputEvents from the old policy).
+	{@code approvalPolicy} is ignored when this flag is true.
+	"""
+	clearApprovalPolicy: Boolean
 	releaseInputTriggers: [ReleaseInputEventInput]
 	outputTriggers: [ReleaseOutputEventInput]
 	globalInputEventRefs: [GlobalInputEventRefInput]
@@ -2105,6 +2351,7 @@ input UpdateComponentInput {
 
 input GlobalInputEventRefInput {
 	uuid: ID
+	disabled: Boolean
 	overrideOutputEventsLocally: Boolean
 	outputEventsOverride: [ID]
 }
@@ -2249,6 +2496,34 @@ input ArtifactInput {
 	stripBom: StripBomEnum
 	digestRecords: [DigestRecordInput]
 	artifacts: [ArtifactInput]
+# v1.2 VEX-only: how broadly the VEX claim applies. Default ORG when type=VEX.
+	vexScope: AnalysisScope
+# v1.2 VEX-only: AUTO_ACCEPT (default) / STAGE / REJECT.
+	vexImportMode: VexImportMode
+# v1.2 VEX-only: override the heuristic-derived issuer class.
+	userIssuerClassOverride: IssuerClass
+}
+
+enum VexImportMode {
+	AUTO_ACCEPT
+	STAGE
+	REJECT
+}
+
+input VexProposalUpdateInput {
+	analysisState: AnalysisState
+	analysisJustification: AnalysisJustification
+	details: String
+	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
+}
+
+enum IssuerClass {
+	SELF
+	VENDOR
+	THIRD_PARTY
 }
 
 input DigestRecordInput {
@@ -2549,6 +2824,7 @@ input IntegrationInput {
 	client: String
 	note: String
 	schedule: String
+	capabilities: [IntegrationCapability!]
 }
 
 input ReleaseSbomExportInput {
@@ -3019,13 +3295,85 @@ enum ApprovalMappingClass {
 
 enum IntegrationType {
 	GITHUB
-	GITHUB_VALIDATE
 	GITLAB
 	JENKINS
 	ADO
 	SLACK
 	MSTEAMS
 	DEPENDENCYTRACK
+}
+
+# Capabilities a GITHUB integration is wired up to perform. Picked at
+# create/update time, validated by the server, and used both as a UI
+# filter (e.g. the "create webhook" picker only shows integrations with
+# WEBHOOK) and as a runtime guard on outbound dispatch paths.
+enum IntegrationCapability {
+	WORKFLOW_DISPATCH
+	PR_VALIDATE
+	WEBHOOK
+}
+
+# Inbound GitHub webhook receiver. One row per Integration (one-to-one
+# cardinality enforced server-side). The (org, slug) pair forms the
+# public URL path /api/programmatic/v1/webhook/{org}/{slug}.
+# encryptedSecret is intentionally not exposed back through the API —
+# it's set-only on create / update.
+type Webhook {
+	uuid: ID
+	org: ID
+	integration: ID
+	slug: String
+	note: String
+	status: WebhookStatus
+	lastDeliveryAt: DateTime
+	lastDeliveryStatus: WebhookDeliveryOutcome
+	lastDeliveryId: String
+	consecutiveFailureCount: Int
+	createdDate: DateTime
+	updatedDate: DateTime
+}
+
+input WebhookInput {
+	org: ID!
+	integration: ID!
+	# Lowercase ASCII, 4-63 chars, no leading/trailing hyphen. Unique
+	# within the org. Reserved values are rejected.
+	slug: String!
+	# Plain HMAC-SHA256 key (matches the value pasted into the GitHub
+	# App's "Webhook secret" field). Encrypted at rest.
+	secret: String!
+	# GitHub installation ID (numeric, passed as string for symmetry
+	# with the GH App's existing schedule field).
+	installation: String
+	note: String
+}
+
+input WebhookUpdateInput {
+	uuid: ID!
+	note: String
+	status: WebhookStatus
+	# Pass empty string to clear, omit to preserve.
+	installation: String
+	# Pass to rotate; omit to keep existing.
+	secret: String
+	# Pass to rename. Same regex + uniqueness rules as create. Changing
+	# the slug also changes the public webhook URL — re-register it on
+	# the GitHub App side at the same time.
+	slug: String
+}
+
+enum WebhookStatus {
+	ACTIVE
+	DISABLED
+}
+
+enum WebhookDeliveryOutcome {
+	SUCCESS
+	SIGNATURE_INVALID
+	HANDLER_ERROR
+	UNKNOWN_EVENT
+	DUPLICATE
+	WEBHOOK_DISABLED
 }
 
 enum BomFormat {
@@ -3725,4 +4073,90 @@ enum DownloadSubjectType {
 	ARTIFACT
 	RELEASE
 	COMPONENT
+}
+
+type VexStatementProposalWebDto {
+	uuid: ID!
+	org: ID!
+	sourceArtifact: ID!
+	sourceFormat: SourceFormat!
+	sourceStatementJson: String!
+	signatureStatus: SignatureStatus!
+	issuerIdentity: String
+	scope: AnalysisScope!
+	scopeUuid: ID!
+	location: String!
+	rawLocation: String
+	locationType: LocationType!
+	findingId: String!
+	findingAliases: [String]
+	findingType: FindingType!
+	analysisState: AnalysisState!
+	analysisJustification: AnalysisJustification
+	details: String
+	severity: VulnerabilitySeverity
+	responses: [AnalysisResponse!]
+	recommendation: String
+	workaround: String
+	status: ProposalStatus!
+	statusReason: String
+	targetVulnAnalysis: ID
+	mitigationAttestation: ID
+	actedAt: DateTime
+	actedBy: ID
+	translationNotes: [String]
+	issuerClass: IssuerClass
+	userImportMode: VexImportMode
+	userIssuerClassOverride: IssuerClass
+	demotionReason: String
+}
+
+enum ProposalStatus {
+	PENDING
+	ACCEPTED
+	REJECTED
+	SUPERSEDED
+	ERRORED
+}
+
+enum SignatureStatus {
+	UNSIGNED
+	VERIFIED_TRUSTED
+	VERIFIED_UNTRUSTED
+	INVALID
+}
+
+enum SourceFormat {
+	OPENVEX
+	CDX_VEX
+}
+
+type MitigationAttestationWebDto {
+	uuid: ID!
+	org: ID!
+	proposal: ID!
+	claimType: ClaimType!
+	claimText: String!
+	scope: AnalysisScope!
+	scopeUuid: ID!
+	assignedTo: ID
+	assignedAt: DateTime
+	deadline: DateTime
+	status: AttestationStatus!
+	evidence: String
+	attestedAt: DateTime
+	attestedBy: ID
+	statusReason: String
+}
+
+enum AttestationStatus {
+	PENDING
+	ATTESTED
+	WAIVED
+	EXPIRED
+}
+
+enum ClaimType {
+	WORKAROUND
+	ENVIRONMENTAL_CONTROL
 }

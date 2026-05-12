@@ -244,7 +244,7 @@ public class ReleaseServiceCdxVexTransformTest {
 		Bom bom = invokeTransform(buildVdrLikeFixture(), Boolean.FALSE, Boolean.FALSE);
 		int before = bom.getVulnerabilities().size();
 
-		ReleaseService.appendHistoricallyResolvedToBom(bom, List.of(), Map.of(), null);
+		ReleaseService.appendHistoricallyResolvedToBom(bom, List.of(), Map.of(), Map.of(), null);
 
 		assertEquals(before, bom.getVulnerabilities().size(),
 				"Empty historical-resolved list must not modify the bom");
@@ -258,7 +258,7 @@ public class ReleaseServiceCdxVexTransformTest {
 		List<HistoricallyResolvedFinding> findings = List.of(
 				hrf("CVE-2024-9001", "pkg:npm/lodash@4.17.20", resolvingUuid, "1.5", "2026-02-01T00:00:00Z"));
 
-		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), null);
+		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), Map.of(), null);
 
 		Vulnerability appended = bom.getVulnerabilities().stream()
 				.filter(v -> "CVE-2024-9001".equals(v.getId()))
@@ -296,7 +296,7 @@ public class ReleaseServiceCdxVexTransformTest {
 					UUID.fromString("00000000-0000-0000-0000-0000000000fb"), "1.5",
 					"2026-02-01T00:00:00Z"));
 
-		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), null);
+		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), Map.of(), null);
 
 		assertEquals(before, bom.getVulnerabilities().size(),
 				"Historical entry for a CVE id already in bom must be skipped");
@@ -324,7 +324,7 @@ public class ReleaseServiceCdxVexTransformTest {
 		String key = ReleaseService.computeAnalysisKey("pkg:npm/lodash@4.17.20", "CVE-2024-9100");
 		Map<String, AnalysisHistory> resolvedHistoryByKey = Map.of(key, latest);
 
-		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, resolvedHistoryByKey, null);
+		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, resolvedHistoryByKey, Map.of(), null);
 
 		Vulnerability appended = bom.getVulnerabilities().stream()
 				.filter(v -> "CVE-2024-9100".equals(v.getId())).findFirst().orElseThrow();
@@ -345,7 +345,7 @@ public class ReleaseServiceCdxVexTransformTest {
 				hrf("CVE-2024-9101", "pkg:npm/lodash@4.17.20", resolvingUuid, "1.5",
 					resolveDate.toString()));
 
-		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), null);
+		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), Map.of(), null);
 
 		Vulnerability appended = bom.getVulnerabilities().stream()
 				.filter(v -> "CVE-2024-9101".equals(v.getId())).findFirst().orElseThrow();
@@ -366,7 +366,7 @@ public class ReleaseServiceCdxVexTransformTest {
 				hrf("CVE-2024-9201", "pkg:maven/org.apache/log4j-core@2.20.0", resolvingUuid, "1.5",
 					"2026-02-01T00:00:00Z"));
 
-		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), null);
+		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), Map.of(), null);
 
 		BomJsonGenerator gen = BomGeneratorFactory.createJson(Version.VERSION_16, bom);
 		String json = gen.toJsonString();
@@ -392,7 +392,7 @@ public class ReleaseServiceCdxVexTransformTest {
 					UUID.fromString("00000000-0000-0000-0000-0000000000ff"), "1.5",
 					"2026-02-01T00:00:00Z"));
 
-		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), fallback);
+		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), Map.of(), fallback);
 
 		Vulnerability appended = bom.getVulnerabilities().stream()
 				.filter(v -> "CVE-2024-9300".equals(v.getId())).findFirst().orElseThrow();
@@ -414,7 +414,7 @@ public class ReleaseServiceCdxVexTransformTest {
 					UUID.fromString("00000000-0000-0000-0000-0000000000fe"), "1.5",
 					"2026-02-01T00:00:00Z"));
 
-		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), null);
+		ReleaseService.appendHistoricallyResolvedToBom(bom, findings, Map.of(), Map.of(), null);
 
 		Vulnerability appended = bom.getVulnerabilities().stream()
 				.filter(v -> "CVE-2024-9301".equals(v.getId())).findFirst().orElseThrow();

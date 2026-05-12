@@ -68,6 +68,15 @@ public class ReleaseMetricsComputeService {
 			var allReleaseArts = artifactGatherService.gatherReleaseArtifacts(rd);
 			final ZonedDateTime[] releaseFirstScanned = { null };
 			final boolean[] hasAnyBomArtifact = { false };
+			// All-or-nothing flag for every BOM gathered for this release —
+			// release-direct, SCE-attached, and outbound-deliverable BOMs all
+			// flow through the same `gatherReleaseArtifacts` set. As soon as
+			// any one of them lacks firstScanned (still in flight, or never
+			// submitted), the release's firstScanned must remain null.
+			// Matches the parent/child rollup semantic enforced below and
+			// makes `release.firstScanned` a reliable "scan complete" signal
+			// for CEL conditions on policy-wide rules (notably PR_COMMENT).
+			final boolean[] anyBomUnscanned = { false };
 			allReleaseArts.forEach(aid -> {
 				var ad = artifactService.getArtifactData(aid);
 				if (ad.isPresent()) {
@@ -89,6 +98,9 @@ public class ReleaseMetricsComputeService {
 					// has been submitted but not yet scanned would surface stale
 					// "ready" circles in the UI before the initial scan completes.
 					ZonedDateTime artFs = (artifactData.getMetrics() != null) ? artifactData.getMetrics().getFirstScanned() : null;
+					if (artifactData.getType() == ArtifactType.BOM && artFs == null) {
+						anyBomUnscanned[0] = true;
+					}
 					if (artFs != null && (releaseFirstScanned[0] == null || artFs.isAfter(releaseFirstScanned[0]))) {
 						releaseFirstScanned[0] = artFs;
 					}
@@ -99,13 +111,24 @@ public class ReleaseMetricsComputeService {
 			vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), r.getUuid(), AnalysisScope.RELEASE, rmd);
 			if (null == lastScanned) lastScanned = ZonedDateTime.now();
 			rmd.setLastScanned(lastScanned);
-			// Merge direct-artifact firstScanned into whatever rollUpProductReleaseMetrics contributed.
-			// Do NOT unconditionally overwrite: for product releases with no direct artifacts,
-			// releaseFirstScanned[0] is null and would wipe the value propagated from child releases.
-			if (releaseFirstScanned[0] != null) {
+			// Merge artifact firstScanned into whatever rollUpProductReleaseMetrics contributed.
+			// Do NOT unconditionally overwrite: for product releases with no artifacts of
+			// their own, releaseFirstScanned[0] is null and would wipe the value propagated
+			// from child releases. Gated on anyBomUnscanned: if any BOM on this release
+			// (direct, SCE, or outbound deliverable) is still in flight we suppress the
+			// merge rather than promote a partial timestamp.
+			if (releaseFirstScanned[0] != null && !anyBomUnscanned[0]) {
 				if (rmd.getFirstScanned() == null || releaseFirstScanned[0].isAfter(rmd.getFirstScanned())) {
 					rmd.setFirstScanned(releaseFirstScanned[0]);
 				}
+			}
+			// All-or-nothing on artifact-level scans: any unscanned BOM also clobbers
+			// whatever firstScanned the product rollup contributed. Without this, a
+			// product-style merge of a child release's firstScanned could land on a
+			// release whose own BOMs aren't all scanned yet, and `release.firstScanned`
+			// would read as "ready" too early.
+			if (anyBomUnscanned[0]) {
+				rmd.setFirstScanned(null);
 			}
 			// All-or-nothing: if any known child release lacks firstScanned, the product
 			// release's firstScanned must remain null. rollUpProductReleaseMetrics signals
@@ -138,6 +161,21 @@ public class ReleaseMetricsComputeService {
 					&& isScannableLifecycle(rd.getLifecycle())
 					&& rd.getCreatedDate() != null) {
 				rmd.setFirstScanned(rd.getCreatedDate());
+			}
+			// Final safety: if every other path left rmd.firstScanned null but
+			// we previously had one persisted (set by an earlier scan, or by
+			// the V34 backfill on pre-bridge rows), preserve the historical
+			// value rather than reverting it to null. Without this, a release
+			// that's since transitioned to a non-scannable lifecycle (e.g.
+			// CANCELLED) loses its firstScanned on the next scheduler tick
+			// because isScannableLifecycle gates the no-BOM anchor — and the
+			// V34 backfill is silently undone on rows it just fixed.
+			if (rmd.getFirstScanned() == null
+					&& originalMetrics != null
+					&& originalMetrics.getFirstScanned() != null
+					&& !anyBomUnscanned[0]
+					&& !childrenIncomplete) {
+				rmd.setFirstScanned(originalMetrics.getFirstScanned());
 			}
 			rd.setMetrics(rmd);
 			if (!rmd.equals(originalMetrics)) {
@@ -219,7 +257,16 @@ public class ReleaseMetricsComputeService {
 		});
 		// mergeWithByContent above only takes max-of-non-null for firstScanned,
 		// which is wrong for the rollup contract. Override with all-or-nothing.
-		rmd.setFirstScanned(allChildrenScanned[0] ? maxChildFirstScanned[0] : null);
+		//
+		// Plus a lifecycle gate: a product release that hasn't reached
+		// scannable lifecycle (PENDING / DRAFT) is still being assembled —
+		// surfacing firstScanned while the release is in flight would fire
+		// scan-complete triggers (PR_COMMENT etc.) before the release is
+		// officially formed. Until the product release itself transitions to
+		// ASSEMBLED+, treat its rolled-up firstScanned as not-yet-scanned
+		// regardless of how complete the children are.
+		boolean productScannable = isScannableLifecycle(rd.getLifecycle());
+		rmd.setFirstScanned((allChildrenScanned[0] && productScannable) ? maxChildFirstScanned[0] : null);
 		vulnAnalysisService.processReleaseMetricsDto(rd.getOrg(), rd.getUuid(), AnalysisScope.RELEASE, rmd);
 		return rmd;
 	}

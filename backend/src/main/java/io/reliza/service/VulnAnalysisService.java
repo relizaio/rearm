@@ -448,7 +448,7 @@ public class VulnAnalysisService {
 		
 		// Check for existing analysis with same scope, location, finding ID, and type
 		Optional<VulnAnalysisData> existingAnalysis = findByOrgAndLocationAndFindingIdAndScopeAndType(
-				createDto.getScopeUuid(), normalizedLocation, createDto.getFindingId(), 
+				createDto.getOrg(), normalizedLocation, createDto.getFindingId(),
 				createDto.getScope(), createDto.getScopeUuid(), createDto.getFindingType());
 		
 		if (existingAnalysis.isPresent()) {
@@ -694,8 +694,11 @@ public class VulnAnalysisService {
 					analysis.getAnalysisState(),
 					getLatestAnalysisDate(analysis),
 					vulnerability.attributedAt(),
-					vulnerability.description(), vulnerability.cwes(), vulnerability.references(),
-					vulnerability.published(), vulnerability.updated());
+					// description / cwes / references / published / updated migrated to
+				// rearm.vulnerability_records (V33). Drop here so re-enrichment
+				// doesn't carry the legacy per-finding bloat forward into newly
+				// written metrics blobs.
+				null, null, null, null, null);
 		}
 
 		// No DB analysis found - compute primary state from sources if available
@@ -713,8 +716,11 @@ public class VulnAnalysisService {
 					primaryState,
 					primaryDate,
 					vulnerability.attributedAt(),
-					vulnerability.description(), vulnerability.cwes(), vulnerability.references(),
-					vulnerability.published(), vulnerability.updated());
+					// description / cwes / references / published / updated migrated to
+				// rearm.vulnerability_records (V33). Drop here so re-enrichment
+				// doesn't carry the legacy per-finding bloat forward into newly
+				// written metrics blobs.
+				null, null, null, null, null);
 		}
 
 		return vulnerability; // No analysis found anywhere

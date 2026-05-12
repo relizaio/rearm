@@ -4,8 +4,10 @@
 
 package io.reliza.model.dto;
 
+import java.util.List;
 import java.util.UUID;
 
+import io.reliza.model.IntegrationData.IntegrationCapability;
 import io.reliza.model.IntegrationData.IntegrationType;
 import lombok.Data;
 
@@ -21,4 +23,5 @@ public class TriggerIntegrationInputDto {
 	private String client;
 	private String note;
 	private String identifier;
+	private List<IntegrationCapability> capabilities;
 }

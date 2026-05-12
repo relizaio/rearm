@@ -507,4 +507,60 @@ public class OpenVexServiceTest {
 		assertNull(stmt.get("action_statement"),
 				"fixed status must not carry action_statement (Strict L15)");
 	}
+
+	@Test
+	void roundTripExtensionEmittedForFalsePositive() {
+		Vulnerability v = new Vulnerability();
+		v.setId("CVE-2024-1");
+		Vulnerability.Analysis a = new Vulnerability.Analysis();
+		a.setState(Vulnerability.Analysis.State.FALSE_POSITIVE);
+		v.setAnalysis(a);
+		Map<String, Object> stmt = OpenVexService.buildStatement(v, "pkg:maven/x/y@1");
+		assertEquals("not_affected", stmt.get("status"));
+		assertEquals("FALSE_POSITIVE", stmt.get("x_rearm_cdx_state"));
+	}
+
+	@Test
+	void roundTripExtensionPreservesProtectedAtPerimeter() {
+		Vulnerability v = new Vulnerability();
+		v.setId("CVE-2024-2");
+		Vulnerability.Analysis a = new Vulnerability.Analysis();
+		a.setState(Vulnerability.Analysis.State.NOT_AFFECTED);
+		a.setJustification(Vulnerability.Analysis.Justification.PROTECTED_AT_PERIMETER);
+		v.setAnalysis(a);
+		Map<String, Object> stmt = OpenVexService.buildStatement(v, "pkg:maven/x/y@1");
+		assertEquals("inline_mitigations_already_exist", stmt.get("justification"));
+		assertEquals("PROTECTED_AT_PERIMETER", stmt.get("x_rearm_cdx_justification"));
+	}
+
+	@Test
+	void roundTripExtensionEmitsResponsesArray() {
+		Vulnerability v = new Vulnerability();
+		v.setId("CVE-2024-3");
+		v.setRecommendation("upgrade");
+		Vulnerability.Analysis a = new Vulnerability.Analysis();
+		a.setState(Vulnerability.Analysis.State.EXPLOITABLE);
+		a.setResponses(List.of(Vulnerability.Analysis.Response.UPDATE, Vulnerability.Analysis.Response.WORKAROUND_AVAILABLE));
+		v.setAnalysis(a);
+		Map<String, Object> stmt = OpenVexService.buildStatement(v, "pkg:maven/x/y@1");
+		assertEquals("affected", stmt.get("status"));
+		@SuppressWarnings("unchecked")
+		List<String> responses = (List<String>) stmt.get("x_rearm_cdx_responses");
+		assertEquals(List.of("UPDATE", "WORKAROUND_AVAILABLE"), responses);
+	}
+
+	@Test
+	void roundTripExtensionAbsentWhenSourceFieldEmpty() {
+		Vulnerability v = new Vulnerability();
+		v.setId("CVE-2024-4");
+		Vulnerability.Analysis a = new Vulnerability.Analysis();
+		a.setState(Vulnerability.Analysis.State.RESOLVED);
+		v.setAnalysis(a);
+		Map<String, Object> stmt = OpenVexService.buildStatement(v, "pkg:maven/x/y@1");
+		// RESOLVED → CDX library has no pedigree variant in our pipeline; round-trip extension only adds
+		// info when there's a distinction to preserve. RESOLVED is unambiguous on inverse.
+		assertNull(stmt.get("x_rearm_cdx_state"));
+		assertNull(stmt.get("x_rearm_cdx_justification"));
+		assertNull(stmt.get("x_rearm_cdx_responses"));
+	}
 }

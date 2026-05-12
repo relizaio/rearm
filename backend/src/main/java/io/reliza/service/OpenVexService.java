@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.cyclonedx.model.Bom;
@@ -62,6 +63,15 @@ public class OpenVexService {
 	static final String OPENVEX_CONTEXT = "https://openvex.dev/ns/v0.2.0";
 	static final String OPENVEX_AUTHOR = "Reliza ReARM";
 	static final int OPENVEX_DOC_VERSION = 1;
+
+	private static final Set<Vulnerability.Analysis.Justification> LOSSY_JUSTIFICATIONS = Set.of(
+		Vulnerability.Analysis.Justification.PROTECTED_BY_COMPILER,
+		Vulnerability.Analysis.Justification.PROTECTED_AT_RUNTIME,
+		Vulnerability.Analysis.Justification.PROTECTED_AT_PERIMETER,
+		Vulnerability.Analysis.Justification.PROTECTED_BY_MITIGATING_CONTROL,
+		Vulnerability.Analysis.Justification.REQUIRES_CONFIGURATION,
+		Vulnerability.Analysis.Justification.REQUIRES_ENVIRONMENT
+	);
 
 	private final ReleaseService releaseService;
 	private final ObjectMapper objectMapper;
@@ -184,6 +194,26 @@ public class OpenVexService {
 			}
 		} else if ("affected".equals(status)) {
 			stmt.put("action_statement", deriveActionStatement(v));
+		}
+
+		// Round-trip extension: namespaced properties so ReARM's own importer can
+		// losslessly recover the ReARM-internal vocabulary even though OpenVEX collapses it.
+		// Strict OpenVEX validators (vexctl/go-vex) ignore unknown keys.
+		// Only emit when there's distinguishing info to preserve.
+		Vulnerability.Analysis a = v.getAnalysis();
+		// State: emit only for FALSE_POSITIVE (distinguishes from NOT_AFFECTED on inverse).
+		if (a.getState() == Vulnerability.Analysis.State.FALSE_POSITIVE) {
+			stmt.put("x_rearm_cdx_state", "FALSE_POSITIVE");
+		}
+		// Justification: emit when the CDX value loses info on OpenVEX collapse.
+		Vulnerability.Analysis.Justification j = a.getJustification();
+		if (j != null && LOSSY_JUSTIFICATIONS.contains(j)) {
+			stmt.put("x_rearm_cdx_justification", j.name());
+		}
+		// Responses: OpenVEX has no peer field; preserve the structured enum array.
+		List<Vulnerability.Analysis.Response> rs = a.getResponses();
+		if (rs != null && !rs.isEmpty()) {
+			stmt.put("x_rearm_cdx_responses", rs.stream().map(Enum::name).toList());
 		}
 
 		return stmt;

@@ -120,6 +120,49 @@ public class OrganizationService {
 	public void saveOrg(Organization org){
 		repository.save(org);
 	}
+
+	/**
+	 * Replace the org's global PR-validation trigger rule list. Persistence-only:
+	 * the caller is responsible for validating each rule (regex compile, name
+	 * uniqueness, integration scope/capability) — typically the SAAS-only
+	 * {@code OrgValidationTriggerService.setRules}, which handles those checks
+	 * before delegating here. Lives on the shared service so the data field
+	 * round-trip stays in one place; the validation that gates writes lives in
+	 * the SAAS layer per the {@code saas ← oss ← shared} layering rule.
+	 */
+	@Transactional
+	public OrganizationData setGlobalPrValidationTriggerRules(UUID orgUuid,
+			List<OrganizationData.GlobalPrValidationTriggerRule> validatedRules, WhoUpdated wu)
+			throws RelizaException {
+		Organization org = getOrganizationService.getOrganization(orgUuid)
+				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
+		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+		od.setGlobalPrValidationTriggerRules(validatedRules == null ? new java.util.LinkedList<>() : validatedRules);
+		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
+		return OrganizationData.orgDataFromDbRecord(saved);
+	}
+
+	/**
+	 * Replace the org's global approval-policy assignment rule list.
+	 * Persistence-only: the caller is responsible for validating each
+	 * rule (regex compile, name uniqueness, policy exists in same org) —
+	 * typically the SAAS-only {@code OrgApprovalPolicyService.setRules},
+	 * which handles those checks before delegating here. Lives on the
+	 * shared service so the data field round-trip stays in one place;
+	 * the validation that gates writes lives in the SAAS layer per the
+	 * {@code saas ← oss ← shared} layering rule.
+	 */
+	@Transactional
+	public OrganizationData setGlobalApprovalPolicyRules(UUID orgUuid,
+			List<OrganizationData.GlobalApprovalPolicyRule> validatedRules, WhoUpdated wu)
+			throws RelizaException {
+		Organization org = getOrganizationService.getOrganization(orgUuid)
+				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
+		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+		od.setGlobalApprovalPolicyRules(validatedRules == null ? new java.util.LinkedList<>() : validatedRules);
+		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
+		return OrganizationData.orgDataFromDbRecord(saved);
+	}
 	
 	private List<Organization> listAllOrganizations() {
 		return repository.findAll();

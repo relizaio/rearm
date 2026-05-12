@@ -62,6 +62,8 @@ import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityReferenceDto;
+import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.VulnerabilityRecordData.CvssScore;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils;
@@ -151,6 +153,9 @@ public class ReleaseService {
 	
 	@Autowired
 	private ArtifactService artifactService;
+
+	@Autowired
+	private VulnerabilityRecordService vulnerabilityRecordService;
 
 	@Autowired
 	private OssReleaseService ossReleaseService;
@@ -1141,19 +1146,19 @@ public class ReleaseService {
 		if (!isAllowed) {
 			throw new RelizaException("Cannot update deliverables on the current release lifecycle");
 		}
-		
+
 		if (deliverableDtos != null && !deliverableDtos.isEmpty()) {
 			List<UUID> newDeliverables = deliverableService.prepareListofDeliverables(deliverableDtos, releaseData.getBranch(),
 					releaseData.getVersion(), wu);
 			currentDeliverables.addAll(newDeliverables);
 		}
-		
+
 		releaseData.setInboundDeliverables(currentDeliverables);
 		ReleaseDto releaseDto = Utils.OM.convertValue(Utils.dataToRecord(releaseData), ReleaseDto.class);
 		Release release = ossReleaseService.updateRelease(releaseDto, UpdateReleaseStrength.FULL, wu);
 		return ReleaseData.dataFromRecord(release);
 	}
-	
+
 	private void addRebom(ReleaseData releaseData, ReleaseBom rebom, WhoUpdated wu) throws RelizaException {
 		List<ReleaseBom> newBoms = new ArrayList<>(); 
 		List<ReleaseBom> currentBoms = releaseRebomService.getReleaseBoms(releaseData);
@@ -1575,13 +1580,28 @@ public class ReleaseService {
 
 	private void computeMetricsForReleaseList(List<Release> releaseList,
 			Set<UUID> dedupProcessedReleases) {
-		releaseList.forEach(r -> {
-			if (!dedupProcessedReleases.contains(r.getUuid())) {
+		// Per-release try/catch — without this, a single bad release in the
+		// batch propagates through Stream.forEach and aborts every release
+		// after it in the same tick. The aborted releases then stay matched
+		// by their respective finder predicates (notably BY_UPDATE) and
+		// look like they're stuck in a 1-minute loop — except the loop is
+		// "find them, hit the poison pill, skip them, repeat next tick."
+		//
+		// Skipping a single release silently is the right tradeoff: the
+		// finder will re-pick it next tick if it still qualifies, and the
+		// failure surface (logged here) is enough for an operator to find
+		// the actual problem release.
+		for (Release r : releaseList) {
+			if (dedupProcessedReleases.contains(r.getUuid())) continue;
+			dedupProcessedReleases.add(r.getUuid());
+			try {
 				boolean metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(r);
-				dedupProcessedReleases.add(r.getUuid());
 				if (metricsChanged) ossReleaseService.processRelease(r.getUuid());
+			} catch (Exception e) {
+				log.error("Metrics compute failed for release {} — continuing with batch: {}",
+						r.getUuid(), e.getMessage(), e);
 			}
-		});
+		}
 	}
 	
 	@Async
@@ -1870,11 +1890,16 @@ public class ReleaseService {
 	}
 
 	/**
-	 * Populate the common CDX vulnerability fields (source, ratings, description, cwes,
-	 * references, published/updated) from a {@link VulnerabilityDto}. Shared by
-	 * {@link #buildVdrVulnerabilityEntry} and {@link #appendHistoricallyResolvedToBom} so the
-	 * source-prefix mapping and field carry-through stay in sync between current and
-	 * historical entries.
+	 * Populate the source + per-finding rating on a CycloneDX Vulnerability.
+	 * The richer enrichment fields (description, cwes, references,
+	 * published/updated, deeper CVSS) come from
+	 * {@link VulnerabilityRecordData} and are applied separately by
+	 * {@link #applyVulnerabilityEnrichmentFromRecord} so VEX exports use
+	 * the canonical, deduped multi-source record rather than the
+	 * per-finding copy that used to live inside release.metrics.
+	 *
+	 * <p>Shared by {@link #buildVdrVulnerabilityEntry} and
+	 * {@link #appendHistoricallyResolvedToBom}.
 	 */
 	static void setVulnerabilityCommonFields(Vulnerability vuln, VulnerabilityDto vulnDto) {
 		Source source = new Source();
@@ -1896,32 +1921,114 @@ public class ReleaseService {
 			rating.setSeverity(mapVdrSeverity(vulnDto.severity()));
 			vuln.setRatings(List.of(rating));
 		}
-		if (StringUtils.isNotBlank(vulnDto.description())) {
-			vuln.setDescription(vulnDto.description());
+	}
+
+	/**
+	 * Apply the multi-source enrichment fields (description, cwes,
+	 * references, published / updated) from the canonical
+	 * {@link VulnerabilityRecordData} onto a CycloneDX {@link Vulnerability}.
+	 *
+	 * <p>No-op when {@code vrd} is null — releases that haven't been
+	 * rescanned since the vulnerability_records table was introduced won't
+	 * have a row yet, in which case the VEX entry surfaces without
+	 * enrichment text (per the agreed cutover: no fallback to the
+	 * legacy per-finding fields, no migration of historical bloat).
+	 */
+	static void applyVulnerabilityEnrichmentFromRecord(Vulnerability vuln, VulnerabilityRecordData vrd) {
+		if (vrd == null) return;
+		if (StringUtils.isNotBlank(vrd.getDescription())) {
+			vuln.setDescription(vrd.getDescription());
 		}
-		List<Integer> cweInts = parseCwesToCdxIntegers(vulnDto.cwes());
+		List<Integer> cweInts = parseCwesToCdxIntegers(vrd.getCwes());
 		if (!cweInts.isEmpty()) vuln.setCwes(cweInts);
-		if (vulnDto.references() != null && !vulnDto.references().isEmpty()) {
-			List<Vulnerability.Reference> refs = new ArrayList<>();
-			for (VulnerabilityReferenceDto refDto : vulnDto.references()) {
+		List<Vulnerability.Reference> refs = parseReferencesMarkdown(vrd.getReferences());
+		if (!refs.isEmpty()) vuln.setReferences(refs);
+		if (vrd.getPublished() != null) {
+			vuln.setPublished(Date.from(vrd.getPublished().toInstant()));
+		}
+		if (vrd.getUpdated() != null) {
+			vuln.setUpdated(Date.from(vrd.getUpdated().toInstant()));
+		}
+	}
+
+	/**
+	 * Pre-resolve canonical {@link VulnerabilityRecordData} for every
+	 * vuln id (and known aliases) referenced by the release's finding
+	 * list. One batched read by org + primary id, then a second alias
+	 * pass for findings whose id is a known alias (e.g. release surfaced
+	 * the GHSA but the canonical row is keyed by the CVE).
+	 */
+	private Map<String, VulnerabilityRecordData> resolveVulnerabilityEnrichment(
+			UUID org, List<VulnerabilityDto> vulnerabilityDetails) {
+		Map<String, VulnerabilityRecordData> out = new HashMap<>();
+		if (org == null || vulnerabilityDetails == null || vulnerabilityDetails.isEmpty()) return out;
+		java.util.Set<String> primaryIds = new java.util.LinkedHashSet<>();
+		for (VulnerabilityDto v : vulnerabilityDetails) {
+			if (v != null && v.vulnId() != null) primaryIds.add(v.vulnId());
+		}
+		Map<String, VulnerabilityRecordData> direct =
+				vulnerabilityRecordService.getDataByOrgAndPrimaryVulnIds(org, primaryIds);
+		out.putAll(direct);
+		// Fallback alias lookup: any finding whose vulnId isn't a canonical
+		// row may still resolve via the GIN-indexed aliases list. We only
+		// pay this cost for the misses.
+		for (VulnerabilityDto v : vulnerabilityDetails) {
+			if (v == null || v.vulnId() == null) continue;
+			if (direct.containsKey(v.vulnId())) continue;
+			vulnerabilityRecordService.getByAlias(org, v.vulnId()).ifPresent(vrd -> {
+				out.put(v.vulnId(), vrd);
+			});
+		}
+		return out;
+	}
+
+	/**
+	 * Look up the pre-resolved enrichment for a single finding. Tries the
+	 * primary id first (the common case) then the known aliases on the
+	 * finding's DTO. Returns null when nothing matches — caller degrades
+	 * gracefully.
+	 */
+	private static VulnerabilityRecordData resolveEnrichment(
+			Map<String, VulnerabilityRecordData> map,
+			String primaryId,
+			java.util.Set<? extends io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasDto> aliases) {
+		if (map == null) return null;
+		if (primaryId != null) {
+			VulnerabilityRecordData hit = map.get(primaryId);
+			if (hit != null) return hit;
+		}
+		if (aliases != null) {
+			for (var a : aliases) {
+				if (a == null || a.aliasId() == null) continue;
+				VulnerabilityRecordData hit = map.get(a.aliasId());
+				if (hit != null) return hit;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Parse DTrack's markdown-bullet references blob into discrete
+	 * CycloneDX references. The blob looks like {@code "* [text](url)"}
+	 * one per line; we extract each URL and emit a reference whose id
+	 * is the URL. Lines that don't match the expected shape are skipped.
+	 */
+	private static List<Vulnerability.Reference> parseReferencesMarkdown(String markdown) {
+		if (markdown == null || markdown.isBlank()) return List.of();
+		List<Vulnerability.Reference> refs = new ArrayList<>();
+		java.util.regex.Pattern bullet = java.util.regex.Pattern.compile("\\[[^\\]]*\\]\\((https?://[^\\)]+)\\)");
+		java.util.Set<String> seen = new java.util.HashSet<>();
+		for (String line : markdown.split("\\r?\\n")) {
+			java.util.regex.Matcher m = bullet.matcher(line);
+			while (m.find()) {
+				String url = m.group(1);
+				if (!seen.add(url)) continue;
 				Vulnerability.Reference ref = new Vulnerability.Reference();
-				ref.setId(refDto.id());
-				if (refDto.sourceName() != null || refDto.sourceUrl() != null) {
-					Source refSource = new Source();
-					refSource.setName(refDto.sourceName());
-					refSource.setUrl(refDto.sourceUrl());
-					ref.setSource(refSource);
-				}
+				ref.setId(url);
 				refs.add(ref);
 			}
-			vuln.setReferences(refs);
 		}
-		if (vulnDto.published() != null) {
-			vuln.setPublished(Date.from(vulnDto.published().toInstant()));
-		}
-		if (vulnDto.updated() != null) {
-			vuln.setUpdated(Date.from(vulnDto.updated().toInstant()));
-		}
+		return refs;
 	}
 
 	/**
@@ -1957,6 +2064,7 @@ public class ReleaseService {
 			Bom bom,
 			List<HistoricallyResolvedFinding> findings,
 			Map<String, VulnAnalysisData.AnalysisHistory> resolvedHistoryByKey,
+			Map<String, VulnerabilityRecordData> enrichmentByPrimaryId,
 			String fallbackProductRef) {
 
 		if (bom == null || findings == null || findings.isEmpty()) return;
@@ -1986,8 +2094,10 @@ public class ReleaseService {
 			v.setBomRef(UUID.randomUUID().toString());
 			v.setId(id);
 
-			// Source / severity / description / cwes / references / dates from the source DTO.
+			// Source + per-finding rating from the source DTO.
 			setVulnerabilityCommonFields(v, f.vulnerability());
+			applyVulnerabilityEnrichmentFromRecord(v,
+					resolveEnrichment(enrichmentByPrimaryId, f.vulnerability().vulnId(), f.vulnerability().aliases()));
 
 			// Analysis: state = RESOLVED, with optional enrichment from a pre-resolved AnalysisHistory entry.
 			Vulnerability.Analysis a = new Vulnerability.Analysis();
@@ -2101,12 +2211,22 @@ public class ReleaseService {
 			if (entry != null) resolvedHistoryByKey.put(e.getKey(), entry);
 		}
 
+		// Pre-resolve vulnerability_records enrichment for the historical
+		// finding ids. Same batched-then-alias-fallback pattern as the
+		// current-state VEX path.
+		List<VulnerabilityDto> historicalVulnDtos = new ArrayList<>();
+		for (HistoricallyResolvedFinding f : findings) {
+			if (f != null && f.vulnerability() != null) historicalVulnDtos.add(f.vulnerability());
+		}
+		Map<String, VulnerabilityRecordData> enrichmentByPrimaryId = resolveVulnerabilityEnrichment(
+				releaseData.getOrg(), historicalVulnDtos);
+
 		// Releases may have no metadata.component bom-ref (no sid PURL set). Fall back to the
 		// codebase-canonical "preferred bom identifier" chain: sid PURL > any other PURL >
 		// release UUID string (always non-null). Same chain used by the dependency
 		// release-component path further down, and by ReleaseData.getPreferredBomIdentifier.
 		String fallbackProductRef = releaseData.getPreferredBomIdentifier();
-		appendHistoricallyResolvedToBom(bom, findings, resolvedHistoryByKey, fallbackProductRef);
+		appendHistoricallyResolvedToBom(bom, findings, resolvedHistoryByKey, enrichmentByPrimaryId, fallbackProductRef);
 	}
 
 	/**
@@ -2337,8 +2457,17 @@ public class ReleaseService {
 				releaseAnalysisMaps.put(releaseUuid, buildAnalysisByKey(releaseUuid));
 			}
 			
+			// Pre-resolve vulnerability_records enrichment in one batch keyed
+			// by primary vuln id. Misses (CVE-X not yet present in the new
+			// table) degrade to no-enrichment at emission time, per the
+			// V33 cutover contract — no fallback to the legacy per-finding
+			// fields.
+			Map<String, VulnerabilityRecordData> enrichmentByPrimaryId = resolveVulnerabilityEnrichment(
+					releaseData.getOrg(), metrics.getVulnerabilityDetails());
+
 			// Build VDR context for transformation
-			VdrContext vdrContext = new VdrContext(analysisMap, releaseAnalysisMaps, releaseBomRefMap, releaseData.getUuid());
+			VdrContext vdrContext = new VdrContext(analysisMap, releaseAnalysisMaps, releaseBomRefMap,
+					releaseData.getUuid(), enrichmentByPrimaryId);
 			
 			// Transform vulnerabilities - split by analysis state if sources have different states
 			List<Vulnerability> vulnerabilities = new ArrayList<>();
@@ -2375,7 +2504,16 @@ public class ReleaseService {
 		Map<String, VulnAnalysisData> selfAnalysisMap,
 		Map<UUID, Map<String, VulnAnalysisData>> releaseAnalysisMaps,
 		Map<UUID, String> releaseBomRefMap,
-		UUID selfReleaseUuid
+		UUID selfReleaseUuid,
+		/**
+		 * Pre-resolved enrichment by primary vuln id, indexed once at the
+		 * top of {@link #buildVdrBom} so we don't issue a per-finding lookup
+		 * per VDR entry. Misses are fine — the per-finding emitter degrades
+		 * to the no-enrichment branch, which matches the cutover contract
+		 * for releases that haven't been rescanned since the
+		 * {@code vulnerability_records} migration.
+		 */
+		Map<String, VulnerabilityRecordData> enrichmentByPrimaryId
 	) {}
 	
 	/**
@@ -2443,12 +2581,16 @@ public class ReleaseService {
 	private Vulnerability buildVdrVulnerabilityEntry(VulnerabilityDto vulnDto, AnalysisState defaultAnalysisState, 
 			List<FindingSourceDto> sourcesForState, VdrContext vdrContext, ZonedDateTime cutOffDate) {
 		Vulnerability vuln = new Vulnerability();
-		
+
 		// Set vulnerability ID
 		vuln.setId(vulnDto.vulnId());
-		
-		// Source / severity / description / cwes / references / dates from the source DTO.
+
+		// Source + per-finding rating from the source DTO.
 		setVulnerabilityCommonFields(vuln, vulnDto);
+		// Description / cwes / references / published / updated come from the
+		// canonical vulnerability_records row pre-resolved on vdrContext.
+		applyVulnerabilityEnrichmentFromRecord(vuln,
+				resolveEnrichment(vdrContext.enrichmentByPrimaryId(), vulnDto.vulnId(), vulnDto.aliases()));
 
 		// Build affects list - include both PURL and release bom-refs
 		List<Vulnerability.Affect> affects = new ArrayList<>();

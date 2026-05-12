@@ -1342,7 +1342,65 @@ class VariableQueries {
 					OR record_data->>'component' = :componentUuidAsString
 					OR record_data->>'scope' = 'ORG')
 			""";
-	
+
+	/*
+	 * VEX Statement Proposals
+	 */
+	protected static final String FIND_VEX_PROPOSAL_BY_ORG_AND_STATUS = """
+			SELECT * FROM rearm.vex_statement_proposals
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'status' = :status
+				ORDER BY created_date DESC
+			""";
+
+	protected static final String FIND_VEX_PROPOSAL_BY_ORG = """
+			SELECT * FROM rearm.vex_statement_proposals
+				WHERE record_data->>'org' = :orgUuidAsString
+				ORDER BY created_date DESC
+			""";
+
+	protected static final String FIND_VEX_PROPOSAL_DEDUPE = """
+			SELECT * FROM rearm.vex_statement_proposals
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'sourceArtifact' = :sourceArtifactAsString
+				AND record_data->>'sourceStatementHash' = :sourceStatementHash
+			""";
+
+	protected static final String FIND_VEX_PROPOSAL_BY_ARTIFACT = """
+			SELECT * FROM rearm.vex_statement_proposals
+				WHERE record_data->>'sourceArtifact' = :sourceArtifactAsString
+				ORDER BY created_date DESC
+			""";
+
+	protected static final String FIND_VEX_PROPOSAL_BY_SOURCE_ARTIFACT_IN = """
+			SELECT * FROM rearm.vex_statement_proposals
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'sourceArtifact' IN (:sourceArtifactsAsStrings)
+				ORDER BY created_date DESC
+			""";
+
+	/*
+	 * Mitigation Attestations
+	 */
+	protected static final String FIND_ATTESTATION_BY_ORG_AND_STATUS = """
+			SELECT * FROM rearm.mitigation_attestations
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND record_data->>'status' = :status
+				ORDER BY created_date DESC
+			""";
+
+	protected static final String FIND_ATTESTATION_BY_PROPOSAL = """
+			SELECT * FROM rearm.mitigation_attestations
+				WHERE record_data->>'proposal' = :proposalUuidAsString
+			""";
+
+	protected static final String FIND_ATTESTATION_BY_ASSIGNEE = """
+			SELECT * FROM rearm.mitigation_attestations
+				WHERE record_data->>'assignedTo' = :assigneeUuidAsString
+				AND record_data->>'status' = :status
+				ORDER BY created_date DESC
+			""";
+
 	/*
 	 * Release UUIDs by component (used for perspective-scoped download log filtering)
 	 */

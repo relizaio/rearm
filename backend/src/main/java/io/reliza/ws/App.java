@@ -78,6 +78,12 @@ public class App {
 	  .csrf(c -> c
 			.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
 			.csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+			// Webhook intake is signature-authenticated (HMAC-SHA256 via
+			// X-Hub-Signature-256) — CSRF protection doesn't apply, and
+			// GitHub can't carry a CSRF cookie anyway. The path is opt-in
+			// and the controller verifies the signature before any state
+			// mutation.
+			.ignoringRequestMatchers("/api/programmatic/v1/webhook/**")
 	  )
 	  .oauth2ResourceServer(
 		    oauth2 -> oauth2.jwt(Customizer.withDefaults())

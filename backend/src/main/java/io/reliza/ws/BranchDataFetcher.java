@@ -57,6 +57,7 @@ import io.reliza.service.ComponentService;
 import io.reliza.service.DependencyPatternService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.PullRequestService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -101,6 +102,9 @@ public class BranchDataFetcher {
 
 	@Autowired
 	GetOrganizationService getOrganizationService;
+
+	@Autowired
+	PullRequestService pullRequestService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "branch")
@@ -330,6 +334,25 @@ public class BranchDataFetcher {
 		Set<UUID> deadBranches = branchService.findDeadBranches(componentId, liveBranches);
 		for (UUID db : deadBranches) {
 			branchService.archiveBranch(db, ar.getWhoUpdated());
+		}
+		// Close any open PR on this component's VCS whose source branch is no
+		// longer in the SCM-live list. CE/SAAS has no GitHub webhook intake
+		// for pull_request.closed events, so without this hook PRs accumulate
+		// stuck on OPEN forever after their branch is deleted upstream. Best-
+		// effort: failures are logged inside closeStalePrsForVcs and never
+		// fail the mutation.
+		if (ocd.isPresent() && ocd.get().getVcs() != null) {
+			try {
+				int closedCount = pullRequestService.closeStalePrsForVcs(
+						ocd.get().getVcs(), liveBranches, ar.getWhoUpdated());
+				if (closedCount > 0) {
+					log.info("synchronizeLiveBranches: closed {} stale PR(s) on VCS {} for component {}",
+							closedCount, ocd.get().getVcs(), componentId);
+				}
+			} catch (Exception e) {
+				log.warn("synchronizeLiveBranches: stale-PR sweep failed on VCS {} for component {}: {}",
+						ocd.get().getVcs(), componentId, e.getMessage());
+			}
 		}
 		return true;
 	}

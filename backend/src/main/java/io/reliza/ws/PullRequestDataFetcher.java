@@ -97,26 +97,28 @@ public class PullRequestDataFetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "pullRequestsOfOrg")
-	public List<PullRequestData> pullRequestsOfOrg(@InputArgument("orgUuid") UUID orgUuid) throws RelizaException {
+	public List<PullRequestData> pullRequestsOfOrg(@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("states") List<String> states) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
-		return pullRequestService.listByOrg(orgUuid);
+		return pullRequestService.listByOrg(orgUuid, states);
 	}
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "pullRequestsOfVcs")
-	public List<PullRequestData> pullRequestsOfVcs(@InputArgument("vcs") UUID vcsUuid) throws RelizaException {
+	public List<PullRequestData> pullRequestsOfVcs(@InputArgument("vcs") UUID vcsUuid,
+			@InputArgument("states") List<String> states) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsUuid);
 		RelizaObject ro = ovrd.isPresent() ? ovrd.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, List.of(ro), CallType.READ);
-		return pullRequestService.listByTargetRepository(vcsUuid);
+		return pullRequestService.listByTargetRepository(vcsUuid, states);
 	}
 
 	/**
@@ -356,5 +358,19 @@ public class PullRequestDataFetcher {
 				.map(java.util.Optional::get)
 				.map(io.reliza.model.ReleaseData::dataFromRecord)
 				.collect(java.util.stream.Collectors.toList());
+	}
+
+	/**
+	 * PullRequest.currentValidationState resolver — picks the latest
+	 * pr_validation_event whose sourceCodeEntry matches the PR's current
+	 * head SCE. Mirrors the aggregator's "latest-for-head" lookup so the
+	 * UI sees the same value the SCM dispatch sees. Null when the PR has
+	 * no commits / no events / no event for the current head.
+	 */
+	@DgsData(parentType = "PullRequest", field = "currentValidationState")
+	public io.reliza.model.ValidationState currentValidationState(
+			com.netflix.graphql.dgs.DgsDataFetchingEnvironment dfe) {
+		PullRequestData prd = dfe.getSource();
+		return pullRequestService.getCurrentValidationState(prd);
 	}
 }

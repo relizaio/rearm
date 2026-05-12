@@ -4,10 +4,12 @@
 
 package io.reliza.model.dto;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import io.reliza.model.IntegrationData.IntegrationCapability;
 import io.reliza.model.IntegrationData.IntegrationType;
 import lombok.Builder;
 import lombok.Data;
@@ -27,4 +29,6 @@ public class IntegrationWebDto {
 	private IntegrationType type;
 	@JsonProperty
 	private String note;
+	@JsonProperty
+	private List<IntegrationCapability> capabilities;
 }

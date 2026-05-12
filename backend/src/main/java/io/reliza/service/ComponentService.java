@@ -337,12 +337,23 @@ public class ComponentService {
 				cd.setMarketingVersionSchema(cdto.getMarketingVersionSchema());
 			}
 			if (null != cdto.getApprovalPolicy()) {
-				// guardrail: if changing approval policy, check that component doesn't reference global events from the old one
-				if (null != cd.getApprovalPolicy() && !cdto.getApprovalPolicy().equals(cd.getApprovalPolicy())
-						&& null != cd.getGlobalInputEventRefs() && !cd.getGlobalInputEventRefs().isEmpty()) {
-					throw new RelizaException("Cannot change approval policy while component references global events from the current policy. Remove global event references first.");
+				// Setting a per-component policy that differs from what's
+				// stored: stale per-rule refs (disables / output-overrides)
+				// target the previous policy's rule UUIDs and have no meaning
+				// under the new one. Drop them rather than orphan them. This
+				// covers manual→manual switches and the org-rule→manual
+				// transition (cd.approvalPolicy null prior). The refs block
+				// further down will reapply explicitly if cdto carries them.
+				if (!cdto.getApprovalPolicy().equals(cd.getApprovalPolicy())) {
+					cd.setGlobalInputEventRefs(null);
 				}
 				cd.setApprovalPolicy(cdto.getApprovalPolicy());
+			} else if (Boolean.TRUE.equals(cdto.getClearApprovalPolicy()) && null != cd.getApprovalPolicy()) {
+				// Explicit clear path — UI sends this flag when the operator
+				// hits the clearable X on the policy dropdown. Drop the refs
+				// alongside, since they're tied to the cleared policy's rules.
+				cd.setGlobalInputEventRefs(null);
+				cd.setApprovalPolicy(null);
 			}
 			if (null != cdto.getReleaseInputTriggers()) {
 				cdto.getReleaseInputTriggers().forEach(t -> {

@@ -6,7 +6,9 @@ package io.reliza.model;
 
 import java.net.URI;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -35,12 +37,6 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	public enum IntegrationType {
 		DEPENDENCYTRACK,
 		GITHUB,
-		// GITHUB_VALIDATE shares storage shape with GITHUB (App ID in
-		// `schedule`, base64-PKCS8 private key in `secret`) but is wired
-		// to the EXTERNAL_VALIDATION output event type — POSTs check-runs
-		// against /repos/{owner}/{repo}/check-runs to gate PRs based on
-		// ReARM release state, instead of triggering repository_dispatch.
-		GITHUB_VALIDATE,
 		GITLAB,
 		JENKINS,
 		ADO,
@@ -48,6 +44,28 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 		MSTEAMS;
 
 		private IntegrationType () {}
+	}
+
+	/**
+	 * Capabilities a GITHUB integration is wired up to perform. Each is
+	 * an assertion of intent the user picks; the outbound dispatch paths
+	 * (EXTERNAL_VALIDATION, PR_COMMENT) and inbound webhook intake gate
+	 * on the relevant capability rather than on a separate IntegrationType.
+	 */
+	public enum IntegrationCapability {
+		/** Triggers a repository_dispatch / workflow_dispatch in the linked repo. */
+		WORKFLOW_DISPATCH,
+		/**
+		 * Posts check-run conclusions and PR comments back to GitHub via the
+		 * App's installation token. Required for the EXTERNAL_VALIDATION /
+		 * PR_COMMENT output event types and the PR-level validation dispatch.
+		 */
+		PR_VALIDATE,
+		/**
+		 * Receives inbound webhook deliveries from GitHub. Required for a
+		 * GITHUB integration to show up in the "create webhook" picker.
+		 */
+		WEBHOOK;
 	}
 	
 	@JsonProperty
@@ -76,6 +94,18 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	private Map<String,Object> parameters = new LinkedHashMap<>(); // custom parameters for providers
 	@JsonProperty
 	private String note;
+	@JsonProperty
+	private List<IntegrationCapability> capabilities; // null/empty = no capabilities asserted
+
+	@JsonIgnore
+	public boolean hasCapability(IntegrationCapability cap) {
+		return capabilities != null && capabilities.contains(cap);
+	}
+
+	@JsonIgnore
+	public Set<IntegrationCapability> getCapabilitySet() {
+		return capabilities == null ? Set.of() : Set.copyOf(capabilities);
+	}
 
 	public IntegrationWebDto toWebDto() {
 		return IntegrationWebDto.builder()
@@ -85,6 +115,7 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 				.org(this.org)
 				.type(this.type)
 				.note(this.note)
+				.capabilities(this.capabilities)
 				.build();
 	}
 	

@@ -457,8 +457,13 @@ public class CommonVariables {
 		VARIANTS("variants"),
 		VCS_REPOSITORIES("vcs_repositories"),
 		VERSION_ASSIGNMENTS("version_assignments"),
+		VEX_STATEMENT_PROPOSAL("vex_statement_proposals"),
+		MITIGATION_ATTESTATION("mitigation_attestations"),
+		VULNERABILITY_RECORDS("vulnerability_records"),
 		VULN_ANALYSIS("vuln_analysis"),
-		PERSPECTIVE("perspectives")
+		PERSPECTIVE("perspectives"),
+		WEBHOOKS("webhooks"),
+		WEBHOOK_DELIVERIES("webhook_deliveries")
 		;
 		
 		private String name;

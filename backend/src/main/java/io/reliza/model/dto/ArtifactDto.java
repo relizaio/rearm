@@ -18,6 +18,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.StripBom;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
@@ -25,6 +26,8 @@ import io.reliza.model.ArtifactData.InventoryType;
 import io.reliza.model.ArtifactData.SerializationFormat;
 import io.reliza.model.ArtifactData.SpecVersion;
 import io.reliza.model.ArtifactData.StoredIn;
+import io.reliza.model.IssuerClass;
+import io.reliza.model.VexImportMode;
 import io.reliza.model.tea.Link;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
@@ -78,6 +81,16 @@ public class ArtifactDto {
 	@JsonInclude(JsonInclude.Include.NON_EMPTY)
 	@JsonProperty("digestRecords")
 	private Set<DigestRecord> digestRecords = new HashSet<>();
+
+	// v1.2 VEX-only — populated by the upload form when type=VEX, ignored otherwise.
+	@JsonProperty("vexScope")
+	private AnalysisScope vexScope;
+
+	@JsonProperty("vexImportMode")
+	private VexImportMode vexImportMode;
+
+	@JsonProperty("userIssuerClassOverride")
+	private IssuerClass userIssuerClassOverride;
 	
 	@JsonProperty
 	private List<TagRecord> tags;

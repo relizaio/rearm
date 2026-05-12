@@ -42,11 +42,44 @@ public interface PullRequestRepository extends CrudRepository<PullRequest, UUID>
 			nativeQuery = true)
 	List<PullRequest> findByOrg(@Param("orgUuidAsString") String orgUuidAsString);
 
+	/**
+	 * Same as {@link #findByOrg} but narrowed to the supplied state names.
+	 * Caller filters via the GraphQL {@code states} arg — the default UI
+	 * load passes {@code [OPEN]} so terminal-state PRs aren't fetched
+	 * until the user opts in.
+	 */
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'org' = :orgUuidAsString "
+			+ "AND pr.record_data->>'state' IN (:states) "
+			+ "ORDER BY pr.created_date DESC",
+			nativeQuery = true)
+	List<PullRequest> findByOrgAndStates(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("states") List<String> states);
+
 	@Query(value = "SELECT * FROM rearm.pull_requests pr "
 			+ "WHERE pr.record_data->>'targetVcsRepository' = :targetRepoUuidAsString "
 			+ "ORDER BY pr.created_date DESC",
 			nativeQuery = true)
 	List<PullRequest> findByTargetRepository(@Param("targetRepoUuidAsString") String targetRepoUuidAsString);
+
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'targetVcsRepository' = :targetRepoUuidAsString "
+			+ "AND pr.record_data->>'state' IN (:states) "
+			+ "ORDER BY pr.created_date DESC",
+			nativeQuery = true)
+	List<PullRequest> findByTargetRepositoryAndStates(@Param("targetRepoUuidAsString") String targetRepoUuidAsString,
+			@Param("states") List<String> states);
+
+	/**
+	 * All currently-OPEN PRs against the given VCS. Used by the
+	 * synchronizeLiveBranches close-stale-PRs path to find candidates
+	 * whose source branch is no longer live at the SCM.
+	 */
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'targetVcsRepository' = :targetRepoUuidAsString "
+			+ "AND pr.record_data->>'state' = 'OPEN'",
+			nativeQuery = true)
+	List<PullRequest> findOpenByTargetRepository(@Param("targetRepoUuidAsString") String targetRepoUuidAsString);
 
 	/**
 	 * Find open PRs in a target repo whose commits list contains the given

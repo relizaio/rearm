@@ -19,6 +19,8 @@ public interface ReleaseSbomComponentRepository extends CrudRepository<ReleaseSb
 
 	List<ReleaseSbomComponent> findByOrgAndReleaseUuid(UUID org, UUID releaseUuid);
 
+	boolean existsByOrgAndReleaseUuid(UUID org, UUID releaseUuid);
+
 	List<ReleaseSbomComponent> findByOrgAndReleaseUuidIn(UUID org, Collection<UUID> releaseUuids);
 
 	Optional<ReleaseSbomComponent> findByOrgAndReleaseUuidAndSbomComponentUuid(

@@ -75,13 +75,14 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		VDR_SNAPSHOT_ARTIFACT,
 		ADD_APPROVED_ENVIRONMENT,
 		// EXTERNAL_VALIDATION fires a check-run-style verdict to an
-		// external SCM. Currently routed to GITHUB_VALIDATE integrations
-		// (POSTs to /repos/{owner}/{repo}/check-runs); the dispatch is
-		// integration-type-aware so additional SCMs can slot in later.
+		// external SCM. Currently routed to GITHUB integrations with the
+		// PR_VALIDATE capability (POSTs to /repos/{owner}/{repo}/check-runs);
+		// the dispatch is integration-type-aware so additional SCMs can
+		// slot in later.
 		// Output event fields used:
-		//   integration  → IntegrationData UUID (must be GITHUB_VALIDATE)
+		//   integration  → IntegrationData UUID (GITHUB type + PR_VALIDATE capability)
 		//   eventType    → conclusion (SUCCESS / FAILURE / NEUTRAL / SKIPPED / CANCELLED)
-		//   schedule     → installation ID (consistent with GITHUB integration)
+		//   schedule     → installation ID
 		//   vcs          → VCS repository UUID (resolves to owner/repo)
 		//   clientPayload / celClientPayload → JSON {title, summary, text}
 		EXTERNAL_VALIDATION,
@@ -102,11 +103,11 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		// commits[] includes this release's SCE. Independent from the
 		// PR-level check-run aggregation: one comment per (release, PR,
 		// fire) — never edited in place. Routed through the same
-		// GITHUB_VALIDATE integration the EXTERNAL_VALIDATION trigger
-		// uses (App credentials), but POSTs to issues/comments rather
-		// than check-runs.
+		// GITHUB integration the EXTERNAL_VALIDATION trigger uses
+		// (App credentials with PR_VALIDATE capability), but POSTs to
+		// issues/comments rather than check-runs.
 		// Output event fields used:
-		//   integration  → IntegrationData UUID (must be GITHUB_VALIDATE)
+		//   integration  → IntegrationData UUID (GITHUB type + PR_VALIDATE capability)
 		//   clientPayload / celClientPayload → markdown string appended
 		//     to the auto-generated body (additive, not replacement —
 		//     contrast with EXTERNAL_VALIDATION)
@@ -122,6 +123,12 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class GlobalInputEventRef {
 		private UUID uuid;
+		// Opt-out flag (semantics inverted from earlier opt-in design): every
+		// rule on a component's effective approval policy fires by default;
+		// presence of a ref with disabled=true suppresses just that rule.
+		// Refs may also carry per-rule output overrides via the two fields
+		// below — those still apply only when disabled is false.
+		private boolean disabled;
 		private boolean overrideOutputEventsLocally;
 		private Set<UUID> outputEventsOverride;
 	}

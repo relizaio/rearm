@@ -555,10 +555,14 @@ public class ReleaseMetricsDto implements Cloneable {
 			List<VulnerabilityDto> updatedVulnerabilities = new ArrayList<>();
 			for (VulnerabilityDto vuln : vulnerabilityDetails) {
 				if (vuln.attributedAt() == null) {
+					// description / cwes / references / published / updated
+					// migrated to rearm.vulnerability_records (V33); drop any
+					// legacy per-finding values rather than carry them forward
+					// into newly written metrics.
 					updatedVulnerabilities.add(new VulnerabilityDto(
 						vuln.purl(), vuln.vulnId(), vuln.severity(), vuln.aliases(),
 						vuln.sources(), vuln.severities(), vuln.analysisState(), vuln.analysisDate(), fallbackDate,
-						vuln.description(), vuln.cwes(), vuln.references(), vuln.published(), vuln.updated()
+						null, null, null, null, null
 					));
 				} else {
 					updatedVulnerabilities.add(vuln);
@@ -645,7 +649,8 @@ public class ReleaseMetricsDto implements Cloneable {
 					vuln.analysisState(),
 					vuln.analysisDate(),
 					vuln.attributedAt(),
-					vuln.description(), vuln.cwes(), vuln.references(), vuln.published(), vuln.updated()
+					// description / cwes / references / published / updated → vulnerability_records
+					null, null, null, null, null
 				);
 				enrichedVulnerabilities.add(enrichedVuln);
 			}
@@ -789,13 +794,10 @@ public class ReleaseMetricsDto implements Cloneable {
 						? selectBestSeverity(combinedSeverities)
 						: existing.severity();
 
-				// Union enrichment fields across both sources. Pre-fix this took the first
-				// occurrence's values, dropping data when the first artifact's metrics had
-				// nulls (Jackson coercion or pre-Phase-1b ingestion). For sets we union;
-				// for scalar fields (description/published/updated) we prefer non-null.
-				Set<String> combinedCwes = unionNullSafe(existing.cwes(), x.cwes());
-				Set<VulnerabilityReferenceDto> combinedRefs = unionNullSafe(existing.references(), x.references());
-
+				// description / cwes / references / published / updated migrated to
+				// rearm.vulnerability_records (V33); per-artifact union of those
+				// fields is no longer needed — the canonical row in the new table
+				// already merges across upstream feeds.
 				VulnerabilityDto merged = new VulnerabilityDto(
 					existing.purl(),
 					existing.vulnId(),
@@ -806,11 +808,7 @@ public class ReleaseMetricsDto implements Cloneable {
 					existing.analysisState(),
 					existing.analysisDate(),
 					selectEarlierDate(existing.attributedAt(), x.attributedAt()),
-					firstNonBlank(existing.description(), x.description()),
-					combinedCwes.isEmpty() ? null : combinedCwes,
-					combinedRefs.isEmpty() ? null : combinedRefs,
-					firstNonNull(existing.published(), x.published()),
-					firstNonNull(existing.updated(), x.updated())
+					null, null, null, null, null
 				);
 				vulnMap.put(xKey, merged);
 			} else {
@@ -1096,29 +1094,12 @@ public class ReleaseMetricsDto implements Cloneable {
 			earliestAttributedAt = selectEarlierDate(earliestAttributedAt, vuln.attributedAt());
 		}
 
-		// Union enrichment fields across all alias-equivalent vulns. Same rationale as
-		// mergeVulnerabilityDtos: prior baseVuln-only behaviour silently dropped CWEs and
-		// references whenever the alias-collapse-base happened to lack them.
-		Set<String> mergedCwes = new LinkedHashSet<>();
-		Set<VulnerabilityReferenceDto> mergedRefs = new LinkedHashSet<>();
-		String mergedDescription = null;
-		ZonedDateTime mergedPublished = null;
-		ZonedDateTime mergedUpdated = null;
-		for (VulnerabilityDto vuln : vulnerabilities) {
-			if (vuln.cwes() != null) mergedCwes.addAll(vuln.cwes());
-			if (vuln.references() != null) mergedRefs.addAll(vuln.references());
-			if (mergedDescription == null && vuln.description() != null && !vuln.description().isBlank()) {
-				mergedDescription = vuln.description();
-			}
-			if (mergedPublished == null) mergedPublished = vuln.published();
-			if (mergedUpdated == null) mergedUpdated = vuln.updated();
-		}
-
+		// description / cwes / references / published / updated migrated to
+		// rearm.vulnerability_records (V33). No need to union them across
+		// alias-equivalent vulns here — the canonical row in the new table
+		// already merges across sources by primaryVulnId / aliases.
 		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate(), earliestAttributedAt,
-				mergedDescription,
-				mergedCwes.isEmpty() ? null : mergedCwes,
-				mergedRefs.isEmpty() ? null : mergedRefs,
-				mergedPublished, mergedUpdated);
+				null, null, null, null, null);
 	}
 
 	/**

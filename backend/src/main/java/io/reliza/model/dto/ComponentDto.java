@@ -64,6 +64,14 @@ public class ComponentDto {
 	private UUID parent;
 	@JsonProperty
 	private UUID approvalPolicy;
+	/**
+	 * Explicit clear flag for {@link #approvalPolicy} — see the matching
+	 * field on {@link UpdateComponentDto} for the contract. Carried
+	 * through {@link UpdateComponentDto#convertToComponentDto} so the
+	 * service layer can branch on it.
+	 */
+	@JsonProperty
+	private Boolean clearApprovalPolicy;
 	@JsonProperty
 	private List<ReleaseInputEvent> releaseInputTriggers;
 	@JsonProperty

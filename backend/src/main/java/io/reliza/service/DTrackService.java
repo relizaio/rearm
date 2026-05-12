@@ -514,7 +514,7 @@ public class DTrackService {
             String apiToken = encryptionService.decrypt(oid.get().getSecret());
             URI baseUri = oid.get().getUri();
             List<VulnerabilityDto> vulns = integrationService.fetchDependencyTrackVulnerabilityDetails(
-                baseUri, apiToken, projectId, null, null);
+                baseUri, apiToken, projectId, null, orgUuid, null);
             List<ViolationDto> violations = integrationService.fetchDependencyTrackViolationDetails(
                 baseUri, apiToken, projectId, null, orgUuid, null);
             ArtifactData.DependencyTrackIntegration dti = new ArtifactData.DependencyTrackIntegration();

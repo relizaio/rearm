@@ -94,6 +94,15 @@ public class UpdateComponentDto {
 	private UUID parent;
 	@JsonProperty
 	private UUID approvalPolicy;
+	/**
+	 * Explicit clear flag for the per-component approvalPolicy reference.
+	 * See the GraphQL UpdateComponentInput field for the contract: when
+	 * {@code true} the server unsets the policy reference; {@code null}
+	 * or {@code false} preserves the existing behaviour where
+	 * {@code approvalPolicy == null} means "leave unchanged".
+	 */
+	@JsonProperty
+	private Boolean clearApprovalPolicy;
 	@JsonProperty
 	private String repoPath;
 	@JsonProperty
@@ -140,8 +149,7 @@ public class UpdateComponentDto {
 									.eventType(roei.getEventType())
 									.toReleaseLifecycle(roei.getToReleaseLifecycle())
 									.includeSuppressed(roei.getIncludeSuppressed());
-		if (it == IntegrationType.GITHUB || it == IntegrationType.ADO
-				|| it == IntegrationType.GITHUB_VALIDATE) {
+		if (it == IntegrationType.GITHUB || it == IntegrationType.ADO) {
 			if (StringUtils.isNotEmpty(roei.getClientPayload())) {
 				builder.clientPayload(roei.getClientPayload());
 			}
@@ -186,6 +194,7 @@ public class UpdateComponentDto {
 								.defaultConfig(ucd.getDefaultConfig())
 								.parent(ucd.getParent())
 								.approvalPolicy(ucd.getApprovalPolicy())
+								.clearApprovalPolicy(ucd.getClearApprovalPolicy())
 								.releaseInputTriggers(ucd.getReleaseInputTriggers())
 								.outputTriggers(triggers)
 								.globalInputEventRefs(ucd.getGlobalInputEventRefs())
