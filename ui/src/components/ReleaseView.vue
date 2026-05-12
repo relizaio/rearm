@@ -1575,14 +1575,17 @@ const releaseVexColumns = [
         key: 'actions',
         width: 80,
         render (row: any) {
+            // Open in a new tab so reviewers can keep the release view open while triaging
+            // (matches the VexProposalsInbox behaviour).
+            const href = router.resolve({
+                name: 'VexProposalReview',
+                params: { orguuid: release.value.org, uuid: row.uuid }
+            }).href
             return h(NButton, {
                 size: 'small',
                 type: 'info',
-                title: 'Review proposal',
-                onClick: () => router.push({
-                    name: 'VexProposalReview',
-                    params: { orguuid: release.value.org, uuid: row.uuid }
-                })
+                title: 'Review proposal (opens in new tab)',
+                onClick: () => window.open(href, '_blank', 'noopener')
             }, { default: () => h(NIcon, null, { default: () => h(Eye) }) })
         }
     }

@@ -82,9 +82,14 @@
 
             <n-divider />
             <n-h4 v-if="otherAnalyses.length || proposal.demotionReason">Existing analyses at other scopes for this finding</n-h4>
-            <n-alert v-if="proposal.demotionReason === 'BROADER_SCOPE_CONFLICT'" type="warning" style="margin-bottom: 12px;">
+            <n-alert v-if="hasDemotion('BROADER_SCOPE_CONFLICT')" type="warning" style="margin-bottom: 12px;">
                 Auto-accept was demoted to STAGE: an analysis at a broader scope already exists with a different
                 suppression class. Review the rows below before accepting.
+            </n-alert>
+            <n-alert v-if="hasDemotion('SEVERITY_MISSING')" type="warning" style="margin-bottom: 12px;">
+                Auto-accept was demoted to STAGE: the inbound statement has no severity and the system could not
+                derive one from existing finding analyses or the canonical vulnerability record.
+                <strong>Use Modify to set severity</strong> before accepting.
             </n-alert>
             <n-data-table
                 v-if="otherAnalyses.length"
@@ -112,11 +117,14 @@
                         :autosize="{ minRows: 2, maxRows: 4 }"
                         placeholder="Optional comment (reviewer note for accept, reason for reject)" />
                     <n-space>
-                        <n-button type="primary" :loading="busy" @click="onAccept">Accept</n-button>
+                        <n-button type="primary" :loading="busy" :disabled="!proposal.severity" @click="onAccept">Accept</n-button>
                         <n-button type="error" :loading="busy" :disabled="!actionComment.trim()" @click="onReject">
                             Reject
                         </n-button>
-                        <n-text v-if="!actionComment.trim()" depth="3" style="font-size: 12px; align-self: center;">
+                        <n-text v-if="!proposal.severity" depth="3" style="font-size: 12px; align-self: center;">
+                            (Severity is required — use Modify to set it)
+                        </n-text>
+                        <n-text v-else-if="!actionComment.trim()" depth="3" style="font-size: 12px; align-self: center;">
                             (Reject requires a comment)
                         </n-text>
                     </n-space>
@@ -261,6 +269,14 @@ const severityOptions = [
     { label: 'INFO', value: 'INFO' },
     { label: 'UNASSIGNED', value: 'UNASSIGNED' },
 ]
+
+function hasDemotion (reason: string): boolean {
+    // demotionReason is a ';'-separated list (e.g. "BROADER_SCOPE_CONFLICT;SEVERITY_MISSING")
+    // so both banners can render simultaneously.
+    const raw = proposal.value?.demotionReason
+    if (!raw) return false
+    return raw.split(';').map((s: string) => s.trim()).includes(reason)
+}
 
 const otherAnalyses = computed(() => {
     if (!proposal.value) return []
