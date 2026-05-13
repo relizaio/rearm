@@ -1965,7 +1965,178 @@ const storeObject : any = {
             const updOrg = data.data.deleteApprovalRole
             context.commit('UPDATE_ORGANIZATION', updOrg)
             return updOrg
-        },  
+        },
+
+        // ---------- AI Agents (PR 5) ----------
+        async fetchAgentDashboardKpis (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentDashboardKpis($orgUuid: ID!) {
+                        agentDashboardKpis(orgUuid: $orgUuid) {
+                            activeSessions
+                            closedSessions30d
+                            artifactsProduced7d
+                            registeredAgents
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentDashboardKpis
+        },
+        async fetchAgentsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentsOfOrg($orgUuid: ID!) {
+                        agentsOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            org
+                            name
+                            iconKind
+                            color
+                            notes
+                            apiKeys
+                            status
+                            agentType
+                            rootAgent
+                            subAgents
+                            createdDate
+                            sessionCounts {
+                                openSessions
+                                closedSessions
+                            }
+                            lastActivityAt
+                            model {
+                                uuid
+                                name
+                                version
+                                publisher
+                                description
+                            }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentsOfOrg
+        },
+        async fetchAgent (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agent($uuid: ID!) {
+                        agent(uuid: $uuid) {
+                            uuid
+                            org
+                            name
+                            iconKind
+                            color
+                            notes
+                            apiKeys
+                            status
+                            agentType
+                            rootAgent
+                            subAgents
+                            createdDate
+                            sessionCounts {
+                                openSessions
+                                closedSessions
+                            }
+                            lastActivityAt
+                            openSessions {
+                                uuid
+                                clientSessionId
+                                title
+                                branch
+                                status
+                                startedAt
+                                lastActivityAt
+                                artifacts
+                                commits
+                            }
+                            closedSessions {
+                                uuid
+                                clientSessionId
+                                title
+                                branch
+                                status
+                                startedAt
+                                closedAt
+                                artifacts
+                                commits
+                            }
+                            model {
+                                uuid
+                                name
+                                version
+                                publisher
+                                description
+                            }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agent
+        },
+        async fetchSessionsOfOrg (context: any, payload: { orgUuid: string, statuses?: string[] }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query sessionsOfOrg($orgUuid: ID!, $statuses: [SessionStatus]) {
+                        sessionsOfOrg(orgUuid: $orgUuid, statuses: $statuses) {
+                            uuid
+                            org
+                            agent
+                            clientSessionId
+                            apiKey
+                            title
+                            branch
+                            status
+                            startedAt
+                            closedAt
+                            lastActivityAt
+                            artifacts
+                            commits
+                        }
+                    }`,
+                variables: { orgUuid: payload.orgUuid, statuses: payload.statuses ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.sessionsOfOrg
+        },
+        async fetchSession (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query session($uuid: ID!) {
+                        session(uuid: $uuid) {
+                            uuid
+                            org
+                            agent
+                            clientSessionId
+                            apiKey
+                            title
+                            branch
+                            status
+                            startedAt
+                            closedAt
+                            lastActivityAt
+                            artifacts
+                            commits
+                            policyEvents {
+                                policyUuid
+                                policyName
+                                kind
+                                severity
+                                state
+                                message
+                                evaluatedAt
+                            }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.session
+        },
     },
 }
 
