@@ -739,18 +739,22 @@ class VariableQueries {
 	 */
 	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
-		WITH sce_artifacts AS (
-			SELECT sce.uuid AS sce_uuid,
-			       (art_element->>'artifactUuid')::uuid AS artifact_uuid
-			FROM rearm.source_code_entries sce,
-			     jsonb_array_elements(sce.record_data->'artifacts') AS art_element
-		)
-		SELECT DISTINCT rlzs.uuid, rlzs.revision, rlzs.metrics_revision, rlzs.schema_version, rlzs.created_date, rlzs.last_updated_date, rlzs.record_data, rlzs.metrics, rlzs.approval_events, rlzs.update_events, rlzs.flow_control
+		SELECT rlzs.uuid, rlzs.revision, rlzs.metrics_revision, rlzs.schema_version, rlzs.created_date, rlzs.last_updated_date, rlzs.record_data, rlzs.metrics, rlzs.approval_events, rlzs.update_events, rlzs.flow_control
 		FROM rearm.releases rlzs
-		INNER JOIN sce_artifacts sa ON rlzs.record_data->>'sourceCodeEntry' = cast(sa.sce_uuid AS text)
-		INNER JOIN rearm.artifacts a ON a.uuid = sa.artifact_uuid
-		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) >
-		      coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0)
+		WHERE rlzs.record_data->>'sourceCodeEntry' IS NOT NULL
+		  AND EXISTS (
+		      SELECT 1
+		      FROM rearm.source_code_entries sce
+		      CROSS JOIN LATERAL jsonb_array_elements(
+		          CASE WHEN jsonb_typeof(sce.record_data->'artifacts') = 'array'
+		               THEN sce.record_data->'artifacts'
+		               ELSE '[]'::jsonb END
+		      ) AS art_element
+		      JOIN rearm.artifacts a ON a.uuid = (art_element->>'artifactUuid')::uuid
+		      WHERE sce.uuid::text = rlzs.record_data->>'sourceCodeEntry'
+		        AND coalesce(cast(a.metrics->>'lastScanned' as float), 0)
+		            > coalesce(cast(rlzs.metrics->>'lastScanned' as float), 0)
+		  )
 		ORDER BY rlzs.last_updated_date ASC
 		LIMIT :limit
 		""";
