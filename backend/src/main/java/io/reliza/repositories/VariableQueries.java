@@ -198,9 +198,13 @@ class VariableQueries {
 	 */
 	protected static final String LIST_ARTIFACTS_BY_ORG = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString";
 	
+	// Caps per-tick scan + downstream API calls to DTrack. Ordered FIFO by upload (createdDate ASC)
+	// so a burst of new BOMs doesn't starve older ones still waiting to be processed.
 	protected static final String LIST_INITIAL_ARTIFACTS_PENDING_DEPENDENCY_TRACK = """
-			select * from rearm.artifacts a where a.metrics->>'lastScanned' is null 
+			select * from rearm.artifacts a where a.metrics->>'lastScanned' is null
 			and a.metrics->>'uploadToken' is not null
+			order by a.record_data->>'createdDate' asc
+			limit :limit
 		""";
 	
 	protected static final String LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION = """
@@ -623,8 +627,12 @@ class VariableQueries {
 		jsonb_build_array(jsonb_build_object('idType', :idType, 'idValue', :idValue))))
 	""";
 			
+	// LIMIT keeps the per-tick batch bounded so a flood of abandoned PENDING releases
+	// can't pull thousands of rows into memory in one scheduler pass. Order by created_date ASC
+	// so the oldest stuck release is rejected first — guarantees forward progress under load.
 	protected static final String FIND_PENDING_RELEASES_AFTER_CUTOFF = "SELECT * FROM rearm.releases r WHERE r.record_data->>'"
-	+ CommonVariables.LIFECYCLE_FIELD +"' = :lifecycle AND r.created_date < cast (:cutOffDate as timestamptz)";
+	+ CommonVariables.LIFECYCLE_FIELD +"' = :lifecycle AND r.created_date < cast (:cutOffDate as timestamptz)"
+	+ " ORDER BY r.created_date ASC LIMIT :limit";
 
 	protected static final String FIND_DISTINCT_RELEASE_TAG_KEYS_OF_ORG = """
 	  SELECT distinct(tags.key)
@@ -688,6 +696,9 @@ class VariableQueries {
 	 * their own artifact list, and the scheduler dedup short-circuit drops no-op
 	 * recomputes anyway.
 	 */
+	// LIMIT caps the per-tick batch so a backlog of out-of-date releases doesn't blow up
+	// memory in one pass. ORDER BY last_updated_date ASC puts the staleest unprocessed release
+	// first so nothing starves — the next tick processes the next batch.
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT = """
 		WITH releases_with_artifacts AS (
 			SELECT rlzs.*,
@@ -699,6 +710,8 @@ class VariableQueries {
 		FROM releases_with_artifacts rwa
 		INNER JOIN rearm.artifacts a ON a.uuid = rwa.artifact_uuid
 		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) > rwa.rel_last_scanned
+		ORDER BY rwa.last_updated_date ASC
+		LIMIT :limit
 		""";
 
 	/*
@@ -706,6 +719,7 @@ class VariableQueries {
 	 * release.record_data->>'sourceCodeEntry' → sce.uuid → sce.record_data->'artifacts'[].artifactUuid.
 	 * See BY_ARTIFACT_DIRECT comment for why the global cutoff was dropped.
 	 */
+	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE = """
 		WITH sce_artifacts AS (
 			SELECT sce.uuid AS sce_uuid,
@@ -719,6 +733,8 @@ class VariableQueries {
 		INNER JOIN rearm.artifacts a ON a.uuid = sa.artifact_uuid
 		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) >
 		      coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0)
+		ORDER BY rlzs.last_updated_date ASC
+		LIMIT :limit
 		""";
 
 	/*
@@ -726,6 +742,7 @@ class VariableQueries {
 	 * variant.outboundDeliverables → deliverable.artifacts chain back to the variant's
 	 * release. See BY_ARTIFACT_DIRECT comment for why the global cutoff was dropped.
 	 */
+	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES = """
 		WITH release_outbound_arts AS (
 			SELECT (var.record_data->>'release')::uuid AS release_uuid,
@@ -742,20 +759,28 @@ class VariableQueries {
 		INNER JOIN rearm.artifacts a ON a.uuid = roa.artifact_uuid
 		WHERE coalesce(cast (a.metrics->>'lastScanned' as float), 0) >
 		      coalesce(cast (rlzs.metrics->>'lastScanned' as float), 0)
+		ORDER BY rlzs.last_updated_date ASC
+		LIMIT :limit
 		""";
 
+	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
 	protected static final String FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE = """
 		WITH
 		  lastComputedRlz (maxVal) AS (
 	    select coalesce(max(cast (metrics->>'lastScanned' as float)), 0) AS lastUpd from rearm.releases
 	  )
     SELECT rlz.* from lastComputedRlz, rearm.releases rlz where coalesce(cast (rlz.metrics->>'lastScanned' as float), 0) < (lastComputedRlz.maxVal - 0.01)
-	    AND rlz.record_data->>'parentReleases' != '[]';
+	    AND rlz.record_data->>'parentReleases' != '[]'
+	    ORDER BY rlz.last_updated_date ASC
+	    LIMIT :limit
 			""";
 	
+	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE = """
-		SELECT * FROM rearm.releases 
-			 WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0));
+		SELECT * FROM rearm.releases
+			 WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
+			 ORDER BY last_updated_date ASC
+			 LIMIT :limit
 		""";
 
 	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACT = """
@@ -1359,11 +1384,19 @@ class VariableQueries {
 				ORDER BY created_date DESC
 			""";
 
+	// Dedupe key is the full per-target identity: (org, artifact, statementHash, scope, scopeUuid).
+	// One inbound VEX statement can resolve to several scope-targets (e.g. COMPONENT-scope on a
+	// purl that hits N components) and each target gets its own proposal; keying dedupe only on
+	// (org, artifact, hash) collapses across targets and trips IncorrectResultSizeDataAccess once
+	// a re-upload sees more than one prior row. See ai-plans/vex_imports/05_staging_entity_proposal.md
+	// §"Per-target dedupe".
 	protected static final String FIND_VEX_PROPOSAL_DEDUPE = """
 			SELECT * FROM rearm.vex_statement_proposals
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'sourceArtifact' = :sourceArtifactAsString
 				AND record_data->>'sourceStatementHash' = :sourceStatementHash
+				AND record_data->>'scope' = :scope
+				AND record_data->>'scopeUuid' = :scopeUuidAsString
 			""";
 
 	protected static final String FIND_VEX_PROPOSAL_BY_ARTIFACT = """

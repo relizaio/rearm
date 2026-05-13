@@ -111,7 +111,7 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Query(
 			value = VariableQueries.FIND_PENDING_RELEASES_AFTER_CUTOFF,
 			nativeQuery = true)
-	List<Release> findPendingReleasesAfterCutoff(String lifecycle, String cutOffDate);
+	List<Release> findPendingReleasesAfterCutoff(String lifecycle, String cutOffDate, int limit);
 	
 	@Query(
 			value = VariableQueries.FIND_ALL_RELEASES_OF_ORG_BY_VERSION,
@@ -220,27 +220,27 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_ARTIFACT_DIRECT,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByArtifactDirect();
+	List<Release> findReleasesForMetricsComputeByArtifactDirect(int limit);
 
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_SCE,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeBySce();
+	List<Release> findReleasesForMetricsComputeBySce(int limit);
 
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_OUTBOUND_DELIVERABLES,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByOutboundDeliverables();
+	List<Release> findReleasesForMetricsComputeByOutboundDeliverables(int limit);
 
 	@Query(
 			value = VariableQueries.FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE,
 			nativeQuery = true)
-	List<Release> findProductReleasesForMetricsCompute();
-	
+	List<Release> findProductReleasesForMetricsCompute(int limit);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByUpdate();
+	List<Release> findReleasesForMetricsComputeByUpdate(int limit);
 	
 	@Query(
 		value = VariableQueries.FIND_RELEASES_SHARING_SCE_ARTIFACT,

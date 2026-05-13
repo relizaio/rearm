@@ -30,7 +30,7 @@ import io.reliza.model.dto.MatchCandidate;
  *   <li>COMPONENT — one candidate per distinct component among the resolved releases.</li>
  * </ul>
  *
- * Scope semantics: see ai-plans/vex_imports/11_v12_scope_and_conflict.md §3.A.
+ * Scope semantics: see ai-plans/vex_imports/09_scope_and_conflict.md §3.A.
  */
 @Service
 public class ScopeTargetResolver {

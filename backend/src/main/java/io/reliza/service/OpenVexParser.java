@@ -119,6 +119,7 @@ public class OpenVexParser implements VexFormatParser {
             stmt.actionStatement(),
             null,
             List.of(),
+            null,
             jsonOfStatement(stmt));
         return new VexParseEntry(cdx, notes);
     }

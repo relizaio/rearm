@@ -21,16 +21,22 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.AnalysisScope;
+import io.reliza.model.ArtifactData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ProposalStatus;
+import io.reliza.model.ReleaseData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.UserData;
 import io.reliza.model.VexStatementProposalData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.VexStatementProposalWebDto;
+import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.VexStatementProposalService;
 import lombok.extern.slf4j.Slf4j;
@@ -51,18 +57,20 @@ public class VexStatementProposalDataFetcher {
 	@Autowired
 	private GetOrganizationService getOrganizationService;
 
+	@Autowired
+	private SharedReleaseService sharedReleaseService;
+
+	@Autowired
+	private ArtifactService artifactService;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getVexStatementProposals")
 	public List<VexStatementProposalWebDto> getVexStatementProposals(
 			@InputArgument("org") UUID org,
 			@InputArgument("status") ProposalStatus status) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
-		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(),
-			PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.ORGANIZATION, org, List.of(ro), CallType.READ);
-
+		// Org-wide list: keep ORGANIZATION scope — there's no narrower object to bind to.
+		UserData oud = currentUser();
+		gateOrg(oud, org, PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
 		List<VexStatementProposalData> data = (status == null)
 			? proposalService.listForOrg(org)
 			: proposalService.listForOrgAndStatus(org, status);
@@ -72,33 +80,29 @@ public class VexStatementProposalDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getVexStatementProposal")
 	public VexStatementProposalWebDto getVexStatementProposal(@InputArgument("uuid") UUID uuid) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
+		UserData oud = currentUser();
 		Optional<VexStatementProposalData> opt = proposalService.getProposal(uuid);
 		if (opt.isEmpty()) throw new AccessDeniedException("Proposal not found: " + uuid);
-		VexStatementProposalData d = opt.get();
-		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(d.getOrg());
-		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(),
-			PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.ORGANIZATION, d.getOrg(), List.of(ro), CallType.READ);
-		return VexStatementProposalWebDto.fromData(d);
+		gateProposal(oud, opt.get(), PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
+		return VexStatementProposalWebDto.fromData(opt.get());
 	}
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getVexStatementProposalsBySourceArtifact")
 	public List<VexStatementProposalWebDto> getBySourceArtifact(@InputArgument("artifact") UUID artifact) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		// Permission gate via the org of the first row (all share the same org per-artifact).
-		// Empty short-circuit precedes auth: leaking "no proposals for this artifact UUID" is acceptable
-		// (no row data exposed); v2 may tighten via an artifact→org lookup if proposal-count probing becomes a concern.
+		// Gate at the artifact's binding (COMPONENT-scoped — same pattern as ArtifactDataFetcher).
+		// Empty short-circuit precedes auth: leaking "no proposals for this artifact UUID" is
+		// acceptable (no row data exposed).
+		UserData oud = currentUser();
 		List<VexStatementProposalData> data = proposalService.listForArtifact(artifact);
 		if (data.isEmpty()) return List.of();
-		UUID org = data.get(0).getOrg();
-		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
-		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(),
-			PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.ORGANIZATION, org, List.of(ro), CallType.READ);
+		Optional<ArtifactData> oad = artifactService.getArtifactData(artifact);
+		if (oad.isEmpty()) {
+			// Proposals exist but artifact is gone — fall back to org gate on first proposal's org.
+			gateOrg(oud, data.get(0).getOrg(), PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
+			return data.stream().map(VexStatementProposalWebDto::fromData).collect(Collectors.toList());
+		}
+		gateArtifact(oud, oad.get(), PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
 		return data.stream().map(VexStatementProposalWebDto::fromData).collect(Collectors.toList());
 	}
 
@@ -107,12 +111,8 @@ public class VexStatementProposalDataFetcher {
 	public List<VexStatementProposalWebDto> getByRelease(
 			@InputArgument("org") UUID org,
 			@InputArgument("release") UUID release) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
-		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
-		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(),
-			PermissionFunction.FINDING_ANALYSIS_READ, PermissionScope.ORGANIZATION, org, List.of(ro), CallType.READ);
+		UserData oud = currentUser();
+		gateRelease(oud, org, release, PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
 		return proposalService.listForRelease(org, release).stream()
 			.map(VexStatementProposalWebDto::fromData).collect(Collectors.toList());
 	}
@@ -122,17 +122,11 @@ public class VexStatementProposalDataFetcher {
 	public VexStatementProposalWebDto accept(
 			@InputArgument("uuid") UUID uuid,
 			@InputArgument("comment") String comment) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
+		UserData oud = currentUser();
 		Optional<VexStatementProposalData> opt = proposalService.getProposal(uuid);
 		if (opt.isEmpty()) throw new AccessDeniedException("Proposal not found: " + uuid);
-		VexStatementProposalData d = opt.get();
-		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(d.getOrg());
-		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(),
-			PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, d.getOrg(), List.of(ro), CallType.READ);
-
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		gateProposal(oud, opt.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, CallType.WRITE);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud);
 		return VexStatementProposalWebDto.fromData(proposalService.accept(uuid, comment, wu));
 	}
 
@@ -141,17 +135,11 @@ public class VexStatementProposalDataFetcher {
 	public VexStatementProposalWebDto reject(
 			@InputArgument("uuid") UUID uuid,
 			@InputArgument("reason") String reason) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
+		UserData oud = currentUser();
 		Optional<VexStatementProposalData> opt = proposalService.getProposal(uuid);
 		if (opt.isEmpty()) throw new AccessDeniedException("Proposal not found: " + uuid);
-		VexStatementProposalData d = opt.get();
-		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(d.getOrg());
-		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(),
-			PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, d.getOrg(), List.of(ro), CallType.READ);
-
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		gateProposal(oud, opt.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, CallType.WRITE);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud);
 		return VexStatementProposalWebDto.fromData(proposalService.reject(uuid, wu, reason));
 	}
 
@@ -160,17 +148,67 @@ public class VexStatementProposalDataFetcher {
 	public VexStatementProposalWebDto updateProposal(
 			@InputArgument("uuid") UUID uuid,
 			@InputArgument("updates") VexStatementProposalData updates) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-		var oud = userService.getUserDataByAuth(auth);
+		UserData oud = currentUser();
 		Optional<VexStatementProposalData> opt = proposalService.getProposal(uuid);
 		if (opt.isEmpty()) throw new AccessDeniedException("Proposal not found: " + uuid);
-		VexStatementProposalData d = opt.get();
-		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(d.getOrg());
-		RelizaObject ro = ood.isPresent() ? ood.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(),
-			PermissionFunction.FINDING_ANALYSIS_WRITE, PermissionScope.ORGANIZATION, d.getOrg(), List.of(ro), CallType.READ);
-
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		gateProposal(oud, opt.get(), PermissionFunction.FINDING_ANALYSIS_WRITE, CallType.WRITE);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud);
 		return VexStatementProposalWebDto.fromData(proposalService.updateProposal(uuid, updates, wu));
+	}
+
+	private UserData currentUser() {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		return userService.getUserDataByAuth(auth).orElseThrow(() -> new AccessDeniedException("Unauthenticated"));
+	}
+
+	private void gateOrg(UserData oud, UUID org, PermissionFunction perm, CallType callType) throws RelizaException {
+		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
+		RelizaObject ro = ood.isPresent() ? ood.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud, perm,
+			PermissionScope.ORGANIZATION, org, List.of(ro), callType);
+	}
+
+	/**
+	 * Gate a single proposal at the scope it was emitted at: RELEASE / BRANCH / COMPONENT proposals
+	 * are checked at that narrower scope; ORG / RESOURCE_GROUP fall back to ORGANIZATION.
+	 * Mirrors the pattern in VulnAnalysisDataFetcher.
+	 */
+	private void gateProposal(UserData oud, VexStatementProposalData d, PermissionFunction perm, CallType callType) throws RelizaException {
+		AnalysisScope scope = d.getScope();
+		UUID scopeUuid = d.getScopeUuid();
+		if (scope == AnalysisScope.RELEASE && scopeUuid != null) {
+			gateRelease(oud, d.getOrg(), scopeUuid, perm, callType);
+		} else if (scope == AnalysisScope.COMPONENT && scopeUuid != null) {
+			gateComponent(oud, d.getOrg(), scopeUuid, perm, callType);
+		} else {
+			gateOrg(oud, d.getOrg(), perm, callType);
+		}
+	}
+
+	private void gateRelease(UserData oud, UUID org, UUID release, PermissionFunction perm, CallType callType) throws RelizaException {
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(release, org);
+		RelizaObject ro = ord.isPresent() ? ord.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud, perm,
+			PermissionScope.RELEASE, release, List.of(ro), callType);
+	}
+
+	private void gateComponent(UserData oud, UUID org, UUID component, PermissionFunction perm, CallType callType) throws RelizaException {
+		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(org);
+		RelizaObject ro = ood.isPresent() ? ood.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud, perm,
+			PermissionScope.COMPONENT, component, List.of(ro), callType);
+	}
+
+	/**
+	 * Gate by the artifact's binding. VEX artifacts attach to a RELEASE or SCE/DELIVERABLE
+	 * (component-scoped). We pick the most-specific scope we can derive without an extra
+	 * lookup chain.
+	 */
+	private void gateArtifact(UserData oud, ArtifactData ad, PermissionFunction perm, CallType callType) throws RelizaException {
+		// Artifact-level gate: scope to the artifact's org and let AuthorizationService apply
+		// component/release inheritance. ArtifactData already implements RelizaObject and
+		// surfaces its component/release linkage for the authorizer.
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud, perm,
+			PermissionScope.ORGANIZATION, ad.getOrg(), List.of((RelizaObject) ad), callType);
 	}
 }

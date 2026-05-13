@@ -57,6 +57,7 @@ import io.reliza.model.AnalysisJustification;
 import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
@@ -100,6 +101,7 @@ import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
+import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
@@ -179,6 +181,9 @@ public class ReleaseService {
 	@org.springframework.context.annotation.Lazy
 	private SbomComponentService sbomComponentService;
 
+	@Autowired
+	private VexImportService vexImportService;
+
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 			
 	private final ReleaseRepository repository;
@@ -240,10 +245,10 @@ public class ReleaseService {
 				.toList();
 	}
 
-	private List<Release> listPendingReleasesAfterCutoff (Long cutOffHours) {
+	private List<Release> listPendingReleasesAfterCutoff (Long cutOffHours, int limit) {
 		LocalDateTime cutOffDate = LocalDateTime.now();
 		cutOffDate = cutOffDate.minusHours(cutOffHours);
-		return repository.findPendingReleasesAfterCutoff(ReleaseLifecycle.PENDING.toString(), cutOffDate.toString());
+		return repository.findPendingReleasesAfterCutoff(ReleaseLifecycle.PENDING.toString(), cutOffDate.toString(), limit);
 	}
 	
 	public List<ReleaseData> listReleaseDataOfOrg (UUID orgUuid) {
@@ -1061,15 +1066,20 @@ public class ReleaseService {
 		return commitDate;
 	}
 	
-	public List<ReleaseData> getPendingReleases(){
-		List<Release> releases = listPendingReleasesAfterCutoff( Long.valueOf(2  /* hours */ ));
+	public List<ReleaseData> getPendingReleases(int limit){
+		List<Release> releases = listPendingReleasesAfterCutoff( Long.valueOf(2  /* hours */ ), limit);
 		return releases.stream()
 		.map(ReleaseData::dataFromRecord)
 		.collect(Collectors.toList());
 	}
 
-	public void rejectPendingReleases(){
-		getPendingReleases().stream().forEach(rd -> {
+	/**
+	 * Cancel the oldest abandoned PENDING releases. Bounded per scheduler tick so a flood of
+	 * abandoned CI runs can't pull thousands of rows into memory in one pass; the next tick
+	 * picks up the next batch.
+	 */
+	public void rejectPendingReleases(int limit){
+		getPendingReleases(limit).stream().forEach(rd -> {
 			log.debug("cancelling pending release : uuid {}",rd.getUuid());
 			ossReleaseService.updateReleaseLifecycle(rd.getUuid(), ReleaseLifecycle.CANCELLED, WhoUpdated.getAutoWhoUpdated());
 		});
@@ -1203,17 +1213,68 @@ public class ReleaseService {
 	}
 	
 	/**
-	 * Process and upload release artifacts, then attach them to the release
+	 * Parse an inbound artifact map's {@code type} field into the {@link ArtifactType}
+	 * enum. The map comes off a GraphQL input where the value is either an enum already
+	 * (when DGS coerced it) or a string (raw deserialization). Returns null on absent /
+	 * unrecognised values so callers can treat as "not the type we're filtering for"
+	 * without a try/catch in the hot path.
+	 */
+	private static ArtifactType parseArtifactType(Object raw) {
+		if (raw == null) return null;
+		if (raw instanceof ArtifactType t) return t;
+		if (raw instanceof String s) {
+			try { return ArtifactType.valueOf(s); }
+			catch (IllegalArgumentException e) { return null; }
+		}
+		return null;
+	}
+
+	/**
+	 * Process and upload release artifacts, then attach them to the release.
+	 *
+	 * <p>VEX artifacts additionally trigger the inbound import pipeline
+	 * ({@link io.reliza.service.VexImportService#dispatchFromArtifact}) — the
+	 * same hook the multipart {@code addArtifactManual} path runs (see
+	 * {@code ReleaseDatafetcher#addArtifact}). Without this the CLI / rearm-actions
+	 * upload path silently bypasses VEX import, so vendor VEX submitted through
+	 * automation never produces proposals. See ai-plans/vex_imports/00_overview.md
+	 * §"What VEX import does, in three stages".
 	 */
 	@Transactional
-	public void processReleaseArtifacts(List<Map<String, Object>> artifactsList, ReleaseData rd, 
+	public void processReleaseArtifacts(List<Map<String, Object>> artifactsList, ReleaseData rd,
 			ComponentData cd, OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
 		if (null == artifactsList || artifactsList.isEmpty()) {
 			return;
 		}
-		
+
 		String purl = SidPurlUtils.pickPreferredPurl(rd.getIdentifiers())
 				.map(TeaIdentifier::getIdValue).orElse(null);
+
+		// Capture VEX file bytes BEFORE uploadListOfArtifacts consumes the entries —
+		// the upload path removes the MultipartFile from each map and we still need
+		// the bytes downstream for the VEX parser.
+		List<byte[]> vexBytesByIndex = new java.util.ArrayList<>(artifactsList.size());
+		for (Map<String, Object> a : artifactsList) {
+			byte[] bytes = null;
+			if (ArtifactType.VEX == parseArtifactType(a.get("type"))) {
+				Object fileObj = a.get("file");
+				if (fileObj instanceof org.springframework.web.multipart.MultipartFile mf) {
+					try { bytes = mf.getBytes(); }
+					catch (java.io.IOException e) {
+						log.warn("Failed to capture VEX bytes for downstream dispatch: {}", e.getMessage());
+					}
+				}
+			}
+			vexBytesByIndex.add(bytes);
+		}
+
+		// VexImportService precondition: release must have SBOM inventory before any
+		// VEX uploads in this batch. Run once if any of the artifacts is a VEX so we
+		// fail loud at the GraphQL boundary rather than silently dropping the file.
+		boolean anyVex = vexBytesByIndex.stream().anyMatch(b -> b != null);
+		if (anyVex) {
+			vexImportService.verifyDispatchPreconditions(rd);
+		}
 
 		// Upload artifacts
 		List<UUID> artIds = artifactService.uploadListOfArtifacts(
@@ -1221,10 +1282,32 @@ public class ReleaseService {
 			new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, purl),
 			wu
 		);
-		
+
 		// Attach artifacts to release
 		for (UUID artId : artIds) {
 			addArtifact(artId, rd.getUuid(), wu);
+		}
+
+		// Now dispatch any VEX artifacts. Mirrors the multipart manual path —
+		// best-effort, never blocks the upload result.
+		for (int i = 0; i < artIds.size() && i < vexBytesByIndex.size(); i++) {
+			byte[] bytes = vexBytesByIndex.get(i);
+			if (bytes == null) continue;
+			UUID artId = artIds.get(i);
+			Optional<ArtifactData> oad = artifactService.getArtifactData(artId);
+			if (oad.isEmpty()) continue;
+			// ArtifactDto has no factory from ArtifactData — round-trip through Jackson.
+			// VexImportService only reads bomFormat / vexScope / vexImportMode /
+			// userIssuerClassOverride / displayIdentifier off the dto.
+			ArtifactDto dispatchDto = io.reliza.common.Utils.OM.convertValue(
+				oad.get(), ArtifactDto.class);
+			try {
+				vexImportService.dispatchFromArtifact(
+					artId, dispatchDto, rd, ArtifactBelongsTo.RELEASE, bytes, wu);
+			} catch (Exception e) {
+				log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
+					artId, rd.getUuid(), e.getMessage());
+			}
 		}
 	}
 	
@@ -1527,21 +1610,28 @@ public class ReleaseService {
 		}
 	}
 	
-	protected void computeMetricsForAllUnprocessedReleases () {
-		log.debug("[compute metrics scheduler]: start compute metrics run");
+	/**
+	 * Per-tick metrics compute. Each of the five constituent finders is capped at
+	 * {@code limit} rows so the worst-case in-memory batch is bounded to 5*limit releases
+	 * (typically ~100 with limit=20). Whichever rows don't fit this tick land on the next
+	 * — the ORDER BY ASC on stalest-scan in each query guarantees forward progress and no
+	 * starvation under a backlog.
+	 */
+	protected void computeMetricsForAllUnprocessedReleases (int limit) {
+		log.debug("[compute metrics scheduler]: start compute metrics run (limit={})", limit);
 		// The artifact-driven finders compare art.lastScanned against each release's own
 		// lastScanned (per-release, no global cutoff). See VariableQueries comments for
 		// why the prior global :cutoffTimestamp was wrong.
-		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect();
+		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect(limit);
 		log.debug("[compute metrics scheduler]: releases by art size = " + releasesByArt.size());
 		for (var r : releasesByArt) log.debug("[compute metrics scheduler]: release by art uuid = " + r.getUuid());
-		var releasesBySce = repository.findReleasesForMetricsComputeBySce();
-		log.debug("[compute metrics scheduler]: releases by sce size = " + releasesByArt.size());
+		var releasesBySce = repository.findReleasesForMetricsComputeBySce(limit);
+		log.debug("[compute metrics scheduler]: releases by sce size = " + releasesBySce.size());
 		for (var r : releasesBySce) log.debug("[compute metrics scheduler]: release by sce uuid = " + r.getUuid());
-		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables();
-		log.debug("[compute metrics scheduler]: releases by outbound del size = " + releasesByArt.size());
+		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables(limit);
+		log.debug("[compute metrics scheduler]: releases by outbound del size = " + releasesByOutboundDel.size());
 		for (var r : releasesByOutboundDel) log.debug("[compute metrics scheduler]: release by od uuid = " + r.getUuid());
-		var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate();
+		var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate(limit);
 		log.debug("[compute metrics scheduler]: releases by updated date del size = " + releasesByUpdateDate.size());
 		for (var r : releasesByUpdateDate) log.debug("[compute metrics scheduler]: release by upd uuid = " + r.getUuid());
 		Set<UUID> dedupProcessedReleases = new HashSet<>();
@@ -1550,30 +1640,38 @@ public class ReleaseService {
 		computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases);
 		computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases);
 		log.debug("processed releases size for metrics = " + dedupProcessedReleases.size());
-		
-		var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases);
+
+		var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases, limit);
 		computeMetricsForReleaseList(productReleases, dedupProcessedReleases);
 		log.debug("[compute metrics scheduler]: end compute metrics run");
 		log.debug("processed product releases size for metrics = " + productReleases.size());
 	}
 	
-	private List<Release> findProductReleasesFromComponentsForMetrics (Set<UUID> dedupProcessedReleases) {
+	/**
+	 * Cap the per-tick product-release derivation at {@code limit} so the cascade from
+	 * many recomputed component releases doesn't blow up the in-memory batch. Anything
+	 * past the cap waits for the next tick — fairness comes from the FIFO walk over the
+	 * already-bounded input set.
+	 */
+	private List<Release> findProductReleasesFromComponentsForMetrics (Set<UUID> dedupProcessedReleases, int limit) {
 		Set<UUID> dedupReleases = new HashSet<>();
 		List<Release> productReleases = new LinkedList<>();
 		if (null != dedupProcessedReleases && !dedupProcessedReleases.isEmpty()) {
-			dedupProcessedReleases.forEach(dpr -> {
+			for (UUID dpr : dedupProcessedReleases) {
+				if (productReleases.size() >= limit) break;
 				ReleaseData rd = sharedReleaseService.getReleaseData(dpr).get();
 				List<Release> wipProducts = repository.findProductsByRelease(rd.getOrg().toString(),
 						rd.getUuid().toString());
 				if (null != wipProducts && !wipProducts.isEmpty()) {
-					wipProducts.forEach(p -> {
+					for (Release p : wipProducts) {
+						if (productReleases.size() >= limit) break;
 						if (!dedupProcessedReleases.contains(p.getUuid()) && !dedupReleases.contains(p.getUuid())) {
 							productReleases.add(p);
 							dedupReleases.add(p.getUuid());
 						}
-					});
+					}
 				}
-			});
+			}
 		}
 		return productReleases;
 	}

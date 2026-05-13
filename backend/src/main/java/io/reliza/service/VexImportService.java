@@ -31,6 +31,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.CdxVexStatement;
 import io.reliza.model.dto.MatchCandidate;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.dto.VexImportInput;
 import io.reliza.model.dto.VexImportResult;
 import io.reliza.model.dto.VexParseEntry;
@@ -50,11 +51,11 @@ import lombok.extern.slf4j.Slf4j;
  *         programmatic paths with a fully-populated VexImportInput.</li>
  *   </ul>
  *
- * Pipeline shape (see ai-plans/vex_imports/12_v12_rewrite_plan.md §2):
+ * Pipeline shape:
  *   <pre>
  *   parser   = VexFormatParser registry by SourceFormat
  *   matches  = VexMatcher → PurlReleaseResolver + ScopeTargetResolver
- *   verdict  = VexVerdictResolver  (gate + user-mode; conflict-guard branch in Commit 4)
+ *   verdict  = VexVerdictResolver  (gate + user-mode + conflict guard)
  *   commit   = VexStatementProposalService (createProposal + accept on AUTO_ACCEPT)
  *   </pre>
  */
@@ -69,6 +70,7 @@ public class VexImportService {
     @Autowired VexStatementProposalService proposalService;
     @Autowired SbomComponentService sbomComponentService;
     @Autowired VulnAnalysisService vulnAnalysisService;
+    @Autowired VulnerabilityRecordService vulnerabilityRecordService;
 
     /**
      * Pre-upload precondition: the release must already have SBOM inventory or the VEX has
@@ -88,7 +90,17 @@ public class VexImportService {
      * this method derives IssuerClass from the binding context and dispatches the pipeline.
      * Re-runs the precondition guard defensively (ReleaseDatafetcher already calls
      * {@link #verifyDispatchPreconditions} pre-upload).
+     *
+     * <p>REQUIRES_NEW: the programmatic upload path runs this dispatch from inside
+     * {@code ReleaseService.processReleaseArtifacts(@Transactional)} and catches/logs
+     * dispatch failures so they don't fail the upload. Without REQUIRES_NEW any failure
+     * inside the pipeline poisons the outer tx with rollbackOnly, and the catch-and-log
+     * pattern silently becomes "the upload rolls back too". Putting the new-tx boundary
+     * at this method (the externally-proxied entry point) ensures the AOP proxy actually
+     * creates the new tx — an annotation on the internal {@link #importPipeline} alone
+     * would be bypassed by the same-class call here.
      */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public VexImportResult dispatchFromArtifact(
             UUID artifactUuid, ArtifactDto artDto, ReleaseData rd,
             ArtifactBelongsTo belongsTo, byte[] content, WhoUpdated wu) throws RelizaException {
@@ -135,6 +147,12 @@ public class VexImportService {
         return IssuerClass.THIRD_PARTY;
     }
 
+    /**
+     * Joins the caller's transaction (typically the {@link #dispatchFromArtifact}'s REQUIRES_NEW
+     * boundary). The dispatch entry point owns the new-tx semantics; this method stays REQUIRED
+     * because the same-class call from {@code dispatchFromArtifact} bypasses Spring's AOP proxy
+     * and would ignore any annotation here anyway.
+     */
     @Transactional
     public VexImportResult importPipeline(VexImportInput input, WhoUpdated wu) throws RelizaException {
         if (input.getOrg() == null) throw new RelizaException("VEX import: org is required");
@@ -196,13 +214,15 @@ public class VexImportService {
             List<io.reliza.model.VulnAnalysisData> existingRows = vulnAnalysisService
                 .findByOrgAndLocationAndFindingIdAndType(
                     input.getOrg(), location, stmt.vulnerabilityId(), FindingType.VULNERABILITY);
+            VulnerabilitySeverity resolvedSeverity = resolveSeverity(
+                input.getOrg(), stmt.severity(), stmt.vulnerabilityId(), existingRows);
             for (MatchCandidate mc : matches) {
                 VexStatementProposalData candidate = VexStatementProposalData.createVexStatementProposalData(
                     input.getOrg(), input.getSourceArtifact(), input.getFormat(), hash, stmt.rawJson(),
                     mc.scope(), mc.scopeUuid(),
                     location, productPurl, LocationType.PURL,
                     stmt.vulnerabilityId(), stmt.aliasIds(), FindingType.VULNERABILITY,
-                    stmt.state(), stmt.justification(), stmt.details(), null,
+                    stmt.state(), stmt.justification(), stmt.details(), resolvedSeverity,
                     stmt.responses(), stmt.recommendation(), stmt.workaround(),
                     entry.translationNotes(),
                     effectiveIssuerClass, input.getVexImportMode(), input.getUserIssuerClassOverride());
@@ -210,14 +230,62 @@ public class VexImportService {
                 VexVerdictResolver.Verdict verdict = verdictResolver.resolveWithConflictCheck(
                     effectiveIssuerClass, stmt.state(), input.getVexImportMode(),
                     mc.scope(), existingRows);
-                candidate.setDemotionReason(verdict.demotionReason());
 
-                applyVerdict(candidate, verdict.action(), wu, result);
+                TrustAction finalAction = verdict.action();
+                String finalReason = verdict.demotionReason();
+                if (finalAction == TrustAction.AUTO_ACCEPT && resolvedSeverity == null) {
+                    finalAction = TrustAction.STAGE;
+                    finalReason = finalReason == null
+                        ? VexVerdictResolver.DEMOTION_REASON_SEVERITY_MISSING
+                        : finalReason + ";" + VexVerdictResolver.DEMOTION_REASON_SEVERITY_MISSING;
+                }
+                candidate.setDemotionReason(finalReason);
+
+                applyVerdict(candidate, finalAction, wu, result);
             }
         }
         if (!anyPurlMatched) {
             result.setStatementsUnmatched(result.getStatementsUnmatched() + 1);
         }
+    }
+
+    /**
+     * Severity resolution chain: parser-supplied → existing FindingAnalysis rows (most-specific
+     * scope first) → canonical VulnerabilityRecord by alias. Returns null if all sources are
+     * empty; the caller demotes AUTO_ACCEPT to STAGE in that case.
+     *
+     * <p>Package-private for {@code VexImportServiceTest}.
+     */
+    VulnerabilitySeverity resolveSeverity(UUID org, VulnerabilitySeverity fromStatement,
+                                                  String findingId,
+                                                  List<io.reliza.model.VulnAnalysisData> existingRows) {
+        if (fromStatement != null) return fromStatement;
+        if (existingRows != null && !existingRows.isEmpty()) {
+            VulnerabilitySeverity fromAnalysis = existingRows.stream()
+                .sorted((a, b) -> Integer.compare(scopeRank(a.getScope()), scopeRank(b.getScope())))
+                .map(io.reliza.model.VulnAnalysisData::getSeverity)
+                .filter(s -> s != null)
+                .findFirst()
+                .orElse(null);
+            if (fromAnalysis != null) return fromAnalysis;
+        }
+        if (findingId != null) {
+            return vulnerabilityRecordService.getByAlias(org, findingId)
+                .map(io.reliza.model.VulnerabilityRecordData::getSeverity)
+                .orElse(null);
+        }
+        return null;
+    }
+
+    private static int scopeRank(io.reliza.model.AnalysisScope s) {
+        if (s == null) return 99;
+        return switch (s) {
+            case RELEASE -> 1;
+            case BRANCH -> 2;
+            case COMPONENT -> 3;
+            case ORG -> 4;
+            case RESOURCE_GROUP -> 5;
+        };
     }
 
     private void applyVerdict(VexStatementProposalData candidate, TrustAction action,

@@ -23,6 +23,21 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 public class SchedulingService {
+
+    /**
+     * Per-task batch cap used by the every-minute scheduler tick. The point isn't to
+     * gate throughput but to bound the in-memory working set so a backlog (thousands of
+     * stale releases / pending BOMs) can't pull everything into one pass and OOM.
+     * Each task picks the {@value} oldest unprocessed rows; the next tick grabs the
+     * next batch. ORDER BY clauses on each underlying query guarantee forward progress.
+     *
+     * <p>Two tasks intentionally use different limits because they were already tuned:
+     * {@code submitPendingArtifactsToDependencyTrack} caps at 20 per-org in SQL, and
+     * {@code processPendingReconciles(50)} processes 50 sbom-component reconciles per
+     * tick — both kept as-is.
+     */
+    private static final int SCHEDULER_TICK_BATCH_LIMIT = 20;
+
     @Autowired
     private DataSource dataSource;
 
@@ -96,7 +111,7 @@ public class SchedulingService {
             log.debug("release reject lock acquired {}", lock);
 			if (lock) {
 				try {
-                    releaseService.rejectPendingReleases();
+                    releaseService.rejectPendingReleases(SCHEDULER_TICK_BATCH_LIMIT);
 				} catch (Exception e) {
 					log.error("Exception in rejecting pending releases", e);
 				} finally {
@@ -122,13 +137,40 @@ public class SchedulingService {
             log.debug("resolve dependency track lock acquired {}", lock);
 			if (lock) {
 				try {
-                    log.debug("starting resolve DTrack loop");
-					artifactService.submitPendingArtifactsToDependencyTrack();
-					artifactService.initialProcessArtifactsOnDependencyTrack();
-					releaseService.computeMetricsForAllUnprocessedReleases();
-					sbomComponentService.processPendingReconciles(50);
-				} catch (Exception e) {
-					log.error("Exception in resolving dependency track", e);
+					log.debug("starting resolve DTrack loop");
+					// Each step is isolated so one failing path doesn't skip the
+					// rest. Without this, a transient error in (say) the metrics
+					// compute would silently delay every other step's drain by a
+					// full minute, and the SBOM reconcile queue could back up
+					// indefinitely behind an unrelated upstream fault.
+
+					// submitPendingArtifactsToDependencyTrack caps per-org at 20 inside SQL
+					// (LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION) — already batch-bounded.
+					try {
+						artifactService.submitPendingArtifactsToDependencyTrack();
+					} catch (Exception e) {
+						log.error("submitPendingArtifactsToDependencyTrack failed", e);
+					}
+
+					try {
+						artifactService.initialProcessArtifactsOnDependencyTrack(SCHEDULER_TICK_BATCH_LIMIT);
+					} catch (Exception e) {
+						log.error("initialProcessArtifactsOnDependencyTrack failed", e);
+					}
+
+					try {
+						releaseService.computeMetricsForAllUnprocessedReleases(SCHEDULER_TICK_BATCH_LIMIT);
+					} catch (Exception e) {
+						log.error("computeMetricsForAllUnprocessedReleases failed", e);
+					}
+
+					// processPendingReconciles already takes an explicit batch limit; tuned higher (50)
+					// because each row is a cheap dedupe and the operation is non-IO-bound.
+					try {
+						sbomComponentService.processPendingReconciles(50);
+					} catch (Exception e) {
+						log.error("processPendingReconciles failed", e);
+					}
 				} finally {
 					releaseLock(AdvisoryLockKey.RESOLVE_DEPENDENCY_TRACK_STATUS);
 				}

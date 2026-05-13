@@ -921,8 +921,14 @@ public class ArtifactService {
 		return artifactUploadResponse;
 	}
 	
-	protected void initialProcessArtifactsOnDependencyTrack () {
-		List<Artifact> initialArts = repository.listInitialArtifactsPendingOnDependencyTrack();
+	/**
+	 * Per-tick batch capped at {@code limit} so the initial-fetch loop can't pull
+	 * the whole backlog (potentially thousands of fresh BOMs) into memory in one
+	 * scheduler pass and blast Dependency-Track with that many concurrent API calls.
+	 * Oldest-uploadToken-first ordering in the SQL guarantees forward progress.
+	 */
+	protected void initialProcessArtifactsOnDependencyTrack (int limit) {
+		List<Artifact> initialArts = repository.listInitialArtifactsPendingOnDependencyTrack(limit);
 		log.debug("PSDEBUG: located " + initialArts.size() + " to process initially on dep track");
 		initialArts.forEach(a -> {
 			try {

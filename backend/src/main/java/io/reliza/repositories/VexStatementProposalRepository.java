@@ -33,11 +33,20 @@ public interface VexStatementProposalRepository extends JpaRepository<VexStateme
 	@Query(value = VariableQueries.FIND_VEX_PROPOSAL_BY_ORG, nativeQuery = true)
 	List<VexStatementProposal> findByOrg(@Param("orgUuidAsString") String orgUuidAsString);
 
+	/**
+	 * Find the prior proposal for the same (org, artifact, statementHash, scope, scopeUuid)
+	 * tuple — i.e. the previous per-target row this re-upload should supersede. Returns
+	 * Optional because at most one row matches the full 5-key tuple. See
+	 * {@link VariableQueries#FIND_VEX_PROPOSAL_DEDUPE} for why scope + scopeUuid must be
+	 * part of the key (one statement → many targets → one row each).
+	 */
 	@Query(value = VariableQueries.FIND_VEX_PROPOSAL_DEDUPE, nativeQuery = true)
 	Optional<VexStatementProposal> findForDedupe(
 		@Param("orgUuidAsString") String orgUuidAsString,
 		@Param("sourceArtifactAsString") String sourceArtifactAsString,
-		@Param("sourceStatementHash") String sourceStatementHash);
+		@Param("sourceStatementHash") String sourceStatementHash,
+		@Param("scope") String scope,
+		@Param("scopeUuidAsString") String scopeUuidAsString);
 
 	@Query(value = VariableQueries.FIND_VEX_PROPOSAL_BY_ARTIFACT, nativeQuery = true)
 	List<VexStatementProposal> findBySourceArtifact(@Param("sourceArtifactAsString") String sourceArtifactAsString);

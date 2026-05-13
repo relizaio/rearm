@@ -76,7 +76,7 @@ public class ReleaseMetricsFinderQueryTest {
 		Artifact freshArt = saveArtifactWithLastScanned(org.getUuid(), NEW_EPOCH);
 		Release stuckRelease = saveReleaseWithDirectArtifact(org.getUuid(), OLD_EPOCH, freshArt.getUuid());
 
-		Set<UUID> picked = uuidsOf(releaseRepository.findReleasesForMetricsComputeByArtifactDirect());
+		Set<UUID> picked = uuidsOf(releaseRepository.findReleasesForMetricsComputeByArtifactDirect(100));
 
 		assertTrue(picked.contains(stuckRelease.getUuid()),
 				"Release with art.lastScanned > rel.lastScanned must be picked up "
@@ -85,7 +85,7 @@ public class ReleaseMetricsFinderQueryTest {
 
 		// Negative case: bump release.lastScanned past the artifact's; finder must drop it.
 		updateReleaseLastScanned(stuckRelease.getUuid(), NEW_EPOCH + 1.0);
-		Set<UUID> pickedAfter = uuidsOf(releaseRepository.findReleasesForMetricsComputeByArtifactDirect());
+		Set<UUID> pickedAfter = uuidsOf(releaseRepository.findReleasesForMetricsComputeByArtifactDirect(100));
 		assertFalse(pickedAfter.contains(stuckRelease.getUuid()),
 				"Release with rel.lastScanned > art.lastScanned must not be picked up");
 	}
@@ -97,7 +97,7 @@ public class ReleaseMetricsFinderQueryTest {
 		SourceCodeEntry sce = saveSceWithArtifact(org.getUuid(), freshArt.getUuid());
 		Release stuckRelease = saveReleaseWithSourceCodeEntry(org.getUuid(), OLD_EPOCH, sce.getUuid());
 
-		Set<UUID> picked = uuidsOf(releaseRepository.findReleasesForMetricsComputeBySce());
+		Set<UUID> picked = uuidsOf(releaseRepository.findReleasesForMetricsComputeBySce(100));
 
 		assertTrue(picked.contains(stuckRelease.getUuid()),
 				"Release whose SCE-linked artifact is fresher than rel.lastScanned must be picked up");
@@ -111,7 +111,7 @@ public class ReleaseMetricsFinderQueryTest {
 		Release stuckRelease = saveReleaseWithLastScanned(org.getUuid(), OLD_EPOCH);
 		saveVariantLinkingReleaseToDeliverable(org.getUuid(), stuckRelease.getUuid(), deliverable.getUuid());
 
-		Set<UUID> picked = uuidsOf(releaseRepository.findReleasesForMetricsComputeByOutboundDeliverables());
+		Set<UUID> picked = uuidsOf(releaseRepository.findReleasesForMetricsComputeByOutboundDeliverables(100));
 
 		assertTrue(picked.contains(stuckRelease.getUuid()),
 				"Release linked via variant.outboundDeliverables → deliverable.artifacts to a "

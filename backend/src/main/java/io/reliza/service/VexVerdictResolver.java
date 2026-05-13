@@ -20,7 +20,7 @@ import io.reliza.model.VulnAnalysisData;
  * Resolves the per-statement verdict (AUTO_ACCEPT / STAGE / REJECT) by composing the
  * trust-gate default with the user's per-upload import mode and broader-scope conflict guard.
  *
- * v1.2 precedence chain (full design in ai-plans/vex_imports/11_v12_scope_and_conflict.md §3.B):
+ * Precedence chain (full design in ai-plans/vex_imports/09_scope_and_conflict.md §3.B):
  * <pre>
  *   1. policy   = VexTrustGate.defaultAction(issuerClass, state)
  *   2. user     = userImportMode  (defaults to AUTO_ACCEPT when null)
@@ -38,6 +38,7 @@ import io.reliza.model.VulnAnalysisData;
 public class VexVerdictResolver {
 
     public static final String DEMOTION_REASON_BROADER_SCOPE = "BROADER_SCOPE_CONFLICT";
+    public static final String DEMOTION_REASON_SEVERITY_MISSING = "SEVERITY_MISSING";
 
     /** Steps 1-3 of the precedence chain — gate × user-mode only, no conflict check. */
     public Verdict resolve(IssuerClass issuerClass, AnalysisState state, VexImportMode userMode) {

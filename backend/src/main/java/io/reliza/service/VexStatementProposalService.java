@@ -89,7 +89,10 @@ public class VexStatementProposalService {
 
     @Transactional
     public VexStatementProposalData createProposal(VexStatementProposalData data, WhoUpdated wu) throws RelizaException {
-        markSuperseded(data.getOrg(), data.getSourceArtifact(), data.getSourceStatementHash(), wu);
+        // Dedupe per (org, artifact, hash, scope, scopeUuid) — one inbound statement can resolve
+        // to many scope-targets and each target's proposal has its own supersession lifecycle.
+        markSuperseded(data.getOrg(), data.getSourceArtifact(), data.getSourceStatementHash(),
+            data.getScope(), data.getScopeUuid(), wu);
 
         VexStatementProposal e = new VexStatementProposal();
         e.setUuid(data.getUuid());
@@ -104,6 +107,10 @@ public class VexStatementProposalService {
         VexStatementProposalData d = VexStatementProposalData.dataFromRecord(e);
         if (d.getStatus() != ProposalStatus.PENDING) {
             throw new RelizaException("Proposal not in PENDING state (was: " + d.getStatus() + ")");
+        }
+        if (d.getSeverity() == null) {
+            throw new RelizaException("Severity is required before accepting a VEX proposal. "
+                + "Use Modify to set it (CRITICAL, HIGH, MEDIUM, LOW, or UNASSIGNED).");
         }
 
         boolean conditional = conditionalPredicate.needsAttestation(
@@ -185,9 +192,19 @@ public class VexStatementProposalService {
     }
 
     @Transactional
-    public void markSuperseded(UUID org, UUID sourceArtifact, String sourceStatementHash, WhoUpdated wu) throws RelizaException {
+    public void markSuperseded(UUID org, UUID sourceArtifact, String sourceStatementHash,
+                               io.reliza.model.AnalysisScope scope, UUID scopeUuid,
+                               WhoUpdated wu) throws RelizaException {
+        if (scope == null || scopeUuid == null) {
+            // Defensive: VEX proposals always carry scope + scopeUuid (set by ScopeTargetResolver
+            // before createProposal is invoked); if a caller forgets, we'd otherwise key dedupe
+            // against the literal string "null" and silently fail to supersede anything.
+            throw new IllegalArgumentException(
+                "markSuperseded requires scope + scopeUuid (per-target dedupe key)");
+        }
         Optional<VexStatementProposal> opt = repository.findForDedupe(
-            org.toString(), sourceArtifact.toString(), sourceStatementHash);
+            org.toString(), sourceArtifact.toString(), sourceStatementHash,
+            scope.name(), scopeUuid.toString());
         if (opt.isEmpty()) return;
         Optional<VexStatementProposal> locked = repository.findByIdWriteLocked(opt.get().getUuid());
         if (locked.isEmpty()) return;

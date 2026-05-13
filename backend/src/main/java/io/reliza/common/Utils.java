@@ -627,18 +627,26 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.04.3";
-    
+    private static final String REARM_CD_PRODUCT_VERSION = "26.05.5";
+
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "0e8be9bdf6411e4a576086000a7627ccb7b75caab5e5bec91a1d56b91bcb7436";
-    private static final String REARM_CD_HELM_VERSION = "0.3.17";
-    private static final String REARM_CD_HELM_COMMIT = "4900329bd9a954eb11273efe73a366d3a13e6037";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "bump helm chart version to 0.3.17 [skip ci]";
-    
-    public static final String REARM_CD_CONTAINER_DIGEST = "b6d0a3d413cfe448571258745101cf4fa0f16211d10672207e4229fee5f35a50";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.43";
-    public static final String REARM_CD_CONTAINER_COMMIT = "96e448781c85c9fc96dc5331cfdab20443db5541";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "chore(rearm-cd-app): trigger build";
+    public static final String REARM_CD_HELM_DIGEST = "efd34f252b3bd980edf1b1537eec283d269b152f2d677ae72d9479222c1d898a";
+    private static final String REARM_CD_HELM_VERSION = "0.3.20";
+    private static final String REARM_CD_HELM_COMMIT = "85c23cf809f6a6d7fda06e3629a0f01ce1ac5d60";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.3.20 [skip ci]";
+
+    public static final String REARM_CD_CONTAINER_DIGEST = "19e0f949eb9f0d7714e275dbc594edaa5d3653f20a53b03c2c22c935f6b6a340";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.03.46";
+    public static final String REARM_CD_CONTAINER_COMMIT = "bddef1ff4cedb7ca76f56059577c203797e756b0";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "chore(rearm-cd): trigger build";
+
+    // ReARM Watcher container — sibling to rearm-cd-app under the same ReARM CD product.
+    // Was missing from the hard-coded fallback prior to the 26.05.5 BOM update.
+    public static final String REARM_WATCHER_CONTAINER_NAME = "registry.relizahub.com/library/rearm-watcher-app";
+    public static final String REARM_WATCHER_CONTAINER_DIGEST = "f4aa18fa67bcc41475eca41e750d954dcfe534d396e015440e7e388ca3ddf0dd";
+    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.03.14";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT = "ebc0c5a0eb24d22c1e32f0a2814d17528259fc3c";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "chore: bump dependencies";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
@@ -672,7 +680,7 @@ public class Utils {
 		helmPedigree.setCommits(List.of(helmCommit));
 		rearmCdHelm.setPedigree(helmPedigree);
 
-		// Hard-coded Reliza CD container component
+		// Hard-coded ReARM CD container component
 		org.cyclonedx.model.Component rearmCdContainer = new org.cyclonedx.model.Component();
 		rearmCdContainer.setGroup(REARM_CD_GROUP);
 		rearmCdContainer.setName("registry.relizahub.com/library/rearm-cd-app");
@@ -682,7 +690,7 @@ public class Utils {
 		Pedigree containerPedigree = new Pedigree();
 		Commit containerCommit = new Commit();
 		containerCommit.setUid(REARM_CD_CONTAINER_COMMIT);
-		containerCommit.setUrl("github.com/relizaio/reliza-cd");
+		containerCommit.setUrl("github.com/relizaio/rearm-cd");
 		containerCommit.setMessage(REARM_CD_CONTAINER_COMMIT_MESSAGE);
 		containerPedigree.setCommits(List.of(containerCommit));
 		rearmCdContainer.setPedigree(containerPedigree);
@@ -691,7 +699,26 @@ public class Utils {
 		containerSafeVersionProp.setValue(REARM_CD_CONTAINER_VERSION);
 		rearmCdContainer.setProperties(List.of(containerSafeVersionProp));
 
-		return List.of(rearmCdProduct, rearmCdHelm, rearmCdContainer);
+		// Hard-coded ReARM Watcher container component (sibling of rearm-cd-app under the same product).
+		org.cyclonedx.model.Component rearmWatcherContainer = new org.cyclonedx.model.Component();
+		rearmWatcherContainer.setGroup(REARM_CD_GROUP);
+		rearmWatcherContainer.setName(REARM_WATCHER_CONTAINER_NAME);
+		rearmWatcherContainer.setVersion(REARM_WATCHER_CONTAINER_VERSION);
+		rearmWatcherContainer.setType(org.cyclonedx.model.Component.Type.CONTAINER);
+		rearmWatcherContainer.setHashes(List.of(new org.cyclonedx.model.Hash(org.cyclonedx.model.Hash.Algorithm.SHA_256, REARM_WATCHER_CONTAINER_DIGEST)));
+		Pedigree watcherPedigree = new Pedigree();
+		Commit watcherCommit = new Commit();
+		watcherCommit.setUid(REARM_WATCHER_CONTAINER_COMMIT);
+		watcherCommit.setUrl("github.com/relizaio/rearm-cd");
+		watcherCommit.setMessage(REARM_WATCHER_CONTAINER_COMMIT_MESSAGE);
+		watcherPedigree.setCommits(List.of(watcherCommit));
+		rearmWatcherContainer.setPedigree(watcherPedigree);
+		org.cyclonedx.model.Property watcherSafeVersionProp = new org.cyclonedx.model.Property();
+		watcherSafeVersionProp.setName("reliza:containerSafeVersion");
+		watcherSafeVersionProp.setValue(REARM_WATCHER_CONTAINER_VERSION);
+		rearmWatcherContainer.setProperties(List.of(watcherSafeVersionProp));
+
+		return List.of(rearmCdProduct, rearmCdHelm, rearmCdContainer, rearmWatcherContainer);
     }
 
     public static String getHardCodedRearmCdBomJson() {

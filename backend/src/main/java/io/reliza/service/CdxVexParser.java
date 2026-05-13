@@ -27,6 +27,7 @@ import io.reliza.model.AnalysisState;
 import io.reliza.model.SourceFormat;
 import io.reliza.model.dto.CdxVexParseResult;
 import io.reliza.model.dto.CdxVexStatement;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.dto.VexParseEntry;
 import io.reliza.model.dto.VexParseResult;
 import lombok.extern.slf4j.Slf4j;
@@ -117,12 +118,13 @@ public class CdxVexParser implements VexFormatParser {
         } catch (JsonProcessingException e) {
             stmtJson = "{}";
         }
+        VulnerabilitySeverity severity = highestSeverity(v);
         return new CdxVexStatement(
             v.getId(), aliases, productPurls,
             mapState(a.getState()),
             mapJustification(a.getJustification()),
             a.getDetail(), v.getRecommendation(), v.getWorkaround(),
-            responses, stmtJson);
+            responses, severity, stmtJson);
     }
 
     private AnalysisState mapState(Vulnerability.Analysis.State s) {
@@ -134,5 +136,37 @@ public class CdxVexParser implements VexFormatParser {
     private AnalysisJustification mapJustification(Vulnerability.Analysis.Justification j) {
         if (j == null) return null;
         return AnalysisJustification.valueOf(j.name());
+    }
+
+    private VulnerabilitySeverity highestSeverity(Vulnerability v) {
+        if (v.getRatings() == null || v.getRatings().isEmpty()) return null;
+        VulnerabilitySeverity best = null;
+        for (Vulnerability.Rating r : v.getRatings()) {
+            VulnerabilitySeverity mapped = mapSeverity(r.getSeverity());
+            if (mapped == null) continue;
+            if (best == null || severityRank(mapped) > severityRank(best)) best = mapped;
+        }
+        return best;
+    }
+
+    private VulnerabilitySeverity mapSeverity(Vulnerability.Rating.Severity s) {
+        if (s == null) return null;
+        return switch (s) {
+            case CRITICAL -> VulnerabilitySeverity.CRITICAL;
+            case HIGH -> VulnerabilitySeverity.HIGH;
+            case MEDIUM -> VulnerabilitySeverity.MEDIUM;
+            case LOW -> VulnerabilitySeverity.LOW;
+            case INFO, NONE, UNKNOWN -> VulnerabilitySeverity.UNASSIGNED;
+        };
+    }
+
+    private static int severityRank(VulnerabilitySeverity s) {
+        return switch (s) {
+            case CRITICAL -> 4;
+            case HIGH -> 3;
+            case MEDIUM -> 2;
+            case LOW -> 1;
+            case UNASSIGNED -> 0;
+        };
     }
 }

@@ -3,7 +3,7 @@
 */
 package io.reliza.model;
 
-/** Signature verification result for an inbound VEX document. v1 always sets UNSIGNED — see ai-plans/vex_imports/open_questions.md §7.2. */
+/** Signature verification result for an inbound VEX document. Always set to UNSIGNED today; real verification is a future addition — see ai-plans/vex_imports/open_questions.md (trusted-vendor signature verification). */
 public enum SignatureStatus {
     UNSIGNED,
     VERIFIED_TRUSTED,

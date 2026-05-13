@@ -9,6 +9,7 @@ import java.util.List;
 import io.reliza.model.AnalysisJustification;
 import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 
 /** Normalized CDX-VEX statement after bom-ref resolution and CDX → ReARM enum mapping. */
 public record CdxVexStatement(
@@ -21,5 +22,6 @@ public record CdxVexStatement(
     String recommendation,
     String workaround,
     List<AnalysisResponse> responses,
+    VulnerabilitySeverity severity,
     String rawJson
 ) {}
