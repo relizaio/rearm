@@ -171,7 +171,7 @@ Configuration is the same as any other release output event (component-level or 
 
 If you only want the per-release `EXTERNAL_VALIDATION` model (legacy), you can ignore `VALIDATE_PR` / `INVALIDATE_PR` entirely — they exist purely to drive the PR-aggregated path.
 
-## Inbound webhook — real-time PR state sync
+## Inbound webhook - real-time PR state sync
 
 Everything above pushes *outbound* signals (check-runs, PR comments) from ReARM to GitHub. The inbound webhook closes the loop the other way: GitHub notifies ReARM when a PR is opened, edited, closed, or merged, and ReARM updates the corresponding [first-class PR entity](../workflows/pull-requests) without waiting for a CI run.
 
