@@ -62,6 +62,17 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<Release> findReleasesOfComponent(String componentUuidAsString, String limitAsStr, String offsetAsStr);
 
+	/**
+	 * Batched (component_uuid, lifecycle) projection across many components in a single
+	 * round-trip. Backs the synthetic {@code Component.effectiveLifecycle} GraphQL field
+	 * so the components-list resolver doesn't need to N+1 per-component release lookups.
+	 * Each row is a {@code String[2]} of [componentUuidAsString, lifecycle].
+	 */
+	@Query(
+			value = VariableQueries.FIND_RELEASE_LIFECYCLES_BY_COMPONENTS,
+			nativeQuery = true)
+	List<Object[]> findReleaseLifecyclesByComponents(@Param("componentUuidsAsStrings") java.util.Collection<String> componentUuidsAsStrings);
+
 	@Query(
 			value = VariableQueries.COUNT_RELEASES_OF_ORG_BY_DATE,
 			nativeQuery = true)

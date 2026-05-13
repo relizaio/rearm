@@ -10,6 +10,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -40,6 +41,7 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.DefaultBranchName;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
@@ -79,6 +81,9 @@ public class ComponentService {
 
 	@Autowired
 	private SidPurlResolver sidPurlResolver;
+
+	@Autowired
+	private io.reliza.repositories.ReleaseRepository releaseRepository;
 
 	private static final Logger log = LoggerFactory.getLogger(ComponentService.class);
 			
@@ -155,6 +160,91 @@ public class ComponentService {
 			globalListOfComponentData.addAll(pdList);
 		}
 		return globalListOfComponentData;
+	}
+
+	/**
+	 * Compute the synthetic {@code effectiveLifecycle} for many components in a single
+	 * round-trip. Replaces the per-component release fetch that surfaced as an N+1 in the
+	 * {@code Component.effectiveLifecycle} GraphQL resolver (84 components ≈ 3.5s before).
+	 *
+	 * <p>Bucket logic — unchanged from the legacy per-component path
+	 * (see {@code ComponentDataFetcher.effectiveLifecycle}):
+	 * <ul>
+	 *   <li>If any release has lifecycle &gt; GA, return the min of those (most-recent-only
+	 *       post-GA state).</li>
+	 *   <li>Else return the max of releases at lifecycle &le; GA (most-advanced pre-or-at-GA
+	 *       state).</li>
+	 *   <li>Component with no releases (or only releases lacking a lifecycle): key absent
+	 *       from the returned map.</li>
+	 * </ul>
+	 *
+	 * <p>Empty input is short-circuited; otherwise one native query of shape
+	 * {@code (component_uuid, lifecycle)} runs and the bucketing happens in-process.
+	 */
+	public Map<UUID, ReleaseLifecycle> effectiveLifecyclesForComponents(Collection<UUID> componentUuids) {
+		if (componentUuids == null || componentUuids.isEmpty()) return Map.of();
+		List<String> componentUuidsAsStrings = componentUuids.stream()
+				.filter(java.util.Objects::nonNull)
+				.map(UUID::toString)
+				.toList();
+		if (componentUuidsAsStrings.isEmpty()) return Map.of();
+		List<Object[]> rows = releaseRepository.findReleaseLifecyclesByComponents(componentUuidsAsStrings);
+		final int gaOrd = ReleaseLifecycle.GENERAL_AVAILABILITY.ordinal();
+		Map<UUID, ReleaseLifecycle> minPostGa = new java.util.HashMap<>();
+		Map<UUID, ReleaseLifecycle> maxPreOrAtGa = new java.util.HashMap<>();
+		for (Object[] row : rows) {
+			UUID componentUuid;
+			ReleaseLifecycle lc;
+			try {
+				componentUuid = UUID.fromString((String) row[0]);
+				lc = ReleaseLifecycle.valueOf((String) row[1]);
+			} catch (IllegalArgumentException | NullPointerException e) {
+				// Skip rows with malformed/unknown lifecycle values rather than throw —
+				// the GraphQL response should keep coming for the other components.
+				continue;
+			}
+			if (lc.ordinal() > gaOrd) {
+				ReleaseLifecycle existing = minPostGa.get(componentUuid);
+				if (existing == null || lc.ordinal() < existing.ordinal()) minPostGa.put(componentUuid, lc);
+			} else {
+				ReleaseLifecycle existing = maxPreOrAtGa.get(componentUuid);
+				if (existing == null || lc.ordinal() > existing.ordinal()) maxPreOrAtGa.put(componentUuid, lc);
+			}
+		}
+		// post-GA bucket wins when present (matches the per-component path: "sub-GA releases
+		// ignored once any release has reached GA").
+		Map<UUID, ReleaseLifecycle> out = new java.util.HashMap<>();
+		for (UUID cu : componentUuids) {
+			if (cu == null) continue;
+			ReleaseLifecycle post = minPostGa.get(cu);
+			if (post != null) {
+				out.put(cu, post);
+			} else {
+				ReleaseLifecycle pre = maxPreOrAtGa.get(cu);
+				if (pre != null) out.put(cu, pre);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Convenience: pre-populate the {@code cachedEffectiveLifecycle} field on each ComponentData
+	 * so the GraphQL sub-field resolver can read straight from the source object instead of
+	 * running the per-component release lookup. Sets {@code effectiveLifecycleCached=true} on
+	 * every component so the resolver can distinguish "not cached" from "cached, but null".
+	 */
+	public void populateEffectiveLifecycle(Collection<ComponentData> components) {
+		if (components == null || components.isEmpty()) return;
+		Set<UUID> uuids = components.stream()
+				.map(ComponentData::getUuid)
+				.filter(java.util.Objects::nonNull)
+				.collect(Collectors.toSet());
+		Map<UUID, ReleaseLifecycle> lifecycles = effectiveLifecyclesForComponents(uuids);
+		for (ComponentData cd : components) {
+			if (cd == null || cd.getUuid() == null) continue;
+			cd.setCachedEffectiveLifecycle(lifecycles.get(cd.getUuid()));
+			cd.setEffectiveLifecycleCached(true);
+		}
 	}
 	
 	public List<ComponentData> listComponentDataByOrganizationAndPerspective(UUID orgUuid, UUID perspectiveUuid, ComponentType... pts) {

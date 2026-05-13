@@ -525,9 +525,27 @@ class VariableQueries {
 			""";
 	
 	protected static final String FIND_ALL_RELEASES_OF_COMPONENT = """
-			SELECT * FROM rearm.releases r WHERE r.record_data->>'component' = :componentUuidAsString 
+			SELECT * FROM rearm.releases r WHERE r.record_data->>'component' = :componentUuidAsString
 				ORDER BY r.created_date desc LIMIT cast (:limitAsStr as bigint)
 				OFFSET cast (:offsetAsStr as bigint)
+			""";
+
+	/*
+	 * Batched lookup used by the components-list GraphQL resolver to fold what was an
+	 * N+1 of per-component release fetches (84 components × ~40ms = ~3.5s on agent-scully)
+	 * into a single round-trip. Returns one row per release across the requested
+	 * components, projecting just the two columns needed to compute the
+	 * synthetic effectiveLifecycle bucket — never the full record_data JSONB.
+	 *
+	 * Caller groups by component_uuid in memory and applies the same min-post-GA /
+	 * max-pre-or-at-GA logic the per-component path used to run inline.
+	 */
+	protected static final String FIND_RELEASE_LIFECYCLES_BY_COMPONENTS = """
+			SELECT r.record_data->>'component' AS component_uuid,
+			       r.record_data->>'lifecycle' AS lifecycle
+			FROM rearm.releases r
+			WHERE r.record_data->>'component' IN (:componentUuidsAsStrings)
+			  AND r.record_data->>'lifecycle' IS NOT NULL
 			""";
 	
 	protected static final String FIND_RELEASES_BY_DELIVERABLE_AND_ORG = """

@@ -154,7 +154,9 @@ public class ComponentDataFetcher {
 		if (null != perspectiveUuid) {
 			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
 			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(roOrg, pd), CallType.READ);
-			return componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType);
+			Collection<ComponentData> perspectiveComponents = componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType);
+			componentService.populateEffectiveLifecycle(perspectiveComponents);
+			return perspectiveComponents;
 		}
 
 		var combinedPermissions = organizationService.obtainCombinedUserOrgPermissions(oud.get(), orgUuid);
@@ -164,23 +166,23 @@ public class ComponentDataFetcher {
 
 		Collection<ComponentData> resolvedComponents = componentService.listComponentDataByOrganization(orgUuid, componentType);
 
-		if (hasOrgReadOrHigher) {
-			return resolvedComponents;
+		if (!hasOrgReadOrHigher) {
+			Set<UUID> allowedComponentUuids = combinedPermissions.getOrgPermissionsAsSet(orgUuid).stream()
+					.filter(p -> p.getScope() == PermissionScope.COMPONENT
+							&& p.getType().ordinal() >= io.reliza.model.UserPermission.PermissionType.READ_ONLY.ordinal())
+					.map(p -> p.getObject())
+					.collect(java.util.stream.Collectors.toSet());
+			if (allowedComponentUuids.isEmpty()) return List.of();
+			resolvedComponents = resolvedComponents.stream()
+					.filter(c -> allowedComponentUuids.contains(c.getUuid()))
+					.toList();
 		}
 
-		Set<UUID> allowedComponentUuids = combinedPermissions.getOrgPermissionsAsSet(orgUuid).stream()
-				.filter(p -> p.getScope() == PermissionScope.COMPONENT
-						&& p.getType().ordinal() >= io.reliza.model.UserPermission.PermissionType.READ_ONLY.ordinal())
-				.map(p -> p.getObject())
-				.collect(java.util.stream.Collectors.toSet());
-
-		if (allowedComponentUuids.isEmpty()) {
-			return List.of();
-		}
-
-		return resolvedComponents.stream()
-				.filter(c -> allowedComponentUuids.contains(c.getUuid()))
-				.toList();
+		// Batched pre-compute of the synthetic Component.effectiveLifecycle sub-field —
+		// one SQL roundtrip across all components instead of N per-component release fetches.
+		// Field resolver below reads from the cache when present.
+		componentService.populateEffectiveLifecycle(resolvedComponents);
+		return resolvedComponents;
 	}
 	
 	@PreAuthorize("isAuthenticated()")
@@ -554,29 +556,19 @@ public class ComponentDataFetcher {
 		//                                  whose lc is ≥ GA
 		//                                  (sub-GA releases ignored once
 		//                                   any release has reached GA)
-		// 300-cap mirrors the rest of the read surface; OK for v1.
 		ComponentData cd = dfe.getSource();
 		if (cd == null) return null;
-		var releases = sharedReleaseService.listReleaseDatasOfComponent(cd.getUuid(), 300, 0);
-		if (releases == null || releases.isEmpty()) return null;
-		final int gaOrd = ReleaseLifecycle.GENERAL_AVAILABILITY.ordinal();
-		ReleaseLifecycle minPostGa = null;
-		ReleaseLifecycle maxPreOrAtGa = null;
-		for (var rd : releases) {
-			ReleaseLifecycle lc = rd.getLifecycle();
-			if (lc == null) continue;
-			if (lc.ordinal() > gaOrd) {
-				if (minPostGa == null || lc.ordinal() < minPostGa.ordinal()) {
-					minPostGa = lc;
-				}
-			} else {
-				// ≤ GA bucket
-				if (maxPreOrAtGa == null || lc.ordinal() > maxPreOrAtGa.ordinal()) {
-					maxPreOrAtGa = lc;
-				}
-			}
-		}
-		return minPostGa != null ? minPostGa : maxPreOrAtGa;
+		// Fast path: the components-list datafetcher pre-computes effectiveLifecycle for
+		// every ComponentData in its result via a single batched SQL query
+		// (ComponentService.populateEffectiveLifecycle). When that ran, the cache flag is
+		// set and we just return the cached value — null included, because null is a valid
+		// answer for "no releases yet".
+		if (cd.isEffectiveLifecycleCached()) return cd.getCachedEffectiveLifecycle();
+		// Fallback: single-component fetches (Query.component / Query.componentDetails)
+		// don't go through the list datafetcher. Reuse the same batched helper with a
+		// 1-element set rather than re-implementing the bucket logic.
+		return componentService.effectiveLifecyclesForComponents(java.util.Set.of(cd.getUuid()))
+				.get(cd.getUuid());
 	}
 
 	@DgsData(parentType = "Component", field = "releaseInputTriggers")

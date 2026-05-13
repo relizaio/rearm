@@ -355,6 +355,25 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private BelongsToOrganization isInternal;
 
+	/**
+	 * Cached value of the synthetic {@code effectiveLifecycle} GraphQL field, populated
+	 * up-front by the components-list datafetcher via a single batched SQL query (see
+	 * {@code ComponentService.effectiveLifecyclesForComponents}). Read by the per-Component
+	 * GraphQL sub-field resolver to skip the legacy per-row release lookup that produced
+	 * the N+1 (84 components × ~40ms = ~3.5s).
+	 *
+	 * <p>{@code @JsonIgnore} so neither {@code recordData} JSONB persistence nor the
+	 * GraphQL projection (which goes through the resolver, not this field directly)
+	 * picks it up. The companion {@link #effectiveLifecycleCached} flag distinguishes
+	 * "not cached yet" from "cached, but the component has no releases" — both of which
+	 * surface as a null lifecycle.
+	 */
+	@com.fasterxml.jackson.annotation.JsonIgnore
+	private ReleaseLifecycle cachedEffectiveLifecycle;
+
+	@com.fasterxml.jackson.annotation.JsonIgnore
+	private boolean effectiveLifecycleCached;
+
 	public List<TeaIdentifier> getIdentifiers () {
 		return new LinkedList<>(this.identifiers);
 	}
