@@ -532,7 +532,7 @@
                 </div>
             </n-tab-pane>
 
-            <n-tab-pane name="freeFormKeys" tab="Free Form Keys" v-if="isOrgAdmin && myUser.installationType === 'SAAS'">
+            <n-tab-pane name="freeFormKeys" tab="Free Form Keys" v-if="isOrgAdmin">
                 <div class="programmaticAccessBlock mt-4">
                     <h5>Free Form Keys</h5>
                     <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys"
@@ -2171,8 +2171,12 @@ const allComponents = computed(() => [...orgComponents.value, ...orgProducts.val
 // Instance + cluster lists used by the ScopedPermissions component to
 // expose per-instance and per-cluster permission sections (replaces
 // the old UI's userInstancePermissionColumns / userClusterPermissionColumns
-// data tables).
+// data tables). DevOps Read/Write grants are only honored on SAAS, so we
+// short-circuit the lists to empty on other installation types — that hides
+// the corresponding sections everywhere ScopedPermissions is rendered
+// (users, user groups, programmatic access, free-form keys).
 const orgInstancesAndClusters = computed(() => {
+    if (myUser.value?.installationType !== 'SAAS') return []
     const all = (store.getters.instancesOfOrg(orgResolved.value) || [])
     return all.filter((x: any) => x.revision === -1 && (x.status === 'ACTIVE' || !x.status))
 })
