@@ -6,7 +6,7 @@ type: application
 
 version: 1.0.8
 
-appVersion: "26.04.90"
+appVersion: "26.05.90"
 
 dependencies:
 - name: postgresql
