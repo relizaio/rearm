@@ -137,12 +137,13 @@ Required fields: `identity` and `state`. Provide either `component` (UUID) or `v
 
 ## PR closure
 
-When a PR closes or merges upstream, ReARM transitions its `state` from `OPEN` to `CLOSED` or `MERGED`. Two paths converge:
+When a PR closes or merges upstream, ReARM transitions its `state` from `OPEN` to `CLOSED` or `MERGED`. Three paths converge:
 
-- **Real-time.** Your CI workflow runs on `pull_request: closed` and sends `--pr-state CLOSED` (or `MERGED`) to ReARM via `addrelease`, `getversion`, or `pullrequest upsert`.
-- **Scheduled catch-up.** The `syncbranches` job conservatively marks PRs `CLOSED` when their upstream source branch is deleted. This path never sets `MERGED` on its own — to record a merge, the CI workflow has to send the explicit signal.
+- **GitHub webhook (ReARM Pro).** ReARM accepts inbound GitHub webhooks at `/api/programmatic/v1/webhook/{org}/{slug}` and handles `pull_request` events (opened / reopened / closed / merged + the side-data actions). The webhook intake produces the same `PullRequestService.applyFromInput` call the CLI does — no separate CI step needed on `pull_request: closed` if you wire the webhook up. See [GitHub Pull Request Validation › Inbound webhook](../integrations/githubValidate#inbound-webhook--real-time-pr-state-sync) for the GitHub-App + ReARM setup.
+- **Real-time via CI.** Your CI workflow runs on `pull_request: closed` and sends `--pr-state CLOSED` (or `MERGED`) to ReARM via `addrelease`, `getversion`, or `pullrequest upsert`. Same end result as the webhook path; this is the only option on ReARM CE.
+- **Scheduled catch-up.** The `syncbranches` job conservatively marks PRs `CLOSED` when their upstream source branch is deleted. This path never sets `MERGED` on its own — to record a merge, either the webhook or the CI workflow has to send the explicit signal.
 
-Once a PR is `CLOSED` or `MERGED`, the aggregator stops re-evaluating it on incoming releases.
+The three paths are idempotent and cooperate — running more than one against the same PR converges on the same row (keyed by `(target VCS, identity)`). Once a PR is `CLOSED` or `MERGED`, the aggregator stops re-evaluating it on incoming releases.
 
 ## Driving SCM-side outcomes
 
@@ -152,6 +153,7 @@ For ReARM to actually post a status to GitHub when the PR-level verdict changes,
 - The **VCS-level `EXTERNAL_VALIDATION`** trigger that fires on the aggregated PR verdict.
 - The **release-level `PR_COMMENT`** trigger that posts a markdown comment on every open PR whose commits include the firing release's SCE.
 - The **release-level `INVALIDATE_PR`** input event that contributes a FAILURE to PR aggregation on disapproval / rejection.
+- The **inbound GitHub webhook** that mirrors `pull_request` events back into ReARM so the PR entity tracks upstream state changes in real time without a `pull_request: closed` CI run.
 - Customising the check-run output via `clientPayload` and CEL expressions.
 
-Both `EXTERNAL_VALIDATION` and `PR_COMMENT` are ReARM Pro–only because they push to the upstream SCM. The PR entity, attribution, and aggregator described on this page are part of the shared codebase and run on ReARM CE as well — you can use them to drive your own dashboards, scripts, or third-party integrations regardless of edition.
+`EXTERNAL_VALIDATION`, `PR_COMMENT`, and inbound webhook intake are all ReARM Pro–only — they're paired with the SCM in both directions (push verdicts out, pull state changes in). The PR entity, attribution, and aggregator described on this page are part of the shared codebase and run on ReARM CE as well; on CE you drive PR state through the CLI `pullrequest upsert` path instead.

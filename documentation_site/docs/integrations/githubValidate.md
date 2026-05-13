@@ -14,7 +14,7 @@ GitHub Validate lets ReARM block a Pull Request from being merged until ReARM ha
 
 The end-to-end flow is:
 
-1. **CI** builds the PR head commit and calls ReARM (`getversion` / `addrelease`) with the PR head SHA, the source branch (`head_ref`), and the `--pr-*` flags so ReARM upserts the [first-class Pull Request entity](../workflows/pull-requests) and links the build's commit to it.
+1. **CI** builds the PR head commit and calls ReARM (`getversion` / `addrelease`) with the PR head SHA, the source branch (`head_ref`), and the `--pr-*` flags so ReARM upserts the [first-class Pull Request entity](../workflows/pull-requests) and links the build's commit to it. *Optionally* — the [inbound webhook](#inbound-webhook--real-time-pr-state-sync) covers `pull_request: opened/closed/merged` events, so the CI run on those triggers becomes optional.
 2. **The PR aggregator** folds release-level outcomes into a single PR-level verdict (SUCCESS / FAILURE / PENDING / NEUTRAL) — see [Aggregation and verdicts](../workflows/pull-requests#aggregation-and-verdicts).
 3. **ReARM mints an installation token** from your GitHub App and dispatches one of the configured event types:
    - `EXTERNAL_VALIDATION` → posts a GitHub check-run (PR-level after aggregation, or per-release).
@@ -30,7 +30,7 @@ You need a GitHub App distinct from any "Trigger Workflows" app you may already 
 
 Follow the upstream guide for [registering a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app#registering-a-github-app). Defaults are fine, except:
 
-- **Webhook**: uncheck **Active** (ReARM is CI-driven, no inbound webhook).
+- **Webhook**: optional. Leave **Active** unchecked if you only want outbound check-runs / comments from ReARM. Enable it to receive inbound `pull_request` events into ReARM (Pro-only; see [Inbound webhook](#inbound-webhook--real-time-pr-state-sync) below for the URL + secret you'll paste here).
 - **Repository permissions**:
   - **Checks** → **Read and write** (required to post the check-run).
   - **Pull requests** → **Read and write** (Read is required so the App can resolve PR head SHA; Write is required to post `PR_COMMENT` comments via the issues/comments endpoint).
@@ -171,6 +171,65 @@ Configuration is the same as any other release output event (component-level or 
 
 If you only want the per-release `EXTERNAL_VALIDATION` model (legacy), you can ignore `VALIDATE_PR` / `INVALIDATE_PR` entirely — they exist purely to drive the PR-aggregated path.
 
+## Inbound webhook — real-time PR state sync
+
+Everything above pushes *outbound* signals (check-runs, PR comments) from ReARM to GitHub. The inbound webhook closes the loop the other way: GitHub notifies ReARM when a PR is opened, edited, closed, or merged, and ReARM updates the corresponding [first-class PR entity](../workflows/pull-requests) without waiting for a CI run.
+
+Why bother:
+
+- Removes the need for a `pull_request: closed` CI job whose only purpose was sending `--pr-state CLOSED` / `MERGED` to ReARM.
+- Sets `mergedDate` / `closedDate` from the canonical GitHub timestamps rather than CI's wall clock.
+- Catches PR edits (title / description / labels / assignees) that don't trigger a CI build.
+
+The webhook handler goes through the same `PullRequestService.applyFromInput` path the CLI upsert uses, so the resulting `PullRequest` row is byte-identical between the two intake paths. You can wire both up simultaneously; they're idempotent.
+
+::: warning ReARM Pro only
+The inbound webhook receiver is part of ReARM Pro. On ReARM CE, drive PR state via the CLI `pullrequest upsert` path described in [Pull Requests › Standalone PR upsert](../workflows/pull-requests#standalone-pr-upsert-no-release).
+:::
+
+### 1. Create the Webhook in ReARM
+
+1. In ReARM, open the **Integrations** tab on your Org Settings (the same place the `GITHUB_VALIDATE` integration was registered).
+2. Find the integration you wired up earlier and open its detail panel — webhooks are **one-per-integration** (1:1).
+3. Click **Add Webhook**. Fill in:
+   - **Slug** — a short lowercase identifier, 4–63 ASCII characters, no leading/trailing hyphen. It becomes part of the public webhook URL: `https://<your-rearm>/api/programmatic/v1/webhook/<orgUuid>/<slug>`. Reserved names are rejected. Keep it stable — changing the slug invalidates the GitHub-side webhook URL until you re-register.
+   - **Secret** — a strong random string. ReARM stores it encrypted at rest and uses it as the HMAC-SHA256 key when verifying inbound deliveries.
+   - **Installation ID** *(optional)* — the GitHub App's installation ID for this repo / org. Same value as in step 4 of the GitHub part above.
+   - **Note** *(optional)* — free-form, surfaces in the UI for ops.
+4. Save. ReARM displays the public webhook URL and confirms the secret is set.
+
+### 2. Configure the webhook on the GitHub App side
+
+1. On the GitHub App's settings page, scroll to **Webhook**:
+   - Check **Active**.
+   - **Webhook URL** — paste the URL from the ReARM Webhook detail panel.
+   - **Webhook secret** — paste the same secret you set in ReARM (don't reuse one from another integration).
+2. Save the App.
+3. On the App's **Permissions & events** page, under **Subscribe to events**, enable **Pull request** (the only event ReARM currently consumes — push / delete / check_run / etc. are recorded as `UNKNOWN_EVENT` and discarded).
+4. Re-install or update the App on the target repos so the new permission takes effect.
+
+### 3. Verify delivery
+
+Open or close a test PR. In ReARM, the Webhook detail panel shows:
+
+| Field | Meaning |
+|---|---|
+| **lastDeliveryAt** | Wall-clock of the most recent inbound delivery. |
+| **lastDeliveryStatus** | One of `SUCCESS` / `SIGNATURE_INVALID` / `HANDLER_ERROR` / `UNKNOWN_EVENT` / `DUPLICATE` / `WEBHOOK_DISABLED`. |
+| **lastDeliveryId** | GitHub's `X-GitHub-Delivery` UUID — copy-paste-able into the App's delivery log. |
+| **consecutiveFailureCount** | Resets to 0 on the next `SUCCESS`; non-zero means something's wrong (signature mismatch, malformed payload, etc.). |
+
+A successful first delivery on a PR opens the corresponding `PullRequest` row in ReARM (or updates the existing one) and you should see it on the **Pull Requests** view immediately.
+
+### Troubleshooting the webhook
+
+- **`SIGNATURE_INVALID`** — the secret in ReARM doesn't match the one on the GitHub App. Rotate via the Webhook detail panel's **Rotate secret** action and paste the new value into the App.
+- **`UNKNOWN_EVENT`** — GitHub delivered an event ReARM doesn't yet handle (e.g. `push`, `check_run`). Recorded for visibility; no PR mutation. Subscribe only to `Pull request` events on the App side to keep the deliveries table clean.
+- **`HANDLER_ERROR`** — server-side exception during processing. ReARM still acks GitHub so the App doesn't retry forever; check `lastDeliveryId` against the backend logs for the stack.
+- **`DUPLICATE`** — GitHub retried a delivery ReARM already processed. Dedupe is by `X-GitHub-Delivery`; no-op.
+- **`WEBHOOK_DISABLED`** — the Webhook row's status is `DISABLED`. Re-enable it from the detail panel.
+- **Delivery never arrives** — check the App's "Recent Deliveries" tab on GitHub. Common causes: webhook URL points at an unreachable host, ReARM ingress missing the `/api/programmatic/v1/webhook/...` path (it's a public route, no auth header required — auth is via the HMAC signature), or the App isn't installed on the repo whose PR you tested.
+
 ## Wire up GitHub branch protection
 
 Posting a check-run on its own does not block a merge — you have to tell GitHub the check is required.
@@ -209,12 +268,13 @@ For pipelines that need to record a PR independently of a release (e.g. on `pull
 
 ## Closing the loop on PR close / merge
 
-When a PR closes or merges, two paths converge:
+When a PR closes or merges, three paths converge:
 
-- Your CI (or `rearm-cli pullrequest upsert`) sends `--pr-state CLOSED` or `--pr-state MERGED`, transitioning the PR entity in real time. The aggregator stops re-evaluating the PR on incoming releases.
-- The `syncbranches` job conservatively marks any open PR `CLOSED` when its upstream source branch is deleted. It does not infer `MERGED` — to record a merge, the CI workflow must send the explicit signal.
+- The **[inbound GitHub webhook](#inbound-webhook--real-time-pr-state-sync)** delivers the `pull_request: closed` event to ReARM directly. Recommended when configured — sets `mergedDate` / `closedDate` from GitHub's canonical timestamps and doesn't require a CI run on closure.
+- Your CI (or `rearm-cli pullrequest upsert`) sends `--pr-state CLOSED` or `--pr-state MERGED`, transitioning the PR entity in real time. Same end state as the webhook path; useful when you don't want to wire up the webhook or you're on ReARM CE.
+- The `syncbranches` job conservatively marks any open PR `CLOSED` when its upstream source branch is deleted. It does not infer `MERGED` — to record a merge, either the webhook or the CI workflow must send the explicit signal.
 
-No additional configuration is needed — just make sure your CI pipeline runs on `pull_request` close events if you want closure events to be recorded in real time (otherwise `syncbranches` catches up on its own schedule).
+All three are idempotent and converge on the same row (keyed by `(target VCS, identity)`); pick whichever fits your CI shape. If you've wired the inbound webhook, the CI-side `pull_request: closed` job becomes optional.
 
 ## Customising the check-run output
 
