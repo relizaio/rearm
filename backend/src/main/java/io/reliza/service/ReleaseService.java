@@ -1622,29 +1622,63 @@ public class ReleaseService {
 		// The artifact-driven finders compare art.lastScanned against each release's own
 		// lastScanned (per-release, no global cutoff). See VariableQueries comments for
 		// why the prior global :cutoffTimestamp was wrong.
-		var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect(limit);
-		log.debug("[compute metrics scheduler]: releases by art size = " + releasesByArt.size());
-		for (var r : releasesByArt) log.debug("[compute metrics scheduler]: release by art uuid = " + r.getUuid());
-		var releasesBySce = repository.findReleasesForMetricsComputeBySce(limit);
-		log.debug("[compute metrics scheduler]: releases by sce size = " + releasesBySce.size());
-		for (var r : releasesBySce) log.debug("[compute metrics scheduler]: release by sce uuid = " + r.getUuid());
-		var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables(limit);
-		log.debug("[compute metrics scheduler]: releases by outbound del size = " + releasesByOutboundDel.size());
-		for (var r : releasesByOutboundDel) log.debug("[compute metrics scheduler]: release by od uuid = " + r.getUuid());
-		var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate(limit);
-		log.debug("[compute metrics scheduler]: releases by updated date del size = " + releasesByUpdateDate.size());
-		for (var r : releasesByUpdateDate) log.debug("[compute metrics scheduler]: release by upd uuid = " + r.getUuid());
+		//
+		// Each finder + its corresponding compute is isolated in its own try/catch.
+		// Without this, a SQL-level failure on one finder (statement cancellation,
+		// timeout, transient DB error) would short-circuit the whole tick and the
+		// later finders' releases would silently wait a minute. The downstream
+		// per-release loop in computeMetricsForReleaseList already isolates failures
+		// for individual releases; this layer adds the same protection across the
+		// finder/path boundary.
 		Set<UUID> dedupProcessedReleases = new HashSet<>();
-		computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases);
-		computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases);
-		computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases);
-		computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases);
+
+		try {
+			var releasesByArt = repository.findReleasesForMetricsComputeByArtifactDirect(limit);
+			log.debug("[compute metrics scheduler]: releases by art size = " + releasesByArt.size());
+			// for (var r : releasesByArt) log.debug("[compute metrics scheduler]: release by art uuid = " + r.getUuid());
+			computeMetricsForReleaseList(releasesByArt, dedupProcessedReleases);
+		} catch (Exception e) {
+			log.error("[compute metrics scheduler]: byArtifactDirect path failed", e);
+		}
+
+		try {
+			var releasesBySce = repository.findReleasesForMetricsComputeBySce(limit);
+			log.debug("[compute metrics scheduler]: releases by sce size = " + releasesBySce.size());
+			// for (var r : releasesBySce) log.debug("[compute metrics scheduler]: release by sce uuid = " + r.getUuid());
+			computeMetricsForReleaseList(releasesBySce, dedupProcessedReleases);
+		} catch (Exception e) {
+			log.error("[compute metrics scheduler]: bySce path failed", e);
+		}
+
+		try {
+			var releasesByOutboundDel = repository.findReleasesForMetricsComputeByOutboundDeliverables(limit);
+			log.debug("[compute metrics scheduler]: releases by outbound del size = " + releasesByOutboundDel.size());
+			// for (var r : releasesByOutboundDel) log.debug("[compute metrics scheduler]: release by od uuid = " + r.getUuid());
+			computeMetricsForReleaseList(releasesByOutboundDel, dedupProcessedReleases);
+		} catch (Exception e) {
+			log.error("[compute metrics scheduler]: byOutboundDeliverables path failed", e);
+		}
+
+		try {
+			var releasesByUpdateDate = repository.findReleasesForMetricsComputeByUpdate(limit);
+			log.debug("[compute metrics scheduler]: releases by updated date del size = " + releasesByUpdateDate.size());
+			// for (var r : releasesByUpdateDate) log.debug("[compute metrics scheduler]: release by upd uuid = " + r.getUuid());
+			computeMetricsForReleaseList(releasesByUpdateDate, dedupProcessedReleases);
+		} catch (Exception e) {
+			log.error("[compute metrics scheduler]: byUpdate path failed", e);
+		}
+
 		log.debug("processed releases size for metrics = " + dedupProcessedReleases.size());
 
-		var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases, limit);
-		computeMetricsForReleaseList(productReleases, dedupProcessedReleases);
+		try {
+			var productReleases = findProductReleasesFromComponentsForMetrics(dedupProcessedReleases, limit);
+			computeMetricsForReleaseList(productReleases, dedupProcessedReleases);
+			log.debug("processed product releases size for metrics = " + productReleases.size());
+		} catch (Exception e) {
+			log.error("[compute metrics scheduler]: productReleases cascade failed", e);
+		}
+
 		log.debug("[compute metrics scheduler]: end compute metrics run");
-		log.debug("processed product releases size for metrics = " + productReleases.size());
 	}
 	
 	/**
