@@ -500,8 +500,8 @@
                     <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys"
                         class="table-hover">
                     </n-data-table>
-                    <n-icon v-if="isOrgAdmin" class="clickable" @click="genApiKey"
-                        title="Create Api Key" size="24"><CirclePlus /></n-icon>
+                    <!-- n-icon v-if="isOrgAdmin" class="clickable" @click="genApiKey"
+                        title="Create Api Key" size="24"><CirclePlus /></n-icon -->
                     <n-modal
                         preset="dialog"
                         :show-icon="false"
