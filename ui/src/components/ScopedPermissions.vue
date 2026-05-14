@@ -71,7 +71,7 @@
                                     <QuestionCircle20Regular />
                                 </n-icon>
                             </template>
-                            "I'm an agent" — grants a key (or user) the right to act as an AI agent: register itself on first call, open / touch / close sessions, attach artifacts, spawn sub-agents. Not needed for human users browsing the AI Agents dashboard or admining agent policies.
+                            The I-am-an-agent marker — grants a key (or user) the right to act as an AI agent: register itself on first call, open / touch / close sessions, attach artifacts, spawn sub-agents. Not needed for human users browsing the AI Agents dashboard or admining agent policies.
                         </n-tooltip>
                     </span>
                     <span v-else>
