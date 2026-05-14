@@ -5,7 +5,7 @@
                 {{ agent.iconKind || '◆' }}
             </div>
             <div class="hero__title">
-                <h3>{{ agent.name }}</h3>
+                <h3>{{ agent.name }}<span v-if="agent.agentIdentity" class="hero__id"> — {{ agent.agentIdentity }}</span></h3>
                 <div class="hero__sub">
                     <n-tag size="small" :type="agent.agentType === 'ROOT' ? 'info' : 'default'">{{ agent.agentType }}</n-tag>
                     <n-tag size="small" :type="agent.status === 'ACTIVE' ? 'success' : 'default'">{{ agent.status }}</n-tag>
@@ -104,6 +104,7 @@ const subAgentColumns: DataTableColumns<any> = [
 .hero { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .hero__mark { width: 56px; height: 56px; border-radius: 12px; color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600; }
 .hero__title { flex: 1; }
+.hero__id { font-weight: 400; font-family: monospace; font-size: 14px; color: var(--n-text-color-3, #666); }
 .hero__sub { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 4px; }
 .dim { color: var(--n-text-color-3, #666); }
 .hero__stats { display: flex; gap: 24px; }

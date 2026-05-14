@@ -2137,6 +2137,47 @@ const storeObject : any = {
             })
             return response.data.session
         },
+        async fetchSourceCodeEntryByUuid (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query sourceCodeEntry($sceUuid: ID!) {
+                        sourceCodeEntry(sceUuid: $sceUuid) {
+                            uuid
+                            commit
+                            vcsBranch
+                            commitMessage
+                            commitAuthor
+                            agent
+                            agentSession
+                            dateActual
+                            vcsRepository {
+                                uri
+                                type
+                            }
+                        }
+                    }`,
+                variables: { sceUuid: uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.sourceCodeEntry
+        },
+        async fetchArtifactByUuid (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query artifact($artifactUuid: ID!) {
+                        artifact(artifactUuid: $artifactUuid) {
+                            uuid
+                            type
+                            displayIdentifier
+                            bomFormat
+                            storedIn
+                        }
+                    }`,
+                variables: { artifactUuid: uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.artifact
+        },
     },
 }
 
