@@ -28,6 +28,15 @@
                     <component :is="renderUuidTooltip" :uuid="headSce.uuid" :label="'Head SCE UUID'" />
                     <span v-if="headSce.commitMessage" class="commit-msg">— {{ headSce.commitMessage }}</span>
                 </p>
+                <p v-if="(pr.agents || []).length">
+                    <strong>Agents:</strong>
+                    <span v-for="(a, i) in pr.agents" :key="a.uuid" class="agent-pill">
+                        <router-link :to="{ name: 'AiAgentView', params: { uuid: a.uuid } }">
+                            <span class="agent-chip" :style="{ background: a.color || '#888' }">{{ a.iconKind || '◆' }}</span>
+                            {{ a.name }}<span v-if="a.agentIdentity" class="agent-id"> — {{ a.agentIdentity }}</span>
+                        </router-link><span v-if="i &lt; pr.agents.length - 1">, </span>
+                    </span>
+                </p>
             </div>
 
             <h3 class="mt-4">
@@ -305,4 +314,18 @@ watch(prUuid, load)
 .commit-msg { color: #555; margin-left: 0.5rem; }
 .empty { color: #888; font-style: italic; }
 .mt-4 { margin-top: 1.25rem; }
+.agent-pill { margin-left: 4px; }
+.agent-chip {
+    display: inline-block;
+    width: 1.2em;
+    height: 1.2em;
+    line-height: 1.2em;
+    text-align: center;
+    color: white;
+    border-radius: 4px;
+    font-size: 0.85em;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+.agent-id { font-family: monospace; font-size: 0.85em; color: #888; }
 </style>
