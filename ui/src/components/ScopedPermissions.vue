@@ -33,7 +33,7 @@
         </n-space>
 
         <!-- Organization-Wide Functions -->
-        <n-space style="margin-bottom: 20px;" v-if="orgPermission.type !== 'ADMIN' && orgPermission.type !== 'NONE' && orgPermission.type !== 'ESSENTIAL_READ'">
+        <n-space style="margin-bottom: 20px;" v-if="orgPermission.type !== 'ADMIN' && orgPermission.type !== 'NONE' && orgPermissionFunctions.length">
             <n-h5>
                 <n-text depth="1">
                     Organization-Wide Functions:
@@ -425,15 +425,25 @@ const installationType = computed(() => store.getters.myuser?.installationType)
 const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
 const permissionFunctions: string[] = constants.PermissionFunctions
+const essentialReadPermissionFunctions: string[] = constants.EssentialReadPermissionFunctions
 const isSaas = computed(() => installationType.value === 'SAAS')
 
+const orgPermission = ref<OrgPermission>({
+    type: 'NONE',
+    functions: [],
+    approvals: []
+})
+
 // DevOps Read/Write only make sense (and are only honored by the backend) for
-// SAAS installations; everywhere else they're hidden.
+// SAAS installations; everywhere else they're hidden. At ESSENTIAL_READ we
+// only expose the functions that explicitly support it (currently AGENT) —
+// most org-wide functions are paired with READ_ONLY / READ_WRITE.
 const orgPermissionFunctions = computed(() => permissionFunctions.filter(f =>
     f !== 'RESOURCE' &&
     (props.showSbomProbing || f !== 'SBOM_PROBING') &&
     (!props.showSbomProbing || f !== 'LIFECYCLE_UPDATE') &&
-    (isSaas.value || (f !== 'DEVOPS_READ' && f !== 'DEVOPS_WRITE'))
+    (isSaas.value || (f !== 'DEVOPS_READ' && f !== 'DEVOPS_WRITE')) &&
+    (orgPermission.value.type !== 'ESSENTIAL_READ' || essentialReadPermissionFunctions.includes(f))
 ))
 
 // Perspective / Product / Component scopes never expose DEVOPS_*: those grants
@@ -461,13 +471,7 @@ const newProductId = ref<string | null>(null)
 const newComponentId = ref<string | null>(null)
 const newInstanceId = ref<string | null>(null)
 const newClusterId = ref<string | null>(null)
-
-const orgPermission = ref<OrgPermission>({
-    type: 'NONE',
-    functions: [],
-    approvals: []
-})
-const orgFunctionPermissionTypes = ['READ_ONLY', 'READ_WRITE']
+const orgFunctionPermissionTypes = ['ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE']
 const previousOrgPermissionType = ref<string>(orgPermission.value.type)
 
 const scopedPermissions = ref<ScopedPermission[]>([])
@@ -585,6 +589,13 @@ function onOrgPermissionTypeUpdate(type: string) {
     orgPermission.value.type = type
     if (wasFunctionType && !isFunctionType) {
         orgPermission.value.functions = []
+    } else if (type === 'ESSENTIAL_READ') {
+        // ESSENTIAL_READ exposes a narrower function set than READ_ONLY /
+        // READ_WRITE. Drop any previously-checked function that isn't valid
+        // at this tier so the saved permission matches what the UI shows.
+        orgPermission.value.functions = orgPermission.value.functions.filter(
+            f => essentialReadPermissionFunctions.includes(f)
+        )
     }
 
     previousOrgPermissionType.value = type

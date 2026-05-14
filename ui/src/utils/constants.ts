@@ -167,8 +167,20 @@ const PERMISSION_FUNCTIONS: string[] = [
     // set on a PRODUCT with selected dependency-branch overrides
     // applied on top of the BASE feature set's dep config. Granted
     // at PermissionScope.COMPONENT on the product.
-    'VERSION_FEATURESET'
+    'VERSION_FEATURESET',
+    // Gates every AI-Agent surface — agents, sessions, model
+    // ontologies, the programmatic session lifecycle, and the
+    // policy CRUD (saas). Org-wide and unique among functions in
+    // that it is visible / grantable at ESSENTIAL_READ — agents
+    // shouldn't need READ_WRITE just to initialize a session.
+    'AGENT'
 ]
+// Functions that are grantable at the ESSENTIAL_READ permission type.
+// Most org-wide functions only make sense alongside READ_ONLY/READ_WRITE
+// (you can't usefully grant DEVOPS_WRITE to a user without write
+// access), but AGENT explicitly works at ESSENTIAL_READ — the function
+// is the gate, the type only sets the floor.
+const ESSENTIAL_READ_PERMISSION_FUNCTIONS: string[] = ['AGENT']
 const ARTIFACT_COVERAGE_TYPES = [
     {label: 'Dev', value: 'DEV'},
     {label: 'Test', value: 'TEST'},
@@ -242,5 +254,6 @@ export default {
     FindingsChartColors: FINDINGS_CHART_COLORS,
     PermissionTypes: PERMISSION_TYPES,
     PermissionTypesWithAdmin: PERMISSION_TYPES_WITH_ADMIN,
-    PermissionFunctions: PERMISSION_FUNCTIONS
+    PermissionFunctions: PERMISSION_FUNCTIONS,
+    EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS
 }
