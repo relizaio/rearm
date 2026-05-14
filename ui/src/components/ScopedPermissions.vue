@@ -63,6 +63,17 @@
                             Requires Read &amp; Write permission to take effect - granting this function to a Read Only user will not allow them to change lifecycle.
                         </n-tooltip>
                     </span>
+                    <span v-else-if="f === 'AGENT'" style="display: inline-flex; align-items: center;">
+                        {{ translateFunctionName(f) }}
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-icon size="16" style="margin-left: 4px;">
+                                    <QuestionCircle20Regular />
+                                </n-icon>
+                            </template>
+                            "I'm an agent" — grants a key (or user) the right to act as an AI agent: register itself on first call, open / touch / close sessions, attach artifacts, spawn sub-agents. Not needed for human users browsing the AI Agents dashboard or admining agent policies.
+                        </n-tooltip>
+                    </span>
                     <span v-else>
                         {{ translateFunctionName(f) }}
                     </span>
