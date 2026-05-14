@@ -42,7 +42,7 @@
                 <n-descriptions :column="2" bordered>
                     <n-descriptions-item label="UUID"><code>{{ agent.uuid }}</code></n-descriptions-item>
                     <n-descriptions-item label="Org"><code>{{ agent.org }}</code></n-descriptions-item>
-                    <n-descriptions-item label="API keys">{{ agent.apiKeys?.length ?? 0 }}</n-descriptions-item>
+                    <n-descriptions-item label="Identity"><code>{{ agent.agentIdentity || '—' }}</code></n-descriptions-item>
                     <n-descriptions-item label="Created">{{ formatDate(agent.createdDate) }}</n-descriptions-item>
                     <n-descriptions-item label="Notes" :span="2">{{ agent.notes || '—' }}</n-descriptions-item>
                 </n-descriptions>
