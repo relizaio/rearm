@@ -26,22 +26,15 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			@Param("canonicalPurls") Collection<String> canonicalPurls);
 
 	/**
-	 * Search canonical sbom_components scoped to an org. With per-org pinning
-	 * the org filter is a direct column match — no join through
-	 * release_sbom_components. Version filter is optional; pass null to match
-	 * any version.
+	 * Search canonical sbom_components scoped to an org. Hits the
+	 * (org, name) composite b-tree index — no JSONB scan. Version filter is
+	 * optional; pass null to match any version.
 	 */
-	@Query(
-		value = """
-			SELECT *
-			FROM rearm.sbom_components
-			WHERE org = CAST(:orgUuidAsString AS uuid)
-			AND record_data->>'name' = :name
-			AND (CAST(:version AS text) IS NULL OR record_data->>'version' = :version)
-		""",
-		nativeQuery = true)
+	@Query("SELECT sc FROM SbomComponent sc "
+			+ "WHERE sc.org = :org AND sc.name = :name "
+			+ "AND (:version IS NULL OR sc.version = :version)")
 	List<SbomComponent> searchByOrgAndNameAndOptionalVersion(
-			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("org") UUID org,
 			@Param("name") String name,
 			@Param("version") String version);
 }

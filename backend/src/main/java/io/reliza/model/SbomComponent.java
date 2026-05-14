@@ -5,7 +5,6 @@ package io.reliza.model;
 
 import java.io.Serializable;
 import java.time.ZonedDateTime;
-import java.util.Map;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -13,10 +12,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
-
-import org.hibernate.annotations.Type;
-
-import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 
 @Entity
 @Table(schema = ModelProperties.DB_SCHEMA, name = "sbom_components")
@@ -45,78 +40,72 @@ public class SbomComponent implements Serializable, RelizaEntity {
 	@Column(nullable = false)
 	private String canonicalPurl;
 
-	@Type(JsonBinaryType.class)
-	@Column(columnDefinition = ModelProperties.JSONB)
-	private Map<String, Object> recordData;
+	/** CycloneDX component type (library, application, framework, …). */
+	@Column(name = "purl_type")
+	private String purlType;
+
+	/** Package group / namespace (e.g. Maven groupId, npm scope). */
+	@Column(name = "pkg_group")
+	private String pkgGroup;
+
+	@Column
+	private String name;
+
+	@Column
+	private String version;
+
+	/**
+	 * True when at least one uploaded BOM declared this component as its
+	 * metadata.component (the "subject" of the BOM). Flips on once observed
+	 * as root and stays on for the lifetime of the row.
+	 */
+	@Column(name = "is_root", nullable = false)
+	private boolean isRoot = false;
 
 	@Override
-	public UUID getUuid() {
-		return uuid;
-	}
-
-	public void setUuid(UUID uuid) {
-		this.uuid = uuid;
-	}
+	public UUID getUuid() { return uuid; }
+	public void setUuid(UUID uuid) { this.uuid = uuid; }
 
 	@Override
-	public int getRevision() {
-		return revision;
-	}
-
-	public void setRevision(int revision) {
-		this.revision = revision;
-	}
+	public int getRevision() { return revision; }
+	public void setRevision(int revision) { this.revision = revision; }
 
 	@Override
-	public ZonedDateTime getCreatedDate() {
-		return createdDate;
-	}
-
-	public void setCreatedDate(ZonedDateTime createdDate) {
-		this.createdDate = createdDate;
-	}
+	public ZonedDateTime getCreatedDate() { return createdDate; }
+	public void setCreatedDate(ZonedDateTime createdDate) { this.createdDate = createdDate; }
 
 	@Override
-	public ZonedDateTime getLastUpdatedDate() {
-		return lastUpdatedDate;
-	}
+	public ZonedDateTime getLastUpdatedDate() { return lastUpdatedDate; }
+	public void setLastUpdatedDate(ZonedDateTime lastUpdatedDate) { this.lastUpdatedDate = lastUpdatedDate; }
 
-	public void setLastUpdatedDate(ZonedDateTime lastUpdatedDate) {
-		this.lastUpdatedDate = lastUpdatedDate;
-	}
+	public UUID getOrg() { return org; }
+	public void setOrg(UUID org) { this.org = org; }
 
-	public UUID getOrg() {
-		return org;
-	}
+	public String getCanonicalPurl() { return canonicalPurl; }
+	public void setCanonicalPurl(String canonicalPurl) { this.canonicalPurl = canonicalPurl; }
 
-	public void setOrg(UUID org) {
-		this.org = org;
-	}
+	public String getPurlType() { return purlType; }
+	public void setPurlType(String purlType) { this.purlType = purlType; }
 
-	public String getCanonicalPurl() {
-		return canonicalPurl;
-	}
+	public String getPkgGroup() { return pkgGroup; }
+	public void setPkgGroup(String pkgGroup) { this.pkgGroup = pkgGroup; }
 
-	public void setCanonicalPurl(String canonicalPurl) {
-		this.canonicalPurl = canonicalPurl;
-	}
+	public String getName() { return name; }
+	public void setName(String name) { this.name = name; }
 
-	@Override
-	public Map<String, Object> getRecordData() {
-		return recordData;
-	}
+	public String getVersion() { return version; }
+	public void setVersion(String version) { this.version = version; }
+
+	public boolean isRoot() { return isRoot; }
+	public void setRoot(boolean root) { this.isRoot = root; }
 
 	@Override
-	public void setRecordData(Map<String, Object> recordData) {
-		this.recordData = recordData;
-	}
+	public java.util.Map<String, Object> getRecordData() { return null; }
 
 	@Override
-	public int getSchemaVersion() {
-		return schemaVersion;
-	}
+	public void setRecordData(java.util.Map<String, Object> recordData) { /* no-op: sbom_components no longer carries a JSONB record_data column */ }
 
-	public void setSchemaVersion(int schemaVersion) {
-		this.schemaVersion = schemaVersion;
-	}
+	@Override
+	public int getSchemaVersion() { return schemaVersion; }
+	public void setSchemaVersion(int schemaVersion) { this.schemaVersion = schemaVersion; }
 }

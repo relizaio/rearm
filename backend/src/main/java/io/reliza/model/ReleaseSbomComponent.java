@@ -13,11 +13,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
-
-import org.hibernate.annotations.Type;
-
-import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 
 @Entity
 @Table(schema = ModelProperties.DB_SCHEMA, name = "release_sbom_components")
@@ -49,118 +46,64 @@ public class ReleaseSbomComponent implements Serializable, RelizaEntity {
 	@Column(nullable = false)
 	private UUID sbomComponentUuid;
 
-	@Type(JsonBinaryType.class)
-	@Column(columnDefinition = ModelProperties.JSONB, nullable = false)
+	/**
+	 * Per-artifact participations populated at read time from
+	 * release_sbom_component_artifacts. Shape preserved for the GraphQL
+	 * surface: list of {@code {artifact, exactPurls: [...]}} maps.
+	 * Not persisted — the source of truth lives in the child table.
+	 */
+	@Transient
 	private List<Map<String, Object>> artifactParticipations;
 
 	/**
-	 * In-edges for this component within the release: one entry per
-	 * (sourceSbomComponentUuid, relationshipType) — i.e. "what depends on
-	 * this component." Reverse of the more common BOM dependsOn direction;
-	 * picked because the impact / vulnerability propagation query is the
-	 * dominant lookup. See SbomComponentDataFetcher for forward-edge
-	 * reconstruction.
+	 * In-edges (parents) populated at read time from release_sbom_edges.
+	 * Shape preserved for the GraphQL surface: list of {@code
+	 * {sourceSbomComponentUuid, sourceCanonicalPurl, relationshipType,
+	 * declaringArtifacts: [...]}} maps. Not persisted.
 	 */
-	@Type(JsonBinaryType.class)
-	@Column(columnDefinition = ModelProperties.JSONB, nullable = false)
+	@Transient
 	private List<Map<String, Object>> parents;
 
-	@Type(JsonBinaryType.class)
-	@Column(columnDefinition = ModelProperties.JSONB)
-	private Map<String, Object> recordData;
+	@Override
+	public UUID getUuid() { return uuid; }
+	public void setUuid(UUID uuid) { this.uuid = uuid; }
 
 	@Override
-	public UUID getUuid() {
-		return uuid;
-	}
-
-	public void setUuid(UUID uuid) {
-		this.uuid = uuid;
-	}
+	public int getRevision() { return revision; }
+	public void setRevision(int revision) { this.revision = revision; }
 
 	@Override
-	public int getRevision() {
-		return revision;
-	}
-
-	public void setRevision(int revision) {
-		this.revision = revision;
-	}
+	public ZonedDateTime getCreatedDate() { return createdDate; }
+	public void setCreatedDate(ZonedDateTime createdDate) { this.createdDate = createdDate; }
 
 	@Override
-	public ZonedDateTime getCreatedDate() {
-		return createdDate;
-	}
+	public ZonedDateTime getLastUpdatedDate() { return lastUpdatedDate; }
+	public void setLastUpdatedDate(ZonedDateTime lastUpdatedDate) { this.lastUpdatedDate = lastUpdatedDate; }
 
-	public void setCreatedDate(ZonedDateTime createdDate) {
-		this.createdDate = createdDate;
-	}
+	public UUID getOrg() { return org; }
+	public void setOrg(UUID org) { this.org = org; }
 
-	@Override
-	public ZonedDateTime getLastUpdatedDate() {
-		return lastUpdatedDate;
-	}
+	public UUID getReleaseUuid() { return releaseUuid; }
+	public void setReleaseUuid(UUID releaseUuid) { this.releaseUuid = releaseUuid; }
 
-	public void setLastUpdatedDate(ZonedDateTime lastUpdatedDate) {
-		this.lastUpdatedDate = lastUpdatedDate;
-	}
+	public UUID getSbomComponentUuid() { return sbomComponentUuid; }
+	public void setSbomComponentUuid(UUID sbomComponentUuid) { this.sbomComponentUuid = sbomComponentUuid; }
 
-	public UUID getOrg() {
-		return org;
-	}
-
-	public void setOrg(UUID org) {
-		this.org = org;
-	}
-
-	public UUID getReleaseUuid() {
-		return releaseUuid;
-	}
-
-	public void setReleaseUuid(UUID releaseUuid) {
-		this.releaseUuid = releaseUuid;
-	}
-
-	public UUID getSbomComponentUuid() {
-		return sbomComponentUuid;
-	}
-
-	public void setSbomComponentUuid(UUID sbomComponentUuid) {
-		this.sbomComponentUuid = sbomComponentUuid;
-	}
-
-	public List<Map<String, Object>> getArtifactParticipations() {
-		return artifactParticipations;
-	}
-
+	public List<Map<String, Object>> getArtifactParticipations() { return artifactParticipations; }
 	public void setArtifactParticipations(List<Map<String, Object>> artifactParticipations) {
 		this.artifactParticipations = artifactParticipations;
 	}
 
-	public List<Map<String, Object>> getParents() {
-		return parents;
-	}
-
-	public void setParents(List<Map<String, Object>> parents) {
-		this.parents = parents;
-	}
+	public List<Map<String, Object>> getParents() { return parents; }
+	public void setParents(List<Map<String, Object>> parents) { this.parents = parents; }
 
 	@Override
-	public Map<String, Object> getRecordData() {
-		return recordData;
-	}
+	public Map<String, Object> getRecordData() { return null; }
 
 	@Override
-	public void setRecordData(Map<String, Object> recordData) {
-		this.recordData = recordData;
-	}
+	public void setRecordData(Map<String, Object> recordData) { /* no-op: release_sbom_components no longer carries a JSONB record_data column */ }
 
 	@Override
-	public int getSchemaVersion() {
-		return schemaVersion;
-	}
-
-	public void setSchemaVersion(int schemaVersion) {
-		this.schemaVersion = schemaVersion;
-	}
+	public int getSchemaVersion() { return schemaVersion; }
+	public void setSchemaVersion(int schemaVersion) { this.schemaVersion = schemaVersion; }
 }

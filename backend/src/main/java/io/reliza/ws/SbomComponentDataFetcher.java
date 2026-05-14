@@ -481,16 +481,11 @@ public class SbomComponentDataFetcher {
 		Map<String, Object> dto = new LinkedHashMap<>();
 		dto.put("uuid", sc.getUuid());
 		dto.put("canonicalPurl", sc.getCanonicalPurl());
-		Map<String, Object> rd = sc.getRecordData();
-		if (rd != null) {
-			dto.put("type", rd.get("type"));
-			dto.put("group", rd.get("group"));
-			dto.put("name", rd.get("name"));
-			dto.put("version", rd.get("version"));
-			dto.put("isRoot", Boolean.TRUE.equals(rd.get("isRoot")));
-		} else {
-			dto.put("isRoot", false);
-		}
+		dto.put("type", sc.getPurlType());
+		dto.put("group", sc.getPkgGroup());
+		dto.put("name", sc.getName());
+		dto.put("version", sc.getVersion());
+		dto.put("isRoot", sc.isRoot());
 		return dto;
 	}
 
