@@ -51,7 +51,9 @@
                                 {{ a.iconKind || '◆' }}
                             </div>
                             <div>
-                                <div class="acard__name">{{ a.name }}</div>
+                                <div class="acard__name">
+                                    {{ a.name }}<span v-if="a.agentIdentity" class="acard__id"> — {{ a.agentIdentity }}</span>
+                                </div>
                                 <div class="acard__sub" v-if="a.model">
                                     {{ a.model.publisher }} · <code>{{ a.model.name }}{{ a.model.version ? ' @ ' + a.model.version : '' }}</code>
                                 </div>
@@ -150,6 +152,7 @@ const sessionColumns: DataTableColumns<any> = [
 .acard__top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .acard__mark { width: 36px; height: 36px; border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 18px; }
 .acard__name { font-weight: 600; }
+.acard__id { font-weight: 400; font-family: monospace; font-size: 12px; color: var(--n-text-color-3, #666); }
 .acard__sub { font-size: 12px; color: var(--n-text-color-3, #666); }
 .acard__row { display: flex; gap: 24px; }
 .acard__num { font-size: 22px; font-weight: 600; margin-right: 6px; }
