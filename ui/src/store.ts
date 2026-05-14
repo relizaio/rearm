@@ -1445,6 +1445,18 @@ const storeObject : any = {
                                     name
                                 }
                             }
+                            agents {
+                                uuid
+                                name
+                                iconKind
+                                color
+                                agentIdentity
+                                model {
+                                    name
+                                    version
+                                    publisher
+                                }
+                            }
                         }
                     }`,
                 variables: { prUuid },
