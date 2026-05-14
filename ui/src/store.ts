@@ -1995,7 +1995,7 @@ const storeObject : any = {
                             iconKind
                             color
                             notes
-                            apiKeys
+                            agentIdentity
                             status
                             agentType
                             rootAgent
@@ -2031,7 +2031,7 @@ const storeObject : any = {
                             iconKind
                             color
                             notes
-                            apiKeys
+                            agentIdentity
                             status
                             agentType
                             rootAgent
