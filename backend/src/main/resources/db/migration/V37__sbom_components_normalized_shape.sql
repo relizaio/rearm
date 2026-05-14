@@ -84,9 +84,20 @@
 --                                 each successful reconcile.
 
 -- ---------------------------------------------------------------------------
--- 1. Tear down the old shape. CASCADE on sbom_components drops both the
---    release_sbom_components rows and the FKs by virtue of the existing
---    ON DELETE CASCADE chain.
+-- Foreign-key policy for this migration.
+--
+-- Per the no-FK convention in rearm-core/ai-agents/coding_principles.md,
+-- none of the new tables below declare FOREIGN KEY constraints. App-layer
+-- code (SbomComponentService) writes child rows transactionally and clears
+-- them on the same transactional boundary; orphan-cleanup races are
+-- absorbed in the read path (log.warn + skip). The drop here uses CASCADE
+-- only to dispose of the V25/V28-era FKs that referenced the old shape —
+-- the new tables that follow do not introduce any new ones.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- 1. Tear down the old shape. CASCADE handles the V25/V28-era FK chain
+--    pointing at the dropped tables.
 -- ---------------------------------------------------------------------------
 DROP TABLE IF EXISTS rearm.release_sbom_components CASCADE;
 DROP TABLE IF EXISTS rearm.sbom_components CASCADE;
@@ -196,11 +207,7 @@ CREATE TABLE rearm.release_sbom_components (
     release_uuid uuid NOT NULL,
     sbom_component_uuid uuid NOT NULL,
     CONSTRAINT release_sbom_components_release_component_unique
-        UNIQUE (release_uuid, sbom_component_uuid),
-    CONSTRAINT release_sbom_components_release_fk FOREIGN KEY (release_uuid)
-        REFERENCES rearm.releases(uuid) ON DELETE CASCADE,
-    CONSTRAINT release_sbom_components_component_fk FOREIGN KEY (sbom_component_uuid)
-        REFERENCES rearm.sbom_components(uuid) ON DELETE CASCADE
+        UNIQUE (release_uuid, sbom_component_uuid)
 );
 
 CREATE INDEX release_sbom_components_release_idx
@@ -224,12 +231,6 @@ CREATE TABLE rearm.release_sbom_component_artifacts (
     sbom_component_uuid uuid NOT NULL,
     artifact_uuid uuid NOT NULL,
     exact_purl_uuid uuid,
-    CONSTRAINT release_sbom_component_artifacts_release_fk FOREIGN KEY (release_uuid)
-        REFERENCES rearm.releases(uuid) ON DELETE CASCADE,
-    CONSTRAINT release_sbom_component_artifacts_component_fk FOREIGN KEY (sbom_component_uuid)
-        REFERENCES rearm.sbom_components(uuid) ON DELETE CASCADE,
-    CONSTRAINT release_sbom_component_artifacts_purl_fk FOREIGN KEY (exact_purl_uuid)
-        REFERENCES rearm.purl_qualifiers(uuid) ON DELETE RESTRICT,
     -- NULLS NOT DISTINCT (PG15+) makes the (rel, comp, artifact, NULL) shape
     -- unique too, so the upsert path doesn't insert duplicates when
     -- exact_purl_uuid is NULL (i.e. exact == canonical).
@@ -258,16 +259,6 @@ CREATE TABLE rearm.release_sbom_edges (
     declaring_artifact_uuid uuid NOT NULL,
     source_exact_purl_uuid uuid,
     target_exact_purl_uuid uuid,
-    CONSTRAINT release_sbom_edges_release_fk FOREIGN KEY (release_uuid)
-        REFERENCES rearm.releases(uuid) ON DELETE CASCADE,
-    CONSTRAINT release_sbom_edges_target_fk FOREIGN KEY (target_sbom_component_uuid)
-        REFERENCES rearm.sbom_components(uuid) ON DELETE CASCADE,
-    CONSTRAINT release_sbom_edges_source_fk FOREIGN KEY (source_sbom_component_uuid)
-        REFERENCES rearm.sbom_components(uuid) ON DELETE CASCADE,
-    CONSTRAINT release_sbom_edges_source_purl_fk FOREIGN KEY (source_exact_purl_uuid)
-        REFERENCES rearm.purl_qualifiers(uuid) ON DELETE RESTRICT,
-    CONSTRAINT release_sbom_edges_target_purl_fk FOREIGN KEY (target_exact_purl_uuid)
-        REFERENCES rearm.purl_qualifiers(uuid) ON DELETE RESTRICT,
     CONSTRAINT release_sbom_edges_unique
         UNIQUE NULLS NOT DISTINCT (
             release_uuid,

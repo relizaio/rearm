@@ -47,6 +47,17 @@ public class ReleaseSbomEdge implements Serializable {
 	@Column(nullable = false)
 	private String relationshipType;
 
+	/**
+	 * Always a CANONICAL artifact UUID, resolved through
+	 * {@code artifact_canonical_map} at reconcile time. Two uploads of the
+	 * same BOM (content-identical, same REARM-scope digest, same org) both
+	 * land here as the single canonical UUID, so cross-release "which
+	 * uploads declared this edge" is a join on
+	 * {@code artifact_canonical_map.canonical_artifact_uuid} — never a
+	 * digest comparison. No code path in
+	 * {@link io.reliza.service.SbomComponentService} writes a
+	 * non-canonical UUID into this column.
+	 */
 	@Column(nullable = false)
 	private UUID declaringArtifactUuid;
 
