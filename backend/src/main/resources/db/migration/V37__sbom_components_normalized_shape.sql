@@ -136,6 +136,15 @@ CREATE TABLE rearm.sbom_components (
         UNIQUE (org, canonical_purl)
 );
 
+-- lz4 compression hint on canonical_purl. PG 14+ honours per-column
+-- compression preference; only kicks in when a value crosses the
+-- inline-storage threshold (~2 KB) and gets TOASTed. Most canonical
+-- PURLs are well under that limit and stay inline, so no compression
+-- actually runs today — but this future-proofs the column against
+-- unusually long canonicals (e.g. monorepo-style subpath URLs) without
+-- a follow-up migration. Cheap and harmless.
+ALTER TABLE rearm.sbom_components ALTER COLUMN canonical_purl SET COMPRESSION lz4;
+
 CREATE INDEX sbom_components_org_idx
     ON rearm.sbom_components (org);
 
@@ -191,6 +200,11 @@ CREATE TABLE rearm.purl_qualifiers (
     CONSTRAINT purl_qualifiers_org_full_purl_unique UNIQUE (org, full_purl)
 );
 
+-- lz4 compression hint on full_purl. Same caveat as on canonical_purl:
+-- typical PURLs stay inline and don't compress. Future-proofs the column
+-- against pathological cases without a follow-up migration.
+ALTER TABLE rearm.purl_qualifiers ALTER COLUMN full_purl SET COMPRESSION lz4;
+
 CREATE INDEX purl_qualifiers_org_idx
     ON rearm.purl_qualifiers (org);
 
@@ -230,12 +244,17 @@ CREATE TABLE rearm.release_sbom_component_artifacts (
     release_uuid uuid NOT NULL,
     sbom_component_uuid uuid NOT NULL,
     artifact_uuid uuid NOT NULL,
-    exact_purl_uuid uuid,
-    -- NULLS NOT DISTINCT (PG15+) makes the (rel, comp, artifact, NULL) shape
-    -- unique too, so the upsert path doesn't insert duplicates when
-    -- exact_purl_uuid is NULL (i.e. exact == canonical).
-    CONSTRAINT release_sbom_component_artifacts_unique
-        UNIQUE NULLS NOT DISTINCT (release_uuid, sbom_component_uuid, artifact_uuid, exact_purl_uuid)
+    exact_purl_uuid uuid
+    -- No UNIQUE constraint on the natural key by design.
+    --
+    -- Application-level dedup is sufficient: reconcile deletes all child
+    -- rows for a release before re-inserting, the aggregation TreeSet/Map
+    -- keying dedups logical tuples before bulk insert, and the per-release
+    -- advisory lock serializes concurrent reconciles across replicas. A
+    -- DB-side UNIQUE NULLS NOT DISTINCT (rel, comp, artifact, exact_purl)
+    -- here would add a heavy multi-column index (4 UUIDs + tid ≈ 70 B per
+    -- row) without preventing any class of bug the in-memory path doesn't
+    -- already catch.
 );
 
 CREATE INDEX release_sbom_component_artifacts_release_component_idx
@@ -258,16 +277,16 @@ CREATE TABLE rearm.release_sbom_edges (
     relationship_type text NOT NULL,
     declaring_artifact_uuid uuid NOT NULL,
     source_exact_purl_uuid uuid,
-    target_exact_purl_uuid uuid,
-    CONSTRAINT release_sbom_edges_unique
-        UNIQUE NULLS NOT DISTINCT (
-            release_uuid,
-            target_sbom_component_uuid,
-            source_sbom_component_uuid,
-            relationship_type,
-            declaring_artifact_uuid,
-            source_exact_purl_uuid,
-            target_exact_purl_uuid)
+    target_exact_purl_uuid uuid
+    -- No UNIQUE constraint on the natural key. Same reasoning as
+    -- release_sbom_component_artifacts above: application-level dedup is
+    -- sufficient and the would-be 7-column UNIQUE (release + target +
+    -- source + relationship + artifact + 2× exact PURL) costs ~145 B per
+    -- row on its index — the single biggest line item in the per-row
+    -- footprint when this was profiled in production. ParentAggregation
+    -- already keys declarations by (artifact, source-full-PURL,
+    -- target-full-PURL) before flushing to the bulk insert, so the
+    -- aggregation result is duplicate-free by construction.
 );
 
 -- Two read patterns dominate: "in-edges for one target" (impact / reverse)
