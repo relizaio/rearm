@@ -149,6 +149,31 @@ export interface NoneChangelog {
 }
 
 /**
+ * Child component changes introduced by a single product release (NONE mode).
+ */
+export interface ProductReleaseChanges {
+    releaseUuid: string
+    version: string
+    lifecycle: string
+    createdDate: string
+    branches: NoneBranchChanges[]
+}
+
+/**
+ * NONE mode changelog scoped to a PRODUCT — child component changes grouped
+ * per product release rather than as a flat branch list.
+ */
+export interface NoneProductChangelog {
+    __typename: 'NoneProductChangelog'
+    componentUuid: string
+    componentName: string
+    orgUuid: string
+    firstRelease: ReleaseInfo
+    lastRelease: ReleaseInfo
+    productReleases: ProductReleaseChanges[]
+}
+
+/**
  * AGGREGATED mode changelog (component-level summary)
  */
 export interface AggregatedChangelog {
@@ -166,7 +191,7 @@ export interface AggregatedChangelog {
 /**
  * Union type for component changelog
  */
-export type ComponentChangelog = NoneChangelog | AggregatedChangelog
+export type ComponentChangelog = NoneChangelog | AggregatedChangelog | NoneProductChangelog
 
 /**
  * NONE mode organization changelog (per-component, per-release breakdown)
@@ -209,6 +234,13 @@ export function isNoneChangelog(changelog: ComponentChangelog): changelog is Non
  */
 export function isAggregatedChangelog(changelog: ComponentChangelog): changelog is AggregatedChangelog {
     return changelog.__typename === 'AggregatedChangelog'
+}
+
+/**
+ * Type guard to check if changelog is a NONE mode product changelog
+ */
+export function isNoneProductChangelog(changelog: ComponentChangelog): changelog is NoneProductChangelog {
+    return changelog.__typename === 'NoneProductChangelog'
 }
 
 /**

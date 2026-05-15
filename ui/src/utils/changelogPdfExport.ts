@@ -21,6 +21,8 @@ interface PdfCell {
     text: string
     color?: string
     bold?: boolean
+    colSpan?: number
+    fillColor?: string
 }
 
 interface PdfRow {
@@ -82,13 +84,64 @@ function flattenNoneReleases(changelog: any): FlatNoneEntry[] {
     return entries
 }
 
+// Newest-first comparator by createdDate.
+function byCreatedDateDesc(a: { createdDate?: string }, b: { createdDate?: string }): number {
+    const aDate = a.createdDate ? new Date(a.createdDate).getTime() : 0
+    const bDate = b.createdDate ? new Date(b.createdDate).getTime() : 0
+    return bDate - aDate
+}
+
+// A full-width section-header row (used to label each product release group).
+function sectionHeaderRow(label: string, columnCount: number): PdfRow {
+    const cells: PdfCell[] = [{ text: label, bold: true, colSpan: columnCount, fillColor: '#eef3ff' }]
+    for (let i = 1; i < columnCount; i++) {
+        cells.push({ text: '', fillColor: '#eef3ff' })
+    }
+    return { cells }
+}
+
+// Builds grouped rows for a NoneProductChangelog: a section-header row per product
+// release (newest first) followed by that release's child-component rows. Product
+// releases that produced no rows for the current tab are skipped.
+function buildProductGroupedRows(
+    changelog: any,
+    columnCount: number,
+    emitRelease: (branchLabel: string, release: any) => PdfRow[]
+): PdfRow[] {
+    const rows: PdfRow[] = []
+    const groups = [...(changelog.productReleases || [])].sort(byCreatedDateDesc)
+    for (const group of groups) {
+        const childEntries: { branchLabel: string; release: any }[] = []
+        for (const branch of (group.branches || [])) {
+            const branchLabel = branch.componentName
+                ? `${branch.componentName} / ${branch.branchName || ''}`
+                : (branch.branchName || '')
+            for (const release of (branch.releases || [])) {
+                childEntries.push({ branchLabel, release })
+            }
+        }
+        childEntries.sort((a, b) => byCreatedDateDesc(a.release, b.release))
+        const groupRows: PdfRow[] = []
+        for (const e of childEntries) {
+            groupRows.push(...emitRelease(e.branchLabel, e.release))
+        }
+        if (groupRows.length > 0) {
+            rows.push(sectionHeaderRow(`Product Release: ${group.version || ''}`, columnCount))
+            rows.push(...groupRows)
+        }
+    }
+    return rows
+}
+
 function buildCodeTable(changelog: any, aggregationType: string): { headers: string[]; rows: PdfRow[]; widths: string[] } {
     const headers = ['Branch', 'Release', 'Change Type', 'Commit Message', 'Author']
     const widths = ['auto', 'auto', 'auto', '*', 'auto']
     const rows: PdfRow[] = []
 
     const branches = changelog.branches || []
-    if (!branches.length && !(changelog.components || []).length) return { headers, rows, widths }
+    if (!branches.length && !(changelog.components || []).length && !(changelog.productReleases || []).length) {
+        return { headers, rows, widths }
+    }
 
     if (aggregationType === 'NONE' && changelog.__typename === 'NoneChangelog') {
         for (const { branchLabel, release } of flattenNoneReleases(changelog)) {
@@ -102,6 +155,16 @@ function buildCodeTable(changelog: any, aggregationType: string): { headers: str
                 ]})
             }
         }
+    } else if (aggregationType === 'NONE' && changelog.__typename === 'NoneProductChangelog') {
+        rows.push(...buildProductGroupedRows(changelog, headers.length, (branchLabel, release) =>
+            (release.commits || []).map((commit: any) => ({ cells: [
+                { text: branchLabel },
+                { text: release.version || '' },
+                { text: commit.changeType || '' },
+                { text: commit.message || '' },
+                { text: commit.author || '' }
+            ]}))
+        ))
     } else if (aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog') {
         for (const branch of branches) {
             const branchLabel = branch.componentName ? `${branch.componentName} / ${branch.branchName || ''}` : (branch.branchName || '')
@@ -134,13 +197,13 @@ function buildSbomTable(changelog: any, aggregationType: string): { headers: str
 function buildSbomNoneTable(changelog: any): { headers: string[]; rows: PdfRow[]; widths: string[] } {
     const headers = ['Branch', 'Release', 'Status', 'PURL', 'Name', 'Version']
     const widths = ['auto', 'auto', 'auto', '*', 'auto', 'auto']
-    const rows: PdfRow[] = []
 
-    for (const { branchLabel, release } of flattenNoneReleases(changelog)) {
+    const emitSbom = (branchLabel: string, release: any): PdfRow[] => {
+        const out: PdfRow[] = []
         const sbom = release.sbomChanges
-        if (!sbom) continue
+        if (!sbom) return out
         for (const art of (sbom.addedArtifacts || [])) {
-            rows.push({ cells: [
+            out.push({ cells: [
                 { text: branchLabel },
                 { text: release.version || '' },
                 { text: 'Added', color: '#18a058' },
@@ -150,7 +213,7 @@ function buildSbomNoneTable(changelog: any): { headers: string[]; rows: PdfRow[]
             ]})
         }
         for (const art of (sbom.removedArtifacts || [])) {
-            rows.push({ cells: [
+            out.push({ cells: [
                 { text: branchLabel },
                 { text: release.version || '' },
                 { text: 'Removed', color: '#d03050' },
@@ -159,8 +222,17 @@ function buildSbomNoneTable(changelog: any): { headers: string[]; rows: PdfRow[]
                 { text: art.version || '' }
             ]})
         }
+        return out
     }
 
+    if (changelog.__typename === 'NoneProductChangelog') {
+        return { headers, rows: buildProductGroupedRows(changelog, headers.length, emitSbom), widths }
+    }
+
+    const rows: PdfRow[] = []
+    for (const { branchLabel, release } of flattenNoneReleases(changelog)) {
+        rows.push(...emitSbom(branchLabel, release))
+    }
     return { headers, rows, widths }
 }
 
@@ -209,14 +281,23 @@ function buildFindingTable(changelog: any, aggregationType: string): { headers: 
 function buildFindingNoneTable(changelog: any): { headers: string[]; rows: PdfRow[]; widths: string[] } {
     const headers = ['Branch', 'Release', 'Status', 'Type', 'Issue ID', 'PURL / Location', 'Severity']
     const widths = ['auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto']
-    const rows: PdfRow[] = []
 
-    for (const { branchLabel, release } of flattenNoneReleases(changelog)) {
+    const emitFinding = (branchLabel: string, release: any): PdfRow[] => {
         const fc = release.findingChanges
-        if (!fc) continue
-        addNoneFindingRows(rows, branchLabel, release.version, fc)
+        if (!fc) return []
+        const out: PdfRow[] = []
+        addNoneFindingRows(out, branchLabel, release.version, fc)
+        return out
     }
 
+    if (changelog.__typename === 'NoneProductChangelog') {
+        return { headers, rows: buildProductGroupedRows(changelog, headers.length, emitFinding), widths }
+    }
+
+    const rows: PdfRow[] = []
+    for (const { branchLabel, release } of flattenNoneReleases(changelog)) {
+        rows.push(...emitFinding(branchLabel, release))
+    }
     return { headers, rows, widths }
 }
 
@@ -423,6 +504,8 @@ export function exportChangelogToPdf(options: ChangelogPdfOptions): { success: b
             const cellDef: any = { text: cell.text }
             if (cell.color) cellDef.color = cell.color
             if (cell.bold) cellDef.bold = true
+            if (cell.colSpan) cellDef.colSpan = cell.colSpan
+            if (cell.fillColor) cellDef.fillColor = cell.fillColor
             return cellDef
         })
         tableBody.push(pdfRow)
