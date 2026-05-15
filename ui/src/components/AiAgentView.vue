@@ -1,5 +1,9 @@
 <template>
     <div class="aiAgentView" v-if="agent">
+        <n-breadcrumb separator="›" class="crumbs">
+            <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
+            <n-breadcrumb-item>{{ agent.name }}</n-breadcrumb-item>
+        </n-breadcrumb>
         <div class="hero">
             <div class="hero__mark" :style="{ background: agent.color || '#888' }">
                 {{ agent.iconKind || '◆' }}
@@ -75,7 +79,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, DataTableColumns, useNotification } from 'naive-ui'
 import SessionTable from './AiAgentSessionTable.vue'
 
 const store = useStore()
@@ -110,6 +114,14 @@ async function load () {
 
 function openSession (uuid: string) {
     router.push({ name: 'AiAgentSessionView', params: { uuid } })
+}
+
+function openAgentsOfOrg () {
+    if (agent.value?.org) {
+        router.push({ name: 'AiAgentsOfOrg', params: { orguuid: agent.value.org } })
+    } else {
+        router.back()
+    }
 }
 
 function formatDate (s: string | null | undefined) {
@@ -151,6 +163,8 @@ const subAgentColumns: DataTableColumns<any> = [
 
 <style scoped>
 .aiAgentView { padding: 16px; }
+.crumbs { margin-bottom: 12px; font-size: 13px; }
+.crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .hero { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .hero__mark { width: 56px; height: 56px; border-radius: 12px; color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600; }
 .hero__title { flex: 1; }

@@ -1,5 +1,9 @@
 <template>
     <div class="agentPolicies">
+        <n-breadcrumb separator="›" class="crumbs">
+            <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
+            <n-breadcrumb-item>Policies</n-breadcrumb-item>
+        </n-breadcrumb>
         <div class="head">
             <div class="title-row">
                 <h4>AI Agent Policies</h4>
@@ -33,7 +37,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NDataTable, NIcon, NSpin, NSwitch, NTag, NTooltip, NPopconfirm, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NButton, NDataTable, NIcon, NSpin, NSwitch, NTag, NTooltip, NPopconfirm, DataTableColumns, useNotification } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
 
 const store = useStore()
@@ -59,11 +63,23 @@ async function load () {
 }
 
 function createNew () {
-    router.push({ name: 'AiAgentPolicyView', params: { uuid: 'new' }, query: { org: orgUuid.value } })
+    router.push({
+        name: 'AiAgentPolicyView',
+        params: { uuid: 'new' },
+        query: { org: orgUuid.value, from: 'policies' },
+    })
 }
 
 function openPolicy (uuid: string) {
-    router.push({ name: 'AiAgentPolicyView', params: { uuid } })
+    router.push({
+        name: 'AiAgentPolicyView',
+        params: { uuid },
+        query: { from: 'policies' },
+    })
+}
+
+function openAgentsOfOrg () {
+    router.push({ name: 'AiAgentsOfOrg', params: { orguuid: orgUuid.value } })
 }
 
 async function toggleEnabled (row: any) {
@@ -141,6 +157,8 @@ const columns = computed<DataTableColumns<any>>(() => [
 
 <style scoped>
 .agentPolicies { padding: 16px; }
+.crumbs { margin-bottom: 12px; font-size: 13px; }
+.crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .title-row { display: flex; align-items: center; gap: 8px; }
 .title-row h4 { margin: 0; }
