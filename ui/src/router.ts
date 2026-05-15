@@ -65,6 +65,16 @@ const routes : any[] = [
         component: () => import('@/components/AiAgentSessionView.vue')
     },
     {
+        path: '/aiAgentPolicies/:orguuid',
+        name: 'AiAgentPoliciesOfOrg',
+        component: () => import('@/components/AiAgentPoliciesOfOrg.vue')
+    },
+    {
+        path: '/aiAgentPolicy/:uuid',
+        name: 'AiAgentPolicyView',
+        component: () => import('@/components/AiAgentPolicyView.vue')
+    },
+    {
         path: '/secretsOfOrg/:orguuid',
         name: 'SecretsOfOrg',
         component: () => import('@/components/SecretsOfOrg.vue')

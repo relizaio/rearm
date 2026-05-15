@@ -2199,6 +2199,88 @@ const storeObject : any = {
             })
             return response.data.artifact
         },
+        async fetchAgentPoliciesOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentPoliciesOfOrg($orgUuid: ID!) {
+                        agentPoliciesOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            org
+                            name
+                            description
+                            kind
+                            severity
+                            cel
+                            enabled
+                            createdDate
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentPoliciesOfOrg
+        },
+        async fetchAgentPolicy (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentPolicy($uuid: ID!) {
+                        agentPolicy(uuid: $uuid) {
+                            uuid
+                            org
+                            name
+                            description
+                            kind
+                            severity
+                            cel
+                            enabled
+                            createdDate
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentPolicy
+        },
+        async upsertAgentPolicy (context: any, input: any) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation upsertAgentPolicy($input: AgentPolicyInput!) {
+                        upsertAgentPolicy(input: $input) {
+                            uuid
+                            name
+                            kind
+                            severity
+                            cel
+                            enabled
+                        }
+                    }`,
+                variables: { input }
+            })
+            return response.data.upsertAgentPolicy
+        },
+        async setAgentPolicyEnabled (context: any, payload: { uuid: string, enabled: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setAgentPolicyEnabled($uuid: ID!, $enabled: Boolean!) {
+                        setAgentPolicyEnabled(uuid: $uuid, enabled: $enabled) {
+                            uuid
+                            enabled
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.setAgentPolicyEnabled
+        },
+        async deleteAgentPolicy (context: any, uuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation deleteAgentPolicy($uuid: ID!) {
+                        deleteAgentPolicy(uuid: $uuid)
+                    }`,
+                variables: { uuid }
+            })
+            return response.data.deleteAgentPolicy
+        },
     },
 }
 
