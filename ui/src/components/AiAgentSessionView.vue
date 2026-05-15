@@ -28,7 +28,6 @@
                     </n-descriptions-item>
                     <n-descriptions-item label="Title">{{ session.title || '—' }}</n-descriptions-item>
                     <n-descriptions-item label="Client session ID"><code>{{ session.clientSessionId }}</code></n-descriptions-item>
-                    <n-descriptions-item label="Branch"><code v-if="session.branch">{{ session.branch }}</code><span v-else class="dim">—</span></n-descriptions-item>
                     <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
                     <n-descriptions-item label="Started">{{ formatDate(session.startedAt) }}</n-descriptions-item>
                     <n-descriptions-item label="Closed">{{ formatDate(session.closedAt) }}</n-descriptions-item>

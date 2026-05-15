@@ -2103,7 +2103,6 @@ const storeObject : any = {
                             clientSessionId
                             apiKey
                             title
-                            branch
                             status
                             startedAt
                             closedAt
@@ -2128,7 +2127,6 @@ const storeObject : any = {
                             clientSessionId
                             apiKey
                             title
-                            branch
                             status
                             startedAt
                             closedAt
