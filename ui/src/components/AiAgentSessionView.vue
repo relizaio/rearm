@@ -14,21 +14,33 @@
             </a>
         </div>
         <h3>{{ session.title || '(untitled)' }}</h3>
-        <div class="meta">
-            <div><span class="dim">Branch </span><code>{{ session.branch || '—' }}</code></div>
-            <div><span class="dim">Client session ID </span><code>{{ session.clientSessionId }}</code></div>
-            <div><span class="dim">Started </span>{{ formatDate(session.startedAt) }}</div>
-            <div v-if="session.closedAt"><span class="dim">Closed </span>{{ formatDate(session.closedAt) }}</div>
-            <div v-if="session.lastActivityAt"><span class="dim">Last activity </span>{{ formatDate(session.lastActivityAt) }}</div>
-        </div>
 
         <n-tabs type="line" v-model:value="tab">
             <n-tab-pane name="overview" tab="Overview">
-                <n-descriptions :column="2" bordered>
+                <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
+                    <n-descriptions-item label="Status">
+                        <n-tag :type="session.status === 'OPEN' ? 'info' : 'default'" size="small">{{ session.status }}</n-tag>
+                    </n-descriptions-item>
+                    <n-descriptions-item label="Title">{{ session.title || '—' }}</n-descriptions-item>
+                    <n-descriptions-item label="Client session ID"><code>{{ session.clientSessionId }}</code></n-descriptions-item>
+                    <n-descriptions-item label="Branch"><code v-if="session.branch">{{ session.branch }}</code><span v-else class="dim">—</span></n-descriptions-item>
+                    <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
+                    <n-descriptions-item label="Started">{{ formatDate(session.startedAt) }}</n-descriptions-item>
+                    <n-descriptions-item label="Closed">{{ formatDate(session.closedAt) }}</n-descriptions-item>
+                    <n-descriptions-item label="Last activity">{{ formatDate(session.lastActivityAt) }}</n-descriptions-item>
                     <n-descriptions-item label="Commits"><strong>{{ session.commits?.length ?? 0 }}</strong></n-descriptions-item>
                     <n-descriptions-item label="Artifacts"><strong>{{ session.artifacts?.length ?? 0 }}</strong></n-descriptions-item>
-                    <n-descriptions-item label="Policy verdicts"><strong>{{ session.policyEvents?.length ?? 0 }}</strong></n-descriptions-item>
-                    <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
+                    <n-descriptions-item label="Releases"><strong>{{ releaseRows.length }}</strong></n-descriptions-item>
+                    <n-descriptions-item label="Pull requests"><strong>{{ prRows.length }}</strong></n-descriptions-item>
+                    <n-descriptions-item label="Policy verdicts">
+                        <span v-if="!verdictSummary.total" class="dim">—</span>
+                        <span v-else class="verdict-summary">
+                            <n-tag v-if="verdictSummary.failed" size="tiny" type="error">{{ verdictSummary.failed }} FAILING</n-tag>
+                            <n-tag v-if="verdictSummary.pending" size="tiny" type="warning">{{ verdictSummary.pending }} PENDING</n-tag>
+                            <n-tag v-if="verdictSummary.warning" size="tiny" type="warning">{{ verdictSummary.warning }} WARNING</n-tag>
+                            <n-tag v-if="verdictSummary.passed" size="tiny" type="success">{{ verdictSummary.passed }} PASSING</n-tag>
+                        </span>
+                    </n-descriptions-item>
                 </n-descriptions>
             </n-tab-pane>
             <n-tab-pane name="commits" :tab="`Commits · ${session.commits?.length ?? 0}`">
@@ -38,6 +50,14 @@
             <n-tab-pane name="artifacts" :tab="`Artifacts · ${session.artifacts?.length ?? 0}`">
                 <div v-if="!session.artifacts?.length" class="empty">No artifacts attached.</div>
                 <n-data-table v-else :columns="artifactColumns" :data="artifactRows" :pagination="{ pageSize: 25 }"/>
+            </n-tab-pane>
+            <n-tab-pane name="releases" :tab="`Releases · ${releaseRows.length}`">
+                <div v-if="!releaseRows.length" class="empty">No releases produced from this session.</div>
+                <n-data-table v-else :columns="releaseColumns" :data="releaseRows" :pagination="{ pageSize: 25 }"/>
+            </n-tab-pane>
+            <n-tab-pane name="prs" :tab="`Pull requests · ${prRows.length}`">
+                <div v-if="!prRows.length" class="empty">No pull requests touched by this session.</div>
+                <n-data-table v-else :columns="prColumns" :data="prRows" :pagination="{ pageSize: 25 }"/>
             </n-tab-pane>
             <n-tab-pane name="policies" :tab="`Policies · ${latestPolicyVerdicts.length}`">
                 <div v-if="!latestPolicyVerdicts.length" class="empty">No policy evaluations on this session.</div>
@@ -77,6 +97,8 @@ const artifactRows = ref<any[]>([])
 const tab = ref<string>('overview')
 const showFullPolicyHistory = ref<boolean>(false)
 
+const metaLabelStyle = { width: '180px' }
+
 // Policies are an append-only log — collapse to the latest verdict per
 // policy uuid by default so the table reads "what is currently true",
 // with an opt-in audit-log expander for the full history.
@@ -90,6 +112,35 @@ const latestPolicyVerdicts = computed(() => {
     return Array.from(byPolicy.values())
 })
 
+// Per-policy outcome summary for the overview card.
+const verdictSummary = computed(() => {
+    const out = { passed: 0, failed: 0, pending: 0, warning: 0, total: 0 }
+    for (const ev of latestPolicyVerdicts.value) {
+        out.total++
+        if (ev.state === 'PASSED') out.passed++
+        else if (ev.state === 'FAILED') out.failed++
+        else if (ev.state === 'PENDING') out.pending++
+        else if (ev.state === 'WARNING') out.warning++
+    }
+    return out
+})
+
+// Distinct releases / PRs from per-SCE hydration; falls back to the
+// Session.releases / Session.pullRequests lists when the session
+// query returns them directly.
+const releaseRows = computed<any[]>(() => {
+    if (session.value?.releases?.length) return session.value.releases
+    const byUuid = new Map<string, any>()
+    for (const sce of commitRows.value) {
+        for (const rel of (sce.releases ?? [])) {
+            if (rel?.uuid) byUuid.set(rel.uuid, rel)
+        }
+    }
+    return Array.from(byUuid.values())
+})
+
+const prRows = computed<any[]>(() => session.value?.pullRequests ?? [])
+
 onMounted(load)
 
 async function load () {
@@ -97,8 +148,6 @@ async function load () {
     if (session.value?.agent) {
         agent.value = await store.dispatch('fetchAgent', session.value.agent).catch(() => null)
     }
-    // Resolve commit + artifact uuids to objects in parallel so the
-    // tabs render rich rows without per-row N+1 fetches at render time.
     const commitUuids: string[] = session.value?.commits ?? []
     const artifactUuids: string[] = session.value?.artifacts ?? []
     commitRows.value = (await Promise.all(commitUuids.map((u) =>
@@ -117,11 +166,9 @@ function commitUrl (row: any): string | null {
     const uri: string | undefined = row.vcsRepository?.uri
     const commit: string | undefined = row.commit
     if (!uri || !commit) return null
-    // Normalise common Git remotes to their commit-view URL. github.com /
-    // gitlab.com / bitbucket.org / GitHub Enterprise all use `/commit/<sha>`.
+    // Normalise common Git remotes to their commit-view URL.
     const trimmed = uri.replace(/\.git$/, '').replace(/\/$/, '')
     if (trimmed.startsWith('git@')) {
-        // git@host:owner/repo -> https://host/owner/repo
         const idx = trimmed.indexOf(':')
         if (idx > 0) {
             return `https://${trimmed.slice(4, idx)}/${trimmed.slice(idx + 1)}/commit/${commit}`
@@ -135,6 +182,9 @@ function commitUrl (row: any): string | null {
 }
 
 async function downloadArtifact (a: any) {
+    // REARM-stored bytes — fetch the blob through the authenticated API
+    // and trigger a browser download. For EXTERNALLY-stored artifacts
+    // the UI links out to the first downloadLink directly (see template).
     try {
         const url = `/api/manual/v1/artifact/${a.uuid}/rawdownload`
         const buf = await fetchArrayBufferWithAuth(url)
@@ -152,7 +202,11 @@ async function downloadArtifact (a: any) {
 }
 
 function formatDate (s: string | null | undefined) {
-    return s ? new Date(s).toLocaleString() : '—'
+    return s ? new Date(s).toLocaleString('en-CA') : '—'
+}
+
+function openPolicy (uuid: string) {
+    router.push({ name: 'AiAgentPolicyView', params: { uuid } })
 }
 
 const commitColumns: DataTableColumns<any> = [
@@ -174,10 +228,7 @@ const commitColumns: DataTableColumns<any> = [
         title: 'Message',
         key: 'commitMessage',
         ellipsis: { tooltip: true },
-        render: (row: any) => {
-            const subject = (row.commitMessage || '').split('\n')[0] || '—'
-            return subject
-        },
+        render: (row: any) => (row.commitMessage || '').split('\n')[0] || '—',
     },
     {
         title: 'Release',
@@ -202,8 +253,15 @@ const commitColumns: DataTableColumns<any> = [
             }))
         },
     },
-    { title: 'Date', key: 'dateActual', render: (row: any) => row.dateActual ? new Date(row.dateActual).toLocaleString() : '—' },
+    { title: 'Date', key: 'dateActual', width: 170, render: (row: any) => row.dateActual ? new Date(row.dateActual).toLocaleString('en-CA') : '—' },
 ]
+
+function externalUri (a: any): string | null {
+    const links = a.downloadLinks ?? []
+    if (!links.length) return null
+    return links[0].uri || null
+}
+
 const artifactColumns: DataTableColumns<any> = [
     {
         title: 'Name',
@@ -217,19 +275,101 @@ const artifactColumns: DataTableColumns<any> = [
         render: (row: any) => row.type ? h(NTag, { size: 'small', type: row.type === 'AGENTIC_REPORT' ? 'info' : 'default' }, { default: () => row.type }) : '—',
     },
     {
+        title: 'Tags',
+        key: 'tags',
+        render: (row: any) => {
+            const tags = row.tags ?? []
+            if (!tags.length) return ''
+            return h('span', { style: 'display: inline-flex; gap: 4px; flex-wrap: wrap;' },
+                tags.map((t: any) => h(NTag, { size: 'tiny', bordered: false },
+                    { default: () => `${t.key}=${t.value}` })))
+        },
+    },
+    {
         title: '',
         key: 'download',
-        width: 110,
-        render: (row: any) => h(NButton, {
-            size: 'tiny',
-            quaternary: true,
-            disabled: row.storedIn !== 'REARM',
-            onClick: () => downloadArtifact(row),
-        }, { default: () => row.storedIn === 'REARM' ? 'Download' : 'External' }),
+        width: 140,
+        render: (row: any) => {
+            if (row.storedIn === 'REARM') {
+                return h(NButton, { size: 'tiny', onClick: () => downloadArtifact(row) },
+                    { default: () => 'Download' })
+            }
+            const uri = externalUri(row)
+            if (uri) {
+                return h('a', { href: uri, target: '_blank', rel: 'noopener' },
+                    h(NButton, { size: 'tiny' }, { default: () => 'Open link ↗' }))
+            }
+            return h('span', { class: 'dim' }, 'external (no link)')
+        },
     },
 ]
+
+const releaseColumns: DataTableColumns<any> = [
+    {
+        title: 'Component',
+        key: 'component',
+        render: (row: any) => row.componentDetails?.name || row.component?.slice(0, 8) || '—',
+    },
+    {
+        title: 'Version',
+        key: 'version',
+        render: (row: any) => h('a', {
+            href: '#',
+            onClick: (e: Event) => { e.preventDefault(); router.push({ name: 'ReleaseView', params: { uuid: row.uuid } }) },
+        }, row.version || '—'),
+    },
+    {
+        title: 'Lifecycle',
+        key: 'lifecycle',
+        width: 160,
+        render: (row: any) => row.lifecycle ? h(NTag, { size: 'small', bordered: false }, { default: () => row.lifecycle }) : '—',
+    },
+    {
+        title: 'Created',
+        key: 'createdDate',
+        width: 170,
+        render: (row: any) => row.createdDate ? new Date(row.createdDate).toLocaleString('en-CA') : '—',
+    },
+]
+
+const prColumns: DataTableColumns<any> = [
+    {
+        title: 'PR',
+        key: 'identity',
+        width: 140,
+        render: (row: any) => h('a', {
+            href: '#',
+            onClick: (e: Event) => { e.preventDefault(); router.push({ name: 'PullRequestView', params: { uuid: row.uuid } }) },
+        }, row.identity || row.uuid?.slice(0, 8)),
+    },
+    { title: 'Title', key: 'title', ellipsis: { tooltip: true } },
+    {
+        title: 'State',
+        key: 'state',
+        width: 120,
+        render: (row: any) => row.state ? h(NTag, { size: 'small', bordered: false, type: row.state === 'OPEN' ? 'success' : (row.state === 'MERGED' ? 'info' : 'default') }, { default: () => row.state }) : '—',
+    },
+    { title: 'Source', key: 'sourceBranchName', render: (row: any) => row.sourceBranchName ? h('code', null, row.sourceBranchName) : '—' },
+    { title: 'Target', key: 'targetBranchName', render: (row: any) => row.targetBranchName ? h('code', null, row.targetBranchName) : '—' },
+    {
+        title: 'Created',
+        key: 'prCreatedDate',
+        width: 170,
+        render: (row: any) => row.prCreatedDate ? new Date(row.prCreatedDate).toLocaleString('en-CA') : '—',
+    },
+]
+
 const policyColumns: DataTableColumns<any> = [
-    { title: 'Policy', key: 'policyName' },
+    {
+        title: 'Policy',
+        key: 'policyName',
+        render: (row: any) => row.policyUuid
+            ? h('a', {
+                href: '#',
+                onClick: (e: Event) => { e.preventDefault(); openPolicy(row.policyUuid) },
+            }, row.policyName || row.policyUuid.slice(0, 8))
+            : (row.policyName || '—'),
+    },
     { title: 'Kind', key: 'kind', width: 90 },
     { title: 'Severity', key: 'severity', width: 100 },
     {
@@ -244,7 +384,7 @@ const policyColumns: DataTableColumns<any> = [
         },
     },
     { title: 'Message', key: 'message', render: (row: any) => row.message || '—' },
-    { title: 'Evaluated', key: 'evaluatedAt', render: (row: any) => row.evaluatedAt ? new Date(row.evaluatedAt).toLocaleString() : '—' },
+    { title: 'Evaluated', key: 'evaluatedAt', width: 170, render: (row: any) => row.evaluatedAt ? new Date(row.evaluatedAt).toLocaleString('en-CA') : '—' },
 ]
 </script>
 
@@ -253,7 +393,7 @@ const policyColumns: DataTableColumns<any> = [
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
 .dim { color: var(--n-text-color-3, #666); }
 .agent-id { font-family: monospace; font-size: 11px; }
-.meta { display: flex; gap: 24px; margin: 6px 0 18px 0; font-size: 13px; flex-wrap: wrap; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
 .mt-1 { margin-top: 8px; font-size: 12px; }
+.verdict-summary { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 </style>

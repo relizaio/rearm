@@ -63,8 +63,8 @@
                                     {{ a.model.publisher }} · <code>{{ a.model.name }}{{ a.model.version ? ' @ ' + a.model.version : '' }}</code>
                                 </div>
                             </div>
-                            <n-tag size="small" :type="a.status === 'ACTIVE' ? 'success' : 'default'">
-                                {{ a.status }}
+                            <n-tag v-if="a.status === 'ARCHIVED'" size="small" type="default">
+                                ARCHIVED
                             </n-tag>
                         </div>
                         <div class="acard__row">

@@ -2058,23 +2058,25 @@ const storeObject : any = {
                                 uuid
                                 clientSessionId
                                 title
-                                branch
                                 status
                                 startedAt
                                 lastActivityAt
                                 artifacts
                                 commits
+                                releases { uuid }
+                                pullRequests { uuid }
                             }
                             closedSessions {
                                 uuid
                                 clientSessionId
                                 title
-                                branch
                                 status
                                 startedAt
                                 closedAt
                                 artifacts
                                 commits
+                                releases { uuid }
+                                pullRequests { uuid }
                             }
                             model {
                                 uuid
@@ -2142,6 +2144,23 @@ const storeObject : any = {
                                 message
                                 evaluatedAt
                             }
+                            releases {
+                                uuid
+                                version
+                                lifecycle
+                                createdDate
+                                component
+                                componentDetails { uuid name }
+                            }
+                            pullRequests {
+                                uuid
+                                identity
+                                state
+                                title
+                                sourceBranchName
+                                targetBranchName
+                                prCreatedDate
+                            }
                         }
                     }`,
                 variables: { uuid },
@@ -2192,12 +2211,28 @@ const storeObject : any = {
                             displayIdentifier
                             bomFormat
                             storedIn
+                            tags { key value }
+                            downloadLinks { uri content }
                         }
                     }`,
                 variables: { artifactUuid: uuid },
                 fetchPolicy: 'no-cache'
             })
             return response.data.artifact
+        },
+        async updateAgent (context: any, input: { uuid: string, name?: string, iconKind?: string, color?: string, notes?: string, status?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateAgent($input: AgentUpdateInput!) {
+                        updateAgent(input: $input) {
+                            uuid
+                            name
+                            notes
+                        }
+                    }`,
+                variables: { input }
+            })
+            return response.data.updateAgent
         },
         async fetchAgentPoliciesOfOrg (context: any, orgUuid: string) {
             const response = await graphqlClient.query({
