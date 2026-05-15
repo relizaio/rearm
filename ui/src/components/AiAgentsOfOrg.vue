@@ -1,10 +1,15 @@
 <template>
     <div class="aiAgentsOfOrg">
-        <h4>AI Agents</h4>
-        <p class="sub">
-            Coding agents registered to this workspace. Each agent runs sessions that
-            produce artifacts, commits, pull requests and releases.
-        </p>
+        <div class="page-head">
+            <div>
+                <h4>AI Agents</h4>
+                <p class="sub">
+                    Coding agents registered to this workspace. Each agent runs sessions that
+                    produce artifacts, commits, pull requests and releases.
+                </p>
+            </div>
+            <n-button quaternary @click="openPolicies">Manage policies →</n-button>
+        </div>
 
         <n-spin v-if="loading" size="small"/>
 
@@ -89,7 +94,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NCard, NDataTable, NSpace, NSpin, NTag, DataTableColumns } from 'naive-ui'
+import { NButton, NCard, NDataTable, NSpace, NSpin, NTag, DataTableColumns } from 'naive-ui'
 
 const store = useStore()
 const route = useRoute()
@@ -131,6 +136,10 @@ function openSession (uuid: string) {
     router.push({ name: 'AiAgentSessionView', params: { uuid } })
 }
 
+function openPolicies () {
+    router.push({ name: 'AiAgentPoliciesOfOrg', params: { orguuid: orgUuid.value } })
+}
+
 const sessionColumns: DataTableColumns<any> = [
     { title: 'Session', key: 'clientSessionId', width: 200, render: (row: any) => h('code', null, row.clientSessionId ?? row.uuid.slice(0, 8)) },
     { title: 'Title', key: 'title' },
@@ -144,6 +153,7 @@ const sessionColumns: DataTableColumns<any> = [
 <style scoped>
 .aiAgentsOfOrg { padding: 16px; }
 .sub { color: var(--n-text-color-3, #666); font-size: 13px; margin-bottom: 16px; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .kpi__l { text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; color: var(--n-text-color-3, #666); }
 .kpi__v { font-size: 32px; font-weight: 600; margin-top: 4px; }
