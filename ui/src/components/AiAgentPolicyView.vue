@@ -23,75 +23,97 @@
 
             <n-form-item label="Kind" required>
                 <n-radio-group v-model:value="form.kind">
-                    <n-radio-button value="INPUT">INPUT</n-radio-button>
-                    <n-radio-button value="OUTPUT">OUTPUT</n-radio-button>
+                    <n-radio-button v-for="opt in kindOptions" :key="opt.value" :value="opt.value">
+                        {{ opt.value }}
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-icon size="14" class="opt-help">
+                                    <QuestionCircle20Regular/>
+                                </n-icon>
+                            </template>
+                            <span v-html="opt.help"/>
+                        </n-tooltip>
+                    </n-radio-button>
                 </n-radio-group>
             </n-form-item>
-            <p class="hint">
-                <strong>INPUT</strong> — preconditions on the session itself: checked at
-                <code>sessionInitializeProgrammatic</code>; a BLOCK-FAILED verdict throws and
-                the session never opens. Use for allowlists (model, branch, identity).
-                <br/>
-                <strong>OUTPUT</strong> — postconditions on session work: checked at init
-                (PENDING — soft signal to the agent), re-checked when an artifact attaches,
-                hardens to FAILED when a commit is attributed without satisfying the CEL.
-                Use for "agent must produce X" rules.
-            </p>
 
             <n-form-item label="Severity" required>
                 <n-radio-group v-model:value="form.severity">
-                    <n-radio-button value="BLOCK">BLOCK</n-radio-button>
-                    <n-radio-button value="WARN">WARN</n-radio-button>
+                    <n-radio-button v-for="opt in severityOptions" :key="opt.value" :value="opt.value">
+                        {{ opt.value }}
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-icon size="14" class="opt-help">
+                                    <QuestionCircle20Regular/>
+                                </n-icon>
+                            </template>
+                            <span v-html="opt.help"/>
+                        </n-tooltip>
+                    </n-radio-button>
                 </n-radio-group>
             </n-form-item>
-            <p class="hint">
-                <strong>BLOCK</strong> — failure hardens to FAILED on the session;
-                INPUT throws at init, OUTPUT trips the
-                <code>release.agentSessions[].hasFailedPolicy</code> signal that the
-                approval-policy layer reads.
-                <br/>
-                <strong>WARN</strong> — failure records a WARNING verdict on the
-                session log but never blocks anything.
-            </p>
 
-            <n-form-item label="CEL expression" required>
+            <n-form-item required>
+                <template #label>
+                    CEL expression
+                    <n-popover trigger="click" placement="bottom-start" :width="640" style="max-height: 70vh; overflow: auto;">
+                        <template #trigger>
+                            <n-icon size="14" class="opt-help">
+                                <QuestionCircle20Regular/>
+                            </n-icon>
+                        </template>
+                        <div>
+                            <div style="margin-bottom: 6px; font-size: 11px; color: #888;">
+                                Click the <n-icon size="12" style="vertical-align: middle;"><ClipboardPaste20Regular/></n-icon>
+                                icon to insert a snippet (appended with <code>&amp;&amp;</code> when text already exists).
+                            </div>
+                            <strong>Available variables:</strong>
+                            <table class="ref-table">
+                                <tbody>
+                                    <tr v-for="v in variableDocs" :key="v.name">
+                                        <td class="ref-paste">
+                                            <n-icon size="14" class="clickable" style="color: #888; vertical-align: middle;"
+                                                @click="insertSnippet(v.snippet)" title="Insert">
+                                                <ClipboardPaste20Regular/>
+                                            </n-icon>
+                                        </td>
+                                        <td class="ref-name"><code v-html="v.display"/></td>
+                                        <td v-html="v.desc"/>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div style="margin-top: 10px;"><strong>Snippets:</strong></div>
+                            <table class="ref-table">
+                                <tbody>
+                                    <tr v-for="(ex, i) in snippetDocs" :key="i">
+                                        <td class="ref-paste">
+                                            <n-icon size="14" class="clickable" style="color: #888;"
+                                                @click="insertSnippet(ex.cel)" title="Insert">
+                                                <ClipboardPaste20Regular/>
+                                            </n-icon>
+                                        </td>
+                                        <td>
+                                            <div><code class="snippet">{{ ex.cel }}</code></div>
+                                            <div class="snippet-desc">{{ ex.label }}</div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </n-popover>
+                </template>
                 <n-input v-model:value="form.cel" type="textarea" :rows="3"
                          placeholder='e.g. session.artifacts.exists(a, a.type == "AGENTIC_REPORT")'
                          style="font-family: monospace;"/>
             </n-form-item>
 
             <n-collapse>
-                <n-collapse-item title="Activation reference + sample policies" name="ref">
-                    <p>
-                        The CEL expression evaluates against the agent session context. Top-level
-                        variables: <code>session</code>, <code>agent</code>, <code>model</code>.
-                    </p>
-                    <h5>session</h5>
-                    <ul>
-                        <li><code>session.uuid</code>, <code>session.clientSessionId</code>, <code>session.agent</code>, <code>session.org</code></li>
-                        <li><code>session.status</code> — <code>OPEN</code> / <code>CLOSED</code></li>
-                        <li><code>session.branch</code>, <code>session.title</code></li>
-                        <li>
-                            <code>session.artifacts</code> — list of
-                            <code>{ uuid, type, displayIdentifier, bomFormat, tags }</code>;
-                            each tag is <code>{ key, value }</code>. Tag convention for
-                            agentic reports: <code>agenticPhase</code> = <code>ORIENTATION</code>
-                            / <code>INTERMEDIATE</code> / <code>FINAL</code> (mirrors the
-                            SBOM <code>lifecycle</code> tag pattern).
-                        </li>
-                        <li><code>session.commits</code> — list of SCE uuid strings</li>
-                    </ul>
-                    <h5>agent</h5>
-                    <ul>
-                        <li><code>agent.uuid</code>, <code>agent.name</code>, <code>agent.agentIdentity</code></li>
-                        <li><code>agent.agentType</code> — <code>ROOT</code> / <code>SUB</code></li>
-                        <li><code>agent.status</code> — <code>ACTIVE</code> / <code>ARCHIVED</code></li>
-                    </ul>
-                    <h5>model</h5>
-                    <ul>
-                        <li><code>model.name</code>, <code>model.version</code>, <code>model.publisher</code></li>
-                    </ul>
-                    <h5>Samples</h5>
+                <n-collapse-item title="Sample policies" name="samples">
+                    <n-alert type="warning" size="small" :show-icon="false" style="margin-bottom: 10px;">
+                        Clicking a sample below overwrites every field on the form
+                        (name, description, kind, severity, CEL). Use it as a starting
+                        point on a fresh policy — not to tweak an existing one.
+                    </n-alert>
                     <div class="samples">
                         <n-button v-for="s in samples" :key="s.name" size="small" @click="applySample(s)">
                             <n-tag size="tiny" :type="s.kind === 'INPUT' ? 'info' : 'default'" style="margin-right: 4px;">{{ s.kind }}</n-tag>
@@ -122,9 +144,11 @@ import { computed, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import {
-    NButton, NCollapse, NCollapseItem, NForm, NFormItem, NFormItemGi, NGrid, NInput,
-    NPopconfirm, NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useNotification,
+    NAlert, NButton, NCollapse, NCollapseItem, NForm, NFormItem, NFormItemGi, NGrid,
+    NIcon, NInput, NPopconfirm, NPopover, NRadioButton, NRadioGroup, NSpin, NSwitch,
+    NTag, NTooltip, useNotification,
 } from 'naive-ui'
+import { QuestionCircle20Regular, ClipboardPaste20Regular } from '@vicons/fluent'
 
 const store = useStore()
 const route = useRoute()
@@ -155,6 +179,64 @@ const canSave = computed(() =>
     && form.value.cel?.trim()
 )
 
+const kindOptions = [
+    {
+        value: 'INPUT',
+        help: '<strong>INPUT</strong> — precondition on the session itself. Checked at <code>sessionInitializeProgrammatic</code>; a BLOCK-FAILED verdict throws and the session never opens. Use for allowlists (model, branch, identity).',
+    },
+    {
+        value: 'OUTPUT',
+        help: '<strong>OUTPUT</strong> — postcondition on session work. Checked at init (records PENDING — soft signal to the agent), re-checked when an artifact attaches, hardens to FAILED when a commit is attributed without satisfying the CEL. Use for "agent must produce X" rules.',
+    },
+]
+
+const severityOptions = [
+    {
+        value: 'BLOCK',
+        help: '<strong>BLOCK</strong> — failure hardens to FAILED on the session. INPUT throws at init; OUTPUT trips the <code>release.agentSessions[].hasFailedPolicy</code> signal that the approval-policy layer reads.',
+    },
+    {
+        value: 'WARN',
+        help: '<strong>WARN</strong> — failure records a WARNING verdict on the session log but never blocks anything.',
+    },
+]
+
+// CEL-reference table — every row is clickable to insert the snippet.
+// Convention mirrors CelExpressionBuilder.vue's popover.
+interface VariableDoc { name: string; snippet: string; display: string; desc: string }
+const variableDocs: VariableDoc[] = [
+    { name: 'session.status',            snippet: 'session.status',                                                          display: 'session.status',            desc: 'string — <code>OPEN</code> / <code>CLOSED</code>' },
+    { name: 'session.branch',            snippet: 'session.branch',                                                          display: 'session.branch',            desc: 'string — agent-reported working branch' },
+    { name: 'session.title',             snippet: 'session.title',                                                           display: 'session.title',             desc: 'string — agent-supplied title' },
+    { name: 'session.clientSessionId',   snippet: 'session.clientSessionId',                                                 display: 'session.clientSessionId',   desc: 'string — agent-supplied session id' },
+    { name: 'session.artifacts',         snippet: 'session.artifacts',                                                       display: 'session.artifacts',         desc: 'list of <code>{ uuid, type, displayIdentifier, bomFormat, tags[] }</code>' },
+    { name: 'session.commits',           snippet: 'session.commits',                                                         display: 'session.commits',           desc: 'list&lt;string&gt; — SCE uuids' },
+    { name: 'agent.name',                snippet: 'agent.name',                                                              display: 'agent.name',                desc: 'string — display name' },
+    { name: 'agent.agentType',           snippet: 'agent.agentType',                                                         display: 'agent.agentType',           desc: 'string — <code>ROOT</code> / <code>SUB</code>' },
+    { name: 'agent.agentIdentity',       snippet: 'agent.agentIdentity',                                                     display: 'agent.agentIdentity',       desc: 'string — identity-scope uuid' },
+    { name: 'agent.status',              snippet: 'agent.status',                                                            display: 'agent.status',              desc: 'string — <code>ACTIVE</code> / <code>ARCHIVED</code>' },
+    { name: 'model.name',                snippet: 'model.name',                                                              display: 'model.name',                desc: 'string — model name (e.g. <code>"claude-opus-4-7"</code>)' },
+    { name: 'model.version',             snippet: 'model.version',                                                           display: 'model.version',             desc: 'string' },
+    { name: 'model.publisher',           snippet: 'model.publisher',                                                         display: 'model.publisher',           desc: 'string' },
+]
+
+interface SnippetDoc { label: string; cel: string }
+const snippetDocs: SnippetDoc[] = [
+    { label: 'Any AGENTIC_REPORT artifact attached',
+      cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT")' },
+    { label: 'Orientation report (tag agenticPhase=ORIENTATION)',
+      cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))' },
+    { label: 'Final report (tag agenticPhase=FINAL)',
+      cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))' },
+    { label: 'Model allowlist (INPUT)',
+      cel: 'model.name == "claude-opus-4-7" || model.name == "claude-sonnet-4-6"' },
+    { label: 'No more than 20 commits per session',
+      cel: 'size(session.commits) <= 20' },
+    { label: 'Branch is main',
+      cel: 'session.branch == "main"' },
+]
+
+// Full-form scaffolds. Each one overwrites every field.
 const samples = [
     {
         name: 'Orientation report required',
@@ -224,6 +306,11 @@ async function load () {
     }
 }
 
+function insertSnippet (snippet: string) {
+    const current = (form.value.cel || '').trim()
+    form.value.cel = current ? `${current} && ${snippet}` : snippet
+}
+
 function applySample (s: any) {
     form.value.name = s.name
     form.value.description = s.description
@@ -251,14 +338,12 @@ async function save () {
         }
         const saved = await store.dispatch('upsertAgentPolicy', input)
         notification.success({ content: `Saved "${saved.name}"` })
-        // After create, navigate to the list — after update, stay on the edit page.
         if (isNew.value) {
             router.push({ name: 'AiAgentPoliciesOfOrg', params: { orguuid: form.value.org } })
         } else {
             form.value.uuid = saved.uuid
         }
     } catch (e: any) {
-        // Surface server-side CEL validation errors directly.
         notification.error({ content: `Save failed: ${e?.message ?? e}`, duration: 8000 })
     } finally {
         saving.value = false
@@ -289,16 +374,24 @@ function back () {
 .agentPolicyView { padding: 16px; max-width: 980px; }
 .head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .head h4 { margin: 0; }
-.hint {
-    color: var(--n-text-color-3, #666);
-    font-size: 12px;
-    margin: -6px 0 16px 0;
-    line-height: 1.5;
-    max-width: 720px;
+.opt-help {
+    cursor: help;
+    color: #888;
+    margin-left: 6px;
+    vertical-align: middle;
 }
 .actions { margin-top: 16px; display: flex; gap: 12px; }
-.samples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.samples { display: flex; gap: 8px; flex-wrap: wrap; }
+.ref-table {
+    border-collapse: collapse;
+    margin-top: 6px;
+    font-size: 12px;
+    width: 100%;
+}
+.ref-table td { padding: 3px 8px 3px 0; vertical-align: top; }
+.ref-paste { white-space: nowrap; width: 24px; }
+.ref-name { white-space: nowrap; }
+.snippet { white-space: pre-wrap; word-break: break-all; font-size: 11px; }
+.snippet-desc { color: #888; font-size: 11px; margin-top: 1px; }
 :deep(code) { font-size: 12px; padding: 1px 4px; background: rgba(127,127,127,0.1); border-radius: 3px; }
-:deep(h5) { margin: 12px 0 4px 0; font-size: 13px; }
-:deep(ul) { font-size: 13px; margin: 0; padding-left: 18px; }
 </style>
