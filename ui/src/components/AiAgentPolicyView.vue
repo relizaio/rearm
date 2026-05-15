@@ -29,7 +29,7 @@
             </n-form-item>
             <p class="hint">
                 <strong>INPUT</strong> — preconditions on the session itself: checked at
-                {@code sessionInitializeProgrammatic}; a BLOCK-FAILED verdict throws and
+                <code>sessionInitializeProgrammatic</code>; a BLOCK-FAILED verdict throws and
                 the session never opens. Use for allowlists (model, branch, identity).
                 <br/>
                 <strong>OUTPUT</strong> — postconditions on session work: checked at init
@@ -47,7 +47,7 @@
             <p class="hint">
                 <strong>BLOCK</strong> — failure hardens to FAILED on the session;
                 INPUT throws at init, OUTPUT trips the
-                {@code release.agentSessions[].hasFailedPolicy} signal that the
+                <code>release.agentSessions[].hasFailedPolicy</code> signal that the
                 approval-policy layer reads.
                 <br/>
                 <strong>WARN</strong> — failure records a WARNING verdict on the
@@ -122,8 +122,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import {
-    NButton, NCollapse, NCollapseItem, NForm, NFormItem, NInput, NPopconfirm,
-    NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useNotification,
+    NButton, NCollapse, NCollapseItem, NForm, NFormItem, NFormItemGi, NGrid, NInput,
+    NPopconfirm, NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useNotification,
 } from 'naive-ui'
 
 const store = useStore()
