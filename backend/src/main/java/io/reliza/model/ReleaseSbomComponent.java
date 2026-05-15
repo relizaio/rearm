@@ -9,158 +9,75 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.Version;
-
-import org.hibernate.annotations.Type;
-
-import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
-
-@Entity
-@Table(schema = ModelProperties.DB_SCHEMA, name = "release_sbom_components")
+/**
+ * Read-time view of "the SBOM-component aggregation for one release, one
+ * canonical sbom_component". Not persisted — no @Entity annotation.
+ *
+ * <p>Since V37 (artifact-keyed shape), the underlying storage lives in
+ * {@code artifact_sbom_components} keyed by canonical artifact, not per
+ * (release, sbom_component). This class is the synthesized per-(release,
+ * sbom_component) shape the GraphQL surface still exposes — built by
+ * {@code SbomComponentService.listReleaseSbomComponents} from one or more
+ * artifact rows that participate in the release's BOM set.
+ *
+ * <p>The {@code uuid} field is a deterministic v5 derivation from
+ * (release_uuid, sbom_component_uuid) — stable across reconciles so UI
+ * deep links survive without needing a persisted anchor row.
+ *
+ * <p>{@code artifactParticipations} and {@code parents} preserve the
+ * pre-V37 GraphQL shape: lists of map-shaped entries that the
+ * {@link io.reliza.ws.SbomComponentDataFetcher} resolvers read directly.
+ */
 public class ReleaseSbomComponent implements Serializable, RelizaEntity {
 	private static final long serialVersionUID = 234737L;
 
-	@Id
-	private UUID uuid = UUID.randomUUID();
-
-	@Version
-	@Column(nullable = false)
-	private int revision = 0;
-
-	@Column(nullable = false)
-	private int schemaVersion = 0;
-
-	@Column(nullable = false)
-	private ZonedDateTime createdDate = ZonedDateTime.now();
-
-	@Column(nullable = false)
-	private ZonedDateTime lastUpdatedDate = ZonedDateTime.now();
-
-	@Column(nullable = false)
+	private UUID uuid;
+	private ZonedDateTime createdDate;
+	private ZonedDateTime lastUpdatedDate;
 	private UUID org;
-
-	@Column(nullable = false)
 	private UUID releaseUuid;
-
-	@Column(nullable = false)
 	private UUID sbomComponentUuid;
-
-	@Type(JsonBinaryType.class)
-	@Column(columnDefinition = ModelProperties.JSONB, nullable = false)
 	private List<Map<String, Object>> artifactParticipations;
-
-	/**
-	 * In-edges for this component within the release: one entry per
-	 * (sourceSbomComponentUuid, relationshipType) — i.e. "what depends on
-	 * this component." Reverse of the more common BOM dependsOn direction;
-	 * picked because the impact / vulnerability propagation query is the
-	 * dominant lookup. See SbomComponentDataFetcher for forward-edge
-	 * reconstruction.
-	 */
-	@Type(JsonBinaryType.class)
-	@Column(columnDefinition = ModelProperties.JSONB, nullable = false)
 	private List<Map<String, Object>> parents;
 
-	@Type(JsonBinaryType.class)
-	@Column(columnDefinition = ModelProperties.JSONB)
-	private Map<String, Object> recordData;
+	@Override
+	public UUID getUuid() { return uuid; }
+	public void setUuid(UUID uuid) { this.uuid = uuid; }
 
 	@Override
-	public UUID getUuid() {
-		return uuid;
-	}
-
-	public void setUuid(UUID uuid) {
-		this.uuid = uuid;
-	}
+	public ZonedDateTime getCreatedDate() { return createdDate; }
+	public void setCreatedDate(ZonedDateTime createdDate) { this.createdDate = createdDate; }
 
 	@Override
-	public int getRevision() {
-		return revision;
-	}
+	public ZonedDateTime getLastUpdatedDate() { return lastUpdatedDate; }
+	public void setLastUpdatedDate(ZonedDateTime lastUpdatedDate) { this.lastUpdatedDate = lastUpdatedDate; }
 
-	public void setRevision(int revision) {
-		this.revision = revision;
-	}
+	public UUID getOrg() { return org; }
+	public void setOrg(UUID org) { this.org = org; }
 
-	@Override
-	public ZonedDateTime getCreatedDate() {
-		return createdDate;
-	}
+	public UUID getReleaseUuid() { return releaseUuid; }
+	public void setReleaseUuid(UUID releaseUuid) { this.releaseUuid = releaseUuid; }
 
-	public void setCreatedDate(ZonedDateTime createdDate) {
-		this.createdDate = createdDate;
-	}
+	public UUID getSbomComponentUuid() { return sbomComponentUuid; }
+	public void setSbomComponentUuid(UUID sbomComponentUuid) { this.sbomComponentUuid = sbomComponentUuid; }
 
-	@Override
-	public ZonedDateTime getLastUpdatedDate() {
-		return lastUpdatedDate;
-	}
-
-	public void setLastUpdatedDate(ZonedDateTime lastUpdatedDate) {
-		this.lastUpdatedDate = lastUpdatedDate;
-	}
-
-	public UUID getOrg() {
-		return org;
-	}
-
-	public void setOrg(UUID org) {
-		this.org = org;
-	}
-
-	public UUID getReleaseUuid() {
-		return releaseUuid;
-	}
-
-	public void setReleaseUuid(UUID releaseUuid) {
-		this.releaseUuid = releaseUuid;
-	}
-
-	public UUID getSbomComponentUuid() {
-		return sbomComponentUuid;
-	}
-
-	public void setSbomComponentUuid(UUID sbomComponentUuid) {
-		this.sbomComponentUuid = sbomComponentUuid;
-	}
-
-	public List<Map<String, Object>> getArtifactParticipations() {
-		return artifactParticipations;
-	}
-
+	public List<Map<String, Object>> getArtifactParticipations() { return artifactParticipations; }
 	public void setArtifactParticipations(List<Map<String, Object>> artifactParticipations) {
 		this.artifactParticipations = artifactParticipations;
 	}
 
-	public List<Map<String, Object>> getParents() {
-		return parents;
-	}
-
-	public void setParents(List<Map<String, Object>> parents) {
-		this.parents = parents;
-	}
+	public List<Map<String, Object>> getParents() { return parents; }
+	public void setParents(List<Map<String, Object>> parents) { this.parents = parents; }
 
 	@Override
-	public Map<String, Object> getRecordData() {
-		return recordData;
-	}
+	public Map<String, Object> getRecordData() { return null; }
 
 	@Override
-	public void setRecordData(Map<String, Object> recordData) {
-		this.recordData = recordData;
-	}
+	public void setRecordData(Map<String, Object> recordData) { /* no-op: not persisted */ }
 
 	@Override
-	public int getSchemaVersion() {
-		return schemaVersion;
-	}
+	public int getRevision() { return 0; }
 
-	public void setSchemaVersion(int schemaVersion) {
-		this.schemaVersion = schemaVersion;
-	}
+	@Override
+	public int getSchemaVersion() { return 0; }
 }

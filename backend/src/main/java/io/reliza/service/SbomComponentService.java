@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -24,119 +25,109 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.model.Artifact;
+import io.reliza.model.ArtifactCanonicalMap;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.ArtifactData.DigestScope;
+import io.reliza.model.ArtifactSbomComponent;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.FlowControl;
 import io.reliza.model.Release;
+import io.reliza.model.ReleaseArtifactIndex;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.SbomComponent;
 import io.reliza.model.tea.Rebom.ParsedBom;
 import io.reliza.model.tea.Rebom.ParsedBomComponent;
 import io.reliza.model.tea.Rebom.ParsedBomDependency;
+import io.reliza.repositories.ArtifactCanonicalMapRepository;
+import io.reliza.repositories.ArtifactSbomComponentRepository;
+import io.reliza.repositories.ReleaseArtifactIndexRepository;
 import io.reliza.repositories.ReleaseRepository;
-import io.reliza.repositories.ReleaseSbomComponentRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Maintains the SBOM component tables ({@code sbom_components} and
- * {@code release_sbom_components}). Rebom parses components and dependency
- * edges out of each uploaded BOM; reconciliation aggregates both per release
- * and keeps the two tables in sync by rebuilding the release's component /
- * edge rows from scratch on every reconcile call.
+ * Maintains the SBOM component aggregation. As of V37 (artifact-keyed
+ * shape), the per-component aggregation lives in
+ * {@code artifact_sbom_components} keyed by canonical artifact — not per
+ * (release, sbom_component). A release "owns" components by virtue of the
+ * BOM artifacts it references (deliverables, source-code-entry artifacts,
+ * release-attached artifacts), resolved through {@code artifact_canonical_map}
+ * to canonical form. The per-release view is synthesized at read time.
  *
- * <p>Each {@code release_sbom_components} row is strictly local to its own
- * release — only the BOMs the release itself carries (release-attached
- * artifacts, deliverables, source-code-entry artifacts) flow into its rows.
- * For PRODUCT releases the dep-aggregated inventory is synthesised at read
- * time in {@link #listReleaseSbomComponents(UUID)} by unioning the rows of
- * the product itself with every transitive dependency's rows. This avoids
- * write-time fan-out (a dep's BOM update doesn't have to re-reconcile every
- * product that bundles it) and means a product's inventory is always
- * up-to-date with the latest dep state without a product-side reconcile.
+ * <p>The {@code release_artifact_index} table keeps a reverse mapping
+ * release → canonical artifacts, rebuilt on every reconcile. It makes
+ * impact analysis ("which releases reference this sbom_component") a
+ * 1-join query instead of walking JSONB across the artifacts surface.
  *
- * <p>Reconciliation is idempotent and cheap to re-run. It used to fire
- * synchronously from every artifact-mutation event, which raced on the
- * global {@code sbom_components} unique constraint and on per-release
- * delete/insert. We now <em>queue</em> reconciles by stamping
- * {@code releases.sbom_reconcile_requested_at} and let the every-minute
- * dependency-track scheduler drain the queue serially under its existing
- * advisory lock — multiple triggers within a minute coalesce into one
- * reconcile, and there is at most one reconcile in flight at a time across
- * replicas. The {@link #reconcileReleaseSbomComponents(UUID)} entry point
- * remains public for the operator force-reconcile GraphQL mutation.
+ * <p>Reconciliation is queue-driven by {@code releases.flow_control}; the
+ * every-minute Dependency-Track scheduler drains the queue under its
+ * existing advisory lock. A release's reconcile is cheap when its
+ * canonical artifacts have already been parsed by a prior reconcile —
+ * existence check via {@code ArtifactSbomComponentRepository.existsByCanonicalArtifactUuid}
+ * avoids re-parsing identical content across releases.
  */
 @Slf4j
 @Service
 public class SbomComponentService {
 
-	@Autowired
-	private RebomService rebomService;
+	/**
+	 * Generation cookie stamped onto {@code releases.sbom_schema_version}
+	 * by every successful reconcile. Bumped to 3 on this V37 rewrite to
+	 * the artifact-keyed shape. Future area migrations can either re-enqueue
+	 * via flow_control (V25 / V27 / V28 / V37 pattern) or simply bump this
+	 * constant — a catch-up scheduler can then find rows whose stored
+	 * version is below the current value via the partial index.
+	 */
+	public static final int CURRENT_SBOM_SCHEMA_VERSION = 3;
 
-	@Autowired
-	private SharedReleaseService sharedReleaseService;
-
-	@Autowired
-	private ArtifactService artifactService;
-
-	@Autowired
-	private GetSourceCodeEntryService getSourceCodeEntryService;
-
-	@Autowired
-	private GetDeliverableService getDeliverableService;
-
-	@Autowired
-	private GetComponentService getComponentService;
-
-	@Autowired
-	private VariantService variantService;
-
-	@Autowired
-	private ReleaseRepository releaseRepository;
+	@Autowired private RebomService rebomService;
+	@Autowired private SharedReleaseService sharedReleaseService;
+	@Autowired private ArtifactService artifactService;
+	@Autowired private SharedArtifactService sharedArtifactService;
+	@Autowired private GetSourceCodeEntryService getSourceCodeEntryService;
+	@Autowired private GetDeliverableService getDeliverableService;
+	@Autowired private GetComponentService getComponentService;
+	@Autowired private VariantService variantService;
+	@Autowired private ReleaseRepository releaseRepository;
 
 	/**
 	 * Self-injection so {@link #processPendingReconciles(int)} can call the
-	 * {@code @Transactional} reconcile method through Spring's proxy. Direct
-	 * {@code this.*} calls bypass AOP, leaving the {@code @Modifying} delete
-	 * queries running outside any transaction.
+	 * {@code @Transactional} reconcile method through Spring's proxy.
 	 */
-	@Autowired
-	@Lazy
-	private SbomComponentService self;
+	@Autowired @Lazy private SbomComponentService self;
 
-	/** Failure-backoff caps; exponential up to one hour. */
 	private static final int BASE_BACKOFF_SECONDS = 30;
 	private static final int MAX_BACKOFF_SECONDS = 3600;
 
 	private final SbomComponentRepository sbomComponentRepository;
-	private final ReleaseSbomComponentRepository releaseSbomComponentRepository;
+	private final ArtifactSbomComponentRepository artifactSbomComponentRepository;
+	private final ReleaseArtifactIndexRepository releaseArtifactIndexRepository;
+	private final ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
 
 	SbomComponentService(
 			SbomComponentRepository sbomComponentRepository,
-			ReleaseSbomComponentRepository releaseSbomComponentRepository) {
+			ArtifactSbomComponentRepository artifactSbomComponentRepository,
+			ReleaseArtifactIndexRepository releaseArtifactIndexRepository,
+			ArtifactCanonicalMapRepository artifactCanonicalMapRepository) {
 		this.sbomComponentRepository = sbomComponentRepository;
-		this.releaseSbomComponentRepository = releaseSbomComponentRepository;
+		this.artifactSbomComponentRepository = artifactSbomComponentRepository;
+		this.releaseArtifactIndexRepository = releaseArtifactIndexRepository;
+		this.artifactCanonicalMapRepository = artifactCanonicalMapRepository;
 	}
 
-	/**
-	 * Mark a release as needing SBOM-component reconciliation. Idempotent —
-	 * the timestamp is only set if currently NULL (preserves FIFO ordering
-	 * across the burst of triggers an artifact mutation can produce).
-	 */
+	// ===================================================================
+	// Queue API (unchanged from V25/V27/V28)
+	// ===================================================================
+
 	public void requestReconcile(UUID releaseUuid) {
 		if (releaseUuid == null) return;
 		releaseRepository.markSbomReconcileRequested(releaseUuid);
 	}
 
-	/**
-	 * Drain up to {@code batchLimit} pending reconciles. Called from the
-	 * every-minute dependency-track scheduler under its advisory lock, so
-	 * concurrency across replicas is already serialized; failures bump a
-	 * backoff counter rather than re-throwing so one poison-pill release
-	 * doesn't block the rest of the queue.
-	 */
 	public void processPendingReconciles(int batchLimit) {
 		List<Release> pending = releaseRepository.findReleasesPendingSbomReconcile(batchLimit);
 		if (pending.isEmpty()) return;
@@ -163,21 +154,23 @@ public class SbomComponentService {
 		return fc.sbomReconcileFailureCount();
 	}
 
+	// ===================================================================
+	// Reconcile — artifact-keyed write path
+	// ===================================================================
+
 	/**
-	 * Rebuild the sbom_components / release_sbom_components mappings for a
-	 * single release. For every BOM artifact participating in the release
-	 * we fetch the parsed components + dependencies from rebom, upsert the
-	 * canonical component rows (synthesising an isRoot flag where rebom
-	 * flagged it), and then upsert one join row per (release, component)
-	 * containing all artifact participations and every <em>incoming</em>
-	 * edge whose source canonical purl also appears in the release's
-	 * component set. Stale join rows are dropped.
+	 * Rebuild the SBOM aggregation for a release.
 	 *
-	 * <p>Edges are stored as in-edges (parents) rather than out-edges
-	 * because the impact-analysis "what depends on this component" query
-	 * is the dominant lookup; storing parents makes that a primary-key
-	 * read instead of a GIN-on-jsonb scan. Forward "what does this depend
-	 * on" is reconstructed in memory from a single per-release fetch.
+	 * <p>For each BOM artifact the release references, resolve to canonical
+	 * via {@code artifact_canonical_map}. If the canonical hasn't been
+	 * parsed yet (no rows in {@code artifact_sbom_components}), parse the
+	 * BOM via rebom and write per-component rows. Then rebuild this release's
+	 * {@code release_artifact_index} entries to point at the resolved
+	 * canonical set, and stamp {@code releases.sbom_schema_version}.
+	 *
+	 * <p>The artifact rows are content-addressed and immutable. A reconcile
+	 * on another release that shares the same BOM content reuses them
+	 * without re-parsing.
 	 */
 	@Transactional
 	public void reconcileReleaseSbomComponents(UUID releaseUuid) {
@@ -193,10 +186,7 @@ public class SbomComponentService {
 					"reconcileReleaseSbomComponents: release " + releaseUuid + " has no org");
 		}
 
-		Map<String, ComponentAggregation> componentAggs = new LinkedHashMap<>();
-		// Aggregation is keyed by TARGET canonical: each entry is a target
-		// component carrying the list of source components that point at it.
-		Map<String, Map<ParentKey, ParentAggregation>> parentAggs = new LinkedHashMap<>();
+		Set<UUID> canonicalArtifactSet = new LinkedHashSet<>();
 
 		for (UUID artifactUuid : collectBomArtifactUuids(rd)) {
 			Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
@@ -204,96 +194,182 @@ public class SbomComponentService {
 			ArtifactData ad = oad.get();
 			if (ad.getInternalBom() == null || ad.getInternalBom().id() == null) continue;
 
-			ParsedBom parsed;
-			try {
-				parsed = rebomService.parseBom(ad.getInternalBom().id(), orgUuid);
-			} catch (Exception e) {
-				log.warn("Unable to fetch parsed BOM for artifact {} (bom {}): {}",
-						artifactUuid, ad.getInternalBom().id(), e.getMessage());
+			UUID canonicalArtifactUuid = resolveCanonicalArtifact(ad, orgUuid);
+			canonicalArtifactSet.add(canonicalArtifactUuid);
+
+			// Skip the parse if this canonical's component graph is already on disk.
+			// Artifact content is immutable, so cached rows are still valid.
+			if (artifactSbomComponentRepository.existsByCanonicalArtifactUuid(canonicalArtifactUuid)) {
 				continue;
 			}
-			if (parsed == null) continue;
 
-			if (parsed.components() != null) {
-				for (ParsedBomComponent pc : parsed.components()) {
-					if (pc == null || pc.canonicalPurl() == null) continue;
-					ComponentAggregation agg = componentAggs.computeIfAbsent(
-							pc.canonicalPurl(), k -> new ComponentAggregation(pc));
-					agg.mergeSample(pc);
-					agg.addParticipation(artifactUuid, pc.fullPurl());
+			parseAndUpsertArtifactSbomComponents(ad, canonicalArtifactUuid, orgUuid);
+		}
+
+		// Rebuild this release's reverse-index entries. The release's BOM
+		// artifact set may have shifted since the last reconcile (a deliverable
+		// detached, a new SCE artifact added, etc.) — wholesale replacement
+		// keeps the index in sync with the current artifact set.
+		releaseArtifactIndexRepository.deleteAllByOrgAndReleaseUuid(orgUuid, releaseUuid);
+		if (!canonicalArtifactSet.isEmpty()) {
+			List<ReleaseArtifactIndex> rows = new ArrayList<>(canonicalArtifactSet.size());
+			for (UUID canonical : canonicalArtifactSet) {
+				ReleaseArtifactIndex idx = new ReleaseArtifactIndex();
+				idx.setOrg(orgUuid);
+				idx.setReleaseUuid(releaseUuid);
+				idx.setCanonicalArtifactUuid(canonical);
+				rows.add(idx);
+			}
+			try {
+				releaseArtifactIndexRepository.saveAll(rows);
+			} catch (DataIntegrityViolationException dive) {
+				// Defensive: per-row save to recover from a partial conflict.
+				for (ReleaseArtifactIndex idx : rows) {
+					try {
+						releaseArtifactIndexRepository.save(idx);
+					} catch (DataIntegrityViolationException ignored) {
+						// Already present.
+					}
 				}
 			}
-
-			if (parsed.dependencies() != null) {
-				for (ParsedBomDependency pd : parsed.dependencies()) {
-					if (pd == null || pd.sourceCanonicalPurl() == null
-							|| pd.targetCanonicalPurl() == null) continue;
-					ParentKey key = new ParentKey(
-							pd.sourceCanonicalPurl(),
-							relationshipType(pd));
-					ParentAggregation parentAgg = parentAggs
-							.computeIfAbsent(pd.targetCanonicalPurl(), k -> new LinkedHashMap<>())
-							.computeIfAbsent(key, k -> new ParentAggregation());
-					parentAgg.addDeclaration(artifactUuid, pd.sourceFullPurl(), pd.targetFullPurl());
-				}
-			}
 		}
 
-		if (componentAggs.isEmpty()) {
-			// No components → just clear any existing rows for this release.
-			releaseSbomComponentRepository.deleteAllByOrgAndReleaseUuid(orgUuid, releaseUuid);
-			return;
-		}
-
-		// Upsert the canonical component rows; returns canonical→uuid map the
-		// edge upsert step uses to resolve source component UUIDs.
-		Map<String, UUID> canonicalToUuid = upsertSbomComponents(componentAggs.values(), orgUuid);
-
-		Set<UUID> keepComponentUuids = new HashSet<>();
-		for (Map.Entry<String, ComponentAggregation> e : componentAggs.entrySet()) {
-			UUID componentUuid = canonicalToUuid.get(e.getKey());
-			if (componentUuid == null) continue;
-			keepComponentUuids.add(componentUuid);
-			List<Map<String, Object>> parentsJson = renderParents(
-					parentAggs.get(e.getKey()), canonicalToUuid);
-			upsertReleaseSbomComponent(orgUuid, releaseUuid, componentUuid, e.getValue(), parentsJson);
-		}
-
-		// Drop any join rows for components that no longer participate.
-		if (keepComponentUuids.isEmpty()) {
-			releaseSbomComponentRepository.deleteAllByOrgAndReleaseUuid(orgUuid, releaseUuid);
-		} else {
-			releaseSbomComponentRepository
-					.deleteByOrgAndReleaseUuidAndSbomComponentUuidNotIn(orgUuid, releaseUuid, keepComponentUuids);
-		}
+		markReleaseReconciled(releaseUuid);
 	}
 
 	/**
-	 * Per-release SBOM component inventory.
-	 *
-	 * <p>For COMPONENT releases this is a direct read of
-	 * {@code release_sbom_components}. For PRODUCT releases it is a
-	 * read-time union of (a) the product's own rows (e.g. an aggregated
-	 * BOM uploaded directly to the product) and (b) every transitive
-	 * dependency's rows. The same canonical {@code sbom_components} row
-	 * may appear in many deps; we merge those into one synthetic
-	 * {@link ReleaseSbomComponent} stamped with the product's
-	 * {@code releaseUuid} so the GraphQL surface is releaseUuid-consistent
-	 * and dependency / dependedOnBy edge resolution sees the unioned
-	 * parent set. The synthetic row is a transient JPA instance — never
-	 * saved — so the persisted table stays strictly per-release-local.
+	 * Parse one canonical artifact's BOM via rebom and write the
+	 * per-component {@code artifact_sbom_components} rows. Called only
+	 * when the canonical's rows don't already exist on disk.
 	 */
-	/**
-	 * Operator force-reconcile for a release. For COMPONENT releases this is
-	 * just {@link #reconcileReleaseSbomComponents(UUID)}. For PRODUCT releases
-	 * we first cascade-reconcile every transitive dependency so the read-time
-	 * aggregation on the product picks up the freshest dep state — the queue
-	 * scheduler would catch up within a minute, but force-reconcile is the
-	 * "do it now" entry point and should leave the product fully up-to-date
-	 * the moment it returns. Each cascade reconcile runs in its own
-	 * transaction (delegated through the Spring proxy) so a single dep
-	 * failure doesn't poison the rest.
-	 */
+	private void parseAndUpsertArtifactSbomComponents(
+			ArtifactData ad, UUID canonicalArtifactUuid, UUID orgUuid) {
+
+		ParsedBom parsed;
+		try {
+			parsed = rebomService.parseBom(ad.getInternalBom().id(), orgUuid);
+		} catch (Exception e) {
+			log.warn("Unable to fetch parsed BOM for artifact {} (bom {}): {}",
+					ad.getUuid(), ad.getInternalBom().id(), e.getMessage());
+			return;
+		}
+		if (parsed == null) return;
+
+		// Aggregate the components this BOM declares, keyed by canonical purl.
+		Map<String, ComponentAggregation> componentAggs = new LinkedHashMap<>();
+		if (parsed.components() != null) {
+			for (ParsedBomComponent pc : parsed.components()) {
+				if (pc == null || pc.canonicalPurl() == null) continue;
+				ComponentAggregation agg = componentAggs.computeIfAbsent(
+						pc.canonicalPurl(), k -> new ComponentAggregation(pc));
+				agg.mergeSample(pc);
+				agg.setExactPurl(pc.fullPurl());
+			}
+		}
+
+		// Aggregate the in-edges (parents) keyed by target canonical purl.
+		Map<String, Map<ParentKey, ParentEdge>> parentAggs = new LinkedHashMap<>();
+		if (parsed.dependencies() != null) {
+			for (ParsedBomDependency pd : parsed.dependencies()) {
+				if (pd == null || pd.sourceCanonicalPurl() == null
+						|| pd.targetCanonicalPurl() == null) continue;
+				ParentKey key = new ParentKey(pd.sourceCanonicalPurl(), relationshipType(pd));
+				ParentEdge edge = new ParentEdge(pd.sourceFullPurl(), pd.targetFullPurl());
+				parentAggs.computeIfAbsent(pd.targetCanonicalPurl(), k -> new LinkedHashMap<>())
+						.putIfAbsent(key, edge);
+			}
+		}
+
+		if (componentAggs.isEmpty()) return;
+
+		// Upsert canonical sbom_components and get back canonical→uuid map.
+		Map<String, UUID> canonicalToUuid = upsertSbomComponents(componentAggs.values(), orgUuid);
+
+		// Write one artifact_sbom_components row per component in this BOM.
+		List<ArtifactSbomComponent> rows = new ArrayList<>(componentAggs.size());
+		for (Map.Entry<String, ComponentAggregation> e : componentAggs.entrySet()) {
+			String canonical = e.getKey();
+			UUID componentUuid = canonicalToUuid.get(canonical);
+			if (componentUuid == null) continue;
+
+			List<Map<String, Object>> parentsJson = renderParents(
+					parentAggs.get(canonical), canonicalToUuid);
+
+			ArtifactSbomComponent row = new ArtifactSbomComponent();
+			row.setOrg(orgUuid);
+			row.setCanonicalArtifactUuid(canonicalArtifactUuid);
+			row.setSbomComponentUuid(componentUuid);
+			row.setExactPurl(e.getValue().getExactPurl() != null
+					? e.getValue().getExactPurl() : canonical);
+			row.setParents(parentsJson);
+			rows.add(row);
+		}
+
+		try {
+			artifactSbomComponentRepository.saveAll(rows);
+		} catch (DataIntegrityViolationException dive) {
+			// Lost the race with a concurrent reconcile of the same canonical —
+			// per-row save in case some were inserted, ignore conflicts.
+			for (ArtifactSbomComponent row : rows) {
+				try {
+					artifactSbomComponentRepository.save(row);
+				} catch (DataIntegrityViolationException ignored) {
+				}
+			}
+		}
+	}
+
+	private void markReleaseReconciled(UUID releaseUuid) {
+		releaseRepository.recordSbomReconciledAtVersion(releaseUuid, CURRENT_SBOM_SCHEMA_VERSION);
+	}
+
+	// ===================================================================
+	// Canonical artifact resolution (lazy, BOM artifacts only, org-scoped)
+	// ===================================================================
+
+	private UUID resolveCanonicalArtifact(ArtifactData ad, UUID orgUuid) {
+		UUID artifactUuid = ad.getUuid();
+
+		Optional<ArtifactCanonicalMap> existing =
+				artifactCanonicalMapRepository.findByArtifactUuid(artifactUuid);
+		if (existing.isPresent()) {
+			return existing.get().getCanonicalArtifactUuid();
+		}
+
+		String rearmDigest = extractRearmDigest(ad);
+		UUID canonical = artifactUuid;
+		if (rearmDigest != null) {
+			Optional<Artifact> match = sharedArtifactService.findArtifactByStoredDigest(orgUuid, rearmDigest);
+			canonical = match.map(Artifact::getUuid).orElse(artifactUuid);
+		}
+
+		ArtifactCanonicalMap row = new ArtifactCanonicalMap();
+		row.setOrg(orgUuid);
+		row.setArtifactUuid(artifactUuid);
+		row.setCanonicalArtifactUuid(canonical);
+		try {
+			artifactCanonicalMapRepository.save(row);
+		} catch (DataIntegrityViolationException dive) {
+			return artifactCanonicalMapRepository.findByArtifactUuid(artifactUuid)
+					.map(ArtifactCanonicalMap::getCanonicalArtifactUuid)
+					.orElse(artifactUuid);
+		}
+		return canonical;
+	}
+
+	private static String extractRearmDigest(ArtifactData ad) {
+		Set<DigestRecord> drs = ad.getDigestRecords();
+		if (drs == null || drs.isEmpty()) return null;
+		for (DigestRecord dr : drs) {
+			if (dr.scope() == DigestScope.REARM && dr.digest() != null) return dr.digest();
+		}
+		return null;
+	}
+
+	// ===================================================================
+	// Force-reconcile (operator GraphQL mutation)
+	// ===================================================================
+
 	public void forceReconcileWithDeps(UUID releaseUuid) {
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		if (ord.isEmpty()) {
@@ -317,179 +393,202 @@ public class SbomComponentService {
 		self.reconcileReleaseSbomComponents(releaseUuid);
 	}
 
+	// ===================================================================
+	// Read API — synthesize per-release view from artifact-keyed rows
+	// ===================================================================
+
 	public List<ReleaseSbomComponent> listReleaseSbomComponents(UUID releaseUuid) {
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		if (ord.isEmpty()) return List.of();
 		ReleaseData rd = ord.get();
 		UUID orgUuid = rd.getOrg();
 		if (orgUuid == null) return List.of();
+
 		boolean isProduct = getComponentService.getComponentData(rd.getComponent())
 				.map(cd -> cd.getType() == ComponentType.PRODUCT)
 				.orElse(false);
-		if (!isProduct) {
-			return releaseSbomComponentRepository.findByOrgAndReleaseUuid(orgUuid, releaseUuid);
-		}
 
 		Set<UUID> sourceReleaseUuids = new LinkedHashSet<>();
 		sourceReleaseUuids.add(releaseUuid);
-		// unwindReleaseDependencies enforces same-org/external-org guard, so
-		// every dep we see here belongs to the product's org and the org-scoped
-		// repo lookup below is safe.
-		for (ReleaseData dep : sharedReleaseService.unwindReleaseDependencies(rd)) {
-			sourceReleaseUuids.add(dep.getUuid());
+		if (isProduct) {
+			for (ReleaseData dep : sharedReleaseService.unwindReleaseDependencies(rd)) {
+				sourceReleaseUuids.add(dep.getUuid());
+			}
 		}
-		List<ReleaseSbomComponent> rawRows = releaseSbomComponentRepository
-				.findByOrgAndReleaseUuidIn(orgUuid, sourceReleaseUuids);
-		if (rawRows.isEmpty()) return List.of();
 
-		Map<UUID, List<ReleaseSbomComponent>> byComponent = new LinkedHashMap<>();
-		for (ReleaseSbomComponent r : rawRows) {
+		// Resolve the union of canonical artifacts referenced by the release
+		// (and, for products, every transitive dep).
+		Set<UUID> canonicalSet = new LinkedHashSet<>();
+		for (ReleaseArtifactIndex idx :
+				releaseArtifactIndexRepository.findByOrgAndReleaseUuidIn(orgUuid, sourceReleaseUuids)) {
+			canonicalSet.add(idx.getCanonicalArtifactUuid());
+		}
+		if (canonicalSet.isEmpty()) return List.of();
+
+		// Bulk-fetch every artifact_sbom_components row for the canonical set.
+		List<ArtifactSbomComponent> rows = artifactSbomComponentRepository
+				.findByOrgAndCanonicalArtifactUuidIn(orgUuid, canonicalSet);
+		if (rows.isEmpty()) return List.of();
+
+		// Group rows by sbom_component_uuid to build the per-release view.
+		Map<UUID, List<ArtifactSbomComponent>> byComponent = new LinkedHashMap<>();
+		for (ArtifactSbomComponent r : rows) {
 			byComponent.computeIfAbsent(r.getSbomComponentUuid(), k -> new ArrayList<>()).add(r);
 		}
-		List<ReleaseSbomComponent> aggregated = new ArrayList<>(byComponent.size());
-		for (Map.Entry<UUID, List<ReleaseSbomComponent>> e : byComponent.entrySet()) {
-			aggregated.add(mergeProductRow(orgUuid, releaseUuid, e.getKey(), e.getValue()));
+
+		// Bulk-fetch canonical components referenced by rows + their parents
+		// (we need their canonical purls for the rendered parent entries).
+		Set<UUID> referencedIds = new HashSet<>(byComponent.keySet());
+		for (ArtifactSbomComponent r : rows) {
+			if (r.getParents() != null) {
+				for (Map<String, Object> p : r.getParents()) {
+					UUID src = parseUuid(p.get("sourceSbomComponentUuid"));
+					if (src != null) referencedIds.add(src);
+				}
+			}
 		}
-		return aggregated;
+		Map<UUID, SbomComponent> sbomCompByUuid = findSbomComponentsByIds(referencedIds, orgUuid);
+
+		List<ReleaseSbomComponent> result = new ArrayList<>(byComponent.size());
+		for (Map.Entry<UUID, List<ArtifactSbomComponent>> e : byComponent.entrySet()) {
+			result.add(mergeReleaseRow(orgUuid, releaseUuid, e.getKey(), e.getValue(), sbomCompByUuid));
+		}
+		return result;
 	}
 
 	/**
-	 * Build one synthetic per-product row for a single canonical component
-	 * by unioning the {@code artifactParticipations} and {@code parents}
-	 * jsonb across all source rows. Participations are deduped by artifact
-	 * UUID with their {@code exactPurls} unioned; parents are deduped by
-	 * (sourceSbomComponentUuid, relationshipType) with their
-	 * {@code declaringArtifacts} unioned by (artifact, sourceExactPurl,
-	 * targetExactPurl). Created/updated dates take the earliest/latest seen
-	 * so the consumer sees a sensible aggregate timestamp.
+	 * Build one synthesized per-(release, sbom_component) view by unioning
+	 * the contributing canonical artifacts' rows. Each row contributes one
+	 * artifact participation; each row's parents array contributes a set of
+	 * declarations to the unioned parent edges.
 	 */
-	@SuppressWarnings("unchecked")
-	private ReleaseSbomComponent mergeProductRow(UUID orgUuid, UUID productReleaseUuid, UUID sbomComponentUuid,
-			List<ReleaseSbomComponent> sourceRows) {
-		Map<String, Map<String, Object>> participationsByArtifact = new LinkedHashMap<>();
+	private ReleaseSbomComponent mergeReleaseRow(
+			UUID orgUuid,
+			UUID releaseUuid,
+			UUID sbomComponentUuid,
+			List<ArtifactSbomComponent> sourceRows,
+			Map<UUID, SbomComponent> sbomCompByUuid) {
+
+		// artifactParticipations: one entry per contributing canonical artifact.
+		Map<UUID, Map<String, Object>> participationsByArtifact = new LinkedHashMap<>();
+		// parents: keyed by (sourceSbomComponentUuid, relationshipType) — one
+		// entry per logical edge, with declaringArtifacts collected from each
+		// contributing artifact row.
 		Map<String, Map<String, Object>> parentsByKey = new LinkedHashMap<>();
-		ZonedDateTime earliestCreated = null;
-		ZonedDateTime latestUpdated = null;
+		ZonedDateTime earliestParsed = null;
+		ZonedDateTime latestParsed = null;
 
-		for (ReleaseSbomComponent src : sourceRows) {
-			if (src.getCreatedDate() != null
-					&& (earliestCreated == null || src.getCreatedDate().isBefore(earliestCreated))) {
-				earliestCreated = src.getCreatedDate();
-			}
-			if (src.getLastUpdatedDate() != null
-					&& (latestUpdated == null || src.getLastUpdatedDate().isAfter(latestUpdated))) {
-				latestUpdated = src.getLastUpdatedDate();
+		for (ArtifactSbomComponent src : sourceRows) {
+			if (src.getParsedAt() != null) {
+				if (earliestParsed == null || src.getParsedAt().isBefore(earliestParsed)) earliestParsed = src.getParsedAt();
+				if (latestParsed == null || src.getParsedAt().isAfter(latestParsed)) latestParsed = src.getParsedAt();
 			}
 
-			List<Map<String, Object>> parts = src.getArtifactParticipations();
-			if (parts != null) {
-				for (Map<String, Object> part : parts) {
-					if (part == null) continue;
-					String artifactKey = String.valueOf(part.get("artifact"));
-					Map<String, Object> existing = participationsByArtifact.get(artifactKey);
-					if (existing == null) {
-						Map<String, Object> copy = new LinkedHashMap<>(part);
-						List<String> exact = new ArrayList<>();
-						Object rawExact = part.get("exactPurls");
-						if (rawExact instanceof List<?> list) {
-							for (Object o : list) if (o != null) exact.add(o.toString());
-						}
-						copy.put("exactPurls", exact);
-						participationsByArtifact.put(artifactKey, copy);
-					} else {
-						List<String> exact = (List<String>) existing.get("exactPurls");
-						Set<String> dedup = new LinkedHashSet<>(exact);
-						Object rawExact = part.get("exactPurls");
-						if (rawExact instanceof List<?> list) {
-							for (Object o : list) if (o != null) dedup.add(o.toString());
-						}
-						existing.put("exactPurls", new ArrayList<>(dedup));
+			// Participation: this artifact (canonical) referenced the component
+			// using exact_purl.
+			Map<String, Object> participation = participationsByArtifact
+					.computeIfAbsent(src.getCanonicalArtifactUuid(), k -> {
+						Map<String, Object> m = new LinkedHashMap<>();
+						m.put("artifact", k.toString());
+						m.put("exactPurls", new ArrayList<String>());
+						return m;
+					});
+			@SuppressWarnings("unchecked")
+			List<String> exactPurls = (List<String>) participation.get("exactPurls");
+			if (!exactPurls.contains(src.getExactPurl())) exactPurls.add(src.getExactPurl());
+
+			// Parents: each entry in the artifact's parents array becomes a
+			// declaringArtifacts entry under the unioned edge.
+			if (src.getParents() != null) {
+				for (Map<String, Object> p : src.getParents()) {
+					if (p == null) continue;
+					String sourceCanonicalPurl = String.valueOf(p.get("sourceCanonicalPurl"));
+					String relationshipType = String.valueOf(p.get("relationshipType"));
+					String key = sourceCanonicalPurl + " " + relationshipType;
+					Map<String, Object> publicEntry = parentsByKey.computeIfAbsent(key, k -> {
+						Map<String, Object> m = new LinkedHashMap<>();
+						m.put("sourceSbomComponentUuid", p.get("sourceSbomComponentUuid"));
+						m.put("sourceCanonicalPurl", sourceCanonicalPurl);
+						m.put("relationshipType", relationshipType);
+						m.put("declaringArtifacts", new ArrayList<Map<String, Object>>());
+						return m;
+					});
+					@SuppressWarnings("unchecked")
+					List<Map<String, Object>> decls = (List<Map<String, Object>>) publicEntry.get("declaringArtifacts");
+					Map<String, Object> decl = new LinkedHashMap<>();
+					decl.put("artifact", src.getCanonicalArtifactUuid().toString());
+					decl.put("sourceExactPurl", p.get("sourceExactPurl"));
+					decl.put("targetExactPurl", p.get("targetExactPurl"));
+					String declKey = declarationKey(decl);
+					boolean seen = false;
+					for (Map<String, Object> existing : decls) {
+						if (declarationKey(existing).equals(declKey)) { seen = true; break; }
 					}
-				}
-			}
-
-			List<Map<String, Object>> parents = src.getParents();
-			if (parents != null) {
-				for (Map<String, Object> parent : parents) {
-					if (parent == null) continue;
-					String parentKey = parent.get("sourceSbomComponentUuid")
-							+ "\u0000" + parent.get("relationshipType");
-					Map<String, Object> existing = parentsByKey.get(parentKey);
-					if (existing == null) {
-						Map<String, Object> copy = new LinkedHashMap<>(parent);
-						List<Map<String, Object>> declarations = new ArrayList<>();
-						Object rawDecls = parent.get("declaringArtifacts");
-						if (rawDecls instanceof List<?> list) {
-							for (Object o : list) {
-								if (o instanceof Map<?, ?> m) declarations.add(new LinkedHashMap<>((Map<String, Object>) m));
-							}
-						}
-						copy.put("declaringArtifacts", declarations);
-						parentsByKey.put(parentKey, copy);
-					} else {
-						List<Map<String, Object>> declarations = (List<Map<String, Object>>) existing.get("declaringArtifacts");
-						Set<String> seen = new HashSet<>();
-						for (Map<String, Object> d : declarations) {
-							seen.add(declarationKey(d));
-						}
-						Object rawDecls = parent.get("declaringArtifacts");
-						if (rawDecls instanceof List<?> list) {
-							for (Object o : list) {
-								if (o instanceof Map<?, ?> m) {
-									Map<String, Object> decl = new LinkedHashMap<>((Map<String, Object>) m);
-									if (seen.add(declarationKey(decl))) declarations.add(decl);
-								}
-							}
-						}
-					}
+					if (!seen) decls.add(decl);
 				}
 			}
 		}
 
+		// Stable sort: participations by artifact uuid, parents by source
+		// canonical purl + relationship.
+		List<Map<String, Object>> participationsSorted = new ArrayList<>(participationsByArtifact.values());
+		participationsSorted.sort((a, b) -> String.valueOf(a.get("artifact")).compareTo(String.valueOf(b.get("artifact"))));
+		// Sort exact purls inside each participation entry deterministically.
+		for (Map<String, Object> part : participationsSorted) {
+			@SuppressWarnings("unchecked")
+			List<String> purls = (List<String>) part.get("exactPurls");
+			Collections.sort(purls);
+		}
+
+		List<Map<String, Object>> parentsSorted = new ArrayList<>(parentsByKey.values());
+		parentsSorted.sort((a, b) -> {
+			String sa = String.valueOf(a.get("sourceCanonicalPurl"));
+			String sb = String.valueOf(b.get("sourceCanonicalPurl"));
+			int by = sa.compareTo(sb);
+			if (by != 0) return by;
+			return String.valueOf(a.get("relationshipType")).compareTo(String.valueOf(b.get("relationshipType")));
+		});
+
 		ReleaseSbomComponent merged = new ReleaseSbomComponent();
-		// Deterministic synthetic uuid derived from (productReleaseUuid,
-		// sbomComponentUuid). Without this, ReleaseSbomComponent's @Id default
-		// initializer hands out a fresh randomUUID on every merge call —
-		// breaking UI navigation that round-trips row.uuid through the URL,
-		// and churning Apollo's normalized cache (which keys on uuid) on every
-		// query against a product release. v5/name-based UUIDs occupy a
-		// different version-bit space than the v4 randomUUIDs used for real
-		// persisted rows, so synthetic ids cannot collide with persisted ones.
-		merged.setUuid(syntheticProductRowUuid(productReleaseUuid, sbomComponentUuid));
+		merged.setUuid(syntheticReleaseRowUuid(releaseUuid, sbomComponentUuid));
 		merged.setOrg(orgUuid);
-		merged.setReleaseUuid(productReleaseUuid);
+		merged.setReleaseUuid(releaseUuid);
 		merged.setSbomComponentUuid(sbomComponentUuid);
-		merged.setArtifactParticipations(new ArrayList<>(participationsByArtifact.values()));
-		merged.setParents(new ArrayList<>(parentsByKey.values()));
-		if (earliestCreated != null) merged.setCreatedDate(earliestCreated);
-		if (latestUpdated != null) merged.setLastUpdatedDate(latestUpdated);
+		merged.setArtifactParticipations(participationsSorted);
+		merged.setParents(parentsSorted);
+		if (earliestParsed != null) merged.setCreatedDate(earliestParsed);
+		if (latestParsed != null) merged.setLastUpdatedDate(latestParsed);
 		return merged;
 	}
 
-	private static UUID syntheticProductRowUuid(UUID productReleaseUuid, UUID sbomComponentUuid) {
-		String key = productReleaseUuid.toString() + ":" + sbomComponentUuid.toString();
+	private static UUID syntheticReleaseRowUuid(UUID releaseUuid, UUID sbomComponentUuid) {
+		String key = releaseUuid.toString() + ":" + sbomComponentUuid.toString();
 		return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
 	}
 
 	private static String declarationKey(Map<String, Object> declaration) {
 		return String.valueOf(declaration.get("artifact"))
-				+ "\u0000" + String.valueOf(declaration.get("sourceExactPurl"))
-				+ "\u0000" + String.valueOf(declaration.get("targetExactPurl"));
+				+ " " + String.valueOf(declaration.get("sourceExactPurl"))
+				+ " " + String.valueOf(declaration.get("targetExactPurl"));
 	}
+
+	private static UUID parseUuid(Object value) {
+		if (value == null) return null;
+		if (value instanceof UUID u) return u;
+		if (value instanceof String s && !s.isBlank()) {
+			try { return UUID.fromString(s); } catch (IllegalArgumentException iae) { return null; }
+		}
+		return null;
+	}
+
+	// ===================================================================
+	// Misc public API
+	// ===================================================================
 
 	public Optional<SbomComponent> getSbomComponent(UUID uuid) {
 		return sbomComponentRepository.findById(uuid);
 	}
 
-	/**
-	 * Bulk-fetch sbom_components by UUID, filtered to {@code orgUuid}, into a
-	 * uuid→component map. Used by the per-release graph resolver to avoid an
-	 * N+1 against the components table when resolving {@code component} /
-	 * {@code targetCanonicalPurl} on many edges. The org filter is defensive
-	 * — UUIDs are globally unique so a cross-org id wouldn't be in {@code ids}
-	 * for a properly-scoped release read, but we honour the contract that
-	 * every read in this service is org-bounded.
-	 */
 	public Map<UUID, SbomComponent> findSbomComponentsByIds(Collection<UUID> ids, UUID orgUuid) {
 		if (ids == null || ids.isEmpty() || orgUuid == null) return Map.of();
 		Map<UUID, SbomComponent> out = new LinkedHashMap<>();
@@ -499,26 +598,20 @@ public class SbomComponentService {
 		return out;
 	}
 
+	/**
+	 * No persisted per-(release, sbom_component) row exists since V37 —
+	 * the synthesized view is built on demand. Returns empty for code paths
+	 * that still call this lookup directly; the GraphQL surface is served
+	 * via {@link #listReleaseSbomComponents(UUID)}.
+	 */
 	public Optional<ReleaseSbomComponent> getReleaseSbomComponent(UUID uuid) {
-		return releaseSbomComponentRepository.findById(uuid);
+		return Optional.empty();
 	}
 
 	public record SbomComponentSearchQuery(String name, String version) {}
 
 	public record ComponentPurlToSbom(String purl, List<UUID> sbomComponents) {}
 
-	/**
-	 * Native (non-DependencyTrack) batch search analogue of
-	 * {@code IntegrationService.searchDependencyTrackComponentBatch}. Each
-	 * input query is matched against {@code sbom_components} narrowed to the
-	 * org via {@code release_sbom_components}, then results are grouped by
-	 * canonical purl. The grouped shape mirrors {@code ComponentPurlToDtrack}
-	 * so the UI can feed the resulting component UUIDs into
-	 * {@code releasesBySbomComponents}. Each canonical purl maps to exactly
-	 * one {@code sbom_components.uuid} today, so the {@code sbomComponents}
-	 * list is typically length 1 — kept as a list for shape parity and
-	 * future-proofing.
-	 */
 	public List<ComponentPurlToSbom> searchSbomComponentsBatch(
 			List<SbomComponentSearchQuery> queries, UUID orgUuid) {
 		if (queries == null || queries.isEmpty() || orgUuid == null) return List.of();
@@ -540,12 +633,6 @@ public class SbomComponentService {
 		return out;
 	}
 
-	/**
-	 * Resolve a (possibly qualifier- or subpath-bearing) purl to its canonical
-	 * sbom_components row within {@code orgUuid}. Returns null if the purl
-	 * can't be parsed or no sbom_components row matches the canonical form
-	 * for that org.
-	 */
 	public UUID searchSbomComponentByPurl(String purl, UUID orgUuid) {
 		if (orgUuid == null) return null;
 		String canonical = io.reliza.common.Utils.canonicalizePurl(purl);
@@ -555,32 +642,20 @@ public class SbomComponentService {
 				.orElse(null);
 	}
 
-	/**
-	 * Whether the given release has any rows in release_sbom_components.
-	 * VEX import precondition guard — a release with no SBOM has no inventory to match against.
-	 */
 	public boolean releaseHasSbomComponents(UUID releaseUuid, UUID orgUuid) {
 		if (orgUuid == null || releaseUuid == null) return false;
-		return releaseSbomComponentRepository.existsByOrgAndReleaseUuid(orgUuid, releaseUuid);
+		return releaseArtifactIndexRepository.existsByOrgAndReleaseUuid(orgUuid, releaseUuid);
 	}
 
 	/**
-	 * Distinct release UUIDs (within {@code orgUuid}) whose inventory
-	 * references any of the given canonical sbom_components. Returns both
-	 * (a) component releases that directly carry the component in
-	 * {@code release_sbom_components} and (b) every transitive product
-	 * release that bundles those component releases — products no longer
-	 * materialise their own rows under the read-time aggregation model, so
-	 * the upward walk is what makes impact analysis ("which releases are
-	 * affected by component X?") actually surface affected products.
-	 *
-	 * <p>The org scope is a direct {@code release_sbom_components.org}
-	 * column match — sbom_components is now per-org so no cross-org leakage
-	 * is possible by construction.
+	 * Impact analysis: distinct release UUIDs that reference any canonical
+	 * artifact whose BOM contains any of the given canonical sbom_components.
+	 * Walks upward through {@code locateAllProductsOfRelease} so product
+	 * releases bundling affected component releases also surface.
 	 */
 	public Set<UUID> findReleaseUuidsBySbomComponents(Collection<UUID> sbomComponentUuids, UUID orgUuid) {
 		if (sbomComponentUuids == null || sbomComponentUuids.isEmpty() || orgUuid == null) return Set.of();
-		List<UUID> directReleaseUuids = releaseSbomComponentRepository
+		List<UUID> directReleaseUuids = artifactSbomComponentRepository
 				.findDistinctReleaseUuidsByOrgAndSbomComponentUuidIn(orgUuid, sbomComponentUuids);
 		if (directReleaseUuids.isEmpty()) return Set.of();
 		Set<UUID> all = new LinkedHashSet<>(directReleaseUuids);
@@ -595,20 +670,10 @@ public class SbomComponentService {
 		return all;
 	}
 
-	/**
-	 * Pull all BOM-bearing artifact UUIDs that participate in a single
-	 * release: inbound + outbound deliverables, source-code entry artifacts
-	 * scoped to the release's component, and release-attached artifacts.
-	 *
-	 * <p>For PRODUCT releases we deliberately do <em>not</em> recurse into
-	 * dependencies here — dep aggregation now happens at read time in
-	 * {@link #listReleaseSbomComponents(UUID)}. This keeps each
-	 * {@code release_sbom_components} row strictly local to its own release
-	 * (a product reconcile only writes rows for BOMs the product itself
-	 * carries, e.g. an aggregate uploaded directly), and the read path
-	 * unions across deps so a product's inventory always reflects the
-	 * latest dep state without re-reconciling the product.
-	 */
+	// ===================================================================
+	// BOM artifact collection (unchanged from V25 — same set of sources)
+	// ===================================================================
+
 	private Set<UUID> collectBomArtifactUuids(ReleaseData rd) {
 		Set<UUID> artifactUuids = new LinkedHashSet<>();
 
@@ -620,7 +685,6 @@ public class SbomComponentService {
 			if (dd.getArtifacts() != null) artifactUuids.addAll(dd.getArtifacts());
 		}
 
-		// Artifacts on the source-code entry matching the release component.
 		if (rd.getSourceCodeEntry() != null) {
 			getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry())
 					.ifPresent(sce -> {
@@ -631,28 +695,22 @@ public class SbomComponentService {
 						}
 					});
 		}
-		// Artifacts directly attached to the release.
 		if (rd.getArtifacts() != null) artifactUuids.addAll(rd.getArtifacts());
 		return artifactUuids;
 	}
 
-	/**
-	 * Ensure a row exists for every canonical purl in the aggregation set
-	 * within {@code orgUuid} and return a canonical→uuid map. With per-org
-	 * pinning the same canonical purl can exist as separate rows in
-	 * different orgs, so all lookups + inserts are scoped to the caller's
-	 * org. Concurrent inserts of the same (org, canonical) pair are now
-	 * serialised by the dtrack advisory lock the queue scheduler runs
-	 * under, but the race-tolerant catch is kept for the operator
-	 * force-reconcile path.
-	 */
+	// ===================================================================
+	// Canonical sbom_components upsert (unchanged from V25)
+	// ===================================================================
+
 	private Map<String, UUID> upsertSbomComponents(Collection<ComponentAggregation> aggs, UUID orgUuid) {
 		List<String> canonicals = new ArrayList<>();
 		for (ComponentAggregation agg : aggs) canonicals.add(agg.sample.canonicalPurl());
 
 		Map<String, UUID> canonicalToUuid = new HashMap<>();
 		Map<String, SbomComponent> existingByCanonical = new HashMap<>();
-		for (SbomComponent sc : sbomComponentRepository.findByOrgAndCanonicalPurlIn(orgUuid.toString(), canonicals)) {
+		for (SbomComponent sc :
+				sbomComponentRepository.findByOrgAndCanonicalPurlIn(orgUuid.toString(), canonicals)) {
 			existingByCanonical.put(sc.getCanonicalPurl(), sc);
 			canonicalToUuid.put(sc.getCanonicalPurl(), sc.getUuid());
 		}
@@ -661,7 +719,6 @@ public class SbomComponentService {
 			String canonical = agg.sample.canonicalPurl();
 			SbomComponent existing = existingByCanonical.get(canonical);
 			if (existing != null) {
-				// Flip isRoot on only if we now have evidence the component is a root.
 				if (agg.isRoot && !isMarkedRoot(existing)) {
 					Map<String, Object> rec = existing.getRecordData() != null
 							? new HashMap<>(existing.getRecordData())
@@ -669,11 +726,8 @@ public class SbomComponentService {
 					rec.put("isRoot", true);
 					existing.setRecordData(rec);
 					existing.setLastUpdatedDate(ZonedDateTime.now());
-					try {
-						sbomComponentRepository.save(existing);
-					} catch (DataIntegrityViolationException ignored) {
-						// best-effort; the read-side still resolves the row.
-					}
+					try { sbomComponentRepository.save(existing); }
+					catch (DataIntegrityViolationException ignored) {}
 				}
 				continue;
 			}
@@ -682,7 +736,6 @@ public class SbomComponentService {
 				sc = sbomComponentRepository.save(sc);
 				canonicalToUuid.put(canonical, sc.getUuid());
 			} catch (DataIntegrityViolationException dive) {
-				// Lost the race with another writer — re-read within the same org.
 				sbomComponentRepository.findByOrgAndCanonicalPurl(orgUuid, canonical)
 						.ifPresent(rec -> canonicalToUuid.put(canonical, rec.getUuid()));
 			}
@@ -710,82 +763,37 @@ public class SbomComponentService {
 	}
 
 	/**
-	 * Render the parents jsonb for one target component: one entry per
-	 * (source canonical, relationshipType), each carrying its per-artifact
-	 * declarations. Source entries that don't resolve to a canonical uuid
-	 * (shouldn't happen since rebom only returns resolved edges, but
-	 * defensive) are dropped.
+	 * Render the parents JSONB for one target component within one BOM:
+	 * one entry per (source canonical, relationshipType). The
+	 * declaringArtifacts wrapper from the prior per-release shape is gone
+	 * — the row's {@code canonical_artifact_uuid} field IS the declaring
+	 * artifact. Source canonical UUIDs are resolved from the canonical→uuid
+	 * map; entries whose source can't be resolved are dropped.
 	 */
 	private List<Map<String, Object>> renderParents(
-			Map<ParentKey, ParentAggregation> edges,
+			Map<ParentKey, ParentEdge> edges,
 			Map<String, UUID> canonicalToUuid) {
 		if (edges == null || edges.isEmpty()) return new ArrayList<>();
 		List<Map<String, Object>> out = new ArrayList<>();
-		for (Map.Entry<ParentKey, ParentAggregation> e : edges.entrySet()) {
+		for (Map.Entry<ParentKey, ParentEdge> e : edges.entrySet()) {
 			UUID sourceUuid = canonicalToUuid.get(e.getKey().sourceCanonical);
 			if (sourceUuid == null) continue;
 			Map<String, Object> entry = new LinkedHashMap<>();
 			entry.put("sourceSbomComponentUuid", sourceUuid.toString());
 			entry.put("sourceCanonicalPurl", e.getKey().sourceCanonical);
 			entry.put("relationshipType", e.getKey().relationshipType);
-			entry.put("declaringArtifacts", e.getValue().sortedDeclarations());
+			entry.put("sourceExactPurl", e.getValue().sourceFullPurl);
+			entry.put("targetExactPurl", e.getValue().targetFullPurl);
 			out.add(entry);
 		}
-		// Stable output: sort by source canonical purl then relationship type.
 		out.sort((a, b) -> {
-			int bySource = ((String) a.get("sourceCanonicalPurl"))
-					.compareTo((String) b.get("sourceCanonicalPurl"));
+			int bySource = String.valueOf(a.get("sourceCanonicalPurl"))
+					.compareTo(String.valueOf(b.get("sourceCanonicalPurl")));
 			if (bySource != 0) return bySource;
-			return ((String) a.get("relationshipType"))
-					.compareTo((String) b.get("relationshipType"));
+			return String.valueOf(a.get("relationshipType"))
+					.compareTo(String.valueOf(b.get("relationshipType")));
 		});
 		return out;
-	}
-
-	private void upsertReleaseSbomComponent(
-			UUID orgUuid,
-			UUID releaseUuid,
-			UUID sbomComponentUuid,
-			ComponentAggregation agg,
-			List<Map<String, Object>> parentsJson) {
-		List<Map<String, Object>> participations = new ArrayList<>();
-		for (Map.Entry<UUID, Set<String>> part : agg.sortedParticipations().entrySet()) {
-			Map<String, Object> entry = new LinkedHashMap<>();
-			entry.put("artifact", part.getKey().toString());
-			entry.put("exactPurls", new ArrayList<>(part.getValue()));
-			participations.add(entry);
-		}
-
-		Optional<ReleaseSbomComponent> existing = releaseSbomComponentRepository
-				.findByOrgAndReleaseUuidAndSbomComponentUuid(orgUuid, releaseUuid, sbomComponentUuid);
-		if (existing.isPresent()) {
-			ReleaseSbomComponent row = existing.get();
-			row.setArtifactParticipations(participations);
-			row.setParents(parentsJson);
-			row.setLastUpdatedDate(ZonedDateTime.now());
-			releaseSbomComponentRepository.save(row);
-		} else {
-			ReleaseSbomComponent row = new ReleaseSbomComponent();
-			row.setOrg(orgUuid);
-			row.setReleaseUuid(releaseUuid);
-			row.setSbomComponentUuid(sbomComponentUuid);
-			row.setArtifactParticipations(participations);
-			row.setParents(parentsJson);
-			try {
-				releaseSbomComponentRepository.save(row);
-			} catch (DataIntegrityViolationException dive) {
-				// Defensive — the queue should serialize per-release work, so
-				// this branch is only reachable on a genuine concurrent write.
-				releaseSbomComponentRepository
-						.findByOrgAndReleaseUuidAndSbomComponentUuid(orgUuid, releaseUuid, sbomComponentUuid)
-						.ifPresent(r -> {
-							r.setArtifactParticipations(participations);
-							r.setParents(parentsJson);
-							r.setLastUpdatedDate(ZonedDateTime.now());
-							releaseSbomComponentRepository.save(r);
-						});
-			}
-		}
 	}
 
 	private static String relationshipType(ParsedBomDependency pd) {
@@ -794,16 +802,14 @@ public class SbomComponentService {
 		return raw.toUpperCase();
 	}
 
-	/**
-	 * Per-canonical aggregation bucket: one representative ParsedBomComponent
-	 * (first one seen; used for the record_data on sbom_components), whether
-	 * we've seen any artifact declare this component as a root, plus the map
-	 * of participating artifacts → full purls observed for that artifact.
-	 */
+	// ===================================================================
+	// Aggregation buckets (per artifact)
+	// ===================================================================
+
 	private static final class ComponentAggregation {
-		private final ParsedBomComponent sample;
-		private boolean isRoot;
-		private final Map<UUID, Set<String>> participations = new LinkedHashMap<>();
+		final ParsedBomComponent sample;
+		boolean isRoot;
+		private String exactPurl;
 
 		ComponentAggregation(ParsedBomComponent sample) {
 			this.sample = sample;
@@ -814,45 +820,14 @@ public class SbomComponentService {
 			if (Boolean.TRUE.equals(other.isRoot())) this.isRoot = true;
 		}
 
-		void addParticipation(UUID artifactUuid, String fullPurl) {
-			participations.computeIfAbsent(artifactUuid, k -> new TreeSet<>()).add(fullPurl);
+		void setExactPurl(String purl) {
+			if (this.exactPurl == null || purl != null) this.exactPurl = purl;
 		}
 
-		Map<UUID, Set<String>> sortedParticipations() {
-			Map<UUID, Set<String>> sorted = new LinkedHashMap<>();
-			participations.entrySet().stream()
-					.sorted(Map.Entry.comparingByKey((a, b) -> a.toString().compareTo(b.toString())))
-					.forEach(e -> sorted.put(e.getKey(), e.getValue()));
-			return sorted;
-		}
+		String getExactPurl() { return exactPurl; }
 	}
 
-	/** Grouping key for parent aggregation within one target canonical. */
 	private record ParentKey(String sourceCanonical, String relationshipType) {}
 
-	/**
-	 * Per (source, target, relationshipType) bucket: one entry per artifact
-	 * that declared the edge, capturing the exact purls it used on both ends.
-	 */
-	private static final class ParentAggregation {
-		/** Keyed by (artifact, source full purl, target full purl). */
-		private final Map<String, Map<String, Object>> declarations = new LinkedHashMap<>();
-
-		void addDeclaration(UUID artifactUuid, String sourceFullPurl, String targetFullPurl) {
-			String key = artifactUuid + "\u0000" + sourceFullPurl + "\u0000" + targetFullPurl;
-			if (declarations.containsKey(key)) return;
-			Map<String, Object> entry = new LinkedHashMap<>();
-			entry.put("artifact", artifactUuid.toString());
-			entry.put("sourceExactPurl", sourceFullPurl);
-			entry.put("targetExactPurl", targetFullPurl);
-			declarations.put(key, entry);
-		}
-
-		List<Map<String, Object>> sortedDeclarations() {
-			return declarations.entrySet().stream()
-					.sorted(Map.Entry.comparingByKey())
-					.map(Map.Entry::getValue)
-					.toList();
-		}
-	}
+	private record ParentEdge(String sourceFullPurl, String targetFullPurl) {}
 }

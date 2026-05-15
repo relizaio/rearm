@@ -410,4 +410,19 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "WHERE uuid = :uuid", nativeQuery = true)
 	void recordSbomReconcileFailure(@Param("uuid") UUID uuid, @Param("skipSeconds") int skipSeconds);
 
+	/**
+	 * Stamp {@code sbom_schema_version} after a successful reconcile so the
+	 * catch-up scheduler can later identify releases still on an older
+	 * aggregation layout via the partial index added in V37. Updated
+	 * separately from the flow_control clear so future migrations of this
+	 * area can simply bump the constant in code — rows below it surface as
+	 * eligible-for-reconcile without any Flyway re-enqueue UPDATE.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET sbom_schema_version = :version "
+			+ "WHERE uuid = :uuid AND sbom_schema_version < :version", nativeQuery = true)
+	void recordSbomReconciledAtVersion(@Param("uuid") UUID uuid, @Param("version") int version);
+
 }
