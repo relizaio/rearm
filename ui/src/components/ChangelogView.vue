@@ -144,8 +144,38 @@
                         />
                     </div>
                 </div>
+
+                <!-- NONE aggregation, PRODUCT: grouped per product release -->
+                <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneProductChangelog'">
+                    <div v-for="group in displayProductReleases" :key="group.releaseUuid" class="product-release-group">
+                        <ProductReleaseHeader
+                            :uuid="group.releaseUuid"
+                            :version="group.version"
+                            :lifecycle="group.lifecycle"
+                        />
+                        <template v-for="branch in group.branches" :key="branch.branchUuid">
+                            <div v-for="release in branch.releases" :key="release.releaseUuid">
+                                <ReleaseHeader
+                                    :uuid="release.releaseUuid"
+                                    :version="release.version"
+                                    :lifecycle="release.lifecycle"
+                                    :org-uuid="changelog.orgUuid"
+                                    :component-uuid="branch.componentUuid || changelog.componentUuid"
+                                    :component-name="branch.componentName"
+                                    :branch-uuid="branch.branchUuid"
+                                    :branch-name="branch.branchName"
+                                    :branch-change-type="branch.changeType"
+                                />
+                                <CodeChangesDisplay
+                                    :changes="formatCodeChanges(release)"
+                                    :selected-severity="selectedSeverity"
+                                />
+                            </div>
+                        </template>
+                    </div>
+                </div>
             </n-tab-pane>
-            
+
             <n-tab-pane name="sbom" tab="📦 SBOM Changes">
                 <div v-if="!hasData" style="padding: 40px; text-align: center; color: #999;">
                     <p style="font-size: 16px; margin-bottom: 10px;">No SBOM changes available{{ isDateBased ? ' for the selected date range' : '' }}</p>
@@ -168,7 +198,33 @@
                         <SbomChangesDisplay :sbom-changes="entry.release.sbomChanges" />
                     </div>
                 </div>
-                
+
+                <!-- NONE mode, PRODUCT: grouped per product release -->
+                <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneProductChangelog'">
+                    <div v-for="group in displayProductReleases" :key="group.releaseUuid" class="product-release-group">
+                        <ProductReleaseHeader
+                            :uuid="group.releaseUuid"
+                            :version="group.version"
+                            :lifecycle="group.lifecycle"
+                        />
+                        <template v-for="branch in group.branches" :key="branch.branchUuid">
+                            <div v-for="release in branch.releases" :key="release.releaseUuid">
+                                <ReleaseHeader
+                                    :uuid="release.releaseUuid"
+                                    :version="release.version"
+                                    :lifecycle="release.lifecycle"
+                                    :org-uuid="changelog.orgUuid"
+                                    :component-uuid="branch.componentUuid || changelog.componentUuid"
+                                    :component-name="branch.componentName"
+                                    :branch-uuid="branch.branchUuid"
+                                    :branch-name="branch.branchName"
+                                />
+                                <SbomChangesDisplay :sbom-changes="release.sbomChanges" />
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
                 <!-- AGGREGATED mode: Show top-level aggregated changes -->
                 <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                     <p style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
@@ -197,7 +253,33 @@
                         <FindingChangesDisplay :finding-changes="entry.release.findingChanges" />
                     </div>
                 </div>
-                
+
+                <!-- NONE mode, PRODUCT: grouped per product release -->
+                <div v-else-if="aggregationType === 'NONE' && changelog.__typename === 'NoneProductChangelog'">
+                    <div v-for="group in displayProductReleases" :key="group.releaseUuid" class="product-release-group">
+                        <ProductReleaseHeader
+                            :uuid="group.releaseUuid"
+                            :version="group.version"
+                            :lifecycle="group.lifecycle"
+                        />
+                        <template v-for="branch in group.branches" :key="branch.branchUuid">
+                            <div v-for="release in branch.releases" :key="release.releaseUuid">
+                                <ReleaseHeader
+                                    :uuid="release.releaseUuid"
+                                    :version="release.version"
+                                    :lifecycle="release.lifecycle"
+                                    :org-uuid="changelog.orgUuid"
+                                    :component-uuid="branch.componentUuid || changelog.componentUuid"
+                                    :component-name="branch.componentName"
+                                    :branch-uuid="branch.branchUuid"
+                                    :branch-name="branch.branchName"
+                                />
+                                <FindingChangesDisplay :finding-changes="release.findingChanges" />
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
                 <!-- AGGREGATED mode: Show top-level aggregated changes -->
                 <div v-else-if="aggregationType === 'AGGREGATED' && changelog.__typename === 'AggregatedChangelog'">
                     <p style="margin-bottom: 10px; font-style: italic;">{{ aggregatedDescription }}</p>
@@ -217,20 +299,21 @@ export default {
 import { Ref, ref, watch, computed } from 'vue'
 import { NTabs, NTabPane, NButton, useNotification } from 'naive-ui'
 import { useStore } from 'vuex'
-import { 
+import {
     FindingChangesDisplay,
     FindingChangesDisplayWithAttribution,
-    SbomChangesDisplay, 
-    CodeChangesDisplay, 
+    SbomChangesDisplay,
+    CodeChangesDisplay,
     ReleaseHeader,
+    ProductReleaseHeader,
     ChangelogControls,
     SeverityFilter
 } from './changelog'
-import { 
-    fetchComponentChangelogByDate, 
-    fetchComponentChangelog 
+import {
+    fetchComponentChangelogByDate,
+    fetchComponentChangelog
 } from '../utils/changelogQueries'
-import type { ComponentChangelog, NoneReleaseChanges, CodeCommit } from '../types/changelog-sealed'
+import type { ComponentChangelog, NoneReleaseChanges, CodeCommit, ProductReleaseChanges } from '../types/changelog-sealed'
 import { exportChangelogToPdf } from '../utils/changelogPdfExport'
 import type { ChangelogTab } from '../utils/changelogPdfExport'
 
@@ -290,11 +373,39 @@ const componentType = props.componenttypeprop
 
 const isProduct = computed(() => componentType === 'PRODUCT')
 const isDateBased = computed(() => props.iscomponentchangelog)
-const hasData = computed(() => changelog.value && changelog.value.branches && changelog.value.branches.length > 0)
+const hasData = computed(() => {
+    const cl = changelog.value
+    if (!cl) return false
+    if (cl.__typename === 'NoneProductChangelog') {
+        return !!(cl.productReleases && cl.productReleases.length > 0)
+    }
+    return !!(cl.branches && cl.branches.length > 0)
+})
 
 const displayBranches = computed((): any[] => {
     if (!hasData.value || !changelog.value) return []
+    if (changelog.value.__typename === 'NoneProductChangelog') return []
     return changelog.value.branches
+})
+
+// Product NONE changelog: groups sorted newest product release first, and each
+// group's child releases sorted newest first. Shallow copies avoid mutating source.
+const displayProductReleases = computed<ProductReleaseChanges[]>(() => {
+    if (!changelog.value || changelog.value.__typename !== 'NoneProductChangelog') return []
+    const byCreatedDesc = (a: { createdDate?: string }, b: { createdDate?: string }) => {
+        const aDate = a.createdDate ? new Date(a.createdDate).getTime() : 0
+        const bDate = b.createdDate ? new Date(b.createdDate).getTime() : 0
+        return bDate - aDate
+    }
+    return [...changelog.value.productReleases]
+        .sort(byCreatedDesc)
+        .map(group => ({
+            ...group,
+            branches: (group.branches || []).map(branch => ({
+                ...branch,
+                releases: [...(branch.releases || [])].sort(byCreatedDesc)
+            }))
+        }))
 })
 
 const showBranchHeadings = computed(() => {
@@ -444,4 +555,7 @@ function handleExportPdf() {
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
+.product-release-group {
+    margin-bottom: 20px;
+}
 </style>

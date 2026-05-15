@@ -3,6 +3,7 @@ export { default as FindingChangesDisplayWithAttribution } from './FindingChange
 export { default as SbomChangesDisplay } from './SbomChangesDisplay.vue'
 export { default as CodeChangesDisplay } from './CodeChangesDisplay.vue'
 export { default as ReleaseHeader } from './ReleaseHeader.vue'
+export { default as ProductReleaseHeader } from './ProductReleaseHeader.vue'
 export { default as ComponentHeader } from './ComponentHeader.vue'
 export { default as ChangelogControls } from './ChangelogControls.vue'
 export { default as SeverityFilter } from './SeverityFilter.vue'

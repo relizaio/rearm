@@ -217,6 +217,17 @@ const FINDING_CHANGES_WITH_ATTRIBUTION_FRAGMENT = `
 
 // ========== Shared Component Changelog Fragments ==========
 
+const NONE_BRANCH_CHANGES_FRAGMENT = `
+    branchUuid
+    branchName
+    componentUuid
+    componentName
+    changeType
+    releases {
+        ${NONE_RELEASE_CHANGES_FRAGMENT}
+    }
+`
+
 const NONE_CHANGELOG_FIELDS = `
     componentUuid
     componentName
@@ -228,13 +239,27 @@ const NONE_CHANGELOG_FIELDS = `
         ${RELEASE_INFO_FRAGMENT}
     }
     branches {
-        branchUuid
-        branchName
-        componentUuid
-        componentName
-        changeType
-        releases {
-            ${NONE_RELEASE_CHANGES_FRAGMENT}
+        ${NONE_BRANCH_CHANGES_FRAGMENT}
+    }
+`
+
+const NONE_PRODUCT_CHANGELOG_FIELDS = `
+    componentUuid
+    componentName
+    orgUuid
+    firstRelease {
+        ${RELEASE_INFO_FRAGMENT}
+    }
+    lastRelease {
+        ${RELEASE_INFO_FRAGMENT}
+    }
+    productReleases {
+        releaseUuid
+        version
+        lifecycle
+        createdDate
+        branches {
+            ${NONE_BRANCH_CHANGES_FRAGMENT}
         }
     }
 `
@@ -303,6 +328,9 @@ export async function fetchComponentChangelog(params: {
                     ... on NoneChangelog {
                         ${NONE_CHANGELOG_FIELDS}
                     }
+                    ... on NoneProductChangelog {
+                        ${NONE_PRODUCT_CHANGELOG_FIELDS}
+                    }
                     ... on AggregatedChangelog {
                         ${AGGREGATED_CHANGELOG_FIELDS}
                     }
@@ -357,6 +385,9 @@ export async function fetchComponentChangelogByDate(params: {
                     __typename
                     ... on NoneChangelog {
                         ${NONE_CHANGELOG_FIELDS}
+                    }
+                    ... on NoneProductChangelog {
+                        ${NONE_PRODUCT_CHANGELOG_FIELDS}
                     }
                     ... on AggregatedChangelog {
                         ${AGGREGATED_CHANGELOG_FIELDS}
