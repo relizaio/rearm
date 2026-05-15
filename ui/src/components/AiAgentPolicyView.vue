@@ -21,20 +21,38 @@
                          placeholder="Operator-facing message shown when this policy is violated."/>
             </n-form-item>
 
-            <n-grid :cols="2" x-gap="20">
-                <n-form-item-gi label="Kind" required>
-                    <n-radio-group v-model:value="form.kind">
-                        <n-radio-button value="INPUT">INPUT — gate on init / artifact attach</n-radio-button>
-                        <n-radio-button value="OUTPUT">OUTPUT — harden on commit attribution</n-radio-button>
-                    </n-radio-group>
-                </n-form-item-gi>
-                <n-form-item-gi label="Severity" required>
-                    <n-radio-group v-model:value="form.severity">
-                        <n-radio-button value="BLOCK">BLOCK — fail hardens to FAILED</n-radio-button>
-                        <n-radio-button value="WARN">WARN — fail records WARNING only</n-radio-button>
-                    </n-radio-group>
-                </n-form-item-gi>
-            </n-grid>
+            <n-form-item label="Kind" required>
+                <n-radio-group v-model:value="form.kind">
+                    <n-radio-button value="INPUT">INPUT</n-radio-button>
+                    <n-radio-button value="OUTPUT">OUTPUT</n-radio-button>
+                </n-radio-group>
+            </n-form-item>
+            <p class="hint">
+                <strong>INPUT</strong> — preconditions on the session itself: checked at
+                {@code sessionInitializeProgrammatic}; a BLOCK-FAILED verdict throws and
+                the session never opens. Use for allowlists (model, branch, identity).
+                <br/>
+                <strong>OUTPUT</strong> — postconditions on session work: checked at init
+                (PENDING — soft signal to the agent), re-checked when an artifact attaches,
+                hardens to FAILED when a commit is attributed without satisfying the CEL.
+                Use for "agent must produce X" rules.
+            </p>
+
+            <n-form-item label="Severity" required>
+                <n-radio-group v-model:value="form.severity">
+                    <n-radio-button value="BLOCK">BLOCK</n-radio-button>
+                    <n-radio-button value="WARN">WARN</n-radio-button>
+                </n-radio-group>
+            </n-form-item>
+            <p class="hint">
+                <strong>BLOCK</strong> — failure hardens to FAILED on the session;
+                INPUT throws at init, OUTPUT trips the
+                {@code release.agentSessions[].hasFailedPolicy} signal that the
+                approval-policy layer reads.
+                <br/>
+                <strong>WARN</strong> — failure records a WARNING verdict on the
+                session log but never blocks anything.
+            </p>
 
             <n-form-item label="CEL expression" required>
                 <n-input v-model:value="form.cel" type="textarea" :rows="3"
@@ -53,7 +71,14 @@
                         <li><code>session.uuid</code>, <code>session.clientSessionId</code>, <code>session.agent</code>, <code>session.org</code></li>
                         <li><code>session.status</code> — <code>OPEN</code> / <code>CLOSED</code></li>
                         <li><code>session.branch</code>, <code>session.title</code></li>
-                        <li><code>session.artifacts</code> — list of <code>{ uuid, type, displayIdentifier, bomFormat }</code></li>
+                        <li>
+                            <code>session.artifacts</code> — list of
+                            <code>{ uuid, type, displayIdentifier, bomFormat, tags }</code>;
+                            each tag is <code>{ key, value }</code>. Tag convention for
+                            agentic reports: <code>agenticPhase</code> = <code>ORIENTATION</code>
+                            / <code>INTERMEDIATE</code> / <code>FINAL</code> (mirrors the
+                            SBOM <code>lifecycle</code> tag pattern).
+                        </li>
                         <li><code>session.commits</code> — list of SCE uuid strings</li>
                     </ul>
                     <h5>agent</h5>
@@ -69,6 +94,8 @@
                     <h5>Samples</h5>
                     <div class="samples">
                         <n-button v-for="s in samples" :key="s.name" size="small" @click="applySample(s)">
+                            <n-tag size="tiny" :type="s.kind === 'INPUT' ? 'info' : 'default'" style="margin-right: 4px;">{{ s.kind }}</n-tag>
+                            <n-tag size="tiny" :type="s.severity === 'BLOCK' ? 'error' : 'warning'" style="margin-right: 6px;">{{ s.severity }}</n-tag>
                             {{ s.name }}
                         </n-button>
                     </div>
@@ -95,8 +122,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import {
-    NButton, NCollapse, NCollapseItem, NForm, NFormItem, NFormItemGi, NGrid, NInput,
-    NPopconfirm, NRadioButton, NRadioGroup, NSpin, NSwitch, useNotification,
+    NButton, NCollapse, NCollapseItem, NForm, NFormItem, NInput, NPopconfirm,
+    NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useNotification,
 } from 'naive-ui'
 
 const store = useStore()
@@ -131,7 +158,21 @@ const canSave = computed(() =>
 const samples = [
     {
         name: 'Orientation report required',
-        description: 'Every session must carry an AGENTIC_REPORT artifact before commits will be accepted.',
+        description: 'Every session must carry an AGENTIC_REPORT tagged agenticPhase=ORIENTATION before commits will be accepted.',
+        kind: 'OUTPUT',
+        severity: 'BLOCK',
+        cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))',
+    },
+    {
+        name: 'Final report required',
+        description: 'Session must produce a final-phase AGENTIC_REPORT before commits land.',
+        kind: 'OUTPUT',
+        severity: 'BLOCK',
+        cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))',
+    },
+    {
+        name: 'Any AGENTIC_REPORT artifact required',
+        description: 'Looser variant — any AGENTIC_REPORT artifact (no phase distinction).',
         kind: 'OUTPUT',
         severity: 'BLOCK',
         cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT")',
@@ -144,7 +185,7 @@ const samples = [
         cel: 'model.name == "claude-opus-4-7" || model.name == "claude-sonnet-4-6"',
     },
     {
-        name: 'Session has more than 20 commits',
+        name: 'Session has more than 20 commits (warn)',
         description: 'Soft signal for very long-running sessions; does not block.',
         kind: 'OUTPUT',
         severity: 'WARN',
@@ -248,6 +289,13 @@ function back () {
 .agentPolicyView { padding: 16px; max-width: 980px; }
 .head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .head h4 { margin: 0; }
+.hint {
+    color: var(--n-text-color-3, #666);
+    font-size: 12px;
+    margin: -6px 0 16px 0;
+    line-height: 1.5;
+    max-width: 720px;
+}
 .actions { margin-top: 16px; display: flex; gap: 12px; }
 .samples { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 :deep(code) { font-size: 12px; padding: 1px 4px; background: rgba(127,127,127,0.1); border-radius: 3px; }
