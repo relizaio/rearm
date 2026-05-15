@@ -1,7 +1,16 @@
 <template>
     <div class="agentPolicyView">
+        <n-breadcrumb separator="›" class="crumbs">
+            <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
+            <template v-if="fromSession">
+                <n-breadcrumb-item @click="openSession">Session {{ sessionShortLabel }}</n-breadcrumb-item>
+            </template>
+            <template v-else>
+                <n-breadcrumb-item @click="openPolicies">Policies</n-breadcrumb-item>
+            </template>
+            <n-breadcrumb-item>{{ isNew ? 'New policy' : (form.name || 'Edit policy') }}</n-breadcrumb-item>
+        </n-breadcrumb>
         <div class="head">
-            <n-button quaternary @click="back">‹ Back</n-button>
             <h4>{{ isNew ? 'New AI agent policy' : (form.name || 'Edit policy') }}</h4>
         </div>
 
@@ -144,9 +153,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import {
-    NAlert, NButton, NCollapse, NCollapseItem, NForm, NFormItem, NFormItemGi, NGrid,
-    NIcon, NInput, NPopconfirm, NPopover, NRadioButton, NRadioGroup, NSpin, NSwitch,
-    NTag, NTooltip, useNotification,
+    NAlert, NBreadcrumb, NBreadcrumbItem, NButton, NCollapse, NCollapseItem,
+    NForm, NFormItem, NFormItemGi, NGrid, NIcon, NInput, NPopconfirm, NPopover,
+    NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, NTooltip, useNotification,
 } from 'naive-ui'
 import { QuestionCircle20Regular, ClipboardPaste20Regular } from '@vicons/fluent'
 
@@ -158,9 +167,13 @@ const notification = useNotification()
 const isNew = computed(() => route.params.uuid === 'new')
 const policyUuid = computed(() => route.params.uuid as string)
 const orgFromQuery = computed(() => route.query.org as string | undefined)
+const fromQuery = computed(() => (route.query.from as string | undefined) || 'policies')
+const fromSession = computed(() => fromQuery.value === 'session')
+const sessionUuidFromQuery = computed(() => route.query.sessionUuid as string | undefined)
 
 const loading = ref<boolean>(true)
 const saving = ref<boolean>(false)
+const sessionContext = ref<any>(null)
 const form = ref<any>({
     uuid: null,
     org: '',
@@ -170,6 +183,14 @@ const form = ref<any>({
     severity: 'BLOCK',
     cel: '',
     enabled: true,
+})
+
+const sessionShortLabel = computed(() => {
+    const s = sessionContext.value
+    if (!s) return sessionUuidFromQuery.value?.slice(0, 8) ?? ''
+    const csid = s.clientSessionId
+    if (csid) return csid.length > 12 ? csid.slice(0, 12) + '…' : csid
+    return s.uuid?.slice(0, 8) ?? ''
 })
 
 const canSave = computed(() =>
@@ -299,6 +320,9 @@ async function load () {
                 enabled: !!p.enabled,
             }
         }
+        if (fromSession.value && sessionUuidFromQuery.value) {
+            sessionContext.value = await store.dispatch('fetchSession', sessionUuidFromQuery.value).catch(() => null)
+        }
     } catch (e: any) {
         notification.error({ content: `Failed to load: ${e?.message ?? e}` })
     } finally {
@@ -361,9 +385,27 @@ async function remove () {
     }
 }
 
-function back () {
-    if (form.value.org) {
-        router.push({ name: 'AiAgentPoliciesOfOrg', params: { orguuid: form.value.org } })
+function openAgentsOfOrg () {
+    const orgUuid = form.value.org || orgFromQuery.value
+    if (orgUuid) {
+        router.push({ name: 'AiAgentsOfOrg', params: { orguuid: orgUuid } })
+    } else {
+        router.back()
+    }
+}
+
+function openPolicies () {
+    const orgUuid = form.value.org || orgFromQuery.value
+    if (orgUuid) {
+        router.push({ name: 'AiAgentPoliciesOfOrg', params: { orguuid: orgUuid } })
+    } else {
+        router.back()
+    }
+}
+
+function openSession () {
+    if (sessionUuidFromQuery.value) {
+        router.push({ name: 'AiAgentSessionView', params: { uuid: sessionUuidFromQuery.value } })
     } else {
         router.back()
     }
@@ -372,6 +414,8 @@ function back () {
 
 <style scoped>
 .agentPolicyView { padding: 16px; max-width: 980px; }
+.crumbs { margin-bottom: 12px; font-size: 13px; }
+.crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .head h4 { margin: 0; }
 .opt-help {

@@ -1,5 +1,10 @@
 <template>
     <div class="aiAgentSessionView" v-if="session">
+        <n-breadcrumb separator="›" class="crumbs">
+            <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
+            <n-breadcrumb-item v-if="agent" @click="openAgent">{{ agent.name }}</n-breadcrumb-item>
+            <n-breadcrumb-item>Session {{ sessionShortLabel }}</n-breadcrumb-item>
+        </n-breadcrumb>
         <div class="hero">
             <n-tag :type="session.status === 'OPEN' ? 'info' : 'default'" size="small">
                 {{ session.status }}
@@ -81,7 +86,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, DataTableColumns, useNotification } from 'naive-ui'
 import { fetchArrayBufferWithAuth } from '@/utils/fetchClient'
 
 const store = useStore()
@@ -162,6 +167,21 @@ function openAgent () {
     if (agent.value) router.push({ name: 'AiAgentView', params: { uuid: agent.value.uuid } })
 }
 
+function openAgentsOfOrg () {
+    const orgUuid = agent.value?.org ?? session.value?.org
+    if (orgUuid) {
+        router.push({ name: 'AiAgentsOfOrg', params: { orguuid: orgUuid } })
+    } else {
+        router.back()
+    }
+}
+
+const sessionShortLabel = computed(() => {
+    const csid = session.value?.clientSessionId
+    if (csid) return csid.length > 12 ? csid.slice(0, 12) + '…' : csid
+    return session.value?.uuid?.slice(0, 8) ?? ''
+})
+
 function commitUrl (row: any): string | null {
     const uri: string | undefined = row.vcsRepository?.uri
     const commit: string | undefined = row.commit
@@ -206,7 +226,11 @@ function formatDate (s: string | null | undefined) {
 }
 
 function openPolicy (uuid: string) {
-    router.push({ name: 'AiAgentPolicyView', params: { uuid } })
+    router.push({
+        name: 'AiAgentPolicyView',
+        params: { uuid },
+        query: { from: 'session', sessionUuid: sessionUuid.value },
+    })
 }
 
 const commitColumns: DataTableColumns<any> = [
@@ -390,6 +414,8 @@ const policyColumns: DataTableColumns<any> = [
 
 <style scoped>
 .aiAgentSessionView { padding: 16px; }
+.crumbs { margin-bottom: 12px; font-size: 13px; }
+.crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
 .dim { color: var(--n-text-color-3, #666); }
 .agent-id { font-family: monospace; font-size: 11px; }

@@ -83,7 +83,6 @@
                     :columns="sessionColumns"
                     :data="openSessions"
                     :pagination="{ pageSize: 10 }"
-                    @update:row-click="(row: any) => openSession(row.uuid)"
                 />
             </div>
         </n-space>
@@ -141,10 +140,18 @@ function openPolicies () {
 }
 
 const sessionColumns: DataTableColumns<any> = [
-    { title: 'Session', key: 'clientSessionId', width: 200, render: (row: any) => h('code', null, row.clientSessionId ?? row.uuid.slice(0, 8)) },
+    {
+        title: 'Session',
+        key: 'clientSessionId',
+        width: 220,
+        render: (row: any) => h('a', {
+            href: '#',
+            onClick: (e: Event) => { e.preventDefault(); openSession(row.uuid) },
+        }, h('code', null, row.clientSessionId ?? row.uuid.slice(0, 8))),
+    },
     { title: 'Title', key: 'title' },
     { title: 'Branch', key: 'branch', render: (row: any) => row.branch ? h('code', null, row.branch) : '—' },
-    { title: 'Started', key: 'startedAt', render: (row: any) => row.startedAt ? new Date(row.startedAt).toLocaleString() : '—' },
+    { title: 'Started', key: 'startedAt', render: (row: any) => row.startedAt ? new Date(row.startedAt).toLocaleString('en-CA') : '—' },
     { title: 'Artifacts', key: 'artifacts', width: 110, render: (row: any) => row.artifacts?.length ?? 0 },
     { title: 'Commits', key: 'commits', width: 100, render: (row: any) => row.commits?.length ?? 0 },
 ]
