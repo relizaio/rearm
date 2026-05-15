@@ -2166,6 +2166,15 @@ const storeObject : any = {
                                 uri
                                 type
                             }
+                            releases {
+                                uuid
+                                version
+                                lifecycle
+                                componentDetails {
+                                    uuid
+                                    name
+                                }
+                            }
                         }
                     }`,
                 variables: { sceUuid: uuid },

@@ -10,7 +10,7 @@
                 <span :style="{ background: agent.color || '#888', color: 'white', padding: '0 4px', borderRadius: '4px', marginRight: '4px' }">
                     {{ agent.iconKind || '◆' }}
                 </span>
-                {{ agent.name }}
+                {{ agent.name }}<span v-if="agent.agentIdentity" class="dim agent-id"> — {{ agent.agentIdentity }}</span>
             </a>
         </div>
         <h3>{{ session.title || '(untitled)' }}</h3>
@@ -39,9 +39,18 @@
                 <div v-if="!session.artifacts?.length" class="empty">No artifacts attached.</div>
                 <n-data-table v-else :columns="artifactColumns" :data="artifactRows" :pagination="{ pageSize: 25 }"/>
             </n-tab-pane>
-            <n-tab-pane name="policies" :tab="`Policies · ${session.policyEvents?.length ?? 0}`">
-                <div v-if="!session.policyEvents?.length" class="empty">No policy evaluations on this session.</div>
-                <n-data-table v-else :columns="policyColumns" :data="session.policyEvents" :pagination="{ pageSize: 25 }"/>
+            <n-tab-pane name="policies" :tab="`Policies · ${latestPolicyVerdicts.length}`">
+                <div v-if="!latestPolicyVerdicts.length" class="empty">No policy evaluations on this session.</div>
+                <template v-else>
+                    <n-data-table :columns="policyColumns" :data="latestPolicyVerdicts" :pagination="{ pageSize: 25 }"/>
+                    <p v-if="session.policyEvents?.length > latestPolicyVerdicts.length" class="dim mt-1">
+                        Showing the latest verdict per policy.
+                        <a href="#" @click.prevent="showFullPolicyHistory = !showFullPolicyHistory">
+                            {{ showFullPolicyHistory ? 'Hide full audit log' : `Show full audit log (${session.policyEvents.length} entries)` }}
+                        </a>
+                    </p>
+                    <n-data-table v-if="showFullPolicyHistory" :columns="policyColumns" :data="session.policyEvents" :pagination="{ pageSize: 25 }" style="margin-top: 12px;"/>
+                </template>
             </n-tab-pane>
         </n-tabs>
     </div>
@@ -66,6 +75,20 @@ const agent = ref<any>(null)
 const commitRows = ref<any[]>([])
 const artifactRows = ref<any[]>([])
 const tab = ref<string>('overview')
+const showFullPolicyHistory = ref<boolean>(false)
+
+// Policies are an append-only log — collapse to the latest verdict per
+// policy uuid by default so the table reads "what is currently true",
+// with an opt-in audit-log expander for the full history.
+const latestPolicyVerdicts = computed(() => {
+    const events = session.value?.policyEvents ?? []
+    const byPolicy = new Map<string, any>()
+    for (const ev of events) {
+        if (!ev?.policyUuid) continue
+        byPolicy.set(ev.policyUuid, ev)
+    }
+    return Array.from(byPolicy.values())
+})
 
 onMounted(load)
 
@@ -156,7 +179,30 @@ const commitColumns: DataTableColumns<any> = [
             return subject
         },
     },
-    { title: 'Date', key: 'dateActual', render: (row: any) => row.dateActual ? new Date(row.dateActual * 1000).toLocaleString() : '—' },
+    {
+        title: 'Release',
+        key: 'releases',
+        width: 240,
+        render: (row: any) => {
+            const releases: any[] = row.releases ?? []
+            if (!releases.length) return '—'
+            return h('span', null, releases.flatMap((rel, i) => {
+                const label = rel.componentDetails?.name
+                    ? `${rel.componentDetails.name} ${rel.version || ''}`.trim()
+                    : (rel.version || rel.uuid.slice(0, 8))
+                const lc = rel.lifecycle ? h(NTag, { size: 'small', bordered: false }, { default: () => rel.lifecycle }) : null
+                const link = h('a', {
+                    href: '#',
+                    onClick: (e: Event) => { e.preventDefault(); router.push({ name: 'ReleaseView', params: { uuid: rel.uuid } }) },
+                }, label)
+                const parts = [link]
+                if (lc) parts.push(h('span', { style: 'margin-left: 4px;' }, [lc]))
+                if (i < releases.length - 1) parts.push(', ')
+                return parts
+            }))
+        },
+    },
+    { title: 'Date', key: 'dateActual', render: (row: any) => row.dateActual ? new Date(row.dateActual).toLocaleString() : '—' },
 ]
 const artifactColumns: DataTableColumns<any> = [
     {
@@ -206,6 +252,8 @@ const policyColumns: DataTableColumns<any> = [
 .aiAgentSessionView { padding: 16px; }
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
 .dim { color: var(--n-text-color-3, #666); }
+.agent-id { font-family: monospace; font-size: 11px; }
 .meta { display: flex; gap: 24px; margin: 6px 0 18px 0; font-size: 13px; flex-wrap: wrap; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
+.mt-1 { margin-top: 8px; font-size: 12px; }
 </style>
