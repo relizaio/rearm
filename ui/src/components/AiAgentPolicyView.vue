@@ -227,7 +227,6 @@ const severityOptions = [
 interface VariableDoc { name: string; snippet: string; display: string; desc: string }
 const variableDocs: VariableDoc[] = [
     { name: 'session.status',            snippet: 'session.status',                                                          display: 'session.status',            desc: 'string — <code>OPEN</code> / <code>CLOSED</code>' },
-    { name: 'session.branch',            snippet: 'session.branch',                                                          display: 'session.branch',            desc: 'string — agent-reported working branch' },
     { name: 'session.title',             snippet: 'session.title',                                                           display: 'session.title',             desc: 'string — agent-supplied title' },
     { name: 'session.clientSessionId',   snippet: 'session.clientSessionId',                                                 display: 'session.clientSessionId',   desc: 'string — agent-supplied session id' },
     { name: 'session.artifacts',         snippet: 'session.artifacts',                                                       display: 'session.artifacts',         desc: 'list of <code>{ uuid, type, displayIdentifier, bomFormat, tags[] }</code>' },
@@ -253,8 +252,6 @@ const snippetDocs: SnippetDoc[] = [
       cel: 'model.name == "claude-opus-4-7" || model.name == "claude-sonnet-4-6"' },
     { label: 'No more than 20 commits per session',
       cel: 'size(session.commits) <= 20' },
-    { label: 'Branch is main',
-      cel: 'session.branch == "main"' },
 ]
 
 // Full-form scaffolds. Each one overwrites every field.
