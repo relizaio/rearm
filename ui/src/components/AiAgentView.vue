@@ -8,7 +8,7 @@
                 <h3>{{ agent.name }}<span v-if="agent.agentIdentity" class="hero__id"> — {{ agent.agentIdentity }}</span></h3>
                 <div class="hero__sub">
                     <n-tag size="small" :type="agent.agentType === 'ROOT' ? 'info' : 'default'">{{ agent.agentType }}</n-tag>
-                    <n-tag size="small" :type="agent.status === 'ACTIVE' ? 'success' : 'default'">{{ agent.status }}</n-tag>
+                    <n-tag v-if="agent.status === 'ARCHIVED'" size="small" type="default">ARCHIVED</n-tag>
                     <span v-if="agent.model" class="dim">
                         {{ agent.model.publisher }} · <code>{{ agent.model.name }}{{ agent.model.version ? ' @ ' + agent.model.version : '' }}</code>
                     </span>
@@ -38,13 +38,32 @@
                     :pagination="{ pageSize: 10 }"
                 />
             </n-tab-pane>
-            <n-tab-pane name="settings" tab="Settings">
-                <n-descriptions :column="2" bordered>
+            <n-tab-pane name="metadata" tab="Metadata">
+                <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
                     <n-descriptions-item label="UUID"><code>{{ agent.uuid }}</code></n-descriptions-item>
                     <n-descriptions-item label="Org"><code>{{ agent.org }}</code></n-descriptions-item>
                     <n-descriptions-item label="Identity"><code>{{ agent.agentIdentity || '—' }}</code></n-descriptions-item>
+                    <n-descriptions-item label="Type">{{ agent.agentType }}</n-descriptions-item>
+                    <n-descriptions-item label="Status">{{ agent.status }}</n-descriptions-item>
+                    <n-descriptions-item label="Model">
+                        <span v-if="agent.model">{{ agent.model.publisher }} · <code>{{ agent.model.name }}{{ agent.model.version ? ' @ ' + agent.model.version : '' }}</code></span>
+                        <span v-else class="dim">—</span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Created">{{ formatDate(agent.createdDate) }}</n-descriptions-item>
-                    <n-descriptions-item label="Notes" :span="2">{{ agent.notes || '—' }}</n-descriptions-item>
+                    <n-descriptions-item label="Last activity">{{ formatDate(agent.lastActivityAt) }}</n-descriptions-item>
+                    <n-descriptions-item label="Notes">
+                        <div v-if="!editingNotes" class="notes-row">
+                            <span class="notes-text">{{ agent.notes || '—' }}</span>
+                            <n-button size="tiny" quaternary @click="startEditNotes">Edit</n-button>
+                        </div>
+                        <div v-else class="notes-edit">
+                            <n-input v-model:value="notesDraft" type="textarea" :rows="3" placeholder="Free-form notes (markdown not rendered)"/>
+                            <div class="notes-actions">
+                                <n-button size="small" type="primary" :loading="savingNotes" @click="saveNotes">Save</n-button>
+                                <n-button size="small" quaternary @click="cancelEditNotes">Cancel</n-button>
+                            </div>
+                        </div>
+                    </n-descriptions-item>
                 </n-descriptions>
             </n-tab-pane>
         </n-tabs>
@@ -56,20 +75,26 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, DataTableColumns } from 'naive-ui'
+import { NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, DataTableColumns, useNotification } from 'naive-ui'
 import SessionTable from './AiAgentSessionTable.vue'
 
 const store = useStore()
 const route = useRoute()
 const router = useRouter()
+const notification = useNotification()
 
 const agentUuid = computed(() => route.params.uuid as string)
 const agent = ref<any>(null)
 const subAgentRows = ref<any[]>([])
 const tab = ref<string>('open')
+const editingNotes = ref<boolean>(false)
+const notesDraft = ref<string>('')
+const savingNotes = ref<boolean>(false)
 
 const openSessions = computed(() => agent.value?.openSessions ?? [])
 const closedSessions = computed(() => agent.value?.closedSessions ?? [])
+
+const metaLabelStyle = { width: '180px' }
 
 onMounted(load)
 
@@ -88,14 +113,39 @@ function openSession (uuid: string) {
 }
 
 function formatDate (s: string | null | undefined) {
-    return s ? new Date(s).toLocaleString() : '—'
+    return s ? new Date(s).toLocaleString('en-CA') : '—'
+}
+
+function startEditNotes () {
+    notesDraft.value = agent.value?.notes ?? ''
+    editingNotes.value = true
+}
+
+function cancelEditNotes () {
+    editingNotes.value = false
+}
+
+async function saveNotes () {
+    savingNotes.value = true
+    try {
+        await store.dispatch('updateAgent', {
+            uuid: agent.value.uuid,
+            notes: notesDraft.value,
+        })
+        agent.value.notes = notesDraft.value
+        editingNotes.value = false
+        notification.success({ content: 'Notes saved' })
+    } catch (e: any) {
+        notification.error({ content: `Save failed: ${e?.message ?? e}` })
+    } finally {
+        savingNotes.value = false
+    }
 }
 
 const subAgentColumns: DataTableColumns<any> = [
     { title: 'Name', key: 'name', render: (row: any) => h('a', { onClick: () => router.push({ name: 'AiAgentView', params: { uuid: row.uuid } }) }, row.name) },
-    { title: 'Status', key: 'status' },
     { title: 'Sessions', key: 'sess', render: (row: any) => (row.sessionCounts?.openSessions ?? 0) + ' open / ' + (row.sessionCounts?.closedSessions ?? 0) + ' closed' },
-    { title: 'Last activity', key: 'lastActivityAt', render: (row: any) => row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString() : '—' },
+    { title: 'Last activity', key: 'lastActivityAt', render: (row: any) => row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString('en-CA') : '—' },
 ]
 </script>
 
@@ -110,4 +160,8 @@ const subAgentColumns: DataTableColumns<any> = [
 .hero__stats { display: flex; gap: 24px; }
 .stat__v { font-size: 24px; font-weight: 600; text-align: center; }
 .stat__l { font-size: 11px; color: var(--n-text-color-3, #666); text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
+.notes-row { display: flex; align-items: center; gap: 12px; }
+.notes-text { white-space: pre-wrap; }
+.notes-edit { display: flex; flex-direction: column; gap: 6px; }
+.notes-actions { display: flex; gap: 8px; }
 </style>

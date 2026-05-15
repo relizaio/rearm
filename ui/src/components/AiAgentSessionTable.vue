@@ -15,6 +15,10 @@ const props = defineProps<{
     onOpen: (uuid: string) => void
 }>()
 
+function fmt (s: string | null | undefined): string {
+    return s ? new Date(s).toLocaleString('en-CA') : '—'
+}
+
 const columns = computed<DataTableColumns<any>>(() => [
     {
         title: 'Session',
@@ -34,24 +38,28 @@ const columns = computed<DataTableColumns<any>>(() => [
             ),
     },
     { title: 'Title', key: 'title' },
-    { title: 'Branch', key: 'branch', render: (row: any) => (row.branch ? h('code', null, row.branch) : '—') },
     {
         title: 'Status',
         key: 'status',
+        width: 90,
         render: (row: any) =>
             h(NTag, { size: 'small', type: row.status === 'OPEN' ? 'info' : 'default' }, { default: () => row.status }),
     },
     {
         title: 'Started',
         key: 'startedAt',
-        render: (row: any) => (row.startedAt ? new Date(row.startedAt).toLocaleString() : '—'),
+        width: 170,
+        render: (row: any) => fmt(row.startedAt),
     },
     {
         title: 'Closed',
         key: 'closedAt',
-        render: (row: any) => (row.closedAt ? new Date(row.closedAt).toLocaleString() : '—'),
+        width: 170,
+        render: (row: any) => fmt(row.closedAt),
     },
-    { title: 'Artifacts', key: 'artifacts', width: 110, render: (row: any) => row.artifacts?.length ?? 0 },
-    { title: 'Commits', key: 'commits', width: 100, render: (row: any) => row.commits?.length ?? 0 },
+    { title: 'Commits', key: 'commits', width: 90, render: (row: any) => row.commits?.length ?? 0 },
+    { title: 'Artifacts', key: 'artifacts', width: 95, render: (row: any) => row.artifacts?.length ?? 0 },
+    { title: 'Releases', key: 'releases', width: 90, render: (row: any) => row.releases?.length ?? 0 },
+    { title: 'PRs', key: 'pullRequests', width: 70, render: (row: any) => row.pullRequests?.length ?? 0 },
 ])
 </script>

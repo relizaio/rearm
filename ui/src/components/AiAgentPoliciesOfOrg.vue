@@ -1,15 +1,20 @@
 <template>
     <div class="agentPolicies">
         <div class="head">
-            <div>
+            <div class="title-row">
                 <h4>AI Agent Policies</h4>
-                <p class="sub">
+                <n-tooltip trigger="hover" :width="380" placement="bottom-start">
+                    <template #trigger>
+                        <n-icon size="16" class="info-icon">
+                            <QuestionCircle20Regular/>
+                        </n-icon>
+                    </template>
                     CEL rules evaluated against every agent session in this org —
-                    INPUT policies gate session init; OUTPUT policies harden when a
-                    commit is attributed. See
-                    <code>backend/ai-plans/agentic/README.md</code> §11 for the
-                    activation reference + sample CELs.
-                </p>
+                    <strong>INPUT</strong> policies gate session init;
+                    <strong>OUTPUT</strong> policies harden when a commit is
+                    attributed. Open the editor and expand
+                    <em>Sample policies</em> for starter scaffolds.
+                </n-tooltip>
             </div>
             <n-button @click="createNew" type="primary">+ New policy</n-button>
         </div>
@@ -17,9 +22,7 @@
         <n-spin v-if="loading" size="small"/>
         <div v-else>
             <div v-if="!policies.length" class="empty">
-                No policies yet. Click <strong>New policy</strong> above to add one,
-                or seed an org-wide rule via the GraphQL <code>upsertAgentPolicy</code>
-                mutation.
+                No policies yet. Click <strong>New policy</strong> above to add one.
             </div>
             <n-data-table v-else :columns="columns" :data="policies" :pagination="{ pageSize: 25 }"/>
         </div>
@@ -30,7 +33,8 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NDataTable, NSpin, NSwitch, NTag, NPopconfirm, DataTableColumns, useNotification } from 'naive-ui'
+import { NButton, NDataTable, NIcon, NSpin, NSwitch, NTag, NTooltip, NPopconfirm, DataTableColumns, useNotification } from 'naive-ui'
+import { QuestionCircle20Regular } from '@vicons/fluent'
 
 const store = useStore()
 const route = useRoute()
@@ -137,8 +141,10 @@ const columns = computed<DataTableColumns<any>>(() => [
 
 <style scoped>
 .agentPolicies { padding: 16px; }
-.head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
-.sub { color: var(--n-text-color-3, #666); margin-top: 4px; font-size: 13px; max-width: 720px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.title-row { display: flex; align-items: center; gap: 8px; }
+.title-row h4 { margin: 0; }
+.info-icon { color: #888; cursor: help; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
 :deep(.cel-cell) { font-size: 12px; }
 </style>
