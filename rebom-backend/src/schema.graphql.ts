@@ -34,6 +34,47 @@ const typeDefs = gql`
     setBearIntegration(org: ID!, uri: String!, apiKey: String!, skipPatterns: [String]): BearIntegration
     updateBearSkipPatterns(org: ID!, skipPatterns: [String]): BearIntegration
     deleteBearIntegration(org: ID!): Boolean!
+    """
+    Verify a detached signature against a payload using one of the
+    supported wire formats (SSH | GPG). The trust store is the
+    aggregated list of enrolled public keys for the org — passed
+    inline by rearm-backend so this resolver is stateless w.r.t.
+    the ReARM keystore. Never consults the public key embedded in
+    the signature blob; the trust store is authoritative.
+    """
+    verifySignature(input: VerifySignatureInput!): VerifySignatureResult!
+  }
+
+  input VerifySignatureInput {
+    format: VerifierSignatureFormat!
+    """Base64-encoded raw signature bytes (the gpgsig blob or the ssh-keygen -Y signature)."""
+    signatureB64: String!
+    """Base64-encoded signed payload bytes (commit object body, etc.)."""
+    payloadB64: String!
+    """Base64-encoded trust store — ssh allowed_signers file for SSH; concatenated ASCII-armoured pubkeys for GPG."""
+    trustStoreB64: String!
+    """SSH allowed_signers principal expected on the signature; optional."""
+    expectedIdentity: String
+  }
+
+  type VerifySignatureResult {
+    verdict: VerifierVerdict!
+    """Fingerprint of the enrolled key that matched, when verdict = VERIFIED."""
+    matchedFingerprint: String
+    """Free-form diagnostic for the UI / debugging."""
+    details: String
+  }
+
+  enum VerifierSignatureFormat {
+    SSH
+    GPG
+  }
+
+  enum VerifierVerdict {
+    VERIFIED
+    INVALID_SIGNATURE
+    UNKNOWN_KEY
+    ERRORED
   }
 
   type EnrichmentTriggerResult {
