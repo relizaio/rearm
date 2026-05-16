@@ -83,6 +83,7 @@ async function verifySsh (input: VerifyInput): Promise<VerifyResult> {
     }
 
     let lastErr = 'no identity verified'
+    let sawInvalidSignature = false
     for (const identity of identitiesToTry) {
       const res = await runSshKeygenYVerify({
         sigPath,
@@ -94,9 +95,19 @@ async function verifySsh (input: VerifyInput): Promise<VerifyResult> {
       if (res.verdict === 'VERIFIED') {
         return res
       }
+      // Parse failures / subprocess errors are blob-level — they aren't going
+      // to change between principals, so don't mask them as UNKNOWN_KEY by
+      // continuing the loop. Surface them immediately.
+      if (res.verdict === 'ERRORED' || res.verdict === 'INVALID_SIGNATURE') {
+        if (res.verdict === 'INVALID_SIGNATURE') {
+          sawInvalidSignature = true
+        } else {
+          return res
+        }
+      }
       lastErr = res.details ?? lastErr
     }
-    return { verdict: 'UNKNOWN_KEY', details: lastErr }
+    return { verdict: sawInvalidSignature ? 'INVALID_SIGNATURE' : 'UNKNOWN_KEY', details: lastErr }
   } catch (e: any) {
     logger.error({ err: e }, 'SSH verifier failed')
     return { verdict: 'ERRORED', details: e?.message ?? String(e) }
@@ -142,6 +153,17 @@ function runSshKeygenYVerify (args: SshArgs): Promise<VerifyResult> {
         return
       }
       const text = combined.toLowerCase()
+      // Parse-level failures: the signature blob itself is malformed, so
+      // ssh-keygen never reaches the cryptographic check. Treat as ERRORED
+      // (subprocess-level fault) rather than INVALID_SIGNATURE (legitimately
+      // bad sig over a good blob).
+      if (text.includes("couldn't parse signature")
+          || text.includes('cannot parse signature')
+          || text.includes('invalid format')
+          || text.includes('sshsig_armor')) {
+        resolve({ verdict: 'ERRORED', details: combined })
+        return
+      }
       if (text.includes('signature verification failed') || text.includes('bad signature')) {
         resolve({ verdict: 'INVALID_SIGNATURE', details: combined })
       } else if (text.includes('no principal matched') || text.includes('not authorized') || text.includes('not found in')) {
