@@ -85,7 +85,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { fetchArrayBufferWithAuth } from '@/utils/fetchClient'
 
 const store = useStore()
@@ -232,6 +232,28 @@ function openPolicy (uuid: string) {
     })
 }
 
+function renderSignatureBadge (sig: any) {
+    if (!sig || !sig.state || sig.state === 'UNSIGNED') {
+        return h(NTag, { size: 'tiny', type: 'default' }, { default: () => 'unsigned' })
+    }
+    const state = sig.state as string
+    const tone: 'success' | 'warning' | 'error' | 'default' =
+        state === 'VERIFIED' ? 'success'
+        : state === 'INVALID_SIGNATURE' || state === 'WRONG_SIGNER' || state === 'ERRORED' ? 'error'
+        : state === 'UNKNOWN_KEY' || state === 'KEY_REVOKED' ? 'warning'
+        : 'default'
+    const tip = [
+        sig.format ? `format: ${sig.format}` : '',
+        sig.signedByOwnerType ? `owner: ${sig.signedByOwnerType}` : '',
+        sig.keyFingerprint ? `fp: ${sig.keyFingerprint}` : '',
+        sig.verifiedAt ? `verified: ${new Date(sig.verifiedAt).toLocaleString('en-CA')}` : '',
+    ].filter(Boolean).join(' · ')
+    return h(NTooltip, {}, {
+        trigger: () => h(NTag, { size: 'tiny', type: tone, bordered: false }, { default: () => state }),
+        default: () => tip || state,
+    })
+}
+
 const commitColumns: DataTableColumns<any> = [
     {
         title: 'Commit',
@@ -247,6 +269,12 @@ const commitColumns: DataTableColumns<any> = [
         },
     },
     { title: 'Branch', key: 'vcsBranch', render: (row: any) => row.vcsBranch ? h('code', null, row.vcsBranch) : '—' },
+    {
+        title: 'Signature',
+        key: 'signature',
+        width: 130,
+        render: (row: any) => renderSignatureBadge(row.signature),
+    },
     {
         title: 'Message',
         key: 'commitMessage',

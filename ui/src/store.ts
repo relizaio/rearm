@@ -2192,6 +2192,14 @@ const storeObject : any = {
                                     name
                                 }
                             }
+                            signature {
+                                state
+                                format
+                                signedByOwnerType
+                                signedByOwnerUuid
+                                keyFingerprint
+                                verifiedAt
+                            }
                         }
                     }`,
                 variables: { sceUuid: uuid },
@@ -2313,6 +2321,107 @@ const storeObject : any = {
                 variables: { uuid }
             })
             return response.data.deleteAgentPolicy
+        },
+
+        // ---- Committers / signing keys / verifications ----
+
+        async fetchCommittersOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query committersOfOrg($orgUuid: ID!) {
+                        committersOfOrg(orgUuid: $orgUuid) {
+                            uuid org name email user aliases status createdDate
+                            signingKeys { uuid format fingerprint identity createdDate revokedAt }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.committersOfOrg
+        },
+        async fetchCommitter (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query committer($uuid: ID!) {
+                        committer(uuid: $uuid) {
+                            uuid org name email user aliases status createdDate
+                            signingKeys { uuid format fingerprint identity pubKey createdDate revokedAt firstSeenAt }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.committer
+        },
+        async upsertCommitter (context: any, input: any) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation upsertCommitter($input: CommitterInput!) {
+                        upsertCommitter(input: $input) {
+                            uuid org name email user aliases status createdDate
+                        }
+                    }`,
+                variables: { input }
+            })
+            return response.data.upsertCommitter
+        },
+        async archiveCommitter (context: any, uuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation archiveCommitter($uuid: ID!) {
+                        archiveCommitter(uuid: $uuid) { uuid status }
+                    }`,
+                variables: { uuid }
+            })
+            return response.data.archiveCommitter
+        },
+
+        async fetchSigningKeysOfOwner (context: any, payload: { orgUuid: string, ownerType: string, ownerUuid: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query signingKeysOfOwner($orgUuid: ID!, $ownerType: SigningKeyOwnerType!, $ownerUuid: ID!) {
+                        signingKeysOfOwner(orgUuid: $orgUuid, ownerType: $ownerType, ownerUuid: $ownerUuid) {
+                            uuid format ownerType ownerUuid fingerprint identity pubKey createdDate revokedAt firstSeenAt
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.signingKeysOfOwner
+        },
+        async enrollSigningKey (context: any, input: any) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation enrollSigningKey($input: SigningKeyInput!) {
+                        enrollSigningKey(input: $input) {
+                            uuid format ownerType ownerUuid fingerprint identity createdDate
+                        }
+                    }`,
+                variables: { input }
+            })
+            return response.data.enrollSigningKey
+        },
+        async revokeSigningKey (context: any, uuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation revokeSigningKey($uuid: ID!) {
+                        revokeSigningKey(uuid: $uuid) { uuid revokedAt }
+                    }`,
+                variables: { uuid }
+            })
+            return response.data.revokeSigningKey
+        },
+        async verifySignature (context: any, input: any) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation verifySignature($input: VerifySignatureInput!) {
+                        verifySignature(input: $input) {
+                            uuid verdict ownerType ownerUuid keyFingerprint format details verifiedAt
+                        }
+                    }`,
+                variables: { input }
+            })
+            return response.data.verifySignature
         },
     },
 }

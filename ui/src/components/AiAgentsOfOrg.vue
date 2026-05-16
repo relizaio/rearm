@@ -8,7 +8,10 @@
                     produce artifacts, commits, pull requests and releases.
                 </p>
             </div>
-            <n-button quaternary @click="openPolicies">Manage policies →</n-button>
+            <n-space>
+                <n-button quaternary @click="openCommitters">Manage committers →</n-button>
+                <n-button quaternary @click="openPolicies">Manage policies →</n-button>
+            </n-space>
         </div>
 
         <n-spin v-if="loading" size="small"/>
@@ -137,6 +140,10 @@ function openSession (uuid: string) {
 
 function openPolicies () {
     router.push({ name: 'AiAgentPoliciesOfOrg', params: { orguuid: orgUuid.value } })
+}
+
+function openCommitters () {
+    router.push({ name: 'CommittersOfOrg', params: { orguuid: orgUuid.value } })
 }
 
 const sessionColumns: DataTableColumns<any> = [
