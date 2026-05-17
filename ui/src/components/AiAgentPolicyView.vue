@@ -230,7 +230,8 @@ const variableDocs: VariableDoc[] = [
     { name: 'session.title',             snippet: 'session.title',                                                           display: 'session.title',             desc: 'string — agent-supplied title' },
     { name: 'session.clientSessionId',   snippet: 'session.clientSessionId',                                                 display: 'session.clientSessionId',   desc: 'string — agent-supplied session id' },
     { name: 'session.artifacts',         snippet: 'session.artifacts',                                                       display: 'session.artifacts',         desc: 'list of <code>{ uuid, type, displayIdentifier, bomFormat, tags[] }</code>' },
-    { name: 'session.commits',           snippet: 'session.commits',                                                         display: 'session.commits',           desc: 'list&lt;string&gt; — SCE uuids' },
+    { name: 'session.commits',           snippet: 'session.commits',                                                         display: 'session.commits',           desc: 'list of <code>{ uuid, commit, vcsBranch, commitAuthor, commitEmail, agent, agentSession, signature }</code>' },
+    { name: 'session.commits[].signature', snippet: 'session.commits[0].signature.state',                                    display: 'session.commits[].signature', desc: 'object — <code>{ state, format, signedByOwnerType, signedByOwnerUuid, keyFingerprint, verifiedAt }</code>. <code>state</code> ∈ { UNSIGNED, VERIFIED, INVALID_SIGNATURE, UNKNOWN_KEY, KEY_REVOKED, WRONG_SIGNER, PENDING, ERRORED }' },
     { name: 'agent.name',                snippet: 'agent.name',                                                              display: 'agent.name',                desc: 'string — display name' },
     { name: 'agent.agentType',           snippet: 'agent.agentType',                                                         display: 'agent.agentType',           desc: 'string — <code>ROOT</code> / <code>SUB</code>' },
     { name: 'agent.agentIdentity',       snippet: 'agent.agentIdentity',                                                     display: 'agent.agentIdentity',       desc: 'string — identity-scope uuid' },
@@ -252,6 +253,10 @@ const snippetDocs: SnippetDoc[] = [
       cel: 'model.name == "claude-opus-4-7" || model.name == "claude-sonnet-4-6"' },
     { label: 'No more than 20 commits per session',
       cel: 'size(session.commits) <= 20' },
+    { label: 'All commits verified-signed',
+      cel: 'session.commits.all(c, c.signature.state == "VERIFIED")' },
+    { label: 'All commits signed by session agent',
+      cel: 'session.commits.all(c, c.signature.state == "VERIFIED" && c.signature.signedByOwnerType == "AGENT" && c.signature.signedByOwnerUuid == agent.uuid)' },
 ]
 
 // Full-form scaffolds. Each one overwrites every field.
@@ -290,6 +295,20 @@ const samples = [
         kind: 'OUTPUT',
         severity: 'WARN',
         cel: 'size(session.commits) <= 20',
+    },
+    {
+        name: 'All commits verified-signed',
+        description: 'Every commit attributed to this session must have a VERIFIED signature against an enrolled key.',
+        kind: 'OUTPUT',
+        severity: 'BLOCK',
+        cel: 'session.commits.all(c, c.signature.state == "VERIFIED")',
+    },
+    {
+        name: 'Commits signed by session agent',
+        description: 'Cryptographic agentic attribution — every commit in the session must be VERIFIED and signed by a key enrolled to this session\u2019s agent (not a committer key, not another agent).',
+        kind: 'OUTPUT',
+        severity: 'BLOCK',
+        cel: 'session.commits.all(c, c.signature.state == "VERIFIED" && c.signature.signedByOwnerType == "AGENT" && c.signature.signedByOwnerUuid == agent.uuid)',
     },
 ]
 

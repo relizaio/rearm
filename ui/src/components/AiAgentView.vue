@@ -42,6 +42,14 @@
                     :pagination="{ pageSize: 10 }"
                 />
             </n-tab-pane>
+            <n-tab-pane name="keys" tab="Signing keys">
+                <SigningKeyManager
+                    v-if="agent?.org && agent?.uuid"
+                    :org="agent.org"
+                    owner-type="AGENT"
+                    :owner-uuid="agent.uuid"
+                />
+            </n-tab-pane>
             <n-tab-pane name="metadata" tab="Metadata">
                 <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
                     <n-descriptions-item label="UUID"><code>{{ agent.uuid }}</code></n-descriptions-item>
@@ -81,6 +89,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, DataTableColumns, useNotification } from 'naive-ui'
 import SessionTable from './AiAgentSessionTable.vue'
+import SigningKeyManager from './SigningKeyManager.vue'
 
 const store = useStore()
 const route = useRoute()
