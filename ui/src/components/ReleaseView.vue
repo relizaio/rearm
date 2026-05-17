@@ -5314,6 +5314,52 @@ function renderSignatureBadge (sig: any) {
     })
 }
 
+/**
+ * Render the Author column with inline attribution chips.
+ * - Top line: commit author name + email (verbatim from the commit object).
+ * - Below: small chips that link to the authoring agent / agentic session /
+ *   verified-signer committer when present. Agent + session uuids come from
+ *   the commit-trailer parser; committer is the resolved owner of a
+ *   VERIFIED signature with signedByOwnerType=COMMITTER.
+ */
+function renderAuthorWithAttribution (row: any) {
+    const children: any[] = []
+    const authorLine: any[] = []
+    if (row.commitAuthor) authorLine.push(row.commitAuthor)
+    if (row.commitEmail) authorLine.push(authorLine.length ? `, ${row.commitEmail}` : row.commitEmail)
+    if (authorLine.length) children.push(h('div', authorLine.join('')))
+    const chips: any[] = []
+    if (row.agent) {
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentView', params: { uuid: row.agent } },
+            class: 'attrib-chip attrib-chip--agent',
+        }, () => `agent ${String(row.agent).slice(0, 8)}…`))
+    }
+    if (row.agentSession) {
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentSessionView', params: { uuid: row.agentSession } },
+            class: 'attrib-chip attrib-chip--session',
+        }, () => `session ${String(row.agentSession).slice(0, 8)}…`))
+    }
+    if (row.signature?.signedByOwnerType === 'COMMITTER' && row.signature?.signedByOwnerUuid) {
+        chips.push(h(RouterLink, {
+            to: { name: 'CommitterView', params: { uuid: row.signature.signedByOwnerUuid } },
+            class: 'attrib-chip attrib-chip--committer',
+        }, () => `committer ${String(row.signature.signedByOwnerUuid).slice(0, 8)}…`))
+    } else if (row.signature?.signedByOwnerType === 'AGENT' && row.signature?.signedByOwnerUuid
+            && !row.agent) {
+        // VERIFIED by an AGENT key but no trailer-attributed agent on SCE —
+        // fall back to the verifier's resolved owner so the link is still
+        // discoverable.
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentView', params: { uuid: row.signature.signedByOwnerUuid } },
+            class: 'attrib-chip attrib-chip--agent',
+        }, () => `agent ${String(row.signature.signedByOwnerUuid).slice(0, 8)}…`))
+    }
+    if (chips.length) children.push(h('div', { class: 'attrib-row' }, chips))
+    return h('div', children)
+}
+
 const commitTableFields: DataTableColumns<any> = [
     {
         key: 'date',
@@ -5335,15 +5381,7 @@ const commitTableFields: DataTableColumns<any> = [
     {
         key: 'author',
         title: 'Author',
-        render: (row: any) => {
-            let authorContent = ''
-            if (row.commitAuthor) {
-                authorContent += row.commitAuthor
-                if (row.commitEmail) authorContent += ', '
-            }
-            if (row.commitEmail) authorContent += row.commitEmail
-            return authorContent
-        }
+        render: (row: any) => renderAuthorWithAttribution(row),
     },
     {
         key: 'facts',
@@ -5444,15 +5482,7 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
     {
         key: 'author',
         title: 'Author',
-        render: (row: any) => {
-            let authorContent = ''
-            if (row.commitAuthor) {
-                authorContent += row.commitAuthor
-                if (row.commitEmail) authorContent += ', '
-            }
-            if (row.commitEmail) authorContent += row.commitEmail
-            return authorContent
-        }
+        render: (row: any) => renderAuthorWithAttribution(row),
     },
     {
         key: 'facts',
@@ -5762,6 +5792,29 @@ async function handleTabSwitch(tabName: string) {
     padding-left: 0.5%;
     font-size: 16px;
 }
+
+:deep(.attrib-row) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+:deep(.attrib-chip) {
+    font-family: monospace;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--n-color-embedded, #f5f5f5);
+    color: var(--n-text-color-2, #555);
+    text-decoration: none;
+}
+:deep(.attrib-chip:hover) {
+    background: #e0e7ff;
+}
+:deep(.attrib-chip--agent) { color: #1e3a8a; }
+:deep(.attrib-chip--session) { color: #14532d; }
+:deep(.attrib-chip--committer) { color: #7c2d12; }
 
 .release-view {
     position: relative;

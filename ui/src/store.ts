@@ -1423,6 +1423,16 @@ const storeObject : any = {
                                 vcsUuid
                                 vcsBranch
                                 dateActual
+                                agent
+                                agentSession
+                                signature {
+                                    state
+                                    format
+                                    signedByOwnerType
+                                    signedByOwnerUuid
+                                    keyFingerprint
+                                    verifiedAt
+                                }
                             }
                             attributedReleases {
                                 uuid
@@ -2345,7 +2355,7 @@ const storeObject : any = {
                     query committer($uuid: ID!) {
                         committer(uuid: $uuid) {
                             uuid org name email user aliases status createdDate
-                            signingKeys { uuid format fingerprint identity pubKey createdDate revokedAt firstSeenAt }
+                            signingKeys { uuid format fingerprint identity pubKey createdDate revokedAt }
                         }
                     }`,
                 variables: { uuid },
@@ -2381,7 +2391,7 @@ const storeObject : any = {
                 query: gql`
                     query signingKeysOfOwner($orgUuid: ID!, $ownerType: SigningKeyOwnerType!, $ownerUuid: ID!) {
                         signingKeysOfOwner(orgUuid: $orgUuid, ownerType: $ownerType, ownerUuid: $ownerUuid) {
-                            uuid format ownerType ownerUuid fingerprint identity pubKey createdDate revokedAt firstSeenAt
+                            uuid format ownerType ownerUuid fingerprint identity pubKey createdDate revokedAt
                         }
                     }`,
                 variables: payload,

@@ -37,7 +37,22 @@
                         </router-link><span v-if="i &lt; pr.agents.length - 1">, </span>
                     </span>
                 </p>
+                <p v-if="prSessions.length">
+                    <strong>Sessions:</strong>
+                    <span v-for="(s, i) in prSessions" :key="s">
+                        <router-link :to="{ name: 'AiAgentSessionView', params: { uuid: s } }">
+                            <code>{{ s.slice(0, 8) }}…{{ s.slice(-4) }}</code>
+                        </router-link><span v-if="i &lt; prSessions.length - 1">, </span>
+                    </span>
+                </p>
             </div>
+
+            <h3 class="mt-4">Commits attributed to this PR</h3>
+            <n-data-table
+                v-if="(pr.commitDetails || []).length"
+                :columns="commitCols"
+                :data="commitsDesc"/>
+            <p v-else class="empty">No commits attributed yet.</p>
 
             <h3 class="mt-4">
                 Releases at PR head
@@ -120,6 +135,86 @@ const headSce = computed(() => {
     const cd = pr.value?.commitDetails
     return cd && cd.length ? cd[cd.length - 1] : null
 })
+
+// Distinct session uuids surfaced across the PR's commits. Agents and
+// sessions are different concepts: one agent may run many sessions and
+// vice-versa, so we render them as parallel pills.
+const prSessions = computed<string[]>(() => {
+    const set = new Set<string>()
+    for (const c of (pr.value?.commitDetails || [])) {
+        if (c?.agentSession) set.add(c.agentSession)
+    }
+    return Array.from(set)
+})
+
+const commitsDesc = computed(() => {
+    return [...(pr.value?.commitDetails || [])].sort((a: any, b: any) => {
+        const ta = a?.dateActual ? new Date(a.dateActual).getTime() : 0
+        const tb = b?.dateActual ? new Date(b.dateActual).getTime() : 0
+        return tb - ta
+    })
+})
+
+function renderSignatureBadge (sig: any) {
+    if (!sig?.state) return h('span', { class: 'dim' }, '—')
+    const palette: Record<string, string> = {
+        VERIFIED: 'success', INVALID_SIGNATURE: 'error', WRONG_SIGNER: 'error',
+        UNKNOWN_KEY: 'warning', KEY_REVOKED: 'warning', PENDING: 'warning',
+        ERRORED: 'error', UNSIGNED: 'default',
+    }
+    return h(NTag, { size: 'tiny', type: palette[sig.state] || 'default', bordered: false },
+        { default: () => sig.state })
+}
+
+function renderCommitAuthorAttribution (row: any) {
+    const children: any[] = []
+    const authorLine: any[] = []
+    if (row.commitAuthor) authorLine.push(row.commitAuthor)
+    if (row.commitEmail) authorLine.push(authorLine.length ? `, ${row.commitEmail}` : row.commitEmail)
+    if (authorLine.length) children.push(h('div', authorLine.join('')))
+    const chips: any[] = []
+    if (row.agent) {
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentView', params: { uuid: row.agent } }, class: 'attrib-chip',
+        }, () => `agent ${String(row.agent).slice(0, 8)}…`))
+    }
+    if (row.agentSession) {
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentSessionView', params: { uuid: row.agentSession } }, class: 'attrib-chip',
+        }, () => `session ${String(row.agentSession).slice(0, 8)}…`))
+    }
+    if (row.signature?.signedByOwnerType === 'COMMITTER' && row.signature?.signedByOwnerUuid) {
+        chips.push(h(RouterLink, {
+            to: { name: 'CommitterView', params: { uuid: row.signature.signedByOwnerUuid } }, class: 'attrib-chip',
+        }, () => `committer ${String(row.signature.signedByOwnerUuid).slice(0, 8)}…`))
+    } else if (row.signature?.signedByOwnerType === 'AGENT' && row.signature?.signedByOwnerUuid && !row.agent) {
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentView', params: { uuid: row.signature.signedByOwnerUuid } }, class: 'attrib-chip',
+        }, () => `agent ${String(row.signature.signedByOwnerUuid).slice(0, 8)}…`))
+    }
+    if (chips.length) children.push(h('div', { class: 'attrib-row' }, chips))
+    return h('div', children)
+}
+
+const commitCols: DataTableColumns<any> = [
+    {
+        title: 'Date', key: 'dateActual', width: 170,
+        render: (row: any) => row.dateActual ? new Date(row.dateActual).toLocaleString('en-CA') : '—',
+    },
+    {
+        title: 'Signature', key: 'signature', width: 130,
+        render: (row: any) => renderSignatureBadge(row.signature),
+    },
+    { title: 'Message', key: 'commitMessage' },
+    {
+        title: 'Author / Attribution', key: 'author',
+        render: (row: any) => renderCommitAuthorAttribution(row),
+    },
+    {
+        title: 'Hash', key: 'commit', width: 110,
+        render: (row: any) => h('code', null, row.commit ? row.commit.slice(0, 8) : '—'),
+    },
+]
 
 // Both event lists are appended in arrival order on the backend; flip
 // to descending so the newest verdict is at the top of the table.
@@ -328,4 +423,11 @@ watch(prUuid, load)
     vertical-align: middle;
 }
 .agent-id { font-family: monospace; font-size: 0.85em; color: #888; }
+:deep(.attrib-row) { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+:deep(.attrib-chip) {
+    font-family: monospace; font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    background: var(--n-color-embedded, #f5f5f5); color: var(--n-text-color-2, #555);
+    text-decoration: none;
+}
+:deep(.attrib-chip:hover) { background: #e0e7ff; }
 </style>

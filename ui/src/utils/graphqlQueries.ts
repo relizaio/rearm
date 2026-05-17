@@ -42,6 +42,8 @@ const MULTI_RELEASE_GQL_DATA = `
         }
         vcsBranch
         vcsTag
+        agent
+        agentSession
         signature {
             state
             format
@@ -460,6 +462,8 @@ const singleReleaseDataNoParent = `
         }
         vcsBranch
         vcsTag
+        agent
+        agentSession
         artifacts
         artifactDetails {
             ${ARTIFACT_DETAIL_DATA}
@@ -480,6 +484,8 @@ const singleReleaseDataNoParent = `
         commitAuthor
         commitEmail
         dateActual
+        agent
+        agentSession
         signature {
             state
             format

@@ -1,12 +1,12 @@
 <template>
     <div class="agentPolicies">
-        <n-breadcrumb separator="›" class="crumbs">
+        <n-breadcrumb separator="›" class="crumbs" v-if="!props.embedded">
             <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
             <n-breadcrumb-item>Policies</n-breadcrumb-item>
         </n-breadcrumb>
         <div class="head">
             <div class="title-row">
-                <h4>AI Agent Policies</h4>
+                <h4 v-if="!props.embedded">AI Agent Policies</h4>
                 <n-tooltip trigger="hover" :width="380" placement="bottom-start">
                     <template #trigger>
                         <n-icon size="16" class="info-icon">
@@ -40,12 +40,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { NBreadcrumb, NBreadcrumbItem, NButton, NDataTable, NIcon, NSpin, NSwitch, NTag, NTooltip, NPopconfirm, DataTableColumns, useNotification } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
 
+const props = defineProps<{ embedded?: boolean }>()
+
 const store = useStore()
 const route = useRoute()
 const router = useRouter()
 const notification = useNotification()
 
-const orgUuid = computed(() => route.params.orguuid as string)
+// When embedded inside OrgSettings the page reads orgUuid from a different
+// route slot (`/orgSettings/:orguuid`). Fall through to the active org from
+// the store if neither slot is populated so the inner panel still works.
+const myorg = computed(() => store.getters.myorg)
+const orgUuid = computed(() => (route.params.orguuid as string) || myorg.value?.uuid)
 const policies = ref<any[]>([])
 const loading = ref<boolean>(true)
 
