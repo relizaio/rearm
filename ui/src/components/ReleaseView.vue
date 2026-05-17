@@ -5286,6 +5286,34 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
     }
 ])
 
+/**
+ * Render the SourceCodeEntry.signature verdict as a small NTag with a
+ * tooltip carrying the format / owner / fingerprint / verifiedAt details.
+ * Mirrors the AiAgentSessionView Commits-tab badge so the two pages
+ * read the same way.
+ */
+function renderSignatureBadge (sig: any) {
+    if (!sig || !sig.state || sig.state === 'UNSIGNED') {
+        return h(NTag, { size: 'tiny', type: 'default' }, { default: () => 'unsigned' })
+    }
+    const state = sig.state as string
+    const tone: 'success' | 'warning' | 'error' | 'default' =
+        state === 'VERIFIED' ? 'success'
+        : state === 'INVALID_SIGNATURE' || state === 'WRONG_SIGNER' || state === 'ERRORED' ? 'error'
+        : state === 'UNKNOWN_KEY' || state === 'KEY_REVOKED' ? 'warning'
+        : 'default'
+    const tip = [
+        sig.format ? `format: ${sig.format}` : '',
+        sig.signedByOwnerType ? `owner: ${sig.signedByOwnerType}` : '',
+        sig.keyFingerprint ? `fp: ${sig.keyFingerprint}` : '',
+        sig.verifiedAt ? `verified: ${new Date(sig.verifiedAt).toLocaleString('en-CA')}` : '',
+    ].filter(Boolean).join(' · ')
+    return h(NTooltip, {}, {
+        trigger: () => h(NTag, { size: 'tiny', type: tone, bordered: false }, { default: () => state }),
+        default: () => tip || state,
+    })
+}
+
 const commitTableFields: DataTableColumns<any> = [
     {
         key: 'date',
@@ -5293,6 +5321,12 @@ const commitTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             if (row.dateActual) return (new Date(row.dateActual)).toLocaleString('en-CA')
         }
+    },
+    {
+        key: 'signature',
+        title: 'Signature',
+        width: 130,
+        render: (row: any) => renderSignatureBadge(row.signature),
     },
     {
         key: 'commitMessage',
@@ -5396,6 +5430,12 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
         render: (row: any) => {
             if (row.dateActual) return (new Date(row.dateActual)).toLocaleString('en-CA')
         }
+    },
+    {
+        key: 'signature',
+        title: 'Signature',
+        width: 130,
+        render: (row: any) => renderSignatureBadge(row.signature),
     },
     {
         key: 'commitMessage',
