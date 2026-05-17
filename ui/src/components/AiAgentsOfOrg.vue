@@ -58,9 +58,33 @@
                             <div class="acard__mark" :style="{ background: a.color || '#888' }">
                                 {{ a.iconKind || '◆' }}
                             </div>
-                            <div>
-                                <div class="acard__name">
-                                    {{ a.name }}<span v-if="a.agentIdentity" class="acard__id"> — {{ a.agentIdentity }}</span>
+                            <div class="acard__head">
+                                <div class="acard__name">{{ a.name }}</div>
+                                <div class="acard__ids">
+                                    <n-tooltip trigger="hover">
+                                        <template #trigger>
+                                            <code class="acard__chip"><span class="acard__chip-l">uuid</span>{{ shortUuid(a.uuid) }}</code>
+                                        </template>
+                                        ReARM-issued row uuid. Used in the URL, in commit
+                                        trailers (<code>ReARM-Agent</code>), and as the
+                                        owner reference for signing keys. Unique per agent.
+                                    </n-tooltip>
+                                    <n-tooltip v-if="a.agentIdentity" trigger="hover" :width="320">
+                                        <template #trigger>
+                                            <code class="acard__chip" :class="identityShareCount(a.agentIdentity) > 1 ? 'acard__chip--shared' : ''">
+                                                <span class="acard__chip-l">identity</span>{{ shortUuid(a.agentIdentity) }}<span v-if="identityShareCount(a.agentIdentity) > 1" class="acard__shared">+{{ identityShareCount(a.agentIdentity) - 1 }}</span>
+                                            </code>
+                                        </template>
+                                        Credential-scoped identity. Agents registered through the same
+                                        FREEFORM key (or OIDC subject, when wired) share one identity —
+                                        their commits / sessions roll up to the same credential.
+                                        <span v-if="identityShareCount(a.agentIdentity) > 1">
+                                            <br><br>This identity is shared with
+                                            {{ identityShareCount(a.agentIdentity) - 1 }} other
+                                            agent{{ identityShareCount(a.agentIdentity) > 2 ? 's' : '' }}
+                                            in this org.
+                                        </span>
+                                    </n-tooltip>
                                 </div>
                                 <div class="acard__sub" v-if="a.model">
                                     {{ a.model.publisher }} · <code>{{ a.model.name }}{{ a.model.version ? ' @ ' + a.model.version : '' }}</code>
@@ -96,7 +120,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NSpace, NSpin, NTag, DataTableColumns } from 'naive-ui'
+import { NButton, NCard, NDataTable, NSpace, NSpin, NTag, NTooltip, DataTableColumns } from 'naive-ui'
 
 const store = useStore()
 const route = useRoute()
@@ -109,6 +133,24 @@ const agents = ref<any[]>([])
 const openSessions = ref<any[]>([])
 
 const rootAgents = computed(() => agents.value.filter(a => a.agentType === 'ROOT'))
+
+const identityCounts = computed<Record<string, number>>(() => {
+    const m: Record<string, number> = {}
+    for (const a of agents.value) {
+        if (!a?.agentIdentity) continue
+        m[a.agentIdentity] = (m[a.agentIdentity] || 0) + 1
+    }
+    return m
+})
+
+function identityShareCount (id: string | null | undefined): number {
+    if (!id) return 0
+    return identityCounts.value[id] || 0
+}
+
+function shortUuid (u: string | null | undefined): string {
+    return u ? `${u.slice(0, 8)}…${u.slice(-4)}` : ''
+}
 
 onMounted(async () => {
     await refreshAll()
@@ -172,11 +214,16 @@ const sessionColumns: DataTableColumns<any> = [
 .kpi__v { font-size: 32px; font-weight: 600; margin-top: 4px; }
 .kpi__d { font-size: 12px; color: var(--n-text-color-3, #666); margin-top: 2px; }
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 8px; }
-.acard__top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.acard__mark { width: 36px; height: 36px; border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 18px; }
+.acard__top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.acard__mark { width: 36px; height: 36px; border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 18px; flex-shrink: 0; }
+.acard__head { flex: 1; min-width: 0; }
 .acard__name { font-weight: 600; }
-.acard__id { font-weight: 400; font-family: monospace; font-size: 12px; color: var(--n-text-color-3, #666); }
-.acard__sub { font-size: 12px; color: var(--n-text-color-3, #666); }
+.acard__ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.acard__chip { font-family: monospace; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--n-color-embedded, #f5f5f5); color: var(--n-text-color-2, #555); border: 1px solid transparent; }
+.acard__chip-l { text-transform: uppercase; font-size: 9px; letter-spacing: 0.06em; color: var(--n-text-color-3, #888); margin-right: 4px; }
+.acard__chip--shared { background: #fff8e1; border-color: #ffe082; color: #5d4037; }
+.acard__shared { margin-left: 4px; font-size: 10px; font-weight: 600; color: #b26a00; }
+.acard__sub { font-size: 12px; color: var(--n-text-color-3, #666); margin-top: 4px; }
 .acard__row { display: flex; gap: 24px; }
 .acard__num { font-size: 22px; font-weight: 600; margin-right: 6px; }
 .acard__lab { font-size: 11px; color: var(--n-text-color-3, #666); text-transform: uppercase; letter-spacing: 0.04em; }

@@ -9,7 +9,33 @@
                 {{ agent.iconKind || '◆' }}
             </div>
             <div class="hero__title">
-                <h3>{{ agent.name }}<span v-if="agent.agentIdentity" class="hero__id"> — {{ agent.agentIdentity }}</span></h3>
+                <h3>{{ agent.name }}</h3>
+                <div class="hero__ids">
+                    <n-tooltip trigger="hover">
+                        <template #trigger>
+                            <code class="hero__chip"><span class="hero__chip-l">uuid</span>{{ shortUuid(agent.uuid) }}</code>
+                        </template>
+                        ReARM-issued row uuid. Used in URLs, commit trailers
+                        (<code>ReARM-Agent</code>), and as the owner reference
+                        for signing keys. Unique per agent.
+                    </n-tooltip>
+                    <n-tooltip v-if="agent.agentIdentity" trigger="hover" :width="320">
+                        <template #trigger>
+                            <code class="hero__chip" :class="identityShareCount > 1 ? 'hero__chip--shared' : ''">
+                                <span class="hero__chip-l">identity</span>{{ shortUuid(agent.agentIdentity) }}<span v-if="identityShareCount > 1" class="hero__shared">+{{ identityShareCount - 1 }}</span>
+                            </code>
+                        </template>
+                        Credential-scoped identity. Agents registered through the same
+                        FREEFORM key (or OIDC subject) share one identity — their
+                        commits and sessions roll up to the same credential.
+                        <span v-if="identityShareCount > 1">
+                            <br><br>This identity is shared with
+                            {{ identityShareCount - 1 }} other agent{{ identityShareCount > 2 ? 's' : '' }}
+                            in this org. Click the
+                            <strong>Sibling agents</strong> tab below to see them.
+                        </span>
+                    </n-tooltip>
+                </div>
                 <div class="hero__sub">
                     <n-tag size="small" :type="agent.agentType === 'ROOT' ? 'info' : 'default'">{{ agent.agentType }}</n-tag>
                     <n-tag v-if="agent.status === 'ARCHIVED'" size="small" type="default">ARCHIVED</n-tag>
@@ -42,6 +68,18 @@
                     :pagination="{ pageSize: 10 }"
                 />
             </n-tab-pane>
+            <n-tab-pane v-if="siblingAgents.length" name="siblings" :tab="`Sibling agents · ${siblingAgents.length}`">
+                <p class="dim sib-note">
+                    Agents sharing the same <code>agentIdentity</code> were registered through
+                    the same credential. Each row is its own Agent (own uuid, own signing keys);
+                    the identity column is the grouping label.
+                </p>
+                <n-data-table
+                    :columns="siblingColumns"
+                    :data="siblingAgents"
+                    :pagination="{ pageSize: 10 }"
+                />
+            </n-tab-pane>
             <n-tab-pane name="keys" tab="Signing keys">
                 <SigningKeyManager
                     v-if="agent?.org && agent?.uuid"
@@ -54,7 +92,27 @@
                 <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
                     <n-descriptions-item label="UUID"><code>{{ agent.uuid }}</code></n-descriptions-item>
                     <n-descriptions-item label="Org"><code>{{ agent.org }}</code></n-descriptions-item>
-                    <n-descriptions-item label="Identity"><code>{{ agent.agentIdentity || '—' }}</code></n-descriptions-item>
+                    <n-descriptions-item>
+                        <template #label>
+                            Identity
+                            <n-tooltip trigger="hover" :width="320">
+                                <template #trigger>
+                                    <n-icon size="12" class="help-icon"><Info20Regular/></n-icon>
+                                </template>
+                                Credential-scoped identity. Multiple Agent rows may share one
+                                identity if they were registered through the same credential
+                                (FREEFORM key / OIDC subject). Use it to group agents that
+                                belong to the same installation.
+                            </n-tooltip>
+                        </template>
+                        <code>{{ agent.agentIdentity || '—' }}</code>
+                        <span v-if="siblingAgents.length" class="dim">
+                            &nbsp;· shared with
+                            <a href="#" @click.prevent="tab = 'siblings'">
+                                {{ siblingAgents.length }} other agent{{ siblingAgents.length > 1 ? 's' : '' }}
+                            </a>
+                        </span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Type">{{ agent.agentType }}</n-descriptions-item>
                     <n-descriptions-item label="Status">{{ agent.status }}</n-descriptions-item>
                     <n-descriptions-item label="Model">
@@ -87,7 +145,8 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, DataTableColumns, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NIcon, NInput, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { Info20Regular } from '@vicons/fluent'
 import SessionTable from './AiAgentSessionTable.vue'
 import SigningKeyManager from './SigningKeyManager.vue'
 
@@ -99,6 +158,7 @@ const notification = useNotification()
 const agentUuid = computed(() => route.params.uuid as string)
 const agent = ref<any>(null)
 const subAgentRows = ref<any[]>([])
+const siblingAgents = ref<any[]>([])
 const tab = ref<string>('open')
 const editingNotes = ref<boolean>(false)
 const notesDraft = ref<string>('')
@@ -106,6 +166,8 @@ const savingNotes = ref<boolean>(false)
 
 const openSessions = computed(() => agent.value?.openSessions ?? [])
 const closedSessions = computed(() => agent.value?.closedSessions ?? [])
+
+const identityShareCount = computed(() => 1 + siblingAgents.value.length)
 
 const metaLabelStyle = { width: '180px' }
 
@@ -119,7 +181,46 @@ async function load () {
         )
         subAgentRows.value = subs.filter(Boolean)
     }
+    // Resolve other ROOT agents in the same org that share this agentIdentity —
+    // the identity is the "credential boundary"; siblings are agents that
+    // were registered through the same key. Excludes the current agent.
+    if (agent.value?.org && agent.value?.agentIdentity) {
+        const orgAgents = await store.dispatch('fetchAgentsOfOrg', agent.value.org).catch(() => [])
+        siblingAgents.value = (orgAgents || []).filter((a: any) =>
+            a.uuid !== agent.value.uuid &&
+            a.agentIdentity === agent.value.agentIdentity)
+    }
 }
+
+function shortUuid (u: string | null | undefined): string {
+    return u ? `${u.slice(0, 8)}…${u.slice(-4)}` : ''
+}
+
+function openSibling (uuid: string) {
+    router.push({ name: 'AiAgentView', params: { uuid } })
+}
+
+const siblingColumns: DataTableColumns<any> = [
+    {
+        title: 'Name',
+        key: 'name',
+        render: (row: any) => h('a', {
+            href: '#',
+            onClick: (e: Event) => { e.preventDefault(); openSibling(row.uuid) },
+        }, row.name),
+    },
+    { title: 'UUID', key: 'uuid', render: (row: any) => h('code', { class: 'mono-cell' }, shortUuid(row.uuid)) },
+    { title: 'Type', key: 'agentType', width: 80 },
+    { title: 'Status', key: 'status', width: 100 },
+    {
+        title: 'Model',
+        key: 'model',
+        render: (row: any) => row.model
+            ? `${row.model.publisher} · ${row.model.name}${row.model.version ? ' @ ' + row.model.version : ''}`
+            : '—',
+    },
+    { title: 'Created', key: 'createdDate', render: (row: any) => formatDate(row.createdDate) },
+]
 
 function openSession (uuid: string) {
     router.push({ name: 'AiAgentSessionView', params: { uuid } })
@@ -178,9 +279,17 @@ const subAgentColumns: DataTableColumns<any> = [
 .hero__mark { width: 56px; height: 56px; border-radius: 12px; color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600; }
 .hero__title { flex: 1; }
 .hero__id { font-weight: 400; font-family: monospace; font-size: 14px; color: var(--n-text-color-3, #666); }
+.hero__ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; margin-bottom: 4px; }
+.hero__chip { font-family: monospace; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--n-color-embedded, #f5f5f5); color: var(--n-text-color-2, #555); border: 1px solid transparent; }
+.hero__chip-l { text-transform: uppercase; font-size: 9px; letter-spacing: 0.06em; color: var(--n-text-color-3, #888); margin-right: 4px; }
+.hero__chip--shared { background: #fff8e1; border-color: #ffe082; color: #5d4037; }
+.hero__shared { margin-left: 4px; font-size: 10px; font-weight: 600; color: #b26a00; }
 .hero__sub { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 4px; }
 .dim { color: var(--n-text-color-3, #666); }
 .hero__stats { display: flex; gap: 24px; }
+.help-icon { color: #888; cursor: help; vertical-align: middle; margin-left: 4px; }
+.sib-note { font-size: 12px; margin-bottom: 8px; }
+:deep(.mono-cell) { font-family: monospace; font-size: 11px; }
 .stat__v { font-size: 24px; font-weight: 600; text-align: center; }
 .stat__l { font-size: 11px; color: var(--n-text-color-3, #666); text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
 .notes-row { display: flex; align-items: center; gap: 12px; }
