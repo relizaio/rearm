@@ -33,7 +33,7 @@
                     <span v-for="(a, i) in pr.agents" :key="a.uuid" class="agent-pill">
                         <router-link :to="{ name: 'AiAgentView', params: { uuid: a.uuid } }">
                             <span class="agent-chip" :style="{ background: a.color || '#888' }">{{ a.iconKind || '◆' }}</span>
-                            {{ a.name }}<span v-if="a.agentIdentity" class="agent-id"> — {{ a.agentIdentity }}</span>
+                            {{ a.name }}<span class="agent-id" v-if="a.uuid"> — {{ a.uuid.slice(0, 8) }}…{{ a.uuid.slice(-4) }}</span>
                         </router-link><span v-if="i &lt; pr.agents.length - 1">, </span>
                     </span>
                 </p>
