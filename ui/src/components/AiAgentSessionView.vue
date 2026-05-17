@@ -15,7 +15,7 @@
                 <span :style="{ background: agent.color || '#888', color: 'white', padding: '0 4px', borderRadius: '4px', marginRight: '4px' }">
                     {{ agent.iconKind || '◆' }}
                 </span>
-                {{ agent.name }}<span v-if="agent.agentIdentity" class="dim agent-id"> — {{ agent.agentIdentity }}</span>
+                {{ agent.name }}<span class="dim agent-id" v-if="agent.uuid"> — uuid:{{ agent.uuid.slice(0, 8) }}…{{ agent.uuid.slice(-4) }}</span>
             </a>
         </div>
         <h3>{{ session.title || '(untitled)' }}</h3>
