@@ -65,9 +65,18 @@ const routes : any[] = [
         component: () => import('@/components/AiAgentSessionView.vue')
     },
     {
+        // AI Agent Policies list moved under Org Settings → Policies → inner
+        // "AI Agent Policies" tab. Keep the standalone path as a redirect so
+        // bookmarks and the AiAgents "Manage policies →" link continue to
+        // work. The individual policy editor (/aiAgentPolicy/:uuid) is still
+        // a full-page route.
         path: '/aiAgentPolicies/:orguuid',
         name: 'AiAgentPoliciesOfOrg',
-        component: () => import('@/components/AiAgentPoliciesOfOrg.vue')
+        redirect: (to: RouteLocationNormalized) => ({
+            name: 'OrgSettings',
+            params: { orguuid: to.params.orguuid },
+            query: { tab: 'policies' },
+        }),
     },
     {
         path: '/aiAgentPolicy/:uuid',
@@ -75,9 +84,15 @@ const routes : any[] = [
         component: () => import('@/components/AiAgentPolicyView.vue')
     },
     {
+        // Committers list moved under Org Settings → Committers tab. Redirect
+        // preserves any bookmarks; individual committer view stays a route.
         path: '/committersOfOrg/:orguuid',
         name: 'CommittersOfOrg',
-        component: () => import('@/components/CommittersOfOrg.vue')
+        redirect: (to: RouteLocationNormalized) => ({
+            name: 'OrgSettings',
+            params: { orguuid: to.params.orguuid },
+            query: { tab: 'committers' },
+        }),
     },
     {
         path: '/committer/:uuid',

@@ -300,6 +300,10 @@
                 </n-modal>
             </n-tab-pane>
 
+            <n-tab-pane name="committers" tab="Committers" v-if="myUser.installationType !== 'OSS'">
+                <CommittersOfOrg :embedded="true"/>
+            </n-tab-pane>
+
             <n-tab-pane name="users" tab="Users" v-if="isOrgAdmin">
                 <div class="userBlock mt-4">
                     <h5>Users ({{ activeUsers.length }})</h5>
@@ -595,6 +599,9 @@
                         </n-button>
                     </n-space>
                     <n-tabs type="line" default-value="approvalRoles" animated>
+                    <n-tab-pane name="agentPolicies" tab="AI Agent Policies">
+                        <AiAgentPoliciesOfOrg :embedded="true"/>
+                    </n-tab-pane>
                     <n-tab-pane name="approvalRoles" tab="Approval Roles">
                     <h4>Approval Roles:
                         <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Role" @click="showCreateApprovalRole = true">
@@ -1368,6 +1375,8 @@ import ScopedPermissions from './ScopedPermissions.vue'
 import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
+import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
+import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 

@@ -44,7 +44,7 @@ import { ref, h, Component, ComputedRef, computed, Ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
-import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest, Robot, Signature } from '@vicons/tabler'
+import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest, Robot } from '@vicons/tabler'
 
 
 function renderIcon (icon: Component) {
@@ -143,21 +143,6 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                 ),
             key: 'aiAgents',
             icon: renderIcon(Robot)
-        },
-        {
-            label: () =>
-                h(
-                    RouterLink,
-                    {
-                        to: {
-                            name: 'CommittersOfOrg',
-                            params: {orguuid: org}
-                        }
-                    },
-                    { default: () => 'Committers' }
-                ),
-            key: 'committers',
-            icon: renderIcon(Signature)
         },
 
     ]
@@ -275,8 +260,8 @@ const routeToMenuKey: Record<string, string> = {
     'AiAgentSessionView': 'aiAgents',
     'AiAgentPoliciesOfOrg': 'aiAgents',
     'AiAgentPolicyView': 'aiAgents',
-    'CommittersOfOrg': 'committers',
-    'CommitterView': 'committers',
+    'CommittersOfOrg': 'orgsettings',
+    'CommitterView': 'orgsettings',
     'InstancesOfOrg': 'instances',
     'Instance': 'instances',
     'SecretsOfOrg': 'secrets',

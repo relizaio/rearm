@@ -9,7 +9,6 @@
                 </p>
             </div>
             <n-space>
-                <n-button quaternary @click="openCommitters">Manage committers →</n-button>
                 <n-button quaternary @click="openPolicies">Manage policies →</n-button>
             </n-space>
         </div>
@@ -181,11 +180,14 @@ function openSession (uuid: string) {
 }
 
 function openPolicies () {
-    router.push({ name: 'AiAgentPoliciesOfOrg', params: { orguuid: orgUuid.value } })
-}
-
-function openCommitters () {
-    router.push({ name: 'CommittersOfOrg', params: { orguuid: orgUuid.value } })
+    // Policies live under Org Settings → Policies → AI Agent Policies (inner
+    // tab). The outer-tab hint is consumed by OrgSettings on mount; the inner
+    // n-tabs default-value picks up the AI Agent Policies pane.
+    router.push({
+        name: 'OrgSettings',
+        params: { orguuid: orgUuid.value },
+        query: { tab: 'policies' },
+    })
 }
 
 const sessionColumns: DataTableColumns<any> = [
