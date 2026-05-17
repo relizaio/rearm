@@ -42,6 +42,14 @@ const MULTI_RELEASE_GQL_DATA = `
         }
         vcsBranch
         vcsTag
+        signature {
+            state
+            format
+            signedByOwnerType
+            signedByOwnerUuid
+            keyFingerprint
+            verifiedAt
+        }
     }
     branch
     branchDetails {
@@ -456,6 +464,14 @@ const singleReleaseDataNoParent = `
         artifactDetails {
             ${ARTIFACT_DETAIL_DATA}
         }
+        signature {
+            state
+            format
+            signedByOwnerType
+            signedByOwnerUuid
+            keyFingerprint
+            verifiedAt
+        }
     }
     commitsDetails {
         uuid
@@ -464,6 +480,14 @@ const singleReleaseDataNoParent = `
         commitAuthor
         commitEmail
         dateActual
+        signature {
+            state
+            format
+            signedByOwnerType
+            signedByOwnerUuid
+            keyFingerprint
+            verifiedAt
+        }
     }
     branch
     branchDetails {
