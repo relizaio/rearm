@@ -7,8 +7,7 @@
                 </a>
             </h5>
             <div v-if="release" class="mb-3 settingsBlock">
-                <h6>Parent Type: {{ release.componentDetails.type }}</h6>
-                <h6>Release Type: {{ release.type }}</h6>
+                <h6>Type: {{ release.componentDetails.type }}</h6>
                 <h6><span v-if="release.componentDetails.type === 'PRODUCT'">{{ featureSetLabel }}: </span><span v-else>Branch: </span> {{ release.branchDetails.name }}</h6>
             </div>
             <div v-if="release" class="matchedProductBlock">
@@ -129,7 +128,6 @@ const RELEASE_DIFF_QUERY = gql`
             uuid
             version
             org
-            type
             componentDetails { uuid name type resourceGroup }
             branchDetails { uuid name }
             parentReleases {
@@ -144,7 +142,6 @@ const PARENT_RELEASES_DIFF_QUERY = gql`
         releases(orgFilter: $orgId, releaseFilter: $releaseIds) {
             uuid
             version
-            type
             componentDetails { uuid name type resourceGroup }
             branchDetails { uuid name }
             sourceCodeEntryDetails {
