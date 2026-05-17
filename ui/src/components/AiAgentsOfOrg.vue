@@ -60,7 +60,7 @@
                             </div>
                             <div>
                                 <div class="acard__name">
-                                    {{ a.name }}<span class="acard__id" v-if="a.uuid"> — {{ a.uuid.slice(0, 8) }}…{{ a.uuid.slice(-4) }}</span>
+                                    {{ a.name }}<span v-if="a.agentIdentity" class="acard__id"> — {{ a.agentIdentity }}</span>
                                 </div>
                                 <div class="acard__sub" v-if="a.model">
                                     {{ a.model.publisher }} · <code>{{ a.model.name }}{{ a.model.version ? ' @ ' + a.model.version : '' }}</code>

@@ -9,7 +9,7 @@
                 {{ agent.iconKind || '◆' }}
             </div>
             <div class="hero__title">
-                <h3>{{ agent.name }}<span class="hero__id"> — {{ shortUuid(agent.uuid) }}</span></h3>
+                <h3>{{ agent.name }}<span v-if="agent.agentIdentity" class="hero__id"> — {{ agent.agentIdentity }}</span></h3>
                 <div class="hero__sub">
                     <n-tag size="small" :type="agent.agentType === 'ROOT' ? 'info' : 'default'">{{ agent.agentType }}</n-tag>
                     <n-tag v-if="agent.status === 'ARCHIVED'" size="small" type="default">ARCHIVED</n-tag>
@@ -54,6 +54,7 @@
                 <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
                     <n-descriptions-item label="UUID"><code>{{ agent.uuid }}</code></n-descriptions-item>
                     <n-descriptions-item label="Org"><code>{{ agent.org }}</code></n-descriptions-item>
+                    <n-descriptions-item label="Identity"><code>{{ agent.agentIdentity || '—' }}</code></n-descriptions-item>
                     <n-descriptions-item label="Type">{{ agent.agentType }}</n-descriptions-item>
                     <n-descriptions-item label="Status">{{ agent.status }}</n-descriptions-item>
                     <n-descriptions-item label="Model">
@@ -134,10 +135,6 @@ function openAgentsOfOrg () {
 
 function formatDate (s: string | null | undefined) {
     return s ? new Date(s).toLocaleString('en-CA') : '—'
-}
-
-function shortUuid (u: string | null | undefined) {
-    return u ? `${u.slice(0, 8)}…${u.slice(-4)}` : ''
 }
 
 function startEditNotes () {
