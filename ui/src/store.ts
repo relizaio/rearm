@@ -1450,6 +1450,7 @@ const storeObject : any = {
                                 name
                                 iconKind
                                 color
+                                agentIdentity
                                 model {
                                     name
                                     version
@@ -2006,6 +2007,7 @@ const storeObject : any = {
                             iconKind
                             color
                             notes
+                            agentIdentity
                             status
                             agentType
                             rootAgent
@@ -2041,6 +2043,7 @@ const storeObject : any = {
                             iconKind
                             color
                             notes
+                            agentIdentity
                             status
                             agentType
                             rootAgent
