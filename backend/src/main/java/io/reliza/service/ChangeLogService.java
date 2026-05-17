@@ -37,7 +37,9 @@ import io.reliza.dto.ChangelogRecords.ComponentChangelog;
 import io.reliza.dto.ChangelogRecords.NoneBranchChanges;
 import io.reliza.dto.ChangelogRecords.NoneChangelog;
 import io.reliza.dto.ChangelogRecords.NoneOrganizationChangelog;
+import io.reliza.dto.ChangelogRecords.NoneProductChangelog;
 import io.reliza.dto.ChangelogRecords.NoneReleaseChanges;
+import io.reliza.dto.ChangelogRecords.ProductReleaseChanges;
 import io.reliza.dto.ChangelogRecords.OrganizationChangelog;
 import io.reliza.dto.ChangelogRecords.AggregatedOrganizationChangelog;
 import io.reliza.dto.ChangelogRecords.ReleaseInfo;
@@ -980,17 +982,21 @@ public class ChangeLogService {
 	}
 	
 	/**
-	 * Computes product changelog using the sealed interface pattern.
-	 * Extracts child component releases from product releases' parentReleases,
-	 * computes per-child-component changelogs, and aggregates SBOM/finding changes to product level.
-	 * Similar to organization changelog pattern but scoped to a single product.
+	 * Computes a product changelog.
+	 * <p>
+	 * AGGREGATED mode is a single baseline-&gt;target pass. NONE mode groups the
+	 * changes per product release: each product release in the range becomes a
+	 * {@link ProductReleaseChanges} entry holding the child component changes it
+	 * introduced (see {@link #computeNoneProductChangelog}).
 	 *
-	 * @param productReleases Product releases (sorted newest first)
+	 * @param productReleases Product releases in range (sorted newest first)
 	 * @param product Product component data
 	 * @param org Organization UUID
 	 * @param aggregationType NONE or AGGREGATED
 	 * @param userTimeZone User's timezone
-	 * @return ComponentChangelog with product-level aggregated data
+	 * @param explicitFirst Baseline product release (release-comparison), or null for date-based
+	 * @param explicitLast Target product release (release-comparison), or null for date-based
+	 * @return ComponentChangelog (NoneProductChangelog for NONE, AggregatedChangelog for AGGREGATED)
 	 */
 	private ComponentChangelog computeProductChangelogFromReleases(
 			List<ReleaseData> productReleases,
@@ -1000,7 +1006,114 @@ public class ChangeLogService {
 			String userTimeZone,
 			ReleaseData explicitFirst,
 			ReleaseData explicitLast) throws RelizaException {
-		
+
+		if (productReleases.isEmpty()) {
+			throw new RelizaException("No product releases provided for changelog computation");
+		}
+
+		if (aggregationType == AggregationType.NONE) {
+			return computeNoneProductChangelog(productReleases, product, org, userTimeZone,
+				explicitFirst, explicitLast);
+		}
+		// AGGREGATED: single baseline->target pass (behavior unchanged).
+		return computeProductChangelogStep(productReleases, product, org, aggregationType,
+			userTimeZone, explicitFirst, explicitLast);
+	}
+
+	/**
+	 * Computes a NONE-mode product changelog grouped per product release.
+	 * <p>
+	 * Walks the product releases in the range oldest-&gt;newest and, for each
+	 * consecutive pair, computes (via {@link #computeProductChangelogStep}) the
+	 * child component changes the newer product release introduced. The oldest
+	 * product release in the range is the comparison floor and is not emitted as
+	 * its own group. For date-based changelogs (explicit endpoints absent) the
+	 * product release immediately preceding the window is used as the floor when
+	 * available, so the oldest in-window release still gets its own group.
+	 * Product releases that introduced no child change are omitted.
+	 */
+	private NoneProductChangelog computeNoneProductChangelog(
+			List<ReleaseData> productReleases,
+			ComponentData product,
+			UUID org,
+			String userTimeZone,
+			ReleaseData explicitFirst,
+			ReleaseData explicitLast) throws RelizaException {
+
+		// Determine baseline (older) and target (newer) product releases for range metadata.
+		ReleaseData productFirst = (explicitFirst != null)
+			? explicitFirst : productReleases.get(productReleases.size() - 1);
+		ReleaseData productLast = (explicitLast != null)
+			? explicitLast : productReleases.get(0);
+		if (productFirst.getCreatedDate().isAfter(productLast.getCreatedDate())) {
+			ReleaseData tmp = productFirst;
+			productFirst = productLast;
+			productLast = tmp;
+		}
+
+		// Ordered oldest->newest, de-duplicated by UUID.
+		LinkedHashMap<UUID, ReleaseData> orderedAsc = new LinkedHashMap<>();
+		productReleases.stream()
+			.sorted(Comparator.comparing(ReleaseData::getCreatedDate))
+			.forEach(rd -> orderedAsc.putIfAbsent(rd.getUuid(), rd));
+		List<ReleaseData> walk = new ArrayList<>(orderedAsc.values());
+
+		// Date-based changelog: prepend the product release just before the window as
+		// the floor so the oldest in-window release also gets its own group.
+		if (explicitFirst == null && !walk.isEmpty()) {
+			ReleaseData oldest = walk.get(0);
+			UUID predUuid = sharedReleaseService.findPreviousReleasesOfBranchForRelease(
+				oldest.getBranch(), oldest.getUuid());
+			if (predUuid != null) {
+				sharedReleaseService.getReleaseData(predUuid, org)
+					.ifPresent(pred -> walk.add(0, pred));
+			}
+		}
+
+		// Walk consecutive pairs newest-first so groups read newest product release first.
+		List<ProductReleaseChanges> groups = new ArrayList<>();
+		for (int i = walk.size() - 1; i >= 1; i--) {
+			ReleaseData prev = walk.get(i - 1);
+			ReleaseData curr = walk.get(i);
+			ComponentChangelog stepResult = computeProductChangelogStep(
+				List.of(prev, curr), product, org, AggregationType.NONE, userTimeZone, prev, curr);
+			if (stepResult instanceof NoneChangelog noneStep && !noneStep.branches().isEmpty()) {
+				groups.add(new ProductReleaseChanges(
+					curr.getUuid(),
+					curr.getDecoratedVersionString(userTimeZone),
+					curr.getLifecycle(),
+					curr.getCreatedDate(),
+					noneStep.branches()));
+			}
+		}
+
+		return new NoneProductChangelog(
+			product.getUuid(), product.getName(), org,
+			toReleaseInfo(productFirst), toReleaseInfo(productLast), groups);
+	}
+
+	/**
+	 * Computes the changes for a single product changelog step (one baseline-&gt;target
+	 * product release pair). Extracts child component releases from the product
+	 * releases' parentReleases, computes per-child-component changelogs, and for
+	 * AGGREGATED mode aggregates SBOM/finding changes to product level.
+	 *
+	 * @param productReleases Product releases (non-empty; endpoints taken from explicitFirst/Last)
+	 * @param product Product component data
+	 * @param org Organization UUID
+	 * @param aggregationType NONE or AGGREGATED
+	 * @param userTimeZone User's timezone
+	 * @return ComponentChangelog with product-level data for this step
+	 */
+	private ComponentChangelog computeProductChangelogStep(
+			List<ReleaseData> productReleases,
+			ComponentData product,
+			UUID org,
+			AggregationType aggregationType,
+			String userTimeZone,
+			ReleaseData explicitFirst,
+			ReleaseData explicitLast) throws RelizaException {
+
 		if (productReleases.isEmpty()) {
 			throw new RelizaException("No product releases provided for changelog computation");
 		}

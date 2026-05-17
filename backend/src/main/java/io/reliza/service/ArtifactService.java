@@ -39,6 +39,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.HeapPressureGuard;
 import io.reliza.common.CommonVariables.Removable;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
@@ -930,13 +931,21 @@ public class ArtifactService {
 	protected void initialProcessArtifactsOnDependencyTrack (int limit) {
 		List<Artifact> initialArts = repository.listInitialArtifactsPendingOnDependencyTrack(limit);
 		log.debug("PSDEBUG: located " + initialArts.size() + " to process initially on dep track");
-		initialArts.forEach(a -> {
+		int processed = 0;
+		int total = initialArts.size();
+		for (Artifact a : initialArts) {
+			if (HeapPressureGuard.checkAndMaybeGc(log, "DTrack initial process",
+					String.format("before artifact %s (%d/%d done); remaining will be retried on next tick.",
+							a.getUuid(), processed, total))) {
+				break;
+			}
 			try {
 				fetchDependencyTrackDataForArtifact(a);
+				processed++;
 			} catch (RelizaException e) {
 				log.error("Exception on initial processing artifact on dtrack for id = " + a.getUuid());
 			}
-		});
+		}
 	}
 	
 	/**
@@ -1219,6 +1228,21 @@ public class ArtifactService {
 		int processedCount = 0;
 		int totalArtifacts = artifactUuids.size();
 		for (UUID artifactUuid : artifactUuids) {
+			// Pre-flight free-heap guard. A single artifact's DT fetch can
+			// pull many pages of vulnerabilities and violations, with peak
+			// heap proportional to project size. If we're already tight on
+			// heap, skip the whole artifact rather than start a fetch we
+			// may not be able to finish — finishing partially would write
+			// incomplete vulnerability data to disk and downstream
+			// consumers treat it as authoritative. The error-counter logic
+			// below leaves lastDtrackSync unchanged when this triggers, so
+			// the next sync run retries the remaining artifacts from the
+			// same lastSyncTime.
+			if (HeapPressureGuard.checkAndMaybeGc(log, "DTrack sync",
+					String.format("before artifact %s (%d/%d done); remaining will be retried on next sync run.",
+							artifactUuid, processedCount, totalArtifacts))) {
+				break;
+			}
 			try {
 				// Fetch artifact fresh for each iteration to avoid holding all data in memory
 				Optional<Artifact> artifactOpt = repository.findById(artifactUuid);
@@ -1230,7 +1254,7 @@ public class ArtifactService {
 					log.warn("Artifact not found for UUID: {} during dependency track sync", artifactUuid);
 				}
 			} catch (Exception e) {
-				log.error("Error processing artifact {} for dependency track sync: {}", 
+				log.error("Error processing artifact {} for dependency track sync: {}",
 						artifactUuid, e.getMessage(), e);
 			}
 		}

@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 
 import com.fasterxml.jackson.annotation.JsonValue;
@@ -545,6 +547,9 @@ public class CommonVariables {
 	@Data
 	@Builder()
 	public static class AuthHeaderParse implements AuthPrincipal {
+
+		private static final Logger log = LoggerFactory.getLogger(AuthHeaderParse.class);
+
 		@Setter(AccessLevel.PRIVATE) private ApiTypeEnum type;
 		@Setter(AccessLevel.PRIVATE) private UUID objUuid;
 		@Setter(AccessLevel.PRIVATE) private String apiKey;
@@ -553,13 +558,16 @@ public class CommonVariables {
 		@Setter(AccessLevel.PRIVATE) private String keyOrder;
 		@Setter(AccessLevel.PRIVATE) private String remoteIp;
 		private AuthorizationStatus authStatus = AuthorizationStatus.FORBIDDEN;
-		
-		
+
+
 		public static AuthHeaderParse parseAuthHeader(HttpHeaders headers, String ipAddr) {
-			AuthHeaderParseBuilder ahpBuilder = AuthHeaderParse.builder();
 			final String authorization = headers.getFirst(HttpHeaders.AUTHORIZATION);
 			// based on parser from Gitblit project - Apache 2.0
-			if (authorization != null && authorization.toLowerCase().startsWith("basic")) {
+			if (authorization == null || !authorization.toLowerCase().startsWith("basic")) {
+				return AuthHeaderParse.builder().build();
+			}
+			AuthHeaderParseBuilder ahpBuilder = AuthHeaderParse.builder();
+			try {
 			    // Authorization: Basic base64credentials
 			    String base64Credentials = authorization.substring("Basic".length()).trim();
 			    byte[] credDecoded = Base64.getDecoder().decode(base64Credentials);
@@ -567,14 +575,14 @@ public class CommonVariables {
 			    // credentials = username:password
 			    final String[] values = credentials.split(":", 2);
 			    ahpBuilder.apiKey(values[1]);
-			    
+
 			    // resolve key order if present
 			    String[] orderParse = values[0].split("__ord__", 2);
 			    if (orderParse.length > 1) {
 			    	ahpBuilder.keyOrder = orderParse[1];
 			    }
 			    ahpBuilder.apiKeyId = values[0];
-			    
+
 			    // resolve uuids and type
 				String[] typeProj = orderParse[0].split("__", 0);
 			    ahpBuilder.type(ApiTypeEnum.valueOf(typeProj[0]));
@@ -585,6 +593,21 @@ public class CommonVariables {
 					ahpBuilder.orgUuid(ahpBuilder.objUuid);
 				}
 				ahpBuilder.remoteIp(ipAddr);
+			} catch (RuntimeException e) {
+				// Malformed Basic Authorization header. Most commonly an
+				// unsubstituted CI/CD template variable (e.g. "$(ReARM-ApiKeyId)")
+				// or a scanner probe — i.e. an external client sending
+				// garbage at the HTTP boundary, not an internal bug.
+				// Without this catch the unchecked exception propagates up
+				// through the filter chain and Spring logs a full stack
+				// trace at ERROR level, which both pollutes operator alerts
+				// and gives anyone hitting the endpoint a free log-spam
+				// amplifier. Return an empty AHP so the caller treats the
+				// request as unauthenticated; DEBUG keeps the cause
+				// available without filling disk.
+				log.debug("Malformed Basic Authorization header from {} — treating as unauthenticated. Cause: {}",
+						ipAddr, e.getMessage());
+				return AuthHeaderParse.builder().build();
 			}
 			return ahpBuilder.build();
 		}

@@ -25,6 +25,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
+import io.reliza.common.HeapPressureGuard;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactCanonicalMap;
 import io.reliza.model.ArtifactData;
@@ -103,6 +107,18 @@ public class SbomComponentService {
 	private static final int BASE_BACKOFF_SECONDS = 30;
 	private static final int MAX_BACKOFF_SECONDS = 3600;
 
+	/**
+	 * Persistence-context flush + clear granularity for bulk inserts. Keeps the
+	 * Hibernate L1 cache bounded when a single BOM yields hundreds-to-thousands
+	 * of {@link ArtifactSbomComponent} rows. Picked to amortize JDBC batch
+	 * overhead while still letting GC reclaim the entity references between
+	 * chunks.
+	 */
+	private static final int FLUSH_CHUNK = 500;
+
+	@PersistenceContext
+	private EntityManager entityManager;
+
 	private final SbomComponentRepository sbomComponentRepository;
 	private final ArtifactSbomComponentRepository artifactSbomComponentRepository;
 	private final ReleaseArtifactIndexRepository releaseArtifactIndexRepository;
@@ -134,6 +150,17 @@ public class SbomComponentService {
 		log.debug("Draining {} pending SBOM reconciles", pending.size());
 		for (Release r : pending) {
 			UUID releaseUuid = r.getUuid();
+			// Pre-flight free-heap guard. ParsedBom + aggregation Maps can
+			// spike allocation by tens of MB per reconcile; if we're
+			// already running hot, punting the next release back to the
+			// queue lets the next scheduler tick try again after the GC
+			// hint reclaims the previous reconcile's transient state.
+			// Shared with DT batch loops via HeapPressureGuard.
+			if (HeapPressureGuard.checkAndMaybeGc(log, "SBOM reconcile drain",
+					String.format("queue holds %d more releases; they will be retried on the next scheduler tick.",
+							pending.size() - pending.indexOf(r)))) {
+				return;
+			}
 			try {
 				self.reconcileReleaseSbomComponents(releaseUuid);
 				releaseRepository.clearSbomReconcileRequested(releaseUuid);
@@ -148,7 +175,7 @@ public class SbomComponentService {
 		}
 	}
 
-	private static int currentReconcileFailureCount(Release r) {
+private static int currentReconcileFailureCount(Release r) {
 		FlowControl fc = r.getFlowControl();
 		if (fc == null || fc.sbomReconcileFailureCount() == null) return 0;
 		return fc.sbomReconcileFailureCount();
@@ -171,8 +198,19 @@ public class SbomComponentService {
 	 * <p>The artifact rows are content-addressed and immutable. A reconcile
 	 * on another release that shares the same BOM content reuses them
 	 * without re-parsing.
+	 *
+	 * <p>This outer method is intentionally NOT {@code @Transactional}. Each
+	 * artifact's parse + persist happens in its own short-lived transaction
+	 * (via {@link #parseAndUpsertArtifactSbomComponents}), and the index
+	 * rebuild + version-cookie stamp happen in a second short-lived
+	 * transaction (via {@link #rebuildReleaseArtifactIndex}). The split
+	 * keeps the Hibernate L1 cache bounded per artifact instead of letting
+	 * it accumulate every entity loaded across all BOMs the release carries
+	 * — important when one release contains many or unusually large BOMs.
+	 * Idempotency across partial failure is preserved by the
+	 * {@code existsByCanonicalArtifactUuid} short-circuit and by the
+	 * single-transaction rebuild step at the tail.
 	 */
-	@Transactional
 	public void reconcileReleaseSbomComponents(UUID releaseUuid) {
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		if (ord.isEmpty()) {
@@ -203,15 +241,32 @@ public class SbomComponentService {
 				continue;
 			}
 
-			parseAndUpsertArtifactSbomComponents(ad, canonicalArtifactUuid, orgUuid);
+			// Each artifact's parse runs in its own @Transactional via the Spring
+			// proxy. The local ParsedBom + aggregation Maps inside the call are
+			// fully GC-eligible the moment that transaction commits — they don't
+			// have to wait for the whole release reconcile to finish.
+			self.parseAndUpsertArtifactSbomComponents(ad, canonicalArtifactUuid, orgUuid);
 		}
 
-		// Rebuild this release's reverse-index entries. The release's BOM
-		// artifact set may have shifted since the last reconcile (a deliverable
-		// detached, a new SCE artifact added, etc.) — wholesale replacement
-		// keeps the index in sync with the current artifact set.
+		self.rebuildReleaseArtifactIndex(releaseUuid, orgUuid, canonicalArtifactSet);
+	}
+
+	/**
+	 * Wipe and rewrite {@code release_artifact_index} for one release, then
+	 * stamp {@code releases.sbom_schema_version}. Runs as its own
+	 * transaction so the entity manager's L1 cache is fresh — separate
+	 * from any per-artifact parse transactions that ran earlier in the
+	 * release's reconcile.
+	 *
+	 * <p>The release's BOM artifact set may have shifted since the last
+	 * reconcile (a deliverable detached, a new SCE artifact added, etc.) —
+	 * wholesale replacement keeps the index in sync with the current
+	 * artifact set.
+	 */
+	@Transactional
+	public void rebuildReleaseArtifactIndex(UUID releaseUuid, UUID orgUuid, Set<UUID> canonicalArtifactSet) {
 		releaseArtifactIndexRepository.deleteAllByOrgAndReleaseUuid(orgUuid, releaseUuid);
-		if (!canonicalArtifactSet.isEmpty()) {
+		if (canonicalArtifactSet != null && !canonicalArtifactSet.isEmpty()) {
 			List<ReleaseArtifactIndex> rows = new ArrayList<>(canonicalArtifactSet.size());
 			for (UUID canonical : canonicalArtifactSet) {
 				ReleaseArtifactIndex idx = new ReleaseArtifactIndex();
@@ -220,20 +275,8 @@ public class SbomComponentService {
 				idx.setCanonicalArtifactUuid(canonical);
 				rows.add(idx);
 			}
-			try {
-				releaseArtifactIndexRepository.saveAll(rows);
-			} catch (DataIntegrityViolationException dive) {
-				// Defensive: per-row save to recover from a partial conflict.
-				for (ReleaseArtifactIndex idx : rows) {
-					try {
-						releaseArtifactIndexRepository.save(idx);
-					} catch (DataIntegrityViolationException ignored) {
-						// Already present.
-					}
-				}
-			}
+			saveAllChunked(rows, releaseArtifactIndexRepository::saveAll);
 		}
-
 		markReleaseReconciled(releaseUuid);
 	}
 
@@ -241,8 +284,15 @@ public class SbomComponentService {
 	 * Parse one canonical artifact's BOM via rebom and write the
 	 * per-component {@code artifact_sbom_components} rows. Called only
 	 * when the canonical's rows don't already exist on disk.
+	 *
+	 * <p>Annotated {@code @Transactional} so each canonical's persist runs
+	 * in its own short-lived session — see {@link #reconcileReleaseSbomComponents}
+	 * for why the outer method dropped the transaction wrapper. Must be
+	 * called through Spring's proxy ({@code self.*}) for the annotation to
+	 * fire.
 	 */
-	private void parseAndUpsertArtifactSbomComponents(
+	@Transactional
+	public void parseAndUpsertArtifactSbomComponents(
 			ArtifactData ad, UUID canonicalArtifactUuid, UUID orgUuid) {
 
 		ParsedBom parsed;
@@ -280,6 +330,12 @@ public class SbomComponentService {
 			}
 		}
 
+		// The raw ParsedBom can be tens of MB for large BOMs. We've extracted
+		// everything we need into the smaller aggregation maps; releasing the
+		// reference here lets the JVM mark it for collection while we move on
+		// to the persist phase rather than waiting for the method to exit.
+		parsed = null;
+
 		if (componentAggs.isEmpty()) return;
 
 		// Upsert canonical sbom_components and get back canonical→uuid map.
@@ -305,17 +361,40 @@ public class SbomComponentService {
 			rows.add(row);
 		}
 
+		// Drop the aggregation maps — no longer needed once rows are built.
+		componentAggs = null;
+		parentAggs = null;
+		canonicalToUuid = null;
+
 		try {
-			artifactSbomComponentRepository.saveAll(rows);
+			saveAllChunked(rows, artifactSbomComponentRepository::saveAll);
 		} catch (DataIntegrityViolationException dive) {
 			// Lost the race with a concurrent reconcile of the same canonical —
-			// per-row save in case some were inserted, ignore conflicts.
+			// per-row save in case some were inserted, ignore conflicts. Chunked
+			// flush already happened on prior batches; no harm.
 			for (ArtifactSbomComponent row : rows) {
 				try {
 					artifactSbomComponentRepository.save(row);
 				} catch (DataIntegrityViolationException ignored) {
 				}
 			}
+		}
+	}
+
+	/**
+	 * Batch-save with intermediate {@code flush() + clear()} so the L1 cache
+	 * doesn't hold every entity inserted by a single call. Important when
+	 * one canonical artifact's BOM yields thousands of {@link ArtifactSbomComponent}
+	 * rows.
+	 */
+	private <T> void saveAllChunked(List<T> rows, java.util.function.Function<List<T>, Iterable<T>> saver) {
+		if (rows == null || rows.isEmpty()) return;
+		int size = rows.size();
+		for (int i = 0; i < size; i += FLUSH_CHUNK) {
+			List<T> chunk = rows.subList(i, Math.min(i + FLUSH_CHUNK, size));
+			saver.apply(chunk);
+			entityManager.flush();
+			entityManager.clear();
 		}
 	}
 

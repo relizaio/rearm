@@ -137,7 +137,14 @@ public class IntegrationService {
 			.defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
 			.build();
 	
-	final int dtrackBufferSize = 200 * 1024 * 1024;
+	// 150 MB ceiling on a single Dependency-Track response payload. Was 200 MB,
+	// then 50 MB (too tight — tripped DataBufferLimitException on real
+	// projects), then 100 MB. Raised again to 150 MB to give projects with
+	// very large vuln listings more headroom while still keeping the per-call
+	// allocation well under the original 200 MB. We paginate everything (see
+	// executeDtrackPaginatedCallWithTransform), so this cap is only a
+	// runaway-allocation safety net.
+	final int dtrackBufferSize = 150 * 1024 * 1024;
     final ExchangeStrategies dtrackExchangeStrategies = ExchangeStrategies.builder()
             .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(dtrackBufferSize))
             .build();
@@ -1149,7 +1156,7 @@ public class IntegrationService {
 	 * @param pageTransformer Function that transforms a page of raw objects into the target type
 	 * @return List of all transformed results from all pages
 	 */
-	private <T> List<T> executeDtrackPaginatedCallWithTransform(String baseUri, String apiToken, 
+	private <T> List<T> executeDtrackPaginatedCallWithTransform(String baseUri, String apiToken,
 			String existingParams, Function<List<Object>, List<T>> pageTransformer) {
 		List<T> allResults = new ArrayList<>();
 		int pageNumber = 1;
@@ -1157,22 +1164,22 @@ public class IntegrationService {
 		boolean hasMorePages = true;
 		int totalRawFetched = 0;
 		String separator = existingParams.isEmpty() ? "?" : (existingParams.endsWith("&") ? "" : "&");
-		
+
 		while (hasMorePages) {
 			DtrackPageResult pageResult = fetchDtrackPage(baseUri, apiToken, existingParams, separator, pageNumber, pageSize);
-			
+
 			if (pageResult != null && pageResult.results() != null && !pageResult.results().isEmpty()) {
 				allResults.addAll(pageTransformer.apply(pageResult.results()));
 				totalRawFetched += pageResult.results().size();
 			}
-			
+
 			// Stop if: null result, empty result, fetched all items per totalCount, or partial page
 			if (pageResult == null || pageResult.results() == null || pageResult.results().isEmpty()
 					|| pageResult.results().size() < pageSize
 					|| (pageResult.totalCount() > 0 && totalRawFetched >= pageResult.totalCount())) {
 				hasMorePages = false;
 			}
-			
+
 			pageNumber++;
 		}
 		return allResults;

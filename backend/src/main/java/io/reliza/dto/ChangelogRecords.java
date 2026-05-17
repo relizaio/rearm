@@ -26,16 +26,16 @@ public final class ChangelogRecords {
 
 	/**
 	 * Sealed interface for component changelogs.
-	 * Permits only NONE and AGGREGATED mode implementations.
+	 * Permits NONE, AGGREGATED, and per-product-release (NONE product) implementations.
 	 */
-	public sealed interface ComponentChangelog permits NoneChangelog, AggregatedChangelog {
+	public sealed interface ComponentChangelog permits NoneChangelog, AggregatedChangelog, NoneProductChangelog {
 		UUID componentUuid();
 		String componentName();
 		UUID orgUuid();
 		ReleaseInfo firstRelease();
 		ReleaseInfo lastRelease();
 	}
-	
+
 	/**
 	 * Changelog for NONE mode (per-release breakdown).
 	 */
@@ -47,6 +47,33 @@ public final class ChangelogRecords {
 		ReleaseInfo lastRelease,
 		List<NoneBranchChanges> branches
 	) implements ComponentChangelog {}
+
+	/**
+	 * Changelog for NONE mode scoped to a PRODUCT.
+	 * Groups child component changes per product release rather than as a flat
+	 * branch list, so each product release in the range is a self-contained unit.
+	 */
+	public record NoneProductChangelog(
+		UUID componentUuid,
+		String componentName,
+		UUID orgUuid,
+		ReleaseInfo firstRelease,
+		ReleaseInfo lastRelease,
+		List<ProductReleaseChanges> productReleases
+	) implements ComponentChangelog {}
+
+	/**
+	 * Child component changes introduced by a single product release (NONE mode).
+	 * The branches list reuses {@link NoneBranchChanges} and carries the child
+	 * component releases that this product release newly pinned.
+	 */
+	public record ProductReleaseChanges(
+		UUID releaseUuid,
+		String version,
+		ReleaseLifecycle lifecycle,
+		ZonedDateTime createdDate,
+		List<NoneBranchChanges> branches
+	) {}
 	
 	/**
 	 * Changelog for AGGREGATED mode (component-level summary).
