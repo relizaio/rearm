@@ -361,7 +361,11 @@ const variableDocs: VariableDoc[] = [
     { name: 'release.commits[].signature.state',        snippet: 'release.commits.all(c, c.signature.state == "VERIFIED")', display: 'release.commits[].signature.state', desc: 'string — VERIFIED / INVALID_SIGNATURE / UNKNOWN_KEY / KEY_REVOKED / WRONG_SIGNER / PENDING / ERRORED / UNSIGNED' },
     { name: 'release.commits[].signature.format',       snippet: 'release.commits.exists(c, c.signature.format == "SSH")', display: 'release.commits[].signature.format', desc: 'string — "SSH", "GPG", "X509"' },
     { name: 'release.commits[].signature.signedByOwnerType', snippet: 'release.commits.all(c, c.signature.signedByOwnerType == "AGENT")', display: 'release.commits[].signature.signedByOwnerType', desc: 'string — "AGENT" / "COMMITTER" (which trust scope the matched key belongs to)' },
-    { name: 'release.commits[].signature.keyFingerprint', snippet: 'release.commits.exists(c, c.signature.keyFingerprint == "SHA256:...")', display: 'release.commits[].signature.keyFingerprint', desc: 'string — fingerprint of the matched enrolled key' }
+    { name: 'release.commits[].signature.keyFingerprint', snippet: 'release.commits.exists(c, c.signature.keyFingerprint == "SHA256:...")', display: 'release.commits[].signature.keyFingerprint', desc: 'string — fingerprint of the matched enrolled key' },
+    { name: 'release.commits[].attribution.state',      snippet: 'release.commits.exists(c, c.attribution.state == "REJECTED")',  display: 'release.commits[].attribution.state',      desc: 'string — UNATTRIBUTED / RESOLVED / REJECTED. Set on the SCE by the agent-trailer resolver; REJECTED means trailers were present but the claim could not be resolved (unknown agent, unknown session, malformed clientSessionId, cross-org, etc.).' },
+    { name: 'release.commits[].attribution.resolved',   snippet: 'release.commits.all(c, c.attribution.resolved || c.attribution.state == "UNATTRIBUTED")', display: 'release.commits[].attribution.resolved',   desc: 'bool — true iff state == RESOLVED' },
+    { name: 'release.commits[].attribution.rejected',   snippet: 'release.commits.exists(c, c.attribution.rejected)',             display: 'release.commits[].attribution.rejected',   desc: 'bool — true iff state == REJECTED' },
+    { name: 'release.commits[].attribution.reason',     snippet: 'release.commits.exists(c, c.attribution.reason != "")',         display: 'release.commits[].attribution.reason',     desc: 'string — free-form rejection reason; empty when RESOLVED / UNATTRIBUTED' }
 ]
 
 const exampleDocs: string[] = [
@@ -376,7 +380,8 @@ const exampleDocs: string[] = [
     'release.agentSessions.exists(s, s.hasFailedPolicy)',
     'release.agentSessions.all(s, s.status == "CLOSED")',
     'release.commits.all(c, c.signature.state == "VERIFIED")',
-    'release.commits.exists(c, c.agent != "") && release.commits.all(c, c.signature.signedByOwnerType == "AGENT")'
+    'release.commits.exists(c, c.agent != "") && release.commits.all(c, c.signature.signedByOwnerType == "AGENT")',
+    'release.commits.exists(c, c.attribution.state == "REJECTED")'
 ]
 
 function insertSnippet(snippet: string) {
