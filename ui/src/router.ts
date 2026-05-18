@@ -75,7 +75,7 @@ const routes : any[] = [
         redirect: (to: RouteLocationNormalized) => ({
             name: 'OrgSettings',
             params: { orguuid: to.params.orguuid },
-            query: { tab: 'policies' },
+            query: { tab: 'policies', policyTab: 'agentPolicies' },
         }),
     },
     {

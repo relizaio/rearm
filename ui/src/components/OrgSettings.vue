@@ -598,7 +598,7 @@
                             Populate Default Approval Setup
                         </n-button>
                     </n-space>
-                    <n-tabs type="line" default-value="approvalRoles" animated>
+                    <n-tabs type="line" :value="policySubTab" @update:value="handlePolicySubTabSwitch" animated>
                     <n-tab-pane name="agentPolicies" tab="AI Agent Policies">
                         <AiAgentPoliciesOfOrg :embedded="true"/>
                     </n-tab-pane>
@@ -1653,6 +1653,7 @@ const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
 // Tab management with router integration
 const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 const currentTab = ref(route.query.tab as string || defaultTab)
+const policySubTab = ref(route.query.policyTab as string || 'approvalRoles')
 
 const approvalRoleFields: any[] = [
     {
@@ -5024,13 +5025,20 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
 async function handleTabSwitch(tabName: string) {
     // Update current tab
     currentTab.value = tabName
-    
+
     // Update router query parameter
     await router.push({
         query: { ...route.query, tab: tabName }
     })
-    
+
     loadTabSpecificData(tabName)
+}
+
+async function handlePolicySubTabSwitch(tabName: string) {
+    policySubTab.value = tabName
+    await router.push({
+        query: { ...route.query, policyTab: tabName }
+    })
 }
 
 async function loadInvitedUsers(useCache: boolean) {
