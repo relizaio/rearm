@@ -1,6 +1,6 @@
 <template>
     <div class="agentPolicies">
-        <n-breadcrumb separator="›" class="crumbs" v-if="!props.embedded">
+        <n-breadcrumb separator="›" class="crumbs">
             <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
             <n-breadcrumb-item>Policies</n-breadcrumb-item>
         </n-breadcrumb>
