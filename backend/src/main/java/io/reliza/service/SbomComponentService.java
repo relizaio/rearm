@@ -145,11 +145,21 @@ public class SbomComponentService {
 	}
 
 	public void processPendingReconciles(int batchLimit) {
-		List<Release> pending = releaseRepository.findReleasesPendingSbomReconcile(batchLimit);
-		if (pending.isEmpty()) return;
-		log.debug("Draining {} pending SBOM reconciles", pending.size());
-		for (Release r : pending) {
-			UUID releaseUuid = r.getUuid();
+		// Load UUIDs only — the full Release has five JSONB columns
+		// (recordData, metrics, approvalEvents, updateEvents, flowControl)
+		// and Hibernate's dirty-checking snapshot deep-copies each via
+		// serialize→bytes→deserialize. Batching full rows up front
+		// allocated enough that the scheduler thread could OOM before
+		// the per-iteration heap guard had a chance to fire. The
+		// reconcile itself only needs the UUID; the FlowControl
+		// failure-count read is on the rare exception path and pays
+		// for one lazy findById there.
+		List<UUID> pendingUuids = releaseRepository.findUuidsOfReleasesPendingSbomReconcile(batchLimit);
+		if (pendingUuids.isEmpty()) return;
+		log.debug("Draining {} pending SBOM reconciles", pendingUuids.size());
+		int processed = 0;
+		int total = pendingUuids.size();
+		for (UUID releaseUuid : pendingUuids) {
 			// Pre-flight free-heap guard. ParsedBom + aggregation Maps can
 			// spike allocation by tens of MB per reconcile; if we're
 			// already running hot, punting the next release back to the
@@ -157,15 +167,18 @@ public class SbomComponentService {
 			// hint reclaims the previous reconcile's transient state.
 			// Shared with DT batch loops via HeapPressureGuard.
 			if (HeapPressureGuard.checkAndMaybeGc(log, "SBOM reconcile drain",
-					String.format("queue holds %d more releases; they will be retried on the next scheduler tick.",
-							pending.size() - pending.indexOf(r)))) {
+					String.format("before release %s (%d/%d done); remaining will be retried on the next scheduler tick.",
+							releaseUuid, processed, total))) {
 				return;
 			}
 			try {
 				self.reconcileReleaseSbomComponents(releaseUuid);
 				releaseRepository.clearSbomReconcileRequested(releaseUuid);
+				processed++;
 			} catch (Exception e) {
-				int nextAttempt = currentReconcileFailureCount(r) + 1;
+				int nextAttempt = releaseRepository.findById(releaseUuid)
+						.map(SbomComponentService::currentReconcileFailureCount)
+						.orElse(0) + 1;
 				int backoff = Math.min(BASE_BACKOFF_SECONDS << Math.min(nextAttempt - 1, 7),
 						MAX_BACKOFF_SECONDS);
 				releaseRepository.recordSbomReconcileFailure(releaseUuid, backoff);

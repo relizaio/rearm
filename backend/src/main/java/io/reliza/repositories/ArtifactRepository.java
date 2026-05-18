@@ -23,9 +23,9 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	List<Artifact> listArtifactsByOrg(String orgUuidAsString);
 	
 	@Query(
-			value = VariableQueries.LIST_INITIAL_ARTIFACTS_PENDING_DEPENDENCY_TRACK,
+			value = VariableQueries.LIST_INITIAL_ARTIFACT_UUIDS_PENDING_DEPENDENCY_TRACK,
 			nativeQuery = true)
-	List<Artifact> listInitialArtifactsPendingOnDependencyTrack(int limit);
+	List<UUID> listInitialArtifactUuidsPendingOnDependencyTrack(int limit);
 	
 	@Query(
 			value = VariableQueries.LIST_ARTIFACTS_PENDING_DTRACK_SUBMISSION,

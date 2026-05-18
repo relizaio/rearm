@@ -198,10 +198,17 @@ class VariableQueries {
 	 */
 	protected static final String LIST_ARTIFACTS_BY_ORG = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString";
 	
-	// Caps per-tick scan + downstream API calls to DTrack. Ordered FIFO by upload (createdDate ASC)
-	// so a burst of new BOMs doesn't starve older ones still waiting to be processed.
-	protected static final String LIST_INITIAL_ARTIFACTS_PENDING_DEPENDENCY_TRACK = """
-			select * from rearm.artifacts a where a.metrics->>'lastScanned' is null
+	// Caps per-tick scan + downstream API calls to DTrack. Ordered FIFO by
+	// upload (createdDate ASC) so a burst of new BOMs doesn't starve older
+	// ones still waiting to be processed. Returns UUIDs only so the
+	// every-minute scheduler can iterate with a heap-pressure guard between
+	// findById materializations — at most one Artifact (and one row's JSONB
+	// snapshot) is resident in the persistence context. Loading full rows
+	// up front triggered Hibernate dirty-checking snapshots that deep-copy
+	// the metrics JSONB via serialize→bytes→deserialize, large enough on
+	// projects with thousands of vulns to OOM the scheduler thread.
+	protected static final String LIST_INITIAL_ARTIFACT_UUIDS_PENDING_DEPENDENCY_TRACK = """
+			select uuid from rearm.artifacts a where a.metrics->>'lastScanned' is null
 			and a.metrics->>'uploadToken' is not null
 			order by a.record_data->>'createdDate' asc
 			limit :limit

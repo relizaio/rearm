@@ -368,14 +368,24 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	/**
 	 * Picked up by the every-minute dependency-track scheduler. Excludes rows
 	 * still in failure-backoff. Oldest-first to drain backed-up work fairly.
+	 *
+	 * <p>Returns just UUIDs so the caller can iterate with a heap-pressure
+	 * guard between {@code findById} calls — at most one Release entity
+	 * (and therefore at most one row's worth of JSONB snapshots) is
+	 * resident in the persistence context at any moment. Loading full
+	 * {@link Release} rows up front would trigger Hibernate dirty-checking
+	 * snapshots that deep-copy every JSONB column via
+	 * serialize→bytes→deserialize ({@code hypersistence-utils} {@code JsonType}),
+	 * which was large enough to OOM the scheduler thread before the
+	 * per-iteration heap guard fired.
 	 */
-	@Query(value = "SELECT * FROM rearm.releases r "
+	@Query(value = "SELECT uuid FROM rearm.releases r "
 			+ "WHERE r.flow_control->>'sbomReconcileRequestedAt' IS NOT NULL "
 			+ "AND (r.flow_control->>'sbomReconcileSkipUntil' IS NULL "
 			+ "     OR (r.flow_control->>'sbomReconcileSkipUntil')::timestamptz < now()) "
 			+ "ORDER BY (r.flow_control->>'sbomReconcileRequestedAt')::timestamptz ASC "
 			+ "LIMIT :batchLimit", nativeQuery = true)
-	List<Release> findReleasesPendingSbomReconcile(@Param("batchLimit") int batchLimit);
+	List<UUID> findUuidsOfReleasesPendingSbomReconcile(@Param("batchLimit") int batchLimit);
 
 	/**
 	 * Clear the queue marker after a successful reconcile. Strips just the

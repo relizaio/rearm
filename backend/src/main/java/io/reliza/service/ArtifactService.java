@@ -929,21 +929,34 @@ public class ArtifactService {
 	 * Oldest-uploadToken-first ordering in the SQL guarantees forward progress.
 	 */
 	protected void initialProcessArtifactsOnDependencyTrack (int limit) {
-		List<Artifact> initialArts = repository.listInitialArtifactsPendingOnDependencyTrack(limit);
-		log.debug("PSDEBUG: located " + initialArts.size() + " to process initially on dep track");
+		// Load UUIDs only — the full Artifact has JSONB columns (metrics
+		// carries DT vuln/violation detail) whose Hibernate dirty-checking
+		// snapshot deep-copies via serialize→bytes→deserialize. Batching
+		// full rows up front allocated enough that the scheduler thread
+		// could OOM before the per-iteration heap guard had a chance to
+		// fire. UUID-only retrieval keeps at most one Artifact resident
+		// in the persistence context.
+		List<UUID> uuids = repository.listInitialArtifactUuidsPendingOnDependencyTrack(limit);
+		log.debug("PSDEBUG: located {} to process initially on dep track", uuids.size());
 		int processed = 0;
-		int total = initialArts.size();
-		for (Artifact a : initialArts) {
+		int total = uuids.size();
+		for (UUID uuid : uuids) {
 			if (HeapPressureGuard.checkAndMaybeGc(log, "DTrack initial process",
 					String.format("before artifact %s (%d/%d done); remaining will be retried on next tick.",
-							a.getUuid(), processed, total))) {
+							uuid, processed, total))) {
 				break;
 			}
+			Optional<Artifact> oa = repository.findById(uuid);
+			if (oa.isEmpty()) {
+				log.warn("Artifact {} disappeared between uuid scan and findById on dtrack initial process; skipping",
+						uuid);
+				continue;
+			}
 			try {
-				fetchDependencyTrackDataForArtifact(a);
+				fetchDependencyTrackDataForArtifact(oa.get());
 				processed++;
 			} catch (RelizaException e) {
-				log.error("Exception on initial processing artifact on dtrack for id = " + a.getUuid());
+				log.error("Exception on initial processing artifact on dtrack for id = " + uuid);
 			}
 		}
 	}
