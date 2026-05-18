@@ -1307,6 +1307,7 @@ function buildCombinedHistory() {
                     objectId: event.objectId,
                     oldValue: event.oldValue,
                     newValue: event.newValue,
+                    message: event.message,
                     wu: event.wu,
                     source: 'release'
                 })
