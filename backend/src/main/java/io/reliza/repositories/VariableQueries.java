@@ -328,8 +328,13 @@ class VariableQueries {
 			AND b.record_data->>'status' != 'ARCHIVED'
 		""";
 	
+	// UUID-only — caller (VulnAnalysisUpdateService) feeds the UUID
+	// straight to computeArtifactMetrics(uuid). Avoids materializing
+	// full Artifact rows (and their JSONB-snapshot deep copies) in the
+	// persistence context for a finding-affected sweep that can return
+	// large lists org-wide.
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """
-			SELECT * FROM rearm.artifacts
+			SELECT uuid FROM rearm.artifacts
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
 				AND EXISTS (
@@ -338,9 +343,9 @@ class VariableQueries {
 					AND vuln->>'vulnId' = :findingId
 				)
 			""";
-	
+
 	protected static final String FIND_ARTIFACTS_WITH_VIOLATION = """
-			SELECT * FROM rearm.artifacts
+			SELECT uuid FROM rearm.artifacts
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
 				AND EXISTS (
@@ -349,9 +354,9 @@ class VariableQueries {
 					AND violation->>'type' = :findingId
 				)
 			""";
-	
+
 	protected static final String FIND_ARTIFACTS_WITH_WEAKNESS = """
-			SELECT * FROM rearm.artifacts
+			SELECT uuid FROM rearm.artifacts
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
 				AND EXISTS (
@@ -875,8 +880,13 @@ class VariableQueries {
 				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
 		""";
 
+	// UUID-only — caller (VulnAnalysisUpdateService) feeds each UUID
+	// straight to computeReleaseMetrics(uuid, false). See the
+	// FIND_ARTIFACTS_WITH_* block above for the heap-pressure
+	// rationale; Release rows are even worse offenders because they
+	// carry five JSONB columns each.
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
 				AND EXISTS (
@@ -885,9 +895,9 @@ class VariableQueries {
 					AND vuln->>'vulnId' = :findingId
 				)
 			""";
-	
+
 	protected static final String FIND_RELEASES_WITH_VIOLATION = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
 				AND EXISTS (
@@ -896,9 +906,9 @@ class VariableQueries {
 					AND violation->>'type' = :findingId
 				)
 			""";
-	
+
 	protected static final String FIND_RELEASES_WITH_WEAKNESS = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
 				AND EXISTS (
@@ -907,9 +917,9 @@ class VariableQueries {
 					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
 				)
 			""";
-	
+
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY_IN_BRANCH = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'branch' = :branchUuidAsString
 				AND metrics IS NOT NULL
@@ -919,9 +929,9 @@ class VariableQueries {
 					AND vuln->>'vulnId' = :findingId
 				)
 			""";
-	
+
 	protected static final String FIND_RELEASES_WITH_VIOLATION_IN_BRANCH = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'branch' = :branchUuidAsString
 				AND metrics IS NOT NULL
@@ -931,9 +941,9 @@ class VariableQueries {
 					AND violation->>'type' = :findingId
 				)
 			""";
-	
+
 	protected static final String FIND_RELEASES_WITH_WEAKNESS_IN_BRANCH = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'branch' = :branchUuidAsString
 				AND metrics IS NOT NULL
@@ -943,9 +953,9 @@ class VariableQueries {
 					AND (weakness->>'cweId' = :findingId OR weakness->>'ruleId' = :findingId)
 				)
 			""";
-	
+
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY_IN_COMPONENT = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'component' = :componentUuidAsString
 				AND metrics IS NOT NULL
@@ -955,9 +965,9 @@ class VariableQueries {
 					AND vuln->>'vulnId' = :findingId
 				)
 			""";
-	
+
 	protected static final String FIND_RELEASES_WITH_VIOLATION_IN_COMPONENT = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'component' = :componentUuidAsString
 				AND metrics IS NOT NULL
@@ -967,9 +977,9 @@ class VariableQueries {
 					AND violation->>'type' = :findingId
 				)
 			""";
-	
+
 	protected static final String FIND_RELEASES_WITH_WEAKNESS_IN_COMPONENT = """
-			SELECT * FROM rearm.releases
+			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'component' = :componentUuidAsString
 				AND metrics IS NOT NULL

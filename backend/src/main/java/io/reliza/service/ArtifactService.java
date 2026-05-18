@@ -1361,23 +1361,24 @@ public class ArtifactService {
 	}
 	
 	/**
-	 * Find artifacts with matching vulnerability
+	 * UUIDs of artifacts whose JSONB metrics contain the given vulnerability finding.
+	 * Returns UUIDs only — the sole caller ({@code VulnAnalysisUpdateService})
+	 * passes each UUID straight to {@link #computeArtifactMetrics(UUID)}, so
+	 * materializing the full Artifact (with its JSONB metrics snapshot
+	 * deep-copy) would be pure waste and a heap-pressure liability when a
+	 * popular CVE affects many artifacts org-wide.
 	 */
-	public List<Artifact> findArtifactsWithVulnerability(UUID orgUuid, String location, String findingId) {
+	public List<UUID> findArtifactUuidsWithVulnerability(UUID orgUuid, String location, String findingId) {
 		return repository.findArtifactsWithVulnerability(orgUuid.toString(), location, findingId);
 	}
-	
-	/**
-	 * Find artifacts with matching violation
-	 */
-	public List<Artifact> findArtifactsWithViolation(UUID orgUuid, String location, String findingId) {
+
+	/** UUIDs of artifacts with a matching violation finding. See {@link #findArtifactUuidsWithVulnerability}. */
+	public List<UUID> findArtifactUuidsWithViolation(UUID orgUuid, String location, String findingId) {
 		return repository.findArtifactsWithViolation(orgUuid.toString(), location, findingId);
 	}
-	
-	/**
-	 * Find artifacts with matching weakness
-	 */
-	public List<Artifact> findArtifactsWithWeakness(UUID orgUuid, String location, String findingId) {
+
+	/** UUIDs of artifacts with a matching weakness finding. See {@link #findArtifactUuidsWithVulnerability}. */
+	public List<UUID> findArtifactUuidsWithWeakness(UUID orgUuid, String location, String findingId) {
 		return repository.findArtifactsWithWeakness(orgUuid.toString(), location, findingId);
 	}
 	

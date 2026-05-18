@@ -65,17 +65,17 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_VULNERABILITY,
 			nativeQuery = true)
-	List<Artifact> findArtifactsWithVulnerability(String orgUuidAsString, String location, String findingId);
-	
+	List<UUID> findArtifactsWithVulnerability(String orgUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_VIOLATION,
 			nativeQuery = true)
-	List<Artifact> findArtifactsWithViolation(String orgUuidAsString, String location, String findingId);
-	
+	List<UUID> findArtifactsWithViolation(String orgUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_ARTIFACTS_WITH_WEAKNESS,
 			nativeQuery = true)
-	List<Artifact> findArtifactsWithWeakness(String orgUuidAsString, String location, String findingId);
+	List<UUID> findArtifactsWithWeakness(String orgUuidAsString, String location, String findingId);
 	
 	@Query(
 			value = VariableQueries.LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG,

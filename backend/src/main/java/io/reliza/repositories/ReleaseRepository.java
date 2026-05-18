@@ -286,47 +286,47 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_VULNERABILITY,
 			nativeQuery = true)
-	List<Release> findReleasesWithVulnerability(String orgUuidAsString, String location, String findingId);
-	
+	List<UUID> findReleasesWithVulnerability(String orgUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_VIOLATION,
 			nativeQuery = true)
-	List<Release> findReleasesWithViolation(String orgUuidAsString, String location, String findingId);
-	
+	List<UUID> findReleasesWithViolation(String orgUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_WEAKNESS,
 			nativeQuery = true)
-	List<Release> findReleasesWithWeakness(String orgUuidAsString, String location, String findingId);
-	
+	List<UUID> findReleasesWithWeakness(String orgUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_VULNERABILITY_IN_BRANCH,
 			nativeQuery = true)
-	List<Release> findReleasesWithVulnerabilityInBranch(String orgUuidAsString, String branchUuidAsString, String location, String findingId);
-	
+	List<UUID> findReleasesWithVulnerabilityInBranch(String orgUuidAsString, String branchUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_VIOLATION_IN_BRANCH,
 			nativeQuery = true)
-	List<Release> findReleasesWithViolationInBranch(String orgUuidAsString, String branchUuidAsString, String location, String findingId);
-	
+	List<UUID> findReleasesWithViolationInBranch(String orgUuidAsString, String branchUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_WEAKNESS_IN_BRANCH,
 			nativeQuery = true)
-	List<Release> findReleasesWithWeaknessInBranch(String orgUuidAsString, String branchUuidAsString, String location, String findingId);
-	
+	List<UUID> findReleasesWithWeaknessInBranch(String orgUuidAsString, String branchUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_VULNERABILITY_IN_COMPONENT,
 			nativeQuery = true)
-	List<Release> findReleasesWithVulnerabilityInComponent(String orgUuidAsString, String componentUuidAsString, String location, String findingId);
-	
+	List<UUID> findReleasesWithVulnerabilityInComponent(String orgUuidAsString, String componentUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_VIOLATION_IN_COMPONENT,
 			nativeQuery = true)
-	List<Release> findReleasesWithViolationInComponent(String orgUuidAsString, String componentUuidAsString, String location, String findingId);
-	
+	List<UUID> findReleasesWithViolationInComponent(String orgUuidAsString, String componentUuidAsString, String location, String findingId);
+
 	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_WEAKNESS_IN_COMPONENT,
 			nativeQuery = true)
-	List<Release> findReleasesWithWeaknessInComponent(String orgUuidAsString, String componentUuidAsString, String location, String findingId);
+	List<UUID> findReleasesWithWeaknessInComponent(String orgUuidAsString, String componentUuidAsString, String location, String findingId);
 	
 	@Query(
 			value = VariableQueries.FIND_RELEASES_BY_CVE_ID,

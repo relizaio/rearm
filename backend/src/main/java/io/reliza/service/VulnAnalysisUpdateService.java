@@ -13,9 +13,6 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import io.reliza.model.AnalysisScope;
-import io.reliza.model.Artifact;
-import io.reliza.model.Release;
 import io.reliza.model.VulnAnalysisData;
 import lombok.extern.slf4j.Slf4j;
 
@@ -69,26 +66,30 @@ public class VulnAnalysisUpdateService {
 	 * Process org-wide updates - affects both artifacts and releases
 	 */
 	private void processOrgWideUpdate(VulnAnalysisData analysisData) {
-		// Use SQL-level queries to find affected artifacts
-		List<Artifact> affectedArtifacts = findAffectedArtifacts(analysisData);
-		log.info("Found {} affected artifacts for finding: {}", affectedArtifacts.size(), analysisData.getFindingId());
-		
-		for (Artifact artifact : affectedArtifacts) {
+		// Use SQL-level queries to find affected artifacts (UUIDs only —
+		// the downstream computeArtifactMetrics / computeReleaseMetrics
+		// methods take UUIDs, so materializing full entities would force
+		// pointless JSONB-snapshot deep copies on a potentially large
+		// affected list).
+		List<UUID> affectedArtifactUuids = findAffectedArtifactUuids(analysisData);
+		log.info("Found {} affected artifacts for finding: {}", affectedArtifactUuids.size(), analysisData.getFindingId());
+
+		for (UUID artifactUuid : affectedArtifactUuids) {
 			try {
-				artifactService.computeArtifactMetrics(artifact.getUuid());
+				artifactService.computeArtifactMetrics(artifactUuid);
 			} catch (Exception e) {
-				log.error("Error recomputing metrics for artifact: {}", artifact.getUuid(), e);
+				log.error("Error recomputing metrics for artifact: {}", artifactUuid, e);
 			}
 		}
 
-		List<Release> affectedReleases = findAffectedReleases(analysisData);
-		log.info("Found {} affected releases for finding: {}", affectedReleases.size(), analysisData.getFindingId());
+		List<UUID> affectedReleaseUuids = findAffectedReleaseUuids(analysisData);
+		log.info("Found {} affected releases for finding: {}", affectedReleaseUuids.size(), analysisData.getFindingId());
 
-		for (Release release : affectedReleases) {
+		for (UUID releaseUuid : affectedReleaseUuids) {
 			try {
-				releaseService.computeReleaseMetrics(release.getUuid(), false);
+				releaseService.computeReleaseMetrics(releaseUuid, false);
 			} catch (Exception e) {
-				log.error("Error recomputing metrics for release: {}", release.getUuid(), e);
+				log.error("Error recomputing metrics for release: {}", releaseUuid, e);
 			}
 		}
 	}
@@ -109,156 +110,156 @@ public class VulnAnalysisUpdateService {
 	 * Process branch-specific update - find releases in the branch that match the finding
 	 */
 	private void processBranchUpdate(VulnAnalysisData analysisData) {
-		List<Release> affectedReleases = findAffectedReleasesInBranch(analysisData);
-		log.info("Found {} affected releases in branch {} for finding: {}", 
-				affectedReleases.size(), analysisData.getScopeUuid(), analysisData.getFindingId());
-		
-		for (Release release : affectedReleases) {
+		List<UUID> affectedReleaseUuids = findAffectedReleaseUuidsInBranch(analysisData);
+		log.info("Found {} affected releases in branch {} for finding: {}",
+				affectedReleaseUuids.size(), analysisData.getScopeUuid(), analysisData.getFindingId());
+
+		for (UUID releaseUuid : affectedReleaseUuids) {
 			try {
-				releaseService.computeReleaseMetrics(release.getUuid(), false);
+				releaseService.computeReleaseMetrics(releaseUuid, false);
 			} catch (Exception e) {
-				log.error("Error recomputing metrics for release: {}", release.getUuid(), e);
+				log.error("Error recomputing metrics for release: {}", releaseUuid, e);
 			}
 		}
 	}
-	
+
 	/**
 	 * Process component-specific update - find releases in the component that match the finding
 	 */
 	private void processComponentUpdate(VulnAnalysisData analysisData) {
-		List<Release> affectedReleases = findAffectedReleasesInComponent(analysisData);
-		log.info("Found {} affected releases in component {} for finding: {}", 
-				affectedReleases.size(), analysisData.getScopeUuid(), analysisData.getFindingId());
-		
-		for (Release release : affectedReleases) {
+		List<UUID> affectedReleaseUuids = findAffectedReleaseUuidsInComponent(analysisData);
+		log.info("Found {} affected releases in component {} for finding: {}",
+				affectedReleaseUuids.size(), analysisData.getScopeUuid(), analysisData.getFindingId());
+
+		for (UUID releaseUuid : affectedReleaseUuids) {
 			try {
-				releaseService.computeReleaseMetrics(release.getUuid(), false);
+				releaseService.computeReleaseMetrics(releaseUuid, false);
 			} catch (Exception e) {
-				log.error("Error recomputing metrics for release: {}", release.getUuid(), e);
+				log.error("Error recomputing metrics for release: {}", releaseUuid, e);
 			}
 		}
 	}
 	
 	/**
-	 * Find artifacts affected by the vulnerability analysis using SQL-level queries
+	 * UUIDs of artifacts affected by the vulnerability analysis.
 	 */
-	private List<Artifact> findAffectedArtifacts(VulnAnalysisData analysisData) {
+	private List<UUID> findAffectedArtifactUuids(VulnAnalysisData analysisData) {
         String location = analysisData.getLocation();
 		String rawLocation = analysisData.getRawLocation();
 		String findingId = analysisData.getFindingId();
-		
+
 		switch (analysisData.getFindingType()) {
 			case VULNERABILITY:
-                List<Artifact> vulnArtifacts = new LinkedList<>();
+                List<UUID> vulnArtifacts = new LinkedList<>();
                 if (!rawLocation.equals(location)) {
-                    vulnArtifacts.addAll(artifactService.findArtifactsWithVulnerability(analysisData.getOrg(), location, findingId));
+                    vulnArtifacts.addAll(artifactService.findArtifactUuidsWithVulnerability(analysisData.getOrg(), location, findingId));
                 }
-                vulnArtifacts.addAll(artifactService.findArtifactsWithVulnerability(analysisData.getOrg(), rawLocation, findingId));
+                vulnArtifacts.addAll(artifactService.findArtifactUuidsWithVulnerability(analysisData.getOrg(), rawLocation, findingId));
 				return vulnArtifacts;
 			case VIOLATION:
-                List<Artifact> violArtifacts = new LinkedList<>();
+                List<UUID> violArtifacts = new LinkedList<>();
                 if (!rawLocation.equals(location)) {
-                    violArtifacts.addAll(artifactService.findArtifactsWithViolation(analysisData.getOrg(), location, findingId));
+                    violArtifacts.addAll(artifactService.findArtifactUuidsWithViolation(analysisData.getOrg(), location, findingId));
                 }
-				violArtifacts.addAll(artifactService.findArtifactsWithViolation(analysisData.getOrg(), rawLocation, findingId));
+				violArtifacts.addAll(artifactService.findArtifactUuidsWithViolation(analysisData.getOrg(), rawLocation, findingId));
                 return violArtifacts;
 			case WEAKNESS:
-				return artifactService.findArtifactsWithWeakness(analysisData.getOrg(), location, findingId);
+				return artifactService.findArtifactUuidsWithWeakness(analysisData.getOrg(), location, findingId);
 			default:
 				log.warn("Unknown finding type: {}", analysisData.getFindingType());
 				return List.of();
 		}
 	}
-	
+
 	/**
-	 * Find releases affected by the vulnerability analysis in a specific branch
+	 * UUIDs of releases affected by the vulnerability analysis in a specific branch.
 	 */
-	private List<Release> findAffectedReleasesInBranch(VulnAnalysisData analysisData) {
+	private List<UUID> findAffectedReleaseUuidsInBranch(VulnAnalysisData analysisData) {
         String location = analysisData.getLocation();
 		String rawLocation = analysisData.getRawLocation();
 		String findingId = analysisData.getFindingId();
 		UUID branchUuid = analysisData.getScopeUuid();
-		
+
 		switch (analysisData.getFindingType()) {
 			case VULNERABILITY:
-                List<Release> vulnReleases = new LinkedList<>();
+                List<UUID> vulnReleases = new LinkedList<>();
                 if (!rawLocation.equals(location)) {
-                    vulnReleases.addAll(sharedReleaseService.findReleasesWithVulnerabilityInBranch(analysisData.getOrg(), branchUuid, location, findingId));
+                    vulnReleases.addAll(sharedReleaseService.findReleaseUuidsWithVulnerabilityInBranch(analysisData.getOrg(), branchUuid, location, findingId));
                 }
-                vulnReleases.addAll(sharedReleaseService.findReleasesWithVulnerabilityInBranch(analysisData.getOrg(), branchUuid, rawLocation, findingId));
+                vulnReleases.addAll(sharedReleaseService.findReleaseUuidsWithVulnerabilityInBranch(analysisData.getOrg(), branchUuid, rawLocation, findingId));
 				return vulnReleases;
 			case VIOLATION:
-                List<Release> violReleases = new LinkedList<>();
+                List<UUID> violReleases = new LinkedList<>();
                 if (!rawLocation.equals(location)) {
-                    violReleases.addAll(sharedReleaseService.findReleasesWithViolationInBranch(analysisData.getOrg(), branchUuid, location, findingId));
+                    violReleases.addAll(sharedReleaseService.findReleaseUuidsWithViolationInBranch(analysisData.getOrg(), branchUuid, location, findingId));
                 }
-				violReleases.addAll(sharedReleaseService.findReleasesWithViolationInBranch(analysisData.getOrg(), branchUuid, rawLocation, findingId));
+				violReleases.addAll(sharedReleaseService.findReleaseUuidsWithViolationInBranch(analysisData.getOrg(), branchUuid, rawLocation, findingId));
                 return violReleases;
 			case WEAKNESS:
-				return sharedReleaseService.findReleasesWithWeaknessInBranch(analysisData.getOrg(), branchUuid, location, findingId);
+				return sharedReleaseService.findReleaseUuidsWithWeaknessInBranch(analysisData.getOrg(), branchUuid, location, findingId);
 			default:
 				log.warn("Unknown finding type: {}", analysisData.getFindingType());
 				return List.of();
 		}
 	}
-	
+
 	/**
-	 * Find releases affected by the vulnerability analysis in a specific component
+	 * UUIDs of releases affected by the vulnerability analysis in a specific component.
 	 */
-	private List<Release> findAffectedReleasesInComponent(VulnAnalysisData analysisData) {
+	private List<UUID> findAffectedReleaseUuidsInComponent(VulnAnalysisData analysisData) {
         String location = analysisData.getLocation();
 		String rawLocation = analysisData.getRawLocation();
 		String findingId = analysisData.getFindingId();
 		UUID componentUuid = analysisData.getScopeUuid();
-		
+
 		switch (analysisData.getFindingType()) {
 			case VULNERABILITY:
-                List<Release> vulnReleases = new LinkedList<>();
+                List<UUID> vulnReleases = new LinkedList<>();
                 if (!rawLocation.equals(location)) {
-                    vulnReleases.addAll(sharedReleaseService.findReleasesWithVulnerabilityInComponent(analysisData.getOrg(), componentUuid, location, findingId));
+                    vulnReleases.addAll(sharedReleaseService.findReleaseUuidsWithVulnerabilityInComponent(analysisData.getOrg(), componentUuid, location, findingId));
                 }
-                vulnReleases.addAll(sharedReleaseService.findReleasesWithVulnerabilityInComponent(analysisData.getOrg(), componentUuid, rawLocation, findingId));
+                vulnReleases.addAll(sharedReleaseService.findReleaseUuidsWithVulnerabilityInComponent(analysisData.getOrg(), componentUuid, rawLocation, findingId));
 				return vulnReleases;
 			case VIOLATION:
-                List<Release> violReleases = new LinkedList<>();
+                List<UUID> violReleases = new LinkedList<>();
                 if (!rawLocation.equals(location)) {
-                    violReleases.addAll(sharedReleaseService.findReleasesWithViolationInComponent(analysisData.getOrg(), componentUuid, location, findingId));
+                    violReleases.addAll(sharedReleaseService.findReleaseUuidsWithViolationInComponent(analysisData.getOrg(), componentUuid, location, findingId));
                 }
-				violReleases.addAll(sharedReleaseService.findReleasesWithViolationInComponent(analysisData.getOrg(), componentUuid, rawLocation, findingId));
+				violReleases.addAll(sharedReleaseService.findReleaseUuidsWithViolationInComponent(analysisData.getOrg(), componentUuid, rawLocation, findingId));
                 return violReleases;
 			case WEAKNESS:
-				return sharedReleaseService.findReleasesWithWeaknessInComponent(analysisData.getOrg(), componentUuid, location, findingId);
+				return sharedReleaseService.findReleaseUuidsWithWeaknessInComponent(analysisData.getOrg(), componentUuid, location, findingId);
 			default:
 				log.warn("Unknown finding type: {}", analysisData.getFindingType());
 				return List.of();
 		}
 	}
-	
+
 	/**
-	 * Find releases affected by the vulnerability analysis using SQL-level queries
+	 * UUIDs of releases affected by the vulnerability analysis org-wide.
 	 */
-	private List<Release> findAffectedReleases(VulnAnalysisData analysisData) {
+	private List<UUID> findAffectedReleaseUuids(VulnAnalysisData analysisData) {
         String location = analysisData.getLocation();
 		String rawLocation = analysisData.getRawLocation();
 		String findingId = analysisData.getFindingId();
-		
+
 		switch (analysisData.getFindingType()) {
 			case VULNERABILITY:
-                List<Release> vulnReleases = new LinkedList<>();
+                List<UUID> vulnReleases = new LinkedList<>();
                 if (!rawLocation.equals(location)) {
-                    vulnReleases.addAll(sharedReleaseService.findReleasesWithVulnerability(analysisData.getOrg(), location, findingId));
+                    vulnReleases.addAll(sharedReleaseService.findReleaseUuidsWithVulnerability(analysisData.getOrg(), location, findingId));
                 }
-                vulnReleases.addAll(sharedReleaseService.findReleasesWithVulnerability(analysisData.getOrg(), rawLocation, findingId));
+                vulnReleases.addAll(sharedReleaseService.findReleaseUuidsWithVulnerability(analysisData.getOrg(), rawLocation, findingId));
 				return vulnReleases;
 			case VIOLATION:
-                List<Release> violReleases = new LinkedList<>();
+                List<UUID> violReleases = new LinkedList<>();
                 if (!rawLocation.equals(location)) {
-                    violReleases.addAll(sharedReleaseService.findReleasesWithViolation(analysisData.getOrg(), location, findingId));
+                    violReleases.addAll(sharedReleaseService.findReleaseUuidsWithViolation(analysisData.getOrg(), location, findingId));
                 }
-				violReleases.addAll(sharedReleaseService.findReleasesWithViolation(analysisData.getOrg(), rawLocation, findingId));
+				violReleases.addAll(sharedReleaseService.findReleaseUuidsWithViolation(analysisData.getOrg(), rawLocation, findingId));
                 return violReleases;
 			case WEAKNESS:
-				return sharedReleaseService.findReleasesWithWeakness(analysisData.getOrg(), location, findingId);
+				return sharedReleaseService.findReleaseUuidsWithWeakness(analysisData.getOrg(), location, findingId);
 			default:
 				log.warn("Unknown finding type: {}", analysisData.getFindingType());
 				return List.of();

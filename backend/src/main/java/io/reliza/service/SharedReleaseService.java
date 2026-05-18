@@ -1176,39 +1176,45 @@ public class SharedReleaseService {
 		return rds;
 	}
 	
-	public List<Release> findReleasesWithVulnerability(UUID org, String location, String findingId) {
+	// UUID-only finders for VulnAnalysisUpdateService — caller feeds each
+	// UUID straight to computeReleaseMetrics(uuid, false), so materializing
+	// the full Release (with five JSONB columns' worth of snapshot
+	// deep-copies per row) would be pure waste and a heap-pressure
+	// liability when a popular CVE / new violation rule affects many
+	// releases org-wide.
+	public List<UUID> findReleaseUuidsWithVulnerability(UUID org, String location, String findingId) {
 		return repository.findReleasesWithVulnerability(org.toString(), location, findingId);
 	}
-	
-	public List<Release> findReleasesWithViolation(UUID org, String location, String findingId) {
+
+	public List<UUID> findReleaseUuidsWithViolation(UUID org, String location, String findingId) {
 		return repository.findReleasesWithViolation(org.toString(), location, findingId);
 	}
-	
-	public List<Release> findReleasesWithWeakness(UUID org, String location, String findingId) {
+
+	public List<UUID> findReleaseUuidsWithWeakness(UUID org, String location, String findingId) {
 		return repository.findReleasesWithWeakness(org.toString(), location, findingId);
 	}
-	
-	public List<Release> findReleasesWithVulnerabilityInBranch(UUID org, UUID branch, String location, String findingId) {
+
+	public List<UUID> findReleaseUuidsWithVulnerabilityInBranch(UUID org, UUID branch, String location, String findingId) {
 		return repository.findReleasesWithVulnerabilityInBranch(org.toString(), branch.toString(), location, findingId);
 	}
-	
-	public List<Release> findReleasesWithViolationInBranch(UUID org, UUID branch, String location, String findingId) {
+
+	public List<UUID> findReleaseUuidsWithViolationInBranch(UUID org, UUID branch, String location, String findingId) {
 		return repository.findReleasesWithViolationInBranch(org.toString(), branch.toString(), location, findingId);
 	}
-	
-	public List<Release> findReleasesWithWeaknessInBranch(UUID org, UUID branch, String location, String findingId) {
+
+	public List<UUID> findReleaseUuidsWithWeaknessInBranch(UUID org, UUID branch, String location, String findingId) {
 		return repository.findReleasesWithWeaknessInBranch(org.toString(), branch.toString(), location, findingId);
 	}
-	
-	public List<Release> findReleasesWithVulnerabilityInComponent(UUID org, UUID component, String location, String findingId) {
+
+	public List<UUID> findReleaseUuidsWithVulnerabilityInComponent(UUID org, UUID component, String location, String findingId) {
 		return repository.findReleasesWithVulnerabilityInComponent(org.toString(), component.toString(), location, findingId);
 	}
-	
-	public List<Release> findReleasesWithViolationInComponent(UUID org, UUID component, String location, String findingId) {
+
+	public List<UUID> findReleaseUuidsWithViolationInComponent(UUID org, UUID component, String location, String findingId) {
 		return repository.findReleasesWithViolationInComponent(org.toString(), component.toString(), location, findingId);
 	}
-	
-	public List<Release> findReleasesWithWeaknessInComponent(UUID org, UUID component, String location, String findingId) {
+
+	public List<UUID> findReleaseUuidsWithWeaknessInComponent(UUID org, UUID component, String location, String findingId) {
 		return repository.findReleasesWithWeaknessInComponent(org.toString(), component.toString(), location, findingId);
 	}
 
