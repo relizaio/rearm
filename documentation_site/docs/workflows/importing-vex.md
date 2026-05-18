@@ -110,7 +110,7 @@ Imported VEX statements are preserved verbatim on the proposal as `sourceStateme
 
 ## Programmatic import
 
-Direct API import isn't exposed as a separate mutation — every VEX import goes through the artifact-upload path. Both the **multipart manual** (`addArtifactManual`, used by the UI) and the **programmatic** (`addArtifactProgrammatic`, used by [rearm-cli](https://github.com/relizaio/rearm-cli) and CI integrations) paths trigger the import pipeline when the artifact's `type` is `VEX`.
+Direct API import isn't exposed as a separate mutation — every VEX import goes through the artifact-upload path. Both the **multipart manual** (`addArtifactManual`, used by the UI) and the **programmatic** (`addArtifactProgrammatic`, used by [rearm-cli](https://github.com/relizaio/rearm-cli) and CI integrations) paths trigger the import pipeline when the artifact's `type` is `VEX` — whether the artifact is attached to the release, a deliverable (`--deliverablearts`), or a source-code entry (`--scearts`).
 
 CI example:
 
@@ -123,9 +123,12 @@ rearm-cli addartifact \
     "type": "VEX",
     "bomFormat": "CYCLONEDX",
     "storedIn": "REARM",
-    "displayIdentifier": "vendor-vex-1"
+    "displayIdentifier": "vendor-vex-1",
+    "vexImportMode": "STAGE"
   }]'
 ```
+
+The three controls the UI upload form exposes — [Scope](#scope), [Import mode](#import-mode), and [Issuer class](#issuer-class) — can be set on the artifact JSON via the optional `vexScope`, `vexImportMode`, and `userIssuerClassOverride` fields. Omit them to accept the defaults (`COMPONENT` scope, `AUTO_ACCEPT` mode, issuer class derived from binding context). These fields require **rearm-cli 26.05 or newer** — older CLI builds silently drop them, so the import falls back to the defaults.
 
 Or fold it into the `addrelease` call via `--releasearts`. The GitHub Actions wrapper [`relizaio/rearm-actions`](https://github.com/relizaio/rearm-actions) does this for you when a VEX file is on the build's artifact list.
 
