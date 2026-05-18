@@ -283,4 +283,37 @@ public class SchedulingService {
         }
     }
 
+    @Autowired
+    ApiKeyAccessService apiKeyAccessService;
+
+    /**
+     * Daily retention sweep for the {@code api_key_access} audit table.
+     * CI/CD pipelines polling against an org's keys can drive this table
+     * to multi-GB scale; the per-request dedupe in
+     * {@code ApiKeyAccessService.recordApiKeyAccess} caps inserts to ≤1
+     * per (key, ip) per hour, and this sweep caps the historical tail
+     * at 90 days. Runs at 04:30 UTC — well separated from the other
+     * daily crons (00:00 analytics, 03:00 DTrack-project cleanup,
+     * 21:50 DTrack sync) so the single-transaction DELETE doesn't
+     * contend with them.
+     */
+    @Scheduled(cron="0 30 4 * * *")
+    public void purgeOldApiKeyAccessRows() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.PURGE_OLD_API_KEY_ACCESS);
+            log.debug("api_key_access purge lock acquired {}", lock);
+            if (lock) {
+                try {
+                    apiKeyAccessService.purgeOldAccessRows();
+                } catch (Exception e) {
+                    log.error("Exception in api_key_access retention sweep", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.PURGE_OLD_API_KEY_ACCESS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("api_key_access retention sweep failed with an error", e);
+        }
+    }
+
 }

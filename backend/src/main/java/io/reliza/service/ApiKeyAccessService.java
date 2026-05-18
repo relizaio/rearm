@@ -17,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 import io.reliza.model.ApiKeyAccess;
 import io.reliza.repositories.ApiKeyAccessRepository;
 import io.reliza.repositories.ApiKeyRepository;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 public class ApiKeyAccessService {
 
@@ -53,18 +55,47 @@ public class ApiKeyAccessService {
 
 	@Transactional
     public void recordApiKeyAccess(UUID apiKeyUuid, String ipAddress, UUID org, String apiKeyId ){
+		// Always bump api_keys.last_access_date — that's what the per-org
+		// dashboard reads, and it should reflect the latest activity.
+		apiKeyRepository.touchLastAccessDate(apiKeyUuid);
+
+		// Dedupe the per-access audit row: CI/CD pipelines polling main
+		// can fire thousands of requests per key per day with the same
+		// (api_key_uuid, ip_address) tuple, which grew this table to
+		// >10 GB in two months in production. Skip the insert if an
+		// access row already exists for the same tuple within the last
+		// hour. Uses the existing (api_key_uuid, access_date DESC) index;
+		// the in-line ip_address filter runs on the tiny candidate set
+		// the index hands back.
+		String safeIp = ipAddress != null ? ipAddress : "";
+		if (repository.existsRecentAccess(apiKeyUuid, safeIp)) {
+			return;
+		}
+
 		ApiKeyAccess aka = new ApiKeyAccess();
 		aka.setApiKeyUuid(apiKeyUuid);
-		aka.setIpAddress(ipAddress);
+		aka.setIpAddress(safeIp);
 		aka.setOrg(org);
 		aka.setApiKeyId(apiKeyId);
 		aka.setAccessDate(ZonedDateTime.now());
 
         saveApiKeyAccess(aka);
-        // Mirror the audit timestamp onto api_keys so the per-org dashboard
-        // read doesn't have to scan api_key_access.
-        apiKeyRepository.touchLastAccessDate(apiKeyUuid);
     }
+
+	/**
+	 * Daily retention sweep — deletes audit rows older than 90 days.
+	 * Driven by {@code SchedulingService.purgeOldApiKeyAccessRows} at
+	 * 04:30 UTC. Returns the number of rows actually deleted for log
+	 * visibility.
+	 */
+	@Transactional
+	public int purgeOldAccessRows() {
+		int deleted = repository.deleteAccessRowsOlderThan90Days();
+		if (deleted > 0) {
+			log.info("api_key_access retention: deleted {} row(s) older than 90 days", deleted);
+		}
+		return deleted;
+	}
 
 	@Transactional
 	public ApiKeyAccess createSbomProbingSession(UUID apiKeyUuid, String ipAddress, UUID orgUuid, String notesJson) {
