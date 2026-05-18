@@ -546,6 +546,7 @@ const singleReleaseDataNoParent = `
         oldValue
         newValue
         objectId
+        message
         date
         wu {
             createdType
@@ -975,6 +976,7 @@ const singleReleaseProductNoParent = `
         oldValue
         newValue
         objectId
+        message
         date
         wu {
             createdType

@@ -4317,11 +4317,23 @@ const releaseHistoryFields = computed(() => [
         key: 'objectId',
         title: 'Event or Object Details',
         render: (row: any) => {
+            // Info-icon tooltip carrying the human-readable reason
+            // when the backend recorded one (typically LIFECYCLE events
+            // fired by a CEL input trigger — see ReleaseUpdateEvent.message
+            // on rearm-saas).
+            const reasonIcon = row.message
+                ? h(NTooltip, { trigger: 'hover', style: 'max-width: 480px;' }, {
+                    trigger: () => h(NIcon, { class: 'icons', size: 16, style: 'margin-left: 6px; vertical-align: middle;' }, () => h(Info20Regular)),
+                    default: () => row.message,
+                })
+                : null
             if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER') {
-                return row.newValue || row.objectId
+                const txt = row.newValue || row.objectId
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
             if (row.rus === 'LIFECYCLE') {
-                return `${resolveLifecycleLabel(row.oldValue)} -> ${resolveLifecycleLabel(row.newValue)}`
+                const txt = `${resolveLifecycleLabel(row.oldValue)} -> ${resolveLifecycleLabel(row.newValue)}`
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
             // For artifact events from acollections, show type with info icon
             if (row.source === 'acollection' && row.artifact) {
