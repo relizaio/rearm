@@ -11,9 +11,8 @@ The agent itself **does not need to read this page** — its contract lives at `
 ## Prerequisites
 
 1. **A ReARM Pro org** the agent will work under.
-2. **A FREEFORM API key** scoped to that org with `PermissionFunction.AGENT` at `ORGANIZATION` scope. The minting flow is documented in [the FREEFORM API key recipe](https://github.com/relizaio/rearm-saas/blob/main/backend/ai-agents/sandbox.md#minting-a-freeform-api-key-programmatically) — note the two footguns it covers (the structured id suffix vs the row uuid, and the secret being shown only once on creation).
-3. **An optional `ORGANIZATION_RW` key** for the agent to use specifically for `addArtifactProgrammatic` calls — orientation artifacts and any other agent-uploaded artifacts. v1 of `addArtifactProgrammatic` doesn't accept FREEFORM keys; this is the workaround until support is added.
-4. **An SSH or GPG signing key for the agent**, enrolled under the agent identity via `rearm agent enrollkey`. Without an enrolled key the agent's commits won't pass the signed-commit gate.
+2. **A FREEFORM API key** scoped to that org with `PermissionFunction.AGENT` at `ORGANIZATION` scope. `ESSENTIAL_READ` is the minimum permission type — the agent surface intentionally accepts the floor so an agent-flow key doesn't have to carry broader rights. The minting flow is documented in [the FREEFORM API key recipe](https://github.com/relizaio/rearm-saas/blob/main/ai-agents/sandbox.md#minting-a-freeform-api-key-programmatically) — note the two footguns it covers (the structured id suffix vs the row uuid, and the secret being shown only once on creation).
+3. **An SSH or GPG signing key for the agent**, enrolled under the agent identity via `rearm agent enrollkey`. Without an enrolled key the agent's commits won't pass the signed-commit gate. The agent can self-enrol its own pub key on first run using the same FREEFORM AGENT key from step 2 (an intentional carve-out — `enrollSigningKeyProgrammatic` only allows an agent key to attach a key to its own identity, never another agent's) so the operator doesn't have to pre-provision this.
 
 ## Starting an agent
 
@@ -96,7 +95,6 @@ Worth being honest about so you don't build expectations around things that don'
 
 - **No outbound webhooks** scoped per agent. The agent polls; ReARM doesn't push. Polling at 30-60s is plenty for any reviewer-driven workflow.
 - **No `rearm agent spawn`** in the published CLI. Sub-agent registration is on the API but the convenience command isn't shipped yet; sub-agents currently stamp the root agent's uuid in their trailers.
-- **`addArtifactProgrammatic` requires `ORGANIZATION_RW`**, not `FREEFORM` — agent needs a second key for artifact uploads. Tracked.
 - **No model-card auto-attach.** If a policy checks `model.modelCard != ""`, the operator must attach a model card via `rearm agent model attach` before the agent's session init will pass.
 
 ## Reference
