@@ -76,6 +76,14 @@
                                 Click the <n-icon size="12" style="vertical-align: middle;"><ClipboardPaste20Regular/></n-icon>
                                 icon to insert a snippet (appended with <code>&amp;&amp;</code> when text already exists).
                             </div>
+                            <div style="margin-bottom: 8px; padding: 6px 8px; background: #fff8e6; border-left: 3px solid #f0a020; font-size: 11px;">
+                                <strong>Match-to-block:</strong> the CEL describes the
+                                <em>failure</em> condition. True&nbsp;=&nbsp;match&nbsp;→ verdict
+                                FAILED/WARNING/PENDING. False&nbsp;=&nbsp;PASSED. Same
+                                shape as component-level CEL gates (e.g.
+                                <code>release.commits.exists(c, c.signature.state != "VERIFIED")</code>
+                                = "block when any commit is not verified").
+                            </div>
                             <strong>Available variables:</strong>
                             <table class="ref-table">
                                 <tbody>
@@ -112,7 +120,7 @@
                     </n-popover>
                 </template>
                 <n-input v-model:value="form.cel" type="textarea" :rows="3"
-                         placeholder='e.g. session.artifacts.exists(a, a.type == "AGENTIC_REPORT")'
+                         placeholder='e.g. !session.artifacts.exists(a, a.type == "AGENTIC_REPORT")  // match-to-block: true = failure'
                          style="font-family: monospace;"/>
             </n-form-item>
 
@@ -241,74 +249,81 @@ const variableDocs: VariableDoc[] = [
     { name: 'model.publisher',           snippet: 'model.publisher',                                                         display: 'model.publisher',           desc: 'string' },
 ]
 
+// Match-to-block semantics: CEL true = failure matches → verdict is
+// FAILED / WARNING / PENDING. CEL false = no match → PASSED. Snippets
+// below describe the *block condition*, mirroring component-level CEL
+// gates (`release.commits.exists(c, c.signature.state != "VERIFIED")`
+// reads as "any unverified commit → reject").
 interface SnippetDoc { label: string; cel: string }
 const snippetDocs: SnippetDoc[] = [
-    { label: 'Any AGENTIC_REPORT artifact attached',
-      cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT")' },
-    { label: 'Orientation report (tag agenticPhase=ORIENTATION)',
-      cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))' },
-    { label: 'Final report (tag agenticPhase=FINAL)',
-      cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))' },
-    { label: 'Model allowlist (INPUT)',
-      cel: 'model.name == "claude-opus-4-7" || model.name == "claude-sonnet-4-6"' },
-    { label: 'No more than 20 commits per session',
-      cel: 'size(session.commits) <= 20' },
-    { label: 'All commits verified-signed',
-      cel: 'session.commits.all(c, c.signature.state == "VERIFIED")' },
-    { label: 'All commits signed by session agent',
-      cel: 'session.commits.all(c, c.signature.state == "VERIFIED" && c.signature.signedByOwnerType == "AGENT" && c.signature.signedByOwnerUuid == agent.uuid)' },
+    { label: 'Block when no AGENTIC_REPORT artifact attached',
+      cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT")' },
+    { label: 'Block when no orientation report (tag agenticPhase=ORIENTATION)',
+      cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))' },
+    { label: 'Block when no final report (tag agenticPhase=FINAL)',
+      cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))' },
+    { label: 'Block when model is not on the allowlist (INPUT)',
+      cel: 'model.name != "claude-opus-4-7" && model.name != "claude-sonnet-4-6"' },
+    { label: 'Warn when session has more than 20 commits',
+      cel: 'size(session.commits) > 20' },
+    { label: 'Block when any commit is not verified-signed',
+      cel: 'session.commits.exists(c, c.signature.state != "VERIFIED")' },
+    { label: 'Block when any commit is not signed by the session agent',
+      cel: 'session.commits.exists(c, c.signature.state != "VERIFIED" || c.signature.signedByOwnerType != "AGENT" || c.signature.signedByOwnerUuid != agent.uuid)' },
 ]
 
 // Full-form scaffolds. Each one overwrites every field.
+// Match-to-block semantics: each CEL below describes the *failure*
+// condition — CEL true = match = the session/commit violates the policy.
 const samples = [
     {
         name: 'Orientation report required',
         description: 'Every session must carry an AGENTIC_REPORT tagged agenticPhase=ORIENTATION before commits will be accepted.',
         kind: 'OUTPUT',
         severity: 'BLOCK',
-        cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))',
+        cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))',
     },
     {
         name: 'Final report required',
         description: 'Session must produce a final-phase AGENTIC_REPORT before commits land.',
         kind: 'OUTPUT',
         severity: 'BLOCK',
-        cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))',
+        cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))',
     },
     {
         name: 'Any AGENTIC_REPORT artifact required',
         description: 'Looser variant — any AGENTIC_REPORT artifact (no phase distinction).',
         kind: 'OUTPUT',
         severity: 'BLOCK',
-        cel: 'session.artifacts.exists(a, a.type == "AGENTIC_REPORT")',
+        cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT")',
     },
     {
         name: 'Approved model required',
         description: 'Sessions opened by an agent on an unapproved model are rejected at init.',
         kind: 'INPUT',
         severity: 'BLOCK',
-        cel: 'model.name == "claude-opus-4-7" || model.name == "claude-sonnet-4-6"',
+        cel: 'model.name != "claude-opus-4-7" && model.name != "claude-sonnet-4-6"',
     },
     {
         name: 'Session has more than 20 commits (warn)',
         description: 'Soft signal for very long-running sessions; does not block.',
         kind: 'OUTPUT',
         severity: 'WARN',
-        cel: 'size(session.commits) <= 20',
+        cel: 'size(session.commits) > 20',
     },
     {
         name: 'All commits verified-signed',
         description: 'Every commit attributed to this session must have a VERIFIED signature against an enrolled key.',
         kind: 'OUTPUT',
         severity: 'BLOCK',
-        cel: 'session.commits.all(c, c.signature.state == "VERIFIED")',
+        cel: 'session.commits.exists(c, c.signature.state != "VERIFIED")',
     },
     {
         name: 'Commits signed by session agent',
         description: 'Cryptographic agentic attribution — every commit in the session must be VERIFIED and signed by a key enrolled to this session\u2019s agent (not a committer key, not another agent).',
         kind: 'OUTPUT',
         severity: 'BLOCK',
-        cel: 'session.commits.all(c, c.signature.state == "VERIFIED" && c.signature.signedByOwnerType == "AGENT" && c.signature.signedByOwnerUuid == agent.uuid)',
+        cel: 'session.commits.exists(c, c.signature.state != "VERIFIED" || c.signature.signedByOwnerType != "AGENT" || c.signature.signedByOwnerUuid != agent.uuid)',
     },
 ]
 
