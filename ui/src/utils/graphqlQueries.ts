@@ -593,6 +593,16 @@ const singleReleaseDataNoParent = `
             commitAuthor
             commitEmail
             dateActual
+            agent
+            agentSession
+            signature {
+                state
+                format
+                signedByOwnerType
+                signedByOwnerUuid
+                keyFingerprint
+                verifiedAt
+            }
         }
     }
     sbomReconcilePending
