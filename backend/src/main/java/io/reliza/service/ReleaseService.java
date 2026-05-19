@@ -1230,15 +1230,110 @@ public class ReleaseService {
 	}
 
 	/**
+	 * Per-VEX-artifact capture taken before {@link ArtifactService#uploadListOfArtifacts}
+	 * runs: the raw document {@code content} (the upload strips the {@code MultipartFile}
+	 * off the map) plus the {@code inputDto} parsed from the input map.
+	 *
+	 * <p>The input DTO is the only carrier of the VEX import-control fields —
+	 * {@code vexScope} / {@code vexImportMode} / {@code userIssuerClassOverride}. Those
+	 * are transient: they are <em>not</em> columns on {@link ArtifactData}, so once the
+	 * artifact is persisted they cannot be recovered from the stored row. They must be
+	 * read off the input before upload and threaded into the dispatch DTO by hand.
+	 */
+	private record VexUpload(byte[] content, ArtifactDto inputDto) {}
+
+	/**
+	 * Capture the raw bytes and input DTO of every VEX artifact in an upload batch
+	 * <em>before</em> {@link ArtifactService#uploadListOfArtifacts} consumes the
+	 * {@code MultipartFile} entries, and verify the VEX-import precondition once if the
+	 * batch contains any VEX.
+	 *
+	 * <p>The returned list is index-aligned with {@code artifactsList} — {@code null}
+	 * for non-VEX entries — and is meant to be handed to {@link #dispatchVexArtifacts}
+	 * after the upload completes.
+	 */
+	private List<VexUpload> captureVexUploads(List<Map<String, Object>> artifactsList, ReleaseData rd) throws RelizaException {
+		List<VexUpload> vexByIndex = new java.util.ArrayList<>(artifactsList.size());
+		for (Map<String, Object> a : artifactsList) {
+			VexUpload vu = null;
+			if (ArtifactType.VEX == parseArtifactType(a.get("type"))) {
+				byte[] bytes = null;
+				Object fileObj = a.get("file");
+				if (fileObj instanceof org.springframework.web.multipart.MultipartFile mf) {
+					try { bytes = mf.getBytes(); }
+					catch (java.io.IOException e) {
+						log.warn("Failed to capture VEX bytes for downstream dispatch: {}", e.getMessage());
+					}
+				}
+				// Parse the input map into an ArtifactDto for the VEX control fields —
+				// mirrors uploadSingleArtifactWithFileFromList's conversion. file /
+				// artifacts are dropped first as they don't round-trip onto the DTO.
+				Map<String, Object> dtoMap = new java.util.HashMap<>(a);
+				dtoMap.remove("file");
+				dtoMap.remove("artifacts");
+				ArtifactDto inputDto = io.reliza.common.Utils.OM.convertValue(dtoMap, ArtifactDto.class);
+				vu = new VexUpload(bytes, inputDto);
+			}
+			vexByIndex.add(vu);
+		}
+
+		// VexImportService precondition: release must have SBOM inventory before any
+		// VEX uploads in this batch. Run once if any of the artifacts is a VEX so we
+		// fail loud at the GraphQL boundary rather than silently dropping the file.
+		if (vexByIndex.stream().anyMatch(v -> v != null && v.content() != null)) {
+			vexImportService.verifyDispatchPreconditions(rd);
+		}
+		return vexByIndex;
+	}
+
+	/**
+	 * Dispatch the inbound VEX import pipeline
+	 * ({@link io.reliza.service.VexImportService#dispatchFromArtifact}) for every VEX
+	 * artifact in an uploaded batch — the same hook the multipart {@code addArtifactManual}
+	 * path runs (see {@code ReleaseDatafetcher#addArtifact}). Without this the CLI /
+	 * rearm-actions upload path silently bypasses VEX import, so vendor VEX submitted
+	 * through automation never produces proposals. See ai-plans/vex_imports/00_overview.md
+	 * §"What VEX import does, in three stages".
+	 *
+	 * <p>{@code vexUploads} comes from {@link #captureVexUploads} and is index-aligned
+	 * with {@code artIds}. Best-effort — a dispatch failure is logged, never blocks the
+	 * upload result.
+	 *
+	 * @param belongsTo binding of the uploaded artifacts (RELEASE / DELIVERABLE / SCE);
+	 *                  drives issuer-class derivation inside {@link VexImportService}.
+	 */
+	private void dispatchVexArtifacts(List<VexUpload> vexUploads, List<UUID> artIds,
+			ReleaseData rd, ArtifactBelongsTo belongsTo, WhoUpdated wu) {
+		for (int i = 0; i < artIds.size() && i < vexUploads.size(); i++) {
+			VexUpload vu = vexUploads.get(i);
+			if (vu == null || vu.content() == null) continue;
+			UUID artId = artIds.get(i);
+			Optional<ArtifactData> oad = artifactService.getArtifactData(artId);
+			if (oad.isEmpty()) continue;
+			// ArtifactDto has no factory from ArtifactData — round-trip through Jackson.
+			// dispatchFromArtifact reads bomFormat / displayIdentifier off the persisted
+			// artifact, plus vexScope / vexImportMode / userIssuerClassOverride — which
+			// are NOT persisted on ArtifactData, so overlay them from the input DTO.
+			ArtifactDto dispatchDto = io.reliza.common.Utils.OM.convertValue(
+				oad.get(), ArtifactDto.class);
+			dispatchDto.setVexScope(vu.inputDto().getVexScope());
+			dispatchDto.setVexImportMode(vu.inputDto().getVexImportMode());
+			dispatchDto.setUserIssuerClassOverride(vu.inputDto().getUserIssuerClassOverride());
+			try {
+				vexImportService.dispatchFromArtifact(
+					artId, dispatchDto, rd, belongsTo, vu.content(), wu);
+			} catch (Exception e) {
+				log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
+					artId, rd.getUuid(), e.getMessage());
+			}
+		}
+	}
+
+	/**
 	 * Process and upload release artifacts, then attach them to the release.
 	 *
-	 * <p>VEX artifacts additionally trigger the inbound import pipeline
-	 * ({@link io.reliza.service.VexImportService#dispatchFromArtifact}) — the
-	 * same hook the multipart {@code addArtifactManual} path runs (see
-	 * {@code ReleaseDatafetcher#addArtifact}). Without this the CLI / rearm-actions
-	 * upload path silently bypasses VEX import, so vendor VEX submitted through
-	 * automation never produces proposals. See ai-plans/vex_imports/00_overview.md
-	 * §"What VEX import does, in three stages".
+	 * <p>VEX artifacts additionally trigger the inbound import pipeline — see
+	 * {@link #dispatchVexArtifacts}.
 	 */
 	@Transactional
 	public void processReleaseArtifacts(List<Map<String, Object>> artifactsList, ReleaseData rd,
@@ -1250,31 +1345,8 @@ public class ReleaseService {
 		String purl = SidPurlUtils.pickPreferredPurl(rd.getIdentifiers())
 				.map(TeaIdentifier::getIdValue).orElse(null);
 
-		// Capture VEX file bytes BEFORE uploadListOfArtifacts consumes the entries —
-		// the upload path removes the MultipartFile from each map and we still need
-		// the bytes downstream for the VEX parser.
-		List<byte[]> vexBytesByIndex = new java.util.ArrayList<>(artifactsList.size());
-		for (Map<String, Object> a : artifactsList) {
-			byte[] bytes = null;
-			if (ArtifactType.VEX == parseArtifactType(a.get("type"))) {
-				Object fileObj = a.get("file");
-				if (fileObj instanceof org.springframework.web.multipart.MultipartFile mf) {
-					try { bytes = mf.getBytes(); }
-					catch (java.io.IOException e) {
-						log.warn("Failed to capture VEX bytes for downstream dispatch: {}", e.getMessage());
-					}
-				}
-			}
-			vexBytesByIndex.add(bytes);
-		}
-
-		// VexImportService precondition: release must have SBOM inventory before any
-		// VEX uploads in this batch. Run once if any of the artifacts is a VEX so we
-		// fail loud at the GraphQL boundary rather than silently dropping the file.
-		boolean anyVex = vexBytesByIndex.stream().anyMatch(b -> b != null);
-		if (anyVex) {
-			vexImportService.verifyDispatchPreconditions(rd);
-		}
+		// Capture VEX uploads before uploadListOfArtifacts consumes the MultipartFile entries.
+		List<VexUpload> vexUploads = captureVexUploads(artifactsList, rd);
 
 		// Upload artifacts
 		List<UUID> artIds = artifactService.uploadListOfArtifacts(
@@ -1288,34 +1360,20 @@ public class ReleaseService {
 			addArtifact(artId, rd.getUuid(), wu);
 		}
 
-		// Now dispatch any VEX artifacts. Mirrors the multipart manual path —
-		// best-effort, never blocks the upload result.
-		for (int i = 0; i < artIds.size() && i < vexBytesByIndex.size(); i++) {
-			byte[] bytes = vexBytesByIndex.get(i);
-			if (bytes == null) continue;
-			UUID artId = artIds.get(i);
-			Optional<ArtifactData> oad = artifactService.getArtifactData(artId);
-			if (oad.isEmpty()) continue;
-			// ArtifactDto has no factory from ArtifactData — round-trip through Jackson.
-			// VexImportService only reads bomFormat / vexScope / vexImportMode /
-			// userIssuerClassOverride / displayIdentifier off the dto.
-			ArtifactDto dispatchDto = io.reliza.common.Utils.OM.convertValue(
-				oad.get(), ArtifactDto.class);
-			try {
-				vexImportService.dispatchFromArtifact(
-					artId, dispatchDto, rd, ArtifactBelongsTo.RELEASE, bytes, wu);
-			} catch (Exception e) {
-				log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
-					artId, rd.getUuid(), e.getMessage());
-			}
-		}
+		dispatchVexArtifacts(vexUploads, artIds, rd, ArtifactBelongsTo.RELEASE, wu);
 	}
 	
 	/**
-	 * Process and upload deliverable artifacts, then attach them to the deliverable
+	 * Process and upload deliverable artifacts, then attach them to the deliverable.
+	 *
+	 * <p>VEX artifacts additionally trigger the inbound import pipeline — see
+	 * {@link #dispatchVexArtifacts}. {@code rd} is the release the upload targets;
+	 * the VEX matcher and the SBOM precondition are release-scoped, so a
+	 * deliverable-bound VEX still resolves against {@code rd}'s inventory — the
+	 * same {@code rd} the multipart manual path passes for DELIVERABLE bindings.
 	 */
 	@Transactional
-	public void processDeliverableArtifacts(List<Map<String, Object>> delArtsList, ComponentData cd, 
+	public void processDeliverableArtifacts(List<Map<String, Object>> delArtsList, ReleaseData rd, ComponentData cd,
 			OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
 		if (null == delArtsList || delArtsList.isEmpty()) {
 			return;
@@ -1352,25 +1410,36 @@ public class ReleaseService {
 				}
 			}
 			
+			// Capture VEX uploads before uploadListOfArtifacts consumes the MultipartFile entries.
+			List<VexUpload> vexUploads = captureVexUploads(artifactsList, rd);
+
 			// Upload artifacts
 			List<UUID> artIds = artifactService.uploadListOfArtifacts(
 				od, artifactsList,
 				new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, hash, StripBom.FALSE, purl),
 				wu
 			);
-			
+
 			// Attach artifacts to deliverable
 			for (UUID artId : artIds) {
 				deliverableService.addArtifact(deliverableId, artId, wu);
 			}
+
+			dispatchVexArtifacts(vexUploads, artIds, rd, ArtifactBelongsTo.DELIVERABLE, wu);
 		}
 	}
 	
 	/**
-	 * Process and upload SCE artifacts, then attach them to the source code entry
+	 * Process and upload SCE artifacts, then attach them to the source code entry.
+	 *
+	 * <p>VEX artifacts additionally trigger the inbound import pipeline — see
+	 * {@link #dispatchVexArtifacts}. {@code rd} is the release the upload targets;
+	 * the VEX matcher and the SBOM precondition are release-scoped, so an
+	 * SCE-bound VEX still resolves against {@code rd}'s inventory — the same
+	 * {@code rd} the multipart manual path passes for SCE bindings.
 	 */
 	@Transactional
-	public void processSceArtifacts(List<Map<String, Object>> sceArtsList, ComponentData cd, 
+	public void processSceArtifacts(List<Map<String, Object>> sceArtsList, ReleaseData rd, ComponentData cd,
 			OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
 		if (null == sceArtsList || sceArtsList.isEmpty()) {
 			return;
@@ -1392,18 +1461,23 @@ public class ReleaseService {
 				throw new RelizaException("'artifacts' list cannot be empty in sceArtifacts");
 			}
 			
+			// Capture VEX uploads before uploadListOfArtifacts consumes the MultipartFile entries.
+			List<VexUpload> vexUploads = captureVexUploads(artifactsList, rd);
+
 			// Upload artifacts
 			List<UUID> artIds = artifactService.uploadListOfArtifacts(
 				od, artifactsList,
 				new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sced.getCommit(), StripBom.FALSE, null),
 				wu
 			);
-			
+
 			// Attach artifacts to SCE
 			for (UUID artId : artIds) {
 				SCEArtifact sceArt = new SCEArtifact(artId, cd.getUuid());
 				sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
 			}
+
+			dispatchVexArtifacts(vexUploads, artIds, rd, ArtifactBelongsTo.SCE, wu);
 		}
 	}
 	@Transactional

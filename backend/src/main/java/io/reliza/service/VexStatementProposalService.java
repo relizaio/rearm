@@ -5,9 +5,12 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -17,9 +20,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ArtifactData;
 import io.reliza.model.ClaimType;
+import io.reliza.model.DeliverableData;
 import io.reliza.model.MitigationAttestationData;
 import io.reliza.model.ProposalStatus;
+import io.reliza.model.ReleaseData;
+import io.reliza.model.SourceCodeEntryData;
+import io.reliza.model.SourceCodeEntryData.SCEArtifact;
+import io.reliza.model.VariantData;
 import io.reliza.model.VexStatementProposal;
 import io.reliza.model.VexStatementProposalData;
 import io.reliza.model.VulnAnalysisData;
@@ -38,6 +47,9 @@ public class VexStatementProposalService {
     @Autowired MitigationAttestationService attestationService;
     @Autowired SharedReleaseService sharedReleaseService;
     @Autowired ArtifactService artifactService;
+    @Autowired GetDeliverableService getDeliverableService;
+    @Autowired GetSourceCodeEntryService getSourceCodeEntryService;
+    @Autowired VariantService variantService;
 
     private final VexStatementProposalRepository repository;
 
@@ -65,26 +77,80 @@ public class VexStatementProposalService {
     }
 
     /**
-     * Lists VEX proposals whose source artifact is attached to the given release —
-     * "what VEX has been uploaded to this release". Decisions whose effect crosses
-     * scope levels (e.g. ORG-scoped proposals affecting many releases) are visible in
-     * the org-wide VEX Proposals inbox; this view is intentionally local.
+     * Lists VEX proposals whose source artifact was uploaded to the given release —
+     * "what VEX has been uploaded here". A VEX artifact can be bound to a release
+     * through several paths, so this walks all of them: the release's own artifacts,
+     * its deliverables (release-level inbound plus each variant's outbound), and its
+     * source code entries (export SCE plus commit SCEs). The deliverable/SCE upload
+     * paths attach the VEX artifact to that child object, not to the release's own
+     * artifact list (see {@code ReleaseService.processDeliverableArtifacts} /
+     * {@code processSceArtifacts}), so a release-artifacts-only walk silently misses
+     * deliverable- and SCE-bound VEX.
+     *
+     * <p>The view stays provenance-local: it answers "which VEX documents were
+     * uploaded against this release", not "which VEX decisions affect it". Proposals
+     * whose effect crosses scope levels (e.g. an ORG-scoped proposal touching many
+     * releases) are surfaced in the org-wide VEX Proposals inbox, not here.
      */
     public List<VexStatementProposalData> listForRelease(UUID org, UUID release) {
-        var rd = sharedReleaseService.getReleaseData(release, org);
-        if (rd.isEmpty() || rd.get().getArtifacts() == null || rd.get().getArtifacts().isEmpty()) {
+        Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(release, org);
+        if (ord.isEmpty()) {
             return List.of();
         }
-        List<String> vexArtifactUuids = rd.get().getArtifacts().stream()
-            .filter(a -> {
-                var ad = artifactService.getArtifactData(a);
-                return ad.isPresent() && ad.get().getType() == io.reliza.model.ArtifactData.ArtifactType.VEX;
-            })
+        List<String> vexArtifactUuids = collectVexArtifactUuids(ord.get()).stream()
             .map(UUID::toString)
             .collect(Collectors.toList());
         if (vexArtifactUuids.isEmpty()) return List.of();
         return repository.findByOrgAndSourceArtifactIn(org.toString(), vexArtifactUuids).stream()
             .map(VexStatementProposalData::dataFromRecord).collect(Collectors.toList());
+    }
+
+    /**
+     * Collects every VEX-typed artifact bound to a release — directly, or through one
+     * of its deliverables or source code entries. Returns a de-duplicated set in
+     * discovery order. Dangling child references are tolerated: a missing deliverable
+     * or SCE is skipped, never thrown (the model carries no DB-level FKs — see
+     * {@code coding_principles.md}).
+     */
+    private Set<UUID> collectVexArtifactUuids(ReleaseData rd) {
+        Set<UUID> candidates = new LinkedHashSet<>();
+        if (rd.getArtifacts() != null) {
+            candidates.addAll(rd.getArtifacts());
+        }
+
+        // Deliverables: release-level inbound + each variant's outbound.
+        Set<UUID> deliverableUuids = new LinkedHashSet<>(rd.getInboundDeliverables());
+        for (VariantData vd : variantService.getVariantsOfRelease(rd.getUuid())) {
+            if (vd.getOutboundDeliverables() != null) {
+                deliverableUuids.addAll(vd.getOutboundDeliverables());
+            }
+        }
+        for (DeliverableData dd : getDeliverableService.getDeliverableDataList(deliverableUuids)) {
+            if (dd.getArtifacts() != null) {
+                candidates.addAll(dd.getArtifacts());
+            }
+        }
+
+        // Source code entries: export SCE + commit SCEs (getAllCommits unions both).
+        Set<UUID> sceUuids = rd.getAllCommits().stream()
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        for (SourceCodeEntryData sced : getSourceCodeEntryService.getSourceCodeEntryDataList(sceUuids)) {
+            if (sced.getArtifacts() != null) {
+                sced.getArtifacts().stream()
+                    .map(SCEArtifact::artifactUuid)
+                    .filter(Objects::nonNull)
+                    .forEach(candidates::add);
+            }
+        }
+
+        // Keep only VEX-typed artifacts: the proposal table only ever keys off a VEX
+        // source artifact, and this trims the IN-list handed to the repository. One
+        // batch lookup — missing artifacts are simply absent from the result.
+        return artifactService.getArtifactDataList(candidates).stream()
+            .filter(ad -> ad.getType() == ArtifactData.ArtifactType.VEX)
+            .map(ArtifactData::getUuid)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     @Transactional

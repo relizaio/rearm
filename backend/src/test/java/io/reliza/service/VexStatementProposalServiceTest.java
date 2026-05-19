@@ -5,16 +5,23 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,10 +33,16 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisJustification;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.ArtifactData;
+import io.reliza.model.DeliverableData;
 import io.reliza.model.FindingType;
 import io.reliza.model.LocationType;
 import io.reliza.model.ProposalStatus;
+import io.reliza.model.ReleaseData;
+import io.reliza.model.SourceCodeEntryData;
+import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.SourceFormat;
+import io.reliza.model.VariantData;
 import io.reliza.model.VexStatementProposal;
 import io.reliza.model.VexStatementProposalData;
 import io.reliza.model.WhoUpdated;
@@ -41,6 +54,11 @@ class VexStatementProposalServiceTest {
     private VexStatementProposalRepository repo;
     private AuditService audit;
     private VulnAnalysisService vulnService;
+    private SharedReleaseService sharedReleaseService;
+    private ArtifactService artifactService;
+    private GetDeliverableService getDeliverableService;
+    private GetSourceCodeEntryService getSourceCodeEntryService;
+    private VariantService variantService;
     private VexStatementProposalService svc;
 
     @BeforeEach
@@ -48,11 +66,21 @@ class VexStatementProposalServiceTest {
         repo = mock(VexStatementProposalRepository.class);
         audit = mock(AuditService.class);
         vulnService = mock(VulnAnalysisService.class);
+        sharedReleaseService = mock(SharedReleaseService.class);
+        artifactService = mock(ArtifactService.class);
+        getDeliverableService = mock(GetDeliverableService.class);
+        getSourceCodeEntryService = mock(GetSourceCodeEntryService.class);
+        variantService = mock(VariantService.class);
         svc = new VexStatementProposalService(repo);
         svc.auditService = audit;
         svc.vulnAnalysisService = vulnService;
         svc.conditionalPredicate = new ConditionalMitigationPredicate();
         svc.attestationService = mock(MitigationAttestationService.class);
+        svc.sharedReleaseService = sharedReleaseService;
+        svc.artifactService = artifactService;
+        svc.getDeliverableService = getDeliverableService;
+        svc.getSourceCodeEntryService = getSourceCodeEntryService;
+        svc.variantService = variantService;
     }
 
     private VexStatementProposalData newProposal() {
@@ -270,5 +298,109 @@ class VexStatementProposalServiceTest {
         // VulnAnalysis must not have been mutated.
         verify(vulnService, org.mockito.Mockito.never()).createVulnAnalysis(any(), any());
         verify(vulnService, org.mockito.Mockito.never()).updateAnalysisState(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    // --- listForRelease: cross-binding VEX collection ------------------------
+
+    private ArtifactData artifactOfType(UUID uuid, ArtifactData.ArtifactType type) {
+        ArtifactData ad = mock(ArtifactData.class);
+        when(ad.getUuid()).thenReturn(uuid);
+        when(ad.getType()).thenReturn(type);
+        return ad;
+    }
+
+    @Test
+    void listForReleaseReturnsEmptyWhenReleaseAbsent() {
+        UUID org = UUID.randomUUID();
+        UUID release = UUID.randomUUID();
+        when(sharedReleaseService.getReleaseData(release, org)).thenReturn(Optional.empty());
+
+        assertTrue(svc.listForRelease(org, release).isEmpty());
+        verify(repo, never()).findByOrgAndSourceArtifactIn(any(), any());
+    }
+
+    @Test
+    void listForReleaseCollectsVexFromReleaseDeliverablesAndSces() {
+        // Regression guard: a VEX uploaded to a release's deliverable or source code
+        // entry must surface on the per-release VEX tab, not just in the org-wide
+        // inbox. The walk covers release artifacts, inbound + outbound deliverables,
+        // and source code entries; a non-VEX artifact on the release is filtered out.
+        UUID org = UUID.randomUUID();
+        UUID release = UUID.randomUUID();
+
+        UUID releaseVex = UUID.randomUUID();
+        UUID decoyBom = UUID.randomUUID();
+        UUID inboundDeliverableVex = UUID.randomUUID();
+        UUID outboundDeliverableVex = UUID.randomUUID();
+        UUID sceVex = UUID.randomUUID();
+
+        UUID inboundDeliverable = UUID.randomUUID();
+        UUID outboundDeliverable = UUID.randomUUID();
+        UUID exportSce = UUID.randomUUID();
+
+        ReleaseData rd = mock(ReleaseData.class);
+        when(rd.getUuid()).thenReturn(release);
+        when(rd.getArtifacts()).thenReturn(List.of(releaseVex, decoyBom));
+        when(rd.getInboundDeliverables()).thenReturn(List.of(inboundDeliverable));
+        when(rd.getAllCommits()).thenReturn(new LinkedHashSet<>(List.of(exportSce)));
+        when(sharedReleaseService.getReleaseData(release, org)).thenReturn(Optional.of(rd));
+
+        VariantData variant = mock(VariantData.class);
+        when(variant.getOutboundDeliverables()).thenReturn(new LinkedHashSet<>(List.of(outboundDeliverable)));
+        when(variantService.getVariantsOfRelease(release)).thenReturn(List.of(variant));
+
+        DeliverableData inboundDd = mock(DeliverableData.class);
+        when(inboundDd.getArtifacts()).thenReturn(List.of(inboundDeliverableVex));
+        DeliverableData outboundDd = mock(DeliverableData.class);
+        when(outboundDd.getArtifacts()).thenReturn(List.of(outboundDeliverableVex));
+        when(getDeliverableService.getDeliverableDataList(any())).thenReturn(List.of(inboundDd, outboundDd));
+
+        SourceCodeEntryData sced = mock(SourceCodeEntryData.class);
+        when(sced.getArtifacts()).thenReturn(List.of(new SCEArtifact(sceVex, UUID.randomUUID())));
+        when(getSourceCodeEntryService.getSourceCodeEntryDataList(any())).thenReturn(List.of(sced));
+
+        // Build the ArtifactData mocks up front — artifactOfType() itself stubs, so it
+        // must not be called inside an enclosing when(...).thenReturn(...) argument.
+        ArtifactData releaseVexAd = artifactOfType(releaseVex, ArtifactData.ArtifactType.VEX);
+        ArtifactData inboundVexAd = artifactOfType(inboundDeliverableVex, ArtifactData.ArtifactType.VEX);
+        ArtifactData outboundVexAd = artifactOfType(outboundDeliverableVex, ArtifactData.ArtifactType.VEX);
+        ArtifactData sceVexAd = artifactOfType(sceVex, ArtifactData.ArtifactType.VEX);
+        ArtifactData decoyBomAd = artifactOfType(decoyBom, ArtifactData.ArtifactType.BOM);
+        Map<UUID, ArtifactData> artifactsById = Map.of(
+            releaseVex, releaseVexAd, inboundDeliverableVex, inboundVexAd,
+            outboundDeliverableVex, outboundVexAd, sceVex, sceVexAd, decoyBom, decoyBomAd);
+        // Answer like the real findAllById: return only the artifacts actually passed
+        // in. A binding path the traversal misses therefore never reaches the query —
+        // which is exactly what the captor assertions below pin down.
+        when(artifactService.getArtifactDataList(any())).thenAnswer(inv -> {
+            List<ArtifactData> found = new ArrayList<>();
+            for (UUID id : (Iterable<UUID>) inv.getArgument(0)) {
+                ArtifactData ad = artifactsById.get(id);
+                if (ad != null) found.add(ad);
+            }
+            return found;
+        });
+
+        VexStatementProposalData proposal = newProposal();
+        VexStatementProposal e = new VexStatementProposal();
+        e.setUuid(proposal.getUuid());
+        e.setRecordData(proposal.toRecordData());
+        when(repo.findByOrgAndSourceArtifactIn(eq(org.toString()), any())).thenReturn(List.of(e));
+
+        List<VexStatementProposalData> out = svc.listForRelease(org, release);
+        assertEquals(1, out.size());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<String>> captor = ArgumentCaptor.forClass(Collection.class);
+        verify(repo).findByOrgAndSourceArtifactIn(eq(org.toString()), captor.capture());
+        Collection<String> queried = captor.getValue();
+        // Every binding path's VEX artifact reaches the proposal query...
+        assertTrue(queried.contains(releaseVex.toString()));
+        assertTrue(queried.contains(inboundDeliverableVex.toString()));
+        assertTrue(queried.contains(outboundDeliverableVex.toString()));
+        assertTrue(queried.contains(sceVex.toString()));
+        // ...and the non-VEX artifact is filtered out.
+        assertFalse(queried.contains(decoyBom.toString()));
+        assertEquals(4, queried.size());
     }
 }
