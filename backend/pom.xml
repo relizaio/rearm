@@ -28,6 +28,8 @@
     <log4j2.version>2.26.0</log4j2.version>
     <jackson-bom.version>2.21.3</jackson-bom.version>
     <commons-lang3.version>3.20.0</commons-lang3.version>
+	<netty.version>4.1.133.Final</netty.version>   <!-- override Spring Boot 3.5.14 BOM (was 4.1.132.Final) -->
+	<tomcat.version>10.1.55</tomcat.version>   <!-- override Spring Boot 3.5.14 BOM (was 10.1.54), CVE-2026-41293 / CVE-2026-43512 -->
   </properties>
   
     <parent>
