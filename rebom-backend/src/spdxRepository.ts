@@ -291,7 +291,7 @@ export async function findSpdxBomByConvertedUuid(
 
 /**
  * Find SPDX BOM by the serialNumber of its converted CycloneDX BOM.
- * This is used when updating an SPDX artifact - the internalBom.id from rearm-saas
+ * This is used when updating an SPDX artifact - the internalBom.id from ReARM backend
  * is the serialNumber of the converted CycloneDX BOM, not the converted_bom_uuid.
  */
 export async function findSpdxBomBySerialNumber(

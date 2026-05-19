@@ -4,7 +4,7 @@ import { parseSarifFromString } from '../../src/services/sarif/sarifParser';
 /**
  * Unit tests for SARIF (Static Analysis Results Interchange Format) parser
  * Tests parsing of SARIF security scan results
- * Used by rearm-saas/backend for security weakness scanning
+ * Used by the ReARM backend for security weakness scanning
  */
 
 describe('SARIF Parser - Unit Tests', () => {

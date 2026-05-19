@@ -18,7 +18,7 @@ import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumbe
 
 /**
  * Integration tests for BOM merge operations
- * Tests the mergeAndStoreBoms functionality used by rearm-saas/backend for release BOMs
+ * Tests the mergeAndStoreBoms functionality used by the ReARM backend for release BOMs
  */
 
 describe('BOM Merge Operations', () => {
@@ -97,7 +97,7 @@ describe('BOM Merge Operations', () => {
             BomService.addBom
         );
 
-        // Verify merged BOM record structure (used by rearm-saas/backend)
+        // Verify merged BOM record structure (used by the ReARM backend)
         expect(mergedRecord).toBeDefined();
         expect(mergedRecord).toHaveProperty('uuid');
         expect(mergedRecord).toHaveProperty('meta');
@@ -510,7 +510,7 @@ describe('BOM Merge Operations', () => {
             BomService.addBom
         );
 
-        // Verify BomRecord structure matches what rearm-saas/backend expects
+        // Verify BomRecord structure matches what the ReARM backend expects
         expect(mergedRecord).toBeDefined();
         expect(mergedRecord).toHaveProperty('uuid');
         expect(mergedRecord).toHaveProperty('meta');
@@ -525,7 +525,7 @@ describe('BOM Merge Operations', () => {
         expect(mergedRecord.meta.serialNumber).toBeDefined();
         expect(mergedRecord.meta.serialNumber).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         
-        // Meta should contain other required fields for rearm-saas/backend
+        // Meta should contain other required fields for the ReARM backend
         expect(mergedRecord.meta).toHaveProperty('name');
         expect(mergedRecord.meta).toHaveProperty('version');
         expect(mergedRecord.meta.name).toBe('merged');

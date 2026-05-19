@@ -19,7 +19,7 @@ import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumbe
 
 /**
  * Integration tests for BOM diff operations
- * Tests the bomDiff functionality used by rearm-saas/backend for changelogs
+ * Tests the bomDiff functionality used by the ReARM backend for changelogs
  */
 
 describe('BOM Diff Operations', () => {
@@ -304,7 +304,7 @@ describe('BOM Diff Operations', () => {
             TEST_ORG_UUID
         );
 
-        // Verify the result matches the ComponentDiff interface used by rearm-saas/backend
+        // Verify the result matches the ComponentDiff interface used by the ReARM backend
         expect(diffResult).toBeDefined();
         expect(typeof diffResult).toBe('object');
         expect(diffResult).toHaveProperty('added');

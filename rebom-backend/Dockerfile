@@ -3,7 +3,7 @@ FROM node:26.1.0-alpine3.23@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1
 ARG TARGETARCH
 ARG TARGETOS
 
-# Install PostgreSQL and unzip for running tests (same approach as rearm-saas/backend)
+# Install PostgreSQL and unzip for running tests (same approach as the ReARM backend)
 RUN apk add postgresql postgresql-contrib unzip wget
 
 # Initialize PostgreSQL database for tests
