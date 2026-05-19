@@ -71,7 +71,11 @@
                                     <QuestionCircle20Regular />
                                 </n-icon>
                             </template>
-                            The I-am-an-agent marker — grants a key (or user) the right to act as an AI agent: register itself on first call, open / touch / close sessions, attach artifacts, spawn sub-agents. Not needed for human users browsing the AI Agents dashboard or admining agent policies.
+                            <div style="max-width: 480px;">
+                                The I-am-an-agent marker — grants a key the right to act as an AI agent: register itself on first call, open / touch / close sessions, attach artifacts, spawn sub-agents. Not needed for human users browsing the AI Agents dashboard or admining agent policies.
+                                <br/><br/>
+                                <strong>Carve-out:</strong> a key with this function (even at <code>READ_ONLY</code>) can also enrol its <em>own</em> SSH/GPG public signing key via <code>rearm agent enrollkey</code> — needed so an agent can sign its first commit without operator intervention. The backend enforces that the key being enrolled targets the calling key's own agent identity; cross-agent enrolment is rejected.
+                            </div>
                         </n-tooltip>
                     </span>
                     <span v-else>

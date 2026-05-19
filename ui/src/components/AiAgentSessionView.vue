@@ -123,7 +123,7 @@ const verdictSummary = computed(() => {
         out.total++
         if (ev.state === 'PASSED') out.passed++
         else if (ev.state === 'FAILED') out.failed++
-        else if (ev.state === 'PENDING') out.pending++
+        else if (ev.state === 'AWAITING') out.pending++
         else if (ev.state === 'WARNING') out.warning++
     }
     return out
