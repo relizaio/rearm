@@ -43,7 +43,7 @@ OCIARTIFACTS_REGISTRY_NAMESPACE="430fcdde-d7bc-4542-ad5b-4f534f4942f0-private"
 docker-compose up -d
 ```
 
-Then proceed to the [create administrative user](/get-started/#create-your-administrative-user-and-log-in) section.
+Then proceed to the [create administrative user](/installation/#create-your-administrative-user-and-log-in) section.
 
 ## Installation Via Helm Chart
 Time it takes: 5 minutes.

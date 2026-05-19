@@ -1,6 +1,6 @@
 services:
   rearm-core:
-    image: registry.relizahub.com/library/rearm-backend:26.05.41@sha256:16571b685676ac61362d23eac3f74dc53d010f887bcb02fe66c7ad22f29414a5
+    image: registry.relizahub.com/library/rearm-backend:26.05.17@sha256:5f1e624f070c2b1422cffb3d050ad6881bca649fdb91002b541767aeba691fce
     env_file:
      - path: ./core.env
        required: false
@@ -25,7 +25,7 @@ services:
         parallelism: 1
         delay: 10s
   rearm-ui:
-    image: registry.relizahub.com/library/rearm-ui:26.05.37@sha256:4e2c6fbe1facf47095ca774e61875061fef07af7dc69c05e5b12c9161e0bde0d
+    image: registry.relizahub.com/library/rearm-ui:26.05.40@sha256:575ecdb7ad7c8eef771066f046dd2083764e4ce206985bbcde5b3b2d0afa9970
     ports:
      - "8092:80"
     environment:
@@ -59,7 +59,7 @@ services:
     volumes:
       - "rearm-postgres-data:/relizaio/postgresql"
   keycloak:
-    image: registry.relizahub.com/library/rearm-keycloak:26.03.6@sha256:92ff231cbf3d49934f115b729eb9af673efd48b88b29853187f52f7acfc7bd0b
+    image: registry.relizahub.com/library/rearm-keycloak:26.03.4@sha256:9f566f355b2109da875388899da52b9f4981c7dfedbcb5e7125c557cd1380b08
     # build: ../../keycloak
     ports:
      - "9080:9080"
