@@ -2421,18 +2421,6 @@ const storeObject : any = {
             })
             return response.data.revokeSigningKey
         },
-        async verifySignature (context: any, input: any) {
-            const response = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation verifySignature($input: VerifySignatureInput!) {
-                        verifySignature(input: $input) {
-                            uuid verdict ownerType ownerUuid keyFingerprint format details verifiedAt
-                        }
-                    }`,
-                variables: { input }
-            })
-            return response.data.verifySignature
-        },
     },
 }
 
