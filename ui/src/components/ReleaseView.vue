@@ -5399,7 +5399,7 @@ const commitTableFields: DataTableColumns<any> = [
     {
         key: 'facts',
         title: 'Facts',
-        minWidth: 31,
+        minWidth: 60,
         render: (row: any) => {
             const factContent: any[] = []
             factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
@@ -5425,7 +5425,7 @@ const commitTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
-        minWidth: 50,
+        minWidth: 90,
         render: (row: any) => {
             let els: any[] = []
             if (updatedRelease.value.sourceCodeEntryDetails.vcsRepository?.uri) {
@@ -5446,15 +5446,15 @@ const commitTableFields: DataTableColumns<any> = [
                     title: 'Add Artifact',
                     class: 'icons clickable',
                     size: 25,
-                    onClick: () => { 
+                    onClick: () => {
                         sceAddArtifactSceId.value = row.uuid
                         showSCEAddArtifactModal.value = true
-                        
+
                     }
                 }, () => h(BoxArrowUp20Regular))
             els.push(addArtifactEl)
             if (!els.length) els.push(h('span', 'N/A'))
-            return h('div', els)
+            return h('div', { style: 'display: flex; gap: 6px; align-items: center;' }, els)
         }
     }
 ]
@@ -5500,6 +5500,7 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
     {
         key: 'facts',
         title: 'Facts',
+        minWidth: 60,
         render: (row: any) => {
             const factContent: any[] = []
             factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
@@ -5525,6 +5526,7 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 90,
         render: (row: any) => {
             let els: any[] = []
             if (updatedRelease.value.sourceCodeEntryDetails?.vcsRepository?.uri) {
@@ -5541,7 +5543,7 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
                 }
             }
             if (!els.length) els.push(h('span', 'N/A'))
-            return h('div', els)
+            return h('div', { style: 'display: flex; gap: 6px; align-items: center;' }, els)
         }
     }
 ]
