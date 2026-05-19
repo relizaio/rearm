@@ -93,6 +93,8 @@ In the UI, this surfaces as: the **History** tab on the release shows lifecycle-
 
 Worth being honest about so you don't build expectations around things that don't exist yet:
 
+- **Signed commits only verify SSH and GPG.** X.509 / sigstore (cosign keyless, Gitsign) signatures land with verdict `ERRORED` — the verdict row is still written so the audit trail is honest, but the signed-commit gate won't pass for them. If your team signs with sigstore, plan to enrol SSH or GPG keys for ReARM-attributed work until the X.509 verifier ships.
+- **No VSA emission.** ReARM records its verification verdict per signature internally, but does not yet mint a [SLSA Verification Summary Attestation](https://slsa.dev/spec/v1.0/verification_summary) ("ReARM verified release R passed policy P at time T") that downstream consumers can pin against. If you need a portable, signed verdict to hand off to a registry / deploy gate, that piece is on the roadmap, not in v1.
 - **No outbound webhooks** scoped per agent. The agent polls; ReARM doesn't push. Polling at 30-60s is plenty for any reviewer-driven workflow.
 - **No `rearm agent spawn`** in the published CLI. Sub-agent registration is on the API but the convenience command isn't shipped yet; sub-agents currently stamp the root agent's uuid in their trailers.
 - **No model-card auto-attach.** If a policy checks `model.modelCard != ""`, the operator must attach a model card via `rearm agent model attach` before the agent's session init will pass.
@@ -100,6 +102,5 @@ Worth being honest about so you don't build expectations around things that don'
 ## Reference
 
 - **Agent contract**: `$REARM_URL/api/agents/orientation.md` — pinned to the backend version.
-- **CEL surface for agent policies**: `session.*`, `agent.*`, `model.*` — see [Agent Policies](../configure/) (TODO once that page exists) and the CEL helper inside the UI.
+- **CEL surface for agent policies**: `session.*`, `agent.*`, `model.*` — explore via the CEL helper picker inside the policy editor; every helper carries a tooltip with its return shape and an example.
 - **Component-level CEL gates** that interact with agent sessions: `release.agentSessions[].hasFailedPolicy`, `release.commits[].attribution.state`, `release.commits[].signature.state`. The first two are agentic-specific; the third is the signed-commits gate.
-- **Plan §6-9** (`backend/ai-plans/agentic/README.md`) for the data model.
