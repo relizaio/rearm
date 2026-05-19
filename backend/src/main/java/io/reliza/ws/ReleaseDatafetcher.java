@@ -1386,13 +1386,13 @@ public class ReleaseDatafetcher {
 		if (addArtifactInput.containsKey("deliverableArtifacts")) {
 			@SuppressWarnings("unchecked")
 			List<Map<String,Object>> delArtsList = (List<Map<String,Object>>) addArtifactInput.get("deliverableArtifacts");
-			releaseService.processDeliverableArtifacts(delArtsList, cd, od, version, wu);
+			releaseService.processDeliverableArtifacts(delArtsList, ord.get(), cd, od, version, wu);
 		}
-		
+
 		if (addArtifactInput.containsKey("sceArtifacts")) {
 			@SuppressWarnings("unchecked")
 			List<Map<String,Object>> sceArtsList = (List<Map<String,Object>>) addArtifactInput.get("sceArtifacts");
-			releaseService.processSceArtifacts(sceArtsList, cd, od, version, wu);
+			releaseService.processSceArtifacts(sceArtsList, ord.get(), cd, od, version, wu);
 		}
 		
 		// Reconcile merged SBOM

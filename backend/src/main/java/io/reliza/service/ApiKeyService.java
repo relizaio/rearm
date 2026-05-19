@@ -3,8 +3,13 @@
 */
 package io.reliza.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.Collection;
+import java.util.HexFormat;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +21,9 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
@@ -49,20 +57,70 @@ public class ApiKeyService {
 	private GetComponentService getComponentService;;
 
 	private final ApiKeyRepository repository;
-	
+
+	/**
+	 * Cache of successfully-verified (apiKeyUuid, presentedSecret) tuples
+	 * so that subsequent authenticated requests can skip the Argon2
+	 * verification entirely. Argon2 is memory-hard (~16 MB allocation per
+	 * matches() call with the v5_8 defaults) and was OOMing the request
+	 * thread under polling load. TTL is intentionally short (3 minutes)
+	 * to bound the window during which a revoked key would still verify
+	 * if invalidation somehow missed an entry; the deliberate revocation
+	 * paths ({@link #deleteApiKey} and the regeneration branch of
+	 * {@link #setObjectApiKey}) call {@link #invalidateVerificationCacheForKey}
+	 * to evict immediately.
+	 *
+	 * <p>Cache value is just a sentinel {@link Boolean#TRUE} — the key
+	 * carries everything we need to identify the verified combination.
+	 * Cache key is {@code apiKeyUuid + ":" + sha256Hex(presentedSecret)};
+	 * the SHA-256 keeps plaintext API keys out of the cache map.
+	 *
+	 * <p>Negatives are not cached — repeated wrong guesses still pay
+	 * the Argon2 cost, naturally rate-limiting brute-force attempts.
+	 */
+	private static final Duration VERIFICATION_CACHE_TTL = Duration.ofMinutes(3);
+	private final Cache<String, Boolean> verifiedKeyCache = Caffeine.newBuilder()
+			.maximumSize(50_000)
+			.expireAfterWrite(VERIFICATION_CACHE_TTL)
+			.build();
+
     @Autowired
 	public ApiKeyService(ApiKeyRepository repository) {
 	    this.repository = repository;
 	}
-	
+
+	private static String cacheKeyFor(UUID apiKeyUuid, String presentedSecret) {
+		try {
+			MessageDigest md = MessageDigest.getInstance("SHA-256");
+			byte[] hash = md.digest(presentedSecret.getBytes(StandardCharsets.UTF_8));
+			return apiKeyUuid + ":" + HexFormat.of().formatHex(hash);
+		} catch (NoSuchAlgorithmException e) {
+			// SHA-256 is guaranteed available on every JRE; this is unreachable.
+			throw new IllegalStateException("SHA-256 unavailable", e);
+		}
+	}
+
+	/**
+	 * Drop all cached verifications for the given stored ApiKey UUID.
+	 * Called whenever the stored hash changes (revoke / regenerate) so
+	 * that the new hash takes effect immediately rather than waiting
+	 * for the cache TTL.
+	 */
+	private void invalidateVerificationCacheForKey(UUID apiKeyUuid) {
+		if (apiKeyUuid == null) return;
+		String prefix = apiKeyUuid + ":";
+		verifiedKeyCache.asMap().keySet().removeIf(k -> k.startsWith(prefix));
+	}
+
 	public void deleteApiKey(UUID uuid, WhoUpdated wu){
 		Optional<ApiKey> oak = getApiKey(uuid);
 		ApiKey ak = oak.get();
 		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
 		ak.setApiKey(null);
-		
+
 		Map<String,Object> recordData = Utils.dataToRecord(akd);
 		saveApiKey(ak, recordData, wu);
+		invalidateVerificationCacheForKey(uuid);
 	}
 
 	private Optional<ApiKey> getApiKey (UUID uuid) {
@@ -205,6 +263,10 @@ public class ApiKeyService {
 		akd.setNotes(notes);
 		Map<String,Object> recordData = Utils.dataToRecord(akd);
 		saveApiKey(ak, recordData, wu);
+		// On regeneration the stored hash changes, so the old cached
+		// verifications must not be honored. Safe to call even for
+		// freshly-created keys (no cache entries to evict).
+		invalidateVerificationCacheForKey(ak.getUuid());
 		return apiKeyString;
 	}
 
@@ -248,10 +310,26 @@ public class ApiKeyService {
 		Optional<ApiKey> oak = getApiKeyByObjUuidTypeOrder(ahp.getObjUuid(), ahp.getType(), ahp.getKeyOrder(), orgUuid);
 		
 		if (oak.isPresent()) {
-			Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
 			ApiKey ak = oak.get();
-			if (encoder.matches(ahp.getApiKey(), ak.getApiKey())) {
-				matchingKeyId = oak.get().getUuid();
+			// Cache lookup before paying the Argon2 cost. Argon2PasswordEncoder
+			// .defaultsForSpringSecurity_v5_8() allocates ~16 MB per matches()
+			// call (memory-hard KDF by design); under polling load that
+			// dominated heap and OOMed the request thread. The cache lets
+			// each (apiKeyUuid, presentedSecret) combination skip Argon2
+			// for VERIFICATION_CACHE_TTL after a successful match.
+			String cacheKey = cacheKeyFor(ak.getUuid(), ahp.getApiKey());
+			Boolean cached = verifiedKeyCache.getIfPresent(cacheKey);
+			if (Boolean.TRUE.equals(cached)) {
+				matchingKeyId = ak.getUuid();
+			} else {
+				Argon2PasswordEncoder encoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+				if (encoder.matches(ahp.getApiKey(), ak.getApiKey())) {
+					matchingKeyId = ak.getUuid();
+					verifiedKeyCache.put(cacheKey, Boolean.TRUE);
+				}
+				// Deliberately do NOT cache negatives — repeated wrong
+				// guesses keep paying the Argon2 cost, which provides
+				// natural rate-limiting against brute-force attempts.
 			}
 		}
 		if (matchingKeyId == null) {

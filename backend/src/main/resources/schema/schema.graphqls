@@ -2513,7 +2513,7 @@ input ArtifactInput {
 	stripBom: StripBomEnum
 	digestRecords: [DigestRecordInput]
 	artifacts: [ArtifactInput]
-# v1.2 VEX-only: how broadly the VEX claim applies. Default ORG when type=VEX.
+# v1.2 VEX-only: how broadly the VEX claim applies. Default COMPONENT when type=VEX.
 	vexScope: AnalysisScope
 # v1.2 VEX-only: AUTO_ACCEPT (default) / STAGE / REJECT.
 	vexImportMode: VexImportMode
