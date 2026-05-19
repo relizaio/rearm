@@ -4,7 +4,7 @@ import { parseCycloneDxFromString } from '../../src/services/cyclonedx/cycloneDx
 /**
  * Unit tests for CycloneDX VDR (Vulnerability Disclosure Report) parser
  * Tests parsing of CycloneDX content with vulnerabilities
- * Used by rearm-saas/backend for vulnerability scanning
+ * Used by the ReARM backend for vulnerability scanning
  */
 
 describe('CycloneDX Parser - Unit Tests', () => {

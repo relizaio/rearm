@@ -11,7 +11,7 @@ The agent itself **does not need to read this page** — its contract lives at `
 ## Prerequisites
 
 1. **A ReARM Pro org** the agent will work under.
-2. **A FREEFORM API key** scoped to that org with `PermissionFunction.AGENT` at `ORGANIZATION` scope. `ESSENTIAL_READ` is the minimum permission type — the agent surface intentionally accepts the floor so an agent-flow key doesn't have to carry broader rights. The minting flow is documented in [the FREEFORM API key recipe](https://github.com/relizaio/rearm-saas/blob/main/ai-agents/sandbox.md#minting-a-freeform-api-key-programmatically) — note the two footguns it covers (the structured id suffix vs the row uuid, and the secret being shown only once on creation).
+2. **A FREEFORM API key** scoped to that org with `PermissionFunction.AGENT` at `ORGANIZATION` scope. `ESSENTIAL_READ` is the minimum permission type — the agent surface intentionally accepts the floor so an agent-flow key doesn't have to carry broader rights. Mint the key from **Settings → API Keys → Add FREEFORM key** in the ReARM UI, then attach the `AGENT` function on the org scope from the permissions panel. The plaintext secret is shown **only once** on creation — capture it immediately into your secret store.
 3. **An SSH or GPG signing key for the agent**, enrolled under the agent identity via `rearm agent enrollkey`. Without an enrolled key the agent's commits won't pass the signed-commit gate. The agent can self-enrol its own pub key on first run using the same FREEFORM AGENT key from step 2 (an intentional carve-out — `enrollSigningKeyProgrammatic` only allows an agent key to attach a key to its own identity, never another agent's) so the operator doesn't have to pre-provision this.
 
 ## Starting an agent

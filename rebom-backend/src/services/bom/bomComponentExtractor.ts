@@ -1,7 +1,7 @@
 /**
  * SBOM component + dependency extraction.
  *
- * Parses a CycloneDX BOM into two structures consumed by rearm-saas:
+ * Parses a CycloneDX BOM into two structures consumed by ReARM backend:
  *
  *   - components: one entry per component (including the BOM's root from
  *     metadata.component when it has a purl of its own) that carries a

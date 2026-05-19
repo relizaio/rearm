@@ -4319,9 +4319,9 @@ const releaseHistoryFields = computed(() => [
         title: 'Event or Object Details',
         render: (row: any) => {
             // Info-icon tooltip carrying the human-readable reason
-            // when the backend recorded one (typically LIFECYCLE events
-            // fired by a CEL input trigger — see ReleaseUpdateEvent.message
-            // on rearm-saas).
+            // when the backend recorded one — typically LIFECYCLE events
+            // fired by a CEL input trigger, where the trigger reason is
+            // attached to the update event's `message`.
             const reasonIcon = row.message
                 ? h(NTooltip, { trigger: 'hover', style: 'max-width: 480px;' }, {
                     trigger: () => h(NIcon, { class: 'icons', size: 16, style: 'margin-left: 6px; vertical-align: middle;' }, () => h(Info20Regular)),

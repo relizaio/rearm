@@ -101,7 +101,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   const rawBom = bomInput.bomInput.bom;
   // CycloneDX 1.7 is published upstream but no library in our stack
   // (cyclonedx-go used by rearm-cli for BEAR enrichment, cyclonedx-core-java
-  // used by rearm-saas for SBOM-component parsing, cyclonedx-javascript-library
+  // used by ReARM backend for SBOM-component parsing, cyclonedx-javascript-library
   // used here for validation) supports it yet. Deep-clone the raw BOM and
   // downgrade the clone's specVersion to 1.6 in place so all downstream sees
   // a recognised spec. The original bytes are still stored verbatim under the
@@ -115,7 +115,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   // Step 2: Prepare metadata
   const rebomOptions: RebomOptions = bomInput.bomInput.rebomOptions ?? {};
   rebomOptions.serialNumber = processedBom.serialNumber;
-  rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by rearm-saas)
+  rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by ReARM backend)
   rebomOptions.mod = 'raw';
 
   // Step 3: Set enrichment status and optionally augment with component context
@@ -147,8 +147,8 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   // Validate both BOMs went to same repository and have repository names set
   validateDualBomPush(rawPushResult, pushResult, 'upload', newUuid);
   
-  // Track raw BOM metadata for rearm-saas (use actual file digest from OCI)
-  // Note: rawBomUuid is always `uuid + '-raw'` so rearm-saas can reconstruct it
+  // Track raw BOM metadata for ReARM backend (use actual file digest from OCI)
+  // Note: rawBomUuid is always `uuid + '-raw'` so ReARM backend can reconstruct it
   rebomOptions.originalFileDigest = rawPushResult.fileSHA256Digest;  // Actual file digest from OCI
   rebomOptions.originalFileSize = rawPushResult.originalSize;
   rebomOptions.originalMediaType = rawPushResult.originalMediaType;
