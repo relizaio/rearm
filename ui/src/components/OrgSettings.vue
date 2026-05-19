@@ -300,6 +300,10 @@
                 </n-modal>
             </n-tab-pane>
 
+            <n-tab-pane name="committers" tab="Committers" v-if="myUser.installationType !== 'OSS'">
+                <CommittersOfOrg :embedded="true"/>
+            </n-tab-pane>
+
             <n-tab-pane name="users" tab="Users" v-if="isOrgAdmin">
                 <div class="userBlock mt-4">
                     <h5>Users ({{ activeUsers.length }})</h5>
@@ -594,7 +598,10 @@
                             Populate Default Approval Setup
                         </n-button>
                     </n-space>
-                    <n-tabs type="line" default-value="approvalRoles" animated>
+                    <n-tabs type="line" :value="policySubTab" @update:value="handlePolicySubTabSwitch" animated>
+                    <n-tab-pane name="agentPolicies" tab="AI Agent Policies">
+                        <AiAgentPoliciesOfOrg :embedded="true"/>
+                    </n-tab-pane>
                     <n-tab-pane name="approvalRoles" tab="Approval Roles">
                     <h4>Approval Roles:
                         <Icon v-if="isWritable" class="clickable addIcon" size="25" title="Create Approval Role" @click="showCreateApprovalRole = true">
@@ -1368,6 +1375,8 @@ import ScopedPermissions from './ScopedPermissions.vue'
 import WebhooksOfOrg from './WebhooksOfOrg.vue'
 import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
+import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
+import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 
@@ -1644,6 +1653,7 @@ const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
 // Tab management with router integration
 const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 const currentTab = ref(route.query.tab as string || defaultTab)
+const policySubTab = ref(route.query.policyTab as string || 'approvalRoles')
 
 const approvalRoleFields: any[] = [
     {
@@ -5015,13 +5025,20 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
 async function handleTabSwitch(tabName: string) {
     // Update current tab
     currentTab.value = tabName
-    
+
     // Update router query parameter
     await router.push({
         query: { ...route.query, tab: tabName }
     })
-    
+
     loadTabSpecificData(tabName)
+}
+
+async function handlePolicySubTabSwitch(tabName: string) {
+    policySubTab.value = tabName
+    await router.push({
+        query: { ...route.query, policyTab: tabName }
+    })
 }
 
 async function loadInvitedUsers(useCache: boolean) {

@@ -341,7 +341,31 @@ const variableDocs: VariableDoc[] = [
     { name: 'release.anyApproved',           snippet: 'release.anyApproved',           display: 'release.anyApproved',           desc: 'bool — true if any approval entry is APPROVED' },
     { name: 'release.anyDisapproved',        snippet: 'release.anyDisapproved',        display: 'release.anyDisapproved',        desc: 'bool — true if any approval entry is DISAPPROVED' },
     { name: 'approvals',                     snippet: 'approvals',                     display: 'approvals',                     desc: 'map&lt;string,string&gt; — top-level, keyed by approval entry UUID' },
-    { name: 'release.component',             snippet: 'release.component',             display: 'release.component',             desc: 'string (UUID)' }
+    { name: 'release.component',             snippet: 'release.component',             display: 'release.component',             desc: 'string (UUID)' },
+    // ─── Agentic / signature scope ───────────────────────────────────────────
+    // Both lists are empty when the release has no agentic provenance and / or
+    // no SCEs; CEL macros like .exists / .all / .filter handle the empty case.
+    { name: 'release.agentSessions',                 snippet: 'release.agentSessions',                                 display: 'release.agentSessions',           desc: 'list — one entry per distinct AgentSession touched by this release\'s commits. Empty for non-agentic releases.' },
+    { name: 'release.agentSessions[].uuid',          snippet: 'release.agentSessions.exists(s, s.uuid == "<uuid>")',   display: 'release.agentSessions[].uuid',    desc: 'string — session UUID' },
+    { name: 'release.agentSessions[].agent',         snippet: 'release.agentSessions.exists(s, s.agent == "<uuid>")',  display: 'release.agentSessions[].agent',   desc: 'string — root agent UUID' },
+    { name: 'release.agentSessions[].agentName',     snippet: 'release.agentSessions.exists(s, s.agentName == "Claude Code")', display: 'release.agentSessions[].agentName', desc: 'string — display name (e.g. "Claude Code")' },
+    { name: 'release.agentSessions[].status',        snippet: 'release.agentSessions.all(s, s.status == "CLOSED")',    display: 'release.agentSessions[].status',  desc: 'string — "OPEN" / "CLOSED"' },
+    { name: 'release.agentSessions[].hasFailedPolicy',  snippet: 'release.agentSessions.exists(s, s.hasFailedPolicy)',  display: 'release.agentSessions[].hasFailedPolicy',  desc: 'bool — any session policy in FAILED state. Canonical gate for "reject release when agent policy failed".' },
+    { name: 'release.agentSessions[].hasPendingPolicy', snippet: 'release.agentSessions.exists(s, s.hasPendingPolicy)', display: 'release.agentSessions[].hasPendingPolicy', desc: 'bool — any session policy still PENDING' },
+    { name: 'release.agentSessions[].failedPolicies',   snippet: 'release.agentSessions.exists(s, s.failedPolicies.size() > 0)', display: 'release.agentSessions[].failedPolicies', desc: 'list&lt;string&gt; — policy UUIDs currently in FAILED state on the session' },
+    { name: 'release.agentSessions[].pendingPolicies',  snippet: 'release.agentSessions.exists(s, s.pendingPolicies.size() > 0)', display: 'release.agentSessions[].pendingPolicies', desc: 'list&lt;string&gt; — policy UUIDs currently in PENDING state' },
+    { name: 'release.commits',                          snippet: 'release.commits',                                     display: 'release.commits',                  desc: 'list — one entry per SCE on the release (primary + multi-commit)' },
+    { name: 'release.commits[].commit',                 snippet: 'release.commits.exists(c, c.commit == "<sha>")',      display: 'release.commits[].commit',         desc: 'string — full commit SHA' },
+    { name: 'release.commits[].agent',                  snippet: 'release.commits.exists(c, c.agent == "<uuid>")',      display: 'release.commits[].agent',          desc: 'string — agent UUID resolved from ReARM-Agent trailer (empty for non-agentic commits)' },
+    { name: 'release.commits[].agentSession',           snippet: 'release.commits.exists(c, c.agentSession != "")',     display: 'release.commits[].agentSession',   desc: 'string — session UUID resolved from ReARM-Agentic-Session trailer' },
+    { name: 'release.commits[].signature.state',        snippet: 'release.commits.all(c, c.signature.state == "VERIFIED")', display: 'release.commits[].signature.state', desc: 'string — VERIFIED / INVALID_SIGNATURE / UNKNOWN_KEY / KEY_REVOKED / WRONG_SIGNER / PENDING / ERRORED / UNSIGNED' },
+    { name: 'release.commits[].signature.format',       snippet: 'release.commits.exists(c, c.signature.format == "SSH")', display: 'release.commits[].signature.format', desc: 'string — "SSH", "GPG", "X509"' },
+    { name: 'release.commits[].signature.signedByOwnerType', snippet: 'release.commits.all(c, c.signature.signedByOwnerType == "AGENT")', display: 'release.commits[].signature.signedByOwnerType', desc: 'string — "AGENT" / "COMMITTER" (which trust scope the matched key belongs to)' },
+    { name: 'release.commits[].signature.keyFingerprint', snippet: 'release.commits.exists(c, c.signature.keyFingerprint == "SHA256:...")', display: 'release.commits[].signature.keyFingerprint', desc: 'string — fingerprint of the matched enrolled key' },
+    { name: 'release.commits[].attribution.state',      snippet: 'release.commits.exists(c, c.attribution.state == "REJECTED")',  display: 'release.commits[].attribution.state',      desc: 'string — UNATTRIBUTED / RESOLVED / REJECTED. Set on the SCE by the agent-trailer resolver; REJECTED means trailers were present but the claim could not be resolved (unknown agent, unknown session, malformed clientSessionId, cross-org, etc.).' },
+    { name: 'release.commits[].attribution.resolved',   snippet: 'release.commits.all(c, c.attribution.resolved || c.attribution.state == "UNATTRIBUTED")', display: 'release.commits[].attribution.resolved',   desc: 'bool — true iff state == RESOLVED' },
+    { name: 'release.commits[].attribution.rejected',   snippet: 'release.commits.exists(c, c.attribution.rejected)',             display: 'release.commits[].attribution.rejected',   desc: 'bool — true iff state == REJECTED' },
+    { name: 'release.commits[].attribution.reason',     snippet: 'release.commits.exists(c, c.attribution.reason != "")',         display: 'release.commits[].attribution.reason',     desc: 'string — free-form rejection reason; empty when RESOLVED / UNATTRIBUTED' }
 ]
 
 const exampleDocs: string[] = [
@@ -352,7 +376,12 @@ const exampleDocs: string[] = [
     'release.lifecycle in ["DRAFT","ASSEMBLED","READY_TO_SHIP"] && release.anyDisapproved',
     'approvals.exists(k, approvals[k] == "DISAPPROVED")',
     'approvals.all(k, approvals[k] == "APPROVED")',
-    'approvals.filter(k, approvals[k] == "APPROVED").size() >= 3'
+    'approvals.filter(k, approvals[k] == "APPROVED").size() >= 3',
+    'release.agentSessions.exists(s, s.hasFailedPolicy)',
+    'release.agentSessions.all(s, s.status == "CLOSED")',
+    'release.commits.all(c, c.signature.state == "VERIFIED")',
+    'release.commits.exists(c, c.agent != "") && release.commits.all(c, c.signature.signedByOwnerType == "AGENT")',
+    'release.commits.exists(c, c.attribution.state == "REJECTED")'
 ]
 
 function insertSnippet(snippet: string) {

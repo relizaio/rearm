@@ -1307,6 +1307,7 @@ function buildCombinedHistory() {
                     objectId: event.objectId,
                     oldValue: event.oldValue,
                     newValue: event.newValue,
+                    message: event.message,
                     wu: event.wu,
                     source: 'release'
                 })
@@ -4317,11 +4318,23 @@ const releaseHistoryFields = computed(() => [
         key: 'objectId',
         title: 'Event or Object Details',
         render: (row: any) => {
+            // Info-icon tooltip carrying the human-readable reason
+            // when the backend recorded one (typically LIFECYCLE events
+            // fired by a CEL input trigger — see ReleaseUpdateEvent.message
+            // on rearm-saas).
+            const reasonIcon = row.message
+                ? h(NTooltip, { trigger: 'hover', style: 'max-width: 480px;' }, {
+                    trigger: () => h(NIcon, { class: 'icons', size: 16, style: 'margin-left: 6px; vertical-align: middle;' }, () => h(Info20Regular)),
+                    default: () => row.message,
+                })
+                : null
             if (row.rus === 'TRIGGER' || row.rus === 'INPUT_TRIGGER') {
-                return row.newValue || row.objectId
+                const txt = row.newValue || row.objectId
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
             if (row.rus === 'LIFECYCLE') {
-                return `${resolveLifecycleLabel(row.oldValue)} -> ${resolveLifecycleLabel(row.newValue)}`
+                const txt = `${resolveLifecycleLabel(row.oldValue)} -> ${resolveLifecycleLabel(row.newValue)}`
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
             // For artifact events from acollections, show type with info icon
             if (row.source === 'acollection' && row.artifact) {
@@ -5286,6 +5299,80 @@ const parentReleaseTableFields: ComputedRef<DataTableColumns<any>> = computed(()
     }
 ])
 
+/**
+ * Render the SourceCodeEntry.signature verdict as a small NTag with a
+ * tooltip carrying the format / owner / fingerprint / verifiedAt details.
+ * Mirrors the AiAgentSessionView Commits-tab badge so the two pages
+ * read the same way.
+ */
+function renderSignatureBadge (sig: any) {
+    if (!sig || !sig.state || sig.state === 'UNSIGNED') {
+        return h(NTag, { size: 'tiny', type: 'default' }, { default: () => 'unsigned' })
+    }
+    const state = sig.state as string
+    const tone: 'success' | 'warning' | 'error' | 'default' =
+        state === 'VERIFIED' ? 'success'
+        : state === 'INVALID_SIGNATURE' || state === 'WRONG_SIGNER' || state === 'ERRORED' ? 'error'
+        : state === 'UNKNOWN_KEY' || state === 'KEY_REVOKED' ? 'warning'
+        : 'default'
+    const tip = [
+        sig.format ? `format: ${sig.format}` : '',
+        sig.signedByOwnerType ? `owner: ${sig.signedByOwnerType}` : '',
+        sig.keyFingerprint ? `fp: ${sig.keyFingerprint}` : '',
+        sig.verifiedAt ? `verified: ${new Date(sig.verifiedAt).toLocaleString('en-CA')}` : '',
+    ].filter(Boolean).join(' · ')
+    return h(NTooltip, {}, {
+        trigger: () => h(NTag, { size: 'tiny', type: tone, bordered: false }, { default: () => state }),
+        default: () => tip || state,
+    })
+}
+
+/**
+ * Render the Author column with inline attribution chips.
+ * - Top line: commit author name + email (verbatim from the commit object).
+ * - Below: small chips that link to the authoring agent / agentic session /
+ *   verified-signer committer when present. Agent + session uuids come from
+ *   the commit-trailer parser; committer is the resolved owner of a
+ *   VERIFIED signature with signedByOwnerType=COMMITTER.
+ */
+function renderAuthorWithAttribution (row: any) {
+    const children: any[] = []
+    const authorLine: any[] = []
+    if (row.commitAuthor) authorLine.push(row.commitAuthor)
+    if (row.commitEmail) authorLine.push(authorLine.length ? `, ${row.commitEmail}` : row.commitEmail)
+    if (authorLine.length) children.push(h('div', authorLine.join('')))
+    const chips: any[] = []
+    if (row.agent) {
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentView', params: { uuid: row.agent } },
+            class: 'attrib-chip attrib-chip--agent',
+        }, () => `agent ${String(row.agent).slice(0, 8)}…`))
+    }
+    if (row.agentSession) {
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentSessionView', params: { uuid: row.agentSession } },
+            class: 'attrib-chip attrib-chip--session',
+        }, () => `session ${String(row.agentSession).slice(0, 8)}…`))
+    }
+    if (row.signature?.signedByOwnerType === 'COMMITTER' && row.signature?.signedByOwnerUuid) {
+        chips.push(h(RouterLink, {
+            to: { name: 'CommitterView', params: { uuid: row.signature.signedByOwnerUuid } },
+            class: 'attrib-chip attrib-chip--committer',
+        }, () => `committer ${String(row.signature.signedByOwnerUuid).slice(0, 8)}…`))
+    } else if (row.signature?.signedByOwnerType === 'AGENT' && row.signature?.signedByOwnerUuid
+            && !row.agent) {
+        // VERIFIED by an AGENT key but no trailer-attributed agent on SCE —
+        // fall back to the verifier's resolved owner so the link is still
+        // discoverable.
+        chips.push(h(RouterLink, {
+            to: { name: 'AiAgentView', params: { uuid: row.signature.signedByOwnerUuid } },
+            class: 'attrib-chip attrib-chip--agent',
+        }, () => `agent ${String(row.signature.signedByOwnerUuid).slice(0, 8)}…`))
+    }
+    if (chips.length) children.push(h('div', { class: 'attrib-row' }, chips))
+    return h('div', children)
+}
+
 const commitTableFields: DataTableColumns<any> = [
     {
         key: 'date',
@@ -5295,26 +5382,24 @@ const commitTableFields: DataTableColumns<any> = [
         }
     },
     {
+        key: 'signature',
+        title: 'Signature',
+        width: 130,
+        render: (row: any) => renderSignatureBadge(row.signature),
+    },
+    {
         key: 'commitMessage',
         title: 'Message'
     },
     {
         key: 'author',
         title: 'Author',
-        render: (row: any) => {
-            let authorContent = ''
-            if (row.commitAuthor) {
-                authorContent += row.commitAuthor
-                if (row.commitEmail) authorContent += ', '
-            }
-            if (row.commitEmail) authorContent += row.commitEmail
-            return authorContent
-        }
+        render: (row: any) => renderAuthorWithAttribution(row),
     },
     {
         key: 'facts',
         title: 'Facts',
-        minWidth: 31,
+        minWidth: 60,
         render: (row: any) => {
             const factContent: any[] = []
             factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
@@ -5340,7 +5425,7 @@ const commitTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
-        minWidth: 50,
+        minWidth: 90,
         render: (row: any) => {
             let els: any[] = []
             if (updatedRelease.value.sourceCodeEntryDetails.vcsRepository?.uri) {
@@ -5361,15 +5446,15 @@ const commitTableFields: DataTableColumns<any> = [
                     title: 'Add Artifact',
                     class: 'icons clickable',
                     size: 25,
-                    onClick: () => { 
+                    onClick: () => {
                         sceAddArtifactSceId.value = row.uuid
                         showSCEAddArtifactModal.value = true
-                        
+
                     }
                 }, () => h(BoxArrowUp20Regular))
             els.push(addArtifactEl)
             if (!els.length) els.push(h('span', 'N/A'))
-            return h('div', els)
+            return h('div', { style: 'display: flex; gap: 6px; align-items: center;' }, els)
         }
     }
 ]
@@ -5398,25 +5483,24 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
         }
     },
     {
+        key: 'signature',
+        title: 'Signature',
+        width: 130,
+        render: (row: any) => renderSignatureBadge(row.signature),
+    },
+    {
         key: 'commitMessage',
         title: 'Message'
     },
     {
         key: 'author',
         title: 'Author',
-        render: (row: any) => {
-            let authorContent = ''
-            if (row.commitAuthor) {
-                authorContent += row.commitAuthor
-                if (row.commitEmail) authorContent += ', '
-            }
-            if (row.commitEmail) authorContent += row.commitEmail
-            return authorContent
-        }
+        render: (row: any) => renderAuthorWithAttribution(row),
     },
     {
         key: 'facts',
         title: 'Facts',
+        minWidth: 60,
         render: (row: any) => {
             const factContent: any[] = []
             factContent.push(h('li', h('span', [`UUID: ${row.uuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(row.uuid) })])))
@@ -5442,6 +5526,7 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
     {
         key: 'actions',
         title: 'Actions',
+        minWidth: 90,
         render: (row: any) => {
             let els: any[] = []
             if (updatedRelease.value.sourceCodeEntryDetails?.vcsRepository?.uri) {
@@ -5458,7 +5543,7 @@ const failedReleaseCommitTableFields: DataTableColumns<any> = [
                 }
             }
             if (!els.length) els.push(h('span', 'N/A'))
-            return h('div', els)
+            return h('div', { style: 'display: flex; gap: 6px; align-items: center;' }, els)
         }
     }
 ]
@@ -5722,6 +5807,29 @@ async function handleTabSwitch(tabName: string) {
     padding-left: 0.5%;
     font-size: 16px;
 }
+
+:deep(.attrib-row) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+:deep(.attrib-chip) {
+    font-family: monospace;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--n-color-embedded, #f5f5f5);
+    color: var(--n-text-color-2, #555);
+    text-decoration: none;
+}
+:deep(.attrib-chip:hover) {
+    background: #e0e7ff;
+}
+:deep(.attrib-chip--agent) { color: #1e3a8a; }
+:deep(.attrib-chip--session) { color: #14532d; }
+:deep(.attrib-chip--committer) { color: #7c2d12; }
 
 .release-view {
     position: relative;

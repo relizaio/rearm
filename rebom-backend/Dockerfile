@@ -82,7 +82,9 @@ ENV \
     LANG=en_US.UTF-8
 RUN apk add --no-cache \
     icu-data-full \
-    icu-libs && \
+    icu-libs \
+    openssh-keygen \
+    gnupg && \
     mkdir /app && echo "version=$VERSION" > /app/version && echo "commit=$GIT_COMMIT" >> /app/version && echo "branch=$GIT_BRANCH" >> /app/version
 
 WORKDIR /app

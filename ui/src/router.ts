@@ -50,6 +50,56 @@ const routes : any[] = [
         component: () => import('@/components/VcsReposOfOrg.vue')
     },
     {
+        path: '/aiAgentsOfOrg/:orguuid',
+        name: 'AiAgentsOfOrg',
+        component: () => import('@/components/AiAgentsOfOrg.vue')
+    },
+    {
+        path: '/aiAgent/:uuid',
+        name: 'AiAgentView',
+        component: () => import('@/components/AiAgentView.vue')
+    },
+    {
+        path: '/aiAgentSession/:uuid',
+        name: 'AiAgentSessionView',
+        component: () => import('@/components/AiAgentSessionView.vue')
+    },
+    {
+        // AI Agent Policies list moved under Org Settings → Policies → inner
+        // "AI Agent Policies" tab. Keep the standalone path as a redirect so
+        // bookmarks and the AiAgents "Manage policies →" link continue to
+        // work. The individual policy editor (/aiAgentPolicy/:uuid) is still
+        // a full-page route.
+        path: '/aiAgentPolicies/:orguuid',
+        name: 'AiAgentPoliciesOfOrg',
+        redirect: (to: RouteLocationNormalized) => ({
+            name: 'OrgSettings',
+            params: { orguuid: to.params.orguuid },
+            query: { tab: 'policies', policyTab: 'agentPolicies' },
+        }),
+    },
+    {
+        path: '/aiAgentPolicy/:uuid',
+        name: 'AiAgentPolicyView',
+        component: () => import('@/components/AiAgentPolicyView.vue')
+    },
+    {
+        // Committers list moved under Org Settings → Committers tab. Redirect
+        // preserves any bookmarks; individual committer view stays a route.
+        path: '/committersOfOrg/:orguuid',
+        name: 'CommittersOfOrg',
+        redirect: (to: RouteLocationNormalized) => ({
+            name: 'OrgSettings',
+            params: { orguuid: to.params.orguuid },
+            query: { tab: 'committers' },
+        }),
+    },
+    {
+        path: '/committer/:uuid',
+        name: 'CommitterView',
+        component: () => import('@/components/CommitterView.vue')
+    },
+    {
         path: '/secretsOfOrg/:orguuid',
         name: 'SecretsOfOrg',
         component: () => import('@/components/SecretsOfOrg.vue')

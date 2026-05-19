@@ -6,6 +6,7 @@ import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, WeaknessDto, Vulner
 import * as IntegrationService from './services/integrationService';
 import { toGraphQLError } from './types/errors';
 import { bomToExcel, bomToCsv } from './services/bom/bomExportService';
+import { verifySignature as runVerifySignature, VerifyInput, VerifyResult } from './services/signatureVerifier';
 import { GraphQLError } from 'graphql';
 import { logger } from './logger';
 
@@ -105,7 +106,10 @@ const resolvers = {
 		}, 'updateBearSkipPatterns'),
 		deleteBearIntegration: withErrorHandling(async (_:any, input: { org: string }): Promise<boolean> => {
 			return IntegrationService.deleteBearIntegration(input.org);
-		}, 'deleteBearIntegration')
+		}, 'deleteBearIntegration'),
+		verifySignature: withErrorHandling(async (_:any, input: { input: VerifyInput }): Promise<VerifyResult> => {
+			return runVerifySignature(input.input);
+		}, 'verifySignature')
 	}
 }
 export default resolvers;

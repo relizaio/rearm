@@ -42,6 +42,16 @@ const MULTI_RELEASE_GQL_DATA = `
         }
         vcsBranch
         vcsTag
+        agent
+        agentSession
+        signature {
+            state
+            format
+            signedByOwnerType
+            signedByOwnerUuid
+            keyFingerprint
+            verifiedAt
+        }
     }
     branch
     branchDetails {
@@ -452,9 +462,19 @@ const singleReleaseDataNoParent = `
         }
         vcsBranch
         vcsTag
+        agent
+        agentSession
         artifacts
         artifactDetails {
             ${ARTIFACT_DETAIL_DATA}
+        }
+        signature {
+            state
+            format
+            signedByOwnerType
+            signedByOwnerUuid
+            keyFingerprint
+            verifiedAt
         }
     }
     commitsDetails {
@@ -464,6 +484,16 @@ const singleReleaseDataNoParent = `
         commitAuthor
         commitEmail
         dateActual
+        agent
+        agentSession
+        signature {
+            state
+            format
+            signedByOwnerType
+            signedByOwnerUuid
+            keyFingerprint
+            verifiedAt
+        }
     }
     branch
     branchDetails {
@@ -516,6 +546,7 @@ const singleReleaseDataNoParent = `
         oldValue
         newValue
         objectId
+        message
         date
         wu {
             createdType
@@ -562,6 +593,16 @@ const singleReleaseDataNoParent = `
             commitAuthor
             commitEmail
             dateActual
+            agent
+            agentSession
+            signature {
+                state
+                format
+                signedByOwnerType
+                signedByOwnerUuid
+                keyFingerprint
+                verifiedAt
+            }
         }
     }
     sbomReconcilePending
@@ -945,6 +986,7 @@ const singleReleaseProductNoParent = `
         oldValue
         newValue
         objectId
+        message
         date
         wu {
             createdType
