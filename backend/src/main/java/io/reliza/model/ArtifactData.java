@@ -62,6 +62,13 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         CERTIFICATE_X_509,
         CERTIFICATE_PGP,
 		RISK_ASSESSMENT,
+        // AI-agent self-reported artifact attached to an AgentSession —
+        // orientation briefs, mid-session checkpoints, end-of-session
+        // summaries, etc. Used as the data source for agentic policies
+        // ("session must carry an orientation report before the first
+        // commit is accepted"). Free-form contents — the policy CEL
+        // inspects type + display identifier / tags / bom data.
+        AGENTIC_REPORT,
         OTHER
     }
     

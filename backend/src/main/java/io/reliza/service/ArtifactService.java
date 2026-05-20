@@ -310,6 +310,16 @@ public class ArtifactService {
 		if(null == artifactDto.getType())
 			throw new RelizaException("Artifact must have type!");
 		validateCoverageTypeTags(artifactDto.getTags());
+		// EXTERNALLY-stored artifacts must carry at least one
+		// downloadLink — without bytes in our blob store AND no link to
+		// jump to, the row is unreachable end-to-end. Catch the bad
+		// state at write time so the UI never has to render an
+		// "external (no link)" placeholder.
+		if (artifactDto.getStoredIn() == ArtifactData.StoredIn.EXTERNALLY
+				&& (artifactDto.getDownloadLinks() == null || artifactDto.getDownloadLinks().isEmpty())) {
+			throw new RelizaException(
+					"Artifact with storedIn=EXTERNALLY must carry at least one downloadLink");
+		}
 		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto, a.getUuid());
 		a = sharedArtifactService.saveArtifact(a, ad, wu);
 		return a;

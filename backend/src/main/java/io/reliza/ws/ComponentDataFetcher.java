@@ -355,17 +355,39 @@ public class ComponentDataFetcher {
 			lifecycleResolved = ReleaseLifecycle.PENDING;
 		
 		
+		// Lift per-SCE artifact arrays off the input maps BEFORE Jackson
+		// converts them to SceDto. The artifacts JSON shape (CycloneDX-style
+		// ArtifactInput records — filePath, type, downloadLinks, …) doesn't
+		// match SceDto.artifacts (List<SCEArtifact> = uuid + componentUuid),
+		// so a straight convertValue silently drops them. Stash the raw maps
+		// on SceDto.artifactInputs; the release-service create path uploads
+		// them once the resolved version is known (mirrors the addrelease
+		// path in ReleaseDatafetcher).
 		SceDto sourceCodeEntry = null;
 		if (getNewVersionInput.containsKey(CommonVariables.SOURCE_CODE_ENTRY_FIELD)) {
-			sourceCodeEntry = Utils.OM.convertValue((Map<String, Object>) 
-					getNewVersionInput.get(CommonVariables.SOURCE_CODE_ENTRY_FIELD), SceDto.class);
+			Map<String, Object> sceMap = (Map<String, Object>) getNewVersionInput.get(CommonVariables.SOURCE_CODE_ENTRY_FIELD);
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> primaryArtMaps = (List<Map<String, Object>>) sceMap.remove(CommonVariables.ARTIFACTS_FIELD);
+			sourceCodeEntry = Utils.OM.convertValue(sceMap, SceDto.class);
+			if (primaryArtMaps != null && !primaryArtMaps.isEmpty()) {
+				sourceCodeEntry.setArtifactInputs(primaryArtMaps);
+			}
 		}
-		
+
 		List<SceDto> commits = null;
 		if (getNewVersionInput.containsKey(CommonVariables.COMMITS_FIELD)) {
-			var commitsPrep = ((List<Map<String, Object>>) getNewVersionInput.get(CommonVariables.COMMITS_FIELD)).stream().map(x ->
-					Utils.OM.convertValue(x, SceDto.class)).toList();
-			commits = new LinkedList<>(commitsPrep);
+			List<Map<String, Object>> commitMaps = (List<Map<String, Object>>) getNewVersionInput.get(CommonVariables.COMMITS_FIELD);
+			List<SceDto> commitsPrep = new LinkedList<>();
+			for (Map<String, Object> commitMap : commitMaps) {
+				@SuppressWarnings("unchecked")
+				List<Map<String, Object>> commitArtMaps = (List<Map<String, Object>>) commitMap.remove(CommonVariables.ARTIFACTS_FIELD);
+				SceDto dto = Utils.OM.convertValue(commitMap, SceDto.class);
+				if (commitArtMaps != null && !commitArtMaps.isEmpty()) {
+					dto.setArtifactInputs(commitArtMaps);
+				}
+				commitsPrep.add(dto);
+			}
+			commits = commitsPrep;
 		}
 
 		Boolean rebuildFlag = (Boolean) getNewVersionInput.get("rebuild");

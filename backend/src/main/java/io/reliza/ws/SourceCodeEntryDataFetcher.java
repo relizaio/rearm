@@ -26,6 +26,7 @@ import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.BranchData;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.ReleaseData;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
@@ -124,5 +125,18 @@ public class SourceCodeEntryDataFetcher {
 			ovrd = vcsRepositoryService.getVcsRepositoryData(vcsRepo);
 		}
 		return ovrd;
+	}
+
+	/**
+	 * SourceCodeEntry.releases — releases whose primary sourceCodeEntry
+	 * is this commit. Used by the agent-session view to render a
+	 * commit→release jump-off; usually 0 or 1 entry per SCE, but the
+	 * field is a list to cover rebuilds against the same commit.
+	 */
+	@DgsData(parentType = "SourceCodeEntry", field = "releases")
+	public List<ReleaseData> releasesOfSourceCodeEntry(DgsDataFetchingEnvironment dfe) {
+		SourceCodeEntryData sced = dfe.getSource();
+		if (sced == null || sced.getUuid() == null || sced.getOrg() == null) return List.of();
+		return sharedReleaseService.findReleaseDatasBySce(sced.getUuid(), sced.getOrg());
 	}
 }

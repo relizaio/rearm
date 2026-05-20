@@ -98,6 +98,9 @@ import io.reliza.model.ReleaseData.UpdateReleaseStrength;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
+import io.reliza.model.SignatureArtifactTags;
+import io.reliza.model.SignatureArtifactTags.SignatureSubject;
+import io.reliza.model.SignatureVerificationData.SignatureSubjectType;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
@@ -176,6 +179,16 @@ public class ReleaseService {
 
 	@Autowired
 	private FindingComparisonService findingComparisonService;
+
+	/**
+	 * Cryptographic signature verifier. Auto-fired against
+	 * SCE-attached SIGNATURE/SIGNED_PAYLOAD pairs in
+	 * {@link #processSceArtifacts}. Available in both SAAS and CE
+	 * editions; CEL policy enforcement on top of the verdict is the
+	 * SAAS-only piece.
+	 */
+	@Autowired
+	private SignatureVerifier signatureVerifier;
 
 	@Autowired
 	@org.springframework.context.annotation.Lazy
@@ -335,44 +348,78 @@ public class ReleaseService {
 		Optional<SourceCodeEntryData> osced = Optional.empty();
 		// also check if commits (base64 encoded) are present and if so add to release
 		List<UUID> commits = new LinkedList<>();
-		
+
 		ComponentData cd = getComponentService.getComponentData(bd.getComponent()).get();
-		
+		// Org is only loaded if the caller actually passed SCE-side artifacts;
+		// lookup is cheap but unnecessary when the input has none.
+		OrganizationData od = null;
+
 		if (sourceCodeEntry != null || commitList != null) {
 			// parse list of associated commits obtained via git log with previous CI build if any (note this may include osce)
 			if (commitList != null) {
 				for (var com : commitList) {
-					var parsedCommit = parseSceFromReleaseCreate(com, List.of(), bd, bd.getName(), nextVersion, wu);
+					// Upload any SCE-attached artifacts the caller supplied
+					// (CycloneDX-style ArtifactInput maps, lifted off the
+					// GraphQL input by the resolver). Without this branch,
+					// SIGNATURE / SIGNED_PAYLOAD / BOM artifacts attached at
+					// getversion time get silently dropped — exactly the
+					// timing bug that lets a signature-state component CEL
+					// gate reject every release at create time because
+					// sce.signature.state is null when processRelease runs.
+					List<UUID> sceUploadedArts = List.of();
+					if (com.getArtifactInputs() != null && !com.getArtifactInputs().isEmpty()) {
+						if (od == null) {
+							od = getOrganizationService.getOrganizationData(bd.getOrg()).orElseThrow();
+						}
+						sceUploadedArts = uploadSceArtifacts(com.getArtifactInputs(), od, com, cd, nextVersion, wu);
+					}
+					var parsedCommit = parseSceFromReleaseCreate(com, sceUploadedArts, bd, bd.getName(), nextVersion, wu);
 					if (parsedCommit.isPresent()) {
 						commits.add(parsedCommit.get().getUuid());
 					}
 				}
-				
+
 				// use the first commit of commitlist to fill in the missing fields of source code entry
 				if (!commitList.isEmpty() && null == sourceCodeEntry) {
 					sourceCodeEntry = commitList.get(0);
-				} else if (!commitList.isEmpty() 
+				} else if (!commitList.isEmpty()
 						&& null != sourceCodeEntry && sourceCodeEntry.getCommit().equalsIgnoreCase(commitList.get(0).getCommit())) {
 					SceDto com = commitList.get(0);
 					sourceCodeEntry.setCommitAuthor(com.getCommitAuthor());
 					sourceCodeEntry.setCommitEmail(com.getCommitEmail());
 					sourceCodeEntry.setDate(com.getDate());
+					// Carry through the per-SCE artifact inputs from the first
+					// commit when we adopted it as the primary SCE — otherwise
+					// the upload below would skip them.
+					if (null == sourceCodeEntry.getArtifactInputs() || sourceCodeEntry.getArtifactInputs().isEmpty()) {
+						sourceCodeEntry.setArtifactInputs(com.getArtifactInputs());
+					}
 					log.debug("RGDEBUG: updated sceDTO = {}", sourceCodeEntry);
 				}
 			}
 			if (null != sourceCodeEntry && StringUtils.isNotEmpty(sourceCodeEntry.getCommit())) {
-				// Can't create osce without commit field
+				// Can't create osce without commit field. Route the primary
+				// SCE through the same parseSceFromReleaseCreate path the
+				// commits[] loop uses so signature artifacts attached here
+				// fire autoVerifyCommitSignatures too — without that, the
+				// component-level CEL gate keying on signature.state would
+				// still see null on the primary SCE even when the caller
+				// supplied artifacts.
 				sourceCodeEntry.setBranch(bd.getUuid());
 				sourceCodeEntry.setOrganizationUuid(bd.getOrg());
 				sourceCodeEntry.setVcsBranch(bd.getName());
-				osced = sourceCodeEntryService.populateSourceCodeEntryByVcsAndCommit(
-					sourceCodeEntry,
-					true,
-					wu
-				);
+				List<UUID> primaryUploadedArts = List.of();
+				if (sourceCodeEntry.getArtifactInputs() != null && !sourceCodeEntry.getArtifactInputs().isEmpty()) {
+					if (od == null) {
+						od = getOrganizationService.getOrganizationData(bd.getOrg()).orElseThrow();
+					}
+					primaryUploadedArts = uploadSceArtifacts(
+							sourceCodeEntry.getArtifactInputs(), od, sourceCodeEntry, cd, nextVersion, wu);
+				}
+				osced = parseSceFromReleaseCreate(sourceCodeEntry, primaryUploadedArts, bd, bd.getName(), nextVersion, wu);
 			}
 		}
-	
+
 		var releaseDtoBuilder = ReleaseDto.builder()
 							.branch(bd.getUuid())
 							.org(bd.getOrg())
@@ -381,7 +428,7 @@ public class ReleaseService {
 		if (osced.isPresent()) {
 			releaseDtoBuilder.sourceCodeEntry(osced.get().getUuid());
 		}
-		
+
 		try {
 			// Identifiers are derived inside ossReleaseService.createRelease via the
 			// orchestrator (Step 4 / D13). Auto-derive flow leaves the dto's identifiers
@@ -1110,6 +1157,14 @@ public class ReleaseService {
 			true,
 			wu
 		);
+		// Auto-fire signature verification on the addrelease --scearts
+		// path too (mirror of the processSceArtifacts hook for the
+		// separate addArtifact mutation). Without this, a release
+		// created with --scearts SIGNATURE + SIGNED_PAYLOAD lands the
+		// artifacts but never gets a verdict.
+		if (osced.isPresent() && artIds != null && !artIds.isEmpty()) {
+			autoVerifyCommitSignatures(osced.get().getUuid(), artIds, wu);
+		}
 		return osced;
 	}
 
@@ -1478,8 +1533,89 @@ public class ReleaseService {
 			}
 
 			dispatchVexArtifacts(vexUploads, artIds, rd, ArtifactBelongsTo.SCE, wu);
+			// Auto-fire signature verification when a SIGNATURE artifact
+			// tagged signatureSubject=COMMIT was just attached. Pairs with
+			// the SIGNED_PAYLOAD sibling carrying the same signedCommitSha
+			// tag. Failures are logged-and-swallowed — the verdict already
+			// landed in signature_verifications with state=ERRORED if the
+			// verifier ran into trouble; an exception here would break
+			// addrelease which is wrong UX (the artifact attach succeeded).
+			autoVerifyCommitSignatures(sceUuid, artIds, wu);
 		}
 	}
+
+	/**
+	 * Scan a freshly-attached SCE-artifact set for the commit-signature
+	 * pattern and fire the verifier. Convention:
+	 * <ul>
+	 *   <li>SIGNATURE artifact with tags
+	 *       {@code signatureSubject=COMMIT} + {@code signatureFormat=...}
+	 *       + {@code signedCommitSha=&lt;sha&gt;}.</li>
+	 *   <li>SIGNED_PAYLOAD artifact with a matching
+	 *       {@code signedCommitSha} tag.</li>
+	 * </ul>
+	 * When both are present, calls the verifier; verdict lands in
+	 * signature_verifications. Errors are logged-and-swallowed —
+	 * the artifacts are already persisted, and a verifier blow-up
+	 * shouldn't fail addrelease (the underlying problem will surface
+	 * via the persisted verdict's ERRORED state).
+	 *
+	 * No-op on CE builds where {@link #signatureVerifier} is null.
+	 */
+	private void autoVerifyCommitSignatures(UUID sceUuid, List<UUID> attachedArtifactUuids, WhoUpdated wu) {
+		if (signatureVerifier == null || attachedArtifactUuids == null || attachedArtifactUuids.isEmpty()) {
+			return;
+		}
+		// Pull data for each just-attached artifact so we can read tags.
+		Map<UUID, ArtifactData> byUuid = new HashMap<>();
+		for (UUID au : attachedArtifactUuids) {
+			artifactService.getArtifactData(au).ifPresent(ad -> byUuid.put(au, ad));
+		}
+		// Group SIGNATURE + SIGNED_PAYLOAD by their signedCommitSha tag.
+		Map<String, UUID> sigByCommit = new HashMap<>();
+		Map<String, UUID> payloadByCommit = new HashMap<>();
+		for (var entry : byUuid.entrySet()) {
+			ArtifactData ad = entry.getValue();
+			if (ad.getType() == null) continue;
+			String subjectTag = tagValue(ad, SignatureArtifactTags.SIGNATURE_SUBJECT);
+			String commitShaTag = tagValue(ad, SignatureArtifactTags.SIGNED_COMMIT_SHA);
+			if (StringUtils.isBlank(commitShaTag)) continue;
+			if (ad.getType() == ArtifactType.SIGNATURE && SignatureSubject.COMMIT.name().equals(subjectTag)) {
+				sigByCommit.put(commitShaTag, entry.getKey());
+			} else if (ad.getType() == ArtifactType.SIGNED_PAYLOAD) {
+				payloadByCommit.put(commitShaTag, entry.getKey());
+			}
+		}
+		for (var sigEntry : sigByCommit.entrySet()) {
+			UUID payloadUuid = payloadByCommit.get(sigEntry.getKey());
+			if (payloadUuid == null) {
+				log.warn("Auto-verify: SIGNATURE artifact {} (sha {}) has no paired SIGNED_PAYLOAD on this SCE — skipping",
+						sigEntry.getValue(), sigEntry.getKey());
+				continue;
+			}
+			Map<String, Object> input = new HashMap<>();
+			input.put("subjectType", SignatureSubjectType.SCE.name());
+			input.put("subjectUuid", sceUuid.toString());
+			input.put("signatureArtifactUuid", sigEntry.getValue().toString());
+			input.put("signedPayloadArtifactUuid", payloadUuid.toString());
+			try {
+				signatureVerifier.verify(input, wu);
+			} catch (Exception e) {
+				log.warn("Auto-verify failed for SCE {} signature {}: {}",
+						sceUuid, sigEntry.getValue(), e.getMessage());
+			}
+		}
+	}
+
+	private static String tagValue(ArtifactData ad, String key) {
+		if (ad.getTags() == null) return null;
+		return ad.getTags().stream()
+				.filter(t -> key.equals(t.key()))
+				.map(t -> t.value())
+				.findFirst()
+				.orElse(null);
+	}
+
 	@Transactional
 	public Boolean replaceArtifact(UUID replaceArtifactUuid ,UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
 		Boolean added = false;

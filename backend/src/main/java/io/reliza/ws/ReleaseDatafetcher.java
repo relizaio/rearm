@@ -156,7 +156,10 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	private GetSourceCodeEntryService getSourceCodeEntryService;
-	
+
+	@Autowired
+	private io.reliza.service.AgentSessionService agentSessionService;
+
 	@Autowired
 	private DeliverableService deliverableService;
 	
@@ -245,6 +248,55 @@ public class ReleaseDatafetcher {
 		
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseUuid, ros, CallType.READ);
 		return (ReleaseData) ro;
+	}
+
+	/**
+	 * FREEFORM release lookup with two converging auth paths:
+	 * <ol>
+	 *   <li><b>Agent-session path</b> — caller is an AGENT-flow key
+	 *       reading a release attributed to its own session. Pass
+	 *       {@code sessionUuid} or {@code clientSessionId};
+	 *       {@link AuthorizationService#isFreeformKeyAuthorizedForAgenticSessionRead}
+	 *       verifies the calling key owns the session and the release
+	 *       is attributed to it.</li>
+	 *   <li><b>RESOURCE-on-release path</b> — caller is an operator-grade
+	 *       FREEFORM key holding {@code PermissionFunction.RESOURCE} at
+	 *       a scope that covers this release (RELEASE, BRANCH, COMPONENT,
+	 *       PERSPECTIVE, or ORGANIZATION). No session attribution required.</li>
+	 * </ol>
+	 * Try the agent path first since this query was designed for the
+	 * agent surface; on denial fall back to RESOURCE-on-release. If both
+	 * fail we surface the agent-path denial (it carries the richer
+	 * sessionUuid/clientSessionId context) rather than the generic
+	 * "not authorized for this resource" from the RESOURCE path.
+	 */
+	@DgsData(parentType = "Query", field = "agenticReleaseProgrammatic")
+	public ReleaseData agenticReleaseProgrammatic(
+			@InputArgument("releaseUuid") UUID releaseUuid,
+			@InputArgument("sessionUuid") UUID sessionUuid,
+			@InputArgument("clientSessionId") String clientSessionId,
+			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
+		var authCtx = authorizationService.authenticateProgrammaticWithOrg(
+				requestData.getHeaders(), servletWebRequest);
+		var ahp = authCtx.ahp();
+		if (ahp == null) throw new AccessDeniedException("Invalid authorization");
+		try {
+			authorizationService.isFreeformKeyAuthorizedForAgenticSessionRead(
+					ahp, sessionUuid, clientSessionId, releaseUuid);
+		} catch (AccessDeniedException agentDenied) {
+			ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElse(null);
+			if (rd == null) throw agentDenied;
+			try {
+				authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
+						ahp, PermissionFunction.RESOURCE, PermissionScope.RELEASE,
+						releaseUuid, List.of(rd), CallType.READ);
+			} catch (AccessDeniedException resourceDenied) {
+				throw agentDenied;
+			}
+		}
+		return sharedReleaseService.getReleaseData(releaseUuid).orElse(null);
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -1776,6 +1828,35 @@ public class ReleaseDatafetcher {
 			return new LinkedList<>();
 		}
 		return rd.getCommits().stream().map(c -> getSourceCodeEntryService.getSourceCodeEntryData(c).get()).collect(Collectors.toList());
+	}
+
+	/**
+	 * Release.sessions resolver — walks {@code release.commits ->
+	 * SCE.agentSession} (the forward pointer set by the PR 2
+	 * commit-trailer parser) and returns the distinct
+	 * {@link io.reliza.model.AgentSessionData} rows. Empty list when no
+	 * commits carry agent attribution. Read-only; auth already
+	 * enforced on the parent Release query.
+	 */
+	@DgsData(parentType = "Release", field = "sessions")
+	public List<io.reliza.model.AgentSessionData> sessionsOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		if (rd == null || rd.getCommits() == null || rd.getCommits().isEmpty()) {
+			return new LinkedList<>();
+		}
+		java.util.LinkedHashSet<UUID> sessionUuids = new java.util.LinkedHashSet<>();
+		for (UUID sceUuid : rd.getCommits()) {
+			getSourceCodeEntryService.getSourceCodeEntryData(sceUuid).ifPresent(sced -> {
+				if (sced.getAgentSession() != null) {
+					sessionUuids.add(sced.getAgentSession());
+				}
+			});
+		}
+		List<io.reliza.model.AgentSessionData> result = new LinkedList<>();
+		for (UUID sUuid : sessionUuids) {
+			agentSessionService.getSessionData(sUuid).ifPresent(result::add);
+		}
+		return result;
 	}
 	
 	@DgsData(parentType = "Release", field = "artifactDetails")

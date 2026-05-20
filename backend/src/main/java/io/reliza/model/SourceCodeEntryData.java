@@ -90,7 +90,65 @@ public class SourceCodeEntryData extends RelizaDataParent implements RelizaObjec
 	@Setter()
 	@JsonProperty(CommonVariables.ARTIFACTS_FIELD)
 	private List<SCEArtifact> artifacts = new ArrayList<>();
-	
+
+	/**
+	 * Resolved {@link AgentSession} this commit was authored under. Set
+	 * by {@link io.reliza.service.SourceCodeEntryService} from the
+	 * {@code ReARM-Agentic-Session:} commit trailer (PR 2, see
+	 * {@code ai-plans/agentic/README.md} §6). Null on non-agent
+	 * commits and when the trailer references a session ReARM doesn't
+	 * recognise (logged but not fatal).
+	 */
+	@Setter
+	@JsonProperty
+	private UUID agentSession;
+
+	/**
+	 * Leaf agent uuid from the {@code ReARM-Agent:} commit trailer.
+	 * May be a SUB agent — distinct from {@link AgentSessionData#getAgent()}
+	 * which is always the ROOT. Preserved here so the monitoring
+	 * read-side can show which specific sub-agent authored each commit
+	 * even though the session is owned by the root.
+	 */
+	@Setter
+	@JsonProperty
+	private UUID agent;
+
+	/**
+	 * Outcome of the agent-attribution trailer resolution. Set by
+	 * {@link io.reliza.service.SourceCodeEntryService#resolveAndAttributeTrailers}
+	 * on every code path so policies can gate on attribution failure
+	 * symmetrically with how {@code commit.signature.state} is used for
+	 * unsigned commits. Null on legacy rows created before this field
+	 * existed; the CEL surface normalises null to {@code UNATTRIBUTED}.
+	 */
+	@Setter
+	@JsonProperty
+	private AttributionState attributionState;
+
+	/**
+	 * Human-readable reason set when {@link #attributionState} is
+	 * {@link AttributionState#REJECTED}. Surfaces in audit / UI tooltips
+	 * so the operator knows whether the agent uuid was malformed, the
+	 * session id failed lookup, the orgs disagreed, etc. Null for the
+	 * resolved and unattributed paths.
+	 */
+	@Setter
+	@JsonProperty
+	private String attributionReason;
+
+	public enum AttributionState {
+		/** No agent-attribution trailers present on the commit. */
+		UNATTRIBUTED,
+		/** Both trailers parsed and agent + session resolved cleanly. */
+		RESOLVED,
+		/** Trailers were present but the resolver rejected the claim
+		 *  (parser error, agent / session not found, cross-org, malformed
+		 *  clientSessionId, etc.) — {@link #attributionReason} explains
+		 *  which. Suitable target for a release-level CEL gate. */
+		REJECTED
+	}
+
 	private SourceCodeEntryData () {}
 	
 	public record SCEArtifact (UUID artifactUuid, UUID componentUuid) {}
@@ -144,5 +202,44 @@ public class SourceCodeEntryData extends RelizaDataParent implements RelizaObjec
 	public UUID getResourceGroup() {
 		// TODO Auto-generated method stub
 		return null;
+	}
+
+	/**
+	 * On the merge path in {@link io.reliza.service.SourceCodeEntryService},
+	 * when an existing SCE row already has a commit-metadata field
+	 * populated and the incoming sceDto leaves the same field blank/null,
+	 * copy the existing value forward so a partial-metadata caller doesn't
+	 * wipe earlier complete values. Lives here because the scalar setters
+	 * are AccessLevel.PRIVATE — only methods on this class can mutate them.
+	 *
+	 * <p>Trailer-attribution fields (agent, agentSession) are NOT touched —
+	 * they're resolved fresh by the parser on each create.
+	 */
+	public void preserveScalarsFrom(SourceCodeEntryData existing) {
+		if (isBlank(this.commitMessage) && !isBlank(existing.commitMessage)) {
+			this.commitMessage = existing.commitMessage;
+		}
+		if (isBlank(this.commitAuthor) && !isBlank(existing.commitAuthor)) {
+			this.commitAuthor = existing.commitAuthor;
+		}
+		if (isBlank(this.commitEmail) && !isBlank(existing.commitEmail)) {
+			this.commitEmail = existing.commitEmail;
+		}
+		if (this.dateActual == null && existing.dateActual != null) {
+			this.dateActual = existing.dateActual;
+		}
+		if (isBlank(this.vcsBranch) && !isBlank(existing.vcsBranch)) {
+			this.vcsBranch = existing.vcsBranch;
+		}
+		if (isBlank(this.vcsTag) && !isBlank(existing.vcsTag)) {
+			this.vcsTag = existing.vcsTag;
+		}
+		if (isBlank(this.notes) && !isBlank(existing.notes)) {
+			this.notes = existing.notes;
+		}
+	}
+
+	private static boolean isBlank(String s) {
+		return s == null || s.isBlank();
 	}
 }

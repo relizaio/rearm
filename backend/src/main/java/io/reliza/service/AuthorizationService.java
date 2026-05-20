@@ -30,7 +30,13 @@ import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.RequestType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.AgentData;
+import io.reliza.model.AgentData.AgentType;
+import io.reliza.model.AgentIdentityCredential;
+import io.reliza.model.AgentIdentityData;
+import io.reliza.model.AgentSessionData;
 import io.reliza.model.ApiKey.ApiTypeEnum;
+import io.reliza.model.ReleaseData;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.AuthPrincipal;
 import io.reliza.model.ComponentData;
@@ -79,12 +85,21 @@ public class AuthorizationService {
 	
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
-	
+
 	@Autowired
 	private BranchService branchService;
-	
+
 	@Autowired
 	private LicenseStatus licenseStatus;
+
+	@Autowired
+	private AgentService agentService;
+
+	@Autowired
+	private AgentSessionService agentSessionService;
+
+	@Autowired
+	private AgentIdentityService agentIdentityService;
 	
 	public AuthHeaderParse authenticateProgrammatic (HttpHeaders headers, ServletWebRequest servletWebRequest) {
 		AuthHeaderParse ahp = null;
@@ -750,6 +765,148 @@ public class AuthorizationService {
 		apiKeyAccessService.recordApiKeyAccess(matchingKeyId, ahp.getRemoteIp(), orgUuid, ahp.getApiKeyId());
 		return new FreeformKeyVerification(
 			WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()), orgUuid, matchingKeyId);
+	}
+
+	/**
+	 * Authorization check for an AI agent reading state attributed to
+	 * its own session — release lookups, session show, anything where
+	 * the agent should only see what it produced.
+	 *
+	 * <p>Chain of trust (all four checks must pass; any failure throws
+	 * {@link AccessDeniedException} and is logged SECURITY-level):
+	 * <ol>
+	 *   <li>The calling FREEFORM key carries
+	 *       {@code PermissionFunction.AGENT} at {@code ORGANIZATION}
+	 *       scope (the persistent grant on the key).</li>
+	 *   <li>The session identified by {@code sessionUuid} or
+	 *       {@code clientSessionId} exists.</li>
+	 *   <li>The session's owning root agent has an
+	 *       {@code agentIdentity} that matches the calling key's
+	 *       identity (resolved via the
+	 *       {@code agent_identity_credentials} table — the key uuid is
+	 *       the credential value).</li>
+	 *   <li>The {@code releaseUuid} is attributed to that session —
+	 *       at least one of the session's SCEs produced this release.</li>
+	 * </ol>
+	 *
+	 * <p>Conceptually this is "AGENT permission at session scope" but
+	 * it isn't expressed via the {@link PermissionScope} enum — the
+	 * scope is enforced inline through the chain check above rather
+	 * than carried on a {@link UserPermission} row, since it isn't a
+	 * shape an operator could meaningfully grant ahead of time.
+	 */
+	public FreeformKeyVerification isFreeformKeyAuthorizedForAgenticSessionRead(
+			AuthHeaderParse ahp, UUID sessionUuid, String clientSessionId,
+			UUID releaseUuid) throws RelizaException {
+		validateSystemOperational(CallType.READ);
+		if (ahp == null || ahp.getType() != ApiTypeEnum.FREEFORM)
+			throw new AccessDeniedException("FREEFORM API key required");
+		UUID matchingKeyId = apiKeyService.isMatchingApiKey(ahp);
+		if (matchingKeyId == null)
+			throw new AccessDeniedException("Invalid API key");
+		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(matchingKeyId);
+		if (oakd.isEmpty())
+			throw new AccessDeniedException("API key data not found");
+		ApiKeyData akd = oakd.get();
+		UUID orgUuid = akd.getOrg();
+
+		// 1. Org-wide AGENT permission. The threshold is ESSENTIAL_READ —
+		// the same floor the rest of the agent-flow programmatic surface
+		// uses (see authorizeProgrammaticOrgWrite in AgentDataFetcher).
+		// READ_ONLY here would silently lock out ESSENTIAL_READ keys that
+		// pass every other agent gate.
+		//
+		// A missed AGENT-perm check is NOT logged at SECURITY/ERROR — the
+		// caller (agenticReleaseProgrammatic) treats a denial here as
+		// "wrong auth method" and may fall back to a RESOURCE-on-release
+		// permission check. Logging at INFO keeps the diagnostic trail
+		// without triggering security alerts on every fallback caller.
+		Optional<UserPermission> orgPerm = akd.getPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid);
+		boolean hasAgentOrgPerm = orgPerm.isPresent()
+				&& orgPerm.get().getFunctions() != null
+				&& orgPerm.get().getFunctions().contains(PermissionFunction.AGENT)
+				&& orgPerm.get().getType().ordinal() >= PermissionType.ESSENTIAL_READ.ordinal();
+		if (!hasAgentOrgPerm) {
+			log.info("agentic-session-read: FREEFORM key {} lacks ORGANIZATION-scope AGENT permission (org={}, sessionUuid={}, clientSessionId={}, releaseUuid={}) — caller may fall back to RESOURCE-on-release path",
+					matchingKeyId, orgUuid, sessionUuid, clientSessionId, releaseUuid);
+			throw new AccessDeniedException("Calling key lacks org-wide AGENT permission");
+		}
+
+		// 2. Resolve session — uuid path or clientSessionId path.
+		AgentSessionData session = null;
+		if (sessionUuid != null) {
+			session = agentSessionService.getSessionData(sessionUuid).orElse(null);
+			if (session != null && !orgUuid.equals(session.getOrg())) {
+				log.error("SECURITY: agentic-session-read denied — session {} belongs to org {}, calling key {} is in org {} (releaseUuid={})",
+						sessionUuid, session.getOrg(), matchingKeyId, orgUuid, releaseUuid);
+				throw new AccessDeniedException("Session belongs to a different org");
+			}
+		} else if (StringUtils.isNotBlank(clientSessionId)) {
+			// (org, agent, clientSessionId) is unique; look up by walking
+			// the agents owned by the calling key's identity.
+			AgentIdentityData identity = agentIdentityService.findOrRegisterByCredential(
+					orgUuid, AgentIdentityCredential.IdentityType.REARM_API_KEY,
+					matchingKeyId.toString(),
+					WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()));
+			for (AgentData a : agentService.listByOrg(orgUuid)) {
+				if (a.getAgentType() != AgentType.ROOT) continue;
+				if (!identity.getUuid().equals(a.getAgentIdentity())) continue;
+				Optional<AgentSessionData> osd = agentSessionService.getByClientSessionId(
+						orgUuid, a.getUuid(), clientSessionId);
+				if (osd.isPresent()) { session = osd.get(); break; }
+			}
+		} else {
+			throw new AccessDeniedException("sessionUuid or clientSessionId is required");
+		}
+		if (session == null) {
+			log.error("SECURITY: agentic-session-read denied — session not found (sessionUuid={}, clientSessionId={}, releaseUuid={}, callingKey={}, org={})",
+					sessionUuid, clientSessionId, releaseUuid, matchingKeyId, orgUuid);
+			throw new AccessDeniedException("Session not found");
+		}
+
+		// 3. Session's owning agent must belong to calling key's identity.
+		AgentData rootAgent = agentService.getAgentData(session.getAgent()).orElse(null);
+		if (rootAgent == null) {
+			log.error("SECURITY: agentic-session-read denied — session {} references missing root agent {} (releaseUuid={}, callingKey={})",
+					session.getUuid(), session.getAgent(), releaseUuid, matchingKeyId);
+			throw new AccessDeniedException("Session's root agent not found");
+		}
+		AgentIdentityData callerIdentity = agentIdentityService.findOrRegisterByCredential(
+				orgUuid, AgentIdentityCredential.IdentityType.REARM_API_KEY,
+				matchingKeyId.toString(),
+				WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()));
+		if (!callerIdentity.getUuid().equals(rootAgent.getAgentIdentity())) {
+			log.error("SECURITY: agentic-session-read denied — session {} owned by agent {} with identity {}, but calling key {} resolves to identity {} (releaseUuid={})",
+					session.getUuid(), rootAgent.getUuid(), rootAgent.getAgentIdentity(),
+					matchingKeyId, callerIdentity.getUuid(), releaseUuid);
+			throw new AccessDeniedException("Session not owned by calling key");
+		}
+
+		// 4. Release must be attributed to this session.
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		if (ord.isEmpty() || !orgUuid.equals(ord.get().getOrg())) {
+			log.error("SECURITY: agentic-session-read denied — release {} not found in org {} (session={}, callingKey={})",
+					releaseUuid, orgUuid, session.getUuid(), matchingKeyId);
+			throw new AccessDeniedException("Release not found in this org");
+		}
+		boolean releaseInSession = false;
+		if (session.getCommits() != null) {
+			for (UUID sceUuid : session.getCommits()) {
+				for (ReleaseData rd : sharedReleaseService.findReleaseDatasBySce(sceUuid, orgUuid)) {
+					if (releaseUuid.equals(rd.getUuid())) { releaseInSession = true; break; }
+				}
+				if (releaseInSession) break;
+			}
+		}
+		if (!releaseInSession) {
+			log.error("SECURITY: agentic-session-read denied — release {} is not attributed to session {} (callingKey={}, org={})",
+					releaseUuid, session.getUuid(), matchingKeyId, orgUuid);
+			throw new AccessDeniedException("Release not attributed to this session");
+		}
+
+		apiKeyAccessService.recordApiKeyAccess(matchingKeyId, ahp.getRemoteIp(), orgUuid, ahp.getApiKeyId());
+		return new FreeformKeyVerification(
+				WhoUpdated.getApiWhoUpdated(matchingKeyId, ahp.getRemoteIp()), orgUuid, matchingKeyId);
 	}
 
 	public AuthHeaderParse isProgrammaticAccessAuthorized(HttpHeaders headers,

@@ -92,10 +92,23 @@ public class ArtifactDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		UUID artifactUuid = UUID.fromString(artifactUuidStr);
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
-		RelizaObject ro = oad.isPresent() ? oad.get() : null;
+		if (oad.isEmpty()) {
+			throw new RelizaException("Artifact not found: " + artifactUuid);
+		}
+		RelizaObject ro = oad.get();
 		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, oad.get().getOrg());
 		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
-		authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
+		if (components.isEmpty()) {
+			// Session-attached / orphan artifact — no release/component
+			// linkage exists, so the per-component auth check can't be
+			// answered. Fall back to org-scope READ on the artifact's
+			// owning org (the next-broader natural boundary).
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+					PermissionScope.ORGANIZATION, oad.get().getOrg(), List.of(ro), CallType.READ);
+		} else {
+			authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+					PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
+		}
 		return oad.get();
 	}
 	

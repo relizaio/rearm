@@ -108,7 +108,8 @@ public class App {
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 						.requestMatchers("/api/healthCheck").permitAll()
 						.requestMatchers("/api/programmatic/v1/**").permitAll()
-		  				.anyRequest().authenticated(); 
+						.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
+		  				.anyRequest().authenticated();
 	  		} else {
 	  			authz
 		  				// .anyRequest().permitAll()
@@ -118,7 +119,8 @@ public class App {
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 						.requestMatchers("/api/healthCheck").permitAll()
 						.requestMatchers("/api/programmatic/v1/**").permitAll()
-		  				.anyRequest().authenticated(); 
+						.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
+		  				.anyRequest().authenticated();
 	  		}
 	  	});
     	// Place rate limiting after JWT auth so SecurityContext is populated

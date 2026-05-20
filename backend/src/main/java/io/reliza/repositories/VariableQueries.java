@@ -230,8 +230,17 @@ class VariableQueries {
 			limit 20
 		""";
 
-	protected static final String FIND_ARTIFACTS_BY_STORED_DIGEST = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString" 
-	+ " and jsonb_contains(record_data, jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))";
+	// DTrack dedup ordering: when multiple artifacts share a stored
+	// digest, prefer one that already has a dependencyTrackProject
+	// (so dedup picks the existing target instead of a sibling that's
+	// also still pending). Within each group, oldest-first so dedup
+	// is deterministic across runs. Self-skip stays in the caller —
+	// keeping the SQL self-blind so the same query is reusable.
+	protected static final String FIND_ARTIFACTS_BY_STORED_DIGEST = "select * from rearm.artifacts a where a.record_data->>'org' = :orgUuidAsString"
+	+ " and jsonb_contains(record_data, jsonb_build_object('digestRecords', jsonb_build_array(jsonb_build_object('digest',:digest))))"
+	+ " order by (case when a.metrics->>'dependencyTrackProject' is not null"
+	+ "                  and a.metrics->>'dependencyTrackProject' <> '' then 0 else 1 end) asc,"
+	+ "          a.record_data->>'createdDate' asc";
 	
 	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECTS = """
 			select * from rearm.artifacts a where a.metrics->>'dependencyTrackProject' in (:dtrackProjectIds)

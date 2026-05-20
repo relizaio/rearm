@@ -99,6 +99,23 @@ public interface PullRequestRepository extends CrudRepository<PullRequest, UUID>
 			@Param("sceUuidAsString") String sceUuidAsString);
 
 	/**
+	 * PRs in an org whose commits[] list contains any of the supplied SCE
+	 * uuids. Used by {@code Session.pullRequests} to walk
+	 * session.commits → PRs touched. EXISTS + jsonb_array_elements_text
+	 * gives us the "any-of" semantics without the ?| operator (which
+	 * Hibernate's native-query parser mistakes for a JDBC positional
+	 * parameter).
+	 */
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'org' = :orgUuidAsString "
+			+ "AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(pr.record_data->'commits') AS c(v) "
+			+ "            WHERE c.v = ANY(CAST(:sceUuids AS text[]))) "
+			+ "ORDER BY pr.created_date DESC",
+			nativeQuery = true)
+	List<PullRequest> findByOrgAndAnyCommit(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("sceUuids") String[] sceUuids);
+
+	/**
 	 * Append a single validation event to the appropriate jsonb column.
 	 * Implemented as native SQL to avoid the @DynamicUpdate aliasing
 	 * documented on Release.java — concurrent appends from different

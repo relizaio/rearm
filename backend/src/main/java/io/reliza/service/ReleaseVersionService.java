@@ -114,8 +114,11 @@ public class ReleaseVersionService {
 						}
 						log.info("Found existing release {} for commit {} on branch {} (rebuild)",
 								existingVersion, sourceCodeEntry.getCommit(), getNewVersionDto.branch());
+						String existingLifecycle = matchingRelease.get().getLifecycle() != null
+								? matchingRelease.get().getLifecycle().name() : null;
 						return new VersionResponse(existingVersion,
-								Utils.dockerTagSafeVersion(existingVersion), null, true);
+								Utils.dockerTagSafeVersion(existingVersion), null, true,
+								existingLifecycle);
 					}
 				}
 			}
@@ -156,7 +159,18 @@ public class ReleaseVersionService {
 			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, "");
 		} else {
 			releaseService.createReleaseFromVersion(getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), nextVersion, getNewVersionDto.lifecycle(), bd, wu);
-			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, "");
+			// Re-read the just-created release so the response reflects the
+			// lifecycle AFTER any synchronous trigger fired during save
+			// (e.g. a component-level CEL gate that pre-emptively moved it
+			// to REJECTED). Falls back to whatever was passed in if the
+			// re-read fails.
+			String resolvedLifecycle = sharedReleaseService.findReleaseByComponentAndVersion(
+						bd.getComponent(), nextVersion)
+					.map(io.reliza.model.ReleaseData::dataFromRecord)
+					.map(rd -> rd.getLifecycle() != null ? rd.getLifecycle().name() : null)
+					.orElse(getNewVersionDto.lifecycle() != null
+							? getNewVersionDto.lifecycle().name() : null);
+			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, "", false, resolvedLifecycle);
 		}
 
 		return vr;

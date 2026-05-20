@@ -228,6 +228,69 @@ type Query {
 	
 	# BEAR integration
 	getBearIntegration(org: ID!): BearIntegration
+
+	# AI Agents
+	agent(uuid: ID!): Agent
+	agentsOfOrg(orgUuid: ID!): [Agent]
+	subAgentsOf(rootAgentUuid: ID!): [Agent]
+	session(uuid: ID!): Session
+	sessionsOfOrg(orgUuid: ID!, statuses: [SessionStatus]): [Session]
+	sessionsOfAgent(rootAgentUuid: ID!, statuses: [SessionStatus]): [Session]
+	"""
+	Programmatic poll endpoint for an agent's session — returns
+	actionable events (lifecycle changes on attributed releases,
+	approval flips, new session policy verdicts) strictly after the
+	supplied cursor. Auth: FREEFORM key bound to the session's owning
+	agent identity. Designed for closed-loop "disapproval → agent
+	fix" flows; see {@code /api/agents/orientation.md} for the
+	canonical polling cadence.
+	"""
+	agentSessionInboxProgrammatic(inboxRequest: AgentSessionInboxInput!): [AgentSessionInboxEvent!]!
+	"""
+	FREEFORM-auth read of a single session by uuid. Returns null when
+	the session does not exist or is owned by a different org than the
+	calling key. The JWT-authenticated {@code session} query is the
+	operator/UI path; this is the agent's path for fetching its own
+	full session state (policy verdicts, releases, PRs) after an inbox
+	event.
+	"""
+	sessionProgrammatic(sessionUuid: ID!): Session
+	"""
+	FREEFORM-auth read of a single release by uuid, scoped to the
+	calling agent's session. The caller must pass either {@code
+	sessionUuid} (the row uuid returned by {@code sessionInitializeProgrammatic})
+	or {@code clientSessionId} (the agent-chosen id). Authorization
+	chain: (a) calling key carries {@code PermissionFunction.AGENT}
+	at {@code ORGANIZATION} scope; (b) the session's owning agent
+	belongs to the calling key's identity; (c) the requested release
+	is attributed to that session (its commits trace through to this
+	release). Any failure throws {@code AccessDeniedException} and
+	is logged SECURITY-level. Used by agents after a LIFECYCLE_CHANGE
+	/ APPROVAL inbox event to pull updateEvents + approvalEvents on
+	the release.
+	"""
+	agenticReleaseProgrammatic(releaseUuid: ID!, sessionUuid: ID, clientSessionId: String): Release
+	modelOntology(uuid: ID!): ModelOntology
+	modelOntologiesOfOrg(orgUuid: ID!): [ModelOntology]
+	"""
+	Cross-cutting KPIs for the AI Agents dashboard header — active
+	sessions, closed-in-last-30d, artifacts produced in last 7d, and
+	registered-agent count.
+	"""
+	agentDashboardKpis(orgUuid: ID!): AgentDashboardKpis
+
+	# AI-Agent policies (SAAS-only).
+	agentPolicy(uuid: ID!): AgentPolicy
+	agentPoliciesOfOrg(orgUuid: ID!): [AgentPolicy]
+
+	# Committers + signing keys + signature verifications.
+	committer(uuid: ID!): Committer
+	committersOfOrg(orgUuid: ID!): [Committer]
+	signingKey(uuid: ID!): SigningKey
+	signingKeysOfOwner(orgUuid: ID!, ownerType: SigningKeyOwnerType!, ownerUuid: ID!): [SigningKey]
+	signingKeysOfOrg(orgUuid: ID!): [SigningKey]
+	signatureVerification(uuid: ID!): SignatureVerification
+	signatureVerificationsForSubject(subjectType: SignatureSubjectType!, subjectUuid: ID!): [SignatureVerification]
 }
 
 type Mutation {
@@ -556,6 +619,94 @@ type Mutation {
 	setBearIntegration(org: ID!, uri: String!, apiKey: String!, skipPatterns: [String]): BearIntegration
 	updateBearSkipPatterns(org: ID!, skipPatterns: [String]): BearIntegration
 	deleteBearIntegration(org: ID!): Boolean!
+
+	# AI Agents
+	# Refine display fields on an existing Agent (name, icon, color,
+	# notes, status). Only non-null fields are applied — partial edits
+	# can't blank unrelated fields. Hierarchy fields and the model
+	# ontology pointer are immutable from this entry point; sub-agent
+	# registration goes through spawnSubAgentProgrammatic.
+	updateAgent(input: AgentUpdateInput!): Agent
+
+	# Open a session for a ROOT agent on the calling FREEFORM key. v1
+	# requires agentName + agentModel on the input — multi-root-per-key
+	# means we cannot infer which agent the caller is acting as without
+	# an explicit name, and the model identity is the primary
+	# monitoring grouping so we ask for it up-front.
+	#
+	# Idempotent on (org, agent, clientSessionId): calling with the
+	# same client session id while an OPEN session exists returns
+	# that session (typical agent crash-recovery shape).
+	sessionInitializeProgrammatic(sessionInit: SessionInitializeInput!): Session
+
+	# Heartbeat — bumps lastActivityAt. No-op on a CLOSED session.
+	sessionTouchProgrammatic(sessionUuid: ID!): Session
+
+	# Close the session. Terminal — a closed session cannot be
+	# re-opened. Idempotent on already-closed sessions.
+	sessionCloseProgrammatic(sessionUuid: ID!): Session
+
+	# Upload one or more artifacts and bind them to the session in a
+	# single round-trip. Artifacts created via this path are owned by
+	# the session (belongsTo=AGENT_SESSION) — they don't dangle off
+	# any release or component. This is the only way to add artifacts
+	# to a session; attaching a pre-existing release / sce artifact
+	# uuid is intentionally not exposed (artifacts that originate
+	# elsewhere don't belong on a session).
+	#
+	# Multipart-encoded: each ArtifactInput.file is a separate part of
+	# the multipart body per the Apollo upload spec.
+	sessionAddArtifactProgrammatic(addArtifact: SessionAddArtifactInput!): Session
+
+	# Refine title / branch / clientSessionId mid-session.
+	sessionUpdateMetaProgrammatic(updateMeta: SessionUpdateMetaInput!): Session
+
+	# Register a SUB agent under an existing parent agent (ROOT or SUB).
+	# The new sub's rootAgent is resolved to the parent's owning root,
+	# its model ontology defaults to the parent's, and its uuid is
+	# appended to the parent's subAgents list. Inherits parent's API
+	# keys for v1.
+	spawnSubAgentProgrammatic(spawnSubAgent: SpawnSubAgentInput!): Agent
+
+	# Refine ModelOntology display fields (publisher, description,
+	# purl, notes). Name + version are immutable identity — re-register
+	# under a new name+version pair if needed.
+	updateModelOntology(input: ModelOntologyUpdateInput!): ModelOntology
+
+	# Attach (or replace) a CycloneDX ML-BOM model card on an existing
+	# ontology row. The card is stored opaquely — ReARM does not
+	# validate its structure beyond JSON parsing.
+	setModelOntologyModelCardProgrammatic(input: SetModelCardInput!): ModelOntology
+
+	# AI-Agent policies (SAAS-only).
+	#
+	# Create or update an Agent policy. CEL is validated at write time
+	# — an invalid expression throws so a typo never silently no-ops
+	# at evaluation. Use the same input to update (pass uuid).
+	upsertAgentPolicy(input: AgentPolicyInput!): AgentPolicy
+
+	# Toggle a policy's enabled flag without rewriting the rest.
+	setAgentPolicyEnabled(uuid: ID!, enabled: Boolean!): AgentPolicy
+
+	# Delete a policy (org admin only). Past verdicts on sessions keep
+	# their recorded policy uuid for forensic value.
+	deleteAgentPolicy(uuid: ID!): Boolean
+
+	# Committer + signing-key management.
+	upsertCommitter(input: CommitterInput!): Committer
+	archiveCommitter(uuid: ID!): Committer
+	enrollSigningKey(input: SigningKeyInput!): SigningKey
+
+	# FREEFORM-auth'd self-enrollment for an AI agent. The calling key
+	# must have PermissionFunction.AGENT at ORGANIZATION scope and the
+	# signing-key input's {@code ownerType} must be {@code AGENT} with
+	# {@code ownerUuid} = the root agent resolved from the key. The
+	# operator-driven {@code enrollSigningKey} is the equivalent for
+	# COMMITTER + AGENT owners with a JWT — this variant lets an agent
+	# bootstrap its own signing key on first run without needing the
+	# operator to do it ahead of time.
+	enrollSigningKeyProgrammatic(signingKey: SigningKeyInput!): SigningKey
+	revokeSigningKey(uuid: ID!): SigningKey
 }
 
 type EnrichmentTriggerResult {
@@ -1411,6 +1562,14 @@ type PullRequest {
 	render that as "pending / not yet validated".
 	"""
 	currentValidationState: ValidationState
+	"""
+	Distinct ROOT agents that contributed to this PR — walks
+	`commits → SCE.agent → resolveRoot`. One PR can be attributed to
+	multiple agents (different commits from different sessions / keys).
+	Empty when no commits carry agentic attribution. Order is by first
+	appearance in `commits`.
+	"""
+	agents: [Agent]
 }
 
 type PullRequestValidationEvent {
@@ -1605,6 +1764,13 @@ type Release {
 	# but the every-minute scheduler hasn't drained it yet. Use to surface a
 	# "reconcile pending" indicator in the UI.
 	sbomReconcilePending: Boolean
+	"""
+	Distinct AgentSessions whose commits contributed to this release.
+	Walks release.commits -> SCE.agentSession (the forward pointer set
+	by the PR 2 commit-trailer parser) and dedupes. Empty list when
+	no commits carry agent attribution.
+	"""
+	sessions: [Session]
 }
 
 type IntermediateFailedRelease {
@@ -1694,6 +1860,54 @@ type SourceCodeEntry {
 	createdDate: DateTime
 	artifacts: [ID]
 	artifactDetails: [Artifact]
+	"""
+	Resolved AgentSession this commit was authored under, or null on
+	non-agent commits / unresolved trailers. Set by the PR 2
+	commit-trailer parser from ReARM-Agentic-Session: on the commit
+	message.
+	"""
+	agentSession: ID
+	"""
+	Leaf agent that authored the commit (may be a SUB; the session's
+	{@code agent} is always the ROOT). Set by the PR 2 commit-trailer
+	parser from ReARM-Agent: on the commit message.
+	"""
+	agent: ID
+	"""
+	Releases whose primary SCE is this commit. Typically 0 or 1, but
+	rebuilds against the same commit produce multiple entries. Each
+	release is the natural place the UI can jump to from a commit row.
+	"""
+	releases: [Release]
+	"""
+	Latest signature-verification verdict for this commit (or null when
+	no signature artifact has been attached). Backed by the
+	signature_verifications row pointed at by this SCE — read-time
+	pick of the most-recent verdict for (SCE, subjectUuid). Used by
+	CEL via {@code commit.signature.*}.
+	"""
+	signature: SceSignature
+	"""
+	Outcome of the agent-attribution trailer resolution for this commit.
+	UNATTRIBUTED on non-agent commits; RESOLVED when both trailers parsed
+	and the agent / session were found; REJECTED when the trailers were
+	present but the claim could not be resolved (malformed clientSessionId,
+	unknown agent / session, cross-org, etc.). Used by CEL via
+	{@code commit.attribution.state} — symmetric with
+	{@code commit.signature.state} for the unsigned-commit gate.
+	"""
+	attributionState: AttributionState
+	"""
+	Human-readable reason explaining a REJECTED attribution. Null on
+	UNATTRIBUTED and RESOLVED.
+	"""
+	attributionReason: String
+}
+
+enum AttributionState {
+	UNATTRIBUTED
+	RESOLVED
+	REJECTED
 }
 
 type DigestRecord{
@@ -1705,6 +1919,12 @@ type DigestRecord{
 type Artifact {
 	uuid: ID
 	displayIdentifier: String
+	"""
+	Whether the artifact bytes live inside ReARM's blob store (REARM)
+	or only as external download links (EXTERNALLY). UI uses this to
+	decide whether to render an in-place download button.
+	"""
+	storedIn: ArtifactStoredIn
 	org: ID
 	branch: ID
 	buildId: String
@@ -1833,6 +2053,17 @@ type Version {
 	dockerTagSafeVersion: String
 	changelog: String
 	releaseAlreadyExists: Boolean
+	"""
+	Lifecycle of the resolved release at the time getNewVersion returned.
+	Reflects the state AFTER any synchronous component-trigger run during
+	release creation — so a CEL gate that pre-emptively moves the release
+	to REJECTED is visible here. Callers (CLI / CI actions) should abort
+	downstream build steps when this is a terminal state (REJECTED,
+	CANCELLED) instead of charging into a subsequent addrelease that will
+	collide on the (component, version) dedup gate. Null on the
+	onlyVersion path (no release row was created).
+	"""
+	lifecycle: ReleaseLifecycleEnum
 }
 
 type MarketingReleaseLifecycle {
@@ -1932,6 +2163,15 @@ type ReleaseUpdateEvent {
 	oldValue: String
 	newValue: String
 	objectId: ID
+	"""
+	Human-readable reason for this event, populated when the
+	change carries context the oldValue/newValue tuple cannot
+	convey on its own. For LIFECYCLE events fired by a
+	component-level CEL input trigger, this carries the trigger
+	name and the CEL expression that matched. null for events
+	whose meaning is fully captured by the structural fields.
+	"""
+	message: String
 	date: DateTime
 	wu: WhoUpdated
 }
@@ -3036,6 +3276,7 @@ enum PermissionFunction {
 	DEVOPS_READ
 	DEVOPS_WRITE
 	VERSION_FEATURESET
+	AGENT
 }
 
 enum SbomProbingStatus {
@@ -3398,6 +3639,18 @@ enum BomFormat {
 	SPDX
 }
 
+"""
+Where an artifact's bytes are stored.
+- REARM: bytes live in ReARM's blob store; downloadable in-place
+  via /api/manual/v1/artifact/<uuid>/rawdownload.
+- EXTERNALLY: only metadata + downloadLinks recorded; the UI must
+  send the user to one of the registered downloadLinks instead.
+"""
+enum ArtifactStoredIn {
+	REARM
+	EXTERNALLY
+}
+
 enum VariantType {
 	BASE
 	CUSTOM
@@ -3486,6 +3739,8 @@ enum ArtifactType {
     CERTIFICATE_X_509
     CERTIFICATE_PGP
 	RISK_ASSESSMENT
+	"""AI-agent self-reported artifact attached to an AgentSession — orientation briefs, mid-session checkpoints, end-of-session summaries. Used as the data source for agentic policies."""
+	AGENTIC_REPORT
 	OTHER
 }
 
@@ -4177,3 +4432,635 @@ enum ClaimType {
 	WORKAROUND
 	ENVIRONMENTAL_CONTROL
 }
+
+#
+# AI-Agent monitoring types. Backed by rearm.agents +
+# rearm.agent_sessions + rearm.model_ontologies (V37 + V38). Shared
+# (CE-included) GraphQL surface; policies / enforcement that wrap
+# these arrive in PR 4 behind the SAAS package boundary. Full design
+# rationale in backend/ai-plans/agentic/README.md.
+#
+
+"""
+A coding agent registered to an org. ROOT agents are what an
+external tool registers as and own sessions; SUB agents are
+children a ROOT spawns and share the parent's session.
+
+Identity = (org, lower(name)). Auto-registered on the first session
+a calling FREEFORM key opens with a previously-unknown name in the
+org. {@code model} points to a ModelOntology row carrying the
+publisher / model / version / CycloneDX ML-BOM model card — many
+agents may share a model.
+"""
+type Agent {
+	uuid: ID
+	org: ID
+	"""Display name. Unique per org (case-insensitive)."""
+	name: String
+	"""ModelOntology row this agent runs."""
+	model: ModelOntology
+	"""Optional dashboard glyph."""
+	iconKind: String
+	"""Optional dashboard accent colour (CSS hex)."""
+	color: String
+	"""Free-form notes the user sets on the dashboard."""
+	notes: String
+	"""
+	AgentIdentity row that scopes this agent. (org, agentIdentity,
+	lower(name)) is the uniqueness boundary — two different identities
+	can each own a "Claude Code". SUB agents inherit their root's
+	identity.
+	"""
+	agentIdentity: ID
+	status: AgentStatus
+	agentType: AgentType
+	"""ROOT for top-level agents; SUB pointers point at the owning root."""
+	rootAgent: ID
+	"""Direct children spawned by this agent (best-effort report)."""
+	subAgents: [ID]
+	createdDate: DateTime
+	# --- monitoring read-side (PR 3) ---
+	"""
+	OPEN sessions owned by this ROOT agent. Empty list on SUB agents
+	(sub-agents do not own sessions). Returns the same ordering as
+	{@code sessionsOfAgent} — most recently active first.
+	"""
+	openSessions: [Session]
+	"""
+	CLOSED sessions owned by this ROOT agent. Same ordering as
+	{@code openSessions}.
+	"""
+	closedSessions: [Session]
+	"""
+	Open + closed session counts for this agent. Cheaper than walking
+	the full lists when the dashboard only needs the badges.
+	"""
+	sessionCounts: AgentSessionCounts
+	"""
+	Most-recent activity timestamp across all sessions this agent
+	owns. Drives the dashboard "connected" pill. Null when the agent
+	has no sessions yet.
+	"""
+	lastActivityAt: DateTime
+	"""
+	Enrolled public keys this agent signs commits with. Includes
+	revoked entries — UI filters by revokedAt for display, the
+	verifier filters at lookup time.
+	"""
+	signingKeys: [SigningKey]
+}
+
+type AgentSessionCounts {
+	openSessions: Int
+	closedSessions: Int
+}
+
+"""
+A single agent-policy evaluation outcome on a session. SAAS-only —
+on CE deployments the session's {@code policyEvents} list is always
+empty. Persisted append-only on AgentSession.
+"""
+type PolicyEvent {
+	"""UUID of the AgentPolicy that produced this verdict."""
+	policyUuid: ID
+	"""Snapshot of the policy's name at evaluation time (denormalised so a renamed/deleted policy still surfaces sensibly)."""
+	policyName: String
+	kind: PolicyKind
+	severity: PolicySeverity
+	state: PolicyState
+	"""Operator-facing failure message; null on PASSED verdicts."""
+	message: String
+	evaluatedAt: DateTime
+	"""
+	Full snapshot of the AgentPolicy that produced this verdict (CEL,
+	description, current enabled flag). Lets a calling agent decide
+	whether the failure is recoverable on its own (e.g. attach an
+	orientation artifact and retry) or needs operator action (e.g.
+	a "model must equal claude-opus" policy when the agent runs
+	another model). Resolved at read time from the policyUuid; null
+	if the policy was deleted after the event.
+	"""
+	policy: AgentPolicy
+}
+
+enum PolicyKind {
+	"""Evaluated on session initialize + on artifact attach."""
+	INPUT
+	"""Evaluated on commit attribution and on artifact attach."""
+	OUTPUT
+}
+
+enum PolicySeverity {
+	"""Input failure rejects session init."""
+	BLOCK
+	"""Failure is recorded as a WARNING verdict; never throws."""
+	WARN
+}
+
+enum PolicyState {
+	PASSED
+	WARNING
+	FAILED
+	"""
+	Soft signal: the policy hasn't reached a terminal verdict for this
+	session yet. Emitted at session init / artifact attach for OUTPUT
+	policies that haven't been satisfied, and as a fallback when the
+	evaluator hits a runtime error (the policy will be retried at the
+	next eligible event). Renamed from PENDING to avoid name collision
+	with rebom's EnrichmentStatus.PENDING in adjacent code.
+	"""
+	AWAITING
+}
+
+"""
+SAAS-only AI-Agent policy. CEL expression evaluates against the
+session context — {@code session.*}, {@code agent.*},
+{@code model.*}. **Match-to-block semantics** (same as component-level
+CEL gates): the CEL describes the *failure* condition. Returns true
+when the failure matches → the verdict on the session goes to FAILED
+/ WARNING / PENDING per {@link #severity} + {@link #kind}. Returns
+false → PASSED.
+"""
+type AgentPolicy {
+	uuid: ID
+	org: ID
+	name: String
+	description: String
+	kind: PolicyKind
+	severity: PolicySeverity
+	"""CEL boolean expression — true means the failure matches."""
+	cel: String
+	enabled: Boolean
+	createdDate: DateTime
+}
+
+input AgentPolicyInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	name: String!
+	description: String
+	kind: PolicyKind!
+	severity: PolicySeverity!
+	cel: String!
+	enabled: Boolean
+}
+
+"""
+Cross-cutting KPIs for the AI Agents dashboard header (mockup's
+four-card row).
+"""
+type AgentDashboardKpis {
+	"""Count of OPEN sessions across the org."""
+	activeSessions: Int
+	"""Sessions closed within the last 30 days."""
+	closedSessions30d: Int
+	"""Artifact UUIDs attached to sessions active in the last 7 days. Sum, not distinct."""
+	artifactsProduced7d: Int
+	"""Total registered agents in the org (ROOT + SUB)."""
+	registeredAgents: Int
+}
+
+enum AgentStatus {
+	ACTIVE
+	ARCHIVED
+}
+
+enum AgentType {
+	ROOT
+	SUB
+}
+
+"""
+One ROOT Agent invocation. Many concurrent sessions per agent are
+allowed on the same API key. Sub-agents of the root contribute
+commits / artifacts to the same session via the commit-trailer
+attribution path (PR 2).
+"""
+type Session {
+	uuid: ID
+	org: ID
+	"""Owning ROOT agent uuid."""
+	agent: ID
+	"""
+	Agent-supplied natural session id. Defaults to the row uuid when
+	the agent didn't pick one on initialize. The two-line commit
+	trailer references this value, not the row uuid.
+	"""
+	clientSessionId: String
+	"""API key the agent used to open the session."""
+	apiKey: ID
+	title: String
+	status: SessionStatus
+	startedAt: DateTime
+	closedAt: DateTime
+	lastActivityAt: DateTime
+	"""Artifact UUIDs attached to this session (reuses rearm.artifacts)."""
+	artifacts: [ID]
+	"""
+	SCE UUIDs attributed to this session via the commit-trailer parser
+	(PR 2). Order is append-order; head of list is the earliest commit.
+	"""
+	commits: [ID]
+	"""
+	Append-only log of agent-policy evaluations (PR 4). Empty on CE
+	deployments and on sessions opened under an org with no policies.
+	"""
+	policyEvents: [PolicyEvent]
+	"""
+	Releases produced from this session's commits. Computed at read
+	time by walking `commits → Release.sourceCodeEntry` (and
+	`commits[]` for multi-commit releases). Distinct on release uuid.
+	"""
+	releases: [Release]
+	"""
+	Pull requests touched by this session's commits. Computed at read
+	time by walking `commits → PullRequest.commits[]`. Distinct on
+	PR uuid.
+	"""
+	pullRequests: [PullRequest]
+	"""
+	If this session was opened by an agent retrying after a prior
+	BLOCKED / CLOSED predecessor, this is that predecessor's uuid.
+	Null on first-time sessions.
+	"""
+	parentSession: ID
+	createdDate: DateTime
+}
+
+enum SessionStatus {
+	OPEN
+	CLOSED
+	"""
+	A BLOCK-severity INPUT policy failed on sessionInitializeProgrammatic.
+	The row is persisted so the audit / dashboard show the rejected
+	attempt with its policyEvents, but the trailer-attribution
+	resolver refuses to bind commits against it — trailers carrying
+	this clientSessionId surface as REJECTED attribution. Terminal:
+	the agent must mint a fresh, unique clientSessionId to retry.
+	"""
+	BLOCKED
+}
+
+"""
+A row describing one AI/ML model an Agent runs. Identity =
+(org, lower(name), version). Carries publisher + a full CycloneDX
+ML-BOM model card (opaque jsonb). Auto-upserted on session
+initialize from (agentVendor, agentModel, agentModelVersion).
+"""
+type ModelOntology {
+	uuid: ID
+	org: ID
+	"""Model name, e.g. "claude-sonnet"."""
+	name: String
+	"""Model version, e.g. "4.5". Defaults to "unknown" on auto-registration when omitted."""
+	version: String
+	"""Publisher / vendor (e.g. "Anthropic"). Display-only."""
+	publisher: String
+	"""One-line summary for the dashboard tooltip."""
+	description: String
+	"""Optional canonical id (e.g. "pkg:huggingface/anthropic/claude-sonnet@4.5")."""
+	purl: String
+	"""
+	CycloneDX ML-BOM model component (type machine-learning-model)
+	stored opaquely. Empty {} on auto-registration; the user attaches
+	a fuller card later via setModelOntologyModelCardProgrammatic.
+	"""
+	modelCard: Object
+	notes: String
+	createdDate: DateTime
+}
+
+input AgentUpdateInput {
+	uuid: ID!
+	name: String
+	iconKind: String
+	color: String
+	notes: String
+	status: AgentStatus
+}
+
+"""
+One actionable event the agent owning a session needs to react to —
+typically a release minted from the session's commits changing
+lifecycle (REJECTED by a CEL gate, ASSEMBLED, etc.) or carrying a
+new approval (DISAPPROVED with reviewer comment is the canonical
+"agent fix loop" trigger). Polled by the agent via
+{@code agentSessionInboxProgrammatic} with a cursor it stores
+client-side.
+"""
+type AgentSessionInboxEvent {
+	"""
+	Opaque, monotone cursor token. Pass back as the {@code since}
+	field on the next poll to fetch strictly newer events. Stable —
+	the same event always returns the same cursor.
+	"""
+	cursor: String!
+	occurredAt: DateTime!
+	kind: AgentInboxEventKind!
+	"""
+	Release this event is about, when {@code kind} is release-side
+	(LIFECYCLE_CHANGE / APPROVAL). Null on session-side events
+	(POLICY_VERDICT).
+	"""
+	release: Release
+	"""Previous value, when meaningful (e.g. prior lifecycle)."""
+	oldValue: String
+	"""New value (e.g. new lifecycle, "DISAPPROVED")."""
+	newValue: String
+	"""
+	Free-form human-readable reason for the event:
+	  - LIFECYCLE_CHANGE: the matching ReleaseUpdateEvent.message
+	    (e.g. "Triggered by 'Reject when any commit is not VERIFIED'
+	    (CEL: …)") — what *caused* the lifecycle change.
+	  - APPROVAL: the reviewer's free-text comment when
+	    DISAPPROVED; null on APPROVED unless a comment was left.
+	  - POLICY_VERDICT: the failing policy's failure message.
+	"""
+	reason: String
+	source: AgentInboxSource!
+	"""
+	User uuid that authored the change, when {@code source = HUMAN}.
+	Null for automated / policy-driven events.
+	"""
+	actorUuid: ID
+	"""Approval role id ({@code ApprovalEntry.roleId} snapshot), when {@code kind = APPROVAL}."""
+	actorRoleId: String
+}
+
+enum AgentInboxEventKind {
+	"""A release's lifecycle moved (e.g. ASSEMBLED → REJECTED, PENDING → ASSEMBLED)."""
+	LIFECYCLE_CHANGE
+	"""An approval entry on a release flipped (APPROVED / DISAPPROVED / withdrawn)."""
+	APPROVAL
+	"""A new PolicyEvent landed on the session itself (post-init artifact-attach / commit-attribution re-eval)."""
+	POLICY_VERDICT
+}
+
+enum AgentInboxSource {
+	"""A human user performed the action (approval, manual lifecycle change)."""
+	HUMAN
+	"""An automated component-level output trigger fired (CEL gate matched)."""
+	POLICY_GATE
+	"""Lifecycle progressed by the system without an explicit trigger (e.g. initial release-created PENDING)."""
+	RELEASE_AUTO
+}
+
+input AgentSessionInboxInput {
+	sessionUuid: ID!
+	"""
+	Opaque cursor from a prior poll. Null = "from session start".
+	Server returns events strictly after this cursor.
+	"""
+	since: String
+	"""Optional filter; null = all kinds."""
+	kinds: [AgentInboxEventKind!]
+	"""Default 50; capped at 200."""
+	limit: Int
+}
+
+input SessionInitializeInput {
+	"""
+	Display name the agent reports for itself ("Claude Code", "Cursor
+	Agent"). Required — used as the (org, lower(name)) lookup key.
+	"""
+	agentName: String!
+	"""
+	Model name the agent reports running ("claude-sonnet",
+	"composer-1"). Required — used as the (org, lower(name), version)
+	lookup key on the ModelOntology row.
+	"""
+	agentModel: String!
+	"""Model version (e.g. "4.5"). Defaults to "unknown" if omitted."""
+	agentModelVersion: String
+	"""Publisher / vendor (e.g. "Anthropic"). Display-only; stored on the ModelOntology row."""
+	agentVendor: String
+	agentIconKind: String
+	agentColor: String
+
+	"""
+	Optional client-side session id. Defaults server-side to the row
+	uuid when omitted. **Unique forever within (org, agent)**: an id
+	previously used by ANY session (OPEN, CLOSED, or BLOCKED) cannot
+	be re-used; sessionInitializeProgrammatic errors with
+	clientSessionId-conflict. Agents that retry after a BLOCKED /
+	CLOSED predecessor must mint a fresh id.
+	"""
+	clientSessionId: String
+
+	title: String
+
+	"""
+	Optional pointer to a prior session this one continues from.
+	Set when an agent retries after a BLOCKED or CLOSED predecessor
+	so the audit trail threads the related attempts. Null on first-
+	time sessions.
+	"""
+	parentSession: ID
+}
+
+"""
+Upload one or more artifacts and bind them to an agent session.
+Each {@code ArtifactInput.file} is a separate multipart part on the
+HTTP body per the Apollo upload spec. The resulting artifact rows
+carry {@code belongsTo=AGENT_SESSION} and live only on the session —
+they do not appear on any release or component.
+"""
+input SessionAddArtifactInput {
+	sessionUuid: ID!
+	artifacts: [ArtifactInput!]!
+}
+
+input SessionUpdateMetaInput {
+	uuid: ID!
+	title: String
+	clientSessionId: String
+}
+
+"""
+Register a SUB agent under an existing parent. The parent may be
+ROOT or SUB; the new sub's rootAgent is resolved to the parent's
+owning root and its model ontology inherits from the parent unless
+overridden.
+"""
+input SpawnSubAgentInput {
+	parentUuid: ID!
+	name: String!
+	"""Optional model-ontology override. Defaults to the parent's model."""
+	modelUuid: ID
+	iconKind: String
+	color: String
+}
+
+input ModelOntologyUpdateInput {
+	uuid: ID!
+	publisher: String
+	description: String
+	purl: String
+	notes: String
+}
+
+"""
+Attach (or replace) a CycloneDX ML-BOM model card on an ontology
+row. The card is the {@code component} object of a CycloneDX
+machine-learning model — see the
+[CycloneDX ML-BOM guide](https://github.com/CycloneDX/guides/tree/main/ML-BOM/en)
+for the expected shape.
+"""
+input SetModelCardInput {
+	modelOntologyUuid: ID!
+	modelCard: Object!
+}
+
+# ============================================================
+# Signature verification — commit-level signatures (v1: SSH, GPG).
+# Image / SBOM / X.509 land in v2. See backend/ai-plans/agentic/README §11.4.
+# ============================================================
+
+"""
+A natural person (or external bot) whose commits show up in the
+org's SCEs. Owns enrolled signing keys the verifier matches against.
+May or may not be bound to a ReARM user — the binding is optional so
+external contributors and ex-employees are covered.
+"""
+type Committer {
+	uuid: ID
+	org: ID
+	name: String
+	email: String
+	"""Optional binding to a ReARM users row."""
+	user: ID
+	"""Historical email aliases — same committer, different addresses."""
+	aliases: [String]
+	status: CommitterStatus
+	createdDate: DateTime
+	"""Enrolled keys this committer owns. Includes revoked entries."""
+	signingKeys: [SigningKey]
+}
+
+enum CommitterStatus {
+	ACTIVE
+	ARCHIVED
+}
+
+input CommitterInput {
+	"""null on create; existing uuid on update."""
+	uuid: ID
+	org: ID!
+	name: String!
+	email: String!
+	user: ID
+	aliases: [String]
+}
+
+"""
+Enrolled public key bound to an Agent or Committer. The verifier
+matches signatures by fingerprint to this row and never trusts the
+key embedded in a signature blob.
+"""
+type SigningKey {
+	uuid: ID
+	org: ID
+	format: SignatureFormat
+	ownerType: SigningKeyOwnerType
+	ownerUuid: ID
+	"""Normalised fingerprint — SHA256:... for SSH, long key id for GPG."""
+	fingerprint: String
+	"""Principal string ssh-keygen expects via -I, or GPG user-id."""
+	identity: String
+	"""Wire-format pubkey — single line SSH, ASCII-armoured GPG."""
+	pubKey: String
+	createdDate: DateTime
+	revokedAt: DateTime
+}
+
+enum SignatureFormat {
+	SSH
+	GPG
+	"""Reserved for v2 — trust anchored at CA, not per-key."""
+	X509
+}
+
+enum SigningKeyOwnerType {
+	AGENT
+	COMMITTER
+}
+
+input SigningKeyInput {
+	org: ID!
+	format: SignatureFormat!
+	ownerType: SigningKeyOwnerType!
+	ownerUuid: ID!
+	"""SHA256:... for SSH; long key id for GPG. CLI derives from --pubkey-file."""
+	fingerprint: String!
+	"""Required for SSH (allowed_signers principal); optional for GPG (user-id)."""
+	identity: String
+	"""Single-line SSH or ASCII-armoured GPG block."""
+	pubKey: String!
+}
+
+"""
+Verdict snapshot for a (subject, signature-artifact) pair. CEL reads
+the most-recent row via {@code commit.signature.*}.
+"""
+type SignatureVerification {
+	uuid: ID
+	org: ID
+	subjectType: SignatureSubjectType
+	subjectUuid: ID
+	signatureArtifact: Artifact
+	signedPayloadArtifact: Artifact
+	publicKeyArtifact: Artifact
+	format: SignatureFormat
+	verdict: SignatureVerificationState
+	"""Set on VERIFIED — Agent or Committer that holds the matched key."""
+	ownerType: SigningKeyOwnerType
+	ownerUuid: ID
+	"""Fingerprint of the matched enrolled key — set on VERIFIED."""
+	keyFingerprint: String
+	verifiedAt: DateTime
+	verifierVersion: Int
+	"""Free-form diagnostic for the UI / debugging."""
+	details: String
+	createdDate: DateTime
+}
+
+enum SignatureSubjectType {
+	SCE
+	"""Reserved for v2 — image / SBOM signature attestations."""
+	ARTIFACT
+}
+
+enum SignatureVerificationState {
+	"""No signature artifact attached."""
+	UNSIGNED
+	"""Cryptographic check passed and signer resolved to an enrolled key."""
+	VERIFIED
+	"""Cryptographic check failed."""
+	INVALID_SIGNATURE
+	"""Signature parsed but the signer key is not enrolled in this org."""
+	UNKNOWN_KEY
+	"""Signer key was matched but is revoked."""
+	KEY_REVOKED
+	"""Reserved for v2 — attribution constraint failure decoupled from trust-store scope (e.g. image / attestation flows where the verifier's scope and the expected attribution can legitimately differ). Not produced in v1; the verifier narrows scope upfront from the SCE so a mismatched owner can't reach this branch."""
+	WRONG_SIGNER
+	"""Verification was scheduled but has not yet run."""
+	PENDING
+	"""Verifier subprocess errored — see {@code details} for diagnostics."""
+	ERRORED
+}
+
+"""
+Compact CEL-facing view of an SCE's signature verdict. Surfaced as
+{@code SourceCodeEntry.signature}; the underlying row lives in
+signature_verifications.
+"""
+type SceSignature {
+	state: SignatureVerificationState
+	format: SignatureFormat
+	signedByOwnerType: SigningKeyOwnerType
+	signedByOwnerUuid: ID
+	verifiedAt: DateTime
+	keyFingerprint: String
+}
+

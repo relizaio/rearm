@@ -142,6 +142,19 @@ public class PullRequestService {
 				.collect(Collectors.toList());
 	}
 
+	/**
+	 * Distinct PRs in the org whose commits[] contains any of the
+	 * supplied SCE uuids. Used by {@code Session.pullRequests} —
+	 * walks all session commits in one DB hit via the jsonb ?|
+	 * operator.
+	 */
+	public List<PullRequestData> findByOrgAndAnyCommit(UUID orgUuid, String[] sceUuids) {
+		if (orgUuid == null || sceUuids == null || sceUuids.length == 0) return List.of();
+		return repository.findByOrgAndAnyCommit(orgUuid.toString(), sceUuids).stream()
+				.map(PullRequestData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+
 	public List<PullRequestData> listOpenByTargetRepository(UUID targetRepoUuid) {
 		return repository.findOpenByTargetRepository(targetRepoUuid.toString()).stream()
 				.map(PullRequestData::dataFromRecord)

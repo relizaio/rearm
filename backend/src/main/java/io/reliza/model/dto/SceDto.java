@@ -6,10 +6,12 @@ package io.reliza.model.dto;
 
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
@@ -67,6 +69,30 @@ public class SceDto {
 
 	@JsonProperty(CommonVariables.ARTIFACTS_FIELD)
 	private List<SCEArtifact> artifacts;
+
+	/**
+	 * Raw per-SCE artifact input maps captured from the GraphQL input
+	 * BEFORE Jackson converts the rest of the SCE map into this DTO.
+	 * The DGS resolver (e.g. {@code getNewVersionProgrammatic}) lifts
+	 * the {@code artifacts} array off the map, hands it here, and the
+	 * release-service create path uploads them via
+	 * {@code uploadSceArtifacts} once the resolved version is known.
+	 *
+	 * <p>Mirrors the addrelease path in
+	 * {@code ReleaseDatafetcher.addReleaseProgrammatic} (lines around
+	 * 1059–1062 / 1084–1087) which has always extracted maps out of
+	 * the input and run them through {@code uploadSceArtifacts}. The
+	 * initialize/getversion path now does the same so SIGNATURE +
+	 * SIGNED_PAYLOAD artifacts attached at getversion time fire the
+	 * auto-verifier and populate {@code sce.signature.state} BEFORE
+	 * {@code processRelease} evaluates component-level CEL gates that
+	 * may key on signature state.
+	 *
+	 * <p>{@code @JsonIgnore} so this in-memory ferry field never round-trips
+	 * back to the persisted record.
+	 */
+	@JsonIgnore
+	private List<Map<String, Object>> artifactInputs;
 
 	/**
 	 * This is vcs uri - not part of actual sce

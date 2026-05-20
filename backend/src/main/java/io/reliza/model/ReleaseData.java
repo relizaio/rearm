@@ -80,8 +80,16 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		CHANGED
 	}
 	
-	public record ReleaseUpdateEvent (ReleaseUpdateScope rus, ReleaseUpdateAction rua, String oldValue, 
-			String newValue, UUID objectId, ZonedDateTime date, WhoUpdated wu) {}
+	public record ReleaseUpdateEvent (ReleaseUpdateScope rus, ReleaseUpdateAction rua, String oldValue,
+			String newValue, UUID objectId, String message, ZonedDateTime date, WhoUpdated wu) {
+		// 7-arg ctor for back-compat with the many existing callsites
+		// that don't carry a reason string. Delegates to the canonical
+		// 8-arg form with message = null.
+		public ReleaseUpdateEvent (ReleaseUpdateScope rus, ReleaseUpdateAction rua, String oldValue,
+				String newValue, UUID objectId, ZonedDateTime date, WhoUpdated wu) {
+			this(rus, rua, oldValue, newValue, objectId, null, date, wu);
+		}
+	}
 	
 	public record ReleaseLifecycleEvent (ReleaseLifecycle oldLifecycle, ReleaseLifecycle newLifecycle, ZonedDateTime date, WhoUpdated wu) {}
 	

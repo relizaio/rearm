@@ -44,6 +44,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.dto.ProgrammaticAuthContext;
+import io.reliza.service.AgentService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.service.GetComponentService;
@@ -82,6 +83,9 @@ public class PullRequestDataFetcher {
 
 	@Autowired
 	private io.reliza.service.oss.OssPullRequestAggregatorService pullRequestAggregatorService;
+
+	@Autowired
+	private AgentService agentService;
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "pullRequest")
@@ -334,6 +338,44 @@ public class PullRequestDataFetcher {
 				.filter(java.util.Optional::isPresent)
 				.map(java.util.Optional::get)
 				.collect(java.util.stream.Collectors.toList());
+	}
+
+	/**
+	 * PullRequest.agents resolver — distinct ROOT agents that contributed
+	 * commits to this PR. Walks commits → SCE.agent → resolveRoot so
+	 * leaf SUB-agent attribution rolls up to its owning root. One PR
+	 * can be attributed to multiple agents when different commits came
+	 * from different sessions or different identities. Order is by
+	 * first appearance in commits. Missing / orphan refs silently
+	 * dropped.
+	 */
+	@DgsData(parentType = "PullRequest", field = "agents")
+	public List<io.reliza.model.AgentData> agents(
+			com.netflix.graphql.dgs.DgsDataFetchingEnvironment dfe) {
+		PullRequestData prd = dfe.getSource();
+		if (prd == null || prd.getCommits() == null) return List.of();
+		java.util.LinkedHashSet<UUID> rootUuids = new java.util.LinkedHashSet<>();
+		for (UUID sceUuid : prd.getCommits()) {
+			Optional<io.reliza.model.SourceCodeEntryData> osced =
+					getSourceCodeEntryService.getSourceCodeEntryData(sceUuid);
+			if (osced.isEmpty()) continue;
+			UUID leafAgentUuid = osced.get().getAgent();
+			if (leafAgentUuid == null) continue;
+			Optional<io.reliza.model.AgentData> oad = agentService.getAgentData(leafAgentUuid);
+			if (oad.isEmpty()) continue;
+			try {
+				io.reliza.model.AgentData root = agentService.resolveRoot(oad.get());
+				rootUuids.add(root.getUuid());
+			} catch (RelizaException e) {
+				// Orphan rootAgent pointer — skip rather than 500 the
+				// whole PR view.
+			}
+		}
+		List<io.reliza.model.AgentData> out = new java.util.ArrayList<>();
+		for (UUID u : rootUuids) {
+			agentService.getAgentData(u).ifPresent(out::add);
+		}
+		return out;
 	}
 
 	/**

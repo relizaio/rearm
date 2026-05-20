@@ -10,11 +10,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import java.time.Duration;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -39,6 +42,8 @@ import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClient;
+import reactor.netty.resources.ConnectionProvider;
 
 @Slf4j
 @Service
@@ -71,9 +76,26 @@ public class RebomService {
     public RebomService(
 		@Value("${relizaprops.rebom.url}") String rebomHost
 	) {
-			
+		// rebom-backend is an @apollo/server v5 standalone server
+		// (rearm/rebom-backend/src/index.ts:61, via startStandaloneServer);
+		// its underlying Node http.Server defaults keepAliveTimeout to
+		// 5 seconds and the standalone API does not expose a knob to raise
+		// it. Without a matching cap on the WebClient side, Reactor Netty's
+		// default ConnectionProvider keeps idle sockets indefinitely, then
+		// reuses one that the server has already FIN'd — surfacing as
+		// `PrematureCloseException: Connection prematurely closed BEFORE
+		// response` on the next addArtifact / verifySignature call.
+		// Capping maxIdleTime below the server's keepAliveTimeout forces
+		// the client to close first so we never grab a half-closed socket.
+		ConnectionProvider rebomPool = ConnectionProvider.builder("rebom")
+			.maxIdleTime(Duration.ofSeconds(4))
+			.maxLifeTime(Duration.ofMinutes(5))
+			.evictInBackground(Duration.ofSeconds(15))
+			.build();
+		HttpClient rebomHttpClient = HttpClient.create(rebomPool);
 		this.rebomWebClient = WebClient.builder()
                                 .baseUrl(rebomHost + "graphql")
+                                .clientConnector(new ReactorClientHttpConnector(rebomHttpClient))
                                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                                 .exchangeStrategies(
                                     ExchangeStrategies.builder()
@@ -800,5 +822,48 @@ public class RebomService {
             return new EnrichmentTriggerResult(false, "No response from rebom", null);
         }
         return Utils.OM.convertValue(result, EnrichmentTriggerResult.class);
+    }
+
+    public record SignatureVerifyResult(String verdict, String matchedFingerprint, String details) {}
+
+    /**
+     * Calls rebom-backend's verifySignature mutation. Signature +
+     * payload bytes are passed inline base64. The trust store is the
+     * format-appropriate aggregate of enrolled pubkeys (ssh
+     * allowed_signers lines or ascii-armoured GPG blocks); the caller
+     * builds it from {@code SigningKeyService.listByOrg}.
+     *
+     * Returns a verdict string matching the
+     * {@link io.reliza.model.SignatureVerificationData.SignatureVerificationState}
+     * enum names — {@code VERIFIED}, {@code INVALID_SIGNATURE},
+     * {@code UNKNOWN_KEY}, {@code ERRORED}. Mapping to
+     * KEY_REVOKED / WRONG_SIGNER is the caller's job (verifier
+     * subprocess doesn't know our org's revocation state or the
+     * expected-owner constraint).
+     */
+    public SignatureVerifyResult verifySignature(String format, String signatureB64, String payloadB64,
+            String trustStoreB64, String expectedIdentity) {
+        String mutation = """
+            mutation verifySignature ($input: VerifySignatureInput!) {
+                verifySignature(input: $input) {
+                    verdict
+                    matchedFingerprint
+                    details
+                }
+            }""";
+        Map<String, Object> input = new HashMap<>();
+        input.put("format", format);
+        input.put("signatureB64", signatureB64);
+        input.put("payloadB64", payloadB64);
+        input.put("trustStoreB64", trustStoreB64);
+        if (expectedIdentity != null) input.put("expectedIdentity", expectedIdentity);
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("input", input);
+        Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
+        var result = response.get("verifySignature");
+        if (result == null) {
+            return new SignatureVerifyResult("ERRORED", null, "No response from rebom");
+        }
+        return Utils.OM.convertValue(result, SignatureVerifyResult.class);
     }
 }

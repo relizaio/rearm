@@ -823,6 +823,7 @@ public class Utils {
 		DELIVERABLE,
 		RELEASE,
 		SCE,
+		AGENT_SESSION,
 	}
 	public static enum StripBom {
 		TRUE,

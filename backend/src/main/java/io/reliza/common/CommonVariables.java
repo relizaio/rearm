@@ -425,10 +425,19 @@ public class CommonVariables {
 	}
 	
 	public enum TableName {
+		AGENTS("agents"),
+		AGENT_IDENTITIES("agent_identities"),
+		AGENT_IDENTITY_CREDENTIALS("agent_identity_credentials"),
+		AGENT_SESSIONS("agent_sessions"),
 		API_KEYS("api_keys"),
 		API_KEY_ACCESS("api_key_access"),
 		APP_SERVICES("app_service"),
 		ARTIFACTS(CommonVariables.ARTIFACTS_FIELD),
+		AGENT_POLICIES("agent_policies"),
+		COMMITTERS("committers"),
+		SIGNING_KEYS("signing_keys"),
+		SIGNATURE_VERIFICATIONS("signature_verifications"),
+		MODEL_ONTOLOGIES("model_ontologies"),
 		DELIVERABLES("deliverables"),
 		RESOURCE_GROUPS("resource_groups"),
 		APPROVAL_MATRIX("approval_matrix"),
@@ -655,9 +664,23 @@ public class CommonVariables {
 		}
 	}
 	
-	public record VersionResponse (String version, String dockerTagSafeVersion, String changelog, Boolean releaseAlreadyExists) {
+	/**
+	 * Response shape for getversion / getNewVersion. Includes the
+	 * resolved release's current {@code lifecycle} so the caller can
+	 * detect that a component-level trigger has already pre-emptively
+	 * moved the release to a terminal state (REJECTED, CANCELLED) and
+	 * abort the rest of the CI pipeline instead of charging into a
+	 * downstream {@code addrelease} that will collide on the V31
+	 * dedup gate. Null when no release was created (onlyVersion path).
+	 */
+	public record VersionResponse (String version, String dockerTagSafeVersion, String changelog,
+			Boolean releaseAlreadyExists, String lifecycle) {
 		public VersionResponse(String version, String dockerTagSafeVersion, String changelog) {
-			this(version, dockerTagSafeVersion, changelog, false);
+			this(version, dockerTagSafeVersion, changelog, false, null);
+		}
+		public VersionResponse(String version, String dockerTagSafeVersion, String changelog,
+				Boolean releaseAlreadyExists) {
+			this(version, dockerTagSafeVersion, changelog, releaseAlreadyExists, null);
 		}
 	}
 	

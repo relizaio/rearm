@@ -99,7 +99,17 @@ public class UserPermission {
 		// at PermissionScope.COMPONENT on the product. Permissive call
 		// type — a READ-or-stronger key with this function passes the
 		// auth gate (the operation itself still writes).
-		VERSION_FEATURESET
+		VERSION_FEATURESET,
+		// "I'm an agent." Marks a FREEFORM key (or user) as authorised
+		// to act *as* an AI agent — register itself on first call,
+		// open / touch / close sessions, attach artifacts, spawn
+		// sub-agents, set its own model card. Org-wide, ESSENTIAL_READ
+		// floor on the call type so agents don't need READ_WRITE on
+		// the whole org just to initialize a session. Human-facing
+		// agent monitoring and policy admin are gated separately via
+		// the standard type tiers (no special function), since those
+		// callers aren't agents — they're managing them.
+		AGENT
 		;
 
 		private PermissionFunction () {}

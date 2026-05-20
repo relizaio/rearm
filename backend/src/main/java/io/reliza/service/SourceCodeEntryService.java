@@ -64,9 +64,15 @@ public class SourceCodeEntryService {
 
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
-	
+
 	@Autowired
 	private VcsRepositoryService vcsRepositoryService;
+
+	@Autowired
+	private AgentService agentService;
+
+	@Autowired
+	private AgentSessionService agentSessionService;
 
 	/**
 	 * Self-injection so the routine can call {@link #createSourceCodeEntry} through
@@ -163,6 +169,23 @@ public class SourceCodeEntryService {
 		log.debug("Existing sce found, updating ...: {}", sce);
 		SourceCodeEntryData existingSceData = SourceCodeEntryData.dataFromRecord(sce);
 		SourceCodeEntryData sced = SourceCodeEntryData.scEntryDataFactory(sceDto);
+		// Preserve commit metadata that an earlier addrelease populated when
+		// the current caller didn't supply a value. Two consumers
+		// addrelease-ing the same (vcs, commit) race — one with full
+		// metadata, another with partial — and we don't want the partial
+		// caller to stomp the proper values to null/blank. Mirrors the
+		// artifact-merge logic below; same defence, different field set.
+		sced.preserveScalarsFrom(existingSceData);
+		// Re-resolve agent attribution against the (preserved) commit
+		// message we'll persist. scEntryDataFactory leaves agent and
+		// agentSession null — they're only set by the trailer parser,
+		// which runs from createSourceCodeEntry but not from this merge
+		// path. Without this call, a second addrelease against an
+		// already-attributed SCE silently drops the agent linkage and
+		// the downstream signature verifier lands on ERRORED ("trailer
+		// present but no resolved agent"). Parser is no-op when the
+		// message carries no trailers.
+		UUID mergeResolvedSession = resolveAndAttributeTrailers(sced);
 		if (null != existingSceData.getArtifacts() && !existingSceData.getArtifacts().isEmpty()) {
 			Set<String> dedupArts = new HashSet<>();
 			if (null != sced.getArtifacts() && !sced.getArtifacts().isEmpty()) {
@@ -182,7 +205,20 @@ public class SourceCodeEntryService {
 			}
 		}
 		Map<String,Object> recordData = Utils.dataToRecord(sced);
-		return Optional.of(saveSourceCodeEntry(sce, recordData, wu));
+		SourceCodeEntry mergedSce = saveSourceCodeEntry(sce, recordData, wu);
+		// Mirror createSourceCodeEntry's post-save reverse-index update so
+		// the session's commit list picks up a merge-resolved attribution
+		// just like a fresh-create one would. Best-effort; failure does
+		// not roll back the merge.
+		if (mergeResolvedSession != null) {
+			try {
+				agentSessionService.recordCommit(mergeResolvedSession, mergedSce.getUuid(), wu);
+			} catch (Exception e) {
+				log.warn("Failed to record SCE {} on session {} (merge path): {}",
+						mergedSce.getUuid(), mergeResolvedSession, e.getMessage());
+			}
+		}
+		return Optional.of(mergedSce);
 	}
 
 	// REQUIRES_NEW so a unique-violation on (vcs, commit) rolls back only this
@@ -202,10 +238,153 @@ public class SourceCodeEntryService {
 			if (null == sceDto.getOrganizationUuid())
 				sceDto.setOrganizationUuid(orgUuid);
 		}
-		
+
 		SourceCodeEntryData sced = SourceCodeEntryData.scEntryDataFactory(sceDto);
+
+		// Parse the PR 2 agent commit trailers off the message and resolve
+		// them to a (leaf agent, root session) pair before saving the SCE.
+		// Resolution failures are non-fatal: we want the SCE to land
+		// regardless of whether its agent attribution survives —
+		// untracked commits are still releaseable. See
+		// {@code ai-plans/agentic/README.md} §6-7 for the contract.
+		UUID resolvedSession = resolveAndAttributeTrailers(sced);
+
 		Map<String,Object> recordData = Utils.dataToRecord(sced);
-		return saveSourceCodeEntry(sce, recordData, wu);
+		SourceCodeEntry saved = saveSourceCodeEntry(sce, recordData, wu);
+
+		// Record the SCE on the session's reverse-index in a best-effort
+		// post-write step. Failure here is logged but does not roll back
+		// the SCE creation — the forward pointer on the SCE row is the
+		// source of truth for the read path, the reverse index is an
+		// optimisation.
+		if (resolvedSession != null) {
+			try {
+				agentSessionService.recordCommit(resolvedSession, saved.getUuid(), wu);
+			} catch (Exception e) {
+				log.warn("Failed to record SCE {} on session {}: {}",
+						saved.getUuid(), resolvedSession, e.getMessage());
+			}
+		}
+		return saved;
+	}
+
+	/**
+	 * Parse {@code ReARM-Agent} + {@code ReARM-Agentic-Session} trailers
+	 * off the SCE's commit message, mutate the SCE data in place with
+	 * the resolved leaf-agent + root-session pointers, and return the
+	 * session uuid (or null) so the caller can record the SCE on the
+	 * reverse index after save.
+	 *
+	 * Returns null and logs warnings for any of: missing trailers,
+	 * malformed agent uuid, unknown agent, unknown session, agent and
+	 * session orgs disagreeing with the SCE org. The SCE is still
+	 * saved without attribution in all these cases.
+	 */
+	private UUID resolveAndAttributeTrailers(SourceCodeEntryData sced) {
+		String msg = sced.getCommitMessage();
+		if (StringUtils.isBlank(msg)) {
+			sced.setAttributionState(SourceCodeEntryData.AttributionState.UNATTRIBUTED);
+			return null;
+		}
+		AgentCommitTrailerParser.AgentCommitAttribution parsed;
+		try {
+			parsed = AgentCommitTrailerParser.parse(msg);
+		} catch (RelizaException e) {
+			log.warn("Rejected trailer block on commit {}: {}", sced.getCommit(), e.getMessage());
+			rejectAttribution(sced, "Trailer block invalid: " + e.getMessage());
+			return null;
+		}
+		if (!parsed.hasAgent() && !parsed.hasSession()) {
+			sced.setAttributionState(SourceCodeEntryData.AttributionState.UNATTRIBUTED);
+			return null;
+		}
+		if (!parsed.isFullAttribution()) {
+			// Either trailer present in isolation: claim is incomplete,
+			// so it can't resolve — flag as REJECTED so policies can gate.
+			String which = parsed.agentUuid() == null ? "ReARM-Agent" : "ReARM-Agentic-Session";
+			rejectAttribution(sced, "Partial attribution — missing " + which + " trailer");
+			return null;
+		}
+		if (parsed.clientSessionId() != null
+				&& !AgentCommitTrailerParser.CLIENT_SESSION_ID_PATTERN.matcher(parsed.clientSessionId()).matches()) {
+			rejectAttribution(sced, "ReARM-Agentic-Session value '" + parsed.clientSessionId()
+					+ "' does not match the canonical clientSessionId pattern "
+					+ AgentCommitTrailerParser.CLIENT_SESSION_ID_PATTERN.pattern());
+			return null;
+		}
+		var agentOpt = agentService.getAgentData(parsed.agentUuid());
+		if (agentOpt.isEmpty()) {
+			log.warn("ReARM-Agent {} not found — SCE {} saved without attribution",
+					parsed.agentUuid(), sced.getCommit());
+			rejectAttribution(sced, "ReARM-Agent " + parsed.agentUuid() + " not found");
+			return null;
+		}
+		// Past this point the agent uuid is valid AND the agent exists in
+		// DB. Pin it on the SCE so the signature verifier can still match
+		// the commit signature to the agent's enrolled keys even if a
+		// later step (cross-org, session not found, …) rejects the
+		// overall attribution. CEL gates discriminate via
+		// commit.attribution.state instead of commit.agent presence.
+		var agent = agentOpt.get();
+		sced.setAgent(parsed.agentUuid());
+		if (sced.getOrg() != null && !sced.getOrg().equals(agent.getOrg())) {
+			log.warn("ReARM-Agent {} belongs to org {} but SCE org is {} — refusing cross-org attribution",
+					parsed.agentUuid(), agent.getOrg(), sced.getOrg());
+			rejectAttribution(sced, "ReARM-Agent " + parsed.agentUuid()
+					+ " belongs to a different org than the SCE — cross-org attribution refused");
+			return null;
+		}
+		io.reliza.model.AgentData root;
+		try {
+			root = agentService.resolveRoot(agent);
+		} catch (RelizaException e) {
+			log.warn("Could not resolve root for agent {}: {}", parsed.agentUuid(), e.getMessage());
+			rejectAttribution(sced, "Could not resolve root for ReARM-Agent " + parsed.agentUuid()
+					+ ": " + e.getMessage());
+			return null;
+		}
+		var sessionOpt = agentSessionService.getByClientSessionId(
+				root.getOrg(), root.getUuid(), parsed.clientSessionId());
+		if (sessionOpt.isEmpty()) {
+			log.warn("Session clientId='{}' not found under root agent {} — SCE {} saved without attribution",
+					parsed.clientSessionId(), root.getUuid(), sced.getCommit());
+			rejectAttribution(sced, "ReARM-Agentic-Session '" + parsed.clientSessionId()
+					+ "' not found under root agent " + root.getUuid());
+			return null;
+		}
+		var session = sessionOpt.get();
+		// BLOCKED sessions are persisted-but-terminal: they exist in the
+		// audit (so operators see the rejected attempt + policyEvents),
+		// but commits can't bind to them. Surface as REJECTED attribution
+		// so policies can gate symmetric with other rejection reasons,
+		// rather than letting the trailer silently resolve to a session
+		// that was never allowed to do work.
+		if (session.getStatus() == io.reliza.model.AgentSessionData.SessionStatus.BLOCKED) {
+			log.warn("Session clientId='{}' under root agent {} is BLOCKED — refusing attribution on SCE {}",
+					parsed.clientSessionId(), root.getUuid(), sced.getCommit());
+			rejectAttribution(sced, "ReARM-Agentic-Session '" + parsed.clientSessionId()
+					+ "' is BLOCKED (failed an INPUT policy on init). Commits cannot resolve to a"
+					+ " BLOCKED session; agent should retry with a fresh clientSessionId once the"
+					+ " policy is satisfied.");
+			return null;
+		}
+		sced.setAgent(parsed.agentUuid());
+		sced.setAgentSession(session.getUuid());
+		sced.setAttributionState(SourceCodeEntryData.AttributionState.RESOLVED);
+		sced.setAttributionReason(null);
+		log.info("Attributed SCE commit={} to session {} (agent={}, root={})",
+				sced.getCommit(), session.getUuid(), parsed.agentUuid(), root.getUuid());
+		return session.getUuid();
+	}
+
+	private void rejectAttribution(SourceCodeEntryData sced, String reason) {
+		sced.setAttributionState(SourceCodeEntryData.AttributionState.REJECTED);
+		sced.setAttributionReason(reason);
+		// agentSession is the resolved-only pointer — clear it. agent
+		// is set earlier IFF the agent uuid validated AND the agent
+		// exists in DB (verifier needs that to pick the right key
+		// scope), so we leave it as the caller set it.
+		sced.setAgentSession(null);
 	}
 
 	@Transactional
