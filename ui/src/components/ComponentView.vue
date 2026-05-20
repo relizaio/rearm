@@ -428,6 +428,7 @@
                                         </div>
                                     </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS'">
+                                        <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Actions</h4>
                                         <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
                                         <Icon v-if="isWritable" class="clickable" size="25" title="Add Action" @click="resetOutputTrigger(); loadEnvTypes(); showCreateOutputTriggerModal = true">
                                             <CirclePlus />
@@ -462,7 +463,7 @@
                                                 <p class="text-muted" style="font-size: 0.9em; margin-bottom: 6px;">
                                                     Actions defined on the approval policy. Read-only here — edit them on the policy itself.
                                                 </p>
-                                                <n-data-table :data="policyGlobalOutputEvents" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
+                                                <n-data-table :data="policyGlobalOutputEvents" :columns="outputTriggerTableFieldsReadOnly" :row-key="dataTableUuidRowKey" />
                                             </template>
                                         </div>
                                         <n-modal
@@ -672,6 +673,7 @@
                                         </n-modal>
                                     </n-tab-pane>
                                     <n-tab-pane name="Input Events" tab="Rules" v-if="myUser.installationType !== 'OSS'">
+                                        <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Rules</h4>
                                         <n-data-table :data="updatedComponent.releaseInputTriggers ? updatedComponent.releaseInputTriggers : []" :columns="inputTriggerTableFields" :row-key="dataTableUuidRowKey" />
                                         <Icon v-if="isWritable" class="clickable" size="25" title="Add Rule" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
                                             <CirclePlus />
@@ -699,6 +701,11 @@
                                                         <span class="text-muted" style="font-size: 0.85em;">
                                                             ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
                                                         </span>
+                                                    </div>
+                                                    <div style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
+                                                        <span class="text-muted" style="margin-right: 6px;">Condition:</span>
+                                                        <code v-if="gie.celExpression">{{ gie.celExpression }}</code>
+                                                        <span v-else class="text-muted">(none — rule will not fire)</span>
                                                     </div>
                                                     <div v-if="isGlobalInputEventEnabled(gie.uuid)" style="margin-left: 28px; margin-top: 8px;">
                                                         <div style="display: flex; align-items: center; gap: 8px;">
@@ -2839,6 +2846,9 @@ async function deleteInputTrigger (uuid: string) {
 
 const dataTableUuidRowKey = (row: any) => row.uuid
 
+// Local action columns — used for the editable component-owned table
+// at the top of the Actions tab. No scope column (the table itself is
+// the "local" section; the column was visual noise).
 const outputTriggerTableFields: DataTableColumns<any> = [
     {
         key: 'name',
@@ -2861,43 +2871,51 @@ const outputTriggerTableFields: DataTableColumns<any> = [
         }
     },
     {
-        key: 'scope',
-        title: 'Scope',
-        render: (row: any) => {
-            if (row.scope === 'GLOBAL') return h('span', { style: 'color: #2080f0; font-weight: bold;' }, 'Global')
-            return h('span', 'Local')
-        }
-    },
-    {
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
-            let els: any[] = []
-            if (isWritable && row.scope !== 'GLOBAL') {
-                const editEl = h(NIcon, {
+            const els: any[] = []
+            if (isWritable.value) {
+                els.push(h(NIcon, {
                     title: 'Edit Trigger',
                     class: 'icons clickable',
                     size: 20,
-                    onClick: () => {
-                        editOutputTrigger(row)
-                    }
-                }, 
-                () => h(Edit)
-                )
-                const deleteEl = h(NIcon, {
+                    onClick: () => editOutputTrigger(row)
+                }, () => h(Edit)))
+                els.push(h(NIcon, {
                     title: 'Delete Trigger',
                     class: 'icons clickable',
                     size: 20,
-                    onClick: () => {
-                        deleteOutputTrigger(row.uuid)
-                    }
-                }, 
-                () => h(Trash)
-                )
-                els.push(editEl, deleteEl)
+                    onClick: () => deleteOutputTrigger(row.uuid)
+                }, () => h(Trash)))
             }
-            if (!els.length) els = [h('div'), row.scope === 'GLOBAL' ? 'Global' : 'N/A']
-            return els
+            return els.length ? els : h('div', 'N/A')
+        }
+    }
+]
+
+// Policy-wide action columns — read-only display in the lower section
+// of the Actions tab. No actions column (edits happen on the policy),
+// no scope column (the table itself is the "policy-wide" section).
+const outputTriggerTableFieldsReadOnly: DataTableColumns<any> = [
+    {
+        key: 'name',
+        title: 'Name'
+    },
+    {
+        key: 'type',
+        title: 'Type',
+        render: (row: any) => {
+            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
+            return option ? option.label : row.type
+        }
+    },
+    {
+        key: 'toReleaseLifecycle',
+        title: 'Lifecycle to Change To',
+        render: (row: any) => {
+            const option = outputTriggerLifecycleOptions.find(opt => opt.value === row.toReleaseLifecycle)
+            return option ? option.label : row.toReleaseLifecycle
         }
     }
 ]
@@ -2906,6 +2924,18 @@ const inputTriggerTableFields: DataTableColumns<any> = [
     {
         key: 'name',
         title: 'Name'
+    },
+    {
+        key: 'celExpression',
+        title: 'Condition',
+        render: (row: any) => {
+            if (!row.celExpression) {
+                return h(NAlert, { type: 'warning', style: 'font-size: 12px;' }, {
+                    default: () => 'No CEL expression — rule will not fire. Edit to add a condition.'
+                })
+            }
+            return h('code', { style: 'font-size: 12px;' }, row.celExpression)
+        }
     },
     {
         key: 'outputTriggers',
@@ -2929,64 +2959,25 @@ const inputTriggerTableFields: DataTableColumns<any> = [
         }
     },
     {
-        key: 'facts',
-        title: 'Facts',
-        render: (row: any) => {
-            const els: any[] = []
-            if (!row.celExpression) {
-                els.push(h(NAlert, { type: 'warning', style: 'margin-bottom: 4px;' }, {
-                    default: () => 'This trigger has no CEL expression and will not fire. Add a condition.'
-                }))
-            }
-            const factContent: any[] = [
-                h('div', `UUID: ${row.uuid}`),
-                h('div', `CEL: ${row.celExpression || '(none)'}`)
-            ]
-            els.push(h(NTooltip, { trigger: 'hover' }, {
-                trigger: () => h(NIcon, { class: 'icons', size: 25 }, () => h(Info20Regular)),
-                default: () => h('ul', factContent)
-            }))
-            return h('div', els)
-        }
-    },
-    {
-        key: 'scope',
-        title: 'Scope',
-        render: (row: any) => {
-            if (row.scope === 'GLOBAL') return h('span', { style: 'color: #2080f0; font-weight: bold;' }, 'Global')
-            return h('span', 'Local')
-        }
-    },
-    {
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
-            let els: any[] = []
-            if (isWritable && row.scope !== 'GLOBAL') {
-                const editEl = h(NIcon, {
+            const els: any[] = []
+            if (isWritable.value) {
+                els.push(h(NIcon, {
                     title: 'Edit Trigger',
                     class: 'icons clickable',
                     size: 20,
-                    onClick: () => {
-                        editInputTrigger(row)
-                    }
-                }, 
-                () => h(Edit)
-                )
-                const deleteEl = h(NIcon, {
+                    onClick: () => editInputTrigger(row)
+                }, () => h(Edit)))
+                els.push(h(NIcon, {
                     title: 'Delete Trigger',
                     class: 'icons clickable',
                     size: 20,
-                    onClick: () => {
-                        deleteInputTrigger(row.uuid)
-                    }
-                }, 
-                () => h(Trash)
-                )
-                els.push(editEl, deleteEl)
+                    onClick: () => deleteInputTrigger(row.uuid)
+                }, () => h(Trash)))
             }
-            if (!els.length) els = [h('div'), row.scope === 'GLOBAL' ? 'Global' : 'N/A']
-            return els
+            return els.length ? els : h('div', 'N/A')
         }
     }
 ]
