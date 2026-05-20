@@ -2119,6 +2119,8 @@ const storeObject : any = {
                             lastActivityAt
                             artifacts
                             commits
+                            releases { uuid }
+                            pullRequests { uuid }
                         }
                     }`,
                 variables: { orgUuid: payload.orgUuid, statuses: payload.statuses ?? null },
