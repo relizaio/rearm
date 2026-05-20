@@ -108,8 +108,30 @@
                             <div><span class="acard__num">{{ a.subAgents?.length ?? 0 }}</span><span class="acard__lab">sub-agents</span></div>
                         </div>
                         <div class="acard__seen">
-                            <span><span class="acard__lab">first seen</span> {{ formatDate(a.createdDate) }}</span>
-                            <span><span class="acard__lab">last seen</span> {{ formatDate(a.lastActivityAt) }}</span>
+                            <span>
+                                <span class="acard__lab">first seen</span>
+                                {{ formatDate(a.createdDate) }}
+                                <n-tooltip v-if="a.createdDate" trigger="hover" placement="top">
+                                    <template #trigger>
+                                        <n-icon class="acard__info" :size="13" @click.stop>
+                                            <Info20Regular/>
+                                        </n-icon>
+                                    </template>
+                                    {{ formatDateTimePrecise(a.createdDate) }}
+                                </n-tooltip>
+                            </span>
+                            <span>
+                                <span class="acard__lab">last seen</span>
+                                {{ formatDate(a.lastActivityAt) }}
+                                <n-tooltip v-if="a.lastActivityAt" trigger="hover" placement="top">
+                                    <template #trigger>
+                                        <n-icon class="acard__info" :size="13" @click.stop>
+                                            <Info20Regular/>
+                                        </n-icon>
+                                    </template>
+                                    {{ formatDateTimePrecise(a.lastActivityAt) }}
+                                </n-tooltip>
+                            </span>
                         </div>
                     </n-card>
                 </div>
@@ -132,7 +154,8 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NSpace, NSpin, NTag, NTooltip, DataTableColumns } from 'naive-ui'
+import { NButton, NCard, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns } from 'naive-ui'
+import { Info20Regular } from '@vicons/fluent'
 
 const store = useStore()
 const route = useRoute()
@@ -165,6 +188,20 @@ function formatDate (iso: string | null | undefined): string {
     if (!iso) return '—'
     const d = new Date(iso)
     return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-CA')
+}
+
+// Second-precision tooltip variant — the visible card text stays at
+// day granularity to keep the row dense, the tooltip surfaces the
+// exact moment for users who care about ordering bursts of activity.
+function formatDateTimePrecise (iso: string | null | undefined): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleString('en-CA', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+    })
 }
 
 const identityCounts = computed<Record<string, number>>(() => {
@@ -273,6 +310,8 @@ const sessionColumns: DataTableColumns<any> = [
 .acard__lab { font-size: 11px; color: var(--n-text-color-3, #666); text-transform: uppercase; letter-spacing: 0.04em; }
 .acard__seen { display: flex; gap: 16px; margin-top: 10px; font-size: 12px; color: var(--n-text-color-3, #666); }
 .acard__seen .acard__lab { margin-right: 6px; }
+.acard__info { vertical-align: middle; margin-left: 4px; color: var(--n-text-color-3, #999); cursor: help; }
+.acard__info:hover { color: var(--n-text-color-2, #555); }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
 </style>
