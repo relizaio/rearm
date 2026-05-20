@@ -436,6 +436,23 @@
                                                 </n-button>
                                             </n-space>
                                         </div>
+                                        <!-- Policy-Wide Actions — read-only display. These are owned by
+                                             the approval policy, not the component. The local save
+                                             path (`saveTriggers` → `updateComponent`) only ships local
+                                             `outputTriggers`; policy-wide rows are never round-tripped
+                                             on the component mutation. -->
+                                        <div v-if="hasEffectivePolicy" style="margin-top: 28px;">
+                                            <h4 style="margin-bottom: 8px;">Policy-Wide Actions</h4>
+                                            <p v-if="policyGlobalOutputEvents.length === 0" class="text-muted">
+                                                No policy-wide actions defined on the approval policy.
+                                            </p>
+                                            <template v-else>
+                                                <p class="text-muted" style="font-size: 0.9em; margin-bottom: 6px;">
+                                                    Actions defined on the approval policy. Read-only here — edit them on the policy itself.
+                                                </p>
+                                                <n-data-table :data="policyGlobalOutputEvents" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
+                                            </template>
+                                        </div>
                                         <n-modal
                                             v-model:show="showCreateOutputTriggerModal"
                                             preset="dialog"
@@ -647,6 +664,61 @@
                                         <Icon v-if="isWritable" class="clickable" size="25" title="Add Rule" @click="resetInputTrigger(); showCreateInputTriggerModal = true">
                                             <CirclePlus />
                                         </Icon>
+                                        <!-- Policy-Wide Rules — co-located with local rules per
+                                             operator request. Toggle / override widgets save via the
+                                             same `saveTriggers` button below, which ships both
+                                             `releaseInputTriggers` (local) and `globalInputEventRefs`
+                                             (opt-out / override records) on the component mutation. -->
+                                        <div v-if="hasEffectivePolicy" style="margin-top: 28px;">
+                                            <h4 style="margin-bottom: 8px;">Policy-Wide Rules</h4>
+                                            <div v-if="policyGlobalInputEvents.length === 0" class="text-muted">
+                                                No policy-wide rules defined on the approval policy.
+                                            </div>
+                                            <div v-else>
+                                                <p class="text-muted" style="font-size: 0.9em; margin-bottom: 6px;">Policy-wide rules apply to this {{ words.component }} by default. Toggle a rule off to opt out, or override its actions locally.</p>
+                                                <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;">
+                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                        <n-switch
+                                                            :value="isGlobalInputEventEnabled(gie.uuid)"
+                                                            @update:value="(val: boolean) => toggleGlobalInputEventRef(gie.uuid, val)"
+                                                            :disabled="!isWritable"
+                                                        />
+                                                        <strong>{{ gie.name }}</strong>
+                                                        <span class="text-muted" style="font-size: 0.85em;">
+                                                            ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
+                                                        </span>
+                                                    </div>
+                                                    <div v-if="isGlobalInputEventEnabled(gie.uuid)" style="margin-left: 28px; margin-top: 8px;">
+                                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                                            <n-switch
+                                                                :value="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally || false"
+                                                                @update:value="(val: boolean) => toggleOverrideOutputEvents(gie.uuid, val)"
+                                                                :disabled="!isWritable"
+                                                            />
+                                                            <span>Override actions locally</span>
+                                                            <n-button v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally"
+                                                                size="tiny" quaternary type="warning"
+                                                                @click="resetGlobalInputEventOverride(gie.uuid)"
+                                                                :disabled="!isWritable">
+                                                                Reset to Default
+                                                            </n-button>
+                                                        </div>
+                                                        <div v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally" style="margin-top: 8px;">
+                                                            <span style="color: #f0a020; font-size: 0.85em; font-weight: bold;">⚠ Actions are overridden locally</span>
+                                                            <n-select
+                                                                :value="getGlobalInputEventRef(gie.uuid)?.outputEventsOverride || []"
+                                                                @update:value="(val: string[]) => updateOutputEventsOverride(gie.uuid, val)"
+                                                                :options="allOutputEventsForOverride"
+                                                                multiple
+                                                                placeholder="Select actions to use instead"
+                                                                :disabled="!isWritable"
+                                                                style="margin-top: 4px;"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                         <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
                                             <n-space>
                                                 <n-button type="success" @click="saveTriggers">
@@ -692,71 +764,6 @@
                                                 </n-space>
                                             </n-form>
                                         </n-modal>
-                                    </n-tab-pane>
-                                    <n-tab-pane name="globalTriggerEvents" tab="Policy-Wide Rules" v-if="myUser.installationType !== 'OSS' && hasEffectivePolicy">
-                                        <div v-if="policyGlobalInputEvents.length === 0" class="text-muted mt-2">
-                                            No policy-wide rules defined on the approval policy.
-                                        </div>
-                                        <div v-else>
-                                            <p class="text-muted">Policy-wide rules apply to this {{ words.component }} by default. Toggle a rule off to opt out, or override its actions locally.</p>
-                                            <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;">
-                                                <div style="display: flex; align-items: center; gap: 8px;">
-                                                    <n-switch
-                                                        :value="isGlobalInputEventEnabled(gie.uuid)"
-                                                        @update:value="(val: boolean) => toggleGlobalInputEventRef(gie.uuid, val)"
-                                                        :disabled="!isWritable"
-                                                    />
-                                                    <strong>{{ gie.name }}</strong>
-                                                    <span class="text-muted" style="font-size: 0.85em;">
-                                                        ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
-                                                    </span>
-                                                </div>
-                                                <div v-if="isGlobalInputEventEnabled(gie.uuid)" style="margin-left: 28px; margin-top: 8px;">
-                                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                                        <n-switch
-                                                            :value="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally || false"
-                                                            @update:value="(val: boolean) => toggleOverrideOutputEvents(gie.uuid, val)"
-                                                            :disabled="!isWritable"
-                                                        />
-                                                        <span>Override actions locally</span>
-                                                        <n-button v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally"
-                                                            size="tiny" quaternary type="warning"
-                                                            @click="resetGlobalInputEventOverride(gie.uuid)"
-                                                            :disabled="!isWritable">
-                                                            Reset to Default
-                                                        </n-button>
-                                                    </div>
-                                                    <div v-if="getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally" style="margin-top: 8px;">
-                                                        <span style="color: #f0a020; font-size: 0.85em; font-weight: bold;">⚠ Actions are overridden locally</span>
-                                                        <n-select
-                                                            :value="getGlobalInputEventRef(gie.uuid)?.outputEventsOverride || []"
-                                                            @update:value="(val: string[]) => updateOutputEventsOverride(gie.uuid, val)"
-                                                            :options="allOutputEventsForOverride"
-                                                            multiple
-                                                            placeholder="Select actions to use instead"
-                                                            :disabled="!isWritable"
-                                                            style="margin-top: 4px;"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="coreSettingsActions" v-if="hasTriggerChanges && isWritable" style="margin-top: 20px;">
-                                            <n-space>
-                                                <n-button type="success" @click="saveTriggers">
-                                                    <template #icon>
-                                                        <n-icon><Check /></n-icon>
-                                                    </template>
-                                                    Save Changes
-                                                </n-button>
-                                                <n-button type="warning" @click="resetTriggers">
-                                                    <template #icon>
-                                                        <n-icon><X /></n-icon>
-                                                    </template>
-                                                    Reset Changes
-                                                </n-button>
-                                            </n-space>
-                                        </div>
                                     </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
