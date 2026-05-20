@@ -252,11 +252,34 @@ const isStaleChunkError = (err: unknown): boolean => {
 }
 
 const RELOAD_GUARD_KEY = 'rearm-stale-chunk-reload-at'
+
+function showReloadToast (): void {
+    if (document.getElementById('rearm-stale-chunk-toast')) return
+    const el = document.createElement('div')
+    el.id = 'rearm-stale-chunk-toast'
+    el.textContent = 'App updated — reloading…'
+    Object.assign(el.style, {
+        position: 'fixed',
+        bottom: '24px',
+        right: '24px',
+        background: '#2080f0',
+        color: '#fff',
+        padding: '10px 16px',
+        borderRadius: '6px',
+        fontSize: '14px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        zIndex: '9999',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+    } as Partial<CSSStyleDeclaration>)
+    document.body.appendChild(el)
+}
+
 const reloadOnce = () => {
     const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) || 0)
     if (Date.now() - last < 10_000) return
     sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()))
-    window.location.reload()
+    showReloadToast()
+    setTimeout(() => window.location.reload(), 800)
 }
 
 Router.onError((err) => {

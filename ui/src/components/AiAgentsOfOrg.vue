@@ -279,6 +279,8 @@ const sessionColumns: DataTableColumns<any> = [
     { title: 'Started', key: 'startedAt', render: (row: any) => row.startedAt ? new Date(row.startedAt).toLocaleString('en-CA') : '—' },
     { title: 'Artifacts', key: 'artifacts', width: 110, render: (row: any) => row.artifacts?.length ?? 0 },
     { title: 'Commits', key: 'commits', width: 100, render: (row: any) => row.commits?.length ?? 0 },
+    { title: 'PRs', key: 'pullRequests', width: 80, render: (row: any) => row.pullRequests?.length ?? 0 },
+    { title: 'Releases', key: 'releases', width: 100, render: (row: any) => row.releases?.length ?? 0 },
 ]
 </script>
 
