@@ -253,7 +253,11 @@ const sessionColumns: DataTableColumns<any> = [
 .kpi__l { text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; color: var(--n-text-color-3, #666); }
 .kpi__v { font-size: 32px; font-weight: 600; margin-top: 4px; }
 .kpi__d { font-size: 12px; color: var(--n-text-color-3, #666); margin-top: 2px; }
-.agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 8px; }
+/* Cap at 4 cards per row so each card has room to breathe. The
+ * max(280px, …) keeps the auto-fit floor on narrow screens — once the
+ * viewport drops below ~1130px the 23% lower bound stops winning and
+ * the grid falls back to as many 280px-min cards as fit. */
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(max(280px, 23%), 1fr)); gap: 12px; margin-top: 8px; }
 .acard__top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .acard__mark { width: 36px; height: 36px; border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 18px; flex-shrink: 0; }
 .acard__head { flex: 1; min-width: 0; }
