@@ -6046,9 +6046,18 @@ async function fetchApprovalPolicies () {
                 approvalNames
             }
         })
-        // If a policy was selected, refresh its events
+        // If a policy was selected (either via prior row click or via
+        // the `?policy=<uuid>` deep-link initialiser), populate the
+        // side panel directly. Do NOT call selectPolicyForGlobalEvents
+        // here — that function toggles when called with the already-
+        // selected uuid, which would clear the selection on a
+        // deep-link load.
         if (selectedPolicyUuid.value) {
-            selectPolicyForGlobalEvents(selectedPolicyUuid.value)
+            const policy = approvalPoliciesFullData.value.find((p: any) => p.uuid === selectedPolicyUuid.value)
+            if (policy) {
+                globalOutputEvents.value = policy.globalOutputEvents || []
+                globalInputEvents.value = policy.globalInputEvents || []
+            }
         }
     } else {
         approvalPolicyTableData.value = []
