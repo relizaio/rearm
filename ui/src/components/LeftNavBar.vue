@@ -105,6 +105,21 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                     RouterLink,
                     {
                         to: {
+                            name: 'AiAgentsOfOrg',
+                            params: {orguuid: org}
+                        }
+                    },
+                    { default: () => 'AI Agents' }
+                ),
+            key: 'aiAgents',
+            icon: renderIcon(Robot)
+        },
+        {
+            label: () =>
+                h(
+                    RouterLink,
+                    {
+                        to: {
                             name: 'VcsReposOfOrg',
                             params: {orguuid: org}
                         }
@@ -128,21 +143,6 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                 ),
             key: 'pullRequests',
             icon: renderIcon(GitPullRequest)
-        },
-        {
-            label: () =>
-                h(
-                    RouterLink,
-                    {
-                        to: {
-                            name: 'AiAgentsOfOrg',
-                            params: {orguuid: org}
-                        }
-                    },
-                    { default: () => 'AI Agents' }
-                ),
-            key: 'aiAgents',
-            icon: renderIcon(Robot)
         },
 
     ]
@@ -256,6 +256,7 @@ const routeToMenuKey: Record<string, string> = {
     'PullRequestsOfOrg': 'pullRequests',
     'PullRequestView': 'pullRequests',
     'AiAgentsOfOrg': 'aiAgents',
+    'AiAgentsTableOfOrg': 'aiAgents',
     'AiAgentView': 'aiAgents',
     'AiAgentSessionView': 'aiAgents',
     'AiAgentPoliciesOfOrg': 'aiAgents',

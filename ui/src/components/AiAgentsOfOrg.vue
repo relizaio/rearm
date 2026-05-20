@@ -40,13 +40,22 @@
 
             <!-- Agent card grid -->
             <div>
-                <h5>Registered agents</h5>
+                <div class="section-head">
+                    <h5>Registered agents</h5>
+                    <n-button
+                        v-if="rootAgents.length > HERO_LIMIT"
+                        quaternary size="small"
+                        @click="openAllAgents"
+                    >
+                        See all {{ rootAgents.length }} →
+                    </n-button>
+                </div>
                 <div v-if="agents.length === 0" class="empty">
                     No agents yet. Sessions auto-register an agent on first init.
                 </div>
                 <div class="agent-grid" v-else>
                     <n-card
-                        v-for="a in rootAgents"
+                        v-for="a in heroAgents"
                         :key="a.uuid"
                         class="acard"
                         size="small"
@@ -86,7 +95,7 @@
                                     </n-tooltip>
                                 </div>
                                 <div class="acard__sub" v-if="a.model">
-                                    {{ a.model.publisher }} · <code>{{ a.model.name }}{{ a.model.version ? ' @ ' + a.model.version : '' }}</code>
+                                    {{ a.model.publisher }} · <code>{{ a.model.name }}{{ a.model.version && a.model.version !== 'unknown' ? ' @ ' + a.model.version : '' }}</code>
                                 </div>
                             </div>
                             <n-tag v-if="a.status === 'ARCHIVED'" size="small" type="default">
@@ -97,6 +106,10 @@
                             <div><span class="acard__num">{{ a.sessionCounts?.openSessions ?? 0 }}</span><span class="acard__lab">open</span></div>
                             <div><span class="acard__num">{{ a.sessionCounts?.closedSessions ?? 0 }}</span><span class="acard__lab">closed</span></div>
                             <div><span class="acard__num">{{ a.subAgents?.length ?? 0 }}</span><span class="acard__lab">sub-agents</span></div>
+                        </div>
+                        <div class="acard__seen">
+                            <span><span class="acard__lab">first seen</span> {{ formatDate(a.createdDate) }}</span>
+                            <span><span class="acard__lab">last seen</span> {{ formatDate(a.lastActivityAt) }}</span>
                         </div>
                     </n-card>
                 </div>
@@ -131,7 +144,28 @@ const kpis = ref<any>(null)
 const agents = ref<any[]>([])
 const openSessions = ref<any[]>([])
 
+const HERO_LIMIT = 8
+
 const rootAgents = computed(() => agents.value.filter(a => a.agentType === 'ROOT'))
+
+// Hero shows the 8 most recently active agents — abandoned agents
+// shouldn't crowd out live ones once the org grows past a handful.
+// "See all" link surfaces the rest in a dedicated table view.
+const heroAgents = computed(() =>
+    [...rootAgents.value]
+        .sort((a, b) => {
+            const lhs = a.lastActivityAt ?? a.createdDate ?? ''
+            const rhs = b.lastActivityAt ?? b.createdDate ?? ''
+            return rhs.localeCompare(lhs)
+        })
+        .slice(0, HERO_LIMIT)
+)
+
+function formatDate (iso: string | null | undefined): string {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-CA')
+}
 
 const identityCounts = computed<Record<string, number>>(() => {
     const m: Record<string, number> = {}
@@ -173,6 +207,10 @@ async function refreshAll () {
 
 function openAgent (uuid: string) {
     router.push({ name: 'AiAgentView', params: { uuid } })
+}
+
+function openAllAgents () {
+    router.push({ name: 'AiAgentsTableOfOrg', params: { orguuid: orgUuid.value } })
 }
 
 function openSession (uuid: string) {
@@ -229,5 +267,8 @@ const sessionColumns: DataTableColumns<any> = [
 .acard__row { display: flex; gap: 24px; }
 .acard__num { font-size: 22px; font-weight: 600; margin-right: 6px; }
 .acard__lab { font-size: 11px; color: var(--n-text-color-3, #666); text-transform: uppercase; letter-spacing: 0.04em; }
+.acard__seen { display: flex; gap: 16px; margin-top: 10px; font-size: 12px; color: var(--n-text-color-3, #666); }
+.acard__seen .acard__lab { margin-right: 6px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
 </style>
