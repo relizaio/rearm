@@ -159,14 +159,28 @@ const filterValue: Ref<any> = ref({
     createdBy: ''
 })
 
+// Tooltip body for the URI cell — always carries URI + Environment,
+// appends Cluster when the row resolves to a CLUSTER_INSTANCE that
+// matches an entry in `findInstanceCluster`. Hoisted so the render
+// function stays compact.
+function uriTooltipText (row: any): string {
+    const parts = [`URI: ${row.uri}`, `Environment: ${row.environment}`]
+    if (row.instanceType === InstanceType.CLUSTER_INSTANCE) {
+        const cluster = findInstanceCluster(row.uuid)
+        if (cluster && cluster.name) parts.push(`Cluster: ${cluster.name}`)
+    }
+    return parts.join(', ')
+}
+
 const uriField = reactive<DataTableBaseColumn<any>>({
     key: 'uri',
     title: 'URI',
     // Long URIs (`card-shuffle.psclaude.rearmhq.com`-style) used to wrap
     // and break the column layout. Render as a single ellipsised line
-    // and always surface the full URI + environment in a hover tooltip
-    // — the user wants the tooltip available unconditionally, not only
-    // when the text actually overflows.
+    // and always surface the full URI + environment (+ cluster when
+    // present) in a hover tooltip — the user wants the tooltip
+    // available unconditionally, not only when the text actually
+    // overflows.
     render (row: any) {
         return h(
             NTooltip,
@@ -177,7 +191,7 @@ const uriField = reactive<DataTableBaseColumn<any>>({
                 trigger: () => h('div', {
                     style: 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 100%;'
                 }, row.uri),
-                default: () => `URI: ${row.uri}, Environment: ${row.environment}`
+                default: () => uriTooltipText(row)
             }
         )
     },
@@ -202,20 +216,6 @@ const rowClassName = (row: any) => {
 
 const instanceFields: DataTableColumns<any> = [
     uriField,
-    {
-        key: 'cluster',
-        title: 'Cluster',
-        render: (row: any) => {
-            let clustername = ""
-            if(row.instanceType === InstanceType.CLUSTER_INSTANCE){
-                let cluster = findInstanceCluster(row.uuid)
-                if(cluster && cluster.uuid && cluster.uuid.length){
-                    clustername = cluster.name
-                }
-            }
-            return clustername
-        }
-    },
 ]
 
 const clusetrFields = [
