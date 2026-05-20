@@ -5782,7 +5782,13 @@ const approvalPolicyFields: DataTableColumns<any> = [
 
 const approvalPolicyTableData: Ref<any[]> = ref([])
 const approvalPoliciesFullData: Ref<any[]> = ref([])
-const selectedPolicyUuid: Ref<string> = ref('')
+// Deep-link support: `?policy=<uuid>` on the OrgSettings URL pre-
+// selects an approval policy so links from ComponentView's
+// "Effective policy:" provenance line land directly on the right row.
+// The downstream loader (`loadApprovalPolicies()`) checks
+// `selectedPolicyUuid.value` after fetching and runs the side-panel
+// population for the matching policy automatically.
+const selectedPolicyUuid: Ref<string> = ref(route.query.policy as string || '')
 const globalOutputEvents: Ref<any[]> = ref([])
 const globalInputEvents: Ref<any[]> = ref([])
 
