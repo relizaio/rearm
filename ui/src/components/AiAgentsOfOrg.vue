@@ -95,7 +95,7 @@
                                     </n-tooltip>
                                 </div>
                                 <div class="acard__sub" v-if="a.model">
-                                    {{ a.model.publisher }} · <code>{{ a.model.name }}{{ a.model.version && a.model.version !== 'unknown' ? ' @ ' + a.model.version : '' }}</code>
+                                    <template v-if="a.model.publisher">{{ a.model.publisher }} · </template><code>{{ a.model.name }}{{ a.model.version && a.model.version !== 'unknown' ? ' @ ' + a.model.version : '' }}</code>
                                 </div>
                             </div>
                             <n-tag v-if="a.status === 'ARCHIVED'" size="small" type="default">

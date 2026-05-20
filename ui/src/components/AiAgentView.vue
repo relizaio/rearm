@@ -40,7 +40,7 @@
                     <n-tag size="small" :type="agent.agentType === 'ROOT' ? 'info' : 'default'">{{ agent.agentType }}</n-tag>
                     <n-tag v-if="agent.status === 'ARCHIVED'" size="small" type="default">ARCHIVED</n-tag>
                     <span v-if="agent.model" class="dim">
-                        {{ agent.model.publisher }} · <code>{{ agent.model.name }}{{ agent.model.version && agent.model.version !== 'unknown' ? ' @ ' + agent.model.version : '' }}</code>
+                        <template v-if="agent.model.publisher">{{ agent.model.publisher }} · </template><code>{{ agent.model.name }}{{ agent.model.version && agent.model.version !== 'unknown' ? ' @ ' + agent.model.version : '' }}</code>
                     </span>
                     <span class="dim" v-if="agent.lastActivityAt">
                         last activity {{ formatDate(agent.lastActivityAt) }}
@@ -116,7 +116,7 @@
                     <n-descriptions-item label="Type">{{ agent.agentType }}</n-descriptions-item>
                     <n-descriptions-item label="Status">{{ agent.status }}</n-descriptions-item>
                     <n-descriptions-item label="Model">
-                        <span v-if="agent.model">{{ agent.model.publisher }} · <code>{{ agent.model.name }}{{ agent.model.version && agent.model.version !== 'unknown' ? ' @ ' + agent.model.version : '' }}</code></span>
+                        <span v-if="agent.model"><template v-if="agent.model.publisher">{{ agent.model.publisher }} · </template><code>{{ agent.model.name }}{{ agent.model.version && agent.model.version !== 'unknown' ? ' @ ' + agent.model.version : '' }}</code></span>
                         <span v-else class="dim">—</span>
                     </n-descriptions-item>
                     <n-descriptions-item label="Created">{{ formatDate(agent.createdDate) }}</n-descriptions-item>
@@ -216,7 +216,7 @@ const siblingColumns: DataTableColumns<any> = [
         title: 'Model',
         key: 'model',
         render: (row: any) => row.model
-            ? `${row.model.publisher} · ${row.model.name}${row.model.version && row.model.version !== 'unknown' ? ' @ ' + row.model.version : ''}`
+            ? `${[row.model.publisher, row.model.name].filter(Boolean).join(' · ')}${row.model.version && row.model.version !== 'unknown' ? ' @ ' + row.model.version : ''}`
             : '—',
     },
     { title: 'Created', key: 'createdDate', render: (row: any) => formatDate(row.createdDate) },

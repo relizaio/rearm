@@ -162,16 +162,22 @@ const filterValue: Ref<any> = ref({
 const uriField = reactive<DataTableBaseColumn<any>>({
     key: 'uri',
     title: 'URI',
+    // Long URIs (`card-shuffle.psclaude.rearmhq.com`-style) used to wrap
+    // and break the column layout. Render as a single ellipsised line
+    // and always surface the full URI + environment in a hover tooltip
+    // — the user wants the tooltip available unconditionally, not only
+    // when the text actually overflows.
     render (row: any) {
-        // console.log(row)
         return h(
             NTooltip,
             {
                 trigger: 'hover'
-            }, 
+            },
             {
-                trigger: () => row.uri,
-                default: () => 'Environment: ' + row.environment + ', type: ' + ((row.spawnType !== 'MANUAL') ? 'Ephemeral' : 'Persistent')
+                trigger: () => h('div', {
+                    style: 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 100%;'
+                }, row.uri),
+                default: () => `URI: ${row.uri}, Environment: ${row.environment}`
             }
         )
     },
@@ -209,10 +215,6 @@ const instanceFields: DataTableColumns<any> = [
             }
             return clustername
         }
-    },
-    {
-        key: 'namespace',
-        title: 'ns',
     },
 ]
 
