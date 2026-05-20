@@ -30,7 +30,8 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NDataTable, NSpin, NTag, DataTableColumns } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NDataTable, NIcon, NSpin, NTag, NTooltip, DataTableColumns } from 'naive-ui'
+import { Info20Regular } from '@vicons/fluent'
 
 const store = useStore()
 const route = useRoute()
@@ -70,6 +71,31 @@ function formatDate (iso: string | null | undefined): string {
     if (!iso) return '—'
     const d = new Date(iso)
     return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-CA')
+}
+
+function formatDateTimePrecise (iso: string | null | undefined): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleString('en-CA', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+    })
+}
+
+// Date cell with second-precision tooltip on an info icon. Column
+// stays sortable on the raw ISO via the column's `sorter` — this
+// helper is purely the render side.
+function dateCell (iso: string | null | undefined) {
+    if (!iso) return h('span', null, '—')
+    return h('span', { class: 'date-cell' }, [
+        formatDate(iso),
+        h(NTooltip, { trigger: 'hover', placement: 'top' }, {
+            trigger: () => h(NIcon, { class: 'date-cell__info', size: 13, onClick: (e: Event) => e.stopPropagation() }, () => h(Info20Regular)),
+            default: () => formatDateTimePrecise(iso),
+        }),
+    ])
 }
 
 function modelDisplay (m: any): string {
@@ -131,14 +157,14 @@ const columns: DataTableColumns<any> = [
         title: 'First seen',
         key: 'createdDate',
         sorter: (a: any, b: any) => (a.createdDate ?? '').localeCompare(b.createdDate ?? ''),
-        render: (row: any) => formatDate(row.createdDate),
+        render: (row: any) => dateCell(row.createdDate),
     },
     {
         title: 'Last seen',
         key: 'lastActivityAt',
         sorter: (a: any, b: any) => (a.lastActivityAt ?? '').localeCompare(b.lastActivityAt ?? ''),
         defaultSortOrder: 'descend',
-        render: (row: any) => formatDate(row.lastActivityAt),
+        render: (row: any) => dateCell(row.lastActivityAt),
     },
 ]
 </script>
@@ -150,4 +176,7 @@ const columns: DataTableColumns<any> = [
 .crumbs :deep(.n-breadcrumb-item:first-child .n-breadcrumb-item__link) { cursor: pointer; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .name-text { font-weight: 500; }
+.date-cell { display: inline-flex; align-items: center; gap: 4px; }
+.date-cell__info { color: var(--n-text-color-3, #999); cursor: help; vertical-align: middle; }
+.date-cell__info:hover { color: var(--n-text-color-2, #555); }
 </style>
