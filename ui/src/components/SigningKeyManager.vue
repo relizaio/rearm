@@ -36,27 +36,6 @@
                                  : '-----BEGIN PGP PUBLIC KEY BLOCK-----\\n…\\n-----END PGP PUBLIC KEY BLOCK-----'"
                              style="font-family: monospace;"/>
                 </n-form-item>
-                <n-form-item required>
-                    <template #label>
-                        Fingerprint
-                        <n-tooltip trigger="hover" :width="320">
-                            <template #trigger>
-                                <n-icon size="12" class="info-icon"><QuestionCircle20Regular/></n-icon>
-                            </template>
-                            SSH: SHA256:&lt;base64&gt; (from <code>ssh-keygen -lf</code>).<br>
-                            GPG: long key id (16 hex chars uppercase).<br>
-                            Auto-derived from the pubkey is not done in the
-                            web UI in v1 — paste the value from your local
-                            tool, or use <code>rearm agent enrollkey</code> /
-                            <code>rearm committer enrollkey</code> on the CLI.
-                        </n-tooltip>
-                    </template>
-                    <n-input v-model:value="draft.fingerprint"
-                             :placeholder="draft.format === 'SSH' ? 'SHA256:...' : '0123456789ABCDEF'"/>
-                </n-form-item>
-                <n-form-item :label="`Identity${draft.format === 'SSH' ? ' (required for SSH)' : ' (optional)'}`">
-                    <n-input v-model:value="draft.identity" placeholder="email or principal"/>
-                </n-form-item>
             </n-form>
             <template #footer>
                 <n-space>
@@ -90,13 +69,11 @@ const notification = useNotification()
 const keys = ref<any[]>([])
 const showEnroll = ref<boolean>(false)
 const enrolling = ref<boolean>(false)
-const draft = ref<{ format: 'SSH' | 'GPG', pubKey: string, fingerprint: string, identity: string }>({
-    format: 'SSH', pubKey: '', fingerprint: '', identity: '',
+const draft = ref<{ format: 'SSH' | 'GPG', pubKey: string }>({
+    format: 'SSH', pubKey: '',
 })
 
-const canEnrol = computed(() => !!draft.value.pubKey.trim()
-    && !!draft.value.fingerprint.trim()
-    && (draft.value.format !== 'SSH' || !!draft.value.identity.trim()))
+const canEnrol = computed(() => !!draft.value.pubKey.trim())
 
 onMounted(load)
 watch(() => props.ownerUuid, load)
@@ -122,14 +99,12 @@ async function enrol () {
             format: draft.value.format,
             ownerType: props.ownerType,
             ownerUuid: props.ownerUuid,
-            fingerprint: draft.value.fingerprint.trim(),
             pubKey: draft.value.pubKey.trim(),
         }
-        if (draft.value.identity.trim()) input.identity = draft.value.identity.trim()
         const saved = await store.dispatch('enrollSigningKey', input)
         notification.success({ content: `Enrolled ${saved.format} key ${saved.fingerprint}` })
         showEnroll.value = false
-        draft.value = { format: 'SSH', pubKey: '', fingerprint: '', identity: '' }
+        draft.value = { format: 'SSH', pubKey: '' }
         await load()
     } catch (e: any) {
         notification.error({ content: `Enrol failed: ${e?.message ?? e}`, duration: 8000 })
