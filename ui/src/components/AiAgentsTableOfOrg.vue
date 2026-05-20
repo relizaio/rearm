@@ -1,5 +1,9 @@
 <template>
     <div class="aiAgentsTable">
+        <n-breadcrumb separator="›" class="crumbs">
+            <n-breadcrumb-item @click="back">AI Agents</n-breadcrumb-item>
+            <n-breadcrumb-item>All Agents</n-breadcrumb-item>
+        </n-breadcrumb>
         <div class="page-head">
             <div>
                 <h4>All AI Agents</h4>
@@ -8,7 +12,6 @@
                     haven't been active recently. Sortable by any column.
                 </p>
             </div>
-            <n-button quaternary @click="back">← Back to overview</n-button>
         </div>
 
         <n-spin v-if="loading" size="small"/>
@@ -27,7 +30,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NDataTable, NSpin, NTag, DataTableColumns } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NDataTable, NSpin, NTag, DataTableColumns } from 'naive-ui'
 
 const store = useStore()
 const route = useRoute()
@@ -72,7 +75,10 @@ function formatDate (iso: string | null | undefined): string {
 function modelDisplay (m: any): string {
     if (!m) return '—'
     const tail = m.version && m.version !== 'unknown' ? ` @ ${m.version}` : ''
-    return `${m.publisher ?? ''} · ${m.name ?? ''}${tail}`.replace(/^· /, '')
+    // Publisher is optional — drop the " · " separator when it's missing
+    // so we don't render a leading dot when only the name is known.
+    const head = [m.publisher, m.name].filter(Boolean).join(' · ')
+    return `${head}${tail}`
 }
 
 function shortUuid (u: string | null | undefined): string {
@@ -84,10 +90,7 @@ const columns: DataTableColumns<any> = [
         title: 'Name',
         key: 'name',
         sorter: 'default',
-        render: (row: any) => h('div', { class: 'name-cell' }, [
-            h('span', { class: 'mark', style: { background: row.color || '#888' } }, row.iconKind || '◆'),
-            h('span', { class: 'name-text' }, row.name),
-        ]),
+        render: (row: any) => h('span', { class: 'name-text' }, row.name),
     },
     {
         title: 'Model',
@@ -143,8 +146,8 @@ const columns: DataTableColumns<any> = [
 <style scoped>
 .aiAgentsTable { padding: 16px; }
 .sub { color: var(--n-text-color-3, #666); font-size: 13px; margin-bottom: 16px; }
+.crumbs { margin-bottom: 12px; }
+.crumbs :deep(.n-breadcrumb-item:first-child .n-breadcrumb-item__link) { cursor: pointer; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-.name-cell { display: flex; align-items: center; gap: 8px; }
-.mark { display: inline-flex; width: 22px; height: 22px; border-radius: 5px; color: white; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
 .name-text { font-weight: 500; }
 </style>
