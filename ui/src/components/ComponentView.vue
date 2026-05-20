@@ -378,11 +378,23 @@
                                                 <div class="provenance-line">
                                                     <strong>Effective policy:</strong>
                                                     <span v-if="effectiveApprovalPolicy.source === 'PER_COMPONENT'">
-                                                        <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
+                                                        <a v-if="canViewOrgPolicies && effectiveApprovalPolicy.approvalPolicy"
+                                                            :href="policyLink(effectiveApprovalPolicy.approvalPolicy)"
+                                                            target="_blank" rel="noopener"
+                                                            title="Open policy in Org Settings (new tab)">
+                                                            <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
+                                                        </a>
+                                                        <code v-else>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
                                                         (set directly on this {{ words.component }})
                                                     </span>
                                                     <span v-else-if="effectiveApprovalPolicy.source === 'ORG_RULE'">
-                                                        <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
+                                                        <a v-if="canViewOrgPolicies && effectiveApprovalPolicy.approvalPolicy"
+                                                            :href="policyLink(effectiveApprovalPolicy.approvalPolicy)"
+                                                            target="_blank" rel="noopener"
+                                                            title="Open policy in Org Settings (new tab)">
+                                                            <code>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
+                                                        </a>
+                                                        <code v-else>{{ effectiveApprovalPolicy.approvalPolicyDetails?.policyName || effectiveApprovalPolicy.approvalPolicy }}</code>
                                                         — inherited from org rule <code>{{ effectiveApprovalPolicy.ruleName }}</code>
                                                     </span>
                                                     <span v-else>none — no per-{{ words.component }} reference and no matching org rule</span>
@@ -1079,6 +1091,19 @@ const isWritable : ComputedRef<boolean> = computed((): boolean => {
     )
     return componentPermission?.type === 'READ_WRITE'
 })
+
+// Org-wide READ_ONLY or above gates the "Effective policy:" deep-link
+// to Org Settings. Users without org-scoped read access wouldn't be
+// able to see the policy detail page anyway, so the link would just
+// land on an empty / 403 view.
+const canViewOrgPolicies : ComputedRef<boolean> = computed((): boolean => {
+    const userPermission = commonFunctions.getUserPermission(orguuid.value, myUser)
+    return ['READ_ONLY', 'READ_WRITE', 'ADMIN'].includes(userPermission.org)
+})
+
+function policyLink (policyUuid: string): string {
+    return `/orgSettings/${orguuid.value}?tab=policies&policyTab=approvalPoliciesInner&policy=${policyUuid}`
+}
 
 const words: Ref<any> = ref({})
 
