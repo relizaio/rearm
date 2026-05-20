@@ -233,6 +233,43 @@ const Router : Router = createRouter({
     routes
 })
 
+// After a backend pod roll the browser's loaded index.js still references
+// the previous chunk hashes; the new pod serves index.html for the missing
+// asset, the browser refuses it on MIME type and the UI freezes mid-nav.
+// Reload once on these errors so the user lands on the fresh bundle.
+const STALE_CHUNK_PATTERNS = [
+    /Failed to fetch dynamically imported module/i,
+    /Loading chunk [\w-]+ failed/i,
+    /Loading CSS chunk [\w-]+ failed/i,
+    /Unable to preload CSS/i,
+    /error loading dynamically imported module/i,
+    /disallowed MIME type/i,
+]
+
+const isStaleChunkError = (err: unknown): boolean => {
+    const msg = err instanceof Error ? err.message : String(err ?? '')
+    return STALE_CHUNK_PATTERNS.some(p => p.test(msg))
+}
+
+const RELOAD_GUARD_KEY = 'rearm-stale-chunk-reload-at'
+const reloadOnce = () => {
+    const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) || 0)
+    if (Date.now() - last < 10_000) return
+    sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()))
+    window.location.reload()
+}
+
+Router.onError((err) => {
+    if (isStaleChunkError(err)) reloadOnce()
+})
+
+window.addEventListener('error', (e) => {
+    if (isStaleChunkError(e.error ?? e.message)) reloadOnce()
+})
+window.addEventListener('unhandledrejection', (e) => {
+    if (isStaleChunkError(e.reason)) reloadOnce()
+})
+
 export default {
     name: 'Router',
     // mode: 'history',
