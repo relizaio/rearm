@@ -365,7 +365,20 @@ const variableDocs: VariableDoc[] = [
     { name: 'release.commits[].attribution.state',      snippet: 'release.commits.exists(c, c.attribution.state == "REJECTED")',  display: 'release.commits[].attribution.state',      desc: 'string — UNATTRIBUTED / RESOLVED / REJECTED. Set on the SCE by the agent-trailer resolver; REJECTED means trailers were present but the claim could not be resolved (unknown agent, unknown session, malformed clientSessionId, cross-org, etc.).' },
     { name: 'release.commits[].attribution.resolved',   snippet: 'release.commits.all(c, c.attribution.resolved || c.attribution.state == "UNATTRIBUTED")', display: 'release.commits[].attribution.resolved',   desc: 'bool — true iff state == RESOLVED' },
     { name: 'release.commits[].attribution.rejected',   snippet: 'release.commits.exists(c, c.attribution.rejected)',             display: 'release.commits[].attribution.rejected',   desc: 'bool — true iff state == REJECTED' },
-    { name: 'release.commits[].attribution.reason',     snippet: 'release.commits.exists(c, c.attribution.reason != "")',         display: 'release.commits[].attribution.reason',     desc: 'string — free-form rejection reason; empty when RESOLVED / UNATTRIBUTED' }
+    { name: 'release.commits[].attribution.reason',     snippet: 'release.commits.exists(c, c.attribution.reason != "")',         display: 'release.commits[].attribution.reason',     desc: 'string — free-form rejection reason; empty when RESOLVED / UNATTRIBUTED' },
+    // ─── release.headCommit ──────────────────────────────────────────────────
+    // Single rich-shape commit map for the release's primary SCE — the
+    // merge/squash commit on a BASE-branch build, the latest push on a
+    // feature-branch build. Same field shape as release.commits[] items.
+    // Use this when the gate is on "the commit that triggered the release",
+    // not on every transitive ancestor.
+    { name: 'release.headCommit',                       snippet: 'release.headCommit',                                                                  display: 'release.headCommit',                       desc: 'map — the release\'s primary SCE in the same rich shape used by release.commits[] items. Null when no sourceCodeEntry is attached.' },
+    { name: 'release.headCommit.commit',                snippet: 'release.headCommit.commit == "<sha>"',                                                display: 'release.headCommit.commit',                desc: 'string — full commit SHA' },
+    { name: 'release.headCommit.commitEmail',           snippet: 'release.headCommit.commitEmail == "<email>"',                                         display: 'release.headCommit.commitEmail',           desc: 'string — lowercased author email' },
+    { name: 'release.headCommit.agent',                 snippet: 'release.headCommit.agent == ""',                                                      display: 'release.headCommit.agent',                 desc: 'string — agent UUID resolved from ReARM-Agent trailer; empty for non-agentic commits' },
+    { name: 'release.headCommit.signature.state',       snippet: 'release.headCommit.signature.state == "VERIFIED"',                                    display: 'release.headCommit.signature.state',       desc: 'string — VERIFIED / INVALID_SIGNATURE / UNKNOWN_KEY / KEY_REVOKED / WRONG_SIGNER / PENDING / ERRORED / UNSIGNED' },
+    { name: 'release.headCommit.signature.signedByOwnerType', snippet: 'release.headCommit.signature.signedByOwnerType == "COMMITTER"',                  display: 'release.headCommit.signature.signedByOwnerType', desc: 'string — "AGENT" / "COMMITTER"' },
+    { name: 'release.headCommit.attribution.state',     snippet: 'release.headCommit.attribution.state == "RESOLVED"',                                  display: 'release.headCommit.attribution.state',     desc: 'string — UNATTRIBUTED / RESOLVED / REJECTED' }
 ]
 
 const exampleDocs: string[] = [
@@ -381,7 +394,8 @@ const exampleDocs: string[] = [
     'release.agentSessions.all(s, s.status == "CLOSED")',
     'release.commits.all(c, c.signature.state == "VERIFIED")',
     'release.commits.exists(c, c.agent != "") && release.commits.all(c, c.signature.signedByOwnerType == "AGENT")',
-    'release.commits.exists(c, c.attribution.state == "REJECTED")'
+    'release.commits.exists(c, c.attribution.state == "REJECTED")',
+    'release.branchType == "BASE" && release.headCommit.signature.state == "VERIFIED" && release.headCommit.signature.signedByOwnerType == "COMMITTER" && release.headCommit.agent == ""'
 ]
 
 function insertSnippet(snippet: string) {
