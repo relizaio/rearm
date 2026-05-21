@@ -9,10 +9,12 @@
         <div class="hero">
             <h3>{{ committer.name }}</h3>
             <n-tag size="small" :type="committer.status === 'ACTIVE' ? 'success' : 'default'">{{ committer.status }}</n-tag>
+            <n-button size="small" @click="showEdit = true">Edit</n-button>
         </div>
 
         <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
             <n-descriptions-item label="UUID"><code>{{ committer.uuid }}</code></n-descriptions-item>
+            <n-descriptions-item label="Name">{{ committer.name }}</n-descriptions-item>
             <n-descriptions-item label="Email"><code>{{ committer.email }}</code></n-descriptions-item>
             <n-descriptions-item label="Aliases">
                 <span v-if="committer.aliases?.length">
@@ -34,6 +36,14 @@
             :owner-uuid="committer.uuid"
             style="margin-top: 16px;"
         />
+
+        <CommitterEditDialog
+            v-if="committer.org"
+            v-model:show="showEdit"
+            :org-uuid="committer.org"
+            :committer="committer"
+            @saved="load"
+        />
     </div>
     <n-spin v-else size="small"/>
 </template>
@@ -42,8 +52,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NDescriptions, NDescriptionsItem, NSpin, NTag, useNotification } from 'naive-ui'
+import { NBreadcrumb, NBreadcrumbItem, NButton, NDescriptions, NDescriptionsItem, NSpin, NTag, useNotification } from 'naive-ui'
 import SigningKeyManager from './SigningKeyManager.vue'
+import CommitterEditDialog from './CommitterEditDialog.vue'
 
 const store = useStore()
 const route = useRoute()
@@ -52,6 +63,7 @@ const notification = useNotification()
 
 const uuid = computed(() => route.params.uuid as string)
 const committer = ref<any>(null)
+const showEdit = ref<boolean>(false)
 const metaLabelStyle = { width: '180px' }
 
 onMounted(load)
