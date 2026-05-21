@@ -31,29 +31,12 @@
             <n-data-table v-else :columns="columns" :data="committers" :pagination="{ pageSize: 25 }"/>
         </div>
 
-        <!-- Create / edit dialog -->
-        <n-modal v-model:show="showDialog" preset="card" :title="dialogTitle" style="width: 560px;">
-            <n-form label-placement="top">
-                <n-form-item label="Name" required>
-                    <n-input v-model:value="draft.name" placeholder="e.g. Alex Doe"/>
-                </n-form-item>
-                <n-form-item label="Email" required>
-                    <n-input v-model:value="draft.email" placeholder="alex@example.com"/>
-                </n-form-item>
-                <n-form-item label="Aliases (comma-separated)">
-                    <n-input v-model:value="draft.aliasesText" placeholder="alex@old.example.com"/>
-                </n-form-item>
-                <n-form-item label="Linked ReARM user UUID (optional)">
-                    <n-input v-model:value="draft.user" placeholder="leave blank for external contributor"/>
-                </n-form-item>
-            </n-form>
-            <template #footer>
-                <n-space>
-                    <n-button @click="showDialog = false">Cancel</n-button>
-                    <n-button type="primary" :loading="saving" @click="saveDraft">Save</n-button>
-                </n-space>
-            </template>
-        </n-modal>
+        <CommitterEditDialog
+            v-model:show="showDialog"
+            :org-uuid="orgUuid"
+            :committer="editTarget"
+            @saved="load"
+        />
     </div>
 </template>
 
@@ -62,11 +45,11 @@ import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import {
-    NBreadcrumb, NBreadcrumbItem, NButton, NDataTable, NForm, NFormItem,
-    NIcon, NInput, NModal, NPopconfirm, NSpace, NSpin, NTag, NTooltip,
-    DataTableColumns, useNotification,
+    NBreadcrumb, NBreadcrumbItem, NButton, NDataTable, NIcon, NPopconfirm,
+    NSpace, NSpin, NTag, NTooltip, DataTableColumns, useNotification,
 } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
+import CommitterEditDialog from './CommitterEditDialog.vue'
 
 const props = defineProps<{ embedded?: boolean }>()
 
@@ -80,12 +63,7 @@ const orgUuid = computed(() => (route.params.orguuid as string) || myorg.value?.
 const committers = ref<any[]>([])
 const loading = ref<boolean>(true)
 const showDialog = ref<boolean>(false)
-const saving = ref<boolean>(false)
-const draft = ref<{ uuid?: string, name: string, email: string, aliasesText: string, user: string }>({
-    name: '', email: '', aliasesText: '', user: '',
-})
-
-const dialogTitle = computed(() => draft.value.uuid ? 'Edit committer' : 'New committer')
+const editTarget = ref<any | null>(null)
 
 onMounted(load)
 
@@ -105,46 +83,13 @@ function openOrgSettings () {
 }
 
 function createNew () {
-    draft.value = { name: '', email: '', aliasesText: '', user: '' }
+    editTarget.value = null
     showDialog.value = true
 }
 
 function edit (row: any) {
-    draft.value = {
-        uuid: row.uuid,
-        name: row.name ?? '',
-        email: row.email ?? '',
-        aliasesText: (row.aliases ?? []).join(', '),
-        user: row.user ?? '',
-    }
+    editTarget.value = row
     showDialog.value = true
-}
-
-async function saveDraft () {
-    if (!draft.value.name.trim() || !draft.value.email.trim()) {
-        notification.warning({ content: 'Name and email are required' })
-        return
-    }
-    saving.value = true
-    try {
-        const input: any = {
-            org: orgUuid.value,
-            name: draft.value.name.trim(),
-            email: draft.value.email.trim().toLowerCase(),
-        }
-        if (draft.value.uuid) input.uuid = draft.value.uuid
-        if (draft.value.user.trim()) input.user = draft.value.user.trim()
-        const aliases = draft.value.aliasesText.split(',').map((a) => a.trim().toLowerCase()).filter(Boolean)
-        if (aliases.length) input.aliases = aliases
-        const saved = await store.dispatch('upsertCommitter', input)
-        notification.success({ content: `Saved "${saved.name}"` })
-        showDialog.value = false
-        await load()
-    } catch (e: any) {
-        notification.error({ content: `Save failed: ${e?.message ?? e}` })
-    } finally {
-        saving.value = false
-    }
 }
 
 async function archive (row: any) {
