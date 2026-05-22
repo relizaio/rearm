@@ -809,6 +809,12 @@
                         </n-space>
                     </div>
                 </n-tab-pane>
+                <n-tab-pane name="pullRequests" :tab="`Pull Requests${pullRequests.length ? ' · ' + pullRequests.length : ''}`">
+                    <div class="container">
+                        <p v-if="!pullRequests.length" class="dim">No pull requests reference any of this release's commits.</p>
+                        <n-data-table v-else :data="pullRequests" :columns="pullRequestsTableFields" :row-key="(row) => row.uuid"/>
+                    </div>
+                </n-tab-pane>
                 <n-tab-pane v-if="updatedRelease.componentDetails && updatedRelease.componentDetails.type === 'COMPONENT'" name="partOfProducts" tab="Part of Products">
                     <div class="container" v-if="inProductsLoading">
                         <n-spin size="large" />
@@ -3293,6 +3299,10 @@ const commits: ComputedRef<any> = computed((): any => {
     return commits
 })
 
+const pullRequests: ComputedRef<any[]> = computed((): any[] => {
+    return (updatedRelease.value && updatedRelease.value.pullRequests) ? updatedRelease.value.pullRequests : []
+})
+
 const failedReleaseCommitsFlattened: ComputedRef<any[]> = computed((): any[] => {
     const flattened: any[] = []
     const mainCommitHashes = new Set(commits.value.map((c: any) => c.commit))
@@ -5372,6 +5382,49 @@ function renderAuthorWithAttribution (row: any) {
     if (chips.length) children.push(h('div', { class: 'attrib-row' }, chips))
     return h('div', children)
 }
+
+const pullRequestsTableFields: DataTableColumns<any> = [
+    {
+        key: 'identity',
+        title: 'PR',
+        width: 80,
+        render: (row: any) => h(RouterLink, {
+            to: { name: 'PullRequestView', params: { uuid: row.uuid } },
+            class: 'pr-link',
+        }, () => `#${row.identity ?? row.uuid.slice(0, 8)}`),
+    },
+    {
+        key: 'title',
+        title: 'Title',
+        render: (row: any) => row.title || h('span', { class: 'dim' }, '—'),
+    },
+    {
+        key: 'state',
+        title: 'State',
+        width: 110,
+        render: (row: any) => {
+            const s = (row.state || 'OPEN').toUpperCase()
+            const type = s === 'MERGED' ? 'success' : s === 'CLOSED' ? 'default' : 'info'
+            return h(NTag, { size: 'small', type, round: true }, () => s)
+        },
+    },
+    {
+        key: 'branches',
+        title: 'Branches',
+        render: (row: any) => {
+            const src = row.sourceBranchName || ''
+            const tgt = row.targetBranchName || ''
+            if (!src && !tgt) return h('span', { class: 'dim' }, '—')
+            return h('code', { class: 'pr-branches' }, `${src} → ${tgt}`)
+        },
+    },
+    {
+        key: 'endpoint',
+        title: '',
+        width: 50,
+        render: (row: any) => row.endpoint ? h('a', { href: row.endpoint, target: '_blank' }, '↗') : null,
+    },
+]
 
 const commitTableFields: DataTableColumns<any> = [
     {

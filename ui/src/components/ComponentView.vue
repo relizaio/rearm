@@ -71,7 +71,6 @@
                                 <n-icon v-if="componentData" @click="navigateToVulnAnalysis" class="clickable icons" size="24" :title="'Open ' + words.componentFirstUpper + ' Finding Analysis'">
                                     <bug-outlined />
                                 </n-icon>
-                                <n-icon v-if="isWritable" @click="archiveComponent" class="clickable" :title="'Archive ' + words.componentFirstUpper" size="24"><Trash /></n-icon>
                             </n-space>
                             <n-modal
                                 v-model:show="showComponentAnalyticsModal"
@@ -837,6 +836,22 @@
                                                     Reset Changes
                                                 </n-button>
                                             </n-space>
+                                        </div>
+
+                                        <div class="dangerZone">
+                                            <h5 class="dangerZoneHeader">Danger Zone</h5>
+                                            <p class="dangerZoneCopy">
+                                                Archiving the {{ words.component }} hides it from the active component
+                                                list. Existing releases keep their data and historical lookups stay
+                                                resolvable, but no new releases can be minted against an archived
+                                                {{ words.component }}.
+                                            </p>
+                                            <n-button v-if="isWritable" type="error" @click="archiveComponent">
+                                                <template #icon>
+                                                    <n-icon><Trash /></n-icon>
+                                                </template>
+                                                Archive {{ words.componentFirstUpper }}
+                                            </n-button>
                                         </div>
                                     </n-tab-pane>
                                 </n-tabs>
@@ -2603,6 +2618,37 @@ const rowProps = (row: any) => {
 const branchRowClassName = (row: any) => {
     return selectedBranchUuid.value === row.uuid ? 'selectedRow' : ''
 }
+async function archiveBranchFromList (row: any) {
+    if (!row || !row.uuid || row.type === 'BASE') return
+    const onSwalConfirm = async function () {
+        try {
+            await store.dispatch('archiveBranch', {
+                branchUuid: row.uuid,
+                componentUuid: componentUuid,
+            })
+        } catch (err: any) {
+            Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        }
+    }
+    const swalData: SwalData = {
+        questionText: `Are you sure you want to archive ${words.value.branch} "${row.name}"?`,
+        successTitle: 'Archived!',
+        successText: `${words.value.branchFirstUpper} "${row.name}" has been archived.`,
+        dismissText: `Archive cancelled.`,
+    }
+    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
+}
+
+function archiveActionCell (row: any) {
+    if (!isWritable.value || row.type === 'BASE') return null
+    return h(NIcon, {
+        title: 'Archive ' + words.value.branchFirstUpper,
+        class: 'icons clickable',
+        size: 22,
+        onClick: (e: Event) => { e.stopPropagation(); archiveBranchFromList(row) },
+    }, () => h(Trash))
+}
+
 const branchFields: any[] = [
     {
         title: () => {
@@ -2644,9 +2690,15 @@ const branchFields: any[] = [
         }
     },
     {
-        title: 'Version Schema',
+        title: 'Schema',
         key: 'versionSchema',
         render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
+    },
+    {
+        title: '',
+        key: 'archive',
+        width: 50,
+        render: archiveActionCell,
     },]
 
 if (!isComponent.value && isWritable){
@@ -2677,9 +2729,15 @@ const pullRequestFields: any[] = [
         key: 'name'
     },
     {
-        title: 'Version Schema',
+        title: 'Schema',
         key: 'versionSchema',
         render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
+    },
+    {
+        title: '',
+        key: 'archive',
+        width: 50,
+        render: archiveActionCell,
     }
 ]
 
@@ -2690,9 +2748,15 @@ const tagFields: any[] = [
         key: 'name'
     },
     {
-        title: 'Version Schema',
+        title: 'Schema',
         key: 'versionSchema',
         render: (row: any) => row.versionSchema ? row.versionSchema : 'Not set'
+    },
+    {
+        title: '',
+        key: 'archive',
+        width: 50,
+        render: archiveActionCell,
     }
 ]
 
@@ -3285,5 +3349,20 @@ projSettingsCollapse {
     color: #b25400;
 }
 .provenance-line { margin-bottom: 0; }
+
+.dangerZone {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 2px solid #e74c3c;
+}
+.dangerZoneHeader {
+    color: #e74c3c;
+    margin: 0 0 8px 0;
+}
+.dangerZoneCopy {
+    color: var(--n-text-color-3, #666);
+    font-size: 13px;
+    margin-bottom: 12px;
+}
 
 </style>

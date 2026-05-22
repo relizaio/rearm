@@ -19,11 +19,6 @@
                     <Eye />
                 </n-icon>
             </div>
-            <div class="dangerControls">
-                <n-icon v-if="isWritable && branchData.type !== 'BASE'" @click="archiveBranch" class="clickable" :title="'Archive ' + words.branchFirstUpper" size="24">
-                    <Trash />
-                </n-icon>
-            </div>
         </div>
         <n-modal
             v-model:show="showCreateReleaseModal"
@@ -548,41 +543,6 @@ const isWritable : ComputedRef<boolean> = computed((): boolean => {
     )
     return componentPermission?.type === 'READ_WRITE'
 })
-
-const archiveBranch = async function() {
-    const componentUuid = modifiedBranch.value.component
-    const isProduct = branchData.value.componentDetails?.type === 'PRODUCT'
-    const onSwalConfirm = async function () {
-        const archiveBranchParams = {
-            branchUuid: branchData.value.uuid,
-            componentUuid: componentUuid
-        }
-        try {
-            await store.dispatch('archiveBranch', archiveBranchParams)
-            // Navigate to the component/product page after successful archive
-            router.push({
-                name: isProduct ? 'ProductsOfOrg' : 'ComponentsOfOrg',
-                params: {
-                    orguuid: orguuid,
-                    compuuid: componentUuid
-                }
-            })
-        } catch (err: any) {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(err.message),
-                'error'
-            )
-        }
-    }
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to archive the ${modifiedBranch.value.name} ${words.value.branch}?`,
-        successTitle: 'Archived!',
-        successText: `The ${words.value.branch} ${modifiedBranch.value.name} has been archived.`,
-        dismissText: 'Archiving has been cancelled.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
-}
 
 const showReleaseModal: Ref<boolean> = ref(false)
 const showReleaseUuid: Ref<string> = ref('')

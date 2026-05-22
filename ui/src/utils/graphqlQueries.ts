@@ -495,6 +495,17 @@ const singleReleaseDataNoParent = `
             verifiedAt
         }
     }
+    pullRequests {
+        uuid
+        identity
+        state
+        title
+        sourceBranchName
+        targetBranchName
+        endpoint
+        mergedDate
+        closedDate
+    }
     branch
     branchDetails {
         uuid
