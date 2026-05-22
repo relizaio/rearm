@@ -1,7 +1,7 @@
 ---
 rearm_cli_min: 26.05.8
-rearm_cli_recommended: 26.05.8
-last_updated: 2026-05-18
+rearm_cli_recommended: 26.05.10
+last_updated: 2026-05-20
 ---
 
 # ReARM agent orientation
@@ -21,6 +21,50 @@ backend directly, do not improvise. The CLI is the contract; raw
 HTTP is undefined behavior. If a command you need doesn't exist in
 the CLI yet, stop and report to the operator — that's a CLI gap to
 fix, not something to work around with bespoke HTTP.
+
+**Two editions of ReARM exist** and the surface available to you
+differs:
+
+| Capability                                | ReARM Pro            | ReARM CE             |
+| ----------------------------------------- | -------------------- | -------------------- |
+| Agentic data model (Agent, AgentSession, Artifact, SignatureVerification, signing keys, etc.) | yes | yes |
+| Commit attribution via `ReARM-Agent` / `ReARM-Agentic-Session` trailers | yes | yes |
+| Agent policies (verdicts, BLOCK-severity session gating)    | yes | **not present** |
+| Approval policies (entries, requirements, role enforcement) | yes | **not present** |
+| Instances + DevOps surface (`rearm devops listfeaturesets / versionfeatureset / switchfeatureset`) | yes | **not in schema** |
+| Perspectives + product/instance feature-set deploys | yes        | **not present** |
+
+The "not present" rows mean exactly that — the implementation lives
+in the SAAS-only Java packages that the CE backend doesn't load.
+There's no observed-but-not-enforced mode: on CE, policies aren't
+computed at all. Concrete consequences for you:
+
+- `rearm agent session init` on CE returns a session whose
+  `policyEvents[]` array is empty — not because no policy fired, but
+  because no policy machinery is loaded. **Don't treat empty
+  `policyEvents` as "everything passed"** — on CE it means "no checks
+  exist". If the operator's task description implies a policy-gated
+  workflow ("the security policy must pass before merge") and you're
+  on CE, the policy isn't there to pass; surface that to the operator.
+- Approval-policy verdicts (`release.approvals[]`) similarly never
+  populate on CE. Releases just sit at whatever lifecycle the build
+  produced; nothing auto-flips them.
+- Pro-only CLI commands (anything under `rearm devops`, anything
+  requiring a Pro-only mutation) return a clean `Field 'X' in type
+  'Y' is undefined` error from the CLI against a CE backend.
+
+**The hard rule for you: never branch on "edition" as a flag.**
+Try the call. If the CLI returns "field undefined", stop and tell
+the operator which command failed and that the deployment appears
+to be CE. Don't fabricate fallbacks, don't skip checks the operator
+asked for, don't pretend a policy that doesn't exist on this
+backend somehow passed.
+
+The orientation doc you're reading is served by the running
+backend. Pro and CE backends ship the same content so the contract
+is one document — Pro-only sections stay labelled as such; just
+don't attempt those commands when the CLI tells you they're not
+there.
 
 ## 1. Prerequisites
 
@@ -502,7 +546,102 @@ rearm agent session inbox <session-uuid> --since '<last cursor>'
 
 # --- release inspection after an inbox event ---
 rearm agent release show <release-uuid>
+
+# --- deployment / devops (ReARM Pro only — read §10 before using) ---
+rearm devops listfeaturesets --instanceuri <sandbox-url> --namespace <ns>
+rearm devops versionfeatureset --product <product-uuid> --overrides '[…]'
+rearm devops switchfeatureset --instanceuri <sandbox-url> --product <product-uuid> \
+  --featureset <new-fs-uuid> --namespace <ns>
 ```
+
+## 10. Deployment operations (ReARM Pro only)
+
+`rearm devops` commands change which build a running ReARM instance
+serves. They are powerful and wrong-instance mistakes are
+**visible to other people** — switching a shared sandbox or a
+production instance to a feature-branch build is a real incident
+that takes operator effort to recover from.
+
+**Hard constraint: do not run any `rearm devops` command unless the
+operator's task description explicitly names the target instance
+(by URI or instance UUID).** "Test on the sandbox" is not specific
+enough — ask "which sandbox URI / instance UUID?" before proceeding.
+If the operator can't or won't name a specific instance, stop. Don't
+guess. Don't pick "the only one I happen to know about" or "the one
+my key seems to work against".
+
+ReARM CE does not ship these commands. If `rearm devops
+listfeaturesets` returns `Field 'listFeatureSetsOfInstance' in type
+'Mutation' is undefined` (or similar), you are on CE and no devops
+operation can proceed regardless of how the task is phrased — tell
+the operator the edition mismatch.
+
+### 10.1 Discovery — `listfeaturesets`
+
+Always your first call. It confirms (a) you're talking to the
+instance the operator named, (b) the FREEFORM key you were given can
+actually see the deployment, and (c) the product + current feature
+set match what the operator described:
+
+```bash
+rearm devops listfeaturesets \
+  --instanceuri "<sandbox base URL the operator gave you>" \
+  --namespace "<k8s namespace, typically 'rearm'>"
+```
+
+Returns the product UUID and the current + available feature-set
+UUIDs. **Record the current `currentFeatureSet.uuid`** before doing
+anything else — that's the rollback target if the operator needs to
+revert.
+
+### 10.2 Versioning — `versionfeatureset`
+
+Creates a new feature set that pins one or more component branches.
+The override branches must already exist on the components (i.e. CI
+must have run on that branch at least once and produced a release):
+
+```bash
+rearm devops versionfeatureset \
+  --product "<product-uuid from listfeaturesets>" \
+  --overrides '[
+    {"vcsUri":"<vcs uri>","repoPath":"<component sub-path>","branch":"<branch-name>"}
+  ]'
+```
+
+Returns `{uuid, name, autoIntegrate, component}` for the new
+feature set.
+
+### 10.3 Switching — `switchfeatureset`
+
+Retargets the named instance at the new feature set. The in-cluster
+reconciler picks up the change within a minute or two and rolls
+matching pods; the **pod image tag is the source of truth** for
+what's actually running, not the GraphQL response:
+
+```bash
+rearm devops switchfeatureset \
+  --instanceuri "<sandbox base URL>" \
+  --product "<product-uuid>" \
+  --featureset "<new feature-set uuid from §10.2>" \
+  --namespace "<k8s namespace>"
+```
+
+Re-run `listfeaturesets` to confirm `currentFeatureSet.uuid`
+matches. If after 10 min the pod image tag hasn't changed, the
+reconcile is wedged — surface to the operator with the timestamp of
+the switch and the instance URI.
+
+### 10.4 Pre-flight checklist
+
+Before any `rearm devops` operation, you should be able to answer
+all of these. If you can't tick all six, stop and ask:
+
+- [ ] The operator's task explicitly named this instance (URI or UUID).
+- [ ] `listfeaturesets` against that instance succeeded with the FREEFORM key the operator provided.
+- [ ] The response's `product` and `currentFeatureSet` match the operator's description.
+- [ ] You've recorded the previous `currentFeatureSet.uuid` so rollback is one command away.
+- [ ] You understand the change rolls a running pod within minutes — there is no preview mode.
+- [ ] You are on **ReARM Pro** — `listfeaturesets` succeeded at all (not a CE backend).
 
 ---
 

@@ -1725,6 +1725,12 @@ type Release {
 	commits: [ID]
 	commitTime: DateTime
 	commitsDetails: [SourceCodeEntry]
+	"""
+	Pull requests this release participates in — any PR whose commits[]
+	intersects this release's commits[]. Computed at read time; resolves
+	by matching SCE UUIDs.
+	"""
+	pullRequests: [PullRequest]
 	artifacts: [ID]
 	artifactDetails: [Artifact]
 	inboundDeliverables: [ID]
@@ -4991,9 +4997,9 @@ input SigningKeyInput {
 	format: SignatureFormat!
 	ownerType: SigningKeyOwnerType!
 	ownerUuid: ID!
-	"""SHA256:... for SSH; long key id for GPG. CLI derives from --pubkey-file."""
-	fingerprint: String!
-	"""Required for SSH (allowed_signers principal); optional for GPG (user-id)."""
+	"""SHA256:... for SSH; long key id for GPG. Derived from pubKey when omitted."""
+	fingerprint: String
+	"""Optional override; for COMMITTER owners defaults to committer.email."""
 	identity: String
 	"""Single-line SSH or ASCII-armoured GPG block."""
 	pubKey: String!

@@ -53,4 +53,16 @@ public interface CommitterRepository extends CrudRepository<Committer, UUID> {
 			+ "ORDER BY c.created_date DESC",
 			nativeQuery = true)
 	List<Committer> findByOrg(@Param("orgUuidAsString") String orgUuidAsString);
+
+	/**
+	 * Reverse lookup: active committer in the org linked to a given user.
+	 * Used by upsert to enforce the "at most one committer per user" rule.
+	 */
+	@Query(value = "SELECT * FROM rearm.committers c "
+			+ "WHERE c.record_data->>'org' = :orgUuidAsString "
+			+ "AND c.record_data->>'user' = :userUuidAsString "
+			+ "AND c.record_data->>'status' = 'ACTIVE'",
+			nativeQuery = true)
+	Optional<Committer> findActiveByOrgAndUser(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("userUuidAsString") String userUuidAsString);
 }

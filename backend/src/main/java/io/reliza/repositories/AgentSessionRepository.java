@@ -66,4 +66,23 @@ public interface AgentSessionRepository extends CrudRepository<AgentSession, UUI
 			nativeQuery = true)
 	List<AgentSession> findByAgentAndStatuses(@Param("agentUuidAsString") String agentUuidAsString,
 			@Param("statuses") List<String> statuses);
+
+	/**
+	 * Idle-session lookup for the autoclose scheduler. Returns OPEN
+	 * sessions whose {@code lastActivityAt} is older than the supplied
+	 * cutoff. Jackson writes {@code ZonedDateTime} to JSONB as an
+	 * epoch-seconds-with-nanos number (e.g. {@code 1779239058.361082105})
+	 * — NOT an ISO-8601 string — so the comparison is numeric on both
+	 * sides. The {@code ->>} extraction yields text; the explicit
+	 * {@code ::numeric} cast lifts both stored value and cutoff into
+	 * the same numeric domain. BLOCKED sessions are intentionally
+	 * excluded — they need operator attention, not an automatic close.
+	 */
+	@Query(value = "SELECT * FROM rearm.agent_sessions s "
+			+ "WHERE s.record_data->>'status' = 'OPEN' "
+			+ "AND s.record_data->>'lastActivityAt' IS NOT NULL "
+			+ "AND (s.record_data->>'lastActivityAt')::numeric < :cutoffEpochSeconds "
+			+ "ORDER BY (s.record_data->>'lastActivityAt')::numeric ASC",
+			nativeQuery = true)
+	List<AgentSession> findOpenSessionsIdleBefore(@Param("cutoffEpochSeconds") double cutoffEpochSeconds);
 }

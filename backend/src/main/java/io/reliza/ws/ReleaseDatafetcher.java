@@ -1859,6 +1859,23 @@ public class ReleaseDatafetcher {
 		return result;
 	}
 	
+	/**
+	 * Release.pullRequests resolver — distinct PRs in the org whose
+	 * commits[] intersects this release's commits[]. Read at query time
+	 * via the same jsonb ?| operator the agent-session resolver uses.
+	 * Empty list when the release has no commits or no PR touches any
+	 * of them. Read-only; auth enforced on the parent Release query.
+	 */
+	@DgsData(parentType = "Release", field = "pullRequests")
+	public List<io.reliza.model.PullRequestData> pullRequestsOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		if (rd == null || rd.getCommits() == null || rd.getCommits().isEmpty() || rd.getOrg() == null) {
+			return new LinkedList<>();
+		}
+		String[] sceUuids = rd.getCommits().stream().map(UUID::toString).toArray(String[]::new);
+		return pullRequestService.findByOrgAndAnyCommit(rd.getOrg(), sceUuids);
+	}
+
 	@DgsData(parentType = "Release", field = "artifactDetails")
 	public List<ArtifactData> artifactsOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();

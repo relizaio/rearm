@@ -8,7 +8,7 @@ RUN $JAVA_HOME/bin/jlink \
          --strip-java-debug-attributes \
          --no-man-pages \
          --no-header-files \
-         --compress=2 \
+         --compress=zip-9 \
          --output /javaruntime
 
 FROM maven:3.9.15-eclipse-temurin-21-alpine@sha256:856fe78872c59d3b584a64d07693d5433cbf44e35b5ba1f2c911147f39f54266 AS build-cache-stage
@@ -30,10 +30,15 @@ RUN mkdir /run/postgresql && chown postgres:postgres /run/postgresql/ && su - po
 RUN mkdir /workdir
 WORKDIR /workdir
 COPY ./ .
-# following line injects desired version into pom for proper logging
-RUN sed -i "s,Version_Managed_By_CI_AND_Reliza,$VERSION," pom.xml
+# following line injects desired version into pom for proper logging.
+# Slashes in $VERSION (e.g. from `feat/foo` branch names) get treated
+# as path separators by Maven's jar-naming, which produces
+# `target/rearm-pro-backend-feat/foo.0.jar` (subdir!) and breaks the
+# `cp target/*.jar` line below. Normalize to a single token first.
+RUN VERSION_SAFE="$(echo $VERSION | tr '/' '-')" && \
+    sed -i "s,Version_Managed_By_CI_AND_Reliza,$VERSION_SAFE," pom.xml
 
-RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B clean package spring-boot:repackage && cp target/*.jar application.jar && java -Djarmode=layertools -jar application.jar extract
+RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage && cp target/*.jar application.jar && java -Djarmode=layertools -jar application.jar extract
 
 FROM alpine:3.23.4@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11  AS artifact-stage
 ENV JAVA_HOME=/opt/java/openjdk

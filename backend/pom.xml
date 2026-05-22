@@ -135,6 +135,12 @@
         <artifactId>bcprov-jdk18on</artifactId>
         <version>1.84</version>
     </dependency>
+    <!-- Bouncy Castle OpenPGP for GPG fingerprint derivation during signing-key enrolment -->
+    <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpg-jdk18on</artifactId>
+        <version>1.84</version>
+    </dependency>
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>

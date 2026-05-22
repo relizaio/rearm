@@ -193,6 +193,23 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	private List<EmailObject> getAllEmails() {
 		return new LinkedList<>(this.allEmails);
 	}
+
+	/**
+	 * Lowercased email strings this user owns. Used by the committer
+	 * lookup path to union the user's current addresses into a linked
+	 * committer's matching set without storing them as snapshots.
+	 */
+	@JsonIgnore
+	public Set<String> getAllEmailStrings() {
+		Set<String> out = new java.util.LinkedHashSet<>();
+		for (EmailObject eo : this.allEmails) {
+			if (eo != null && eo.getEmail() != null) {
+				out.add(eo.getEmail().toLowerCase());
+			}
+		}
+		if (this.email != null) out.add(this.email.toLowerCase());
+		return out;
+	}
 	
 	/**
 	 * Returns email that needs to be returned per specific organization

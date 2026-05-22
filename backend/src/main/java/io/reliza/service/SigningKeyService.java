@@ -16,8 +16,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.SigningKeyFingerprintUtil;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.CommitterData;
 import io.reliza.model.SigningKey;
 import io.reliza.model.SigningKeyData;
 import io.reliza.model.SigningKeyData.SignatureFormat;
@@ -39,10 +41,12 @@ public class SigningKeyService {
 
 	private final SigningKeyRepository repository;
 	private final AuditService auditService;
+	private final CommitterService committerService;
 
-	SigningKeyService(SigningKeyRepository repository, AuditService auditService) {
+	SigningKeyService(SigningKeyRepository repository, AuditService auditService, CommitterService committerService) {
 		this.repository = repository;
 		this.auditService = auditService;
+		this.committerService = committerService;
 	}
 
 	public Optional<SigningKey> getSigningKey(UUID uuid) {
@@ -111,8 +115,19 @@ public class SigningKeyService {
 		if (seed.getFormat() == null) throw new RelizaException("SigningKey requires a format");
 		if (seed.getOwnerType() == null) throw new RelizaException("SigningKey requires an ownerType");
 		if (seed.getOwnerUuid() == null) throw new RelizaException("SigningKey requires an ownerUuid");
-		if (StringUtils.isBlank(seed.getFingerprint())) throw new RelizaException("SigningKey requires a fingerprint");
 		if (StringUtils.isBlank(seed.getPubKey())) throw new RelizaException("SigningKey requires a pubKey");
+
+		if (StringUtils.isBlank(seed.getFingerprint())) {
+			seed.setFingerprint(seed.getFormat() == SignatureFormat.SSH
+					? SigningKeyFingerprintUtil.deriveSshFingerprint(seed.getPubKey())
+					: SigningKeyFingerprintUtil.deriveGpgLongKeyId(seed.getPubKey()));
+		}
+
+		if (seed.getFormat() == SignatureFormat.SSH && StringUtils.isBlank(seed.getIdentity())
+				&& seed.getOwnerType() == SigningKeyOwnerType.COMMITTER) {
+			Optional<CommitterData> committer = committerService.getCommitterData(seed.getOwnerUuid());
+			committer.ifPresent(c -> seed.setIdentity(c.getEmail()));
+		}
 		if (seed.getFormat() == SignatureFormat.SSH && StringUtils.isBlank(seed.getIdentity())) {
 			throw new RelizaException("SSH SigningKey requires an identity (allowed_signers principal)");
 		}

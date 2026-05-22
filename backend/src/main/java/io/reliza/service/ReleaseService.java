@@ -420,6 +420,22 @@ public class ReleaseService {
 			}
 		}
 
+		// Head-first invariant on release.commits[]: the head SCE (the
+		// commit the release was minted for) belongs at index 0. For
+		// feature-branch builds the head's commit SHA is already in
+		// commitList[0] so the loop's parseSceFromReleaseCreate dedups it
+		// to the same SCE uuid that osced ends up holding — head is
+		// naturally first. For merge-commit builds the head (merge SHA)
+		// isn't in commitList at all (git log -- $path skips merges) so
+		// commits[] would otherwise lead with a feature-branch ancestor.
+		// Normalize here: remove-then-prepend keeps the invariant for
+		// both shapes without an early-bail "is it already first" branch.
+		if (osced.isPresent()) {
+			UUID headUuid = osced.get().getUuid();
+			commits.remove(headUuid);
+			commits.add(0, headUuid);
+		}
+
 		var releaseDtoBuilder = ReleaseDto.builder()
 							.branch(bd.getUuid())
 							.org(bd.getOrg())

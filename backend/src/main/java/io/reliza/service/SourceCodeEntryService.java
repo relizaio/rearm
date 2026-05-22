@@ -75,6 +75,16 @@ public class SourceCodeEntryService {
 	private AgentSessionService agentSessionService;
 
 	/**
+	 * Lookup of artifact rows during SCE-attach dedup (see
+	 * {@link #addArtifact}). Lazy because {@link ArtifactService} pulls
+	 * in {@code SharedReleaseService} which depends on this service —
+	 * eager injection would form a cycle.
+	 */
+	@Autowired
+	@Lazy
+	private ArtifactService artifactService;
+
+	/**
 	 * Self-injection so the routine can call {@link #createSourceCodeEntry} through
 	 * the Spring proxy and pick up its REQUIRES_NEW propagation. A direct
 	 * {@code this.*} call bypasses AOP — a unique-violation in the create would
@@ -187,19 +197,32 @@ public class SourceCodeEntryService {
 		// message carries no trailers.
 		UUID mergeResolvedSession = resolveAndAttributeTrailers(sced);
 		if (null != existingSceData.getArtifacts() && !existingSceData.getArtifacts().isEmpty()) {
-			Set<String> dedupArts = new HashSet<>();
 			if (null != sced.getArtifacts() && !sced.getArtifacts().isEmpty()) {
-				var dedupList = sced.getArtifacts().stream()
-					.map(x -> x.artifactUuid().toString() + x.componentUuid()).toList();
-				dedupArts.addAll(dedupList);
-				for (var esda : existingSceData.getArtifacts()) {
-					String dedupKey = esda.artifactUuid().toString() + esda.componentUuid();
-					if (!dedupList.contains(dedupKey)) {
-						List<SCEArtifact> updArts = new ArrayList<>(sced.getArtifacts());
-						updArts.add(esda);
-						sced.setArtifacts(updArts);
-					}
+				// Same commit gets built twice (feature branch + ff-merge to main); each upload
+				// produces fresh artifact UUIDs but identical canonical content. Dedup on
+				// type + canonical-content signature so the merged SCE keeps existing arts.
+				List<SCEArtifact> mergedArts = new ArrayList<>();
+				Set<String> seenUuidComp = new HashSet<>();
+				Set<String> seenSigs = new HashSet<>();
+				for (SCEArtifact esda : existingSceData.getArtifacts()) {
+					mergedArts.add(esda);
+					seenUuidComp.add(esda.artifactUuid().toString() + esda.componentUuid());
+					String sig = sceArtSemanticKey(esda);
+					if (sig != null) seenSigs.add(sig);
 				}
+				for (SCEArtifact n : sced.getArtifacts()) {
+					String uuidKey = n.artifactUuid().toString() + n.componentUuid();
+					if (seenUuidComp.contains(uuidKey)) continue;
+					String sig = sceArtSemanticKey(n);
+					if (sig != null && seenSigs.contains(sig)) {
+						log.info("SCE merge: dropping new art {} (semantic duplicate of an existing art on this SCE)", n.artifactUuid());
+						continue;
+					}
+					mergedArts.add(n);
+					seenUuidComp.add(uuidKey);
+					if (sig != null) seenSigs.add(sig);
+				}
+				sced.setArtifacts(mergedArts);
 			} else {
 				sced.setArtifacts(existingSceData.getArtifacts());
 			}
@@ -417,12 +440,58 @@ public class SourceCodeEntryService {
 	public boolean addArtifact(UUID sceUuid, SCEArtifact art, WhoUpdated wu) throws RelizaException{
 		SourceCodeEntry sce = getSourceCodeEntryService.getSourceCodeEntry(sceUuid).get();
 		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
+
+		// Defense-in-depth for the GraphQL addArtifact mutation; the typical CI flow
+		// hits populateSourceCodeEntryByVcsAndCommit, which dedups in the merge step.
+		if (isSemanticDuplicateOnSce(sced, art)) {
+			log.info("SCE {} already carries a semantic duplicate of artifact {}; skipping attach",
+					sceUuid, art.artifactUuid());
+			return false;
+		}
+
 		List<SCEArtifact> artifacts = sced.getArtifacts();
 		artifacts.add(art);
 		sced.setArtifacts(artifacts);
 		Map<String,Object> recordData = Utils.dataToRecord(sced);
 		saveSourceCodeEntry(sce, recordData, wu);
 		return true;
+	}
+
+	private boolean isSemanticDuplicateOnSce(SourceCodeEntryData sced, SCEArtifact candidate) {
+		if (candidate == null || candidate.artifactUuid() == null) return false;
+		Optional<io.reliza.model.ArtifactData> oCand = artifactService.getArtifactData(candidate.artifactUuid());
+		if (oCand.isEmpty()) return false;
+		String candSig = canonicalContentSignature(oCand.get());
+		for (SCEArtifact existing : sced.getArtifacts()) {
+			if (candidate.artifactUuid().equals(existing.artifactUuid())) return true;
+			if (candSig == null) continue;
+			Optional<io.reliza.model.ArtifactData> oEx = artifactService.getArtifactData(existing.artifactUuid());
+			if (oEx.isEmpty() || oEx.get().getType() != oCand.get().getType()) continue;
+			if (candSig.equals(canonicalContentSignature(oEx.get()))) return true;
+		}
+		return false;
+	}
+
+	private String canonicalContentSignature(io.reliza.model.ArtifactData art) {
+		if (art == null || art.getDigestRecords() == null) return null;
+		io.reliza.model.ArtifactData.DigestScope preferred =
+				art.getType() == io.reliza.model.ArtifactData.ArtifactType.BOM
+				? io.reliza.model.ArtifactData.DigestScope.REARM
+				: io.reliza.model.ArtifactData.DigestScope.ORIGINAL_FILE;
+		return art.getDigestRecords().stream()
+				.filter(d -> d.scope() == preferred)
+				.map(io.reliza.model.ArtifactData.DigestRecord::digest)
+				.findFirst().orElse(null);
+	}
+
+	private String sceArtSemanticKey(SCEArtifact sceArt) {
+		if (sceArt == null || sceArt.artifactUuid() == null) return null;
+		Optional<io.reliza.model.ArtifactData> oad = artifactService.getArtifactData(sceArt.artifactUuid());
+		if (oad.isEmpty()) return null;
+		io.reliza.model.ArtifactData ad = oad.get();
+		String sig = canonicalContentSignature(ad);
+		if (sig == null) return null;
+		return ad.getType() + ":" + sig;
 	}
 	@Transactional
 	public boolean replaceArtifact(UUID sceUuid, SCEArtifact replaceArt, SCEArtifact art, WhoUpdated wu) throws RelizaException{
@@ -526,15 +595,24 @@ public class SourceCodeEntryService {
 			return VersionApi.getActionFromRawCommit(sceMap.getCommitMessage());
 		// Otherwise, if commits list is present, parse every commit message and return largest action
 		} else if (commits != null && !commits.isEmpty()) {
-			// Add commit from SCE to commits list to easily iterate through all commits
-			if (sceMap != null && StringUtils.isNotEmpty(sceMap.getCommitMessage()) 
+			// Build a local iteration list that conditionally folds in sceMap.
+			// MUST NOT mutate the input `commits` list: it's the same reference
+			// that ReleaseService.createReleaseFromVersion later iterates, and
+			// appending sceMap there would smuggle its artifactInputs into the
+			// commit loop, double-uploading the same artMaps and NPE-ing the
+			// second pass once the first stripped MultipartFile out.
+			List<SceDto> iterCommits;
+			if (sceMap != null && StringUtils.isNotEmpty(sceMap.getCommitMessage())
 					&& !sceMap.getCommit().equalsIgnoreCase(commits.get(0).getCommit())) {
-				commits.add(sceMap);
+				iterCommits = new ArrayList<>(commits);
+				iterCommits.add(sceMap);
+			} else {
+				iterCommits = commits;
 			}
-			
+
 			// Find largest action from list
 			ActionEnum largestAction = null;
-			for (SceDto commit : commits) {
+			for (SceDto commit : iterCommits) {
 				try {
 					if (!rejectedCommits.contains(commit.getCommit())) {
 						ActionEnum action = VersionApi.getActionFromRawCommit(commit.getCommitMessage());

@@ -67,6 +67,9 @@ public class SchedulingService {
     @Autowired
     SbomComponentService sbomComponentService;
 
+    @Autowired
+    AgentSessionService agentSessionService;
+
 
     @Value("${relizaprops.enableDtrackCleanupScheduler}")
     private boolean enableDtrackCleanupScheduler;
@@ -313,6 +316,46 @@ public class SchedulingService {
             }
         } catch (Exception e) {
             log.error("api_key_access retention sweep failed with an error", e);
+        }
+    }
+
+    /**
+     * Autoclose OPEN agent sessions with no activity in the last 24h.
+     * Sessions are heart-beated via the {@code sessionTouchProgrammatic}
+     * mutation; the orientation contract instructs agents to touch every
+     * 30-60s while polling. An OPEN session whose {@code lastActivityAt}
+     * is older than the cutoff is either crashed, stalled, or abandoned —
+     * leaving it OPEN distorts the dashboard's per-agent open-session
+     * count and lets CEL gates that key on {@code session.status == "OPEN"}
+     * keep firing against an agent that's no longer working.
+     *
+     * <p>BLOCKED sessions are intentionally skipped — they're awaiting
+     * operator action, not an automatic close.
+     *
+     * <p>Runs at the top of every hour; advisory lock prevents concurrent
+     * replicas from racing.
+     */
+    @Scheduled(cron="0 0 * * * *")
+    public void autocloseIdleAgentSessions() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.AUTOCLOSE_IDLE_AGENT_SESSIONS);
+            log.debug("autoclose idle agent sessions lock acquired {}", lock);
+            if (lock) {
+                try {
+                    java.time.ZonedDateTime cutoff = java.time.ZonedDateTime.now().minusHours(24);
+                    int closed = agentSessionService.autoCloseIdleSessions(
+                            cutoff, io.reliza.model.WhoUpdated.getAutoWhoUpdated());
+                    if (closed > 0) {
+                        log.info("Autoclosed {} idle agent session(s) (cutoff={})", closed, cutoff);
+                    }
+                } catch (Exception e) {
+                    log.error("Exception in agent-session autoclose sweep", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.AUTOCLOSE_IDLE_AGENT_SESSIONS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("agent-session autoclose sweep failed with an error", e);
         }
     }
 

@@ -263,6 +263,47 @@ public class AgentSessionService {
 	}
 
 	/**
+	 * Autoclose OPEN sessions with no activity since {@code idleCutoff}.
+	 * Sets {@code status=CLOSED}, {@code closedAt=now}, leaves
+	 * {@code lastActivityAt} pointing at the historical idle stamp
+	 * (the closure itself isn't agent-driven activity — preserving the
+	 * idle stamp keeps the audit honest about when the agent actually
+	 * stopped).
+	 *
+	 * <p>Returns the count of rows closed. Driven by
+	 * {@code SchedulingService.autocloseIdleAgentSessions()} which runs
+	 * under an advisory lock so concurrent replicas don't race.
+	 */
+	@Transactional
+	public int autoCloseIdleSessions(ZonedDateTime idleCutoff, WhoUpdated wu) {
+		// JSONB storage for ZonedDateTime is epoch-seconds-with-nanos
+		// (Jackson default), so the cutoff has to land in the same
+		// numeric domain — see AgentSessionRepository.findOpenSessionsIdleBefore.
+		double cutoffEpochSeconds = idleCutoff.toEpochSecond() + (idleCutoff.getNano() / 1_000_000_000.0);
+		List<AgentSession> idle = repository.findOpenSessionsIdleBefore(cutoffEpochSeconds);
+		int closed = 0;
+		ZonedDateTime now = ZonedDateTime.now();
+		for (AgentSession s : idle) {
+			try {
+				AgentSession locked = repository.findByIdWriteLocked(s.getUuid()).orElse(null);
+				if (locked == null) continue;
+				AgentSessionData sd = AgentSessionData.dataFromRecord(locked);
+				// Re-check under lock — another touch may have raced
+				// past the query and rescued the session.
+				if (sd.getStatus() != SessionStatus.OPEN) continue;
+				if (sd.getLastActivityAt() != null && sd.getLastActivityAt().isAfter(idleCutoff)) continue;
+				sd.setStatus(SessionStatus.CLOSED);
+				sd.setClosedAt(now);
+				saveData(sd, wu);
+				closed++;
+			} catch (Exception e) {
+				log.error("autoclose failed for session {}", s.getUuid(), e);
+			}
+		}
+		return closed;
+	}
+
+	/**
 	 * Upload one or more artifact files via {@link ArtifactService} and
 	 * bind each resulting artifact uuid to the session. Artifacts created
 	 * via this path carry {@code belongsTo=AGENT_SESSION} and do not
