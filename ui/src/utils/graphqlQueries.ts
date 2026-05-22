@@ -293,6 +293,10 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
         dtrackSubmissionFailed
         dtrackSubmissionAttempts
         dtrackSubmissionFailureReason
+        dtrackFetchStatus
+        dtrackFetchFailureCount
+        dtrackFetchFailureReason
+        dtrackFetchSkipUntil
         critical
         high
         medium
@@ -357,6 +361,10 @@ const ARTIFACT_DETAIL_DATA = `
         dtrackSubmissionFailed
         dtrackSubmissionAttempts
         dtrackSubmissionFailureReason
+        dtrackFetchStatus
+        dtrackFetchFailureCount
+        dtrackFetchFailureReason
+        dtrackFetchSkipUntil
         lastScanned
         firstScanned
         critical

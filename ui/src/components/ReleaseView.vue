@@ -4817,6 +4817,10 @@ function renderArtifactFactsColumn (row: any) {
     if (row.metrics && row.metrics.dtrackSubmissionFailed) factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack submission failed'))
     if (row.metrics && row.metrics.dtrackSubmissionFailed && row.metrics.dtrackSubmissionFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack failure reason: ${row.metrics.dtrackSubmissionFailureReason}`))
     if (row.metrics && row.metrics.dtrackSubmissionAttempts > 0) factContent.push(h('li', `DependencyTrack submission attempts: ${row.metrics.dtrackSubmissionAttempts}`))
+    if (row.metrics && row.metrics.dtrackFetchStatus === 'FAILED') factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack vuln-scan refresh failed'))
+    if (row.metrics && row.metrics.dtrackFetchStatus === 'FAILED' && row.metrics.dtrackFetchFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack refresh failure reason: ${row.metrics.dtrackFetchFailureReason}`))
+    if (row.metrics && row.metrics.dtrackFetchFailureCount > 0) factContent.push(h('li', `DependencyTrack refresh failure count: ${row.metrics.dtrackFetchFailureCount}`))
+    if (row.metrics && row.metrics.dtrackFetchSkipUntil) factContent.push(h('li', `DependencyTrack next refresh attempt: ${new Date(row.metrics.dtrackFetchSkipUntil).toLocaleString('en-Ca', { hour12: false })}`))
     if (row.artifactDetails && row.artifactDetails.length) {
         row.artifactDetails.forEach((ad: any) => {
             const adChildren: any[] = [h('span', `${ad.type}: `), h('a', {class: 'clickable', onClick: () => downloadArtifact(ad, true)}, 'download')]
@@ -4977,6 +4981,21 @@ function renderDtrackPill (row: any): any {
     if (m.dtrackSubmissionFailed) {
         const reason = m.dtrackSubmissionFailureReason ? `: ${m.dtrackSubmissionFailureReason}` : ''
         return h(NTag, { type: 'error', size: 'small', round: true, title: `DependencyTrack submission failed${reason}` }, () => 'Scan failed')
+    }
+    // Fetch-side failure: BOM was successfully submitted (we have a DT project) but
+    // the backend couldn't read vulnerabilities back. If firstScanned exists, the
+    // artifact still has a previous good scan's data — make it explicit that the
+    // numbers below are stale, not authoritative.
+    if (m.dtrackFetchStatus === 'FAILED') {
+        const reason = m.dtrackFetchFailureReason ? `: ${m.dtrackFetchFailureReason}` : ''
+        const retryAt = m.dtrackFetchSkipUntil
+            ? ` — next retry at ${new Date(m.dtrackFetchSkipUntil).toLocaleString('en-Ca', { hour12: false })}`
+            : ''
+        const stale = m.lastScanned
+            ? ` (showing stale data from ${new Date(m.lastScanned).toLocaleString('en-Ca', { hour12: false })})`
+            : ''
+        const label = m.firstScanned ? 'Scan refresh failed' : 'Scan fetch failed'
+        return h(NTag, { type: 'error', size: 'small', round: true, title: `DependencyTrack fetch failed${reason}${retryAt}${stale}` }, () => label)
     }
     if (m.firstScanned) {
         return h(NTag, { type: 'success', size: 'small', round: true, title: 'Dependency-Track scan complete' }, () => 'Scan done')
