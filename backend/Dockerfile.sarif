@@ -1,9 +1,9 @@
 FROM maven:3.9.16-eclipse-temurin-25-noble@sha256:52766e42de54a9a52bd72e500db1d8e8818133b79550586aa7ddac10c6e4fc84
-ARG CODEQL_BUNDLE_VERSION=2.22.4
+ARG CODEQL_BUNDLE_VERSION=2.25.5
 ARG CODEQL_URL="https://github.com/github/codeql-action/releases/download/codeql-bundle-v${CODEQL_BUNDLE_VERSION}/codeql-bundle-linux64.tar.gz"
 
 RUN curl -sSL "$CODEQL_URL" -o /tmp/codeql.tgz \
-    && echo "0df7d8d8f23b1d404d0d813086a2b6a4b09776cf9fcbc1542d933a66736dee4b  /tmp/codeql.tgz" | sha256sum -c - \
+    && echo "24717f939f1bef659f893ff4a9c99ba8c056fbaca9640f877c4dc74cf96486d7  /tmp/codeql.tgz" | sha256sum -c - \
     && mkdir -p /opt/codeql \
     && tar -xzf /tmp/codeql.tgz -C /opt/codeql --strip-components=1 \
     && rm /tmp/codeql.tgz
