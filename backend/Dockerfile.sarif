@@ -1,4 +1,4 @@
-FROM maven:3.9.11-eclipse-temurin-21-noble@sha256:fe1de86d91ca06519b58fc85ff737e159c18c0d0a8c7f4c66601b74dba136c5c
+FROM maven:3.9.16-eclipse-temurin-25-noble@sha256:52766e42de54a9a52bd72e500db1d8e8818133b79550586aa7ddac10c6e4fc84
 ARG CODEQL_BUNDLE_VERSION=2.22.4
 ARG CODEQL_URL="https://github.com/github/codeql-action/releases/download/codeql-bundle-v${CODEQL_BUNDLE_VERSION}/codeql-bundle-linux64.tar.gz"
 
