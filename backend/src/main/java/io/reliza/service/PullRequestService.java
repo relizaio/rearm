@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import tools.jackson.core.JacksonException;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -399,7 +399,7 @@ public class PullRequestService {
 		ReleaseValidationEvent ev = new ReleaseValidationEvent(release, ZonedDateTime.now(), result, wu);
 		try {
 			repository.appendReleaseValidationEvent(prUuid, Utils.OM.writeValueAsString(ev));
-		} catch (JsonProcessingException e) {
+		} catch (JacksonException e) {
 			throw new RelizaException("Failed to serialize ReleaseValidationEvent for PR " + prUuid
 					+ ": " + e.getMessage());
 		}
@@ -409,7 +409,7 @@ public class PullRequestService {
 	public void recordPrValidationEvent(UUID prUuid, PullRequestValidationEvent ev) throws RelizaException {
 		try {
 			repository.appendPrValidationEvent(prUuid, Utils.OM.writeValueAsString(ev));
-		} catch (JsonProcessingException e) {
+		} catch (JacksonException e) {
 			throw new RelizaException("Failed to serialize PullRequestValidationEvent for PR " + prUuid
 					+ ": " + e.getMessage());
 		}
@@ -422,7 +422,7 @@ public class PullRequestService {
 				ZonedDateTime.now(), wu);
 		try {
 			repository.appendUpdateEvent(prUuid, Utils.OM.writeValueAsString(ev));
-		} catch (JsonProcessingException e) {
+		} catch (JacksonException e) {
 			log.error("Failed to serialize PullRequestUpdateEvent for PR {}", prUuid, e);
 		}
 	}

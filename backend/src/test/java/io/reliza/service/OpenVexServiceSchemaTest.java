@@ -19,8 +19,8 @@ import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.vulnerability.Vulnerability;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
@@ -60,8 +60,10 @@ public class OpenVexServiceSchemaTest {
 
 	private static void assertSchemaValid(Map<String, Object> doc) throws Exception {
 		String json = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(doc);
-		JsonNode node = MAPPER.readTree(json);
-		Set<ValidationMessage> errors = SCHEMA.validate(node);
+		// networknt-schema-validator still uses Jackson 2 JsonNode internally;
+		// pass the raw JSON string + InputFormat.JSON so it parses with its own
+		// (Jackson 2) mapper rather than us trying to bridge tree types.
+		Set<ValidationMessage> errors = SCHEMA.validate(json, com.networknt.schema.InputFormat.JSON);
 		assertTrue(errors.isEmpty(),
 				() -> "OpenVEX 0.2.0 schema validation failed:\n" + errors + "\n---\n" + json);
 	}
@@ -182,8 +184,7 @@ public class OpenVexServiceSchemaTest {
 				"\"status\" : \"not-a-real-status\"");
 		assertFalse(broken.equals(json), "sanity: status replacement did not apply");
 
-		JsonNode node = MAPPER.readTree(broken);
-		Set<ValidationMessage> errors = SCHEMA.validate(node);
+		Set<ValidationMessage> errors = SCHEMA.validate(broken, com.networknt.schema.InputFormat.JSON);
 		assertFalse(errors.isEmpty(),
 				"Expected schema errors for invalid status; got none (validator is a no-op)");
 	}

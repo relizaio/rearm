@@ -81,6 +81,8 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 	
 	@Data
 	@Builder
+	@lombok.NoArgsConstructor
+	@lombok.AllArgsConstructor
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class SoftwareDeliverableMetadata {
 		/**

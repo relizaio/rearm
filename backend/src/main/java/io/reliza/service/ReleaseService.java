@@ -46,8 +46,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import com.github.packageurl.PackageURL;
 
 import io.reliza.common.CdxType;
@@ -715,7 +715,10 @@ public class ReleaseService {
 			Utils.setRearmBomMetadata(bom, bomComponent);
 			BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
 			try {
-				output = generator.toJsonNode();
+				// cyclonedx-core-java still emits Jackson 2 JsonNode; bridge through
+				// JSON-string to our Jackson 3 mapper so the rest of the pipeline
+				// keeps a single tools.jackson.databind.JsonNode type.
+				output = Utils.OM.readTree(generator.toJsonString());
 			} catch (Exception e) {
 				log.error("error when generating cyclone dx bom", e);
 			}
@@ -755,11 +758,11 @@ public class ReleaseService {
 	 * @param excludeCoverageTypes Coverage types to exclude
 	 * @return UUID of the merged BOM
 	 * @throws RelizaException if no SBOMs found or merge fails
-	 * @throws JsonProcessingException if BOM JSON processing fails
+	 * @throws JacksonException if BOM JSON processing fails
 	 */
 	private UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
 			ArtifactBelongsTo belongsTo, BomStructureType structure, WhoUpdated wu, 
-			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JsonProcessingException {
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException {
 		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid).orElseThrow();
 		if (null == tldOnly) tldOnly = false;
 		final RebomOptions mergeOptions = new RebomOptions(belongsTo, tldOnly, ignoreDev, structure);
@@ -783,16 +786,16 @@ public class ReleaseService {
 	 * @param excludeCoverageTypes Coverage types to exclude
 	 * @return JsonNode representation of the merged BOM
 	 * @throws RelizaException if no SBOMs found or merge fails
-	 * @throws JsonProcessingException if BOM JSON processing fails
+	 * @throws JacksonException if BOM JSON processing fails
 	 */
 	private JsonNode getReleaseSbomAsJsonNode(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, 
 			ArtifactBelongsTo belongsTo, BomStructureType structure, UUID org, WhoUpdated wu, 
-			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JsonProcessingException {
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException {
 		UUID releaseBomId = getReleaseBomId(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, wu, excludeCoverageTypes);
 		return rebomService.findBomByIdJson(releaseBomId, org);
 	}
 	
-	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JsonProcessingException{
+	public String exportReleaseSbom(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, ArtifactBelongsTo belongsTo, BomStructureType structure, BomMediaType mediaType, UUID org, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException, JacksonException{
 		String mergedBom = "";
 		if (mediaType == BomMediaType.JSON){
 			JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(releaseUuid, tldOnly, ignoreDev, belongsTo, structure, org, wu, excludeCoverageTypes);
@@ -2736,7 +2739,7 @@ public class ReleaseService {
 					log.error("Failed to enrich VDR components from merged SBOM: {}", e.getMessage(), e);
 				}
 				// Continue with empty map - will use minimal components
-			} catch (JsonProcessingException e) {
+			} catch (JacksonException e) {
 				log.error("JSON processing error while enriching VDR components: {}", e.getMessage(), e);
 				// Continue with empty map - will use minimal components
 			}

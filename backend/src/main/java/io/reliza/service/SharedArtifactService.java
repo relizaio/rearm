@@ -108,7 +108,7 @@ public class SharedArtifactService {
 			}
 			String metricsJson = Utils.OM.writeValueAsString(metrics);
 			repository.updateMetrics(a.getUuid(), metricsJson);
-		} catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+		} catch (tools.jackson.core.JacksonException e) {
 			throw new IllegalStateException("Failed to serialize artifact metrics for artifact " + a.getUuid(), e);
 		}
 	}

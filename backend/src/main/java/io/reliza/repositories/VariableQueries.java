@@ -596,7 +596,7 @@ class VariableQueries {
 
 	protected static final String COUNT_RELEASES_OF_ORG_BY_DATE = """
 			select d.date, COUNT(*) as num from (
-				select DATE(r.created_date AT TIME ZONE :tz) as date
+				select to_char(DATE(r.created_date AT TIME ZONE :tz), 'YYYY-MM-DD') as date
 				from rearm.releases r
 				where r.record_data->>'org' = :orgUuidAsString
 					AND r.created_date > :cutOffDate
@@ -616,7 +616,7 @@ class VariableQueries {
 
 	protected static final String COUNT_RELEASES_OF_COMPONENT_BY_DATE = """
 			select d.date, COUNT(*) as num from (
-				select DATE(r.created_date AT TIME ZONE :tz) as date
+				select to_char(DATE(r.created_date AT TIME ZONE :tz), 'YYYY-MM-DD') as date
 				from rearm.releases r
 				where r.record_data->>'component' = :componentUuidAsString
 					AND r.created_date > :cutOffDate
@@ -627,7 +627,7 @@ class VariableQueries {
 	
 	protected static final String COUNT_RELEASES_OF_BRANCH_BY_DATE = """
 			select d.date, COUNT(*) as num from (
-				select DATE(r.created_date AT TIME ZONE :tz) as date
+				select to_char(DATE(r.created_date AT TIME ZONE :tz), 'YYYY-MM-DD') as date
 				from rearm.releases r
 				where r.record_data->>'branch' = :branchUuidAsString
 					AND r.created_date > :cutOffDate

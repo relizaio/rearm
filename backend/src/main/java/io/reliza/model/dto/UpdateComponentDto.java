@@ -12,8 +12,8 @@ import org.apache.commons.lang3.StringUtils;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DatabindException;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
@@ -136,7 +136,7 @@ public class UpdateComponentDto {
 	private BelongsToOrganization isInternal;
 
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
-			IntegrationType it) throws JsonMappingException, JsonProcessingException {
+			IntegrationType it) throws DatabindException, JacksonException {
 		var builder = ReleaseOutputEvent.builder()
 									.integration(roei.getIntegration())
 									.name(roei.getName())

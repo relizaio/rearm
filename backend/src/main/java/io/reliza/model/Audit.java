@@ -21,8 +21,8 @@ import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DatabindException;
 
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
@@ -99,9 +99,9 @@ public class Audit implements Serializable {
 		Map<String, Object> retObj = new LinkedHashMap<>();
 		try {
 			retObj =  Utils.OM.readValue(revisionRecordData, Map.class);
-		} catch (JsonMappingException e) {
+		} catch (DatabindException e) {
 			log.error("Exception when mapping record data from instance to JSON", e);
-		} catch (JsonProcessingException e) {
+		} catch (JacksonException e) {
 			log.error("Exception when mapping record data from instance to JSON", e);
 		}
 		return retObj;
@@ -110,7 +110,7 @@ public class Audit implements Serializable {
 	public void setRevisionRecordData(Map<String, Object> recordData) {
 		try {
 			this.revisionRecordData = Utils.OM.writeValueAsString(recordData);
-		} catch (JsonProcessingException e) {
+		} catch (JacksonException e) {
 			log.error("Exception when setting record data into instance", e);
 		}
 	}

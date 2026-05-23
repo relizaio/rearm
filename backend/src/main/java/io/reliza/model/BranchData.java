@@ -17,9 +17,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
 
 /**
  * Branch is the child of Project and VcsRepository
@@ -34,6 +36,8 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 	
 	@Builder
 	@Data
+	@NoArgsConstructor
+	@AllArgsConstructor
 	public static class ChildComponent {
 		@JsonProperty(CommonVariables.STATUS_FIELD)
 		private StatusEnum status;
@@ -53,6 +57,8 @@ public class BranchData extends RelizaDataParent implements RelizaObject {
 	 */
 	@Builder
 	@Data
+	@NoArgsConstructor
+	@AllArgsConstructor
 	public static class DependencyPattern {
 		@JsonProperty(CommonVariables.UUID_FIELD)
 		private UUID uuid;

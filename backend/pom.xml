@@ -22,32 +22,43 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <java.version>21</java.version>
+    <java.version>25</java.version>
     <main-class>org.springframework.boot.loader.launch.JarLauncher</main-class>
     <start-class>io.reliza.ws.App</start-class>
     <log4j2.version>2.26.0</log4j2.version>
-    <jackson-bom.version>2.21.3</jackson-bom.version>
     <commons-lang3.version>3.20.0</commons-lang3.version>
-	<netty.version>4.1.133.Final</netty.version>   <!-- override Spring Boot 3.5.14 BOM (was 4.1.132.Final) -->
-	<tomcat.version>10.1.55</tomcat.version>   <!-- override Spring Boot 3.5.14 BOM (was 10.1.54), CVE-2026-41293 / CVE-2026-43512 -->
+    <!-- Override Spring Boot 4.0.6 BOM-managed versions with the latest
+         patch releases that carry CVE fixes vs the BOM-pinned defaults.
+         Refresh on each Spring Boot bump and re-check against the
+         scanner so we don't silently regress past a future BOM. -->
+    <netty.version>4.2.14.Final</netty.version>
+    <tomcat.version>11.0.22</tomcat.version>
+    <postgresql.version>42.7.11</postgresql.version>
   </properties>
-  
+
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.14</version>
+        <version>4.0.6</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    
+
 	<dependencyManagement>
 	    <dependencies>
 	        <dependency>
 	            <groupId>com.netflix.graphql.dgs</groupId>
 	            <artifactId>graphql-dgs-platform-dependencies</artifactId>
 	            <!-- The DGS BOM/platform dependency. This is the only place you set version of DGS -->
-	            <version>10.6.0</version>
+	            <version>12.0.0</version>
 	            <type>pom</type>
 	            <scope>import</scope>
+	        </dependency>
+	        <!-- DGS 12 ships Jackson3JsonProvider wiring that requires
+	             json-path 3.x; Spring Boot 4.0.6 BOM still pins 2.10.0. -->
+	        <dependency>
+	            <groupId>com.jayway.jsonpath</groupId>
+	            <artifactId>json-path</artifactId>
+	            <version>3.0.0</version>
 	        </dependency>
 	    </dependencies>
 	</dependencyManagement>
@@ -116,7 +127,7 @@
     </dependency>
 	<dependency>
 	    <groupId>io.hypersistence</groupId>
-	    <artifactId>hypersistence-utils-hibernate-63</artifactId>
+	    <artifactId>hypersistence-utils-hibernate-71</artifactId>
 	    <version>3.15.2</version>
 	</dependency>
     <dependency>
@@ -146,6 +157,12 @@
       <artifactId>lombok</artifactId>
       <optional>true</optional>
     </dependency>
+    <!-- Spring Boot 4 split RestTemplateBuilder out into spring-boot-restclient.
+         The starter pulls it in (was transitive via spring-boot-starter-web in SB3). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-restclient</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.netflix.graphql.dgs</groupId>
       <artifactId>graphql-dgs-spring-graphql-starter</artifactId>
@@ -161,11 +178,21 @@
     <dependency>
 	  	<groupId>name.nkonev.multipart-spring-graphql</groupId>
 	  	<artifactId>multipart-spring-graphql</artifactId>
-	  	<version>1.6.0</version>
+	  	<version>2.0.0</version>
 	</dependency>
     <dependency>
 		<groupId>org.flywaydb</groupId>
 		<artifactId>flyway-database-postgresql</artifactId>
+	</dependency>
+	<!-- Spring Boot 4 split Flyway auto-config into its own module —
+	     without spring-boot-flyway on the classpath the
+	     FlywayMigrationInitializer post-processor doesn't register,
+	     so EntityManagerFactory starts before migrations and Hibernate's
+	     validate fails with "missing table ..." for anything created
+	     after V0. -->
+	<dependency>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-flyway</artifactId>
 	</dependency>
     <dependency>
         <groupId>io.reliza</groupId>
@@ -268,6 +295,22 @@
         <plugin>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-maven-plugin</artifactId>
+        </plugin>
+        <!-- Java 25 + Spring Boot 4 require Lombok to be explicitly
+             registered as an annotation processor path; the implicit
+             classpath-discovery from older Lombok+javac combos no longer
+             fires the @Data / @Slf4j etc. generators otherwise. -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+                <annotationProcessorPaths>
+                    <path>
+                        <groupId>org.projectlombok</groupId>
+                        <artifactId>lombok</artifactId>
+                    </path>
+                </annotationProcessorPaths>
+            </configuration>
         </plugin>
         <!-- clean lifecycle, see https://maven.apache.org/ref/current/maven-core/lifecycles.html#clean_Lifecycle -->
         <plugin>

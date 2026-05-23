@@ -22,10 +22,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
@@ -233,11 +233,14 @@ public class RebomService {
         BomInput bomInput = new BomInput(bomJson, rebomOptions, bomFormat, org, existingSerialNumber);
         variables.put("bomInput", bomInput);
         Map<String, Object> response = executeGraphQLQuery(mutation, variables).block();
-        //TODO: deserialize bom response as an object of ArtifactUploadRseponseDTO
-        ObjectMapper clonedMapper = Utils.OM.copy();
-        // Configure the cloned ObjectMapper to ignore unknown properties
-        clonedMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        RebomResponse bomResponse = clonedMapper.convertValue(response.get("addBom"), RebomResponse.class);
+        // Jackson 3: ObjectMapper is immutable and ObjectReader no longer
+        // takes a tree node directly. Round-trip through a JSON string so
+        // the per-call FAIL_ON_UNKNOWN_PROPERTIES toggle still applies.
+        String addBomJson = Utils.OM.writeValueAsString(response.get("addBom"));
+        RebomResponse bomResponse = Utils.OM
+                .readerFor(RebomResponse.class)
+                .without(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .readValue(addBomJson);
         return bomResponse;
     }
     public record EnrichedBomProbeResult(EnrichmentStatus status, String enrichedBom) {}
@@ -294,7 +297,7 @@ public class RebomService {
         return new EnrichedBomProbeResult(status, enrichedBom);
     }
 
-    public JsonNode findBomByIdJson(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
+    public JsonNode findBomByIdJson(UUID bomSerialNumber, UUID org) throws JacksonException{
         String query = """
             query bomById ($id: ID, $org: ID) {
                 bomById(id: $id, org: $org)
@@ -341,7 +344,7 @@ public class RebomService {
      * Find augmented BOM by serialNumber and specific version.
      * Used for downloading historical versions of augmented BOMs.
      */
-    public JsonNode findBomByVersion(UUID bomSerialNumber, UUID org, Integer version) throws JsonProcessingException{
+    public JsonNode findBomByVersion(UUID bomSerialNumber, UUID org, Integer version) throws JacksonException{
         String query = """
             query bomBySerialNumberAndVersion ($serialNumber: ID!, $version: Int!, $org: ID!, $raw: Boolean) {
                 bomBySerialNumberAndVersion(serialNumber: $serialNumber, version: $version, org: $org, raw: $raw)
@@ -387,7 +390,7 @@ public class RebomService {
         return br.toString();
     }
 
-    public JsonNode findRawBomById(UUID bomSerialNumber, UUID org) throws JsonProcessingException{
+    public JsonNode findRawBomById(UUID bomSerialNumber, UUID org) throws JacksonException{
         return findRawBomById(bomSerialNumber, org, null);
     }
 
@@ -395,7 +398,7 @@ public class RebomService {
      * Find BOM by serialNumber and specific version.
      * Used for downloading historical versions of SPDX BOMs.
      */
-    public JsonNode findRawBomByVersion(UUID bomSerialNumber, UUID org, Integer version) throws JsonProcessingException{
+    public JsonNode findRawBomByVersion(UUID bomSerialNumber, UUID org, Integer version) throws JacksonException{
         String query = """
             query bomBySerialNumberAndVersion ($serialNumber: ID!, $version: Int!, $org: ID!, $raw: Boolean) {
                 bomBySerialNumberAndVersion(serialNumber: $serialNumber, version: $version, org: $org, raw: $raw)
@@ -424,9 +427,9 @@ public class RebomService {
      * @param org The organization UUID
      * @param format Optional BomFormat (CYCLONEDX or SPDX) - used for SPDX to retrieve original format vs converted
      * @return JsonNode containing the raw BOM data
-     * @throws JsonProcessingException if JSON processing fails
+     * @throws JacksonException if JSON processing fails
      */
-    public JsonNode findRawBomById(UUID bomSerialNumber, UUID org, BomFormat format) throws JsonProcessingException{
+    public JsonNode findRawBomById(UUID bomSerialNumber, UUID org, BomFormat format) throws JacksonException{
         String query;
         Map<String, Object> variables = new HashMap<>();
         variables.put("id", bomSerialNumber.toString());
@@ -563,7 +566,7 @@ public class RebomService {
     //     JsonNode mergedBomJsonNode;
     //     try {
     //         mergedBomJsonNode = Utils.OM.readTree(mergedBomString);
-    //     } catch (JsonProcessingException e) {
+    //     } catch (JacksonException e) {
     //         throw new RelizaException(e.getMessage());
     //     }
     //     return mergedBomJsonNode;
@@ -601,11 +604,11 @@ public class RebomService {
         variables.put("org", org);
        
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
-        ObjectMapper clonedMapper = Utils.OM.copy();
-        // Configure the cloned ObjectMapper to ignore unknown properties
-        clonedMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    
-        RebomResponse bomResponse = clonedMapper.convertValue(response.get("mergeAndStoreBoms"), RebomResponse.class);
+        String mergedJson = Utils.OM.writeValueAsString(response.get("mergeAndStoreBoms"));
+        RebomResponse bomResponse = Utils.OM
+                .readerFor(RebomResponse.class)
+                .without(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .readValue(mergedJson);
         String bomSerialNumber = bomResponse.meta().serialNumber();
         if(bomSerialNumber.startsWith("urn")){
             bomSerialNumber = bomSerialNumber.replace("urn:uuid:","");

@@ -21,7 +21,7 @@ import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import tools.jackson.core.JacksonException;
 
 import io.reliza.common.Utils;
 import lombok.extern.slf4j.Slf4j;
@@ -181,7 +181,7 @@ public class Release implements Serializable, RelizaEntity {
 	public String getRawJson() {
 		try {
 			return Utils.OM.writeValueAsString(this.recordData);
-		} catch (JsonProcessingException e) {
+		} catch (JacksonException e) {
 			log.error("Error parsing record data for release into string", e);
 			return null;
 		}

@@ -17,7 +17,7 @@ import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.vulnerability.Vulnerability;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import io.reliza.common.SidPurlUtils;
 import io.reliza.model.ReleaseData;

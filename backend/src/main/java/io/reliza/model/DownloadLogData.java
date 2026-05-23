@@ -38,6 +38,8 @@ public class DownloadLogData extends RelizaDataParent implements RelizaObject {
 	/** Single flat config class — only fields relevant to the DownloadType will be non-null. */
 	@Builder
 	@Data
+	@lombok.NoArgsConstructor
+	@lombok.AllArgsConstructor
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class DownloadConfig {
 		// ARTIFACT_DOWNLOAD / RAW_ARTIFACT_DOWNLOAD

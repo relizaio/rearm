@@ -651,12 +651,12 @@ public class TeaTransformerService {
 	 *                    describes; may be null/empty (then the field is
 	 *                    emitted as an empty array)
 	 */
-	public com.fasterxml.jackson.databind.JsonNode wrapAsCleDocument(TeaCle cle, java.util.List<io.reliza.model.tea.TeaIdentifier> identifiers) {
-		com.fasterxml.jackson.databind.node.ObjectNode root = io.reliza.common.Utils.OM.createObjectNode();
+	public tools.jackson.databind.JsonNode wrapAsCleDocument(TeaCle cle, java.util.List<io.reliza.model.tea.TeaIdentifier> identifiers) {
+		tools.jackson.databind.node.ObjectNode root = io.reliza.common.Utils.OM.createObjectNode();
 		root.put("$schema", CLE_SCHEMA_URI);
 		// identifier field — spec accepts string OR array. Always array for
 		// uniformity. PURLs only, since spec ties this to the PURL format.
-		com.fasterxml.jackson.databind.node.ArrayNode idArr = root.putArray("identifier");
+		tools.jackson.databind.node.ArrayNode idArr = root.putArray("identifier");
 		if (identifiers != null) {
 			for (var id : identifiers) {
 				if (id == null) continue;

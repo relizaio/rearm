@@ -1,24 +1,24 @@
-FROM eclipse-temurin:21.0.11_10-jdk-alpine-3.23@sha256:4fb80de7aeb277ad949cfbe89b4f504e50bb34c57fd908c5825236473d71e986 AS jre-build
+FROM eclipse-temurin:25-jdk-alpine@sha256:30d9f87d702c2c1c601ed0d31e0c88ea1ea474ee7676cda7b7a59e759181c4dd AS jre-build
 # Create a custom Java runtime
 # to get list of java modules, use the following from target/ directory: 
 # jdeps -R -s --multi-release 16 -cp '.\unjar\BOOT-INF\lib\*' .\rearm-core-Version_Managed_By_CI_AND_Reliza.jar
 
 RUN $JAVA_HOME/bin/jlink \
-         --add-modules java.base,java.sql,java.sql.rowset,java.xml,java.logging,java.net.http,java.naming,java.security.jgss,java.datatransfer,java.desktop,java.management,java.instrument,jdk.unsupported,jdk.crypto.ec \
+         --add-modules java.base,java.compiler,java.sql,java.sql.rowset,java.xml,java.logging,java.net.http,java.naming,java.security.jgss,java.datatransfer,java.desktop,java.management,java.instrument,jdk.unsupported,jdk.crypto.ec \
          --strip-java-debug-attributes \
          --no-man-pages \
          --no-header-files \
          --compress=zip-9 \
          --output /javaruntime
 
-FROM maven:3.9.15-eclipse-temurin-21-alpine@sha256:856fe78872c59d3b584a64d07693d5433cbf44e35b5ba1f2c911147f39f54266 AS build-cache-stage
+FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:5e8229c2aed320c85d2b3851585dd2e7f7c481e366ce051238e802fd4cfb74aa AS build-cache-stage
 RUN mkdir /workdir
 WORKDIR /workdir
 
 COPY ./pom.xml .
 RUN mvn -B dependency:go-offline -T1C 
 
-FROM maven:3.9.15-eclipse-temurin-21-alpine@sha256:856fe78872c59d3b584a64d07693d5433cbf44e35b5ba1f2c911147f39f54266 AS build-stage
+FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:5e8229c2aed320c85d2b3851585dd2e7f7c481e366ce051238e802fd4cfb74aa AS build-stage
 RUN mkdir -p /root/.m2/repository/com
 COPY --from=build-cache-stage /root/.m2 /root/.m2
 

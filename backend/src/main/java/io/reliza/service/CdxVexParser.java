@@ -18,7 +18,7 @@ import org.cyclonedx.model.vulnerability.Vulnerability;
 import org.cyclonedx.parsers.JsonParser;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import tools.jackson.core.JacksonException;
 
 import io.reliza.common.Utils;
 import io.reliza.model.AnalysisJustification;
@@ -115,7 +115,7 @@ public class CdxVexParser implements VexFormatParser {
         String stmtJson;
         try {
             stmtJson = Utils.OM.writeValueAsString(v);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             stmtJson = "{}";
         }
         VulnerabilitySeverity severity = highestSeverity(v);

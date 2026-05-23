@@ -13,9 +13,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.boot.persistence.autoconfigure.EntityScan;
+import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
@@ -71,7 +71,36 @@ public class App {
 	   // Do any additional configuration here
 	   return builder.build();
 	}
-	
+
+	/**
+	 * Default WebClient bean. Spring Boot 4 stopped auto-configuring
+	 * both WebClient and WebClient.Builder when the primary web stack
+	 * is Spring MVC (we keep WebClient around for outbound calls only).
+	 * Construct directly via WebClient.builder() so consumers that
+	 * @Autowire a bare WebClient (DTrackService etc.) keep working.
+	 */
+	@Bean
+	public org.springframework.web.reactive.function.client.WebClient defaultWebClient() {
+		return org.springframework.web.reactive.function.client.WebClient.builder().build();
+	}
+
+	/**
+	 * Loosen Jackson 3's default CREATOR visibility from PUBLIC_ONLY to
+	 * NON_PRIVATE. Lombok's @Builder generates a package-private
+	 * @AllArgsConstructor on every @Data @Builder DTO; under the
+	 * Jackson 2 defaults Spring Boot 3 shipped, those were findable via
+	 * parameter-name binding, but Jackson 3 tightened the default and
+	 * the same DTOs now fail to deserialize at the HTTP/GraphQL boundary
+	 * with "no Creators ... exist". Annotating every DTO with
+	 * @NoArgsConstructor would touch ~30 files; one global mapper tweak
+	 * is the smaller surface change.
+	 */
+	@Bean
+	public org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer relaxCreatorVisibilityCustomizer() {
+		return builder -> builder.changeDefaultVisibility(vc -> vc.withCreatorVisibility(
+				com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.NON_PRIVATE));
+	}
+
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter) throws Exception {
 	  http

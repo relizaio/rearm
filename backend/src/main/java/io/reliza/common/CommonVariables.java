@@ -34,7 +34,19 @@ public class CommonVariables {
 	public static final UUID DEFAULT_RESOURCE_GROUP = new UUID(0,0); // 00000000-0000-0000-0000-000000000000
 	public static final String DEFAULT_RESOURCE_GROUP_NAME = "default";
 	
-	public static final int DTRACK_DEFAULT_PAGE_SIZE = 50;
+	// Default page size for paginated Dependency-Track API calls
+	// (vulnerability/project, finding, violation, component search).
+	// Sized to minimize the per-request rebuild cost on DT for large-project
+	// vulnerability listings: DT pays a constant ~4 s of compute per request
+	// regardless of pageSize (one rebuild of the full flattened (component x
+	// vulnerability) list per call), so larger pages = fewer rebuilds = far
+	// faster drains. Measured 2026-05-22 against a 1,868-row project: at
+	// pageSize=50 the drain wall is ~160 s (38 pages x 4 s); at pageSize=2000
+	// it's ~5 s (single page). Per-page wire size with the directDependencies
+	// serialization fix is ~5 MB at this pageSize (well within the 150 MB
+	// dtrackBufferSize cap in IntegrationService). See
+	// memory/dtrack-pagination-fix-stress.md for the full numbers.
+	public static final int DTRACK_DEFAULT_PAGE_SIZE = 2000;
 	
 	public static final String NAME_FIELD = "name";
 	public static final String DESCRIPTION_FIELD = "description";

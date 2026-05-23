@@ -7,7 +7,7 @@ package io.reliza.model.tea;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;

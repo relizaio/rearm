@@ -122,7 +122,7 @@ public class SharedReleaseService {
 			}
 			String metricsJson = Utils.OM.writeValueAsString(metrics);
 			repository.updateMetrics(r.getUuid(), metricsJson);
-		} catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+		} catch (tools.jackson.core.JacksonException e) {
 			throw new IllegalStateException("Failed to serialize release metrics for release " + r.getUuid(), e);
 		}
 	}

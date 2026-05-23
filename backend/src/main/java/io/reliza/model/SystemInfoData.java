@@ -27,6 +27,8 @@ public class SystemInfoData extends RelizaDataParent{
 	
 	@Data
 	@Builder
+	@lombok.NoArgsConstructor
+	@lombok.AllArgsConstructor
 	public static class SetEmailPropertiesDto {
 		private String sendGridKey;
 		private SmtpProps smtpProps;

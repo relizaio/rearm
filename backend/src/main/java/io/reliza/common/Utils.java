@@ -45,8 +45,9 @@ import org.cyclonedx.model.metadata.ToolInformation;
 import org.springframework.core.io.Resource;
 import org.springframework.security.access.AccessDeniedException;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 import com.github.packageurl.PackageURLBuilder;
@@ -72,8 +73,30 @@ import lombok.extern.slf4j.Slf4j;
 public class Utils {
 	private Utils() {} // non-initializable class
 	
-	public static final ObjectMapper OM = new ObjectMapper().findAndRegisterModules();
-			// .configure(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE, false);
+	// Jackson 3: ObjectMapper is immutable — modules are registered at
+	// builder time and there's no findAndRegisterModules() runtime hook
+	// (auto-detection happens during JsonMapper.builder().build()).
+	// WRITE_DATES_AS_TIMESTAMPS moved off SerializationFeature onto the
+	// new DateTimeFeature enum, and the default flipped from on → off.
+	// We rely on numeric epoch-seconds-with-nanos for ZonedDateTime in
+	// JSONB columns (the metrics_revision UPDATE on rearm.releases casts
+	// to numeric), so re-enable it explicitly. Same for nanosecond
+	// resolution which used to default-on under Jackson 2's
+	// JavaTimeModule. WRITE_DURATIONS_AS_TIMESTAMPS keeps the on-disk
+	// Duration shape consistent.
+	// Jackson 3's default CREATOR visibility is PUBLIC_ONLY, which hides
+	// the package-private all-args constructor Lombok's @Builder produces.
+	// Loosen to NON_PRIVATE so Jackson can use those ctors with parameter
+	// names (Spring Boot 4 keeps `-parameters` on by default) — that's
+	// what makes our many @Data @Builder DTOs round-trip without us
+	// having to annotate every single one with @NoArgsConstructor.
+	public static final ObjectMapper OM = JsonMapper.builder()
+			.changeDefaultVisibility(vc -> vc.withCreatorVisibility(
+					com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.NON_PRIVATE))
+			.enable(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+			.enable(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DATE_TIMESTAMPS_AS_NANOSECONDS)
+			.enable(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
+			.build();
 	
 	public static final ZoneId UTC_ZONE_ID = ZoneId.of("UTC");
 	public static final ZoneOffset UTC_ZONE_OFFSET = ZoneOffset.of("Z");

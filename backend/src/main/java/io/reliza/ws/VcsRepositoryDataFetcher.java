@@ -131,7 +131,7 @@ public class VcsRepositoryDataFetcher {
 	@DgsData(parentType = "Mutation", field = "setVcsRepositoryOutputTriggers")
 	public VcsRepositoryData setVcsRepositoryOutputTriggers(
 			@InputArgument("vcsUuid") UUID vcsUuid,
-			DgsDataFetchingEnvironment dfe) throws RelizaException, com.fasterxml.jackson.core.JsonProcessingException {
+			DgsDataFetchingEnvironment dfe) throws RelizaException, tools.jackson.core.JacksonException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsUuid);

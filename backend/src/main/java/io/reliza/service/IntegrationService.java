@@ -52,9 +52,9 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Mono;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DatabindException;
+import tools.jackson.databind.JsonNode;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.TableName;
@@ -144,6 +144,13 @@ public class IntegrationService {
 	// allocation well under the original 200 MB. We paginate everything (see
 	// executeDtrackPaginatedCallWithTransform), so this cap is only a
 	// runaway-allocation safety net.
+	//
+	// Sizing relationship with CommonVariables.DTRACK_DEFAULT_PAGE_SIZE: the
+	// cap must exceed pageSize × worst-case-per-row × safety-factor. Measured
+	// worst-case row size 2026-05-22 was 33 KB (Log4Shell-class GHSA). With
+	// the current pageSize=2000 and a 2× safety factor that's a theoretical
+	// max page of ~132 MB — 150 MB gives ~12% additional headroom. Past
+	// pageSize bumps should re-check this relationship before landing.
 	final int dtrackBufferSize = 150 * 1024 * 1024;
     final ExchangeStrategies dtrackExchangeStrategies = ExchangeStrategies.builder()
             .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(dtrackBufferSize))
@@ -295,7 +302,7 @@ public class IntegrationService {
 
 	@Transactional
 	public Integration createIntegration (TriggerIntegrationInputDto tii, WhoUpdated wu)
-			throws JsonMappingException, JsonProcessingException {
+			throws DatabindException, JacksonException {
 		Integration i = new Integration();
 		String secret = tii.getSecret();
 		if (tii.getType() == IntegrationType.GITHUB) {
@@ -417,7 +424,7 @@ public class IntegrationService {
 		}
 	}
 	
-	private Map<String, Object> wrapTeamsPayloadInActionCard (String payload) throws JsonMappingException, JsonProcessingException {
+	private Map<String, Object> wrapTeamsPayloadInActionCard (String payload) throws DatabindException, JacksonException {
 		String cardSample = """
 	    {
 	       "type":"message",
@@ -592,7 +599,7 @@ public class IntegrationService {
 	}
 	
 	private DependencyTrackUploadResult sendBomToDependencyTrackOnCreatedProject (IntegrationData dtrackIntegration,
-			UUID projectId, UploadableBom bom, String projectName, String projectVersion) throws JsonMappingException, JsonProcessingException {
+			UUID projectId, UploadableBom bom, String projectName, String projectVersion) throws DatabindException, JacksonException {
 		String apiUriStr = dtrackIntegration.getUri().toString() + "/api/v1/bom";
 		URI apiUri = URI.create(apiUriStr);
 		String apiToken = encryptionService.decrypt(dtrackIntegration.getSecret());
@@ -604,7 +611,7 @@ public class IntegrationService {
 			String bomString = "";
 			try {
 				bomString = Utils.OM.writeValueAsString(bom.bomJson());
-			} catch (JsonProcessingException e) {
+			} catch (JacksonException e) {
 				log.error("Invalid json sent to dtrack", e);
 				throw new RuntimeException("Invalid json input");
 			}
@@ -694,7 +701,7 @@ public class IntegrationService {
 	}
 	
 	private DependencyTrackIntegration obtainDepdencyTrackProjectMetrics (URI dtrackBaseUri,
-			String apiToken, ArtifactData ad, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
+			String apiToken, ArtifactData ad, ZonedDateTime lastScanned) throws DatabindException, JacksonException {
 		String dtrackProject = ad.getMetrics().getDependencyTrackProject();
 		DependencyTrackIntegration dti = new DependencyTrackIntegration();
 		List<VulnerabilityDto> vulnerabilityDetails = fetchDependencyTrackVulnerabilityDetails(
@@ -775,7 +782,7 @@ public class IntegrationService {
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
 	
 	protected List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		// Use lastScanned (DTrack scan time) as attributedAt so findings are included in First Scanned VDR
@@ -948,7 +955,7 @@ public class IntegrationService {
 	}
 	
 	protected List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws JsonMappingException, JsonProcessingException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		final Set<FindingSourceDto> sources = Set.of(source);
@@ -1117,12 +1124,12 @@ public class IntegrationService {
 	 * @return List of all results from all pages
 	 */
 	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams) 
-			throws JsonMappingException, JsonProcessingException {
+			throws DatabindException, JacksonException {
 		return executeDtrackPaginatedCall(baseUri, apiToken, existingParams, CommonVariables.DTRACK_DEFAULT_PAGE_SIZE);
 	}
 	
 	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams, int pageSize) 
-			throws JsonMappingException, JsonProcessingException {
+			throws DatabindException, JacksonException {
 		List<Object> allResults = new ArrayList<>();
 		int pageNumber = 1;
 		boolean hasMorePages = true;
@@ -1218,7 +1225,7 @@ public class IntegrationService {
 	}
 	
 	private List<Map<String, Object>> executeDtrackComponentSearch (String baseUri, String apiToken, String queryParams) 
-			throws JsonMappingException, JsonProcessingException {
+			throws DatabindException, JacksonException {
 		List<Object> results = executeDtrackPaginatedCall(baseUri, apiToken, queryParams, 400);
 		List<Map<String, Object>> respList = new LinkedList<>();
 		for (Object obj : results) {

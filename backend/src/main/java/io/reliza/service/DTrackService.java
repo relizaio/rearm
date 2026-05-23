@@ -24,8 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
@@ -821,7 +821,7 @@ public class DTrackService {
             try {
                 return rebomService.findRawBomById(
                     UUID.fromString(context.internalBomId()), context.orgUuid(), BomFormat.CYCLONEDX);
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 throw new RelizaException("Failed to convert SPDX to CycloneDX: " + e.getMessage());
             }
         }
@@ -831,7 +831,7 @@ public class DTrackService {
     /**
      * Encode BOM to Base64 for DTrack API.
      */
-    private String encodeBom(UploadableBom bom) throws JsonProcessingException {
+    private String encodeBom(UploadableBom bom) throws JacksonException {
         if (!bom.isRaw()) {
             String bomString = Utils.OM.writeValueAsString(bom.bomJson());
             return Base64.getEncoder().encodeToString(bomString.getBytes());

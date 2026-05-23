@@ -4,7 +4,7 @@
 
 package io.reliza.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import tools.jackson.core.JacksonException;
 import java.time.ZonedDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -36,7 +36,7 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.HeapPressureGuard;
@@ -1545,7 +1545,7 @@ public class ArtifactService {
 				}
 			}
 			
-		} catch (JsonProcessingException e) {
+		} catch (JacksonException e) {
 			log.warn("Could not parse JSON for spec version resolution", e);
 		}
 		

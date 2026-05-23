@@ -10,7 +10,7 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import io.reliza.common.Utils;
 import io.reliza.model.AnalysisJustification;
@@ -61,7 +61,7 @@ public class OpenVexParser implements VexFormatParser {
         JsonNode root;
         try {
             root = Utils.OM.readTree(json);
-        } catch (IOException e) {
+        } catch (RuntimeException e) {
             return new OpenVexParseResult(List.of(), List.of(), "doc parse failed: " + e.getMessage());
         }
 

@@ -10,6 +10,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 public class VcsType {
@@ -28,6 +29,26 @@ public class VcsType {
 	
 	public static VcsType resolveStringToType (String typeStr) {
 		return vcsTypeMap.get(typeStr);
+	}
+
+	/**
+	 * Jackson deserialization entry point. Under Jackson 2 the private
+	 * {@code VcsType(String)} ctor was picked up implicitly, so any input
+	 * (e.g. CLI sending {@code "git"} lower-case) round-tripped to a
+	 * {@code VcsType{name=<as-supplied>}}. Jackson 3 needs an explicit
+	 * @JsonCreator; pinning it on the case-sensitive map lookup
+	 * regressed lower-case inputs to null. Match the old shape: prefer
+	 * the canonical static instance when the value matches one of the
+	 * known names (case-insensitive) so reference-equality keeps working
+	 * for built-ins, otherwise mint a fresh instance.
+	 */
+	@JsonCreator
+	public static VcsType forValue (String typeStr) {
+		if (typeStr == null) return null;
+		for (Entry<String, VcsType> e : vcsTypeMap.entrySet()) {
+			if (e.getKey().equalsIgnoreCase(typeStr)) return e.getValue();
+		}
+		return new VcsType(typeStr);
 	}
 	
 	// TODO: later make this data driven - extensible via specific db table

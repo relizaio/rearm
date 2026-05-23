@@ -104,7 +104,7 @@ public class AuthorizationService {
 	public AuthHeaderParse authenticateProgrammatic (HttpHeaders headers, ServletWebRequest servletWebRequest) {
 		AuthHeaderParse ahp = null;
 		String remoteIp = servletWebRequest.getRequest().getRemoteAddr();
-		if (null != headers && headers.containsKey(HttpHeaders.AUTHORIZATION)) {
+		if (null != headers && headers.getFirst(HttpHeaders.AUTHORIZATION) != null) {
 			ahp = AuthHeaderParse.parseAuthHeader(headers, remoteIp);
 		}
 		return ahp;
@@ -137,7 +137,7 @@ public class AuthorizationService {
 //			OAuth2User oauth2User, HttpServletResponse response, boolean rebuildCookie) {
 //		AuthPrincipal ap = null;
 //		// determine whether we are dealing with user or programmatic access
-//		if (null != headers && headers.containsKey(HttpHeaders.AUTHORIZATION)) {
+//		if (null != headers && headers.getFirst(HttpHeaders.AUTHORIZATION) != null) {
 //			ap = AuthHeaderParse.parseAuthHeader(headers, request.getRemoteAddr());
 //		} else {
 //			// we are in manual user world

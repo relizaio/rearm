@@ -32,7 +32,7 @@ import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import tools.jackson.core.JacksonException;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
@@ -309,7 +309,7 @@ public class ReleaseDatafetcher {
 			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
 			@InputArgument("mediaType") BomMediaType mediaType,
 			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes
-			) throws RelizaException, JsonProcessingException{
+			) throws RelizaException, JacksonException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		

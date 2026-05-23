@@ -220,6 +220,8 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	
 	@Data
 	@Builder
+	@lombok.NoArgsConstructor
+	@lombok.AllArgsConstructor
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class ReleaseOutputEvent {
 		private UUID uuid;
