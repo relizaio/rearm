@@ -2866,7 +2866,14 @@ input ReleaseInputProg {
 	outboundDeliverables: [DeliverableInput]
 	endpoint: String
 	commits: [SourceCodeEntryInput]
-	sceArts: [ArtifactInput]
+	"""
+	DEPRECATED — silently dropped by addReleaseProgrammatic. The resolver
+	only consumes source-code-entry artifacts from `sourceCodeEntry.artifacts`
+	(or each `commits[i].artifacts` for multi-commit inputs). Nest the
+	artifacts there instead. The server logs a WARN whenever this field
+	is supplied so we can track remaining callers before removing it.
+	"""
+	sceArts: [ArtifactInput] @deprecated(reason: "Nest SCE artifacts under sourceCodeEntry.artifacts (or commits[i].artifacts); this top-level field is ignored by addReleaseProgrammatic.")
 	identifiers: [IdentifierInput]
 	vcsUri: String
 	repoPath: String

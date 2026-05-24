@@ -948,6 +948,19 @@ public class ReleaseDatafetcher {
 
 		Map<String, Object> progReleaseInput = dfe.getArgument("release");
 
+		// Deprecated input: ReleaseInputProg.sceArts has been silently ignored
+		// since this resolver was written — the SCE-attached artifact path is
+		// sourceCodeEntry.artifacts (or commits[i].artifacts). Log loud enough
+		// to track remaining callers so we can drop the schema field once the
+		// CLI and SDKs catch up.
+		if (progReleaseInput.containsKey("sceArts")) {
+			Object scea = progReleaseInput.get("sceArts");
+			int count = (scea instanceof java.util.Collection) ? ((java.util.Collection<?>) scea).size() : 0;
+			if (count > 0) {
+				log.warn("Deprecated ReleaseInputProg.sceArts received with {} entries; nest under sourceCodeEntry.artifacts (or commits[i].artifacts) instead — this field is ignored.", count);
+			}
+		}
+
 		// First, try to resolve component normally
 		UUID componentId = null;
 		try {
