@@ -14,9 +14,8 @@
                     <span v-if="updatedInstance.instanceType === InstanceType.CLUSTER_INSTANCE"> Part of Cluster: <router-link :to="{ name: 'Instance', params: {orguuid: orguuid, instuuid: cluster.uuid }}">{{ cluster.name }}</router-link></span>
                     <span v-if="updatedInstance.instanceType === InstanceType.CLUSTER_INSTANCE"> Namespace: {{updatedInstance.namespace}}</span>
                 </div>
-                <div class="dangerControls">
-                    <n-icon v-if="isWritable" @click="archiveInstance" class="clickable" title="Archive Instance" size="20"><Trash /></n-icon>
-                </div>
+                <!-- Archival moved to the Settings modal's Danger Zone (matches
+                     ComponentView's pattern). -->
             </div>
             <div v-if="updatedInstance && updatedInstance.instanceType === InstanceType.CLUSTER" class="listHeaderText">
                 Cluster Instances:
@@ -205,6 +204,25 @@
                 <n-input type="textarea" v-else :value="updatedInstance.notes" rows="4" readonly/>
                 <n-icon class="clickable versionIcon reject" v-if="updatedInstance.notes !== instanceData.notes" @click="updatedInstance.notes = instanceData.notes" title="Discard Notes Changes" size="20"><X /></n-icon>
                 <n-icon class="clickable versionIcon accept" v-if="updatedInstance.notes !== instanceData.notes" @click="save" title="Save Notes" size="20"><Check /></n-icon>
+            </div>
+
+            <div class="dangerZone">
+                <h5 class="dangerZoneHeader">Danger Zone</h5>
+                <p class="dangerZoneCopy">
+                    Archiving the {{ instanceWord.toLowerCase() }} hides it from the active list.
+                    Historical release / deployment data tied to it stays resolvable, but no new
+                    activity can be recorded against an archived {{ instanceWord.toLowerCase() }}.
+                    <span v-if="updatedInstance.instanceType === InstanceType.CLUSTER">
+                        A cluster cannot be archived while it still has active instances —
+                        archive the child instances first.
+                    </span>
+                </p>
+                <n-button v-if="isWritable" type="error" @click="archiveInstance">
+                    <template #icon>
+                        <n-icon><Trash /></n-icon>
+                    </template>
+                    Archive {{ instanceWord }}
+                </n-button>
             </div>
         </n-modal>
         <n-modal
@@ -1925,4 +1943,18 @@ await onCreate()
     line-height: 1.5;
     padding: 5px;
   }
+.dangerZone {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 2px solid #e74c3c;
+}
+.dangerZoneHeader {
+    color: #e74c3c;
+    margin: 0 0 8px 0;
+}
+.dangerZoneCopy {
+    color: var(--n-text-color-3, #666);
+    font-size: 13px;
+    margin-bottom: 12px;
+}
 </style>
