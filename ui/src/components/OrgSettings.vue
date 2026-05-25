@@ -3,301 +3,13 @@
         <h4>Organization Settings</h4>
         <n-tabs type="line" :value="currentTab" @update:value="handleTabSwitch">
             <n-tab-pane name="integrations" tab="Integrations" v-if="isOrgAdmin">
-                <div class="integrationsBlock mt-4">
-                    <h5>Organization-Wide Integrations</h5>
-                    <n-space vertical>
-                        <div class="row">
-                            <div v-if="configuredIntegrations.includes('SLACK')">Slack Integration Configured
-                                <n-icon @click="deleteIntegration('SLACK')" class="clickable" title="Delete Slack Integration" size="20"><Trash /></n-icon>
-                            </div>
-                            <div v-else><n-button @click="showOrgSettingsSlackIntegrationModal = true">Add Slack Integration</n-button></div>
-                            <n-modal 
-                                v-model:show="showOrgSettingsSlackIntegrationModal"
-                                preset="dialog"
-                                :show-icon="false" >
-                                <n-card style="width: 600px" size="huge" title="Add slack integration" :bordered="false"
-                                    role="dialog" aria-modal="true">
-
-                                    <n-form>
-                                        <n-form-item id="org_settings_create_slack_integration_secret_group" label="Secret"
-                                            label-for="org_settings_create_slack_integration_secret"
-                                            description="Slack integration secret">
-                                            <n-input type="password" id="org_settings_create_slack_integration_secret"
-                                                v-model:value="createIntegrationObject.secret" required
-                                                placeholder="Enter Slack integration secret" />
-                                        </n-form-item>
-                                        <n-button @click="onAddIntegration('SLACK')" type="success">Submit</n-button>
-                                        <n-button type="error" @click="resetCreateIntegrationObject">Reset</n-button>
-                                    </n-form>
-                                </n-card>
-                            </n-modal>
-                        </div>
-                        <div class="row pt-2">
-                            <div v-if="configuredIntegrations.includes('MSTEAMS')">MS Teams integration configured
-                                <n-icon @click="deleteIntegration('MSTEAMS')" class="clickable" title="Delete MS Teams Integration" size="20"><Trash /></n-icon>
-                            </div>
-                            <div v-else><n-button @click="showOrgSettingsMsteamsIntegrationModal = true">Add MS Teams Integration</n-button></div>
-                            <n-modal
-                                v-model:show="showOrgSettingsMsteamsIntegrationModal"
-                                preset="dialog"
-                                :show-icon="false" >
-                                <n-card style="width: 600px" size="huge" title="Add MS Teams integration" :bordered="false"
-                                    role="dialog" aria-modal="true">
-                                    <n-form @submit="onAddIntegration('MSTEAMS')">
-                                        <n-form-item id="org_settings_create_msteams_integration_secret_group" label="Secret"
-                                            label-for="org_settings_create_msteams_integration_secret"
-                                            description="MS Teams integration URI">
-                                            <n-input type="password" id="org_settings_create_msteams_integration_secret"
-                                                v-model:value="createIntegrationObject.secret" required
-                                                placeholder="Enter MS Teams integration URI" />
-                                        </n-form-item>
-                                        <n-button @click="onAddIntegration('MSTEAMS')" type="success">Submit</n-button>
-                                        <n-button type="error" @click="resetCreateIntegrationObject">Reset</n-button>
-                                    </n-form>
-                                </n-card>
-                            </n-modal>
-                        </div>
-                        <div class="row pt-2">
-                            <div v-if="configuredIntegrations.includes('DEPENDENCYTRACK')">
-                                <div>
-                                    Dependency-Track integration configured
-                                    <n-icon v-if="isOrgAdmin" @click="deleteIntegration('DEPENDENCYTRACK')" class="clickable" title="Delete Dependency-Track Integration" size="20"><Trash /></n-icon>
-                                    <n-icon v-if="isOrgAdmin" class="clickable" size="24" title="Synchronize D-Track Projects" @click="syncDtrackProjects" style="margin-left: 8px; ">
-                                        <Refresh />
-                                    </n-icon>
-                                    <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Re-upload D-Track Projects" @click="refreshDtrackProjects" style="margin-left: 8px; ">
-                                        <ArrowUpload24Regular />
-                                    </n-icon>
-                                    <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Cleanup D-Track Projects" @click="cleanupDtrackProjects" style="margin-left: 8px; ">
-                                        <Clean />
-                                    </n-icon>
-                                    <n-icon v-if="isGlobalAdmin" class="clickable" size="24" title="Re-cleanup D-Track Projects" @click="recleanupDtrackProjects" style="margin-left: 8px; ">
-                                        <DeleteDismiss24Regular />
-                                    </n-icon>
-                                </div>
-                                <div v-if="false" style="margin-top: 8px;">
-                                    <n-button @click="syncDtrackStatus" :loading="syncingDtrackStatus" type="primary" size="small">
-                                        Sync Dependency-Track Status for All Artifacts
-                                    </n-button>
-                                </div>
-                            </div>
-                            <div v-else><n-button @click="showOrgSettingsDependencyTrackIntegrationModal = true">Add Dependency-Track Integration</n-button></div>
-                            <n-modal
-                                v-model:show="showOrgSettingsDependencyTrackIntegrationModal"
-                                preset="dialog"
-                                :show-icon="false" >
-                                <n-card style="width: 600px" size="huge" title="Add Dependency-Track Integration" :bordered="false"
-                                    role="dialog" aria-modal="true">
-                                    <n-form @submit="onAddIntegration('DEPENDENCYTRACK')">
-                                        <n-form-item id="org_settings_create_dependency_track_integration_uri_group" label="Dependency-Track API Server URI"
-                                            label-for="org_settings_create_dependency_track_integration_uri"
-                                            description="Dependency-Track API Server URI">
-                                            <n-input id="org_settings_create_dependency_track_integration_uri"
-                                                v-model:value="createIntegrationObject.uri" required
-                                                placeholder="Enter Dependency-Track API Server URI" />
-                                        </n-form-item>
-                                        <n-form-item id="org_settings_create_dependency_track_integration_frontenduri_group" label="Dependency-Track Frontend URI"
-                                            label-for="org_settings_create_dependency_track_integration_frontenduri"
-                                            description="Dependency-Track API Server Frontend URI">
-                                            <n-input id="org_settings_create_dependency_track_integration_frontenduri"
-                                                v-model:value="createIntegrationObject.frontendUri" required
-                                                placeholder="Enter Dependency-Track Frontend URI" />
-                                        </n-form-item>
-                                        <n-form-item id="org_settings_create_dependency_track_integration_secret_group" label="API Key"
-                                            label-for="org_settings_create_dependency_track_integration_secret"
-                                            description="Dependency-Track API Key">
-                                            <n-input type="password" id="org_settings_create_dependency_track_integration_secret"
-                                                v-model:value="createIntegrationObject.secret" required
-                                                placeholder="Enter Dependency-Track API Key" />
-                                        </n-form-item>
-                                        <n-button @click="onAddIntegration('DEPENDENCYTRACK')" type="success">Submit</n-button>
-                                        <n-button @click="resetCreateIntegrationObject" type="error">Reset</n-button>
-                                    </n-form>
-                                </n-card>
-                            </n-modal>
-                        </div>
-                        <div class="row pt-2">
-                            <div v-if="bearIntegration && bearIntegration.configured">BEAR Integration Configured
-                                <n-icon @click="showBearIntegrationModal = true" class="clickable" title="Edit BEAR Integration" size="20"><EditIcon /></n-icon>
-                                <n-icon @click="deleteBearIntegration" class="clickable" title="Delete BEAR Integration" size="20"><Trash /></n-icon>
-                            </div>
-                            <div v-else><n-button @click="showBearIntegrationModal = true">Add BEAR Integration</n-button></div>
-                            <n-modal
-                                v-model:show="showBearIntegrationModal"
-                                preset="dialog"
-                                :show-icon="false" >
-                                <n-card style="width: 600px" size="huge" :title="bearIntegration && bearIntegration.configured ? 'Edit BEAR Integration' : 'Add BEAR Integration'" :bordered="false"
-                                    role="dialog" aria-modal="true">
-                                    <n-form>
-                                        <n-form-item v-if="bearIntegration && bearIntegration.configured" label="Update Mode">
-                                            <n-checkbox v-model:checked="bearForm.updateSkipPatternsOnly">
-                                                Update skip patterns only (don't modify URI/API Key)
-                                            </n-checkbox>
-                                        </n-form-item>
-                                        <n-form-item label="BEAR URI" v-if="!bearForm.updateSkipPatternsOnly || !bearIntegration || !bearIntegration.configured">
-                                            <n-input v-model:value="bearForm.uri" required
-                                                placeholder="Enter BEAR URI" />
-                                        </n-form-item>
-                                        <n-form-item label="API Key" v-if="!bearForm.updateSkipPatternsOnly || !bearIntegration || !bearIntegration.configured">
-                                            <n-input type="password" v-model:value="bearForm.apiKey" required
-                                                placeholder="Enter BEAR API Key" />
-                                        </n-form-item>
-                                        <n-form-item label="Skip Patterns">
-                                            <n-dynamic-input v-model:value="bearForm.skipPatterns"
-                                                placeholder="Enter skip pattern" />
-                                        </n-form-item>
-                                        <n-button @click="onSetBearIntegration" type="success">Submit</n-button>
-                                        <n-button type="error" @click="resetBearForm">Reset</n-button>
-                                    </n-form>
-                                </n-card>
-                            </n-modal>
-                        </div>
-                    </n-space>
-                    <template v-if="myUser.installationType !== 'OSS'">
-                        <h5>CI Integrations</h5>
-                        <n-data-table :columns="ciIntegrationTableFields" :data="ciIntegrations" :row-key="dataTableRowKey"></n-data-table>
-                        <n-button @click="showCIIntegrationModal=true">Add CI Integration</n-button>
-
-                        <div style="margin-top: 24px;">
-                            <WebhooksOfOrg :orguuid="orgResolved" />
-                        </div>
-                    </template>
-                </div>
-                <n-modal
-                    v-if="myUser.installationType !== 'OSS'"
-                    v-model:show="showCIIntegrationModal"
-                    preset="dialog"
-                    :show-icon="false"
-                    style="width: 90%"
-                >
-                    <n-form :model="createIntegrationObject">
-                        <h2>Add or Update CI Integration</h2>
-                        <n-space vertical size="large">
-                            <n-form-item label="Description" path="note">
-                                <n-input v-model:value="createIntegrationObject.note" required placeholder="Enter Description" />
-                            </n-form-item>
-                            <n-form-item label="CI Type" path="createIntegrationObject.type">
-                                <n-radio-group v-model:value="createIntegrationObject.type" name="ciIntegrationType">
-                                    <n-radio-button label="GitHub" value="GITHUB" />
-                                    <n-radio-button label="GitLab" value="GITLAB" />
-                                    <n-radio-button label="Jenkins" value="JENKINS" />
-                                    <n-radio-button label="Azure DevOps" value="ADO" />
-                                </n-radio-group>
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" label="Capabilities"
-                                description="What this GitHub App is wired up to do. PR_VALIDATE: post check-runs / PR comments. WEBHOOK: receive inbound pull_request events. WORKFLOW_DISPATCH: trigger repository_dispatch.">
-                                <n-checkbox-group v-model:value="createIntegrationObject.capabilities">
-                                    <n-space>
-                                        <n-checkbox value="WORKFLOW_DISPATCH" label="Workflow Dispatch" />
-                                        <n-checkbox value="PR_VALIDATE" label="PR Validate" />
-                                        <n-checkbox value="WEBHOOK" label="Webhook (inbound)" />
-                                    </n-space>
-                                </n-checkbox-group>
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" id="org_settings_create_github_integration_secret_group" label="GitHub Private Key"
-                                label-for="org_settings_create_github_integration_secret"
-                                description="Paste the .pem GitHub provides, upload the file directly, or paste a pre-converted DER base64 blob. Backend normalizes all three.">
-                                <n-space vertical style="width: 100%;">
-                                    <n-radio-group v-model:value="secretInputMode" name="githubSecretInputMode">
-                                        <n-radio-button label="Upload .pem" value="upload" />
-                                        <n-radio-button label="Paste" value="paste" />
-                                    </n-radio-group>
-                                    <n-input v-if="secretInputMode === 'paste'" type="textarea" id="org_settings_create_github_integration_secret"
-                                        v-model:value="createIntegrationObject.secret" required
-                                        :autosize="{ minRows: 6, maxRows: 18 }"
-                                        style="width: 100%; font-family: monospace; font-size: 12px;"
-                                        placeholder="Paste the contents of the .pem file (-----BEGIN RSA PRIVATE KEY----- ...) or DER base64." />
-                                    <n-upload v-else :default-upload="false" :max="1" accept=".pem,.txt,.key,application/x-pem-file" :show-file-list="false" @change="onSecretFileChange">
-                                        <n-upload-trigger #="{ handleClick }" abstract>
-                                            <n-button @click="handleClick">Choose .pem file</n-button>
-                                        </n-upload-trigger>
-                                    </n-upload>
-                                    <n-text v-if="secretInputMode === 'upload' && uploadedSecretFileName" depth="3" style="font-size: 12px;">
-                                        Loaded: {{ uploadedSecretFileName }} ({{ createIntegrationObject.secret.length }} chars)
-                                    </n-text>
-                                </n-space>
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITHUB'" id="org_settings_create_github_integration_appid_group" label="GitHub Application ID"
-                                label-for="org_settings_create_github_integration_appid"
-                                description="GitHub Application ID">
-                                <n-input type="number" id="org_settings_create_github_integration_appid"
-                                    v-model:value="createIntegrationObject.schedule" required
-                                    placeholder="Enter GitHub Application ID" />
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'GITLAB'" label="GitLab Authentication Token" path="createIntegrationObject.secret">
-                                <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter GitLab Authentication Token" />
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'INTEGRATION_TRIGGER' && createIntegrationObject.type === 'JENKINS'" label="Jenkins Token" path="createIntegrationObject.secret">
-                                <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter Jenkins Token" />
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'JENKINS'" label="Jenkins URI" path="createIntegrationObject.uri">
-                                <n-input v-model:value="createIntegrationObject.uri" required placeholder="Jenkins Home URI (i.e. https://jenkins.localhost)" />
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'JENKINS'" label="Jenkins Token" path="createIntegrationObject.secret">
-                                <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter Jenkins Token" />
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Client ID" path="createIntegrationObject.client">
-                                <n-input v-model:value="createIntegrationObject.client" required placeholder="Enter Client ID" />
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Client Secret" path="createIntegrationObject.secret">
-                                <n-input v-model:value="createIntegrationObject.secret" required placeholder="Enter Client Secret" />
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Tenant ID" path="createIntegrationObject.tenant">
-                                <n-input v-model:value="createIntegrationObject.tenant" required placeholder="Enter Tenant ID" />
-                            </n-form-item>
-                            <n-form-item v-if="createIntegrationObject.type === 'ADO'" label="Azure DevOps Organization Name" path="integrationObject.uri">
-                                <n-input v-model:value="createIntegrationObject.uri" required placeholder="Enter Azure DevOps organization name" />
-                            </n-form-item>
-                            <n-button @click="addCiIntegration" type="success">
-                                Save
-                            </n-button>
-                        </n-space>
-                    </n-form>
-                </n-modal>
-
-                <!-- Edit CI Integration modal — GITHUB only for v1. Capabilities
-                     are always editable; if a Webhook is wired to the integration,
-                     slug + secret rotation surface inline so the operator doesn't
-                     have to bounce between two screens. -->
-                <n-modal
-                    v-if="myUser.installationType !== 'OSS'"
-                    v-model:show="showEditCiIntegrationModal"
-                    preset="dialog"
-                    :show-icon="false"
-                    style="width: 90%"
-                >
-                    <n-card style="width: 700px" size="huge"
-                        :title="'Edit CI Integration - ' + (editCiIntegrationObject.note || '')"
-                        :borderd="false" role="dialog" aria-modal="true">
-                        <n-form :model="editCiIntegrationObject">
-                            <n-space vertical size="large">
-                                <n-form-item label="Type">
-                                    <n-text>{{ editCiIntegrationObject.type }}</n-text>
-                                </n-form-item>
-                                <n-form-item label="Capabilities"
-                                    description="What this GitHub App is wired up to do. Reduce or expand without re-creating the integration.">
-                                    <n-checkbox-group v-model:value="editCiIntegrationObject.capabilities">
-                                        <n-space>
-                                            <n-checkbox value="WORKFLOW_DISPATCH" label="Workflow Dispatch" />
-                                            <n-checkbox value="PR_VALIDATE" label="PR Validate" />
-                                            <n-checkbox value="WEBHOOK" label="Webhook (inbound)" />
-                                        </n-space>
-                                    </n-checkbox-group>
-                                </n-form-item>
-
-                                <n-text depth="3" style="font-size: 13px;">
-                                    To add or modify the inbound webhook (slug, secret) attached to this integration,
-                                    use the Webhooks (inbound) section below.
-                                </n-text>
-
-                                <n-space>
-                                    <n-button :loading="editCiIntegrationLoading" @click="saveEditCiIntegration" type="success">Save</n-button>
-                                    <n-button @click="showEditCiIntegrationModal=false" type="default">Cancel</n-button>
-                                </n-space>
-                            </n-space>
-                        </n-form>
-                    </n-card>
-                </n-modal>
+                <OrgIntegrations
+                    :orguuid="orgResolved"
+                    :is-writable="isWritable"
+                    :is-org-admin="isOrgAdmin"
+                    :is-global-admin="isGlobalAdmin"
+                    :installation-type="myUser.installationType"
+                />
             </n-tab-pane>
 
             <n-tab-pane name="committers" tab="Committers" v-if="myUser.installationType !== 'OSS'">
@@ -869,9 +581,8 @@
                     </template>
                     </n-tab-pane>
 
-                    <n-tab-pane name="globalPrValidation" tab="Global PR Validation" v-if="isOrgAdmin">
-                        <OrgGlobalPrValidationRules :orgUuid="orgResolved" :isWritable="isWritable"/>
-                    </n-tab-pane>
+                    <!-- Global PR Validation has moved to Integrations → PR Validation
+                         sub-tab; it's conceptually integration plumbing, not a policy. -->
 
                     <n-tab-pane name="globalPolicyAssignment" tab="Global Policy Assignment" v-if="isOrgAdmin">
                         <OrgGlobalApprovalPolicyRules :orgUuid="orgResolved" :isWritable="isWritable"/>
@@ -1349,14 +1060,13 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NUpload, NUploadTrigger } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Refresh, Search, FolderPlus, Package, Clipboard } from '@vicons/tabler'
-import { Clean } from '@vicons/carbon'
-import { Info20Regular, Edit24Regular, DeleteDismiss24Regular, ArrowUpload24Regular, Power20Regular } from '@vicons/fluent'
+import { Edit as EditIcon, Trash, LockOpen, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard } from '@vicons/tabler'
+import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
@@ -1372,8 +1082,7 @@ import DownloadLogView from './DownloadLogView.vue'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
-import WebhooksOfOrg from './WebhooksOfOrg.vue'
-import OrgGlobalPrValidationRules from './OrgGlobalPrValidationRules.vue'
+import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
@@ -1406,9 +1115,7 @@ onMounted(async () => {
 
 async function loadTabSpecificData (tabName: string) {
     if (tabName === "integrations") {
-        loadConfiguredIntegrations(true)
-        if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
-        loadBearIntegration()
+        // OrgIntegrations loads its own data on mount; nothing to prefetch here.
     } else if (tabName === "users") {
         await Promise.all([
             loadUsers(),
@@ -1501,22 +1208,8 @@ const showUserApiKeyModal = ref(false)
 
 const showOrgRegistryTokenModal = ref(false)
 
-const showOrgSettingsSlackIntegrationModal = ref(false)
-
-const showOrgSettingsMsteamsIntegrationModal = ref(false)
-
-const showOrgSettingsDependencyTrackIntegrationModal = ref(false)
-
-const showBearIntegrationModal = ref(false)
-const bearIntegration: Ref<any> = ref(null)
-const bearForm = ref({
-    uri: '',
-    apiKey: '',
-    skipPatterns: [] as string[],
-    updateSkipPatternsOnly: true
-})
-
-const showOrgSettingsGitHubIntegrationModal = ref(false)
+// Integration modal toggles, form state, and load helpers all moved to
+// OrgIntegrations.vue.
 
 const showComponentRegistryModal = ref(false)
 
@@ -1527,8 +1220,6 @@ const showCreateApprovalEntry = ref(false)
 const showCreateApprovalRole = ref(false)
 const showPopulateApprovalDefaultsModal = ref(false)
 const populateApprovalDefaultsProcessing = ref(false)
-
-const showCIIntegrationModal = ref(false)
 
 const showCreatePerspectiveModal = ref(false)
 const showEditPerspectiveModal = ref(false)
@@ -2007,101 +1698,9 @@ const robotName: Ref<string> = ref('')
 const selectedKey: Ref<any> = ref({})
 const selectedUser: Ref<any> = ref({})
 const selectedUserType: Ref<string> = ref('')
-const configuredIntegrations: Ref<any[]> = ref([])
+// ciIntegrations stays here — the Policies tab's global-output-events
+// selector (ciIntegrationsForGlobalSelect) still reads it.
 const ciIntegrations: Ref<any[]> = ref([])
-const syncingDtrackStatus: Ref<boolean> = ref(false)
-const createIntegrationObject: Ref<any> = ref({
-    org: orgResolved.value,
-    uri: '',
-    frontendUri: '',
-    identifier: 'base',
-    secret: '',
-    type: '',
-    note: '',
-    tenant: '',
-    client: '',
-    schedule: '',
-    capabilities: []
-})
-
-// Toggles between uploading the GitHub-provided .pem file directly
-// (default) and pasting its contents into a textarea. Backend
-// normalizes PEM and DER-base64 to the same canonical form.
-const secretInputMode: Ref<'paste' | 'upload'> = ref('upload')
-const uploadedSecretFileName: Ref<string> = ref('')
-
-async function onSecretFileChange (options: any) {
-    const fileInfo = options.file
-    if (fileInfo && fileInfo.file) {
-        createIntegrationObject.value.secret = await fileInfo.file.text()
-        uploadedSecretFileName.value = fileInfo.file.name || fileInfo.name || ''
-    }
-}
-
-function resetCreateIntegrationObject() {
-    createIntegrationObject.value = {
-        org: orgResolved.value,
-        uri: '',
-        frontendUri: '',
-        identifier: 'base',
-        secret: '',
-        type: '',
-        note: '',
-        tenant: '',
-        client: '',
-        schedule: '',
-        capabilities: []
-    }
-    uploadedSecretFileName.value = ''
-}
-
-// ---- Edit GitHub CI Integration --------------------------------------------
-// Only capabilities are editable from this modal. Webhook fields (slug,
-// secret) are deliberately scoped to the Webhook entity itself — see the
-// Webhooks (inbound) section's edit flow.
-const editCiIntegrationObject: Ref<any> = ref({
-    uuid: '',
-    type: '',
-    note: '',
-    capabilities: [] as string[]
-})
-const showEditCiIntegrationModal: Ref<boolean> = ref(false)
-const editCiIntegrationLoading: Ref<boolean> = ref(false)
-
-function openEditCiIntegrationModal(row: any) {
-    editCiIntegrationObject.value = {
-        uuid: row.uuid,
-        type: row.type,
-        note: row.note,
-        capabilities: [...(row.capabilities || [])]
-    }
-    showEditCiIntegrationModal.value = true
-}
-
-async function saveEditCiIntegration() {
-    const obj = editCiIntegrationObject.value
-    editCiIntegrationLoading.value = true
-    try {
-        await graphqlClient.mutate({
-            mutation: gql`
-                mutation updateIntegrationCapabilities($uuid: ID!, $capabilities: [IntegrationCapability!]!) {
-                    updateIntegrationCapabilities(uuid: $uuid, capabilities: $capabilities) {
-                        uuid capabilities
-                    }
-                }`,
-            variables: { uuid: obj.uuid, capabilities: obj.capabilities },
-            fetchPolicy: 'no-cache'
-        })
-        showEditCiIntegrationModal.value = false
-        await loadCiIntegrations(false)
-    } catch (e: any) {
-        const msg = e?.message || String(e)
-        alert('Failed to save integration: ' + msg)
-        console.error(e)
-    } finally {
-        editCiIntegrationLoading.value = false
-    }
-}
 
 
 const users: Ref<any[]> = ref([])
@@ -3174,40 +2773,8 @@ const userGroupFields = [
     }
 ]
 
-const ciIntegrationTableFields = [
-    {
-        key: 'note',
-        title: 'Description'
-    },
-    {
-        key: 'type',
-        title: 'Type'
-    },
-    {
-        key: 'capabilities',
-        title: 'Capabilities',
-        render: (row: any) => {
-            const caps = (row.capabilities || []) as string[]
-            return caps.length === 0 ? '—' : caps.join(', ')
-        }
-    },
-    {
-        key: 'controls',
-        title: 'Actions',
-        render: (row: any) => {
-            // Edit only on GITHUB for now — that's the only type with
-            // capabilities to manage and the only one with a webhook
-            // counterpart that may need slug/secret rotation.
-            if (row.type !== 'GITHUB') return '—'
-            return h(NIcon, {
-                title: 'Edit integration',
-                class: 'clickable',
-                size: 22,
-                onClick: () => openEditCiIntegrationModal(row)
-            }, () => h(EditIcon))
-        }
-    }
-]
+// ciIntegrationTableFields moved to OrgIntegrations.vue (now renders as
+// per-card instance rows rather than a single flat table).
 
 const props = defineProps<{
     orguuid?: string
@@ -3804,181 +3371,8 @@ async function saveOrgSettings() {
     }
 }
 
-async function refreshDtrackProjects() {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation refreshDtrackProjects($orgUuid: ID!) {
-                    refreshDtrackProjects(orgUuid: $orgUuid)
-                }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        
-        const result = (resp.data as any)?.refreshDtrackProjects
-        if (result) {
-            notify('success', 'D-Track Projects Refresh', 'Successfully refreshed Dependency-Track projects.')
-        } else {
-            notify('warning', 'D-Track Projects Refresh', 'Refresh completed but returned false.')
-        }
-    } catch (err: any) {
-        notify('error', 'D-Track Projects Refresh Failed', err.message || 'Failed to refresh Dependency-Track projects.')
-    }
-}
-
-async function cleanupDtrackProjects() {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation cleanupDtrackProjects($orgUuid: ID!) {
-                    cleanupDtrackProjects(orgUuid: $orgUuid)
-                }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        
-        const result = (resp.data as any)?.cleanupDtrackProjects
-        if (result) {
-            notify('success', 'D-Track Projects Cleanup', 'Successfully cleaned up Dependency-Track projects.')
-        } else {
-            notify('warning', 'D-Track Projects Cleanup', 'Cleanup completed but returned false.')
-        }
-    } catch (err: any) {
-        notify('error', 'D-Track Projects Cleanup Failed', err.message || 'Failed to cleanup Dependency-Track projects.')
-    }
-}
-
-async function recleanupDtrackProjects() {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation recleanupDtrackProjects($orgUuid: ID!) {
-                    recleanupDtrackProjects(orgUuid: $orgUuid)
-                }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        
-        const result = (resp.data as any)?.recleanupDtrackProjects
-        if (result) {
-            notify('success', 'D-Track Projects Re-cleanup', 'Successfully re-cleaned up Dependency-Track projects.')
-        } else {
-            notify('warning', 'D-Track Projects Re-cleanup', 'Re-cleanup completed but returned false.')
-        }
-    } catch (err: any) {
-        notify('error', 'D-Track Projects Re-cleanup Failed', err.message || 'Failed to re-cleanup Dependency-Track projects.')
-    }
-}
-
-async function syncDtrackProjects() {
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation syncDtrackProjects($orgUuid: ID!) {
-                    syncDtrackProjects(orgUuid: $orgUuid)
-                }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        
-        const result = (resp.data as any)?.syncDtrackProjects
-        if (result) {
-            notify('success', 'D-Track Projects Sync', 'Successfully synchronized Dependency-Track projects.')
-        } else {
-            notify('warning', 'D-Track Projects Sync', 'Sync completed but returned false.')
-        }
-    } catch (err: any) {
-        notify('error', 'D-Track Projects Sync Failed', err.message || 'Failed to synchronize Dependency-Track projects.')
-    }
-}
-
-async function syncDtrackStatus() {
-    syncingDtrackStatus.value = true
-    try {
-        const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation syncDtrackStatus($orgUuid: ID!) {
-                    syncDtrackStatus(orgUuid: $orgUuid) {
-                        successCount
-                        failedArtifactUuids
-                    }
-                }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: 'no-cache'
-        })
-        
-        if (resp.data && resp.data.syncDtrackStatus) {
-            const result = resp.data.syncDtrackStatus
-            const failedCount = result.failedArtifactUuids ? result.failedArtifactUuids.length : 0
-            
-            if (failedCount === 0) {
-                notification.success({
-                    title: 'Sync Complete',
-                    content: `Successfully synced ${result.successCount} artifact(s) with Dependency-Track.`,
-                    duration: 5000
-                })
-            } else {
-                notification.warning({
-                    title: 'Sync Partially Complete',
-                    content: `Synced ${result.successCount} artifact(s). Failed to sync ${failedCount} artifact(s).`,
-                    duration: 7000
-                })
-                
-                // Show SweetAlert with failed artifact UUIDs
-                const failedUuidsHtml = result.failedArtifactUuids
-                    .map((uuid: string) => `<div style="text-align: left; font-family: monospace; padding: 2px 0;">${uuid}</div>`)
-                    .join('')
-                
-                await Swal.fire({
-                    icon: 'warning',
-                    title: 'Partial Sync Failure',
-                    html: `<div style="margin-bottom: 10px;">Failed to sync ${failedCount} artifact(s):</div><div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 4px;">${failedUuidsHtml}</div>`,
-                    confirmButtonText: 'OK'
-                })
-            }
-        }
-    } catch (err: any) {
-        notification.error({
-            title: 'Sync Failed',
-            content: err.message || 'Failed to sync Dependency-Track status. Please try again later.',
-            duration: 5000
-        })
-        
-        // Show SweetAlert with error details
-        await Swal.fire({
-            icon: 'error',
-            title: 'Sync Failed',
-            text: err.message || 'Failed to sync Dependency-Track status. Please try again later or contact support.',
-            confirmButtonText: 'OK'
-        })
-    } finally {
-        syncingDtrackStatus.value = false
-    }
-}
-
-async function deleteIntegration(type: string) {
-    await graphqlClient.mutate({
-        mutation: gql`
-                mutation deleteBaseIntegration($org: ID!, $type: IntegrationType!) {
-                    deleteBaseIntegration(org: $org, type: $type)
-                }`,
-        variables: {
-            'org': orgResolved.value,
-            type
-        }
-    })
-    loadConfiguredIntegrations(false)
-}
+// D-Track / base-integration / BEAR / CI-integration mutations all moved to
+// OrgIntegrations.vue (the Integrations tab owns its own data layer now).
 
 async function deleteKey(uuid: string) {
     const onSwalConfirm = async function () {
@@ -4807,28 +4201,6 @@ function initializeResourceGroup() {
     }
 }
 
-async function loadConfiguredIntegrations(useCache: boolean) {
-    let cachePolicy: FetchPolicy = "network-only"
-    if (useCache) cachePolicy = "cache-first"
-    try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                          query configuredBaseIntegrations($org: ID!) {
-                              configuredBaseIntegrations(org: $org)
-                          }`,
-            variables: {
-                org: orgResolved.value
-            },
-            fetchPolicy: cachePolicy
-        })
-        if (resp.data && resp.data.configuredBaseIntegrations) {
-            configuredIntegrations.value = resp.data.configuredBaseIntegrations
-        }
-    } catch (err) { 
-        console.error(err)
-    }
-}
-
 async function loadCiIntegrations(useCache: boolean) {
     if (myUser.value && myUser.value.installationType !== 'OSS') {
         let cachePolicy: FetchPolicy = "network-only"
@@ -4858,123 +4230,6 @@ async function loadCiIntegrations(useCache: boolean) {
         } catch (err) { 
             console.error(err)
         }
-    }
-}
-
-async function loadBearIntegration() {
-    try {
-        const resp = await graphqlClient.query({
-            query: gql`
-                query getBearIntegration($org: ID!) {
-                    getBearIntegration(org: $org) {
-                        uri
-                        configured
-                        skipPatterns
-                    }
-                }`,
-            variables: {
-                org: orgResolved.value
-            },
-            fetchPolicy: 'network-only'
-        })
-        if (resp.data && resp.data.getBearIntegration) {
-            bearIntegration.value = resp.data.getBearIntegration
-            if (bearIntegration.value.configured) {
-                bearForm.value.uri = bearIntegration.value.uri || ''
-                bearForm.value.skipPatterns = bearIntegration.value.skipPatterns || []
-            }
-        }
-    } catch (err) {
-        console.error(err)
-    }
-}
-
-async function onSetBearIntegration() {
-    try {
-        let resp
-        if (bearForm.value.updateSkipPatternsOnly && bearIntegration.value && bearIntegration.value.configured) {
-            // Update skip patterns only
-            resp = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation updateBearSkipPatterns($org: ID!, $skipPatterns: [String]) {
-                        updateBearSkipPatterns(org: $org, skipPatterns: $skipPatterns) {
-                            uri
-                            configured
-                            skipPatterns
-                        }
-                    }`,
-                variables: {
-                    org: orgResolved.value,
-                    skipPatterns: bearForm.value.skipPatterns
-                }
-            })
-            if (resp.data && resp.data.updateBearSkipPatterns) {
-                bearIntegration.value = resp.data.updateBearSkipPatterns
-            }
-            notify('success', 'Success', 'BEAR skip patterns updated successfully.')
-        } else {
-            // Full integration update
-            resp = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation setBearIntegration($org: ID!, $uri: String!, $apiKey: String!, $skipPatterns: [String]) {
-                        setBearIntegration(org: $org, uri: $uri, apiKey: $apiKey, skipPatterns: $skipPatterns) {
-                            uri
-                            configured
-                            skipPatterns
-                        }
-                    }`,
-                variables: {
-                    org: orgResolved.value,
-                    uri: bearForm.value.uri,
-                    apiKey: bearForm.value.apiKey,
-                    skipPatterns: bearForm.value.skipPatterns
-                }
-            })
-            if (resp.data && resp.data.setBearIntegration) {
-                bearIntegration.value = resp.data.setBearIntegration
-            }
-            notify('success', 'Success', 'BEAR integration configured successfully.')
-        }
-        showBearIntegrationModal.value = false
-        bearForm.value.apiKey = ''
-    } catch (err: any) {
-        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
-    }
-}
-
-function resetBearForm() {
-    bearForm.value = {
-        uri: bearIntegration.value?.uri || '',
-        apiKey: '',
-        skipPatterns: bearIntegration.value?.skipPatterns || [],
-        updateSkipPatternsOnly: true
-    }
-}
-
-async function deleteBearIntegration() {
-    const confirmResult = await Swal.fire({
-        title: 'Delete BEAR Integration?',
-        text: 'This will remove the BEAR integration configuration.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, delete it'
-    })
-    if (!confirmResult.isConfirmed) return
-    try {
-        await graphqlClient.mutate({
-            mutation: gql`
-                mutation deleteBearIntegration($org: ID!) {
-                    deleteBearIntegration(org: $org)
-                }`,
-            variables: {
-                org: orgResolved.value
-            }
-        })
-        bearIntegration.value = null
-        bearForm.value = { uri: '', apiKey: '', skipPatterns: [] }
-        notify('success', 'Deleted', 'BEAR integration has been removed.')
-    } catch (err: any) {
-        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
     }
 }
 
@@ -5074,50 +4329,6 @@ function formatValuesForApiKeys (apiKeyEntry: any) {
         updEntry['updatedByName'] = ''
     }
     return updEntry
-}
-
-async function onAddIntegration(type: string) {
-    createIntegrationObject.value.type = type
-    const resp = await graphqlClient.mutate({
-        mutation: gql`
-                      mutation createIntegration($integration: IntegrationInput!) {
-                          createIntegration(integration: $integration) {
-                              uuid
-                          }
-                      }`,
-        variables: {
-            'integration': createIntegrationObject.value
-        }
-    })
-    
-    if (resp.data.createIntegration && resp.data.createIntegration.uuid) await loadConfiguredIntegrations(false)
-
-    resetCreateIntegrationObject()
-
-    showOrgSettingsSlackIntegrationModal.value = false
-    showOrgSettingsGitHubIntegrationModal.value = false
-    showOrgSettingsMsteamsIntegrationModal.value = false
-    showOrgSettingsDependencyTrackIntegrationModal.value = false
-}
-
-async function addCiIntegration() {
-    const resp = await graphqlClient.mutate({
-        mutation: gql`
-                      mutation createTriggerIntegration($integration: IntegrationInput!) {
-                          createTriggerIntegration(integration: $integration) {
-                              uuid
-                          }
-                      }`,
-        variables: {
-            'integration': createIntegrationObject.value
-        }
-    })
-    
-    if (resp.data.createTriggerIntegration && resp.data.createTriggerIntegration.uuid) await loadCiIntegrations(false)
-
-    resetCreateIntegrationObject()
-
-    showCIIntegrationModal.value = false
 }
 
 async function removeUser(userUuid: string) {
