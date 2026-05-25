@@ -207,9 +207,19 @@ class VariableQueries {
 	// up front triggered Hibernate dirty-checking snapshots that deep-copy
 	// the metrics JSONB via serialize→bytes→deserialize, large enough on
 	// projects with thousands of vulns to OOM the scheduler thread.
+	// dtrackFetchSkipUntil filter excludes artifacts whose last fetch attempt
+	// threw and whose backoff window hasn't elapsed. Most rows have no fetch
+	// failure history (skipUntil IS NULL) so the filter is essentially a
+	// no-op on the happy path; only artifacts actively in backoff are excluded.
+	// Storage is flat at metrics->>'dtrackFetchSkipUntil' (DependencyTrackIntegration
+	// fields serialize at the top level of metrics, mirroring dtrackSubmissionFailed).
+	// ISO-8601 string cast to timestamptz matches FlowControl's sbomReconcileSkipUntil
+	// pattern in ReleaseRepository.findUuidsOfReleasesPendingSbomReconcile.
 	protected static final String LIST_INITIAL_ARTIFACT_UUIDS_PENDING_DEPENDENCY_TRACK = """
 			select uuid from rearm.artifacts a where a.metrics->>'lastScanned' is null
 			and a.metrics->>'uploadToken' is not null
+			and (a.metrics->>'dtrackFetchSkipUntil' is null
+				or (a.metrics->>'dtrackFetchSkipUntil')::timestamptz < now())
 			order by a.record_data->>'createdDate' asc
 			limit :limit
 		""";
@@ -244,6 +254,30 @@ class VariableQueries {
 	
 	protected static final String FIND_ARTIFACTS_BY_DTRACK_PROJECTS = """
 			select * from rearm.artifacts a where a.metrics->>'dependencyTrackProject' in (:dtrackProjectIds)
+		""";
+
+	// UUID-only sibling of FIND_ARTIFACTS_BY_DTRACK_PROJECTS. Used by
+	// callers (syncUnsyncedDependencyTrackData, findReleaseDatasByDtrackProjects)
+	// that only need the artifact identities — loading the full Artifact
+	// entity row fired Hibernate's snapshot deep-copy on the metrics JSONB
+	// column for every result, which contributed to the same heap-pressure
+	// pattern PR #92 / #94 closed elsewhere.
+	protected static final String FIND_ARTIFACT_UUIDS_BY_DTRACK_PROJECTS = """
+			select a.uuid from rearm.artifacts a where a.metrics->>'dependencyTrackProject' in (:dtrackProjectIds)
+		""";
+
+	// Stamps {"dtrackProjectDeleted": true} on the metrics JSONB of every
+	// artifact whose dependencyTrackProject matches one of the given ids
+	// for the given org. Used by IntegrationService.markArtifactsWithDeletedProjects
+	// in the daily DT-cleanup cron — pure SQL UPDATE so we don't load
+	// (or snapshot, or re-serialize) the artifact rows, which was a
+	// significant heap-pressure source. The org filter ensures cross-org
+	// project-id collisions (theoretical) can't bleed across tenants.
+	protected static final String MARK_ARTIFACTS_DTRACK_PROJECT_DELETED = """
+			update rearm.artifacts
+			set metrics = jsonb_set(metrics, '{dtrackProjectDeleted}', 'true'::jsonb)
+			where record_data->>'org' = :orgUuidAsString
+			  and metrics->>'dependencyTrackProject' in (:dtrackProjectIds)
 		""";
 	
 	protected static final String LIST_DISTINCT_DTRACK_PROJECTS_BY_ORG = """

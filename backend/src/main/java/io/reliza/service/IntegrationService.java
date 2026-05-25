@@ -61,7 +61,6 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
-import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
@@ -86,6 +85,7 @@ import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.dto.TriggerIntegrationInputDto;
 import io.reliza.model.OrganizationData;
+import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.IntegrationRepository;
 import lombok.Data;
 
@@ -108,7 +108,10 @@ public class IntegrationService {
 	@Autowired
 	@Lazy
 	private ArtifactService artifactService;
-	
+
+	@Autowired
+	private ArtifactRepository artifactRepository;
+
 	@Autowired
 	@Lazy
 	private DTrackService dtrackService;
@@ -701,7 +704,7 @@ public class IntegrationService {
 	}
 	
 	private DependencyTrackIntegration obtainDepdencyTrackProjectMetrics (URI dtrackBaseUri,
-			String apiToken, ArtifactData ad, ZonedDateTime lastScanned) throws DatabindException, JacksonException {
+			String apiToken, ArtifactData ad, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
 		String dtrackProject = ad.getMetrics().getDependencyTrackProject();
 		DependencyTrackIntegration dti = new DependencyTrackIntegration();
 		List<VulnerabilityDto> vulnerabilityDetails = fetchDependencyTrackVulnerabilityDetails(
@@ -721,7 +724,9 @@ public class IntegrationService {
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record DtrackResolvedLicenseRaw(String licenseId) {}
 	
-	private record DtrackPageResult(List<Object> results, int totalCount) {}
+	// Package-private (not private) so a test subclass can construct
+	// deterministic DtrackPageResult instances.
+	record DtrackPageResult(List<Object> results, int totalCount) {}
 	
 	private static int parseDtrackTotalCountHeader(org.springframework.http.ResponseEntity<?> resp) {
 		String header = resp.getHeaders().getFirst("X-Total-Count");
@@ -782,7 +787,7 @@ public class IntegrationService {
 	private record DtrackViolationRaw (ViolationType type, DtrackComponentRaw component) {}
 	
 	protected List<VulnerabilityDto> fetchDependencyTrackVulnerabilityDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/vulnerability/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		// Use lastScanned (DTrack scan time) as attributedAt so findings are included in First Scanned VDR
@@ -955,7 +960,7 @@ public class IntegrationService {
 	}
 	
 	protected List<ViolationDto> fetchDependencyTrackViolationDetails(URI dtrackBaseUri,
-			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException {
+			String apiToken, String dtrackProject, UUID artifactUuid, UUID orgUuid, ZonedDateTime lastScanned) throws DatabindException, JacksonException, RelizaException {
 		String baseUri = dtrackBaseUri.toString() + "/api/v1/violation/project/" + dtrackProject;
 		final FindingSourceDto source = new FindingSourceDto(artifactUuid, null, null);
 		final Set<FindingSourceDto> sources = Set.of(source);
@@ -1123,13 +1128,13 @@ public class IntegrationService {
 	 * @param existingParams Any existing query parameters (should end with & if not empty, or be empty)
 	 * @return List of all results from all pages
 	 */
-	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams) 
-			throws DatabindException, JacksonException {
+	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams)
+			throws DatabindException, JacksonException, RelizaException {
 		return executeDtrackPaginatedCall(baseUri, apiToken, existingParams, CommonVariables.DTRACK_DEFAULT_PAGE_SIZE);
 	}
-	
-	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams, int pageSize) 
-			throws DatabindException, JacksonException {
+
+	private List<Object> executeDtrackPaginatedCall(String baseUri, String apiToken, String existingParams, int pageSize)
+			throws DatabindException, JacksonException, RelizaException {
 		List<Object> allResults = new ArrayList<>();
 		int pageNumber = 1;
 		boolean hasMorePages = true;
@@ -1163,8 +1168,11 @@ public class IntegrationService {
 	 * @param pageTransformer Function that transforms a page of raw objects into the target type
 	 * @return List of all transformed results from all pages
 	 */
-	private <T> List<T> executeDtrackPaginatedCallWithTransform(String baseUri, String apiToken,
-			String existingParams, Function<List<Object>, List<T>> pageTransformer) {
+	// Package-private (not private) so the pagination loop's
+	// fail-fast-on-exception contract is unit-testable via a subclass that
+	// overrides fetchDtrackPage. See IntegrationServiceDtrackPaginationTest.
+	<T> List<T> executeDtrackPaginatedCallWithTransform(String baseUri, String apiToken,
+			String existingParams, Function<List<Object>, List<T>> pageTransformer) throws RelizaException {
 		List<T> allResults = new ArrayList<>();
 		int pageNumber = 1;
 		int pageSize = CommonVariables.DTRACK_DEFAULT_PAGE_SIZE;
@@ -1192,10 +1200,12 @@ public class IntegrationService {
 		return allResults;
 	}
 	
-	private DtrackPageResult fetchDtrackPage(String baseUri, String apiToken, String existingParams, 
-			String separator, int pageNumber, int pageSize) {
+	// Package-private (not private) so a test subclass can override and
+	// inject deterministic page results / exceptions.
+	DtrackPageResult fetchDtrackPage(String baseUri, String apiToken, String existingParams,
+			String separator, int pageNumber, int pageSize) throws RelizaException {
+		URI dtrackUri = URI.create(baseUri + existingParams + separator + "pageNumber=" + pageNumber + "&pageSize=" + pageSize);
 		try {
-			URI dtrackUri = URI.create(baseUri + existingParams + separator + "pageNumber=" + pageNumber + "&pageSize=" + pageSize);
 			log.debug("Calling DTrack API page fetch: uri = {}", dtrackUri);
 			final long httpStartNs = System.nanoTime();
 			var resp = dtrackWebClient
@@ -1205,27 +1215,36 @@ public class IntegrationService {
 				.retrieve()
 				.toEntity(String.class)
 				.block();
-			
+
+			// Null body is a legitimate empty-page signal (some DTrack endpoints
+			// return an empty body with 200 when the project has no findings).
+			// Distinct from a thrown exception — that path now propagates.
 			if (null == resp.getBody()) {
 				log.warn("Null body from DTrack API for uri = {}", dtrackUri);
 				return null;
 			}
-			
+
 			int totalCount = parseDtrackTotalCountHeader(resp);
-			
+
 			@SuppressWarnings("unchecked")
 			List<Object> pageResults = Utils.OM.readValue(resp.getBody(), List.class);
 			log.debug("DTrack API page fetch completed: uri = {}, pageNumber = {}, pageSize = {}, totalCount = {}, httpMs = {}",
 				dtrackUri, pageNumber, pageSize, totalCount, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - httpStartNs));
 			return new DtrackPageResult(pageResults, totalCount);
 		} catch (Exception e) {
-			log.error("Error fetching DTrack page {} for uri = {}", pageNumber, baseUri, e);
-			return null;
+			// Previously returned null here — but null is the "no more pages"
+			// signal upstream, so a transient HTTP/parse failure mid-drain
+			// would silently truncate the result list and the caller would
+			// persist an empty vulnerability set, overwriting the artifact's
+			// previous good data. Propagate as a checked exception so the
+			// scheduled-refresh persist site short-circuits instead.
+			log.error("Error fetching DTrack page {} for uri = {}", pageNumber, dtrackUri, e);
+			throw new RelizaException("Error fetching DTrack page " + pageNumber + " for uri " + dtrackUri + ": " + e.getMessage());
 		}
 	}
 	
-	private List<Map<String, Object>> executeDtrackComponentSearch (String baseUri, String apiToken, String queryParams) 
-			throws DatabindException, JacksonException {
+	private List<Map<String, Object>> executeDtrackComponentSearch (String baseUri, String apiToken, String queryParams)
+			throws DatabindException, JacksonException, RelizaException {
 		List<Object> results = executeDtrackPaginatedCall(baseUri, apiToken, queryParams, 400);
 		List<Map<String, Object>> respList = new LinkedList<>();
 		for (Object obj : results) {
@@ -1615,7 +1634,16 @@ public class IntegrationService {
 		cleanupArchivedDtrackProjects(orgUuid);
 	}
 	
-	@Transactional
+	// NOT @Transactional. The cleanup makes per-project HTTP DELETE calls
+	// to an external DT API inside its inner loop — holding an open
+	// Hibernate transaction across those network calls used to keep the
+	// persistence context alive for the entire per-org cleanup (often
+	// minutes), accumulating every Artifact entity loaded by
+	// markArtifactsWithDeletedProjects + their JSONB dirty-snapshots.
+	// That was an OOM contributor at ~03:28 UTC. The mark step now uses
+	// a single SQL UPDATE (no entity load), and the per-DT-call DB writes
+	// inside this loop already carry their own narrower @Transactional
+	// scopes where needed.
 	public DtrackProjectCleanupResult cleanupArchivedDtrackProjects(UUID orgUuid) {
 		log.info("[DTRACK-CLEANUP] Starting cleanup for org {}", orgUuid);
 		
@@ -1844,32 +1872,24 @@ public class IntegrationService {
 	}
 	
 	/**
-	 * Mark all artifacts using the specified DTrack projects as deleted
-	 * This prevents deduplication from reusing deleted project IDs
+	 * Mark all artifacts whose dtrack project matches one of {@code projectIds}
+	 * (scoped to {@code orgUuid}) with {@code metrics.dtrackProjectDeleted = true}.
+	 * Prevents deduplication from reusing already-deleted project IDs.
+	 *
+	 * <p>Single SQL UPDATE — no entity load, no Hibernate snapshot deep-copy
+	 * of the JSONB column, no per-row save round trip. Previous loop-based
+	 * implementation loaded every affected Artifact into the persistence
+	 * context and re-serialized its full metrics blob per save; on the
+	 * daily DT-cleanup cron over a multi-org sweep that produced enough
+	 * transient allocation to OOM the heap (observed 2026-05-23/24).
 	 */
 	private void markArtifactsWithDeletedProjects(UUID orgUuid, List<String> projectIds) {
 		if (projectIds == null || projectIds.isEmpty()) {
 			return;
 		}
-		
-		int totalMarked = 0;
-		for (String projectId : projectIds) {
-			// Convert string project ID to UUID
-			UUID projectUuid = UUID.fromString(projectId);
-			List<Artifact> affectedArtifacts = artifactService.listArtifactsByDtrackProjects(List.of(projectUuid));
-			log.debug("[DTRACK-CLEANUP] Found {} artifacts using project {}", affectedArtifacts.size(), projectId);
-			
-			for (Artifact artifact : affectedArtifacts) {
-				ArtifactData ad = ArtifactData.dataFromRecord(artifact);
-				if (ad.getMetrics() != null && ad.getOrg().equals(orgUuid)) {
-					ad.getMetrics().setDtrackProjectDeleted(true);
-					sharedArtifactService.saveArtifactMetrics(artifact, ad.getMetrics());
-					totalMarked++;
-				}
-			}
-		}
-		
-		log.info("[DTRACK-CLEANUP] Marked {} artifacts as having deleted DTrack projects", totalMarked);
+		int marked = artifactRepository.markArtifactsAsDtrackProjectDeleted(
+				orgUuid.toString(), projectIds);
+		log.info("[DTRACK-CLEANUP] Marked {} artifacts as having deleted DTrack projects", marked);
 	}
 	
 	/**

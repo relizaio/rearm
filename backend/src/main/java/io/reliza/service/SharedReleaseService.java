@@ -1150,7 +1150,7 @@ public class SharedReleaseService {
 	public List<ComponentWithBranches> findReleaseDatasByDtrackProjects(Collection<UUID> dtrackProjects, final UUID org) {
 		log.debug("dtrack project size = {}", dtrackProjects.size());
 		long startTime = System.currentTimeMillis();
-		Set<UUID> arts = artifactService.listArtifactsByDtrackProjects(dtrackProjects).stream().map(x -> x.getUuid()).collect(Collectors.toSet());
+		Set<UUID> arts = new HashSet<>(artifactService.listArtifactUuidsByDtrackProjects(dtrackProjects));
 		log.debug("artifacts size = {}", arts.size());
 		long afterArtifacts = System.currentTimeMillis();
 		log.debug("findReleaseDatasByDtrackProjects - listArtifactsByDtrackProjects took {} ms, found {} artifacts", afterArtifacts - startTime, arts.size());

@@ -240,6 +240,18 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
     	private Boolean dtrackSubmissionFailed = false;
     	private Integer dtrackSubmissionAttempts = 0;
     	private String dtrackSubmissionFailureReason;
+    	// FETCH-side failure tracking (distinct from the SUBMISSION-side trio above).
+    	// Populated by SharedArtifactService.markArtifactDtrackFetchFailed when the
+    	// paginated vuln/violation drain from DTrack throws; cleared by
+    	// resetArtifactDtrackFetchFailedState on the next successful drain. The
+    	// scheduler-pickup SQL filters on dtrackFetchSkipUntil to avoid re-attempting
+    	// during the backoff window. ISO-8601 String (not ZonedDateTime) so the
+    	// SQL ::timestamptz cast in the scheduler filter parses cleanly.
+    	public static final int FETCH_FAILURE_REASON_MAX_LEN = 512;
+    	private DtrackFetchStatus dtrackFetchStatus;
+    	private Integer dtrackFetchFailureCount;
+    	private String dtrackFetchFailureReason;
+    	private String dtrackFetchSkipUntil;
     	private ZonedDateTime uploadDate;
     	
     	public static DependencyTrackIntegration fromReleaseMetricsDto(ReleaseMetricsDto rmd) {

@@ -225,6 +225,36 @@ public class ArtifactService {
 		List<String> dtrackProjectsForQuery = uniqueDtrackProjects.stream().map(x -> x.toString()).toList();
 		return repository.findArtifactsByDtrackProjects(dtrackProjectsForQuery);
 	}
+
+	/**
+	 * UUID-only sibling of {@link #listArtifactsByDtrackProjects(Collection)}.
+	 * Use when the caller only needs the artifact identities —
+	 * materializing the full {@link Artifact} fires Hibernate's JSONB
+	 * snapshot deep-copy on the {@code metrics} column for every result,
+	 * which has been a heap-pressure source on large sweeps (see PR #92 /
+	 * #94 for the equivalent pattern on other batch loops).
+	 */
+	public List<UUID> listArtifactUuidsByDtrackProjects (Collection<UUID> dtrackProjects) {
+		Set<UUID> uniqueDtrackProjects = new HashSet<>(dtrackProjects);
+		List<String> dtrackProjectsForQuery = uniqueDtrackProjects.stream().map(x -> x.toString()).toList();
+		return repository.findArtifactUuidsByDtrackProjects(dtrackProjectsForQuery);
+	}
+
+	/**
+	 * True when the artifact's last fetch failure is still inside the backoff
+	 * window — i.e. now() is before {@code dtrackFetchSkipUntil}. Null or
+	 * unparseable values are treated as "not in backoff" so a corrupted
+	 * timestamp never permanently parks an artifact.
+	 */
+	private static boolean isInDtrackFetchBackoff(String dtrackFetchSkipUntil) {
+		if (dtrackFetchSkipUntil == null || dtrackFetchSkipUntil.isBlank()) return false;
+		try {
+			return ZonedDateTime.parse(dtrackFetchSkipUntil).isAfter(ZonedDateTime.now());
+		} catch (Exception e) {
+			log.warn("Unparseable dtrackFetchSkipUntil ({}); treating as not in backoff", dtrackFetchSkipUntil);
+			return false;
+		}
+	}
 	
 	public List<String> findOrphanedDtrackProjects (UUID orgUuid) {
 		String orgUuidStr = orgUuid.toString();
@@ -1189,18 +1219,36 @@ public class ArtifactService {
 	public boolean fetchDependencyTrackDataForArtifact (Artifact a) throws RelizaException {
 		ZonedDateTime lastScanned = ZonedDateTime.now();
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
-		var dti = integrationService.resolveDependencyTrackProcessingStatus(ad, lastScanned);
+		ArtifactData.DependencyTrackIntegration dti;
+		try {
+			dti = integrationService.resolveDependencyTrackProcessingStatus(ad, lastScanned);
+		} catch (RelizaException e) {
+			// Fetch threw (e.g. transient DTrack outage mid-pagination, or an upstream
+			// 5xx). Record the failure so the scheduler backs off rather than retrying
+			// every tick. The artifact's previous good vulnerabilityDetails are left
+			// untouched — caller chain short-circuits before any persist.
+			sharedArtifactService.markArtifactDtrackFetchFailed(a.getUuid(), e.getMessage());
+			throw e;
+		}
 		boolean doUpdate = false;
 		if (null != dti) {
 			log.debug("PSDEBUG: setting dti to last scanned = " + dti.getLastScanned() + " on artifact = " + a.getUuid());
-			if (null == ad.getMetrics() || null == ad.getMetrics().getLastScanned() || 
+			if (null == ad.getMetrics() || null == ad.getMetrics().getLastScanned() ||
 					ad.getMetrics().getLastScanned().plusSeconds(1).isBefore(dti.getLastScanned())){
 				doUpdate = true;
 				log.debug("PSDEBUG: saving artifact dti on artifact = " + a.getUuid());
 			}
 		}
-			
+
+		// Order matters: updateArtifactDti uses the in-memory `a.metrics` snapshot
+		// loaded at the top of this method and writes the whole JSONB. If we cleared
+		// fetch-failure state before updateArtifactDti ran, the stale in-memory
+		// fetch fields would be re-written and overwrite the clear. Run the reset
+		// AFTER updateArtifactDti so its UPDATE is applied last. Reset itself is a
+		// guarded no-op when state is already clean, so a never-failed artifact
+		// doesn't pay a write per tick.
 		if (doUpdate) sharedArtifactService.updateArtifactDti(a, dti, WhoUpdated.getAutoWhoUpdated());
+		if (null != dti) sharedArtifactService.resetArtifactDtrackFetchFailedState(a.getUuid());
 		return true;
 	}
 
@@ -1241,8 +1289,7 @@ public class ArtifactService {
 		}
 		
 		// Get artifact UUIDs for these projects (not full entities to save memory)
-		List<UUID> artifactUuids = listArtifactsByDtrackProjects(unsyncedProjects)
-				.stream().map(Artifact::getUuid).toList();
+		List<UUID> artifactUuids = listArtifactUuidsByDtrackProjects(unsyncedProjects);
 		log.info("Found {} artifacts to sync for {} unsynced projects in org {}", 
 				artifactUuids.size(), unsyncedProjects.size(), orgUuid);
 		
@@ -1270,7 +1317,21 @@ public class ArtifactService {
 				// Fetch artifact fresh for each iteration to avoid holding all data in memory
 				Optional<Artifact> artifactOpt = repository.findById(artifactUuid);
 				if (artifactOpt.isPresent()) {
-					fetchDependencyTrackDataForArtifact(artifactOpt.get());
+					Artifact artifact = artifactOpt.get();
+					// Skip artifacts whose fetch backoff window hasn't elapsed.
+					// The per-minute initial-fetch loop has the same filter in
+					// SQL (LIST_INITIAL_ARTIFACT_UUIDS_PENDING_DEPENDENCY_TRACK);
+					// this daily-sync loop loads artifacts via the
+					// FIND_ARTIFACT_UUIDS_BY_DTRACK_PROJECTS path, whose
+					// non-UUID sibling has non-scheduler callers, so the
+					// filter lives at the application layer rather than in SQL.
+					ArtifactData ad = ArtifactData.dataFromRecord(artifact);
+					if (ad.getMetrics() != null && isInDtrackFetchBackoff(ad.getMetrics().getDtrackFetchSkipUntil())) {
+						log.debug("Skipping artifact {} in DTrack-fetch backoff (skipUntil={})",
+								artifactUuid, ad.getMetrics().getDtrackFetchSkipUntil());
+						continue;
+					}
+					fetchDependencyTrackDataForArtifact(artifact);
 					processedCount++;
 					log.debug("Successfully processed artifact {} for dependency track sync", artifactUuid);
 				} else {

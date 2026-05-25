@@ -34,11 +34,13 @@ import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
+import io.reliza.model.DtrackFetchStatus;
 import io.reliza.model.MetricsAudit;
 import io.reliza.model.MetricsAudit.MetricsEntityType;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.MetricsAuditRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
+import io.reliza.util.BackoffPolicy;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
@@ -389,6 +391,86 @@ public class SharedArtifactService {
 			dti.setDtrackSubmissionFailureReason(null);
 			saveArtifactMetrics(a, dti);
 		}
+	}
+
+	/**
+	 * Record a Dependency-Track FETCH failure on the artifact's metrics. Bumps
+	 * the failure counter, pushes {@code dtrackFetchSkipUntil} forward by an
+	 * exponential backoff window, and sets status to {@link DtrackFetchStatus#FAILED}.
+	 * The previously-good vulnerabilityDetails list on the artifact is left
+	 * untouched — the contract is "fetch failed, don't overwrite, retry later."
+	 *
+	 * <p>Distinct from {@link #markArtifactDtrackFailed} which is the SUBMISSION-side
+	 * marker (uploads to DT). Both can coexist on the same artifact, e.g. an
+	 * artifact whose initial submission failed AND whose subsequent reattempt at
+	 * fetching metrics also failed.
+	 *
+	 * <p>If a concurrent scheduler tick races and the JPA optimistic-lock
+	 * {@code @Version} on Artifact fires, the exception propagates — the next
+	 * tick will pick the artifact up again, so no retry loop here.
+	 */
+	@Transactional
+	protected void markArtifactDtrackFetchFailed(UUID artifactUuid, String failureReason) {
+		Optional<Artifact> oa = getArtifact(artifactUuid);
+		if (oa.isEmpty()) {
+			log.warn("markArtifactDtrackFetchFailed: artifact not found for uuid {}", artifactUuid);
+			return;
+		}
+		Artifact a = oa.get();
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		DependencyTrackIntegration dti = ad.getMetrics();
+		if (dti == null) {
+			dti = new DependencyTrackIntegration();
+			ad.setMetrics(dti);
+		}
+		int currentCount = dti.getDtrackFetchFailureCount() == null ? 0 : dti.getDtrackFetchFailureCount();
+		int nextCount = currentCount + 1;
+		dti.setDtrackFetchStatus(DtrackFetchStatus.FAILED);
+		dti.setDtrackFetchFailureCount(nextCount);
+		dti.setDtrackFetchFailureReason(truncate(failureReason, DependencyTrackIntegration.FETCH_FAILURE_REASON_MAX_LEN));
+		dti.setDtrackFetchSkipUntil(ZonedDateTime.now()
+				.plusSeconds(BackoffPolicy.dtrackFetchSkipSeconds(nextCount))
+				.toString());
+		saveArtifactMetrics(a, dti);
+	}
+
+	/**
+	 * Clear any previously-set fetch-failure state after a successful drain.
+	 * Guarded no-op when state is already clean so the metrics row isn't
+	 * pointlessly bumped on every successful tick.
+	 */
+	@Transactional
+	protected void resetArtifactDtrackFetchFailedState(UUID artifactUuid) {
+		Optional<Artifact> oa = getArtifact(artifactUuid);
+		if (oa.isEmpty()) {
+			log.warn("resetArtifactDtrackFetchFailedState: artifact not found for uuid {}", artifactUuid);
+			return;
+		}
+		Artifact a = oa.get();
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		DependencyTrackIntegration dti = ad.getMetrics();
+		if (dti == null) {
+			return;
+		}
+		DtrackFetchStatus status = dti.getDtrackFetchStatus();
+		Integer count = dti.getDtrackFetchFailureCount();
+		String skipUntil = dti.getDtrackFetchSkipUntil();
+		boolean dirty = (status != null && status != DtrackFetchStatus.OK)
+				|| (count != null && count > 0)
+				|| skipUntil != null
+				|| dti.getDtrackFetchFailureReason() != null;
+		if (dirty) {
+			dti.setDtrackFetchStatus(DtrackFetchStatus.OK);
+			dti.setDtrackFetchFailureCount(0);
+			dti.setDtrackFetchFailureReason(null);
+			dti.setDtrackFetchSkipUntil(null);
+			saveArtifactMetrics(a, dti);
+		}
+	}
+
+	private static String truncate(String s, int max) {
+		if (s == null) return null;
+		return s.length() <= max ? s : s.substring(0, max);
 	}
 
 	/**

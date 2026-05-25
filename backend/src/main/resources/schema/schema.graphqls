@@ -1993,6 +1993,10 @@ type DependencyTrackMetrics {
 	dtrackSubmissionFailed: Boolean
 	dtrackSubmissionAttempts: Int
 	dtrackSubmissionFailureReason: String
+	dtrackFetchStatus: String
+	dtrackFetchFailureCount: Int
+	dtrackFetchFailureReason: String
+	dtrackFetchSkipUntil: String
 	lastScanned: DateTime
 	firstScanned: DateTime
 	critical: Int
