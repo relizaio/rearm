@@ -41,6 +41,20 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 			value = VariableQueries.FIND_ARTIFACTS_BY_DTRACK_PROJECTS,
 			nativeQuery = true)
 	List<Artifact> findArtifactsByDtrackProjects(List<String> dtrackProjectIds);
+
+	@Query(
+			value = VariableQueries.FIND_ARTIFACT_UUIDS_BY_DTRACK_PROJECTS,
+			nativeQuery = true)
+	List<UUID> findArtifactUuidsByDtrackProjects(List<String> dtrackProjectIds);
+
+	@Modifying
+	@Transactional
+	@Query(
+			value = VariableQueries.MARK_ARTIFACTS_DTRACK_PROJECT_DELETED,
+			nativeQuery = true)
+	int markArtifactsAsDtrackProjectDeleted(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("dtrackProjectIds") List<String> dtrackProjectIds);
 	
 	@Query(
 			value = VariableQueries.LIST_ACTIVE_RELEASE_ARTIFACT_UUIDS,
