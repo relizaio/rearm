@@ -1680,24 +1680,45 @@ const targetReleaseFeilds: any[] = [
     },
     
 ]
+// Strip the trailing @<algo>:<hex> digest suffix from a container ref so
+// the Image column shows just the registry/repo[:tag] portion. Handles
+// the variety k8s reports: 'registry/repo@sha256:hex',
+// 'registry/repo:tag@sha256:hex', 'registry/repo:tag' (no digest),
+// 'sha256:hex' (bare digest fallback when imageID is absent), and null.
+function coreImageRef(image: string | null | undefined): string {
+    if (!image) return '—'
+    const atIdx = image.indexOf('@')
+    const core = atIdx > 0 ? image.substring(0, atIdx) : image
+    // Bare 'sha256:hex' has no '@' but is itself the digest — keep
+    // it as-is rather than emitting an empty string; the digest
+    // tooltip will still cover the same info.
+    return core || image
+}
+
 const unmatchedImageFields: any[] = [
     {
         key: 'image',
         title: 'Image',
         render: (row: any) => {
-            const els: any[] = [row.image || '—']
-            // Digest as an info-icon tooltip on the same cell — keeps the
-            // table narrow and surfaces the full algo:hex on hover. Click
-            // copies the digest to clipboard.
-            if (row.digest) {
+            const els: any[] = [coreImageRef(row.image)]
+            // Surface the full algo:hex digest behind a hover tooltip on
+            // an info icon so the table stays narrow on dense rows. Click
+            // copies the digest to clipboard. Prefer the dedicated digest
+            // field, then the @-suffix on the image ref, so any of the
+            // imageID / image variants the watcher reports still produces
+            // a visible digest.
+            const atIdx = (row.image || '').indexOf('@')
+            const digest = row.digest || (atIdx > 0 ? row.image.substring(atIdx + 1) : '') ||
+                    (row.image && row.image.startsWith('sha256:') ? row.image : '')
+            if (digest) {
                 els.push(h(NTooltip, { trigger: 'hover', placement: 'top' }, {
                     trigger: () => h(NIcon, {
                         size: 16,
                         class: 'ml-1 clickable',
                         title: 'Copy digest',
-                        onClick: () => { try { navigator.clipboard.writeText(row.digest) } catch {} }
+                        onClick: () => { try { navigator.clipboard.writeText(digest) } catch {} }
                     }, { default: () => h(InfoCircle) }),
-                    default: () => row.digest
+                    default: () => digest
                 }))
             }
             return h('span', { style: 'word-break: break-all;' }, els)
