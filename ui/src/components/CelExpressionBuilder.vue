@@ -277,29 +277,34 @@ interface Props {
     approvalEntryOptions: { label: string; value: string }[]
     placeholder?: string
     error?: string
-    // From the parent rule editor: whether the rule-level
-    // scan-readiness guard is on. When true, the Task-1
-    // METRICS-without-FIRST_SCANNED warning is moot and gets
-    // suppressed — the guard already gates the whole rule on
-    // firstScanned.
-    requiresFirstScannedGuard?: boolean
+    // From the parent rule editor: the rule's precondition CEL string.
+    // When non-empty and it references `firstScanned`, the Task-1
+    // METRICS-without-FIRST_SCANNED warning is suppressed — the
+    // precondition already gates the whole rule on scan readiness.
+    // Substring match is the cheap heuristic (no parsing).
+    preconditionCelExpression?: string | null
+    // Set on the precondition builder's own mount to suppress the
+    // warning loop-back — the precondition would otherwise warn about
+    // itself.
+    suppressFirstScannedWarning?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
     placeholder: '',
     error: '',
-    requiresFirstScannedGuard: false
+    preconditionCelExpression: null,
+    suppressFirstScannedWarning: false
 })
 
 const emit = defineEmits<{
     (e: 'update:modelValue', value: string): void
-    // Task 1 fix-up button asks the parent rule editor to flip the
-    // rule-level scan-readiness guard ON instead of editing the CEL.
-    // The guard gates the whole rule on firstScanned (skipping both
-    // true and else branches), which is the correct shape — an in-CEL
-    // FIRST_SCANNED clause doesn't help when the rule has an else
-    // branch (the false path would still fire on unscanned releases).
-    (e: 'enable-first-scanned-guard'): void
+    // Task 1 fix-up button asks the parent rule editor to set the
+    // precondition CEL to a default first-scanned gate. Parent
+    // receives the suggested CEL string and writes it to
+    // preconditionCelExpression on the rule — single-branch and
+    // else-branch rules get the same correct fix (the rule sits out
+    // entirely on unscanned releases).
+    (e: 'set-precondition', value: string): void
 }>()
 
 // ─── Static option lists ─────────────────────────────────────────────────────
@@ -657,28 +662,40 @@ function addCondition(group: ConditionGroup) {
 
 // Task 1: surface the implicit firstScanned prerequisite. Metrics
 // variables resolve to 0 on unscanned releases, so a rule like
-// `criticalVulns > 0` silently passes before scanning completes — bad
-// gate. We warn when METRICS appears anywhere in the builder state
-// without an explicit FIRST_SCANNED condition, and offer a one-click
-// fix that prepends the prerequisite to the first group. Suppressed
-// when the parent rule has its scan-readiness guard enabled — that
-// already gates the whole rule on firstScanned, making the in-CEL
-// clause redundant.
+// `criticalVulns > 0` silently passes before scanning completes —
+// bad gate. We warn when METRICS appears in the builder state
+// without firstScanned protection from either the main CEL or the
+// rule's precondition. Substring match on the precondition string is
+// the cheap detection — false positives (e.g. `!firstScanned`) are
+// rare enough that a noisy warning is fine.
+//
+// suppressFirstScannedWarning lets the precondition's own builder
+// mount skip this loop — without it the precondition builder would
+// warn about its own contents while trying to be the fix.
 const hasMetricsWithoutFirstScanned = computed((): boolean => {
-    if (props.requiresFirstScannedGuard) return false
+    if (props.suppressFirstScannedWarning) return false
     let hasMetrics = false
-    let hasFirstScanned = false
+    let hasFirstScannedInMainCel = false
     for (const g of builderState.groups) {
         for (const c of g.conditions) {
             if (c.type === 'METRICS') hasMetrics = true
-            if (c.type === 'FIRST_SCANNED') hasFirstScanned = true
+            if (c.type === 'FIRST_SCANNED') hasFirstScannedInMainCel = true
         }
     }
-    return hasMetrics && !hasFirstScanned
+    if (!hasMetrics) return false
+    if (hasFirstScannedInMainCel) return false
+    const pre = props.preconditionCelExpression || ''
+    if (pre.includes('firstScanned')) return false
+    return true
 })
 
+// Suggested precondition CEL that the parent receives when the user
+// clicks "Enable Wait for First Scan". Single source of truth so the
+// emit and any future docs render the same string.
+const FIRST_SCANNED_PRECONDITION = 'release.firstScanned == true'
+
 function enableFirstScannedGuard () {
-    emit('enable-first-scanned-guard')
+    emit('set-precondition', FIRST_SCANNED_PRECONDITION)
 }
 
 function removeCondition(group: ConditionGroup, index: number) {

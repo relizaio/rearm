@@ -772,22 +772,24 @@
                                                             Disabled rules are skipped at evaluation time.
                                                         </n-text>
                                                     </n-form-item>
-                                                    <n-form-item label="Wait for first scan" path="requiresFirstScanned">
-                                                        <n-switch v-model:value="inputTrigger.requiresFirstScanned" />
-                                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
-                                                            When on, the rule is skipped entirely until scanning completes (neither the matched nor else-branch actions fire). Recommended for rules with else-branch actions that depend on metrics.
-                                                        </n-text>
-                                                    </n-form-item>
                                                     <n-form-item label="Name" path="name">
                                                         <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
+                                                    </n-form-item>
+                                                    <n-form-item label="Precondition (optional)" path="preconditionCelExpression">
+                                                        <CelExpressionBuilder
+                                                            v-model="inputTrigger.preconditionCelExpression"
+                                                            :approval-entry-options="approvalEntryOptionsForTriggers"
+                                                            :suppress-first-scanned-warning="true"
+                                                            placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
+                                                        />
                                                     </n-form-item>
                                                     <n-form-item label="Condition" path="celExpression">
                                                         <CelExpressionBuilder
                                                             v-model="inputTrigger.celExpression"
                                                             :approval-entry-options="approvalEntryOptionsForTriggers"
                                                             :error="celExpressionError"
-                                                            :requires-first-scanned-guard="inputTrigger.requiresFirstScanned"
-                                                            @enable-first-scanned-guard="inputTrigger.requiresFirstScanned = true"
+                                                            :precondition-cel-expression="inputTrigger.preconditionCelExpression"
+                                                            @set-precondition="(v: string) => { inputTrigger.preconditionCelExpression = v }"
                                                         />
                                                     </n-form-item>
                                                     <n-form-item label="Actions when condition is met" path="inputTrigger.outputEvents">
@@ -1792,7 +1794,7 @@ const inputTrigger: Ref<InputTriggerEvent> = ref({
     outputEvents: [],
     outputEventsOnFalse: [],
     enabled: true,
-    requiresFirstScanned: false
+    preconditionCelExpression: ''
 })
 const celExpressionError = ref('')
 
@@ -1803,7 +1805,7 @@ function resetInputTrigger () {
         celExpression: '',
         outputEvents: [],
         outputEventsOnFalse: [],
-        requiresFirstScanned: false,
+        preconditionCelExpression: '',
         enabled: true
     }
     celExpressionError.value = ''

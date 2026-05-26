@@ -565,22 +565,24 @@
                                             Disabled rules never fire for any component using this policy, regardless of per-component opt-out.
                                         </n-text>
                                     </n-form-item>
-                                    <n-form-item label="Wait for first scan" path="requiresFirstScanned">
-                                        <n-switch v-model:value="globalInputEvent.requiresFirstScanned" />
-                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
-                                            When on, the rule is skipped entirely on releases that haven't completed scanning yet (neither the matched nor else-branch actions fire). Recommended for rules with else-branch actions that depend on metrics.
-                                        </n-text>
-                                    </n-form-item>
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
+                                    </n-form-item>
+                                    <n-form-item label="Precondition (optional)" path="preconditionCelExpression">
+                                        <CelExpressionBuilder
+                                            v-model="globalInputEvent.preconditionCelExpression"
+                                            :approval-entry-options="globalApprovalEntryOptionsForTriggers"
+                                            :suppress-first-scanned-warning="true"
+                                            placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
+                                        />
                                     </n-form-item>
                                     <n-form-item label="Condition" path="celExpression">
                                         <CelExpressionBuilder
                                             v-model="globalInputEvent.celExpression"
                                             :approval-entry-options="globalApprovalEntryOptionsForTriggers"
                                             :error="globalCelExpressionError"
-                                            :requires-first-scanned-guard="globalInputEvent.requiresFirstScanned"
-                                            @enable-first-scanned-guard="globalInputEvent.requiresFirstScanned = true"
+                                            :precondition-cel-expression="globalInputEvent.preconditionCelExpression"
+                                            @set-precondition="(v: string) => { globalInputEvent.preconditionCelExpression = v }"
                                         />
                                     </n-form-item>
                                     <n-form-item label="Actions when condition is met" path="globalInputEvent.outputEvents">
@@ -5104,7 +5106,7 @@ const globalInputEvent: Ref<InputTriggerEvent> = ref({
     outputEvents: [],
     outputEventsOnFalse: [],
     enabled: true,
-    requiresFirstScanned: false
+    preconditionCelExpression: ''
 })
 
 const globalCelExpressionError = ref('')
@@ -5117,7 +5119,7 @@ function resetGlobalInputEvent () {
         outputEvents: [],
         outputEventsOnFalse: [],
         enabled: true,
-        requiresFirstScanned: false
+        preconditionCelExpression: ''
     }
     globalCelExpressionError.value = ''
 }
@@ -5241,7 +5243,7 @@ async function fetchApprovalPolicies () {
                         outputEventsOnFalse
                         scope
                         enabled
-                        requiresFirstScanned
+                        preconditionCelExpression
                     }
                     globalOutputEvents {
                         uuid
@@ -5380,7 +5382,7 @@ async function saveGlobalInputEvents () {
             outputEvents: e.outputEvents || [],
             outputEventsOnFalse: e.outputEventsOnFalse || [],
             enabled: e.enabled !== false,  // default true; preserve explicit false
-            requiresFirstScanned: e.requiresFirstScanned === true
+            preconditionCelExpression: e.preconditionCelExpression || null
         }))
         const resp = await graphqlClient.mutate({
             mutation: gql`
@@ -5395,7 +5397,7 @@ async function saveGlobalInputEvents () {
                             outputEventsOnFalse
                             scope
                             enabled
-                            requiresFirstScanned
+                            preconditionCelExpression
                         }
                     }
                 }`,
