@@ -17,20 +17,38 @@
                 <!-- Archival moved to the Settings modal's Danger Zone (matches
                      ComponentView's pattern). -->
             </div>
-            <div v-if="updatedInstance && updatedInstance.instanceType === InstanceType.CLUSTER" class="listHeaderText">
-                Cluster Instances:
-                <n-icon v-if="isWritable" class="clickable" @click="showCreateInstanceModal = true" title="Add New Instance on Cluster" size="24"><CirclePlus /></n-icon>
+            <!-- Segmented sub-tab pill control — mirrors OrgIntegrations look-and-feel. -->
+            <div class="subtab-bar">
+                <button class="subtab-pill" :class="{ active: activeTab === 'instance' }" @click="switchTab('instance')">
+                    <n-icon size="16" class="subtab-icon"><Server /></n-icon>
+                    <span>{{ instanceWord }}</span>
+                </button>
+                <button class="subtab-pill" :class="{ active: activeTab === 'plan-history' }" @click="switchTab('plan-history')">
+                    <n-icon size="16" class="subtab-icon"><History /></n-icon>
+                    <span>Plan History</span>
+                </button>
+                <button class="subtab-pill" :class="{ active: activeTab === 'actual-history' }" @click="switchTab('actual-history')">
+                    <n-icon size="16" class="subtab-icon"><History /></n-icon>
+                    <span>Actual History</span>
+                </button>
             </div>
 
-            <n-data-table v-if="updatedInstance && updatedInstance.instanceType === InstanceType.CLUSTER"
-                :data="props.childInstances"
-                :columns="childInstanceFields"
-                :row-key="childInstrowKey"
-                @update:checked-row-keys="handleChildInstSelect"
-                v-model:checked-row-keys="selectedChildInstRowKey"
-            />
-            <div class="instanceBody">
-                <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER" class="listHeaderText">Product Releases:
+            <!-- ================= Instance tab (current view) ================== -->
+            <div v-if="activeTab === 'instance'">
+                <div v-if="updatedInstance && updatedInstance.instanceType === InstanceType.CLUSTER" class="listHeaderText">
+                    Cluster Instances:
+                    <n-icon v-if="isWritable" class="clickable" @click="showCreateInstanceModal = true" title="Add New Instance on Cluster" size="24"><CirclePlus /></n-icon>
+                </div>
+
+                <n-data-table v-if="updatedInstance && updatedInstance.instanceType === InstanceType.CLUSTER"
+                    :data="props.childInstances"
+                    :columns="childInstanceFields"
+                    :row-key="childInstrowKey"
+                    @update:checked-row-keys="handleChildInstSelect"
+                    v-model:checked-row-keys="selectedChildInstRowKey"
+                />
+                <div class="instanceBody">
+                    <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER" class="listHeaderText">Product Releases:
                     <n-icon v-if="isWritable" class="clickable" @click="isUpdateLinkedFeatureSet = false; showLinkFeatureSetModal = true" :title="'Link ' + featureSetLabel" size="24"><CirclePlus /></n-icon>
                     <n-icon @click="genProductRelease" class="clickable" title="Generate Integration Product Releases" size="20"><TrendingUp /></n-icon>
                 </div>
@@ -72,39 +90,87 @@
                     </div>
                     <n-data-table :data="updatedInstance.properties" :columns="instPropFeilds"></n-data-table>
                 </div>
-                <div class="listHeaderText">{{ instanceWord }} History:</div>
-                <div>
-                    <span>
-                        Filter By Change Type:
-                    </span>
-                    <n-dropdown trigger="hover" :options="instanceChangeTypes" @select="handleSearchHistoryChangeType">
-                        <span>
-                                <span>{{ selectedChangeType }}</span>
+                </div>
+            </div>
+
+            <!-- ================= Plan History tab ================== -->
+            <div v-if="activeTab === 'plan-history'" class="historyTab">
+                <div class="historyFilters">
+                    <div>
+                        <span>Filter By Change Type:&nbsp;</span>
+                        <n-dropdown trigger="hover" :options="planChangeTypeOptions" @select="(k) => { planChangeTypeFilter = k; fetchPlanHistory() }">
+                            <span class="clickable">
+                                <span>{{ planChangeTypeFilter }}</span>
                                 <Icon><CaretDownFilled/></Icon>
                             </span>
-                    </n-dropdown>
-                </div>
-                <div class="instanceChangeSearchGroupWrapper">
-                    <div>
-                        <n-input-group class="instanceChangeSearchGroup">
-                            <label>From: </label>
-                            <n-date-picker v-model:value="instanceChangeSearchObj.dateFrom" type="datetime" />
-                        </n-input-group>
+                        </n-dropdown>
                     </div>
-                    <div>
-                        <n-input-group class="instanceChangeSearchGroup">
-                            <label>To: </label>
-                            <n-date-picker v-model:value="instanceChangeSearchObj.dateTo" type="datetime" />
-                            <n-button @click="searchInstanceChanges">Search</n-button>
-                        </n-input-group>
+                    <div class="instanceChangeSearchGroupWrapper">
+                        <div>
+                            <n-input-group class="instanceChangeSearchGroup">
+                                <label>From: </label>
+                                <n-date-picker v-model:value="planHistorySearch.dateFrom" type="datetime" clearable />
+                            </n-input-group>
+                        </div>
+                        <div>
+                            <n-input-group class="instanceChangeSearchGroup">
+                                <label>To: </label>
+                                <n-date-picker v-model:value="planHistorySearch.dateTo" type="datetime" clearable />
+                                <n-button @click="fetchPlanHistory">Search</n-button>
+                            </n-input-group>
+                        </div>
                     </div>
                 </div>
-                <instance-history v-if="updatedInstance && updatedInstance.org && history && history.length"
+                <div v-if="planHistoryLoading" class="historyLoading">Loading…</div>
+                <instance-history v-else-if="updatedInstance && updatedInstance.org && planHistory.length"
+                    :key="'plan-' + planHistory.length"
                     :instanceUuid="updatedInstance.uuid"
-                    :history="history"
+                    :history="planHistory"
+                    :stateType="'PLAN'"
                     :orgProp="updatedInstance.org"
                 />
+                <div v-else class="historyEmpty">No plan history events found{{ planHistorySearch.dateFrom ? ' in this range' : '' }}.</div>
             </div>
+
+            <!-- ================= Actual History tab ================== -->
+            <div v-if="activeTab === 'actual-history'" class="historyTab">
+                <div class="historyFilters">
+                    <div>
+                        <span>Filter By Change Type:&nbsp;</span>
+                        <n-dropdown trigger="hover" :options="actualChangeTypeOptions" @select="(k) => { actualChangeTypeFilter = k; fetchActualHistory() }">
+                            <span class="clickable">
+                                <span>{{ actualChangeTypeFilter }}</span>
+                                <Icon><CaretDownFilled/></Icon>
+                            </span>
+                        </n-dropdown>
+                    </div>
+                    <div class="instanceChangeSearchGroupWrapper">
+                        <div>
+                            <n-input-group class="instanceChangeSearchGroup">
+                                <label>From: </label>
+                                <n-date-picker v-model:value="actualHistorySearch.dateFrom" type="datetime" clearable />
+                            </n-input-group>
+                        </div>
+                        <div>
+                            <n-input-group class="instanceChangeSearchGroup">
+                                <label>To: </label>
+                                <n-date-picker v-model:value="actualHistorySearch.dateTo" type="datetime" clearable />
+                                <n-button @click="fetchActualHistory">Search</n-button>
+                            </n-input-group>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="actualHistoryLoading" class="historyLoading">Loading…</div>
+                <instance-history v-else-if="updatedInstance && updatedInstance.org && actualHistory.length"
+                    :key="'actual-' + actualHistory.length"
+                    :instanceUuid="updatedInstance.uuid"
+                    :history="actualHistory"
+                    :stateType="'ACTUAL'"
+                    :orgProp="updatedInstance.org"
+                />
+                <div v-else class="historyEmpty">No actual history events found{{ actualHistorySearch.dateFrom ? ' in this range' : '' }}.</div>
+            </div>
+
         </div>
         <n-modal
             v-model:show="showAddComponentTargetReleaseModal"
@@ -393,7 +459,7 @@ import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism-tomorrow.css';
 import { AlertOff24Regular, AlertOn24Regular, Edit24Regular, Target20Regular} from '@vicons/fluent'
-import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, Clipboard, X, Check } from '@vicons/tabler'
+import { Box, Copy, LayoutColumns, Filter, Trash, Link as LinkIcon, Share as ShareIcon, ExternalLink, LockOpen, Download, Tool, Refresh, CirclePlus, TrendingUp, InfoCircle, CircleX, Clipboard, X, Check, Server, History } from '@vicons/tabler'
 import { Commit } from '@vicons/carbon'
 import constants from '@/utils/constants'
 import CreateInstance from '@/components/CreateInstance.vue'
@@ -429,8 +495,34 @@ if (route.params.orguuid) {
 }
 
 const updatedInstance: Ref<any> = ref({})
-const history: Ref<any[]> = ref([])
 const envs: Ref<any[]> = ref([])
+
+// --- Tab state (URL-synced) ---
+type InstTab = 'instance' | 'plan-history' | 'actual-history'
+const activeTab = ref<InstTab>((route.query.instTab as InstTab) || 'instance')
+const planHistory: Ref<any[]> = ref([])
+const actualHistory: Ref<any[]> = ref([])
+const planHistoryLoading = ref(false)
+const actualHistoryLoading = ref(false)
+const planHistoryLoaded = ref(false)
+const actualHistoryLoaded = ref(false)
+const planHistorySearch = ref<{dateFrom: number | null, dateTo: number | null}>({ dateFrom: null, dateTo: null })
+const actualHistorySearch = ref<{dateFrom: number | null, dateTo: number | null}>({ dateFrom: null, dateTo: null })
+const planChangeTypeFilter = ref('ANY')
+const actualChangeTypeFilter = ref('ANY')
+const planChangeTypeOptions = [
+    { label: 'Any', key: 'ANY' },
+    { label: 'Product Release', key: 'PRODUCT_RELEASE' },
+    { label: 'Target Release', key: 'TARGET_RELEASE' },
+    { label: 'Property', key: 'PROPERTY' },
+    { label: 'Environment', key: 'ENVIRONMENT' }
+]
+const actualChangeTypeOptions = [
+    { label: 'Any', key: 'ANY' },
+    { label: 'Deployment', key: 'DEPLOYMENT' },
+    { label: 'Agent Data', key: 'AGENT_DATA' },
+    { label: 'Product Match', key: 'PRODUCT_MATCH' }
+]
 const releaseForComparison = ref('')
 const namespaceForComparison = ref('default')
 
@@ -454,25 +546,6 @@ const selectedReleaseIdForModal = ref('')
 const selectedNamespace = ref('')
 const selectedInstanceProductVersionIdentifier = ref('')
 const selectedPrl = ref({})
-
-const selectedChangeType = ref('ANY')
-
-const instanceChangeTypes = [
-    {label: "Any", key: "ANY"},
-    {label: "Product Release", key: "Product Release"},
-    {label: "Target Release", key: "Target Release"},
-    {label: "Deployment", key: "DEPLOYMENT"},
-    {label: "Property", key: "PROPERTY"},
-    {label: "Settings", key: "SETTINGS"},
-    {label: "Notes", key: "NOTES"},
-    {label: "Environment", key: "ENVIRONMENT"},
-    {label: "Type", key: "TYPE"}
-]
-
-const instanceChangeSearchObj = ref({
-    dateFrom: (new Date()).getTime(),
-    dateTo: (new Date()).getTime()
-})
 
 const focusedProduct: Ref<any> = ref({})
 const focusedProperty: Ref<any> = ref({})
@@ -699,25 +772,55 @@ const addedIntegrationFeatureSet = async function (fsObj: any) {
 
 
 
-const searchInstanceChanges = async function () {
-    const cleanedSearchObj = {
-        dateFrom: new Date(instanceChangeSearchObj.value.dateFrom).toISOString(),
-        dateTo: new Date(instanceChangeSearchObj.value.dateTo).toISOString()
+// --- History tab fetchers (lazy: only run when the tab is shown or a filter changes) ---
+function buildHistoryParams(search: any, changeType: string): any {
+    const params: any = { instanceUuid }
+    if (search.dateFrom && search.dateTo) {
+        params.fromDate = new Date(search.dateFrom).toISOString()
+        params.toDate = new Date(search.dateTo).toISOString()
+        if (changeType && changeType !== 'ANY') params.changeType = changeType
     }
+    return params
+}
 
-    let changeType = selectedChangeType.value
-    if (!changeType) {
-        changeType = 'ANY'
-    } else if (changeType.includes('Product Release')) {
-        changeType = changeType.replace('Product Release', 'PRODUCT_RELEASE')
-    } else if (changeType.includes('Target Release')) {
-        changeType = changeType.replace('Target Release', 'TARGET_RELEASE')
+const fetchPlanHistory = async function () {
+    planHistoryLoading.value = true
+    try {
+        const data = await store.dispatch('fetchInstanceHistoryPlan',
+            buildHistoryParams(planHistorySearch.value, planChangeTypeFilter.value))
+        planHistory.value = data || []
+        planHistoryLoaded.value = true
+    } catch (err: any) {
+        console.error(err)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        planHistoryLoading.value = false
     }
-    history.value = []
-    // TODO: history
-    // const axiosResp = await axios.get('/api/manual/v1/instance/historyByDate/' + instanceUuid + '/' + cleanedSearchObj.dateFrom
-    //         + '/' + cleanedSearchObj.dateTo + '/' + changeType)
-    // history.value = axiosResp.data
+}
+
+const fetchActualHistory = async function () {
+    actualHistoryLoading.value = true
+    try {
+        const data = await store.dispatch('fetchInstanceHistoryActual',
+            buildHistoryParams(actualHistorySearch.value, actualChangeTypeFilter.value))
+        actualHistory.value = data || []
+        actualHistoryLoaded.value = true
+    } catch (err: any) {
+        console.error(err)
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        actualHistoryLoading.value = false
+    }
+}
+
+const switchTab = async function (t: InstTab) {
+    activeTab.value = t
+    await router.push({ query: { ...route.query, instTab: t } })
+    if (t === 'plan-history' && !planHistoryLoaded.value) {
+        await fetchPlanHistory()
+    } else if (t === 'actual-history' && !actualHistoryLoaded.value) {
+        await fetchActualHistory()
+    }
 }
 
 const notify = async function (type: NotificationType, title: string, content: string) {
@@ -746,10 +849,6 @@ const deleteProperty = function (uuid: string, namespace: string, product: strin
 const handleEnvironmentChange = async function (newEnv: string) {
     updatedInstance.value.environment = newEnv
 }
-const handleSearchHistoryChangeType = async function (selectedType: string) {
-    selectedChangeType.value = selectedType
-}
-
 const fetchInstance = async function() {
     if( instanceUuid === undefined || instanceUuid === null || instanceUuid === '')
         return
@@ -995,8 +1094,11 @@ const save = async function () {
     try {
         await store.dispatch('updateInstance', updatedInstance.value)
         await fetchInstance()
-        history.value = []
-        loadInstanceHistory()
+        // Invalidate cached history so the next visit to a history tab re-fetches.
+        planHistoryLoaded.value = false
+        actualHistoryLoaded.value = false
+        planHistory.value = []
+        actualHistory.value = []
         notify('info', 'SAVED', 'Instance changes saved successfully!')
     } catch (errOnSave: any) {
         console.error(errOnSave)
@@ -1006,12 +1108,6 @@ const save = async function () {
             'error'
         )
     }
-}
-
-const loadInstanceHistory = async function () {
-    // TODO: instance history
-    // const axiosResp = await axios.get('/v1/instance/history/' + instanceUuid)
-    // history.value = axiosResp.data
 }
 
 const setIntegrateType = async function (prl: any, t: string) {
@@ -1132,8 +1228,15 @@ const onCreate = async function () {
     }).then((envsResp: any) => {
         envs.value = envsResp.data.environmentTypes.map((e: any) => {return {label: e, key: e}})
     })
-    
-    loadInstanceHistory()
+
+    // History (Plan / Actual) is loaded lazily — only when the user clicks
+    // into the corresponding tab. If a tab is selected via URL on first
+    // mount, kick off the fetch now.
+    if (activeTab.value === 'plan-history') {
+        fetchPlanHistory()
+    } else if (activeTab.value === 'actual-history') {
+        fetchActualHistory()
+    }
     if(route.params.subinstuuid !== undefined && route.params.subinstuuid !== null && route.params.subinstuuid !== ''){
         selectedChildInstRowKey.value = [route.params.subinstuuid.toString()]
         showChildInstance.value = true
@@ -1769,6 +1872,49 @@ await onCreate()
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
+/* ---- sub-tab bar — mirrors OrgIntegrations.vue ---- */
+.subtab-bar {
+    display: inline-flex;
+    gap: 4px;
+    background: #F3F5F4;
+    padding: 4px;
+    border-radius: 10px;
+    margin: 12px 0 18px;
+}
+.subtab-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    border: none; background: transparent;
+    border-radius: 7px;
+    font-size: 13px; font-weight: 500;
+    color: #5b6770; cursor: pointer;
+    transition: background .12s, color .12s;
+}
+.subtab-pill:hover { color: #2b3540; }
+.subtab-pill.active {
+    background: #FFFFFF;
+    color: #2b3540;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    font-weight: 600;
+}
+.subtab-icon { display: inline-flex; }
+
+/* ---- History tab content ---- */
+.historyTab {
+    margin-top: 8px;
+}
+.historyFilters {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.historyLoading, .historyEmpty {
+    padding: 16px 0;
+    color: #7a8590;
+    font-style: italic;
+}
+
 .settingsBox {
     margin-bottom: 10px;
     width: 90%;
