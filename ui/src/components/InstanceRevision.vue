@@ -2,9 +2,7 @@
     <div class="container">
         <div class="instanceView">
             <h5 v-if="updatedInstance">Instance: {{ updatedInstance.uri }}, Revision: {{ (props.revision === -1) ? 'Live' : props.revision }}
-                <a :href="'/api/manual/v1/instanceRevision/cyclonedxExport/' + instanceUuid + '/' + props.revision" target="_blank" rel="noopener noreferrer">
-                    <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20"><Download /></n-icon>
-                </a>
+                <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20" @click="downloadRevisionCycloneDx"><Download /></n-icon>
             </h5>
             <div v-if="updatedInstance" class="settingsBlock">
                 <h6>Environment: {{ updatedInstance.environment }}</h6>
@@ -189,8 +187,10 @@ const props = defineProps<{
     otherInstanceUuid: String,
     otherRevision: Number,
     otherRevisionType: String,
-    namespace: String
+    namespace: String,
+    stateType?: String
 }>()
+const effectiveStateType = computed(() => (props.stateType === 'ACTUAL') ? 'ACTUAL' : 'PLAN')
 const notification = useNotification()
 
 const updatedInstance: Ref<any> = ref({})
@@ -340,8 +340,29 @@ const notify = async function (type: NotificationType, title: string, content: s
     })
 }
 
+async function downloadRevisionCycloneDx() {
+    try {
+        const bomJsonStr = await store.dispatch('getInstanceRevisionCycloneDx', {
+            instanceUuid: props.instanceUuid,
+            revision: props.revision,
+            stateType: effectiveStateType.value
+        })
+        const blob = new Blob([bomJsonStr || '{}'], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `instance-${props.instanceUuid}-${effectiveStateType.value.toLowerCase()}-rev${props.revision}.cdx.json`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    } catch (err) {
+        console.error('Failed to download CycloneDX revision', err)
+    }
+}
+
 const onCreate = async function () {
-    const storeResp = await store.dispatch('fetchInstance', { id: props.instanceUuid, revision: props.revision })
+    const storeResp = await store.dispatch('fetchInstance', { id: props.instanceUuid, revision: props.revision, stateType: effectiveStateType.value })
     updatedInstance.value = commonFunctions.deepCopy(storeResp)
     // merge productActuals data into productPlans for display
     if (updatedInstance.value.productPlans && updatedInstance.value.productPlans.length && updatedInstance.value.productActuals && updatedInstance.value.productActuals.length) {

@@ -43,7 +43,8 @@
                 :instanceLeft="props.instanceUuid"
                 :revisionLeft="(revisionsToCompare && revisionsToCompare.length) ? revisionsToCompare[0].revision : ''"
                 :instanceRight="props.instanceUuid"
-                :revisionRight="(revisionsToCompare && revisionsToCompare.length) ? revisionsToCompare[1].revision : ''"/>
+                :revisionRight="(revisionsToCompare && revisionsToCompare.length) ? revisionsToCompare[1].revision : ''"
+                :stateType="stateType"/>
         </n-modal>
     </div>
 </template>
@@ -124,6 +125,27 @@ const showRevisionModal = function (h: any) {
     if (prevRevision && (prevRevision.revision || prevRevision.revision === 0)) {
         revisionsToCompare.value = [prevRevision, h]
         showRevisionComparisonModal.value = true
+    }
+}
+
+async function downloadRevisionCycloneDx(row: any) {
+    try {
+        const bomJsonStr = await store.dispatch('getInstanceRevisionCycloneDx', {
+            instanceUuid: row.instance,
+            revision: row.revision,
+            stateType: stateType.value
+        })
+        const blob = new Blob([bomJsonStr || '{}'], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `instance-${row.instance}-${stateType.value.toLowerCase()}-rev${row.revision}.cdx.json`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    } catch (err) {
+        console.error('Failed to download CycloneDX revision', err)
     }
 }
 
@@ -215,22 +237,18 @@ const historyFields: any = [
         render: (row: any) => {
             let els: any = []
 
-            els.push(h('a', {
-                href: '/api/manual/v1/instanceRevision/cyclonedxExport/' + row.instance + '/' + row.revision,
-                rel: 'noopener noreferrer',
-                target: '_blank'
-            },
-            [
+            els.push(
                 h(
                     NIcon,
                     {
                         title: 'Show as CycloneDX JSON',
                         class: 'icons clickable',
-                        size: 24
+                        size: 24,
+                        onClick: () => downloadRevisionCycloneDx(row)
                     },
                     { default: () => h(Download) }
                 )
-            ]))
+            )
             if(row.revision !== parsedHistory.value[parsedHistory.value.length - 1].revision){
                 els.push(
                     h(

@@ -1604,9 +1604,11 @@ const storeObject : any = {
         },
         async fetchInstance (context: any, instFetchProps: any) {
             if (!instFetchProps.revision) instFetchProps.revision = -1
+            const variables: any = { instanceUuid: instFetchProps.id, revision: instFetchProps.revision }
+            if (instFetchProps.stateType) variables.stateType = instFetchProps.stateType
             const response = await graphqlClient.query({
                 query: graphqlQueries.InstanceGql,
-                variables: { instanceUuid: instFetchProps.id, revision: instFetchProps.revision },
+                variables,
                 fetchPolicy: 'no-cache'
             })
             response.data.instance.revision = instFetchProps.revision
@@ -1625,6 +1627,19 @@ const storeObject : any = {
             })
             context.commit('SET_INSTANCES', instances)
             return instances
+        },
+        async getInstanceRevisionCycloneDx (context: any, params: any) {
+            const { instanceUuid, revision, namespace, stateType } = params
+            const response = await graphqlClient.query({
+                query: gql`query getInstanceRevisionCycloneDxExportManual(
+                        $instanceUuid: ID!, $revision: Int, $namespace: String, $stateType: InstanceStateType) {
+                    getInstanceRevisionCycloneDxExportManual(
+                        instanceUuid: $instanceUuid, revision: $revision, namespace: $namespace, stateType: $stateType)
+                }`,
+                variables: { instanceUuid, revision, namespace, stateType },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.getInstanceRevisionCycloneDxExportManual
         },
         async fetchInstanceHistoryPlan (context: any, params: any) {
             const { instanceUuid, fromDate, toDate, changeType } = params

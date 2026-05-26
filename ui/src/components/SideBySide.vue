@@ -9,6 +9,7 @@
             :instanceUuid="instanceLeft"
             :revision="revisionLeft"
             :namespace="namespaceLeft"
+            :stateType="stateType"
             :otherInstanceUuid="instanceRight"
             :otherRevision="revisionRight"
             :otherRevisionType="comparisonTypeRight"
@@ -22,10 +23,11 @@
             :instanceUuid="instanceRight"
             :revision="revisionRight"
             :namespace="namespaceRight"
+            :stateType="stateType"
             :otherInstanceUuid="instanceLeft"
             :otherRevision="revisionLeft"
             :otherRevisionType="comparisonTypeLeft" />
-            
+
     </div>
 </template>
 
@@ -45,7 +47,8 @@ const props = defineProps<{
     comparisonTypeLeftIn: String,
     comparisonTypeRightIn: String,
     namespaceLeft?: String,
-    namespaceRight?: String
+    namespaceRight?: String,
+    stateType?: String
 }>()
 
 const comparisonTypeLeft = (props.comparisonTypeLeftIn) ? props.comparisonTypeLeftIn : 'instance'

@@ -252,8 +252,8 @@ const MULTI_INSTANCE_GQL_DATA = `
     spawnType
 `
 const INSTANCE_GQL = gql`
-query FetchInstance($instanceUuid: ID!, $revision:Int) {
-    instance(instanceUuid: $instanceUuid, revision:$revision) {
+query FetchInstance($instanceUuid: ID!, $revision:Int, $stateType: InstanceStateType) {
+    instance(instanceUuid: $instanceUuid, revision:$revision, stateType:$stateType) {
         ${INSTANCE_GQL_DATA}
     }
 }`
