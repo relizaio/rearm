@@ -1643,57 +1643,33 @@ const storeObject : any = {
         },
         async fetchInstanceHistoryPlan (context: any, params: any) {
             const { instanceUuid, fromDate, toDate, changeType } = params
-            const hasDateRange = fromDate && toDate
-            const queryStr = hasDateRange
-                ? `query instanceHistoryPlanByDate($instanceUuid: ID!, $fromDate: DateTime!, $toDate: DateTime!, $changeType: InstancePlanChangeType) {
+            const variables: any = { instanceUuid, fromDate, toDate }
+            if (changeType && changeType !== 'ANY') variables.changeType = changeType
+            const response = await graphqlClient.query({
+                query: gql`query instanceHistoryPlanByDate($instanceUuid: ID!, $fromDate: DateTime!, $toDate: DateTime!, $changeType: InstancePlanChangeType) {
                     instanceHistoryPlanByDate(instanceUuid: $instanceUuid, fromDate: $fromDate, toDate: $toDate, changeType: $changeType) {
                         uuid instanceUuid revision date updateType updatedBy changeType
                     }
-                }`
-                : `query instanceHistoryPlan($instanceUuid: ID!) {
-                    instanceHistoryPlan(instanceUuid: $instanceUuid) {
-                        uuid instanceUuid revision date updateType updatedBy changeType
-                    }
-                }`
-            const variables: any = { instanceUuid }
-            if (hasDateRange) {
-                variables.fromDate = fromDate
-                variables.toDate = toDate
-                if (changeType && changeType !== 'ANY') variables.changeType = changeType
-            }
-            const response = await graphqlClient.query({
-                query: gql`${queryStr}`,
+                }`,
                 variables,
                 fetchPolicy: 'no-cache'
             })
-            return hasDateRange ? response.data.instanceHistoryPlanByDate : response.data.instanceHistoryPlan
+            return response.data.instanceHistoryPlanByDate
         },
         async fetchInstanceHistoryActual (context: any, params: any) {
             const { instanceUuid, fromDate, toDate, changeType } = params
-            const hasDateRange = fromDate && toDate
-            const queryStr = hasDateRange
-                ? `query instanceHistoryActualByDate($instanceUuid: ID!, $fromDate: DateTime!, $toDate: DateTime!, $changeType: InstanceActualChangeType) {
+            const variables: any = { instanceUuid, fromDate, toDate }
+            if (changeType && changeType !== 'ANY') variables.changeType = changeType
+            const response = await graphqlClient.query({
+                query: gql`query instanceHistoryActualByDate($instanceUuid: ID!, $fromDate: DateTime!, $toDate: DateTime!, $changeType: InstanceActualChangeType) {
                     instanceHistoryActualByDate(instanceUuid: $instanceUuid, fromDate: $fromDate, toDate: $toDate, changeType: $changeType) {
                         uuid instanceUuid revision date updateType updatedBy changeType
                     }
-                }`
-                : `query instanceHistoryActual($instanceUuid: ID!) {
-                    instanceHistoryActual(instanceUuid: $instanceUuid) {
-                        uuid instanceUuid revision date updateType updatedBy changeType
-                    }
-                }`
-            const variables: any = { instanceUuid }
-            if (hasDateRange) {
-                variables.fromDate = fromDate
-                variables.toDate = toDate
-                if (changeType && changeType !== 'ANY') variables.changeType = changeType
-            }
-            const response = await graphqlClient.query({
-                query: gql`${queryStr}`,
+                }`,
                 variables,
                 fetchPolicy: 'no-cache'
             })
-            return hasDateRange ? response.data.instanceHistoryActualByDate : response.data.instanceHistoryActual
+            return response.data.instanceHistoryActualByDate
         },
         async fetchReleasesByOrgUuids (context: any, params: any) {
             if (params.releases && params.releases.length) {

@@ -109,13 +109,13 @@
                         <div>
                             <n-input-group class="instanceChangeSearchGroup">
                                 <label>From: </label>
-                                <n-date-picker v-model:value="planHistorySearch.dateFrom" type="datetime" clearable />
+                                <n-date-picker v-model:value="planHistorySearch.dateFrom" type="datetime" clearable update-value-on-close />
                             </n-input-group>
                         </div>
                         <div>
                             <n-input-group class="instanceChangeSearchGroup">
                                 <label>To: </label>
-                                <n-date-picker v-model:value="planHistorySearch.dateTo" type="datetime" clearable />
+                                <n-date-picker v-model:value="planHistorySearch.dateTo" type="datetime" clearable update-value-on-close />
                                 <n-button @click="fetchPlanHistory">Search</n-button>
                             </n-input-group>
                         </div>
@@ -148,13 +148,13 @@
                         <div>
                             <n-input-group class="instanceChangeSearchGroup">
                                 <label>From: </label>
-                                <n-date-picker v-model:value="actualHistorySearch.dateFrom" type="datetime" clearable />
+                                <n-date-picker v-model:value="actualHistorySearch.dateFrom" type="datetime" clearable update-value-on-close />
                             </n-input-group>
                         </div>
                         <div>
                             <n-input-group class="instanceChangeSearchGroup">
                                 <label>To: </label>
-                                <n-date-picker v-model:value="actualHistorySearch.dateTo" type="datetime" clearable />
+                                <n-date-picker v-model:value="actualHistorySearch.dateTo" type="datetime" clearable update-value-on-close />
                                 <n-button @click="fetchActualHistory">Search</n-button>
                             </n-input-group>
                         </div>
@@ -506,8 +506,14 @@ const planHistoryLoading = ref(false)
 const actualHistoryLoading = ref(false)
 const planHistoryLoaded = ref(false)
 const actualHistoryLoaded = ref(false)
-const planHistorySearch = ref<{dateFrom: number | null, dateTo: number | null}>({ dateFrom: null, dateTo: null })
-const actualHistorySearch = ref<{dateFrom: number | null, dateTo: number | null}>({ dateFrom: null, dateTo: null })
+// Default the filter window to the last 30 days, so the table populates
+// on first tab open instead of showing 'no events' until the user picks
+// two dates and clicks Search. Users widen / narrow from there.
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+const FAR_PAST_MS = new Date('1970-01-01T00:00:00Z').getTime()
+const nowMs = () => Date.now()
+const planHistorySearch = ref<{dateFrom: number | null, dateTo: number | null}>({ dateFrom: nowMs() - THIRTY_DAYS_MS, dateTo: nowMs() })
+const actualHistorySearch = ref<{dateFrom: number | null, dateTo: number | null}>({ dateFrom: nowMs() - THIRTY_DAYS_MS, dateTo: nowMs() })
 const planChangeTypeFilter = ref('ANY')
 const actualChangeTypeFilter = ref('ANY')
 const planChangeTypeOptions = [
@@ -773,13 +779,19 @@ const addedIntegrationFeatureSet = async function (fsObj: any) {
 
 
 // --- History tab fetchers (lazy: only run when the tab is shown or a filter changes) ---
+// Always use the by-date variant on the server so changeType can be
+// passed even when the user only picks one bound (or none) — the
+// non-date-range query has no changeType arg. Missing bounds fall
+// back to far-past / far-future so the resulting window covers
+// 'all of time' when needed.
+const FAR_FUTURE_MS = new Date('2999-12-31T23:59:59Z').getTime()
 function buildHistoryParams(search: any, changeType: string): any {
     const params: any = { instanceUuid }
-    if (search.dateFrom && search.dateTo) {
-        params.fromDate = new Date(search.dateFrom).toISOString()
-        params.toDate = new Date(search.dateTo).toISOString()
-        if (changeType && changeType !== 'ANY') params.changeType = changeType
-    }
+    const from = search.dateFrom ? Number(search.dateFrom) : FAR_PAST_MS
+    const to = search.dateTo ? Number(search.dateTo) : FAR_FUTURE_MS
+    params.fromDate = new Date(from).toISOString()
+    params.toDate = new Date(to).toISOString()
+    if (changeType && changeType !== 'ANY') params.changeType = changeType
     return params
 }
 
