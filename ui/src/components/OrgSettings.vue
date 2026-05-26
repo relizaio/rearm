@@ -575,9 +575,15 @@
                                             :error="globalCelExpressionError"
                                         />
                                     </n-form-item>
-                                    <n-form-item label="Actions" path="globalInputEvent.outputEvents">
+                                    <n-form-item label="Actions when condition is met" path="globalInputEvent.outputEvents">
                                         <n-select v-model:value="globalInputEvent.outputEvents"
-                                        :options="globalOutputEventsForInputForm" multiple />
+                                        :options="globalOutputEventsForInputForm" multiple
+                                        placeholder="Fired when the condition above is TRUE" />
+                                    </n-form-item>
+                                    <n-form-item label="Actions when condition is NOT met (optional)" path="globalInputEvent.outputEventsOnFalse">
+                                        <n-select v-model:value="globalInputEvent.outputEventsOnFalse"
+                                        :options="globalOutputEventsForInputForm" multiple
+                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
                                     </n-form-item>
                                     <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
                                 </n-space>
@@ -5088,6 +5094,7 @@ const globalInputEvent: Ref<InputTriggerEvent> = ref({
     name: '',
     celExpression: '',
     outputEvents: [],
+    outputEventsOnFalse: [],
     enabled: true
 })
 
@@ -5099,6 +5106,7 @@ function resetGlobalInputEvent () {
         name: '',
         celExpression: '',
         outputEvents: [],
+        outputEventsOnFalse: [],
         enabled: true
     }
     globalCelExpressionError.value = ''
@@ -5220,6 +5228,7 @@ async function fetchApprovalPolicies () {
                         name
                         celExpression
                         outputEvents
+                        outputEventsOnFalse
                         scope
                         enabled
                     }
@@ -5358,6 +5367,7 @@ async function saveGlobalInputEvents () {
             name: e.name,
             celExpression: e.celExpression || null,
             outputEvents: e.outputEvents || [],
+            outputEventsOnFalse: e.outputEventsOnFalse || [],
             enabled: e.enabled !== false  // default true; preserve explicit false
         }))
         const resp = await graphqlClient.mutate({
@@ -5370,6 +5380,7 @@ async function saveGlobalInputEvents () {
                             name
                             celExpression
                             outputEvents
+                            outputEventsOnFalse
                             scope
                             enabled
                         }
@@ -5625,15 +5636,17 @@ const globalInputEventTableFields: DataTableColumns<any> = [
         title: 'Policy Actions',
         minWidth: 153,
         render: (row: any) => {
-            let outNames = ''
-            if (row.outputEvents && row.outputEvents.length) {
-                row.outputEvents.forEach((oeId: string) => {
-                    const oe = globalOutputEvents.value.find((x: any) => x.uuid === oeId)
-                    if (oe) outNames += oe.name + ', '
-                })
-                if (outNames) outNames = outNames.substring(0, outNames.length - 2)
-            }
-            return h('div', outNames)
+            const nameOf = (uuids: string[]): string => (uuids || []).map((u: string) => {
+                const oe = globalOutputEvents.value.find((x: any) => x.uuid === u)
+                return oe ? oe.name : ''
+            }).filter(Boolean).join(', ')
+            const onTrue = nameOf(row.outputEvents)
+            const onFalse = nameOf(row.outputEventsOnFalse)
+            const els: any[] = []
+            if (onTrue) els.push(h('div', { style: 'font-size: 12px;' }, [h('strong', 'When met: '), onTrue]))
+            if (onFalse) els.push(h('div', { style: 'font-size: 12px; margin-top: 2px;' }, [h('strong', 'Else: '), onFalse]))
+            if (!els.length) els.push(h('div', { style: 'font-size: 12px; color: #999;' }, '(no actions)'))
+            return h('div', els)
         }
     },
     {

@@ -782,9 +782,15 @@
                                                             :error="celExpressionError"
                                                         />
                                                     </n-form-item>
-                                                    <n-form-item label="Actions" path="inputTrigger.outputEvents">
+                                                    <n-form-item label="Actions when condition is met" path="inputTrigger.outputEvents">
                                                         <n-select v-model:value="inputTrigger.outputEvents"
-                                                        :options="outputTriggersForInputForm" multiple />
+                                                        :options="outputTriggersForInputForm" multiple
+                                                        placeholder="Fired when the condition above is TRUE" />
+                                                    </n-form-item>
+                                                    <n-form-item label="Actions when condition is NOT met (optional)" path="inputTrigger.outputEventsOnFalse">
+                                                        <n-select v-model:value="inputTrigger.outputEventsOnFalse"
+                                                        :options="outputTriggersForInputForm" multiple
+                                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
                                                     </n-form-item>
                                                     <n-button @click="addInputTrigger" type="success">
                                                         Save
@@ -1776,6 +1782,7 @@ const inputTrigger: Ref<InputTriggerEvent> = ref({
     name: '',
     celExpression: '',
     outputEvents: [],
+    outputEventsOnFalse: [],
     enabled: true
 })
 const celExpressionError = ref('')
@@ -1786,6 +1793,7 @@ function resetInputTrigger () {
         name: '',
         celExpression: '',
         outputEvents: [],
+        outputEventsOnFalse: [],
         enabled: true
     }
     celExpressionError.value = ''
@@ -3046,21 +3054,21 @@ const inputTriggerTableFields: DataTableColumns<any> = [
         key: 'outputTriggers',
         title: 'Policy Actions',
         render: (row: any) => {
-            let outTriggers = ''
-            if (row.outputEvents && row.outputEvents.length) {
-                const allOutputTriggers = [
-                    ...(updatedComponent.value.outputTriggers ?? []),
-                    ...(updatedComponent.value.approvalPolicyDetails?.globalOutputEvents ?? [])
-                ]
-                row.outputEvents.forEach((oe: string) => {
-                    const outTrigger = allOutputTriggers.find((x: any) => x.uuid === oe)
-                    if (outTrigger && outTrigger.uuid) {
-                        outTriggers += outTrigger.name + ', '
-                    }
-                })
-                if (outTriggers) outTriggers = outTriggers.substring(0, outTriggers.length - 2)
-            }
-            return h('div', outTriggers)
+            const allOutputTriggers = [
+                ...(updatedComponent.value.outputTriggers ?? []),
+                ...(updatedComponent.value.approvalPolicyDetails?.globalOutputEvents ?? [])
+            ]
+            const nameOf = (uuids: string[]): string => (uuids || []).map((u: string) => {
+                const ot = allOutputTriggers.find((x: any) => x.uuid === u)
+                return ot ? ot.name : ''
+            }).filter(Boolean).join(', ')
+            const onTrue = nameOf(row.outputEvents)
+            const onFalse = nameOf(row.outputEventsOnFalse)
+            const els: any[] = []
+            if (onTrue) els.push(h('div', { style: 'font-size: 12px;' }, [h('strong', 'When met: '), onTrue]))
+            if (onFalse) els.push(h('div', { style: 'font-size: 12px; margin-top: 2px;' }, [h('strong', 'Else: '), onFalse]))
+            if (!els.length) els.push(h('div', { style: 'font-size: 12px; color: #999;' }, '(no actions)'))
+            return h('div', els)
         }
     },
     {

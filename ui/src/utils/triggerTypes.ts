@@ -5,6 +5,10 @@ export type InputTriggerEvent = {
     name: string;
     celExpression: string | null;
     outputEvents: string[];
+    // Optional else-branch action list. Fires when celExpression
+    // evaluates to false. null/undefined or [] keeps the legacy
+    // single-branch behavior (CEL false fires nothing).
+    outputEventsOnFalse?: string[];
     enabled?: boolean;
 }
 

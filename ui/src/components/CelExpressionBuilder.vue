@@ -12,6 +12,17 @@
                 This expression cannot be represented in the visual builder. Edit in CEL mode.
             </n-alert>
             <template v-else>
+                <!-- Task 1: metrics counts default to 0 on unscanned releases,
+                     so "criticalVulns > 0" silently passes before scanning
+                     completes. Surface that as a soft warning whenever a
+                     METRICS condition is present without an explicit
+                     FIRST_SCANNED gate, plus a one-click insert button. -->
+                <n-alert v-if="hasMetricsWithoutFirstScanned" type="warning" style="margin-bottom: 10px; font-size: 13px;">
+                    <div>This rule reads release metrics but doesn't gate on <strong>First Scanned</strong>. Releases without scans treat all metrics as 0, so the rule will silently pass on unscanned releases.</div>
+                    <n-button size="tiny" type="warning" style="margin-top: 6px;" @click="addFirstScannedPrerequisite">
+                        Add First Scanned
+                    </n-button>
+                </n-alert>
                 <!-- Top-level operator (only when >1 group) -->
                 <div v-if="builderState.groups.length > 1" style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 13px;">Match groups by:</span>
@@ -232,7 +243,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, watch, nextTick } from 'vue'
+import { computed, ref, reactive, watch, nextTick } from 'vue'
 import { NRadioGroup, NRadioButton, NRadio, NSelect, NInputNumber, NButton, NAlert, NInput, NTooltip, NIcon, NPopover } from 'naive-ui'
 import { QuestionCircle20Regular, ClipboardPaste20Regular } from '@vicons/fluent'
 import constants from '../utils/constants'
@@ -624,6 +635,43 @@ function changeConditionType(group: ConditionGroup, index: number, newType: Cond
 
 function addCondition(group: ConditionGroup) {
     group.conditions.push(createDefaultCondition('LIFECYCLE'))
+}
+
+// Task 1: surface the implicit firstScanned prerequisite. Metrics
+// variables resolve to 0 on unscanned releases, so a rule like
+// `criticalVulns > 0` silently passes before scanning completes — bad
+// gate. We warn when METRICS appears anywhere in the builder state
+// without an explicit FIRST_SCANNED condition, and offer a one-click
+// fix that prepends the prerequisite to the first group.
+const hasMetricsWithoutFirstScanned = computed((): boolean => {
+    let hasMetrics = false
+    let hasFirstScanned = false
+    for (const g of builderState.groups) {
+        for (const c of g.conditions) {
+            if (c.type === 'METRICS') hasMetrics = true
+            if (c.type === 'FIRST_SCANNED') hasFirstScanned = true
+        }
+    }
+    return hasMetrics && !hasFirstScanned
+})
+
+function addFirstScannedPrerequisite () {
+    if (builderState.groups.length === 0) {
+        builderState.groups.push({ operator: 'AND', conditions: [createDefaultCondition('FIRST_SCANNED')] })
+        return
+    }
+    // Prepend to the first group so it AND's at the top of the chain
+    // semantically. If the group is OR'd internally, drop the new
+    // condition into a fresh AND group prepended ahead of it instead —
+    // adding a FIRST_SCANNED to an OR group would make the rule fire on
+    // unscanned releases too, defeating the purpose.
+    const first = builderState.groups[0]
+    if (first.operator === 'OR' && first.conditions.length > 1) {
+        builderState.groups.unshift({ operator: 'AND', conditions: [createDefaultCondition('FIRST_SCANNED')] })
+        if (builderState.groups.length > 1) builderState.topOperator = 'AND'
+    } else {
+        first.conditions.unshift(createDefaultCondition('FIRST_SCANNED'))
+    }
 }
 
 function removeCondition(group: ConditionGroup, index: number) {
