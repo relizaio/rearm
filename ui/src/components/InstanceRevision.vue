@@ -62,6 +62,27 @@
                     <div>{{ prl.type }}</div>
                 </div>
             </div>
+            <div v-if="updatedInstance && targetIndividualReleases.length" class="instanceReleaseBlock">
+                <h5 class="mt-2">Individual Target Releases:</h5>
+                <div class="releaseHeader releaseList">
+                    <div>Component</div>
+                    <div>Version</div>
+                    <div>Artifact</div>
+                    <div>Namespace</div>
+                    <div>State</div>
+                </div>
+                <div v-for="drl in targetIndividualReleases"
+                    :class="(drl.diff) ? 'releaseList releaseDiff' : 'releaseList'"
+                    :key="'tgt-' + drl.release.uuid + (drl.namespace || '')">
+                    <div>{{ drl.component }}</div>
+                    <div>
+                        <a href="#" @click="$event => {$event.preventDefault(); selectedReleaseUuid = drl.release.uuid; showReleaseViewModal = true; }" class="clickable">{{ drl.release.version }}</a>
+                    </div>
+                    <div>{{ drl.artifact === 'Not Set' ? 'Not Set' : (drl.artifact.identifier || 'Not Set') }}</div>
+                    <div>{{ drl.namespace }}</div>
+                    <div>{{ drl.state || '—' }}</div>
+                </div>
+            </div>
             <div v-if="updatedInstance" class="instanceReleaseBlock">
                 <h5 class="mt-2">Deployed Component Releases:
                     <n-dropdown title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
@@ -202,6 +223,43 @@ if (props.namespace) selectedNamespace.value = props.namespace
 const selectedReleaseUuid = ref('')
 
 const mapping: Ref<any> = ref({})
+
+const targetIndividualReleases: ComputedRef<any> = computed((): any => {
+    let targetRls: any[] = []
+    const list = updatedInstance.value && updatedInstance.value.targetReleases
+    if (!list || !list.length) return targetRls
+    list.forEach((rl: any) => {
+        if (selectedNamespace.value && selectedNamespace.value !== 'ALL' && selectedNamespace.value !== rl.namespace) return
+        let tgtRl = store.getters.releaseById(rl.release) || store.getters.getProxyRelease(rl.release)
+        if (!tgtRl) return
+        let tgtArt: any = 'Not Set'
+        if (tgtRl.artifactDetails) {
+            const matched = tgtRl.artifactDetails.find((ad: any) => ad.uuid === rl.artifact)
+            if (matched) tgtArt = matched
+        }
+        const entry: any = {
+            release: tgtRl,
+            artifact: tgtArt,
+            type: rl.type,
+            component: tgtRl.componentDetails ? tgtRl.componentDetails.name : '',
+            namespace: rl.namespace,
+            state: rl.state,
+            diff: false
+        }
+        // Highlight diff against the other revision's targetReleases list.
+        if (props.otherRevisionType === 'instance') {
+            const otherInstance = store.getters.instanceById(props.otherInstanceUuid, props.otherRevision)
+            if (otherInstance && otherInstance.uuid) {
+                const otherTargets = otherInstance.targetReleases || []
+                const match = otherTargets.find((x: any) => x.release === rl.release && x.namespace === rl.namespace)
+                if (!match) entry.diff = true
+            }
+        }
+        targetRls.push(entry)
+    })
+    targetRls.sort((a, b) => a.component < b.component ? -1 : a.component > b.component ? 1 : 0)
+    return targetRls
+})
 
 const deployedReleases: ComputedRef<any> = computed((): any => {
     let deployedRls: any[] = []
@@ -376,9 +434,13 @@ const onCreate = async function () {
             }
         })
     }
+    const releaseUuids = [
+        ...(updatedInstance.value.releases || []).map((rl: any) => rl.release),
+        ...(updatedInstance.value.targetReleases || []).map((rl: any) => rl.release)
+    ].filter(Boolean)
     const fetchRlzParams = {
         org: updatedInstance.value.org,
-        releases: updatedInstance.value.releases.map((rl: any) => rl.release)
+        releases: releaseUuids
     }
     const rlzWithMapping = await store.dispatch('fetchReleasesByOrgUuids', fetchRlzParams)
     mapping.value = rlzWithMapping.mapping
