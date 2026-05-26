@@ -147,6 +147,18 @@ const INSTANCE_GQL_DATA = `
             ${MULTI_RELEASE_GQL_DATA}
         }
     }
+    unmatchedReleases {
+        image
+        digest
+        namespace
+        pod
+        lastSeen
+        state
+        replicas {
+            id
+            state
+        }
+    }
     agentData
     environment
     productPlans {

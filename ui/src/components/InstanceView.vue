@@ -84,6 +84,23 @@
                     </div>
                     <n-data-table :data="deployedReleases" :columns="deployedReleaseFeilds"></n-data-table>
                 </div>
+                <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER && filteredUnmatchedReleases.length"
+                     class="instanceReleaseBlock unmatchedImagesOnInstance">
+                    <div class="listHeaderText">
+                        Unmatched Deployed Images:
+                        <n-tooltip trigger="hover" placement="top" :style="{maxWidth: '420px'}">
+                            <template #trigger><n-icon class="ml-1 clickable" size="18"><InfoCircle /></n-icon></template>
+                            Images reported by the cluster watcher whose digest does not resolve to any known deliverable in this org. Typically third-party sidecars (redis, postgres, etc.) or pods missing build-time metadata.
+                        </n-tooltip>
+                        <n-dropdown v-if="!isChildInstance && updatedInstance.instanceType === InstanceType.STANDALONE_INSTANCE" title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
+                            <span>
+                                <span>{{ selectedNamespace ? selectedNamespace : 'Filter By Namespace' }}</span>
+                                <Icon><CaretDownFilled/></Icon>
+                            </span>
+                        </n-dropdown>
+                    </div>
+                    <n-data-table :data="filteredUnmatchedReleases" :columns="unmatchedImageFields" />
+                </div>
                 <div v-if="updatedInstance" class="instancePropertiesBlock">
                     <div class="listHeaderText">{{ instanceWord }} Properties:
                         <n-icon v-if="isWritable" class="clickable" @click="showAddInstancePropertyModal = true" title="Add New Property Manually" size="24"><CirclePlus /></n-icon>
@@ -558,6 +575,17 @@ const deployedReleases: ComputedRef<any> = computed((): any => {
         deployedRls = parseDeployedReleases(updatedInstance.value.releases)
     }
     return deployedRls
+})
+
+// Watcher-reported images whose digest is not in this org's ontology.
+// Snapshot only — refreshes on every watcher tick on the backend. Empty
+// when nothing unrecognised is currently running (or watcher hasn't
+// reported yet). Filtered by namespace when the same dropdown that
+// scopes Deployed Component Releases has a value selected.
+const filteredUnmatchedReleases: ComputedRef<any[]> = computed((): any[] => {
+    const list = (updatedInstance.value && updatedInstance.value.unmatchedReleases) || []
+    if (!selectedNamespace.value || selectedNamespace.value === 'ALL') return list
+    return list.filter((u: any) => u.namespace === selectedNamespace.value)
 })
 
 const instanceData: ComputedRef<any> = computed((): any => store.getters.instanceById(instanceUuid, -1))
@@ -1651,6 +1679,32 @@ const targetReleaseFeilds: any[] = [
         }
     },
     
+]
+const unmatchedImageFields: any[] = [
+    { key: 'image', title: 'Image', render: (row: any) => row.image || '—' },
+    {
+        key: 'digest',
+        title: 'Digest',
+        render: (row: any) => {
+            const d = row.digest || ''
+            // Compact display: show algo:short-hash; copy the full digest on click.
+            const shortHash = d.length > 16 ? d.slice(0, d.indexOf(':') + 1) + d.slice(d.indexOf(':') + 1, d.indexOf(':') + 13) + '…' : d
+            return h('span', {
+                title: d,
+                class: 'clickable',
+                onClick: () => { try { navigator.clipboard.writeText(d) } catch {} }
+            }, shortHash || '—')
+        }
+    },
+    { key: 'namespace', title: 'Namespace', render: (row: any) => row.namespace || '—' },
+    { key: 'pod', title: 'Pod', render: (row: any) => row.pod || '—' },
+    { key: 'state', title: 'State', render: (row: any) => row.state || 'UNSET' },
+    { key: 'replicas', title: 'Replicas', render: (row: any) => (row.replicas || []).length },
+    {
+        key: 'lastSeen',
+        title: 'Last Seen',
+        render: (row: any) => row.lastSeen ? (new Date(row.lastSeen)).toLocaleString('en-CA') : '—'
+    }
 ]
 const deployedReleaseFeilds: any[] = [
     {
