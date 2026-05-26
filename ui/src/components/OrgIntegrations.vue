@@ -110,6 +110,7 @@
                                         </div>
                                         <div class="instance-actions">
                                             <n-icon v-if="card.id === 'GITHUB'" class="instance-icon" size="20" title="Edit integration" @click="openEditCiIntegrationModal(inst)"><EditIcon /></n-icon>
+                                            <n-icon class="instance-icon danger" size="20" title="Delete integration" @click="onDeleteCiInstance(inst)"><Trash /></n-icon>
                                         </div>
                                     </div>
                                 </template>
@@ -707,6 +708,44 @@ async function saveEditCiIntegration() {
         notify('error', 'Failed to save integration', e?.message || String(e))
     } finally {
         editCiIntegrationLoading.value = false
+    }
+}
+
+// CI integration delete. Server-side hard-block: deleteCiIntegration
+// refuses when webhooks, PR validation rules, per-VCS overrides, or
+// approval-policy actions still reference the integration. The error
+// message carries a per-category breakdown — surface it verbatim so
+// the user knows exactly where to clean up.
+async function onDeleteCiInstance(inst: any) {
+    const label = `${kindLabel(inst.type)}${inst.note ? ` (${inst.note})` : ''}`
+    const confirm = await Swal.fire({
+        title: `Delete ${label}?`,
+        text: 'This integration will only be removed if nothing references it (webhooks, PR validation rules, per-VCS overrides, approval-policy actions).',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, delete',
+        cancelButtonText: 'Cancel'
+    })
+    if (!confirm.isConfirmed) return
+    try {
+        await graphqlClient.mutate({
+            mutation: gql`
+                mutation deleteCiIntegration($uuid: ID!) {
+                    deleteCiIntegration(uuid: $uuid)
+                }`,
+            variables: { uuid: inst.uuid },
+            fetchPolicy: 'no-cache'
+        })
+        await loadCiIntegrations(false)
+        notify('success', 'Deleted', `${label} removed.`)
+    } catch (err: any) {
+        const msg = commonFunctions.parseGraphQLError(err.message) || err?.message || String(err)
+        await Swal.fire({
+            title: 'Cannot delete',
+            text: msg,
+            icon: 'warning',
+            confirmButtonText: 'OK'
+        })
     }
 }
 
