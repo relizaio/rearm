@@ -787,7 +787,7 @@
                                                             :approval-entry-options="approvalEntryOptionsForTriggers"
                                                             :error="celExpressionError"
                                                             :requires-first-scanned-guard="inputTrigger.requiresFirstScanned"
-                                                            :has-false-branch="(inputTrigger.outputEventsOnFalse?.length ?? 0) > 0"
+                                                            @enable-first-scanned-guard="inputTrigger.requiresFirstScanned = true"
                                                         />
                                                     </n-form-item>
                                                     <n-form-item label="Actions when condition is met" path="inputTrigger.outputEvents">

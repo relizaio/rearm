@@ -12,20 +12,19 @@
                 This expression cannot be represented in the visual builder. Edit in CEL mode.
             </n-alert>
             <template v-else>
-                <!-- Task 1: metrics counts default to 0 on unscanned releases,
-                     so "criticalVulns > 0" silently passes before scanning
-                     completes. Surface that as a soft warning whenever a
-                     METRICS condition is present without an explicit
-                     FIRST_SCANNED gate, plus a one-click insert button.
-                     For rules with an else-branch, the in-CEL FIRST_SCANNED
-                     clause isn't enough (the else branch fires on unscanned
-                     releases too) — the warning recommends the rule-level
-                     scan-readiness guard instead. -->
+                <!-- Task 1: metrics variables default to 0 on unscanned
+                     releases, so "criticalVulns > 0" silently passes before
+                     scanning completes. Warn whenever METRICS is present
+                     without the rule-level scan-readiness guard, plus a
+                     one-click fix that flips Wait-for-first-scan ON on
+                     the parent rule. The button emits an event up — the
+                     guard lives on the rule, not on the CEL itself, which
+                     is the correct shape for both single-branch and
+                     else-branch rules. -->
                 <n-alert v-if="hasMetricsWithoutFirstScanned" type="warning" style="margin-bottom: 10px; font-size: 13px;">
                     <div>This rule reads release metrics but doesn't gate on <strong>First Scanned</strong>. Releases without scans treat all metrics as 0, so the rule will silently pass on unscanned releases.</div>
-                    <div v-if="hasFalseBranch" style="margin-top: 4px;">Because this rule has an <strong>Else</strong> branch, the in-CEL First Scanned clause isn't enough — the else branch would still fire on unscanned releases. Enable <strong>Wait for first scan</strong> on the rule above instead.</div>
-                    <n-button v-if="!hasFalseBranch" size="tiny" type="warning" style="margin-top: 6px;" @click="addFirstScannedPrerequisite">
-                        Add First Scanned
+                    <n-button size="tiny" type="warning" style="margin-top: 6px;" @click="enableFirstScannedGuard">
+                        Enable Wait for First Scan
                     </n-button>
                 </n-alert>
                 <!-- Top-level operator (only when >1 group) -->
@@ -278,26 +277,29 @@ interface Props {
     approvalEntryOptions: { label: string; value: string }[]
     placeholder?: string
     error?: string
-    // Optional context flags from the parent rule editor. When the
-    // owning rule already has the scan-readiness guard enabled, the
-    // Task-1 METRICS-without-FIRST_SCANNED warning is moot — suppress
-    // it. When the rule has a non-empty else-branch, the warning text
-    // shifts to recommend the rule-level guard over an in-CEL
-    // FIRST_SCANNED clause (the false branch would otherwise fire on
-    // unscanned releases too — see "three-state problem").
+    // From the parent rule editor: whether the rule-level
+    // scan-readiness guard is on. When true, the Task-1
+    // METRICS-without-FIRST_SCANNED warning is moot and gets
+    // suppressed — the guard already gates the whole rule on
+    // firstScanned.
     requiresFirstScannedGuard?: boolean
-    hasFalseBranch?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
     placeholder: '',
     error: '',
-    requiresFirstScannedGuard: false,
-    hasFalseBranch: false
+    requiresFirstScannedGuard: false
 })
 
 const emit = defineEmits<{
     (e: 'update:modelValue', value: string): void
+    // Task 1 fix-up button asks the parent rule editor to flip the
+    // rule-level scan-readiness guard ON instead of editing the CEL.
+    // The guard gates the whole rule on firstScanned (skipping both
+    // true and else branches), which is the correct shape — an in-CEL
+    // FIRST_SCANNED clause doesn't help when the rule has an else
+    // branch (the false path would still fire on unscanned releases).
+    (e: 'enable-first-scanned-guard'): void
 }>()
 
 // ─── Static option lists ─────────────────────────────────────────────────────
@@ -675,23 +677,8 @@ const hasMetricsWithoutFirstScanned = computed((): boolean => {
     return hasMetrics && !hasFirstScanned
 })
 
-function addFirstScannedPrerequisite () {
-    if (builderState.groups.length === 0) {
-        builderState.groups.push({ operator: 'AND', conditions: [createDefaultCondition('FIRST_SCANNED')] })
-        return
-    }
-    // Prepend to the first group so it AND's at the top of the chain
-    // semantically. If the group is OR'd internally, drop the new
-    // condition into a fresh AND group prepended ahead of it instead —
-    // adding a FIRST_SCANNED to an OR group would make the rule fire on
-    // unscanned releases too, defeating the purpose.
-    const first = builderState.groups[0]
-    if (first.operator === 'OR' && first.conditions.length > 1) {
-        builderState.groups.unshift({ operator: 'AND', conditions: [createDefaultCondition('FIRST_SCANNED')] })
-        if (builderState.groups.length > 1) builderState.topOperator = 'AND'
-    } else {
-        first.conditions.unshift(createDefaultCondition('FIRST_SCANNED'))
-    }
+function enableFirstScannedGuard () {
+    emit('enable-first-scanned-guard')
 }
 
 function removeCondition(group: ConditionGroup, index: number) {

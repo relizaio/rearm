@@ -580,7 +580,7 @@
                                             :approval-entry-options="globalApprovalEntryOptionsForTriggers"
                                             :error="globalCelExpressionError"
                                             :requires-first-scanned-guard="globalInputEvent.requiresFirstScanned"
-                                            :has-false-branch="(globalInputEvent.outputEventsOnFalse?.length ?? 0) > 0"
+                                            @enable-first-scanned-guard="globalInputEvent.requiresFirstScanned = true"
                                         />
                                     </n-form-item>
                                     <n-form-item label="Actions when condition is met" path="globalInputEvent.outputEvents">
