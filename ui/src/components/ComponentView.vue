@@ -2875,10 +2875,12 @@ function editInputTrigger (trigger: any) {
 }
 
 // Quick-toggle helper bound to the per-row Enabled switch on the Local
-// Rules table. Mirrors the dialog edit path: flip the field, persist
-// via the same updateComponent mutation saveTriggers uses for everything
-// else on this tab.
-async function toggleLocalInputTriggerEnabled (row: any, val: boolean) {
+// Rules table. Mutates updatedComponent only — persistence happens via
+// the Save Changes button at the bottom of the tab, matching the rest
+// of the editing surface (add / edit modal / delete all defer to the
+// same button). Switch change shows up in hasTriggerChanges, which is
+// what gates the button's visibility.
+function toggleLocalInputTriggerEnabled (row: any, val: boolean) {
     if (!updatedComponent.value.releaseInputTriggers) return
     const idx = updatedComponent.value.releaseInputTriggers.findIndex((t: any) => t.uuid === row.uuid)
     if (idx < 0) return
@@ -2886,7 +2888,6 @@ async function toggleLocalInputTriggerEnabled (row: any, val: boolean) {
         ...updatedComponent.value.releaseInputTriggers[idx],
         enabled: val
     }
-    await saveTriggers()
 }
 
 async function addInputTrigger () {
