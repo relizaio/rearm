@@ -1701,24 +1701,29 @@ const unmatchedImageFields: any[] = [
         title: 'Image',
         render: (row: any) => {
             const els: any[] = [coreImageRef(row.image)]
-            // Surface the full algo:hex digest behind a hover tooltip on
-            // an info icon so the table stays narrow on dense rows. Click
-            // copies the digest to clipboard. Prefer the dedicated digest
-            // field, then the @-suffix on the image ref, so any of the
-            // imageID / image variants the watcher reports still produces
-            // a visible digest.
-            const atIdx = (row.image || '').indexOf('@')
-            const digest = row.digest || (atIdx > 0 ? row.image.substring(atIdx + 1) : '') ||
-                    (row.image && row.image.startsWith('sha256:') ? row.image : '')
-            if (digest) {
+            // Build a tooltip body listing every algo:hex digest record.
+            // Falls back to parsing the @-suffix off the image ref (or the
+            // bare 'sha256:hex' image) when the server didn't include a
+            // record — e.g. older data before the DigestRecord migration.
+            const records: { algo?: string, digest?: string }[] = Array.isArray(row.digestRecords) ? row.digestRecords : []
+            let tooltipLines: string[] = records
+                .filter(r => r && r.digest)
+                .map(r => `${r.algo || 'unknown'}:${r.digest}`)
+            if (tooltipLines.length === 0) {
+                const atIdx = (row.image || '').indexOf('@')
+                if (atIdx > 0) tooltipLines = [row.image.substring(atIdx + 1)]
+                else if (row.image && row.image.startsWith('sha256:')) tooltipLines = [row.image]
+            }
+            if (tooltipLines.length) {
+                const copyValue = tooltipLines.join('\n')
                 els.push(h(NTooltip, { trigger: 'hover', placement: 'top' }, {
                     trigger: () => h(NIcon, {
                         size: 16,
                         class: 'ml-1 clickable',
                         title: 'Copy digest',
-                        onClick: () => { try { navigator.clipboard.writeText(digest) } catch {} }
+                        onClick: () => { try { navigator.clipboard.writeText(copyValue) } catch {} }
                     }, { default: () => h(InfoCircle) }),
-                    default: () => digest
+                    default: () => tooltipLines.join(', ')
                 }))
             }
             return h('span', { style: 'word-break: break-all;' }, els)

@@ -149,7 +149,11 @@ const INSTANCE_GQL_DATA = `
     }
     unmatchedReleases {
         image
-        digest
+        digestRecords {
+            algo
+            digest
+            scope
+        }
         namespace
         pod
         lastSeen
