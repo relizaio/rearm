@@ -43,7 +43,8 @@
                 :instanceLeft="props.instanceUuid"
                 :revisionLeft="(revisionsToCompare && revisionsToCompare.length) ? revisionsToCompare[0].revision : ''"
                 :instanceRight="props.instanceUuid"
-                :revisionRight="(revisionsToCompare && revisionsToCompare.length) ? revisionsToCompare[1].revision : ''"/>
+                :revisionRight="(revisionsToCompare && revisionsToCompare.length) ? revisionsToCompare[1].revision : ''"
+                :stateType="stateType"/>
         </n-modal>
     </div>
 </template>
@@ -62,8 +63,10 @@ import { Eye, Download, LayoutColumns } from '@vicons/tabler'
 const props = defineProps<{
     instanceUuid: String,
     history: Array,
-    orgProp: String
+    orgProp: String,
+    stateType?: String
 }>()
+const stateType = computed(() => (props.stateType === 'ACTUAL') ? 'ACTUAL' : 'PLAN')
 const store = useStore()
 
 const compareMode = ref(false)
@@ -125,29 +128,61 @@ const showRevisionModal = function (h: any) {
     }
 }
 
+async function downloadRevisionCycloneDx(row: any) {
+    try {
+        const bomJsonStr = await store.dispatch('getInstanceRevisionCycloneDx', {
+            instanceUuid: row.instance,
+            revision: row.revision,
+            stateType: stateType.value
+        })
+        const blob = new Blob([bomJsonStr || '{}'], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `instance-${row.instance}-${stateType.value.toLowerCase()}-rev${row.revision}.cdx.json`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    } catch (err) {
+        console.error('Failed to download CycloneDX revision', err)
+    }
+}
+
+function formatChangeType(raw: any): string {
+    if (!raw) return 'Not Determined'
+    let s = Array.isArray(raw) ? raw.join(', ') : raw.toString()
+    // Cosmetic relabeling so the table reads naturally.
+    s = s.replace('PRODUCT_RELEASE', 'Product Release')
+    s = s.replace('TARGET_RELEASE', 'Target Release')
+    s = s.replace('AGENT_DATA', 'Agent Data')
+    s = s.replace('PRODUCT_MATCH', 'Product Match')
+    s = s.replace('DEPLOYMENT', 'Deployment')
+    s = s.replace('PROPERTY', 'Property')
+    s = s.replace('ENVIRONMENT', 'Environment')
+    return s
+}
+
 const onCreate = async function () {
     // get users
     users.value = store.getters.allUsers
-    // parse history
+    // parse history — supports both the legacy axios shape (h.instance,
+    // h.dateActual, h.lastUpdatedBy, h.type) and the new GraphQL shape
+    // (h.instanceUuid, h.date, h.updatedBy, h.changeType) so the same
+    // table renders both Plan and Actual history.
     props.history.forEach((h: any) => {
-        const parsedHist = {
-            instance: h.instance,
+        const instanceField = h.instanceUuid || h.instance
+        const dateField = h.date || h.dateActual
+        const updatedByUuid = h.updatedBy || h.lastUpdatedBy
+        const rawType = h.changeType || h.type
+        const parsedHist: any = {
+            instance: instanceField,
             uuid: h.uuid,
             revision: h.revision,
-            date: (new Date(h.dateActual)).toLocaleString('en-CA'),
-            updatedBy: h.lastUpdatedBy ? displayUser(h.lastUpdatedBy) : h.updateType,
-            type: ''
+            date: dateField ? (new Date(dateField)).toLocaleString('en-CA') : '',
+            updatedBy: updatedByUuid ? displayUser(updatedByUuid) : (h.updateType || 'system'),
+            type: formatChangeType(rawType)
         }
-        let type = h.type
-        if (!type) {
-            type = 'Not Determined'
-        } else if (type.toString().includes('PRODUCT_RELEASE') || type.toString().includes('TARGET_RELEASE')) {
-            type = type.toString().replace('TARGET_RELEASE', 'Target Release')
-            type = type.toString().replace('PRODUCT_RELEASE', 'Product Release')
-        } else {
-            type = h.type.toString()
-        }
-        parsedHist['type'] = type
         parsedHistory.value.push(parsedHist)
     })
 }
@@ -202,22 +237,18 @@ const historyFields: any = [
         render: (row: any) => {
             let els: any = []
 
-            els.push(h('a', {
-                href: '/api/manual/v1/instanceRevision/cyclonedxExport/' + row.instance + '/' + row.revision,
-                rel: 'noopener noreferrer',
-                target: '_blank'
-            },
-            [
+            els.push(
                 h(
                     NIcon,
                     {
                         title: 'Show as CycloneDX JSON',
                         class: 'icons clickable',
-                        size: 24
+                        size: 24,
+                        onClick: () => downloadRevisionCycloneDx(row)
                     },
                     { default: () => h(Download) }
                 )
-            ]))
+            )
             if(row.revision !== parsedHistory.value[parsedHistory.value.length - 1].revision){
                 els.push(
                     h(

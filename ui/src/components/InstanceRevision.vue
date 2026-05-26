@@ -2,9 +2,7 @@
     <div class="container">
         <div class="instanceView">
             <h5 v-if="updatedInstance">Instance: {{ updatedInstance.uri }}, Revision: {{ (props.revision === -1) ? 'Live' : props.revision }}
-                <a :href="'/api/manual/v1/instanceRevision/cyclonedxExport/' + instanceUuid + '/' + props.revision" target="_blank" rel="noopener noreferrer">
-                    <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20"><Download /></n-icon>
-                </a>
+                <n-icon class="clickable icons" title="Show as CycloneDX JSON" size="20" @click="downloadRevisionCycloneDx"><Download /></n-icon>
             </h5>
             <div v-if="updatedInstance" class="settingsBlock">
                 <h6>Environment: {{ updatedInstance.environment }}</h6>
@@ -62,6 +60,27 @@
                     </div>
                     <div>{{ prl.namespace }}</div>
                     <div>{{ prl.type }}</div>
+                </div>
+            </div>
+            <div v-if="updatedInstance && targetIndividualReleases.length" class="instanceReleaseBlock">
+                <h5 class="mt-2">Individual Target Releases:</h5>
+                <div class="releaseHeader releaseList">
+                    <div>Component</div>
+                    <div>Version</div>
+                    <div>Artifact</div>
+                    <div>Namespace</div>
+                    <div>State</div>
+                </div>
+                <div v-for="drl in targetIndividualReleases"
+                    :class="(drl.diff) ? 'releaseList releaseDiff' : 'releaseList'"
+                    :key="'tgt-' + drl.release.uuid + (drl.namespace || '')">
+                    <div>{{ drl.component }}</div>
+                    <div>
+                        <a href="#" @click="$event => {$event.preventDefault(); selectedReleaseUuid = drl.release.uuid; showReleaseViewModal = true; }" class="clickable">{{ drl.release.version }}</a>
+                    </div>
+                    <div>{{ drl.artifact === 'Not Set' ? 'Not Set' : (drl.artifact.identifier || 'Not Set') }}</div>
+                    <div>{{ drl.namespace }}</div>
+                    <div>{{ drl.state || '—' }}</div>
                 </div>
             </div>
             <div v-if="updatedInstance" class="instanceReleaseBlock">
@@ -189,8 +208,10 @@ const props = defineProps<{
     otherInstanceUuid: String,
     otherRevision: Number,
     otherRevisionType: String,
-    namespace: String
+    namespace: String,
+    stateType?: String
 }>()
+const effectiveStateType = computed(() => (props.stateType === 'ACTUAL') ? 'ACTUAL' : 'PLAN')
 const notification = useNotification()
 
 const updatedInstance: Ref<any> = ref({})
@@ -202,6 +223,43 @@ if (props.namespace) selectedNamespace.value = props.namespace
 const selectedReleaseUuid = ref('')
 
 const mapping: Ref<any> = ref({})
+
+const targetIndividualReleases: ComputedRef<any> = computed((): any => {
+    let targetRls: any[] = []
+    const list = updatedInstance.value && updatedInstance.value.targetReleases
+    if (!list || !list.length) return targetRls
+    list.forEach((rl: any) => {
+        if (selectedNamespace.value && selectedNamespace.value !== 'ALL' && selectedNamespace.value !== rl.namespace) return
+        let tgtRl = store.getters.releaseById(rl.release) || store.getters.getProxyRelease(rl.release)
+        if (!tgtRl) return
+        let tgtArt: any = 'Not Set'
+        if (tgtRl.artifactDetails) {
+            const matched = tgtRl.artifactDetails.find((ad: any) => ad.uuid === rl.artifact)
+            if (matched) tgtArt = matched
+        }
+        const entry: any = {
+            release: tgtRl,
+            artifact: tgtArt,
+            type: rl.type,
+            component: tgtRl.componentDetails ? tgtRl.componentDetails.name : '',
+            namespace: rl.namespace,
+            state: rl.state,
+            diff: false
+        }
+        // Highlight diff against the other revision's targetReleases list.
+        if (props.otherRevisionType === 'instance') {
+            const otherInstance = store.getters.instanceById(props.otherInstanceUuid, props.otherRevision)
+            if (otherInstance && otherInstance.uuid) {
+                const otherTargets = otherInstance.targetReleases || []
+                const match = otherTargets.find((x: any) => x.release === rl.release && x.namespace === rl.namespace)
+                if (!match) entry.diff = true
+            }
+        }
+        targetRls.push(entry)
+    })
+    targetRls.sort((a, b) => a.component < b.component ? -1 : a.component > b.component ? 1 : 0)
+    return targetRls
+})
 
 const deployedReleases: ComputedRef<any> = computed((): any => {
     let deployedRls: any[] = []
@@ -340,8 +398,29 @@ const notify = async function (type: NotificationType, title: string, content: s
     })
 }
 
+async function downloadRevisionCycloneDx() {
+    try {
+        const bomJsonStr = await store.dispatch('getInstanceRevisionCycloneDx', {
+            instanceUuid: props.instanceUuid,
+            revision: props.revision,
+            stateType: effectiveStateType.value
+        })
+        const blob = new Blob([bomJsonStr || '{}'], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `instance-${props.instanceUuid}-${effectiveStateType.value.toLowerCase()}-rev${props.revision}.cdx.json`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    } catch (err) {
+        console.error('Failed to download CycloneDX revision', err)
+    }
+}
+
 const onCreate = async function () {
-    const storeResp = await store.dispatch('fetchInstance', { id: props.instanceUuid, revision: props.revision })
+    const storeResp = await store.dispatch('fetchInstance', { id: props.instanceUuid, revision: props.revision, stateType: effectiveStateType.value })
     updatedInstance.value = commonFunctions.deepCopy(storeResp)
     // merge productActuals data into productPlans for display
     if (updatedInstance.value.productPlans && updatedInstance.value.productPlans.length && updatedInstance.value.productActuals && updatedInstance.value.productActuals.length) {
@@ -355,9 +434,13 @@ const onCreate = async function () {
             }
         })
     }
+    const releaseUuids = [
+        ...(updatedInstance.value.releases || []).map((rl: any) => rl.release),
+        ...(updatedInstance.value.targetReleases || []).map((rl: any) => rl.release)
+    ].filter(Boolean)
     const fetchRlzParams = {
         org: updatedInstance.value.org,
-        releases: updatedInstance.value.releases.map((rl: any) => rl.release)
+        releases: releaseUuids
     }
     const rlzWithMapping = await store.dispatch('fetchReleasesByOrgUuids', fetchRlzParams)
     mapping.value = rlzWithMapping.mapping
