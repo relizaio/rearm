@@ -96,8 +96,67 @@ Note that for integration triggers firing on approval policy events, you would n
 
 For example, input: `{"product_version": "$releaseversion"}` to pass the release version on which the trigger fired to the GitHub Actions workflow.
 
-11. Under *CI Repository* click on the Edit icon and select your GitHub repository containing desired GitHub Actions workflow set up above.
+11. Optionally, you can set a *Dynamic client payload (CEL string expression)* instead of — or in addition to — the static JSON above. This is a [CEL](https://cel.dev/) expression evaluated against the release at the moment the trigger fires; when set, the evaluated result **overrides** the *Optional Client Payload JSON* field before delivery.
 
-12. Click on 'Save', your trigger is now created.
+    **When to reach for it.** The static field already supports the `$releaseversion` placeholder, so for a simple `{"version": "<release-version>"}` you do not need CEL — `{"version": "$releaseversion"}` in the static field does the same thing. CEL earns its keep when the payload needs to depend on conditional logic or fields the placeholder system doesn't expose (lifecycle, vulnerability counts, approval state, head-commit metadata, etc.).
 
-13. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).
+    **Format rules** — the same as the static field, because the evaluated string is then JSON-parsed and sent as the GitHub `client_payload`:
+    - The expression must produce a **JSON object string** (top-level `{...}`).
+    - All values must be flat strings — nested objects, arrays, or non-string scalars cause the JSON parse to fail and the trigger silently falls back to the static field (the failure is logged on the server side at `WARN`).
+    - **Don't use CEL's `{}` literal syntax** — `{"version": release.version}` evaluates to a CEL map and stringifies to Java's `{version=0.5.0}` form, which is not valid JSON. Build the JSON string by concatenation instead.
+
+    **Sample expressions:**
+
+    ```cel
+    // Build a JSON object the consuming workflow can read
+    '{"version": "' + release.version + '"}'
+    ```
+
+    ```cel
+    // Multi-field, with a conditional value
+    '{"ref": "refs/tags/' + release.version + '", "skip_tests": "'
+       + (release.criticalVulns > 0 ? 'true' : 'false') + '"}'
+    ```
+
+    **Fields exposed to the expression** (under `release.*`):
+    - `release.version`, `release.lifecycle`, `release.component`, `release.branchType`
+    - vulnerability counts: `release.criticalVulns`, `release.highVulns`, `release.mediumVulns`, `release.lowVulns`, `release.unassignedVulns`, `release.firstScanned`
+    - policy violations: `release.securityViolations`, `release.operationalViolations`, `release.licenseViolations`
+    - approvals: `release.anyApproved`, `release.anyDisapproved`, `release.approvals["<entry-uuid>"]` returning `"APPROVED" | "DISAPPROVED" | "UNSET"`. `approvals` is also a top-level alias so macros like `approvals.exists(k, approvals[k] == "DISAPPROVED")` work.
+    - context: `release.agentSessions`, `release.commits`, `release.headCommit`
+
+    **Reading the payload in the GitHub Actions workflow** — identical to the static-field case. The trigger fires GitHub's [`repository_dispatch`](https://docs.github.com/en/webhooks/webhook-events-and-payloads#repository_dispatch) event with body `{"event_type": "<your event>", "client_payload": <parsed-map>}`:
+
+    ```yaml
+    name: react-to-rearm
+
+    on:
+      repository_dispatch:
+        types: [reliza-build-event]      # must match step 9
+
+    jobs:
+      build:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Show payload
+            run: |
+              echo "version=${{ github.event.client_payload.version }}"
+              echo "ref=${{ github.event.client_payload.ref }}"
+
+          - name: Checkout the tag the trigger pointed at
+            uses: actions/checkout@v4
+            with:
+              ref: ${{ github.event.client_payload.ref }}
+
+          - name: Conditional skip
+            if: github.event.client_payload.skip_tests != 'true'
+            run: ./gradlew test
+    ```
+
+    Each key from the payload map is accessed as `github.event.client_payload.<key>`; values arrive as strings since the server sends a flat string-to-string map.
+
+12. Under *CI Repository* click on the Edit icon and select your GitHub repository containing desired GitHub Actions workflow set up above.
+
+13. Click on 'Save', your trigger is now created.
+
+14. Now create a Trigger Event linked to this trigger to make it fire on desired events (TODO - to be documented soon).
