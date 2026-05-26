@@ -16,10 +16,15 @@
                      so "criticalVulns > 0" silently passes before scanning
                      completes. Surface that as a soft warning whenever a
                      METRICS condition is present without an explicit
-                     FIRST_SCANNED gate, plus a one-click insert button. -->
+                     FIRST_SCANNED gate, plus a one-click insert button.
+                     For rules with an else-branch, the in-CEL FIRST_SCANNED
+                     clause isn't enough (the else branch fires on unscanned
+                     releases too) — the warning recommends the rule-level
+                     scan-readiness guard instead. -->
                 <n-alert v-if="hasMetricsWithoutFirstScanned" type="warning" style="margin-bottom: 10px; font-size: 13px;">
                     <div>This rule reads release metrics but doesn't gate on <strong>First Scanned</strong>. Releases without scans treat all metrics as 0, so the rule will silently pass on unscanned releases.</div>
-                    <n-button size="tiny" type="warning" style="margin-top: 6px;" @click="addFirstScannedPrerequisite">
+                    <div v-if="hasFalseBranch" style="margin-top: 4px;">Because this rule has an <strong>Else</strong> branch, the in-CEL First Scanned clause isn't enough — the else branch would still fire on unscanned releases. Enable <strong>Wait for first scan</strong> on the rule above instead.</div>
+                    <n-button v-if="!hasFalseBranch" size="tiny" type="warning" style="margin-top: 6px;" @click="addFirstScannedPrerequisite">
                         Add First Scanned
                     </n-button>
                 </n-alert>
@@ -273,11 +278,22 @@ interface Props {
     approvalEntryOptions: { label: string; value: string }[]
     placeholder?: string
     error?: string
+    // Optional context flags from the parent rule editor. When the
+    // owning rule already has the scan-readiness guard enabled, the
+    // Task-1 METRICS-without-FIRST_SCANNED warning is moot — suppress
+    // it. When the rule has a non-empty else-branch, the warning text
+    // shifts to recommend the rule-level guard over an in-CEL
+    // FIRST_SCANNED clause (the false branch would otherwise fire on
+    // unscanned releases too — see "three-state problem").
+    requiresFirstScannedGuard?: boolean
+    hasFalseBranch?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
     placeholder: '',
-    error: ''
+    error: '',
+    requiresFirstScannedGuard: false,
+    hasFalseBranch: false
 })
 
 const emit = defineEmits<{
@@ -642,8 +658,12 @@ function addCondition(group: ConditionGroup) {
 // `criticalVulns > 0` silently passes before scanning completes — bad
 // gate. We warn when METRICS appears anywhere in the builder state
 // without an explicit FIRST_SCANNED condition, and offer a one-click
-// fix that prepends the prerequisite to the first group.
+// fix that prepends the prerequisite to the first group. Suppressed
+// when the parent rule has its scan-readiness guard enabled — that
+// already gates the whole rule on firstScanned, making the in-CEL
+// clause redundant.
 const hasMetricsWithoutFirstScanned = computed((): boolean => {
+    if (props.requiresFirstScannedGuard) return false
     let hasMetrics = false
     let hasFirstScanned = false
     for (const g of builderState.groups) {

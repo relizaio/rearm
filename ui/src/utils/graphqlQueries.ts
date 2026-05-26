@@ -723,6 +723,7 @@ const COMPONENT_FULL_DATA = `
             outputEventsOnFalse
             scope
             enabled
+            requiresFirstScanned
         }
         globalOutputEvents {
             uuid
@@ -771,6 +772,7 @@ const COMPONENT_FULL_DATA = `
         outputEventsOnFalse
         scope
         enabled
+        requiresFirstScanned
     }
     globalInputEventRefs {
         uuid

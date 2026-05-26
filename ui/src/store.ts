@@ -1326,6 +1326,7 @@ const storeObject : any = {
                                         outputEvents
                                         outputEventsOnFalse
                                         enabled
+                                        requiresFirstScanned
                                     }
                                     globalOutputEvents {
                                         uuid

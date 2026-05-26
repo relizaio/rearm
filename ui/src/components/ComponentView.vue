@@ -772,6 +772,12 @@
                                                             Disabled rules are skipped at evaluation time.
                                                         </n-text>
                                                     </n-form-item>
+                                                    <n-form-item label="Wait for first scan" path="requiresFirstScanned">
+                                                        <n-switch v-model:value="inputTrigger.requiresFirstScanned" />
+                                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
+                                                            When on, the rule is skipped entirely until scanning completes (neither the matched nor else-branch actions fire). Recommended for rules with else-branch actions that depend on metrics.
+                                                        </n-text>
+                                                    </n-form-item>
                                                     <n-form-item label="Name" path="name">
                                                         <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
                                                     </n-form-item>
@@ -780,6 +786,8 @@
                                                             v-model="inputTrigger.celExpression"
                                                             :approval-entry-options="approvalEntryOptionsForTriggers"
                                                             :error="celExpressionError"
+                                                            :requires-first-scanned-guard="inputTrigger.requiresFirstScanned"
+                                                            :has-false-branch="(inputTrigger.outputEventsOnFalse?.length ?? 0) > 0"
                                                         />
                                                     </n-form-item>
                                                     <n-form-item label="Actions when condition is met" path="inputTrigger.outputEvents">
@@ -1783,7 +1791,8 @@ const inputTrigger: Ref<InputTriggerEvent> = ref({
     celExpression: '',
     outputEvents: [],
     outputEventsOnFalse: [],
-    enabled: true
+    enabled: true,
+    requiresFirstScanned: false
 })
 const celExpressionError = ref('')
 
@@ -1794,6 +1803,7 @@ function resetInputTrigger () {
         celExpression: '',
         outputEvents: [],
         outputEventsOnFalse: [],
+        requiresFirstScanned: false,
         enabled: true
     }
     celExpressionError.value = ''

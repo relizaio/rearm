@@ -10,6 +10,11 @@ export type InputTriggerEvent = {
     // single-branch behavior (CEL false fires nothing).
     outputEventsOnFalse?: string[];
     enabled?: boolean;
+    // Rule-level scan-readiness guard. When true the rule is skipped
+    // entirely on unscanned releases — necessary for else-branch rules
+    // because the false branch would otherwise fire on releases with
+    // missing metrics (which all default to 0).
+    requiresFirstScanned?: boolean;
 }
 
 export type OutputTriggerEvent = {

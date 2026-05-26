@@ -565,6 +565,12 @@
                                             Disabled rules never fire for any component using this policy, regardless of per-component opt-out.
                                         </n-text>
                                     </n-form-item>
+                                    <n-form-item label="Wait for first scan" path="requiresFirstScanned">
+                                        <n-switch v-model:value="globalInputEvent.requiresFirstScanned" />
+                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
+                                            When on, the rule is skipped entirely on releases that haven't completed scanning yet (neither the matched nor else-branch actions fire). Recommended for rules with else-branch actions that depend on metrics.
+                                        </n-text>
+                                    </n-form-item>
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
                                     </n-form-item>
@@ -573,6 +579,8 @@
                                             v-model="globalInputEvent.celExpression"
                                             :approval-entry-options="globalApprovalEntryOptionsForTriggers"
                                             :error="globalCelExpressionError"
+                                            :requires-first-scanned-guard="globalInputEvent.requiresFirstScanned"
+                                            :has-false-branch="(globalInputEvent.outputEventsOnFalse?.length ?? 0) > 0"
                                         />
                                     </n-form-item>
                                     <n-form-item label="Actions when condition is met" path="globalInputEvent.outputEvents">
@@ -5095,7 +5103,8 @@ const globalInputEvent: Ref<InputTriggerEvent> = ref({
     celExpression: '',
     outputEvents: [],
     outputEventsOnFalse: [],
-    enabled: true
+    enabled: true,
+    requiresFirstScanned: false
 })
 
 const globalCelExpressionError = ref('')
@@ -5107,7 +5116,8 @@ function resetGlobalInputEvent () {
         celExpression: '',
         outputEvents: [],
         outputEventsOnFalse: [],
-        enabled: true
+        enabled: true,
+        requiresFirstScanned: false
     }
     globalCelExpressionError.value = ''
 }
@@ -5231,6 +5241,7 @@ async function fetchApprovalPolicies () {
                         outputEventsOnFalse
                         scope
                         enabled
+                        requiresFirstScanned
                     }
                     globalOutputEvents {
                         uuid
@@ -5368,7 +5379,8 @@ async function saveGlobalInputEvents () {
             celExpression: e.celExpression || null,
             outputEvents: e.outputEvents || [],
             outputEventsOnFalse: e.outputEventsOnFalse || [],
-            enabled: e.enabled !== false  // default true; preserve explicit false
+            enabled: e.enabled !== false,  // default true; preserve explicit false
+            requiresFirstScanned: e.requiresFirstScanned === true
         }))
         const resp = await graphqlClient.mutate({
             mutation: gql`
@@ -5383,6 +5395,7 @@ async function saveGlobalInputEvents () {
                             outputEventsOnFalse
                             scope
                             enabled
+                            requiresFirstScanned
                         }
                     }
                 }`,
