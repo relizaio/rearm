@@ -1681,25 +1681,37 @@ const targetReleaseFeilds: any[] = [
     
 ]
 const unmatchedImageFields: any[] = [
-    { key: 'image', title: 'Image', render: (row: any) => row.image || '—' },
     {
-        key: 'digest',
-        title: 'Digest',
+        key: 'image',
+        title: 'Image',
         render: (row: any) => {
-            const d = row.digest || ''
-            // Compact display: show algo:short-hash; copy the full digest on click.
-            const shortHash = d.length > 16 ? d.slice(0, d.indexOf(':') + 1) + d.slice(d.indexOf(':') + 1, d.indexOf(':') + 13) + '…' : d
-            return h('span', {
-                title: d,
-                class: 'clickable',
-                onClick: () => { try { navigator.clipboard.writeText(d) } catch {} }
-            }, shortHash || '—')
+            const els: any[] = [row.image || '—']
+            // Digest as an info-icon tooltip on the same cell — keeps the
+            // table narrow and surfaces the full algo:hex on hover. Click
+            // copies the digest to clipboard.
+            if (row.digest) {
+                els.push(h(NTooltip, { trigger: 'hover', placement: 'top' }, {
+                    trigger: () => h(NIcon, {
+                        size: 16,
+                        class: 'ml-1 clickable',
+                        title: 'Copy digest',
+                        onClick: () => { try { navigator.clipboard.writeText(row.digest) } catch {} }
+                    }, { default: () => h(InfoCircle) }),
+                    default: () => row.digest
+                }))
+            }
+            return h('span', { style: 'word-break: break-all;' }, els)
         }
     },
     { key: 'namespace', title: 'Namespace', render: (row: any) => row.namespace || '—' },
     { key: 'pod', title: 'Pod', render: (row: any) => row.pod || '—' },
-    { key: 'state', title: 'State', render: (row: any) => row.state || 'UNSET' },
-    { key: 'replicas', title: 'Replicas', render: (row: any) => (row.replicas || []).length },
+    {
+        key: 'state',
+        title: 'State',
+        // Keep state on one line — without this, the n-data-table column
+        // can shrink narrow enough to wrap "RUNNING" as "RUNNI / NG".
+        render: (row: any) => h('span', { style: 'white-space: nowrap;' }, row.state || 'UNSET')
+    },
     {
         key: 'lastSeen',
         title: 'Last Seen',
