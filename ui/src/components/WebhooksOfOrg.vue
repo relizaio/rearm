@@ -108,15 +108,25 @@ const notify = (type: NotificationType, title: string, content: string) => {
     notification[type]({ content, meta: title, duration: 3500, keepAliveOnHover: true })
 }
 
+// ciIntegrations is sourced from the parent (OrgIntegrations) so the
+// "Add Webhook" button unlocks the moment the user adds a WEBHOOK-
+// capable GitHub integration on the Catalog sub-tab. Previously this
+// component fetched once on mount and stayed stale until F5.
 const props = defineProps<{
     orguuid?: string
+    ciIntegrations?: any[]
 }>()
 
 const myorg: ComputedRef<any> = computed(() => store.getters.myorg)
 const orgResolved = ref('')
 
 const webhooks: Ref<any[]> = ref([])
-const ciIntegrations: Ref<any[]> = ref([])
+const localCiIntegrations: Ref<any[]> = ref([])
+// Prefer the prop; only fall back to a self-fetched list if the parent
+// didn't pass one (defensive — every current call site passes the prop).
+const effectiveCiIntegrations = computed(() =>
+    props.ciIntegrations ?? localCiIntegrations.value
+)
 
 // Public base URL for the webhook reception path. Origin is the same
 // as the UI itself — agent-scully or whatever the user is logged into.
@@ -126,7 +136,7 @@ function previewUrl(slug: string): string {
 }
 
 const webhookCapableIntegrationOptions = computed(() => {
-    return ciIntegrations.value
+    return effectiveCiIntegrations.value
         .filter((ci: any) => ci.type === 'GITHUB' && (ci.capabilities || []).includes('WEBHOOK'))
         .map((ci: any) => ({ label: `${ci.note || ci.identifier} (${ci.uuid.substring(0, 8)})`, value: ci.uuid }))
 })
@@ -258,6 +268,8 @@ async function loadWebhooks() {
 }
 
 async function loadCiIntegrations() {
+    // Skipped when the parent supplies ciIntegrations via prop.
+    if (props.ciIntegrations) return
     try {
         const resp = await graphqlClient.query({
             query: gql`
@@ -269,7 +281,7 @@ async function loadCiIntegrations() {
             variables: { org: orgResolved.value },
             fetchPolicy: 'no-cache'
         })
-        ciIntegrations.value = resp.data?.ciIntegrations || []
+        localCiIntegrations.value = resp.data?.ciIntegrations || []
     } catch (e: any) {
         console.error(e)
     }
