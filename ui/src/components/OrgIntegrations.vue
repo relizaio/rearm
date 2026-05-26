@@ -146,7 +146,7 @@
                     </div>
                 </div>
             </div>
-            <WebhooksOfOrg :orguuid="orguuid" />
+            <WebhooksOfOrg :orguuid="orguuid" :ci-integrations="ciIntegrations" />
         </div>
 
         <!-- ============================== PR VALIDATION ============================== -->
@@ -493,13 +493,13 @@ interface CardConfig {
 
 const CARDS: CardConfig[] = [
     // Messaging
-    { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Push release notifications and approval-state changes to a Slack channel.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: false },
+    { id: 'SLACK', name: 'Slack', vendor: 'Slack Technologies', category: 'messaging', description: 'Push release notifications to a Slack channel.', logoBg: '#4A154B', iconComponent: BrandSlack, multiInstance: false },
     { id: 'MSTEAMS', name: 'Microsoft Teams', vendor: 'Microsoft', category: 'messaging', description: 'Push release notifications to a Microsoft Teams channel.', logoBg: '#4B53BC', logoMark: 'T', multiInstance: false },
     // CI/CD & Source Control
     { id: 'GITHUB', name: 'GitHub', vendor: 'GitHub', category: 'ci', description: 'GitHub App for PR validation, inbound webhooks, and repository_dispatch.', logoBg: '#1F2328', iconComponent: BrandGithub, multiInstance: true },
-    { id: 'GITLAB', name: 'GitLab', vendor: 'GitLab', category: 'ci', description: 'GitLab project access for pipeline triggers and SCM links.', logoBg: '#FC6D26', iconComponent: BrandGitlab, multiInstance: true },
-    { id: 'JENKINS', name: 'Jenkins', vendor: 'Jenkins', category: 'ci', description: 'Trigger Jenkins jobs and ingest pipeline state.', logoBg: '#D33833', logoMark: 'J', multiInstance: true },
-    { id: 'ADO', name: 'Azure DevOps', vendor: 'Microsoft', category: 'ci', description: 'Trigger Azure DevOps pipelines and ingest pipeline state.', logoBg: '#0078D4', logoMark: 'AZ', multiInstance: true },
+    { id: 'GITLAB', name: 'GitLab', vendor: 'GitLab', category: 'ci', description: 'Trigger GitLab pipelines.', logoBg: '#FC6D26', iconComponent: BrandGitlab, multiInstance: true },
+    { id: 'JENKINS', name: 'Jenkins', vendor: 'Jenkins', category: 'ci', description: 'Trigger Jenkins jobs.', logoBg: '#D33833', logoMark: 'J', multiInstance: true },
+    { id: 'ADO', name: 'Azure DevOps', vendor: 'Microsoft', category: 'ci', description: 'Trigger Azure DevOps pipelines.', logoBg: '#0078D4', logoMark: 'AZ', multiInstance: true },
     // Security & Compliance
     { id: 'DEPENDENCYTRACK', name: 'Dependency-Track', vendor: 'OWASP', category: 'security', description: 'Push SBOMs and pull vulnerability + policy findings.', logoBg: '#1B4E72', logoMark: 'DT', multiInstance: false },
     { id: 'BEAR', name: 'BEAR', vendor: 'Reliza', category: 'security', description: 'BOM enrichment and risk-signal service.', logoBg: '#22332B', logoMark: 'BR', multiInstance: false }
