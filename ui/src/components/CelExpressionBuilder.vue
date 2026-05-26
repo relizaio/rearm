@@ -689,13 +689,26 @@ const hasMetricsWithoutFirstScanned = computed((): boolean => {
     return true
 })
 
-// Suggested precondition CEL that the parent receives when the user
-// clicks "Enable Wait for First Scan". Single source of truth so the
-// emit and any future docs render the same string.
+// Suggested precondition CEL fragment that the parent receives when
+// the user clicks "Enable Wait for First Scan". Single source of truth
+// so the emit and any future docs render the same string.
 const FIRST_SCANNED_PRECONDITION = 'release.firstScanned == true'
 
+// Compose the new precondition. If the existing one is empty, set the
+// fragment as-is. If it already gates on firstScanned, no-op (defensive
+// — the warning suppresses itself when firstScanned is present in the
+// precondition so this branch shouldn't fire in practice). Otherwise
+// AND the existing CEL with the fragment, wrapping the existing in
+// parens to keep precedence intact when the user already wrote a
+// boolean OR at the top of their precondition.
 function enableFirstScannedGuard () {
-    emit('set-precondition', FIRST_SCANNED_PRECONDITION)
+    const existing = (props.preconditionCelExpression || '').trim()
+    if (!existing) {
+        emit('set-precondition', FIRST_SCANNED_PRECONDITION)
+        return
+    }
+    if (existing.includes('firstScanned')) return
+    emit('set-precondition', `(${existing}) && ${FIRST_SCANNED_PRECONDITION}`)
 }
 
 function removeCondition(group: ConditionGroup, index: number) {
