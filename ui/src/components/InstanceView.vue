@@ -95,8 +95,8 @@
 
             <!-- ================= Plan History tab ================== -->
             <div v-if="activeTab === 'plan-history'" class="historyTab">
-                <div class="historyFilters">
-                    <div>
+                <div class="historyFilters historyFilterRow">
+                    <div class="historyFilterItem">
                         <span>Filter By Change Type:&nbsp;</span>
                         <n-dropdown trigger="hover" :options="planChangeTypeOptions" @select="(k) => { planChangeTypeFilter = k; fetchPlanHistory() }">
                             <span class="clickable">
@@ -105,20 +105,13 @@
                             </span>
                         </n-dropdown>
                     </div>
-                    <div class="instanceChangeSearchGroupWrapper">
-                        <div>
-                            <n-input-group class="instanceChangeSearchGroup">
-                                <label>From: </label>
-                                <n-date-picker v-model:value="planHistorySearch.dateFrom" type="datetime" clearable update-value-on-close />
-                            </n-input-group>
-                        </div>
-                        <div>
-                            <n-input-group class="instanceChangeSearchGroup">
-                                <label>To: </label>
-                                <n-date-picker v-model:value="planHistorySearch.dateTo" type="datetime" clearable update-value-on-close />
-                                <n-button @click="fetchPlanHistory">Search</n-button>
-                            </n-input-group>
-                        </div>
+                    <div class="historyFilterItem">
+                        <label>From:&nbsp;</label>
+                        <n-date-picker v-model:value="planHistorySearch.dateFrom" type="datetime" clearable update-value-on-close />
+                    </div>
+                    <div class="historyFilterItem">
+                        <label>To:&nbsp;</label>
+                        <n-date-picker v-model:value="planHistorySearch.dateTo" type="datetime" clearable update-value-on-close />
                     </div>
                 </div>
                 <div v-if="planHistoryLoading" class="historyLoading">Loading…</div>
@@ -134,8 +127,8 @@
 
             <!-- ================= Actual History tab ================== -->
             <div v-if="activeTab === 'actual-history'" class="historyTab">
-                <div class="historyFilters">
-                    <div>
+                <div class="historyFilters historyFilterRow">
+                    <div class="historyFilterItem">
                         <span>Filter By Change Type:&nbsp;</span>
                         <n-dropdown trigger="hover" :options="actualChangeTypeOptions" @select="(k) => { actualChangeTypeFilter = k; fetchActualHistory() }">
                             <span class="clickable">
@@ -144,20 +137,13 @@
                             </span>
                         </n-dropdown>
                     </div>
-                    <div class="instanceChangeSearchGroupWrapper">
-                        <div>
-                            <n-input-group class="instanceChangeSearchGroup">
-                                <label>From: </label>
-                                <n-date-picker v-model:value="actualHistorySearch.dateFrom" type="datetime" clearable update-value-on-close />
-                            </n-input-group>
-                        </div>
-                        <div>
-                            <n-input-group class="instanceChangeSearchGroup">
-                                <label>To: </label>
-                                <n-date-picker v-model:value="actualHistorySearch.dateTo" type="datetime" clearable update-value-on-close />
-                                <n-button @click="fetchActualHistory">Search</n-button>
-                            </n-input-group>
-                        </div>
+                    <div class="historyFilterItem">
+                        <label>From:&nbsp;</label>
+                        <n-date-picker v-model:value="actualHistorySearch.dateFrom" type="datetime" clearable update-value-on-close />
+                    </div>
+                    <div class="historyFilterItem">
+                        <label>To:&nbsp;</label>
+                        <n-date-picker v-model:value="actualHistorySearch.dateTo" type="datetime" clearable update-value-on-close />
                     </div>
                 </div>
                 <div v-if="actualHistoryLoading" class="historyLoading">Loading…</div>
@@ -437,7 +423,7 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { ComputedRef, ref, computed, Ref, h } from 'vue'
+import { ComputedRef, ref, computed, Ref, h, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { NDropdown, NSelect, NEllipsis, NFormItem, NInput, NInputGroup, NButton, NDatePicker, NModal, NTooltip, useNotification, NotificationType, NIcon, NSwitch, NDataTable, NDrawer, NDrawerContent } from 'naive-ui'
@@ -834,6 +820,22 @@ const switchTab = async function (t: InstTab) {
         await fetchActualHistory()
     }
 }
+
+// Auto-refetch when a date bound changes. Debounced so picking
+// both From and To in quick succession (or the picker emitting
+// twice while normalising the value) only triggers one query.
+let planFetchTimer: any = null
+let actualFetchTimer: any = null
+watch(() => [planHistorySearch.value.dateFrom, planHistorySearch.value.dateTo], () => {
+    if (activeTab.value !== 'plan-history') return
+    if (planFetchTimer) clearTimeout(planFetchTimer)
+    planFetchTimer = setTimeout(() => fetchPlanHistory(), 250)
+})
+watch(() => [actualHistorySearch.value.dateFrom, actualHistorySearch.value.dateTo], () => {
+    if (activeTab.value !== 'actual-history') return
+    if (actualFetchTimer) clearTimeout(actualFetchTimer)
+    actualFetchTimer = setTimeout(() => fetchActualHistory(), 250)
+})
 
 const notify = async function (type: NotificationType, title: string, content: string) {
     notification[type]({
@@ -1920,6 +1922,16 @@ await onCreate()
     flex-direction: column;
     gap: 8px;
     margin-bottom: 12px;
+}
+.historyFilterRow {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+}
+.historyFilterItem {
+    display: inline-flex;
+    align-items: center;
 }
 .historyLoading, .historyEmpty {
     padding: 16px 0;
