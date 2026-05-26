@@ -998,9 +998,13 @@ const save = async function () {
         history.value = []
         loadInstanceHistory()
         notify('info', 'SAVED', 'Instance changes saved successfully!')
-    } catch (errOnSave) {
+    } catch (errOnSave: any) {
         console.error(errOnSave)
-        notify('error', 'ERROR', `Could not save instance!`)
+        Swal.fire(
+            'Error!',
+            commonFunctions.parseGraphQLError(errOnSave.message),
+            'error'
+        )
     }
 }
 
