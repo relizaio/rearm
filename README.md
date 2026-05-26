@@ -68,9 +68,10 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 10. Component release-level alerts and changelog for changes in SBOM dependencies
 11. Finding audit (includes audit for vulnerabilities, weaknesses, policy violations)
 12. RBAC
+13. VEX import and export workflow (CycloneDX, OpenVEX). Import workflow supports staging area.
 
 ## Future Capabilities (Medium-Term Roadmap)
-1. Improved VEX workflow
+1. Agentic Dashboard
 2. Better handling and prescribed workflows for Attestations
 3. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
 
