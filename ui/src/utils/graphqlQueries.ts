@@ -721,6 +721,7 @@ const COMPONENT_FULL_DATA = `
             celExpression
             outputEvents
             scope
+            enabled
         }
         globalOutputEvents {
             uuid
@@ -767,6 +768,7 @@ const COMPONENT_FULL_DATA = `
         celExpression
         outputEvents
         scope
+        enabled
     }
     globalInputEventRefs {
         uuid

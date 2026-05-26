@@ -559,6 +559,12 @@
                             <n-form :model="globalInputEvent">
                                 <h2>{{ globalInputEvent.uuid ? 'Edit' : 'Add' }} Policy-Wide Rule</h2>
                                 <n-space vertical size="large">
+                                    <n-form-item label="Enabled" path="enabled">
+                                        <n-switch v-model:value="globalInputEvent.enabled" />
+                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
+                                            Disabled rules never fire for any component using this policy, regardless of per-component opt-out.
+                                        </n-text>
+                                    </n-form-item>
                                     <n-form-item label="Name" path="name">
                                         <n-input v-model:value="globalInputEvent.name" required placeholder="Enter name" />
                                     </n-form-item>
@@ -570,7 +576,7 @@
                                         />
                                     </n-form-item>
                                     <n-form-item label="Actions" path="globalInputEvent.outputEvents">
-                                        <n-select v-model:value="globalInputEvent.outputEvents" 
+                                        <n-select v-model:value="globalInputEvent.outputEvents"
                                         :options="globalOutputEventsForInputForm" multiple />
                                     </n-form-item>
                                     <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
@@ -5081,7 +5087,8 @@ const globalInputEvent: Ref<InputTriggerEvent> = ref({
     uuid: '',
     name: '',
     celExpression: '',
-    outputEvents: []
+    outputEvents: [],
+    enabled: true
 })
 
 const globalCelExpressionError = ref('')
@@ -5091,7 +5098,8 @@ function resetGlobalInputEvent () {
         uuid: '',
         name: '',
         celExpression: '',
-        outputEvents: []
+        outputEvents: [],
+        enabled: true
     }
     globalCelExpressionError.value = ''
 }
@@ -5213,6 +5221,7 @@ async function fetchApprovalPolicies () {
                         celExpression
                         outputEvents
                         scope
+                        enabled
                     }
                     globalOutputEvents {
                         uuid
@@ -5348,7 +5357,8 @@ async function saveGlobalInputEvents () {
             uuid: e.uuid || undefined,
             name: e.name,
             celExpression: e.celExpression || null,
-            outputEvents: e.outputEvents || []
+            outputEvents: e.outputEvents || [],
+            enabled: e.enabled !== false  // default true; preserve explicit false
         }))
         const resp = await graphqlClient.mutate({
             mutation: gql`
@@ -5361,6 +5371,7 @@ async function saveGlobalInputEvents () {
                             celExpression
                             outputEvents
                             scope
+                            enabled
                         }
                     }
                 }`,
@@ -5469,6 +5480,17 @@ async function deleteGlobalOutputEvent (uuid: string, name?: string) {
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
+// Quick-toggle helper bound to the per-row switch in the Policy-Wide
+// Rules table — flips the flag and writes the whole list back in one go
+// so the on-row toggle behaves the same as opening the modal and
+// saving.
+function toggleGlobalInputEventEnabled (row: any, val: boolean) {
+    const idx = globalInputEvents.value.findIndex((e: any) => e.uuid === row.uuid)
+    if (idx < 0) return
+    globalInputEvents.value[idx] = { ...globalInputEvents.value[idx], enabled: val }
+    saveGlobalInputEvents()
+}
+
 function addGlobalInputEvent () {
     const eventToPush = commonFunctions.deepCopy(globalInputEvent.value)
     const validation = validateInputTrigger(eventToPush)
@@ -5570,6 +5592,20 @@ const globalOutputEventTableFields: DataTableColumns<any> = [
 ]
 
 const globalInputEventTableFields: DataTableColumns<any> = [
+    {
+        key: 'enabled',
+        title: 'Enabled',
+        width: 90,
+        render: (row: any) => {
+            // Default true when field absent (older stored events).
+            const checked = row.enabled !== false
+            return h(NSwitch, {
+                value: checked,
+                disabled: !isWritable.value,
+                'onUpdate:value': (v: boolean) => toggleGlobalInputEventEnabled(row, v)
+            })
+        }
+    },
     {
         key: 'name',
         title: 'Name'
