@@ -689,17 +689,21 @@
                                             </div>
                                             <div v-else>
                                                 <p class="text-muted" style="font-size: 0.9em; margin-bottom: 6px;">Policy-wide rules apply to this {{ words.component }} by default. Toggle a rule off to opt out, or override its actions locally.</p>
-                                                <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;">
-                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                <div v-for="gie in policyGlobalInputEvents" :key="gie.uuid" class="mb-3" style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px;" :style="{ opacity: gie.enabled === false ? 0.7 : 1 }">
+                                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                                         <n-switch
                                                             :value="isGlobalInputEventEnabled(gie.uuid)"
                                                             @update:value="(val: boolean) => toggleGlobalInputEventRef(gie.uuid, val)"
                                                             :disabled="!isWritable"
                                                         />
                                                         <strong>{{ gie.name }}</strong>
+                                                        <n-tag v-if="gie.enabled === false" type="warning" size="small" round>Globally disabled</n-tag>
                                                         <span class="text-muted" style="font-size: 0.85em;">
                                                             ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
                                                         </span>
+                                                    </div>
+                                                    <div v-if="gie.enabled === false" style="margin-left: 28px; margin-top: 6px; font-size: 12px;" class="text-muted">
+                                                        Disabled at the policy level — this rule will not fire for this {{ words.component }} regardless of the toggle above.
                                                     </div>
                                                     <div style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
                                                         <span class="text-muted" style="margin-right: 6px;">Condition:</span>
@@ -762,6 +766,12 @@
                                             <n-form :model="inputTrigger">
                                                 <h2>Add or Update Trigger Event</h2>
                                                 <n-space vertical size="large">
+                                                    <n-form-item label="Enabled" path="enabled">
+                                                        <n-switch v-model:value="inputTrigger.enabled" />
+                                                        <n-text depth="3" style="font-size: 12px; margin-left: 10px;">
+                                                            Disabled rules are skipped at evaluation time.
+                                                        </n-text>
+                                                    </n-form-item>
                                                     <n-form-item label="Name" path="name">
                                                         <n-input v-model:value="inputTrigger.name" required placeholder="Enter name" />
                                                     </n-form-item>
@@ -773,7 +783,7 @@
                                                         />
                                                     </n-form-item>
                                                     <n-form-item label="Actions" path="inputTrigger.outputEvents">
-                                                        <n-select v-model:value="inputTrigger.outputEvents" 
+                                                        <n-select v-model:value="inputTrigger.outputEvents"
                                                         :options="outputTriggersForInputForm" multiple />
                                                     </n-form-item>
                                                     <n-button @click="addInputTrigger" type="success">
@@ -930,7 +940,7 @@ export default {
 import { ComputedRef, ref, Ref, computed, h, Component, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
+import { NAlert, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
 import commonFunctions from '../utils/commonFunctions'
 import ComponentAnalytics from './ComponentAnalytics.vue'
 import ChangelogView from './ChangelogView.vue'
@@ -1765,7 +1775,8 @@ const inputTrigger: Ref<InputTriggerEvent> = ref({
     uuid: '',
     name: '',
     celExpression: '',
-    outputEvents: []
+    outputEvents: [],
+    enabled: true
 })
 const celExpressionError = ref('')
 
@@ -1774,7 +1785,8 @@ function resetInputTrigger () {
         uuid: '',
         name: '',
         celExpression: '',
-        outputEvents: []
+        outputEvents: [],
+        enabled: true
     }
     celExpressionError.value = ''
 }
@@ -2862,6 +2874,21 @@ function editInputTrigger (trigger: any) {
     showCreateInputTriggerModal.value = true
 }
 
+// Quick-toggle helper bound to the per-row Enabled switch on the Local
+// Rules table. Mirrors the dialog edit path: flip the field, persist
+// via the same updateComponent mutation saveTriggers uses for everything
+// else on this tab.
+async function toggleLocalInputTriggerEnabled (row: any, val: boolean) {
+    if (!updatedComponent.value.releaseInputTriggers) return
+    const idx = updatedComponent.value.releaseInputTriggers.findIndex((t: any) => t.uuid === row.uuid)
+    if (idx < 0) return
+    updatedComponent.value.releaseInputTriggers[idx] = {
+        ...updatedComponent.value.releaseInputTriggers[idx],
+        enabled: val
+    }
+    await saveTriggers()
+}
+
 async function addInputTrigger () {
     if (!updatedComponent.value.releaseInputTriggers) {
         updatedComponent.value.releaseInputTriggers = []
@@ -2985,6 +3012,19 @@ const outputTriggerTableFieldsReadOnly: DataTableColumns<any> = [
 ]
 
 const inputTriggerTableFields: DataTableColumns<any> = [
+    {
+        key: 'enabled',
+        title: 'Enabled',
+        width: 90,
+        render: (row: any) => {
+            const checked = row.enabled !== false
+            return h(NSwitch, {
+                value: checked,
+                disabled: !isWritable.value,
+                'onUpdate:value': (v: boolean) => toggleLocalInputTriggerEnabled(row, v)
+            })
+        }
+    },
     {
         key: 'name',
         title: 'Name'

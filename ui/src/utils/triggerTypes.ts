@@ -5,6 +5,7 @@ export type InputTriggerEvent = {
     name: string;
     celExpression: string | null;
     outputEvents: string[];
+    enabled?: boolean;
 }
 
 export type OutputTriggerEvent = {
