@@ -1179,7 +1179,7 @@ const patternTableFields: DataTableColumns<any> = [
             h(NTooltip, { trigger: 'hover' }, {
                 trigger: () => h(NIcon, { size: 16, style: { cursor: 'help' } }, { default: () => h(QuestionMark) }),
                 default: () => h('div', { style: { whiteSpace: 'pre-line' } },
-                    'REQUIRED: The dependency is required for the branch to be built.\nIGNORED: The dependency is ignored for the branch to be built.\nTRANSIENT: The dependency is required for the branch to be built, affects matching in the future ReARM DevOps module.'
+                    'REQUIRED: The dependency is required for the branch to be built.\nIGNORED: The dependency is ignored for the branch to be built.\nTRANSIENT: The dependency is required for the branch to be built, affects matching in the future ReARM DevOps module.\nJOB: Schedule-driven workload (k8s Job / CronJob). Included in the instance plan CDX, but excluded from product-release matching so the deployed version is allowed to lag the target until the job next runs.'
                 )
             })
         ]),
@@ -1191,7 +1191,8 @@ const patternTableFields: DataTableColumns<any> = [
                 options: [
                     { label: 'REQUIRED', value: 'REQUIRED' },
                     { label: 'IGNORED', value: 'IGNORED' },
-                    { label: 'TRANSIENT', value: 'TRANSIENT' }
+                    { label: 'TRANSIENT', value: 'TRANSIENT' },
+                    { label: 'JOB', value: 'JOB' }
                 ],
                 onUpdateValue: (val: string) => {
                     row.defaultStatus = val
@@ -1508,7 +1509,8 @@ const effectiveDepTableFields: DataTableColumns<any> = [
                     options: [
                         { label: 'Required', value: 'REQUIRED' },
                         { label: 'Ignored', value: 'IGNORED' },
-                        { label: 'Transient', value: 'TRANSIENT' }
+                        { label: 'Transient', value: 'TRANSIENT' },
+                        { label: 'Job', value: 'JOB' }
                     ],
                     size: 'small'
                 })
