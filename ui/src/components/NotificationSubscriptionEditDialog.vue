@@ -100,9 +100,16 @@ import {
     NButton, NDivider, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect,
     NSpace, useNotification,
 } from 'naive-ui'
+import {
+    NOTIFICATION_SUBSCRIPTION_STATUSES,
+    NOTIFICATION_EVENT_TYPES,
+    NOTIFICATION_SEVERITIES,
+    type NotificationSubscriptionStatus,
+    type NotificationSeverity,
+} from '@/utils/notification-constants'
 
 interface RouteForm {
-    whenSeverityAtLeast: string | null,
+    whenSeverityAtLeast: NotificationSeverity | null,
     channels: string[],
 }
 
@@ -126,7 +133,7 @@ const availableChannels = ref<any[]>([])
 
 const form = reactive({
     name: '',
-    status: 'ACTIVE' as 'ACTIVE' | 'DISABLED' | 'PREVIEW',
+    status: 'ACTIVE' as NotificationSubscriptionStatus,
     eventTypes: [] as string[],
     celExpression: '',
     routes: [emptyRoute()] as RouteForm[],
@@ -137,23 +144,9 @@ function emptyRoute (): RouteForm {
     return { whenSeverityAtLeast: null, channels: [] }
 }
 
-const statusOptions = [
-    { label: 'Active', value: 'ACTIVE' },
-    { label: 'Preview (observe-only)', value: 'PREVIEW' },
-    { label: 'Disabled', value: 'DISABLED' },
-]
-const eventTypeOptions = [
-    { label: 'New vuln affects releases', value: 'NEW_VULN_AFFECTS_RELEASES' },
-    { label: 'Vulnerability record updated', value: 'VULNERABILITY_RECORD_UPDATED' },
-    { label: 'VEX state changed', value: 'VEX_STATE_CHANGED' },
-]
-const severityOptions = [
-    { label: 'CRITICAL', value: 'CRITICAL' },
-    { label: 'HIGH', value: 'HIGH' },
-    { label: 'MEDIUM', value: 'MEDIUM' },
-    { label: 'LOW', value: 'LOW' },
-    { label: 'INFO', value: 'INFO' },
-]
+const statusOptions = NOTIFICATION_SUBSCRIPTION_STATUSES
+const eventTypeOptions = NOTIFICATION_EVENT_TYPES
+const severityOptions = NOTIFICATION_SEVERITIES
 const channelOptions = computed(() =>
     availableChannels.value.map((c: any) => ({
         label: `${c.name} (${c.type}${c.status === 'DISABLED' ? ', DISABLED' : ''})`,

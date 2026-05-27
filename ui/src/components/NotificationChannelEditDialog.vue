@@ -94,6 +94,14 @@ import {
     NButton, NDivider, NForm, NFormItem, NInput, NModal, NSelect, NSpace,
     useNotification,
 } from 'naive-ui'
+import {
+    NOTIFICATION_CHANNEL_TYPES,
+    NOTIFICATION_CHANNEL_STATUSES,
+    NOTIFICATION_WEBHOOK_AUTH_SCHEMES,
+    type NotificationChannelType,
+    type NotificationChannelStatus,
+    type NotificationWebhookAuthScheme,
+} from '@/utils/notification-constants'
 
 const props = defineProps<{
     show: boolean,
@@ -113,27 +121,17 @@ const saving = ref(false)
 
 const form = reactive({
     name: '',
-    type: 'SLACK' as 'SLACK' | 'WEBHOOK',
-    status: 'ENABLED' as 'ENABLED' | 'DISABLED',
+    type: 'SLACK' as NotificationChannelType,
+    status: 'ENABLED' as NotificationChannelStatus,
     slackWebhookUrl: '',
     webhookUrl: '',
-    webhookAuthScheme: 'NONE' as 'NONE' | 'BEARER' | 'HMAC_SHA256',
+    webhookAuthScheme: 'NONE' as NotificationWebhookAuthScheme,
     webhookAuthToken: '',
 })
 
-const typeOptions = [
-    { label: 'Slack', value: 'SLACK' },
-    { label: 'Generic webhook (HTTPS)', value: 'WEBHOOK' },
-]
-const statusOptions = [
-    { label: 'Enabled', value: 'ENABLED' },
-    { label: 'Disabled', value: 'DISABLED' },
-]
-const webhookAuthOptions = [
-    { label: 'None (no auth header)', value: 'NONE' },
-    { label: 'Bearer token', value: 'BEARER' },
-    { label: 'HMAC-SHA256 signed', value: 'HMAC_SHA256' },
-]
+const typeOptions = NOTIFICATION_CHANNEL_TYPES
+const statusOptions = NOTIFICATION_CHANNEL_STATUSES
+const webhookAuthOptions = NOTIFICATION_WEBHOOK_AUTH_SCHEMES
 
 const authTokenLabel = computed(() => {
     const base = form.webhookAuthScheme === 'HMAC_SHA256' ? 'Shared secret' : 'Token'

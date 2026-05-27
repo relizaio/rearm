@@ -85,6 +85,11 @@ import {
     DataTableColumns, useNotification,
 } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
+import {
+    NOTIFICATION_DELIVERY_STATUSES,
+    NOTIFICATION_DELIVERY_ORIGINS,
+    deliveryStatusType,
+} from '@/utils/notification-constants'
 
 const store = useStore()
 const route = useRoute()
@@ -112,16 +117,8 @@ const channelLookup = ref<Record<string, any>>({})
 const subscriptionLookup = ref<Record<string, any>>({})
 const lookupsLoading = ref(true)
 
-const statusOptions = [
-    { label: 'PENDING', value: 'PENDING' },
-    { label: 'SENT', value: 'SENT' },
-    { label: 'FAILED', value: 'FAILED' },
-    { label: 'ACKED', value: 'ACKED' },
-]
-const originOptions = [
-    { label: 'REAL', value: 'REAL' },
-    { label: 'SYNTHETIC', value: 'SYNTHETIC' },
-]
+const statusOptions = NOTIFICATION_DELIVERY_STATUSES
+const originOptions = NOTIFICATION_DELIVERY_ORIGINS
 
 const paginationCfg = computed(() => ({
     page: currentPage.value,
@@ -199,12 +196,7 @@ function formatDate (s: any) {
     return s ? new Date(s).toLocaleString('en-CA') : '—'
 }
 
-function statusType (s: string) {
-    if (s === 'SENT' || s === 'ACKED') return 'success'
-    if (s === 'FAILED') return 'error'
-    if (s === 'PENDING') return 'info'
-    return 'default'
-}
+const statusType = deliveryStatusType
 
 function resolveChannel (uuid: string | null | undefined): string {
     if (!uuid) return '—'
