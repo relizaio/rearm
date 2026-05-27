@@ -69,6 +69,19 @@
                               :disabled="saving || loadingChannels"
                               :loading="loadingChannels"/>
                 </n-form-item>
+                <n-form-item label="Limit to perspectives">
+                    <n-select v-model:value="route.perspectives"
+                              :options="perspectiveOptions"
+                              multiple
+                              clearable
+                              placeholder="Any perspective (no gate)"
+                              :disabled="saving || perspectiveOptions.length === 0"/>
+                </n-form-item>
+                <p class="hint">
+                    Empty = no gate. When set, this route only fires on events that touch a release in
+                    one of the chosen perspectives. Events without affected releases (e.g. VEX state
+                    changes scoped to a release outside these perspectives) are gated out.
+                </p>
             </div>
             <n-button size="small" :disabled="saving" @click="addRoute">+ Add route</n-button>
 
@@ -112,6 +125,9 @@ import {
 interface RouteForm {
     whenSeverityAtLeast: NotificationSeverity | null,
     channels: string[],
+    // Phase 12 — list of perspective UUIDs this route is scoped to.
+    // Empty array = no gate (route fires regardless of release perspective).
+    perspectives: string[],
 }
 
 const props = defineProps<{
@@ -142,7 +158,7 @@ const form = reactive({
 })
 
 function emptyRoute (): RouteForm {
-    return { whenSeverityAtLeast: null, channels: [] }
+    return { whenSeverityAtLeast: null, channels: [], perspectives: [] }
 }
 
 const statusOptions = NOTIFICATION_SUBSCRIPTION_STATUSES
@@ -153,6 +169,20 @@ const channelOptions = computed(() =>
         label: `${c.name} (${c.type}${c.status === 'DISABLED' ? ', DISABLED' : ''})`,
         value: c.uuid,
         disabled: c.status === 'DISABLED',
+    }))
+)
+
+// Perspectives are already in the global Vuex state (loaded at app
+// startup; see TopNavBar / AppHome which use the same getter). If the
+// org has zero perspectives, the dropdown stays empty and routes
+// continue to behave as "match anything" — same as a route with an
+// empty perspectives array.
+const perspectivesOfOrg = computed<any[]>(() =>
+    store.getters.perspectivesOfOrg(props.orgUuid) || [])
+const perspectiveOptions = computed(() =>
+    perspectivesOfOrg.value.map((p: any) => ({
+        label: p.name,
+        value: p.uuid,
     }))
 )
 
@@ -185,6 +215,9 @@ watch(() => props.show, async (opening) => {
                 ? rs.map((r: any) => ({
                     whenSeverityAtLeast: r.whenSeverityAtLeast ?? null,
                     channels: r.channels ?? [],
+                    // Phase 12 — pre-v12 routes have no perspectives key;
+                    // fall back to an empty array (= no gate).
+                    perspectives: r.perspectives ?? [],
                 }))
                 : [emptyRoute()]
         } catch (e) {
@@ -238,6 +271,11 @@ async function save () {
                 andEnvIn: null,
                 andLifecycleIn: null,
                 channels: r.channels,
+                // Send null (not []) when no perspectives are selected
+                // so the backend's "perspectives == null/empty = no gate"
+                // branch is the canonical no-op rather than a populated
+                // empty-list with edge-case semantics.
+                perspectives: r.perspectives.length > 0 ? r.perspectives : null,
             })),
         }
         if (isEdit.value) input.uuid = props.original.uuid
