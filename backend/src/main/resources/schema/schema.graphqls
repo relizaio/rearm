@@ -193,7 +193,16 @@ type Query {
 	featureSetsUsingBranch(branchUuid: ID!): [Branch]
 
 	# Instances
-	instance(instanceUuid: ID!, revision: Int): Instance
+	#
+	# When `revision` is null or -1, returns the live instance state.
+	# When `revision` is a positive integer, the lookup is scoped by
+	# `stateType`: PLAN (default) reads from the instance_data_plan
+	# audit table using the plan-revision counter; ACTUAL reads from
+	# instance_data_actual using the actual-revision counter. This
+	# matches the per-table revision counters surfaced by
+	# instanceHistoryPlan / instanceHistoryActual so the UI can
+	# side-by-side a history row against the current state.
+	instance(instanceUuid: ID!, revision: Int, stateType: InstanceStateType): Instance
 	instancesOfOrganization(orgUuid: ID!): [Instance]
 	instancesByProp(orgUuid: ID!, propKey: ID, propVal: String!): [Instance]
 	instanceHistoryPlan(instanceUuid: ID!): [InstanceHistoryPlan]
@@ -321,6 +330,12 @@ type Mutation {
 	# Replace the capabilities asserted on an Integration. Org-admin
 	# authorized; idempotent; preserves all other fields.
 	updateIntegrationCapabilities(uuid: ID!, capabilities: [IntegrationCapability!]!): Integration
+	# Delete a CI integration by uuid. Refuses with an error message
+	# listing reference counts when any Webhook, GlobalPrValidationTriggerRule,
+	# VcsRepository.outputTriggers entry, or ApprovalPolicy.globalOutputEvents
+	# entry still points at this integration — those have to be cleaned
+	# up first so the integration delete doesn't silently break them.
+	deleteCiIntegration(uuid: ID!): Boolean
 
 	# webhooks (inbound)
 	createWebhook(webhook: WebhookInput!): Webhook
@@ -2218,9 +2233,43 @@ type BearIntegration {
 type ReleaseInputEvent {
 	uuid: ID
 	name: String
+	"""
+	Output events fired when {@link #celExpression} evaluates to TRUE.
+	"""
 	outputEvents: [ID]
+	"""
+	Output events fired when {@link #celExpression} evaluates to FALSE.
+	Optional — leaving this empty preserves the legacy single-branch
+	behavior (rule does nothing when CEL is false). When set, this gives
+	operators a way to express "if X then A else B" in one rule instead
+	of two competing rules. Both branches are skipped together when the
+	rule is disabled or when the component opts out via its
+	GlobalInputEventRef.
+	"""
+	outputEventsOnFalse: [ID]
 	scope: EventScope
 	celExpression: String
+	"""
+	Rule-level enable/disable. Defaults true. When false, the rule is
+	skipped at evaluation time for every release that resolves against
+	the owning approval policy, overriding any per-component
+	GlobalInputEventRef.disabled state. Applies identically to component-
+	local rules under Component.releaseInputTriggers.
+	"""
+	enabled: Boolean
+	"""
+	Optional rule-level precondition CEL. When non-empty, evaluated
+	BEFORE {@link #celExpression}; if the precondition returns false
+	(or throws), the rule is skipped entirely (neither matched- nor
+	else-branch actions fire) and the PR conditions snapshot renders
+	PENDING. Lets operators express "is this rule applicable yet?"
+	separately from "did the condition match?". Necessary for rules
+	with {@link #outputEventsOnFalse} populated because the false
+	branch would otherwise fire on releases with missing data —
+	canonical example: gate metrics-based rules on
+	{@code release.firstScanned == true}.
+	"""
+	preconditionCelExpression: String
 }
 
 type ReleaseOutputEvent {
@@ -3137,7 +3186,10 @@ input ReleaseInputEventInput {
 	uuid: ID
 	name: String
 	outputEvents: [ID]
+	outputEventsOnFalse: [ID]
 	celExpression: String
+	enabled: Boolean
+	preconditionCelExpression: String
 }
 
 input GetLatestReleaseInput {
@@ -3784,12 +3836,31 @@ type Instance {
 	properties: [InstancePropertyRecord]
 	releases: [DeployedRelease]
 	targetReleases: [DeployedRelease]
+	# Live snapshot of images reported by the watcher whose digest does
+	# not resolve to any DeliverableData in this org. Replaced on each
+	# tick — pods that disappear drop off automatically. Surfaced as
+	# "Unmatched Deployed Images" in the Instance UI so operators can
+	# see what is running that ReARM does not know about.
+	unmatchedReleases: [UnmatchedImage]
 	agentData: String
 	productPlans: [InstanceProductMapPlan]
 	productActuals: [InstanceProductMapActual]
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
+}
+
+type UnmatchedImage {
+	image: String
+	# Canonical (algo, hex, scope) digest records — same shape used on
+	# artifact.digestRecords. For k8s container images this is normally
+	# one entry with algo=SHA-256, scope=OCI_STORAGE.
+	digestRecords: [DigestRecord]
+	namespace: String
+	pod: String
+	lastSeen: DateTime
+	state: ServiceState
+	replicas: [DeployedReplica]
 }
 
 type DeployedRelease {

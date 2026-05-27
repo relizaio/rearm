@@ -148,10 +148,25 @@ public class ApiKeyService {
 	private List<ApiKey> listApiKeyByObjUuidAndType(UUID uuid, ApiTypeEnum type, @NonNull UUID org) {
 		return repository.findApiKeyByUuidAndType(uuid, type.toString(), org);
 	}
-	
+
 	private Optional<ApiKey> getApiKeyByObjUuidTypeOrder(UUID uuid, ApiTypeEnum type, String keyOrder, UUID org) {
+		return getApiKeyByObjUuidTypeOrder(uuid, type, keyOrder, org, false);
+	}
+
+	/**
+	 * Resolve the api_keys row for a given object + type + (optional)
+	 * keyOrder + org. When {@code includeRevoked} is true, tombstoned
+	 * rows (api_key IS NULL — i.e., previously revoked / archived
+	 * keys) are also returned. Callers other than the mint path
+	 * ({@link #setObjectApiKey}) should pass false, so auth, listing,
+	 * and archive-cleanup paths keep treating revoked keys as absent.
+	 */
+	private Optional<ApiKey> getApiKeyByObjUuidTypeOrder(UUID uuid, ApiTypeEnum type, String keyOrder, UUID org,
+			boolean includeRevoked) {
 		Optional<ApiKey> oak = Optional.empty();
-		var keyList = listApiKeyByObjUuidAndType(uuid, type, org);
+		List<ApiKey> keyList = includeRevoked
+				? repository.findApiKeyIncludingRevokedByUuidAndType(uuid, type.toString(), org)
+				: listApiKeyByObjUuidAndType(uuid, type, org);
 		if (!keyList.isEmpty()) {
 			if (StringUtils.isEmpty(keyOrder)) {
 				oak = Optional.of(keyList.get(0));
@@ -214,8 +229,17 @@ public class ApiKeyService {
 		if (effectiveOrgUuid == null && type == ApiTypeEnum.COMPONENT) {
 			effectiveOrgUuid = getComponentService.getComponentData(uuid).map(ComponentData::getOrg).orElse(null);
 		}
-		// invalidate old key first if any
-		Optional<ApiKey> presentKey = getApiKeyByObjUuidTypeOrder(uuid, type, keyOrder, effectiveOrgUuid);
+		// Look up any row in the natural-key slot, including revoked
+		// (api_key IS NULL) tombstones. The unique index on
+		// (object_uuid, object_type, org, key_order) means a tombstone
+		// row blocks an INSERT — if we ignored revoked rows here, the
+		// INSERT below would hit a DataIntegrityViolationException
+		// surfaced to the UI as "Request violates data constraints".
+		// Mint should be idempotent: re-take the existing row in place
+		// (whether it currently has a usable key or is a tombstone left
+		// behind by archiveInstance / archiveComponent / archiveOrganization
+		// / deleteApiKey) and write a fresh key into it.
+		Optional<ApiKey> presentKey = getApiKeyByObjUuidTypeOrder(uuid, type, keyOrder, effectiveOrgUuid, true);
 		ApiKey ak = null;
 		ApiKeyData akd = null;
 		if (presentKey.isPresent()) {

@@ -17,16 +17,22 @@ public class ReleaseInputEventDto {
 	private UUID uuid;
 	private String name;
 	private Set<UUID> outputEvents;
+	private Set<UUID> outputEventsOnFalse;
 	private EventScope scope;
 	private String celExpression;
+	private boolean enabled;
+	private String preconditionCelExpression;
 
 	public static ReleaseInputEventDto fromData(ReleaseInputEvent event, EventScope scope) {
 		return ReleaseInputEventDto.builder()
 				.uuid(event.getUuid())
 				.name(event.getName())
 				.outputEvents(event.getOutputEvents())
+				.outputEventsOnFalse(event.getOutputEventsOnFalse())
 				.scope(scope)
 				.celExpression(event.getCelExpression())
+				.enabled(event.isEnabled())
+				.preconditionCelExpression(event.getPreconditionCelExpression())
 				.build();
 	}
 }

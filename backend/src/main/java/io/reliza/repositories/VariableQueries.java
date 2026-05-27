@@ -37,6 +37,14 @@ class VariableQueries {
 	protected static final String FIND_API_KEY_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE ak.api_key IS NOT NULL and "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and ak.org = :org";
 
+	// Mint-side variant: includes revoked / tombstoned rows (api_key IS NULL).
+	// Used only by setObjectApiKey so it can UPDATE a tombstone in place rather
+	// than INSERT and collide on the (object_uuid, object_type, org, key_order)
+	// unique index. Every other read path keeps the NULL filter so revoked
+	// keys remain invisible to auth + listing + archive-loop callers.
+	protected static final String FIND_API_KEY_INCLUDING_REVOKED_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE "
+			+ "ak.object_uuid = :uuid and ak.object_type = :type and ak.org = :org";
+
 	protected static final String FIND_API_KEY_ORG_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE ak.api_key IS NOT NULL and "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and (:keyOrder IS NULL OR ak.key_order = :keyOrder)";
 	

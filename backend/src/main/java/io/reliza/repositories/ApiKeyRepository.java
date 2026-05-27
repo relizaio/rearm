@@ -27,6 +27,20 @@ public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
 			nativeQuery = true)
 	List<ApiKey> findApiKeyByUuidAndType(UUID uuid, String type, UUID org);
 
+	/**
+	 * Variant of {@link #findApiKeyByUuidAndType} that also returns
+	 * revoked rows (api_key IS NULL). Used exclusively from
+	 * {@code ApiKeyService.setObjectApiKey} so the mint path can
+	 * take over an existing tombstone in place rather than INSERT
+	 * and collide on the (object_uuid, object_type, org, key_order)
+	 * unique index. Don't use this from auth, listing, or archive
+	 * code — those should not see revoked keys.
+	 */
+	@Query(
+			value = VariableQueries.FIND_API_KEY_INCLUDING_REVOKED_BY_ID_AND_TYPE,
+			nativeQuery = true)
+	List<ApiKey> findApiKeyIncludingRevokedByUuidAndType(UUID uuid, String type, UUID org);
+
 	@Query(
 			value = VariableQueries.FIND_API_KEY_ORG_BY_ID_AND_TYPE,
 			nativeQuery = true)

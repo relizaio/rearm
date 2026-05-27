@@ -408,6 +408,19 @@ public class BranchService {
 			}
 			if (null != branchDto.getDependencies()) {
 				checkCircularBranchDependency(branchDto.getUuid(), branchDto.getDependencies());
+				// TODO: also reject the update if it would leave this feature set
+				// without a Helm-kind dependency while it is still attached to one
+				// or more instance plans. Requires a saas-side lookup
+				// (instances by product/featureSet) that cannot be invoked from
+				// this shared-layer service without breaking the
+				// shared <- oss <- saas layering. Sketch:
+				//   1. resolve component+kind for each new dep
+				//   2. if no HELM-kind dep remains, query
+				//      InstanceService.findInstancesByFeatureSet(branchUuid)
+				//   3. if any active instance plan references this branch,
+				//      throw RelizaException with a sensible message
+				// The attach-time guard in InstanceService.validateFeatureSetHelmDependency
+				// covers the common path; this edit-time guard is a follow-up.
 				bd.setDependencies(branchDto.getDependencies());
 			}
 			if (null != branchDto.getDependencyPatterns()) {

@@ -214,8 +214,34 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	public static class ReleaseInputEvent {
 		private UUID uuid;
 		private String name;
+		// Output events fired when celExpression evaluates true.
 		private Set<UUID> outputEvents;
+		// Output events fired when celExpression evaluates false. Optional;
+		// null/empty preserves the legacy single-branch behavior (CEL false
+		// fires nothing). When set, lets a rule express "if X then A else B"
+		// without a second mutually-exclusive rule. Both branches are
+		// skipped together when the rule is disabled or the component opts
+		// out via GlobalInputEventRef.
+		private Set<UUID> outputEventsOnFalse;
 		private String celExpression;
+		// Rule-level enable/disable. Defaults true so pre-existing rules
+		// (no field in stored JSON) keep their old behavior on deserialize.
+		// When false, the rule is skipped at evaluation time for every
+		// component using the policy — overrides any per-component
+		// GlobalInputEventRef state. Applies identically to component-
+		// local rules under Component.releaseInputTriggers.
+		private boolean enabled = true;
+		// Optional rule-level precondition CEL. When non-empty, evaluated
+		// BEFORE celExpression — if it returns false (or throws), the
+		// rule is skipped entirely (neither true nor false branch fires)
+		// and the PR snapshot renders PENDING. Separates "is the rule
+		// ready to fire at all?" from "did the condition match?".
+		// Necessary for rules with outputEventsOnFalse populated because
+		// the false branch would otherwise fire on releases with missing
+		// data (metrics default to 0; an unscanned release would silently
+		// match "no critical vulns" and trigger the else-branch). Empty
+		// preserves single-stage evaluation.
+		private String preconditionCelExpression;
 	}
 	
 	@Data
