@@ -5478,29 +5478,22 @@ async function loadEnvironmentTypesForOutputEvents () {
     environmentTypes.value = resp.data.environmentTypes || []
 }
 
+// Caller (table render) has already confirmed via n-popconfirm.
 async function deleteGlobalOutputEvent (uuid: string, name?: string) {
-    // Check if any global input event references this output event
+    // Reference check still happens here so the inline popconfirm
+    // can't bypass it. If found, the row goes nowhere and we emit the
+    // refusal toast (same as before).
     const referencedBy = globalInputEvents.value.find((ie: any) => ie.outputEvents && ie.outputEvents.includes(uuid))
     if (referencedBy) {
         notify('error', 'Error', 'Cannot delete: this action is referenced by a policy-wide rule.')
         return
     }
-    const onSwalConfirm = async () => {
-        const idx = globalOutputEvents.value.findIndex((e: any) => e.uuid === uuid)
-        if (idx > -1) {
-            globalOutputEvents.value.splice(idx, 1)
-            saveGlobalOutputEvents()
-            notify('success', 'Deleted', 'Policy-wide action deleted.')
-        }
+    const idx = globalOutputEvents.value.findIndex((e: any) => e.uuid === uuid)
+    if (idx > -1) {
+        globalOutputEvents.value.splice(idx, 1)
+        saveGlobalOutputEvents()
+        notify('success', 'Deleted', 'Policy-wide action deleted.')
     }
-    const displayName = name || uuid
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to delete policy-wide action ${displayName}?`,
-        successTitle: 'Deleted!',
-        successText: `Policy-wide action ${displayName} has been deleted.`,
-        dismissText: 'Delete has been cancelled.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 // Quick-toggle helper bound to the per-row switch in the Policy-Wide
@@ -5547,23 +5540,14 @@ function editGlobalInputEvent (event: any) {
     showCreateGlobalInputEventModal.value = true
 }
 
-async function deleteGlobalInputEvent (uuid: string, name?: string) {
-    const onSwalConfirm = async () => {
-        const idx = globalInputEvents.value.findIndex((e: any) => e.uuid === uuid)
-        if (idx > -1) {
-            globalInputEvents.value.splice(idx, 1)
-            saveGlobalInputEvents()
-            notify('success', 'Deleted', 'Policy-wide rule deleted.')
-        }
+// Caller has already confirmed via n-popconfirm.
+async function deleteGlobalInputEvent (uuid: string, _name?: string) {
+    const idx = globalInputEvents.value.findIndex((e: any) => e.uuid === uuid)
+    if (idx > -1) {
+        globalInputEvents.value.splice(idx, 1)
+        saveGlobalInputEvents()
+        notify('success', 'Deleted', 'Policy-wide rule deleted.')
     }
-    const displayName = name || uuid
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to delete policy-wide rule ${displayName}?`,
-        successTitle: 'Deleted!',
-        successText: `Policy-wide rule ${displayName} has been deleted.`,
-        dismissText: 'Delete has been cancelled.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 
 const globalOutputEventTableFields: DataTableColumns<any> = [
@@ -5600,12 +5584,16 @@ const globalOutputEventTableFields: DataTableColumns<any> = [
                     size: 20,
                     onClick: () => editGlobalOutputEvent(row)
                 }, () => h(EditIcon))
-                const deleteEl = h(NIcon, {
-                    title: 'Delete Action',
-                    class: 'icons clickable',
-                    size: 20,
-                    onClick: () => deleteGlobalOutputEvent(row.uuid, row.name)
-                }, () => h(Trash))
+                const deleteEl = h(NPopconfirm, {
+                    onPositiveClick: () => deleteGlobalOutputEvent(row.uuid, row.name)
+                }, {
+                    trigger: () => h(NIcon, {
+                        title: 'Delete Action',
+                        class: 'icons clickable',
+                        size: 20
+                    }, () => h(Trash)),
+                    default: () => `Delete policy-wide action "${row.name}"?`
+                })
                 els.push(editEl, deleteEl)
             }
             if (!els.length) els = [h('div', 'N/A')]
@@ -5689,12 +5677,16 @@ const globalInputEventTableFields: DataTableColumns<any> = [
                     size: 20,
                     onClick: () => editGlobalInputEvent(row)
                 }, () => h(EditIcon))
-                const deleteEl = h(NIcon, {
-                    title: 'Delete Rule',
-                    class: 'icons clickable',
-                    size: 20,
-                    onClick: () => deleteGlobalInputEvent(row.uuid, row.name)
-                }, () => h(Trash))
+                const deleteEl = h(NPopconfirm, {
+                    onPositiveClick: () => deleteGlobalInputEvent(row.uuid, row.name)
+                }, {
+                    trigger: () => h(NIcon, {
+                        title: 'Delete Rule',
+                        class: 'icons clickable',
+                        size: 20
+                    }, () => h(Trash)),
+                    default: () => `Delete policy-wide rule "${row.name}"?`
+                })
                 els.push(editEl, deleteEl)
             }
             if (!els.length) els = [h('div', 'N/A')]

@@ -155,10 +155,6 @@ const columns = computed<DataTableColumns<any>>(() => [
     {
         title: 'Name',
         key: 'name',
-        render: (row: any) => h('a', {
-            href: '#',
-            onClick: (e: Event) => { e.preventDefault(); openPolicy(row.uuid) },
-        }, row.name),
     },
     {
         title: 'Kind',
