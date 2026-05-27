@@ -653,11 +653,11 @@ function buildMatchTooltipBody(row: any) {
         const tag = dep.status && dep.status !== 'REQUIRED'
             ? h('span', { style: 'margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: #e8f1ff; color: #1f5ad3; font-size: 10px; font-weight: 600;' }, dep.status)
             : null
-        lines.push(h('div', { style: 'display: flex; align-items: center; gap: 8px; line-height: 1.5;' }, [
-            h('span', { style: `color: ${iconColor}; font-weight: 700; min-width: 14px;` }, icon),
-            h('span', compName),
+        lines.push(h('div', { style: 'display: flex; align-items: center; gap: 8px; line-height: 1.5; white-space: nowrap;' }, [
+            h('span', { style: `color: ${iconColor}; font-weight: 700; min-width: 14px; flex: 0 0 14px;` }, icon),
+            h('span', { style: 'flex: 0 0 auto;' }, compName),
             tag,
-            h('span', { style: 'color: #666;' }, `: actual ${actV} / target ${tgtV}${note}`)
+            h('span', { style: 'color: #aaa; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis;' }, `actual ${actV} / target ${tgtV}${note}`)
         ]))
     })
     return lines
@@ -1448,7 +1448,8 @@ const matchedProductFields: any[] = [
                 els.push(h(NTooltip, {
                     trigger: 'hover',
                     placement: 'top',
-                    style: { maxWidth: '480px' }
+                    width: 720,
+                    style: { maxWidth: '720px' }
                 }, {
                     trigger: () => h(NIcon, {
                         size: 16,
