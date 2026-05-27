@@ -79,42 +79,50 @@ In ReARM, register the GitHub repository whose PRs you want to gate (either via 
 
 ### 3. Choose where to attach the trigger
 
-Three different event types drive different SCM outcomes. They live in different places in the UI:
+Four event types drive different SCM outcomes. They live in different places in the UI:
 
 | Event type | Where configured | What it does |
 |---|---|---|
-| [`EXTERNAL_VALIDATION` (PR-level)](#external_validation--per-pr-aggregated-check-run) | **VCS Repository** → Output Triggers | Posts a single check-run summarising the *aggregated* PR verdict across all attributed releases. Recommended for monorepos. |
-| [`EXTERNAL_VALIDATION` (per-release)](#external_validation--per-release-check-run-legacy) | **Component** or **Approval Policy** → Output Events | Posts a check-run for one specific release. Suitable when CI builds a single component per PR. |
-| [`PR_COMMENT`](#pr_comment--comment-on-the-pr) | **Component** or **Approval Policy** → Output Events | Posts a markdown comment to every open PR whose commits include the firing release's SCE (commit). |
-| [`INVALIDATE_PR`](#invalidate_pr-and-validate_pr--feeding-the-aggregator) / `VALIDATE_PR` | **Component** or **Approval Policy** → Output Events | Internal signals that feed the PR aggregator on approval / rejection. No direct SCM call — the SCM push happens via the VCS-level `EXTERNAL_VALIDATION` trigger. |
+| [`EXTERNAL_VALIDATION` (Global PR Validation rule)](#external_validation--global-pr-validation-rule-recommended) | **Organization Settings → Integrations → PR Validation** | Org-wide ordered list of rules; each rule has a VCS URI regex and a single integration + installation id. The first rule whose regex matches a given repo contributes its trigger to every PR in that repo, automatically across as many repos as the regex covers. **Recommended starting point.** |
+| [`EXTERNAL_VALIDATION` (per-release, component-level)](#external_validation--per-release-component-level) | **Component → Actions** | Posts a check-run for one specific release on the configured component. Suitable when CI builds a single component per PR. |
+| [`EXTERNAL_VALIDATION` (per-release, policy-wide)](#external_validation--per-release-policy-wide) | **Approval Policy → Policy-Wide Actions** | Same as component-level but defined once on the Approval Policy so every component bound to that policy inherits it. |
+| [`EXTERNAL_VALIDATION` (per-VCS override)](#external_validation--per-vcs-override-advanced) | **VCS Repository → Output Triggers** | Advanced: a per-repo override that wins over the matching Global PR Validation rule. Useful when one repo needs a different integration / installation id / check-name from the org-wide rule. |
+| [`PR_COMMENT`](#pr_comment--comment-on-the-pr) | **Component → Actions** or **Approval Policy → Policy-Wide Actions** | Posts a markdown comment to every open PR whose commits include the firing release's SCE (commit). |
+| [`INVALIDATE_PR`](#invalidate_pr-and-validate_pr--feeding-the-aggregator) / `VALIDATE_PR` | **Component → Actions** or **Approval Policy → Policy-Wide Actions** | Internal signals that feed the PR aggregator on approval / rejection. No direct SCM call — the SCM push happens via the matching `EXTERNAL_VALIDATION` trigger. |
 
-::: info VCS-level vs component-level `EXTERNAL_VALIDATION`
-A given PR can be gated by either the VCS-level (PR-aggregated) or component-level (per-release) check-run, not usually both. The VCS-level model is the recommended starting point because it handles monorepos correctly and keeps the GitHub UI clean (one ReARM check per PR, not one per component).
+::: info PR-aggregated vs per-release `EXTERNAL_VALIDATION`
+A given PR is gated by either the PR-aggregated path (Global PR Validation rule or the per-VCS override) **or** the per-release path (component-level / policy-wide), not both. The PR-aggregated path is the recommended starting point because it handles monorepos correctly and keeps the GitHub UI clean (one ReARM check per PR, not one per component).
 :::
 
-### EXTERNAL_VALIDATION — per-PR aggregated check-run
+### EXTERNAL_VALIDATION — Global PR Validation rule (recommended)
 
-This is the recommended setup. ReARM posts one check-run per PR; its conclusion follows the [aggregated verdict](../workflows/pull-requests#aggregation-and-verdicts) computed across every release attributed to the PR's commits.
+The Global PR Validation rule is **org-scoped** and **regex-matched across multiple VCS repos** — one rule can cover an entire org's repos. ReARM posts one PR-aggregated check-run; its conclusion follows the [aggregated verdict](../workflows/pull-requests#aggregation-and-verdicts) computed across every release attributed to the PR's commits.
 
-1. Open the VCS repository under the **VCS** menu item.
-2. Open the **Output Triggers** section. Click the plus-circle icon (Add Output Trigger).
-3. **Name**: e.g. `PR check-run (rearm)`. The check-run reported to GitHub is named `rearm/<componentName>` by default; override via the **Check Name** field if you want a stable label across components in a monorepo (recommended — see "Wire up GitHub branch protection" below).
-4. **Type**: choose **External Validation**.
-5. **Choose Validation Integration**: select the GitHub Validate integration you registered.
-6. **Installation ID**: paste the Installation ID from step 4 of the GitHub part.
-7. **Optional Output JSON** / **Dynamic output (CEL)**: see [Customising the check-run output](#customising-the-check-run-output). The CEL bindings include PR-level fields like `pr.attributedReleases` in addition to release-level fields.
-8. Click **Save**.
+1. In ReARM, open **Organization Settings → Integrations → PR Validation** sub-tab.
+2. Click **+ Add rule**. Fill in:
+   - **Name**: e.g. `Default GitHub PR validation`. Display label; not sent to GitHub.
+   - **VCS URI regex**: a Java regex matched against the repo's `vcsuri`, fully anchored by the engine. Write `github.com/myorg/.*` (no leading `^`, no trailing `$`); the engine anchors automatically.
+   - **GitHub Validate Integration**: pick the integration you registered in [ReARM Part step 1](#1-register-the-integration-org-admin). The dropdown is filtered to GitHub CI integrations that have the **PR Validate** capability enabled.
+   - **GitHub Installation ID**: paste the Installation ID from [step 4 of the GitHub part](#4-install-the-app-on-the-target-repository--repositories).
+   - **Check name override**: optional. Defaults to `rearm/pr/<identity>` where `<identity>` is derived from the PR identity. **Recommended** to set a stable string (e.g. `rearm/pr-validation`) when you intend to wire branch protection — branch protection requires an exact match, and a stable name avoids breakage as repos / components churn.
+3. Click **Save**.
 
-::: tip One trigger per VCS repo
-The VCS-level outputTriggers list accepts at most one `EXTERNAL_VALIDATION` entry. The conclusion is derived from the aggregated verdict, so you don't need a separate trigger for "success" and "failure".
+The new rule appears at the bottom of the list. **Rule order is priority order** — the first rule whose URI regex matches a given repo wins. Use the up/down arrows on a row to reorder.
+
+::: tip One rule, many repos
+You don't need one rule per repo. A regex like `github.com/acme/.*` covers every repo under the `acme` org, and a single rule is enough for most setups. Add a second rule only when you genuinely need different settings (different integration, different installation id, different check name) for a subset of repos — and put the more specific rule **above** the catch-all.
 :::
 
-### EXTERNAL_VALIDATION — per-release check-run (legacy)
+::: info Customising the check-run output
+The Global PR Validation rule UI does not expose `clientPayload` / `celClientPayload` directly in v1 — the check-run uses the server-side default output (see [Customising the check-run output](#customising-the-check-run-output) for the default shape). To customise per-release, drop down to the per-component or policy-wide path below.
+:::
 
-Use this when CI builds exactly one component per PR and you want a check-run that maps directly to that release's lifecycle (rather than to the PR-level aggregate). Per-release `EXTERNAL_VALIDATION` is configured per-component (described here) or at the policy-wide level (next section).
+### EXTERNAL_VALIDATION — per-release, component-level
+
+Use this when CI builds exactly one component per PR and you want a check-run that maps directly to that release's lifecycle (rather than to the PR-level aggregate). The Global PR Validation rule above is the better default for everything else.
 
 1. Open the component you want to gate. Click the tool icon to toggle component settings.
-2. Open the **Output Events** tab. Click the plus-circle icon (Add Output Trigger).
+2. Open the **Actions** tab. Click the plus-circle icon (Add Action).
 3. **Name**: e.g. `Block PR until release is approved`.
 4. **Type**: choose **External Validation**.
 5. **Choose Validation Integration**: select the GitHub Validate integration you registered.
@@ -129,23 +137,43 @@ Use this when CI builds exactly one component per PR and you want a check-run th
 10. **Dynamic output (CEL)**: optional CEL expression to compute the output JSON at fire time.
 11. Click **Save**.
 
-Repeat for each conclusion you want to drive — typically one trigger that posts `success` on approval and one that posts `failure` on rejection — and wire each into the appropriate input trigger / approval state.
+Repeat for each conclusion you want to drive — typically one action that posts `success` on approval and one that posts `failure` on rejection — and wire each into the appropriate rule / approval state.
 
-#### Configure as a policy-wide global event
+### EXTERNAL_VALIDATION — per-release, policy-wide
 
 If you want every component bound to a given Approval Policy to post check-runs the same way, define the per-release `EXTERNAL_VALIDATION` event on the **policy** instead of on each component:
 
-1. Open **Approval Policies** → select your policy.
-2. Find **Policy-Wide Output Events** → click the plus-circle icon.
-3. Fill in the same fields described above. (The global form does not expose **VCS Repository** — the repo is resolved from each component's own VCS at fire time.)
+1. Open **Organization Settings → Policies → Approval Policies** and select your policy.
+2. Find **Policy-Wide Actions** → click the plus-circle icon.
+3. Fill in the same fields described above. (The policy-wide form does not expose **VCS Repository** — the repo is resolved from each bound component's own VCS at fire time.)
+
+### EXTERNAL_VALIDATION — per-VCS override (advanced)
+
+`VcsRepository.outputTriggers` is a per-repo override that **wins over the matching Global PR Validation rule for that one repo**. Use it sparingly — usually only when:
+
+- One repo legitimately needs a different integration or installation id from the rest of the org (e.g. a contractor's repo under a different GitHub App).
+- You want to roll out a new check-name or output template on a single repo before flipping it for the whole org.
+
+Resolution priority is **per-VCS override → Global PR Validation rule list (first regex match wins) → no PR-aggregated check-run** for repos none of the above covers (per-release `EXTERNAL_VALIDATION` still works for those).
+
+1. Open the VCS repository under the **VCS** menu item.
+2. Open the **Output Triggers** section. Click the plus-circle icon (Add Output Trigger).
+3. Fill in **Name**, **Type: External Validation**, **Choose Validation Integration**, **Installation ID**, optional **Output JSON** / **Dynamic output (CEL)**.
+4. Click **Save**.
+
+The repo's `effectivePrValidationTrigger` resolver immediately switches to this override; no change needed to the org-wide rule list.
+
+::: tip One override per VCS repo
+The VCS-level outputTriggers list accepts at most one `EXTERNAL_VALIDATION` entry. The conclusion is derived from the aggregated verdict, so you don't need separate triggers for "success" and "failure".
+:::
 
 ### PR_COMMENT — comment on the PR
 
 `PR_COMMENT` posts a per-release markdown comment to every open PR whose `commits[]` includes the firing release's SCE. New comment per fire — never edited in place. Independent from the PR-level check-run aggregation; you can use one, the other, or both.
 
-Configure it as a release output event on a component (or policy-wide):
+Configure it as an action on a component (or policy-wide):
 
-1. Open the component. Click the tool icon → **Output Events** → plus-circle.
+1. Open the component. Click the tool icon → **Actions** → plus-circle.
 2. **Type**: choose **PR Comment**.
 3. **Choose Validation Integration**: same `GITHUB_VALIDATE` integration you used for `EXTERNAL_VALIDATION`.
 4. **Optional Output JSON** (`clientPayload`): a JSON object with a `body` string (markdown). When set, ReARM **appends** it to the auto-generated body — contrast with `EXTERNAL_VALIDATION`, where `clientPayload` *replaces* the default output.
@@ -163,14 +191,14 @@ Both are **internal signals** with no direct SCM call. They tell the PR aggregat
 - `VALIDATE_PR` — fires when a release transitions to a successful validation state (e.g. approval granted). Asks the aggregator to fold this release's outcome into any open PR whose commits include its SCE.
 - `INVALIDATE_PR` — the failure-side companion. Fires on disapproval / rejection input events. Always contributes `FAILURE` to PR aggregation regardless of the release's lifecycle.
 
-The actual GitHub check-run is posted by the [VCS-level `EXTERNAL_VALIDATION` trigger](#external_validation--per-pr-aggregated-check-run) when the aggregated verdict reaches a terminal state.
+The actual GitHub check-run is posted by the matching PR-aggregated `EXTERNAL_VALIDATION` trigger — that is, the [Global PR Validation rule](#external_validation--global-pr-validation-rule-recommended) (or a [per-VCS override](#external_validation--per-vcs-override-advanced) when one is configured) — when the aggregated verdict reaches a terminal state.
 
-Configuration is the same as any other release output event (component-level or policy-wide). They take no `clientPayload` — they're pure signals. You typically wire:
+Configuration is the same as any other action (component-level or policy-wide). They take no `clientPayload` — they're pure signals. You typically wire:
 
-- `VALIDATE_PR` to your "approval granted" or "lifecycle = GENERAL_AVAILABILITY" output trigger.
-- `INVALIDATE_PR` to your "disapproved" or "rejected" output trigger.
+- `VALIDATE_PR` to your "approval granted" or "lifecycle = GENERAL_AVAILABILITY" rule.
+- `INVALIDATE_PR` to your "disapproved" or "rejected" rule.
 
-If you only want the per-release `EXTERNAL_VALIDATION` model (legacy), you can ignore `VALIDATE_PR` / `INVALIDATE_PR` entirely — they exist purely to drive the PR-aggregated path.
+If you stay on the per-release `EXTERNAL_VALIDATION` path only, you can ignore `VALIDATE_PR` / `INVALIDATE_PR` entirely — they exist purely to drive the PR-aggregated path.
 
 ## Inbound webhook - real-time PR state sync
 
@@ -238,7 +266,7 @@ Posting a check-run on its own does not block a merge — you have to tell GitHu
 1. In your GitHub repository go to **Settings** → **Branches** (or **Settings** → **Rules** if your org uses Rulesets).
 2. Add a branch protection rule (or ruleset) for `main` (or whichever branch you want gated).
 3. Enable **Require status checks to pass before merging**.
-4. In the search box, find and select the ReARM check-run name. The default is `rearm/<componentName>`. For VCS-level `EXTERNAL_VALIDATION`, override the **Check Name** field to a stable string (e.g. `rearm/pr-validation`) — branch protection requires an exact match, and a stable name avoids breakage when components are added or renamed.
+4. In the search box, find and select the ReARM check-run name. For the PR-aggregated path the default is `rearm/pr/<identity>` (from the Global PR Validation rule); for the per-release path it's `rearm/<componentName>`. **Override the Check Name to a stable string** (e.g. `rearm/pr-validation`) on the rule that drives this branch — branch protection requires an exact match, and a stable name avoids breakage when components or repos churn.
 
    ::: tip Check name must have run once first
    GitHub only autocompletes status check names that have already appeared on at least one commit. Open a throwaway PR first so the check posts once, then come back here and add it as required.
