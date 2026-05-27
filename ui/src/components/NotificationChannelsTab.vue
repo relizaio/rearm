@@ -19,23 +19,23 @@
             </div>
             <n-space>
                 <n-button @click="reload" size="small">Refresh</n-button>
+                <n-button type="primary" @click="openCreate">+ New channel</n-button>
             </n-space>
         </div>
-
-        <n-alert type="info" style="margin: 12px 0;">
-            Create + edit dialogs ship in Phase 7b. For now, channels can be
-            authored via the GraphQL API
-            (<code>upsertNotificationChannel</code>) and managed (enable / disable
-            / delete / test) from this view.
-        </n-alert>
 
         <n-spin v-if="loading" size="small"/>
         <div v-else>
             <div v-if="!channels.length" class="empty">
-                No notification channels configured yet.
+                No notification channels configured yet. Click <strong>+ New channel</strong> to add one.
             </div>
             <n-data-table v-else :columns="columns" :data="channels" :pagination="{ pageSize: 25 }"/>
         </div>
+
+        <NotificationChannelEditDialog
+            v-model:show="showDialog"
+            :org-uuid="orgUuid"
+            :original="editTarget"
+            @saved="onSaved"/>
     </div>
 </template>
 
@@ -48,6 +48,7 @@ import {
     NTooltip, DataTableColumns, useNotification,
 } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
+import NotificationChannelEditDialog from './NotificationChannelEditDialog.vue'
 
 const store = useStore()
 const route = useRoute()
@@ -57,8 +58,24 @@ const myorg = computed(() => store.getters.myorg)
 const orgUuid = computed(() => (route.params.orguuid as string) || myorg.value?.uuid)
 const channels = ref<any[]>([])
 const loading = ref<boolean>(true)
+const showDialog = ref<boolean>(false)
+const editTarget = ref<any | null>(null)
 
 onMounted(reload)
+
+function openCreate () {
+    editTarget.value = null
+    showDialog.value = true
+}
+
+function openEdit (row: any) {
+    editTarget.value = row
+    showDialog.value = true
+}
+
+async function onSaved () {
+    await reload()
+}
 
 async function reload () {
     if (!orgUuid.value) return
@@ -131,13 +148,17 @@ const columns = computed<DataTableColumns<any>>(() => [
     {
         title: '',
         key: 'actions',
-        width: 280,
+        width: 340,
         render: (row: any) => h(NSpace, { size: 'small' }, {
             default: () => [
                 h(NButton, {
                     size: 'tiny', type: 'info', secondary: true,
                     onClick: () => testChannel(row),
                 }, { default: () => 'Test' }),
+                h(NButton, {
+                    size: 'tiny', quaternary: true,
+                    onClick: () => openEdit(row),
+                }, { default: () => 'Edit' }),
                 h(NButton, {
                     size: 'tiny', quaternary: true,
                     onClick: () => toggleStatus(row),

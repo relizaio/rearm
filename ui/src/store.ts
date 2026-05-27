@@ -2539,6 +2539,43 @@ const storeObject : any = {
             })
             return response.data.notificationDeliveries
         },
+        async upsertNotificationChannel (context: any, input: any) {
+            // input shape mirrors NotificationChannelInput on the schema:
+            //   { uuid?, org, resourceGroup?, name, type, status?,
+            //     slackConfig?: { webhookUrl },
+            //     webhookConfig?: { url, authScheme, authToken } }
+            // Blank slackConfig/webhookConfig on update preserves the
+            // existing encrypted secret server-side ("rename without
+            // re-typing"); status defaults to ENABLED on create.
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation upsertNotificationChannel($input: NotificationChannelInput!) {
+                        upsertNotificationChannel(input: $input) {
+                            uuid org resourceGroup name type status
+                        }
+                    }`,
+                variables: { input }
+            })
+            return response.data.upsertNotificationChannel
+        },
+        async upsertNotificationSubscription (context: any, input: any) {
+            // input shape mirrors NotificationSubscriptionInput on the schema:
+            //   { uuid?, org, resourceGroup?, name, status, eventTypes,
+            //     filter?, routes, dedupWindowMinutes?, rateLimit? }
+            // CEL filter is validated server-side at save; bad expressions
+            // surface their parser error as a RelizaException to the caller.
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation upsertNotificationSubscription($input: NotificationSubscriptionInput!) {
+                        upsertNotificationSubscription(input: $input) {
+                            uuid org resourceGroup name status eventTypes
+                            filter routes dedupWindowMinutes rateLimit
+                        }
+                    }`,
+                variables: { input }
+            })
+            return response.data.upsertNotificationSubscription
+        },
         async setNotificationChannelStatus (context: any, payload: { uuid: string, status: string }) {
             const response = await graphqlClient.mutate({
                 mutation: gql`

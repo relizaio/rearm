@@ -20,25 +20,24 @@
             </div>
             <n-space>
                 <n-button @click="reload" size="small">Refresh</n-button>
+                <n-button type="primary" @click="openCreate">+ New subscription</n-button>
             </n-space>
         </div>
-
-        <n-alert type="info" style="margin: 12px 0;">
-            Create + edit dialogs ship in Phase 7b. For now, subscriptions can be
-            authored via the GraphQL API
-            (<code>upsertNotificationSubscription</code>) and managed (activate /
-            disable / delete) from this view.
-        </n-alert>
 
         <n-spin v-if="loading" size="small"/>
         <div v-else>
             <div v-if="!subs.length" class="empty">
-                No subscriptions configured yet.
+                No subscriptions configured yet. Click <strong>+ New subscription</strong> to add one.
             </div>
             <n-data-table v-else :columns="columns" :data="subs" :pagination="{ pageSize: 25 }"
-                          :row-key="(r: any) => r.uuid"
-                          :expandable="{ expandColumn: undefined, expandable: () => true }"/>
+                          :row-key="(r: any) => r.uuid"/>
         </div>
+
+        <NotificationSubscriptionEditDialog
+            v-model:show="showDialog"
+            :org-uuid="orgUuid"
+            :original="editTarget"
+            @saved="onSaved"/>
     </div>
 </template>
 
@@ -51,6 +50,7 @@ import {
     NTooltip, DataTableColumns, useNotification,
 } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
+import NotificationSubscriptionEditDialog from './NotificationSubscriptionEditDialog.vue'
 
 const store = useStore()
 const route = useRoute()
@@ -60,8 +60,24 @@ const myorg = computed(() => store.getters.myorg)
 const orgUuid = computed(() => (route.params.orguuid as string) || myorg.value?.uuid)
 const subs = ref<any[]>([])
 const loading = ref<boolean>(true)
+const showDialog = ref<boolean>(false)
+const editTarget = ref<any | null>(null)
 
 onMounted(reload)
+
+function openCreate () {
+    editTarget.value = null
+    showDialog.value = true
+}
+
+function openEdit (row: any) {
+    editTarget.value = row
+    showDialog.value = true
+}
+
+async function onSaved () {
+    await reload()
+}
 
 async function reload () {
     if (!orgUuid.value) return
@@ -146,9 +162,13 @@ const columns = computed<DataTableColumns<any>>(() => [
     {
         title: '',
         key: 'actions',
-        width: 280,
+        width: 340,
         render: (row: any) => {
             const buttons = []
+            buttons.push(h(NButton, {
+                size: 'tiny', quaternary: true,
+                onClick: () => openEdit(row),
+            }, { default: () => 'Edit' }))
             if (row.status !== 'ACTIVE') {
                 buttons.push(h(NButton, {
                     size: 'tiny', quaternary: true,
