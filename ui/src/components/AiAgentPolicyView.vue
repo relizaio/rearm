@@ -34,7 +34,7 @@
                 <n-radio-group v-model:value="form.kind">
                     <n-radio-button v-for="opt in kindOptions" :key="opt.value" :value="opt.value">
                         {{ opt.value }}
-                        <n-tooltip trigger="hover">
+                        <n-tooltip trigger="hover" :style="{ maxWidth: '420px' }" placement="bottom-start">
                             <template #trigger>
                                 <n-icon size="14" class="opt-help">
                                     <QuestionCircle20Regular/>
@@ -50,7 +50,7 @@
                 <n-radio-group v-model:value="form.severity">
                     <n-radio-button v-for="opt in severityOptions" :key="opt.value" :value="opt.value">
                         {{ opt.value }}
-                        <n-tooltip trigger="hover">
+                        <n-tooltip trigger="hover" :style="{ maxWidth: '420px' }" placement="bottom-start">
                             <template #trigger>
                                 <n-icon size="14" class="opt-help">
                                     <QuestionCircle20Regular/>
