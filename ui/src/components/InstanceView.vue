@@ -84,6 +84,23 @@
                     </div>
                     <n-data-table :data="deployedReleases" :columns="deployedReleaseFeilds"></n-data-table>
                 </div>
+                <div v-if="updatedInstance && updatedInstance.instanceType != InstanceType.CLUSTER && filteredUnmatchedReleases.length"
+                     class="instanceReleaseBlock unmatchedImagesOnInstance">
+                    <div class="listHeaderText">
+                        Unmatched Deployed Images:
+                        <n-tooltip trigger="hover" placement="top" :style="{maxWidth: '420px'}">
+                            <template #trigger><n-icon class="ml-1 clickable" size="18"><InfoCircle /></n-icon></template>
+                            Images reported by the cluster watcher whose digest does not resolve to any known deliverable in this org. Typically third-party sidecars (redis, postgres, etc.) or pods missing build-time metadata.
+                        </n-tooltip>
+                        <n-dropdown v-if="!isChildInstance && updatedInstance.instanceType === InstanceType.STANDALONE_INSTANCE" title="Select Namespace" trigger="hover" :options="namespacesForDropdown" @select="$key => {selectedNamespace = $key}">
+                            <span>
+                                <span>{{ selectedNamespace ? selectedNamespace : 'Filter By Namespace' }}</span>
+                                <Icon><CaretDownFilled/></Icon>
+                            </span>
+                        </n-dropdown>
+                    </div>
+                    <n-data-table :data="filteredUnmatchedReleases" :columns="unmatchedImageFields" />
+                </div>
                 <div v-if="updatedInstance" class="instancePropertiesBlock">
                     <div class="listHeaderText">{{ instanceWord }} Properties:
                         <n-icon v-if="isWritable" class="clickable" @click="showAddInstancePropertyModal = true" title="Add New Property Manually" size="24"><CirclePlus /></n-icon>
@@ -558,6 +575,17 @@ const deployedReleases: ComputedRef<any> = computed((): any => {
         deployedRls = parseDeployedReleases(updatedInstance.value.releases)
     }
     return deployedRls
+})
+
+// Watcher-reported images whose digest is not in this org's ontology.
+// Snapshot only — refreshes on every watcher tick on the backend. Empty
+// when nothing unrecognised is currently running (or watcher hasn't
+// reported yet). Filtered by namespace when the same dropdown that
+// scopes Deployed Component Releases has a value selected.
+const filteredUnmatchedReleases: ComputedRef<any[]> = computed((): any[] => {
+    const list = (updatedInstance.value && updatedInstance.value.unmatchedReleases) || []
+    if (!selectedNamespace.value || selectedNamespace.value === 'ALL') return list
+    return list.filter((u: any) => u.namespace === selectedNamespace.value)
 })
 
 const instanceData: ComputedRef<any> = computed((): any => store.getters.instanceById(instanceUuid, -1))
@@ -1651,6 +1679,70 @@ const targetReleaseFeilds: any[] = [
         }
     },
     
+]
+// Strip the trailing @<algo>:<hex> digest suffix from a container ref so
+// the Image column shows just the registry/repo[:tag] portion. Handles
+// the variety k8s reports: 'registry/repo@sha256:hex',
+// 'registry/repo:tag@sha256:hex', 'registry/repo:tag' (no digest),
+// 'sha256:hex' (bare digest fallback when imageID is absent), and null.
+function coreImageRef(image: string | null | undefined): string {
+    if (!image) return '—'
+    const atIdx = image.indexOf('@')
+    const core = atIdx > 0 ? image.substring(0, atIdx) : image
+    // Bare 'sha256:hex' has no '@' but is itself the digest — keep
+    // it as-is rather than emitting an empty string; the digest
+    // tooltip will still cover the same info.
+    return core || image
+}
+
+const unmatchedImageFields: any[] = [
+    {
+        key: 'image',
+        title: 'Image',
+        render: (row: any) => {
+            const els: any[] = [coreImageRef(row.image)]
+            // Build a tooltip body listing every algo:hex digest record.
+            // Falls back to parsing the @-suffix off the image ref (or the
+            // bare 'sha256:hex' image) when the server didn't include a
+            // record — e.g. older data before the DigestRecord migration.
+            const records: { algo?: string, digest?: string }[] = Array.isArray(row.digestRecords) ? row.digestRecords : []
+            let tooltipLines: string[] = records
+                .filter(r => r && r.digest)
+                .map(r => `${r.algo || 'unknown'}:${r.digest}`)
+            if (tooltipLines.length === 0) {
+                const atIdx = (row.image || '').indexOf('@')
+                if (atIdx > 0) tooltipLines = [row.image.substring(atIdx + 1)]
+                else if (row.image && row.image.startsWith('sha256:')) tooltipLines = [row.image]
+            }
+            if (tooltipLines.length) {
+                const copyValue = tooltipLines.join('\n')
+                els.push(h(NTooltip, { trigger: 'hover', placement: 'top' }, {
+                    trigger: () => h(NIcon, {
+                        size: 16,
+                        class: 'ml-1 clickable',
+                        title: 'Copy digest',
+                        onClick: () => { try { navigator.clipboard.writeText(copyValue) } catch {} }
+                    }, { default: () => h(InfoCircle) }),
+                    default: () => tooltipLines.join(', ')
+                }))
+            }
+            return h('span', { style: 'word-break: break-all;' }, els)
+        }
+    },
+    { key: 'namespace', title: 'Namespace', render: (row: any) => row.namespace || '—' },
+    { key: 'pod', title: 'Pod', render: (row: any) => row.pod || '—' },
+    {
+        key: 'state',
+        title: 'State',
+        // Keep state on one line — without this, the n-data-table column
+        // can shrink narrow enough to wrap "RUNNING" as "RUNNI / NG".
+        render: (row: any) => h('span', { style: 'white-space: nowrap;' }, row.state || 'UNSET')
+    },
+    {
+        key: 'lastSeen',
+        title: 'Last Seen',
+        render: (row: any) => row.lastSeen ? (new Date(row.lastSeen)).toLocaleString('en-CA') : '—'
+    }
 ]
 const deployedReleaseFeilds: any[] = [
     {
