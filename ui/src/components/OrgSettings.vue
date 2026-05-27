@@ -262,15 +262,27 @@
                                     </n-form-item>
                                     <n-form-item path="globalInputEvent.outputEvents">
                                         <template #label><strong>Actions when condition is met</strong></template>
-                                        <n-select v-model:value="globalInputEvent.outputEvents"
-                                        :options="globalOutputEventsForInputForm" multiple
-                                        placeholder="Fired when the condition above is TRUE" />
+                                        <n-space vertical size="small" style="width: 100%;">
+                                            <n-select v-model:value="globalInputEvent.outputEvents"
+                                            :options="globalOutputEventsForInputForm" multiple
+                                            placeholder="Fired when the condition above is TRUE" />
+                                            <!-- Inline action create — saves the action immediately and
+                                                 attaches its uuid back to the rule's true-branch list. -->
+                                            <n-button v-if="isWritable" size="tiny" dashed @click="openCreateActionFromRule('true')">
+                                                + Create new action
+                                            </n-button>
+                                        </n-space>
                                     </n-form-item>
                                     <n-form-item path="globalInputEvent.outputEventsOnFalse">
                                         <template #label><strong>Actions when condition is NOT met (optional)</strong></template>
-                                        <n-select v-model:value="globalInputEvent.outputEventsOnFalse"
-                                        :options="globalOutputEventsForInputForm" multiple
-                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
+                                        <n-space vertical size="small" style="width: 100%;">
+                                            <n-select v-model:value="globalInputEvent.outputEventsOnFalse"
+                                            :options="globalOutputEventsForInputForm" multiple
+                                            placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
+                                            <n-button v-if="isWritable" size="tiny" dashed @click="openCreateActionFromRule('false')">
+                                                + Create new action
+                                            </n-button>
+                                        </n-space>
                                     </n-form-item>
                                     <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
                                 </n-space>
@@ -5416,6 +5428,24 @@ async function saveGlobalInputEvents () {
     }
 }
 
+// "+ Create new action" inside the rule modal sets this to 'true' or
+// 'false' before opening the action-create modal. After save, the
+// addGlobalOutputEvent handler diffs the post-save uuid list against
+// this snapshot to find the new entry and appends its uuid back to
+// the rule's outputEvents / outputEventsOnFalse.
+const pendingActionAttachBranch = ref<null | 'true' | 'false'>(null)
+const pendingActionAttachUuidsBefore = ref<string[]>([])
+
+function openCreateActionFromRule (branch: 'true' | 'false') {
+    pendingActionAttachBranch.value = branch
+    pendingActionAttachUuidsBefore.value = globalOutputEvents.value
+        .map((e: any) => e.uuid)
+        .filter((u: any) => !!u)
+    resetGlobalOutputEvent()
+    loadEnvironmentTypesForOutputEvents()
+    showCreateGlobalOutputEventModal.value = true
+}
+
 function addGlobalOutputEvent () {
     const eventToPush = commonFunctions.deepCopy(globalOutputEvent.value)
     if (eventToPush.type === 'VDR_SNAPSHOT_ARTIFACT') {
@@ -5451,7 +5481,26 @@ function addGlobalOutputEvent () {
     } else {
         globalOutputEvents.value.push(eventToPush)
     }
-    saveGlobalOutputEvents()
+    // Await save so we can read back the server-assigned uuid for any
+    // newly-created entry. Then if this modal was opened from a rule's
+    // "+ Create new action" button, attach the new uuid to the rule's
+    // outputEvents / outputEventsOnFalse list.
+    const branch = pendingActionAttachBranch.value
+    const beforeUuids = new Set(pendingActionAttachUuidsBefore.value)
+    pendingActionAttachBranch.value = null
+    pendingActionAttachUuidsBefore.value = []
+    saveGlobalOutputEvents().then(() => {
+        if (branch) {
+            const newOne = globalOutputEvents.value.find((e: any) => e.uuid && !beforeUuids.has(e.uuid))
+            if (newOne && newOne.uuid) {
+                const target = branch === 'true' ? 'outputEvents' : 'outputEventsOnFalse'
+                const list: string[] = globalInputEvent.value[target] || []
+                if (!list.includes(newOne.uuid)) {
+                    globalInputEvent.value[target] = [...list, newOne.uuid]
+                }
+            }
+        }
+    })
     resetGlobalOutputEvent()
     showCreateGlobalOutputEventModal.value = false
 }

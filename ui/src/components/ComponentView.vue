@@ -818,15 +818,30 @@
                                                     </n-form-item>
                                                     <n-form-item path="inputTrigger.outputEvents">
                                                         <template #label><strong>Actions when condition is met</strong></template>
-                                                        <n-select v-model:value="inputTrigger.outputEvents"
-                                                        :options="outputTriggersForInputForm" multiple
-                                                        placeholder="Fired when the condition above is TRUE" />
+                                                        <n-space vertical size="small" style="width: 100%;">
+                                                            <n-select v-model:value="inputTrigger.outputEvents"
+                                                            :options="outputTriggersForInputForm" multiple
+                                                            placeholder="Fired when the condition above is TRUE" />
+                                                            <!-- Inline action create — creates a local
+                                                                 component-level action and attaches its
+                                                                 (temp) uuid back to the rule's true-branch
+                                                                 list. The real uuid is assigned by the
+                                                                 server when the user hits Save Changes. -->
+                                                            <n-button v-if="isWritable" size="tiny" dashed @click="openCreateActionFromRule('true')">
+                                                                + Create new action
+                                                            </n-button>
+                                                        </n-space>
                                                     </n-form-item>
                                                     <n-form-item path="inputTrigger.outputEventsOnFalse">
                                                         <template #label><strong>Actions when condition is NOT met (optional)</strong></template>
-                                                        <n-select v-model:value="inputTrigger.outputEventsOnFalse"
-                                                        :options="outputTriggersForInputForm" multiple
-                                                        placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
+                                                        <n-space vertical size="small" style="width: 100%;">
+                                                            <n-select v-model:value="inputTrigger.outputEventsOnFalse"
+                                                            :options="outputTriggersForInputForm" multiple
+                                                            placeholder="Optional — fired when the condition above is FALSE. Lets you express 'else B' in one rule." />
+                                                            <n-button v-if="isWritable" size="tiny" dashed @click="openCreateActionFromRule('false')">
+                                                                + Create new action
+                                                            </n-button>
+                                                        </n-space>
                                                     </n-form-item>
                                                     <n-button @click="addInputTrigger" type="success">
                                                         Save
@@ -2818,6 +2833,20 @@ const tagFields: any[] = [
     }
 ]
 
+// "+ Create new action" inside the Local Rule modal sets this before
+// opening the action-create modal so addOutputTrigger can attach the
+// new (temp-uuid) entry back to the rule's outputEvents list. Local
+// actions get a temp uuid client-side; the real uuid is assigned
+// when the user hits Save Changes at the bottom of the tab.
+const pendingActionAttachBranch = ref<null | 'true' | 'false'>(null)
+
+function openCreateActionFromRule (branch: 'true' | 'false') {
+    pendingActionAttachBranch.value = branch
+    resetOutputTrigger()
+    loadEnvTypes()
+    showCreateOutputTriggerModal.value = true
+}
+
 async function addOutputTrigger () {
     if (!updatedComponent.value.outputTriggers) {
         updatedComponent.value.outputTriggers = []
@@ -2863,6 +2892,7 @@ async function addOutputTrigger () {
         return
     }
 
+    let isNewAction = false
     if (outputTriggerToPush.uuid) {
         // Check if trigger with this UUID already exists
         const existingIndex = updatedComponent.value.outputTriggers.findIndex((ot: any) => ot.uuid === outputTriggerToPush.uuid)
@@ -2872,13 +2902,29 @@ async function addOutputTrigger () {
         } else {
             // Add new trigger
             updatedComponent.value.outputTriggers.push(outputTriggerToPush)
+            isNewAction = true
         }
     } else {
         // Add new trigger - generate temporary UUID for client-side tracking
         outputTriggerToPush.uuid = 'temp-' + Date.now() + '-' + crypto.randomUUID()
         updatedComponent.value.outputTriggers.push(outputTriggerToPush)
+        isNewAction = true
     }
-    
+
+    // If this modal was opened from a rule's "+ Create new action" button,
+    // attach the new action's uuid to the rule's outputEvents /
+    // outputEventsOnFalse list. The temp uuid is what the rule references
+    // until the user hits Save Changes; the backend rewrites both refs
+    // and the trigger uuid in the same updateComponent call.
+    if (isNewAction && pendingActionAttachBranch.value) {
+        const target = pendingActionAttachBranch.value === 'true' ? 'outputEvents' : 'outputEventsOnFalse'
+        const list: string[] = (inputTrigger.value as any)[target] || []
+        if (!list.includes(outputTriggerToPush.uuid)) {
+            ;(inputTrigger.value as any)[target] = [...list, outputTriggerToPush.uuid]
+        }
+    }
+    pendingActionAttachBranch.value = null
+
     resetOutputTrigger()
     showCreateOutputTriggerModal.value = false
 }
