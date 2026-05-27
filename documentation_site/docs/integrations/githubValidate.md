@@ -206,11 +206,9 @@ Everything above pushes *outbound* signals (check-runs, PR comments) from ReARM 
 
 Why bother:
 
-- Removes the need for a `pull_request: closed` CI job whose only purpose was sending `--pr-state CLOSED` / `MERGED` to ReARM.
+- This is the only way how GitHub can communicate PR`MERGED` status to ReARM.
+- PR updates in ReARM with Webhook happen almost instantly, while without it you have to wait for the next CI run
 - Sets `mergedDate` / `closedDate` from the canonical GitHub timestamps rather than CI's wall clock.
-- Catches PR edits (title / description / labels / assignees) that don't trigger a CI build.
-
-The webhook handler goes through the same `PullRequestService.applyFromInput` path the CLI upsert uses, so the resulting `PullRequest` row is byte-identical between the two intake paths. You can wire both up simultaneously; they're idempotent.
 
 ::: warning ReARM Pro only
 The inbound webhook receiver is part of ReARM Pro. On ReARM CE, drive PR state via the CLI `pullrequest upsert` path described in [Pull Requests › Standalone PR upsert](../workflows/pull-requests#standalone-pr-upsert-no-release).
@@ -223,7 +221,7 @@ The inbound webhook receiver is part of ReARM Pro. On ReARM CE, drive PR state v
 3. Click **Add Webhook**. Fill in:
    - **Slug** — a short lowercase identifier, 4–63 ASCII characters, no leading/trailing hyphen. It becomes part of the public webhook URL: `https://<your-rearm>/api/programmatic/v1/webhook/<orgUuid>/<slug>`. Reserved names are rejected. Keep it stable — changing the slug invalidates the GitHub-side webhook URL until you re-register.
    - **Secret** — a strong random string. ReARM stores it encrypted at rest and uses it as the HMAC-SHA256 key when verifying inbound deliveries.
-   - **Installation ID** *(optional)* — the GitHub App's installation ID for this repo / org. Same value as in step 4 of the GitHub part above.
+   - **Installation ID** — the GitHub App's installation ID for this repo / org. Same value as in step 4 of the GitHub part above.
    - **Note** *(optional)* — free-form, surfaces in the UI for ops.
 4. Save. ReARM displays the public webhook URL and confirms the secret is set.
 
@@ -234,8 +232,7 @@ The inbound webhook receiver is part of ReARM Pro. On ReARM CE, drive PR state v
    - **Webhook URL** — paste the URL from the ReARM Webhook detail panel.
    - **Webhook secret** — paste the same secret you set in ReARM (don't reuse one from another integration).
 2. Save the App.
-3. On the App's **Permissions & events** page, under **Subscribe to events**, enable **Pull request** (the only event ReARM currently consumes — push / delete / check_run / etc. are recorded as `UNKNOWN_EVENT` and discarded).
-4. Re-install or update the App on the target repos so the new permission takes effect.
+3. On the App's **Permissions & events** page, under **Subscribe to events**, enable **Pull request** (the only event ReARM currently consumes; other events such as push / delete / check_run / etc. are recorded as `UNKNOWN_EVENT` and discarded).
 
 ### 3. Verify delivery
 
