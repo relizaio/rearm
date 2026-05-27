@@ -198,7 +198,13 @@
             style="width: 90%;"
             title="Instance Agent Data"
         >
-            <div><pre style="white-space: pre-wrap;"> {{ updatedInstance.agentData }} </pre></div>
+            <prism-editor
+                class="editor agentDataEditor"
+                v-model="prettyAgentData"
+                :highlight="jsonHighlighter"
+                :readonly="true"
+                line-numbers
+            ></prism-editor>
         </n-modal>
         <n-modal
             v-model:show="showProductPublicVersionModal"
@@ -1368,6 +1374,29 @@ const highlighter = function (code: string) {
     return prism.highlight(code, prism.languages[lang], lang)
 }
 
+// Pretty-printed JSON for the Agent Data modal. The watcher ships a
+// JSON string in updatedInstance.agentData; we re-parse + indent so
+// PrismEditor renders it readable instead of a single squashed line.
+// Falls back to the raw string when the payload isn't valid JSON
+// (legacy data, or a watcher mode that ships YAML / plain text).
+const prettyAgentData = computed<string>({
+    get() {
+        const raw = updatedInstance.value && updatedInstance.value.agentData
+        if (!raw) return ''
+        try {
+            return JSON.stringify(JSON.parse(raw), null, 2)
+        } catch {
+            return raw
+        }
+    },
+    // Editor is :readonly so writes never fire, but v-model still
+    // demands a setter — no-op.
+    set() {}
+})
+const jsonHighlighter = function (code: string) {
+    return prism.highlight(code, prism.languages.json, 'json')
+}
+
 // n-data-table
 const matchedProductFields: any[] = [
     {
@@ -2287,6 +2316,10 @@ await onCreate()
     line-height: 1.5;
     padding: 5px;
   }
+.agentDataEditor {
+    max-height: 70vh;
+    overflow: auto;
+}
 .dangerZone {
     margin-top: 32px;
     padding-top: 16px;
