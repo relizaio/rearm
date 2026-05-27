@@ -2182,6 +2182,37 @@ function stripGraphQLMetadata(triggers: any[], stripScope: boolean = false) {
 }
 
 async function saveTriggers() {
+    // New output triggers added inline from "+ Create new action" inside a
+    // rule modal carry a temp-prefixed uuid that the rule references via
+    // outputEvents / outputEventsOnFalse. stripGraphQLMetadata rewrites
+    // the trigger's own uuid to "" so the server generates a fresh one,
+    // but it does NOT rewrite the references inside rules — leaving the
+    // rule pointing at a non-existent temp uuid and the backend choking
+    // with SERVICE_ERROR. Before stripping, remap each temp uuid on an
+    // output trigger to a real client-generated UUID (which the backend
+    // respects on updateComponent), and rewrite the same uuid in every
+    // rule's outputEvents/outputEventsOnFalse so the binding survives.
+    const tempToRealUuid: Record<string, string> = {}
+    if (updatedComponent.value.outputTriggers) {
+        for (const t of updatedComponent.value.outputTriggers) {
+            if (t.uuid && typeof t.uuid === 'string' && t.uuid.startsWith('temp-')) {
+                const real = crypto.randomUUID()
+                tempToRealUuid[t.uuid] = real
+                t.uuid = real
+            }
+        }
+    }
+    if (Object.keys(tempToRealUuid).length > 0 && updatedComponent.value.releaseInputTriggers) {
+        for (const rule of updatedComponent.value.releaseInputTriggers) {
+            if (Array.isArray(rule.outputEvents)) {
+                rule.outputEvents = rule.outputEvents.map((uuid: string) => tempToRealUuid[uuid] || uuid)
+            }
+            if (Array.isArray(rule.outputEventsOnFalse)) {
+                rule.outputEventsOnFalse = rule.outputEventsOnFalse.map((uuid: string) => tempToRealUuid[uuid] || uuid)
+            }
+        }
+    }
+
     // Strip scope and __typename before saving to backend
     updatedComponent.value.outputTriggers = stripGraphQLMetadata(updatedComponent.value.outputTriggers, true)
     updatedComponent.value.releaseInputTriggers = stripGraphQLMetadata(updatedComponent.value.releaseInputTriggers, true)
