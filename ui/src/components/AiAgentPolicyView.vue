@@ -133,7 +133,7 @@
                     </n-alert>
                     <div class="samples">
                         <n-button v-for="s in samples" :key="s.name" size="small" @click="applySample(s)">
-                            <n-tag size="tiny" :type="s.kind === 'INPUT' ? 'info' : 'default'" style="margin-right: 4px;">{{ s.kind }}</n-tag>
+                            <n-tag size="tiny" :type="kindTagType(s.kind)" style="margin-right: 4px;">{{ s.kind }}</n-tag>
                             <n-tag size="tiny" :type="s.severity === 'BLOCK' ? 'error' : 'warning'" style="margin-right: 6px;">{{ s.severity }}</n-tag>
                             {{ s.name }}
                         </n-button>
@@ -215,7 +215,11 @@ const kindOptions = [
     },
     {
         value: 'OUTPUT',
-        help: '<strong>OUTPUT</strong> — postcondition on session work. Checked at init (records PENDING — soft signal to the agent), re-checked when an artifact attaches, hardens to FAILED when a commit is attributed without satisfying the CEL. Use for "agent must produce X" rules.',
+        help: '<strong>OUTPUT</strong> — postcondition on session work. Checked at init (records AWAITING — soft signal to the agent), re-checked when an artifact attaches, hardens to FAILED when a commit is attributed without satisfying the CEL. Use for "agent must produce X by commit-time" rules (e.g. orientation report).',
+    },
+    {
+        value: 'CLOSE',
+        help: '<strong>CLOSE</strong> — postcondition that stays AWAITING through the entire session lifetime and only locks its verdict at session close. Use when the satisfying artifact arrives <em>after</em> the agent\'s last commit — e.g. a FINAL <code>AGENTIC_REPORT</code> tag the agent files as its closing step. OUTPUT would deterministically FAIL such a rule at commit-attribution time.',
     },
 ]
 
@@ -285,15 +289,15 @@ const samples = [
     },
     {
         name: 'Final report required',
-        description: 'Session must produce a final-phase AGENTIC_REPORT before commits land.',
-        kind: 'OUTPUT',
+        description: 'Session must produce a final-phase AGENTIC_REPORT before close. CLOSE kind — the FINAL report is by definition filed after the agent\'s last commit, so OUTPUT would FAIL it at commit-attribution.',
+        kind: 'CLOSE',
         severity: 'BLOCK',
         cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))',
     },
     {
         name: 'Any AGENTIC_REPORT artifact required',
-        description: 'Looser variant — any AGENTIC_REPORT artifact (no phase distinction).',
-        kind: 'OUTPUT',
+        description: 'Looser variant — any AGENTIC_REPORT artifact (no phase distinction). CLOSE kind so a report filed after the last commit still counts.',
+        kind: 'CLOSE',
         severity: 'BLOCK',
         cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT")',
     },
@@ -372,6 +376,12 @@ function applySample (s: any) {
     form.value.kind = s.kind
     form.value.severity = s.severity
     form.value.cel = s.cel
+}
+
+function kindTagType (kind: string): 'info' | 'success' | 'default' {
+    if (kind === 'INPUT') return 'info'
+    if (kind === 'CLOSE') return 'success'
+    return 'default'
 }
 
 async function save () {
