@@ -311,7 +311,7 @@
                                         </div>
                                         <div class="versionSchemaBlock" v-if="updatedComponent && componentData && (componentData.type === 'COMPONENT') && myUser.installationType === 'SAAS'">
                                             <label  id="componentKindLabel" for="componentKind">Component Kind</label>
-                                            <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}]" v-model:value="updatedComponent.kind" clearable />
+                                            <n-select v-if="isWritable" v-on:update:value="updateComponentKind" :options="[{label: 'Generic', value: 'GENERIC'}, {label: 'Helm', value: 'HELM'}, {label: 'Job / CronJob', value: 'JOB'}]" v-model:value="updatedComponent.kind" clearable />
                                             <n-input v-if="!isWritable" type="text" :value="updatedComponent.kind" readonly/>
                                         </div>
                                         <div class="versionSchemaBlock" v-if="(updatedComponent && componentData && updatedComponent.kind === 'HELM' && updatedComponent.authentication  && myUser.installationType === 'SAAS')">

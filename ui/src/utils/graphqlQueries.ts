@@ -62,6 +62,7 @@ const MULTI_RELEASE_GQL_DATA = `
         uuid
         name
         type
+        kind
         resourceGroup
     }
     ticketDetails {

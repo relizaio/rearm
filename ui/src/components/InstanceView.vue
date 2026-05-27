@@ -982,6 +982,7 @@ const parseDeployedReleases = function (releases: any) {
                     component: deployedRl.componentDetails.name,
                     componentUuid: deployedRl.componentDetails.uuid,
                     componentType: deployedRl.componentDetails.type,
+                    componentKind: deployedRl.componentDetails.kind,
                     index: index,
                     namespace: rl.namespace,
                     state: rl.state,
@@ -1749,9 +1750,9 @@ const deployedReleaseFeilds: any[] = [
         key: 'component',
         title: 'Component',
         render: (row: any) => {
-            let el
+            const els: any[] = []
             if (row.componentType === 'COMPONENT') {
-                el = h(
+                els.push(h(
                     RouterLink,
                     {
                         to: {
@@ -1763,12 +1764,24 @@ const deployedReleaseFeilds: any[] = [
                         }
                     },
                     { default: () => row.component }
-                )
-            }else {
-                el = row.component
+                ))
+            } else {
+                els.push(row.component)
             }
-            
-            return el
+            // JOB-kind badge — schedule-driven workloads (k8s Job /
+            // CronJob etc.). Backend's product-release match treats
+            // these like TRANSIENT deps so the deployed version may
+            // legitimately lag the target until the job next runs.
+            if (row.componentKind === 'JOB') {
+                els.push(h(NTooltip, { trigger: 'hover', placement: 'top', style: { maxWidth: '320px' } }, {
+                    trigger: () => h('span', {
+                        class: 'jobBadge',
+                        style: 'margin-left: 8px; padding: 1px 6px; border-radius: 4px; background: #e8f1ff; color: #1f5ad3; font-size: 11px; font-weight: 600;'
+                    }, 'JOB'),
+                    default: () => 'Schedule-driven workload. The deployed version may lag the target product release until the job next runs.'
+                }))
+            }
+            return h('span', { style: 'display: inline-flex; align-items: center;' }, els)
         }
     },
     {
