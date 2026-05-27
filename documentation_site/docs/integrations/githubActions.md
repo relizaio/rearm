@@ -5,3 +5,5 @@
 ## 2. [Signing with Cosign and Sigstore](./githubActionsCosign)
 
 ## 3. [Add integration on ReARM to Trigger GitHub Actions builds](./githubActionsTriggers)
+
+## 4. [Pull Request Validation and Commenting](./githubValidate)

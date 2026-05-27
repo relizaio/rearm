@@ -19,24 +19,25 @@ The end-to-end flow is:
 3. **ReARM mints an installation token** from your GitHub App and dispatches one of the configured event types:
    - `EXTERNAL_VALIDATION` → posts a GitHub check-run (PR-level after aggregation, or per-release).
    - `PR_COMMENT` → posts a markdown comment on every open PR whose commits include the firing release's SCE.
-   - `INVALIDATE_PR` → internal signal that contributes FAILURE to PR aggregation on rejection / disapproval; the actual SCM push happens via the aggregator's `EXTERNAL_VALIDATION` trigger.
+   - `VALIDATE_PR` → internal signal that contributes SUCCESS to PR aggregation; the actual SCM push happens via the aggregator's `EXTERNAL_VALIDATION` trigger.
+   - `INVALIDATE_PR` → internal signal that contributes FAILURE to PR aggregation; the actual SCM push happens via the aggregator's `EXTERNAL_VALIDATION` trigger.
 4. **A branch-protection rule** on `main` (or your target branch) lists the ReARM check-run name as a required status check, so the PR cannot be merged until the check posts a passing conclusion.
 
 ## GitHub Part
 
-### 1. Register a dedicated GitHub App
+### 1. Register a GitHub App
 
-You need a GitHub App distinct from any "Trigger Workflows" app you may already have, because the permission sets are different.
+It is recommended to use a GitHub App distinct from any "Trigger Workflows" app you may already have, because the permission sets are different.
 
 Follow the upstream guide for [registering a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app#registering-a-github-app). Defaults are fine, except:
 
-- **Webhook**: optional. Leave **Active** unchecked if you only want outbound check-runs / comments from ReARM. Enable it to receive inbound `pull_request` events into ReARM (Pro-only; see [Inbound webhook](#inbound-webhook--real-time-pr-state-sync) below for the URL + secret you'll paste here).
+- **Webhook**: optional. Always leave **Active** unchecked when initially creating the application. Generally, Webhook is not required but recommended if you want to receive inbound `pull_request` events into ReARM, in which case you should configure it after the App is installed (See [Inbound webhook](#inbound-webhook--real-time-pr-state-sync) below).
 - **Repository permissions**:
   - **Checks** → **Read and write** (required to post the check-run).
   - **Pull requests** → **Read and write** (Read is required so the App can resolve PR head SHA; Write is required to post `PR_COMMENT` comments via the issues/comments endpoint).
   - **Metadata** → **Read** (mandatory for any App that touches a repo).
 
-Choose whether to allow installation only on your account or on any account based on your needs.
+Choose whether to allow installation only on your account or on any account based on your needs. Note, that it is generally recommended to install for your account only, otherwise your application will be globally visible in GitHub.
 
 ### 2. Note the App ID
 
@@ -61,9 +62,9 @@ After install, GitHub takes you to a settings page whose URL contains the **Inst
 ### 1. Register the integration (Org Admin)
 
 1. In ReARM, open **Organization Settings** → **Integrations** tab → **CI Integrations** sub-section.
-2. Click **Add CI Integration**.
+2. Under **GitHub**, click **Add** or **Add another GitHub** depending on your existing integrations.
 3. **Description**: anything memorable, e.g. `GitHub Validate (acme-org)`.
-4. **CI Type**: choose **GitHub Validate**.
+4. **Capabilities**: check **PR Validate**, if you're planning to configure Webhook, also check **Webhook (inbound)**, if you're also using same app for workflow dispatch also select **Workflow Dispatch** (note that mixing Workflow Dispatch and PR capabilities is not recommended due to mixing permissions).
 5. **GitHub Private Key**:
    - Toggle **Upload .pem** and select the `.pem` file from step 3 above, **or**
    - Toggle **Paste** and paste the contents of the `.pem` file directly.
@@ -74,7 +75,7 @@ The integration is now stored, with the private key encrypted at rest.
 
 ### 2. Make sure the VCS repository is registered
 
-In ReARM, register the GitHub repository whose PRs you want to gate (either via Component creation, or via the **VCS** menu item and the plus-circle icon). The repository's `vcsuri` must contain `github.com/<org>/<repo>` — ReARM uses this to build the check-run and comment URLs.
+In ReARM, register the GitHub repository whose PRs you want to gate (either via Component creation, or via the **VCS** menu item and the plus-circle icon), or it may be self-registered via CI - in any case, make sure that VCS repository is available in ReARM. The repository's `vcsuri` must contain `github.com/<org>/<repo>` — ReARM uses this to build the check-run and comment URLs.
 
 ### 3. Choose where to attach the trigger
 
@@ -84,7 +85,7 @@ Three different event types drive different SCM outcomes. They live in different
 |---|---|---|
 | [`EXTERNAL_VALIDATION` (PR-level)](#external_validation--per-pr-aggregated-check-run) | **VCS Repository** → Output Triggers | Posts a single check-run summarising the *aggregated* PR verdict across all attributed releases. Recommended for monorepos. |
 | [`EXTERNAL_VALIDATION` (per-release)](#external_validation--per-release-check-run-legacy) | **Component** or **Approval Policy** → Output Events | Posts a check-run for one specific release. Suitable when CI builds a single component per PR. |
-| [`PR_COMMENT`](#pr_comment--comment-on-the-pr) | **Component** or **Approval Policy** → Output Events | Posts a markdown comment to every open PR whose commits include the firing release's SCE. |
+| [`PR_COMMENT`](#pr_comment--comment-on-the-pr) | **Component** or **Approval Policy** → Output Events | Posts a markdown comment to every open PR whose commits include the firing release's SCE (commit). |
 | [`INVALIDATE_PR`](#invalidate_pr-and-validate_pr--feeding-the-aggregator) / `VALIDATE_PR` | **Component** or **Approval Policy** → Output Events | Internal signals that feed the PR aggregator on approval / rejection. No direct SCM call — the SCM push happens via the VCS-level `EXTERNAL_VALIDATION` trigger. |
 
 ::: info VCS-level vs component-level `EXTERNAL_VALIDATION`
