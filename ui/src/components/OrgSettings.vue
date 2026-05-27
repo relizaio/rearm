@@ -884,6 +884,25 @@
                     </n-modal>
                 </div>
             </n-tab-pane>
+            <n-tab-pane name="notifications" tab="Notifications" v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
+                <!--
+                    Phase 7a — read-only listings + status flip / delete /
+                    test-channel. Create + edit dialogs ship in 7b; until then
+                    customers author channels and subscriptions via the
+                    GraphQL upsert mutations directly.
+                -->
+                <n-tabs type="line" :value="notificationsSubTab" @update:value="handleNotificationsSubTabSwitch" animated>
+                    <n-tab-pane name="channels" tab="Channels">
+                        <NotificationChannelsTab/>
+                    </n-tab-pane>
+                    <n-tab-pane name="subscriptions" tab="Subscriptions">
+                        <NotificationSubscriptionsTab/>
+                    </n-tab-pane>
+                    <n-tab-pane name="deliveries" tab="History">
+                        <NotificationDeliveriesTab/>
+                    </n-tab-pane>
+                </n-tabs>
+            </n-tab-pane>
             <n-tab-pane name="adminSettings" tab="Admin Settings" v-if="isOrgAdmin">
                 <div class="adminSettingsBlock mt-4">
                     <h5>Violation Ignore Regexes</h5>
@@ -1129,6 +1148,9 @@ import ScopedPermissions from './ScopedPermissions.vue'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
+import NotificationChannelsTab from './NotificationChannelsTab.vue'
+import NotificationSubscriptionsTab from './NotificationSubscriptionsTab.vue'
+import NotificationDeliveriesTab from './NotificationDeliveriesTab.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
@@ -1389,6 +1411,7 @@ const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
 const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 const currentTab = ref(route.query.tab as string || defaultTab)
 const policySubTab = ref(route.query.policyTab as string || 'approvalRoles')
+const notificationsSubTab = ref(route.query.notificationsTab as string || 'channels')
 
 const approvalRoleFields: any[] = [
     {
@@ -4337,6 +4360,13 @@ async function handlePolicySubTabSwitch(tabName: string) {
     policySubTab.value = tabName
     await router.push({
         query: { ...route.query, policyTab: tabName }
+    })
+}
+
+async function handleNotificationsSubTabSwitch(tabName: string) {
+    notificationsSubTab.value = tabName
+    await router.push({
+        query: { ...route.query, notificationsTab: tabName }
     })
 }
 

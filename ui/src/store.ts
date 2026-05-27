@@ -2471,6 +2471,134 @@ const storeObject : any = {
             })
             return response.data.revokeSigningKey
         },
+
+        // Notifications framework — Phase 7a (read-only list views + status
+        // flip + delete + test-channel). Create / edit modals follow in 7b;
+        // until then customers can author channels and subscriptions via
+        // GraphQL directly. PRO-only feature — the UI calls degrade
+        // gracefully on CE because the schema rejects the query.
+        async fetchNotificationChannelsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query notificationChannels($orgUuid: ID!) {
+                        notificationChannels(orgUuid: $orgUuid) {
+                            uuid org resourceGroup name type status
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.notificationChannels
+        },
+        async fetchNotificationSubscriptionsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query notificationSubscriptions($orgUuid: ID!) {
+                        notificationSubscriptions(orgUuid: $orgUuid) {
+                            uuid org resourceGroup name status eventTypes
+                            filter routes dedupWindowMinutes rateLimit
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.notificationSubscriptions
+        },
+        async fetchNotificationDeliveries (context: any, payload: {
+            orgUuid: string,
+            eventUuid?: string | null,
+            channelUuid?: string | null,
+            status?: string | null,
+            origin?: string | null,
+            limit?: number | null,
+            offset?: number | null,
+        }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query notificationDeliveries(
+                        $orgUuid: ID!,
+                        $eventUuid: ID, $channelUuid: ID,
+                        $status: NotificationDeliveryStatusEnum,
+                        $origin: NotificationDeliveryOriginEnum,
+                        $limit: Int, $offset: Int) {
+                        notificationDeliveries(
+                            orgUuid: $orgUuid,
+                            eventUuid: $eventUuid, channelUuid: $channelUuid,
+                            status: $status, origin: $origin,
+                            limit: $limit, offset: $offset) {
+                            totalCount limit offset
+                            items {
+                                uuid status origin channelUuid outboxEventUuid
+                                attemptCount nextAttemptAt sentAt lastError createdDate
+                                dedupKey subscriptionUuid
+                            }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.notificationDeliveries
+        },
+        async setNotificationChannelStatus (context: any, payload: { uuid: string, status: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setNotificationChannelStatus($uuid: ID!, $status: NotificationChannelStatusEnum!) {
+                        setNotificationChannelStatus(uuid: $uuid, status: $status) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.setNotificationChannelStatus
+        },
+        async deleteNotificationChannel (context: any, uuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation deleteNotificationChannel($uuid: ID!) {
+                        deleteNotificationChannel(uuid: $uuid)
+                    }`,
+                variables: { uuid }
+            })
+            return response.data.deleteNotificationChannel
+        },
+        async setNotificationSubscriptionStatus (context: any, payload: { uuid: string, status: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation setNotificationSubscriptionStatus($uuid: ID!, $status: NotificationSubscriptionStatusEnum!) {
+                        setNotificationSubscriptionStatus(uuid: $uuid, status: $status) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.setNotificationSubscriptionStatus
+        },
+        async deleteNotificationSubscription (context: any, uuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation deleteNotificationSubscription($uuid: ID!) {
+                        deleteNotificationSubscription(uuid: $uuid)
+                    }`,
+                variables: { uuid }
+            })
+            return response.data.deleteNotificationSubscription
+        },
+        async testNotificationChannel (context: any, channelUuid: string) {
+            // The mutation returns the persisted outbox-event row; the
+            // actual webhook POST happens asynchronously on the next
+            // fan-out tick (~5s) + delivery tick (~5s). UI polls
+            // notificationDeliveries by eventUuid to surface the result.
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation testNotificationChannel($channelUuid: ID!) {
+                        testNotificationChannel(channelUuid: $channelUuid) {
+                            uuid eventType status origin channelTestTarget
+                        }
+                    }`,
+                variables: { channelUuid }
+            })
+            return response.data.testNotificationChannel
+        },
     },
 }
 
