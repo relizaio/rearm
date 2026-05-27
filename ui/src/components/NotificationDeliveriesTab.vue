@@ -89,6 +89,8 @@ import {
     NOTIFICATION_DELIVERY_STATUSES,
     NOTIFICATION_DELIVERY_ORIGINS,
     deliveryStatusType,
+    type NotificationDeliveryStatus,
+    type NotificationDeliveryOrigin,
 } from '@/utils/notification-constants'
 
 const store = useStore()
@@ -100,8 +102,8 @@ const orgUuid = computed(() => (route.params.orguuid as string) || myorg.value?.
 
 const page = ref<any>({ items: [], totalCount: 0, limit: 25, offset: 0 })
 const loading = ref<boolean>(true)
-const statusFilter = ref<string | null>(null)
-const originFilter = ref<string | null>(null)
+const statusFilter = ref<NotificationDeliveryStatus | null>(null)
+const originFilter = ref<NotificationDeliveryOrigin | null>(null)
 const currentPage = ref(1)
 const pageSize = 25
 

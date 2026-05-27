@@ -106,6 +106,7 @@ import {
     NOTIFICATION_SEVERITIES,
     type NotificationSubscriptionStatus,
     type NotificationSeverity,
+    type NotificationEventType,
 } from '@/utils/notification-constants'
 
 interface RouteForm {
@@ -134,7 +135,7 @@ const availableChannels = ref<any[]>([])
 const form = reactive({
     name: '',
     status: 'ACTIVE' as NotificationSubscriptionStatus,
-    eventTypes: [] as string[],
+    eventTypes: [] as NotificationEventType[],
     celExpression: '',
     routes: [emptyRoute()] as RouteForm[],
     dedupWindowMinutes: null as number | null,

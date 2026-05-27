@@ -13,15 +13,23 @@
  * type so call sites get both the runtime list and compile-time
  * narrowing from a single source.
  *
- * Java-side correspondence:
- *   NotificationChannelType         → NotificationChannelType
- *   NotificationChannelStatus       → NotificationChannelStatus
- *   NotificationSubscriptionStatus  → NotificationSubscriptionStatus
- *   NotificationOutboxStatus (delivery-row status) → NotificationDeliveryStatus
- *   NotificationDeliveryOrigin      → NotificationDeliveryOrigin
- *   NotificationEventType           → NotificationEventType
- *   NotificationSeverity            → NotificationSeverity
+ * Java-side correspondence (1-to-1 unless noted):
+ *   NotificationChannelType.java        → NotificationChannelType
+ *   NotificationChannelStatus.java      → NotificationChannelStatus
+ *   NotificationSubscriptionStatus.java → NotificationSubscriptionStatus
+ *   NotificationDeliveryStatus.java     → NotificationDeliveryStatus (delivery row)
+ *   NotificationOutboxStatus.java       → NotificationOutboxStatus (outbox event, separate)
+ *   NotificationDeliveryOrigin.java     → NotificationDeliveryOrigin
+ *   NotificationEventType.java          → NotificationEventType
+ *   NotificationSeverity.java           → NotificationSeverity
  *   NotificationChannelData.webhookAuthScheme → NotificationWebhookAuthScheme
+ *
+ * NOTE: NotificationChannelType has five Java values (SLACK, MS_TEAMS,
+ * EMAIL, WEBHOOK, SENTINEL). The TS list intentionally ships only the
+ * two with shipped channel workers — MS_TEAMS / EMAIL / SENTINEL will
+ * be added by the Phase 9/10/11 commits that land their respective
+ * dispatchers. Until then, a row of those types is impossible because
+ * the UI can't create one.
  */
 
 // ---------- Channel ----------
@@ -58,13 +66,27 @@ export const NOTIFICATION_SUBSCRIPTION_STATUSES = [
 export type NotificationSubscriptionStatus =
     typeof NOTIFICATION_SUBSCRIPTION_STATUSES[number]['value']
 
-// ---------- Delivery (outbox row state) ----------
+// ---------- Outbox event status (one row per outbox event) ----------
+
+export const NOTIFICATION_OUTBOX_STATUSES = [
+    { label: 'PENDING', value: 'PENDING' },
+    { label: 'FANNED_OUT', value: 'FANNED_OUT' },
+    { label: 'FAILED', value: 'FAILED' },
+] as const
+export type NotificationOutboxStatus =
+    typeof NOTIFICATION_OUTBOX_STATUSES[number]['value']
+
+// ---------- Delivery row (one row per channel × event) ----------
 
 export const NOTIFICATION_DELIVERY_STATUSES = [
     { label: 'PENDING', value: 'PENDING' },
     { label: 'SENT', value: 'SENT' },
-    { label: 'FAILED', value: 'FAILED' },
     { label: 'ACKED', value: 'ACKED' },
+    { label: 'FAILED', value: 'FAILED' },
+    { label: 'RATE_LIMITED', value: 'RATE_LIMITED' },
+    { label: 'EVAL_TIMEOUT', value: 'EVAL_TIMEOUT' },
+    { label: 'TEST', value: 'TEST' },
+    { label: 'PREVIEW', value: 'PREVIEW' },
 ] as const
 export type NotificationDeliveryStatus =
     typeof NOTIFICATION_DELIVERY_STATUSES[number]['value']
@@ -86,12 +108,16 @@ export const NOTIFICATION_EVENT_TYPES = [
 export type NotificationEventType =
     typeof NOTIFICATION_EVENT_TYPES[number]['value']
 
+// NONE is the lowest-weight value on the Java side and exists so events
+// without inherent severity (e.g. some non-vuln event types) can still
+// route through severity-gated rules without special-casing nullability.
 export const NOTIFICATION_SEVERITIES = [
     { label: 'CRITICAL', value: 'CRITICAL' },
     { label: 'HIGH', value: 'HIGH' },
     { label: 'MEDIUM', value: 'MEDIUM' },
     { label: 'LOW', value: 'LOW' },
     { label: 'INFO', value: 'INFO' },
+    { label: 'NONE', value: 'NONE' },
 ] as const
 export type NotificationSeverity =
     typeof NOTIFICATION_SEVERITIES[number]['value']
@@ -103,12 +129,20 @@ export type NotificationSeverity =
  * deliveries table and any future status-pill UI render the same color
  * for the same status. Wide input type because GraphQL responses are
  * loosely typed at the boundary.
+ *
+ * RATE_LIMITED is `warning` (not `error`) — the dispatcher actively
+ * preserves these rows for history rather than letting them silently
+ * disappear, and operators routinely need to distinguish "we hit a
+ * Slack rate limit" from "Slack rejected the payload outright".
+ * EVAL_TIMEOUT is `error` — the subscription's CEL ate its wall-clock
+ * budget, which is an authoring problem worth surfacing red.
  */
 export function deliveryStatusType (
     s: NotificationDeliveryStatus | string | null | undefined,
-): 'success' | 'error' | 'info' | 'default' {
+): 'success' | 'error' | 'warning' | 'info' | 'default' {
     if (s === 'SENT' || s === 'ACKED') return 'success'
-    if (s === 'FAILED') return 'error'
-    if (s === 'PENDING') return 'info'
+    if (s === 'FAILED' || s === 'EVAL_TIMEOUT') return 'error'
+    if (s === 'RATE_LIMITED') return 'warning'
+    if (s === 'PENDING' || s === 'TEST' || s === 'PREVIEW') return 'info'
     return 'default'
 }
