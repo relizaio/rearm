@@ -509,6 +509,20 @@
                                                         <code v-if="gie.celExpression">{{ gie.celExpression }}</code>
                                                         <span v-else class="text-muted">(none — rule will not fire)</span>
                                                     </div>
+                                                    <!-- Default actions — visible whenever the local override
+                                                         is OFF so operators can see the actions the rule will
+                                                         fire by default. Hidden when the override is engaged
+                                                         (the n-select below takes over and shows the local set). -->
+                                                    <div v-if="!getGlobalInputEventRef(gie.uuid)?.overrideOutputEventsLocally"
+                                                         style="margin-left: 28px; margin-top: 4px; font-size: 12px;">
+                                                        <span class="text-muted" style="margin-right: 6px;">Default actions:</span>
+                                                        <template v-if="gie.outputEvents && gie.outputEvents.length">
+                                                            <n-tag v-for="oeUuid in gie.outputEvents" :key="oeUuid" size="small" round style="margin-right: 4px;">
+                                                                {{ resolveGlobalOutputEventName(oeUuid) }}
+                                                            </n-tag>
+                                                        </template>
+                                                        <span v-else class="text-muted">(none)</span>
+                                                    </div>
                                                     <div v-if="isGlobalInputEventEnabled(gie.uuid)" style="margin-left: 28px; margin-top: 8px;">
                                                         <div style="display: flex; align-items: center; gap: 8px;">
                                                             <n-switch
@@ -1960,6 +1974,16 @@ const allOutputEventsForOverride = computed((): any[] => {
 function isGlobalInputEventEnabled (uuid: string): boolean {
     const ref = getGlobalInputEventRef(uuid)
     return !ref || !ref.disabled
+}
+
+// Resolve an output-event uuid (as carried in a policy rule's
+// `outputEvents` list) to its operator-facing name. Defaults the
+// label to a uuid prefix when the event is missing from the
+// resolved policy — keeps the row legible while still flagging that
+// something is off.
+function resolveGlobalOutputEventName (uuid: string): string {
+    const oe = policyGlobalOutputEvents.value.find((e: any) => e.uuid === uuid)
+    return oe?.name || (uuid ? `(missing: ${uuid.slice(0, 8)})` : '(missing)')
 }
 
 function getGlobalInputEventRef (uuid: string): any {

@@ -16,8 +16,11 @@
                     CEL rules evaluated against every agent session in this org —
                     <strong>INPUT</strong> policies gate session init;
                     <strong>OUTPUT</strong> policies harden when a commit is
-                    attributed. Open the editor and expand
-                    <em>Sample policies</em> for starter scaffolds.
+                    attributed; <strong>CLOSE</strong> policies stay AWAITING
+                    until the session closes (use for gates whose satisfying
+                    artifact arrives after the last commit — e.g. a FINAL
+                    report). Open the editor and expand <em>Sample policies</em>
+                    for starter scaffolds.
                 </n-tooltip>
             </div>
             <n-space>
@@ -116,29 +119,52 @@ async function populateDefaults () {
     if (populating.value) return
     populating.value = true
     try {
-        // Single starter policy: every agent session must file an
-        // orientation report (AGENTIC_REPORT artifact) before any of
-        // its commits can be attributed. OUTPUT + BLOCK because the
-        // report normally arrives during the session; gating session
-        // init (INPUT) would be too early.
-        const input = {
-            uuid: null,
-            org: orgUuid.value,
-            name: 'Require Orientation Report',
-            description: 'Reject agent sessions that have not filed an AGENTIC_REPORT artifact (orientation report) by the time their commits are attributed.',
-            kind: 'OUTPUT',
-            severity: 'BLOCK',
-            cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT")',
-            enabled: true
-        }
-        await store.dispatch('upsertAgentPolicy', input)
-        notification.success({ content: 'Seeded "Require Orientation Report".' })
+        // Two starter policies bracketing the session timeline:
+        //   1. Orientation report at OUTPUT — the agent is expected to
+        //      file this near the start, so it should be in place by
+        //      the time the first commit is attributed. OUTPUT hardens
+        //      the verdict at commit-attribution time.
+        //   2. Final report at CLOSE — the FINAL-phase AGENTIC_REPORT is
+        //      by definition filed after the agent's last commit, so an
+        //      OUTPUT-kind rule would deterministically FAIL at commit
+        //      attribution. CLOSE keeps the verdict AWAITING until
+        //      session close, giving the report time to land.
+        const seeds = [
+            {
+                uuid: null,
+                org: orgUuid.value,
+                name: 'Require Orientation Report',
+                description: 'Reject agent sessions that have not filed an orientation-phase AGENTIC_REPORT (tag agenticPhase=ORIENTATION) by the time their commits are attributed.',
+                kind: 'OUTPUT',
+                severity: 'BLOCK',
+                cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))',
+                enabled: true,
+            },
+            {
+                uuid: null,
+                org: orgUuid.value,
+                name: 'Require Final Report',
+                description: 'Reject agent sessions that close without a final-phase AGENTIC_REPORT (tag agenticPhase=FINAL). CLOSE kind — the FINAL report arrives after the agent\'s last commit, so this verdict only locks at session close.',
+                kind: 'CLOSE',
+                severity: 'BLOCK',
+                cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))',
+                enabled: true,
+            },
+        ]
+        for (const s of seeds) await store.dispatch('upsertAgentPolicy', s)
+        notification.success({ content: 'Seeded "Require Orientation Report" + "Require Final Report".' })
         await load()
     } catch (e: any) {
         notification.error({ content: `Populate failed: ${e?.message ?? e}` })
     } finally {
         populating.value = false
     }
+}
+
+function kindTagType (kind: string): 'info' | 'success' | 'default' {
+    if (kind === 'INPUT') return 'info'
+    if (kind === 'CLOSE') return 'success'
+    return 'default'
 }
 
 async function remove (row: any) {
@@ -160,7 +186,7 @@ const columns = computed<DataTableColumns<any>>(() => [
         title: 'Kind',
         key: 'kind',
         width: 100,
-        render: (row: any) => h(NTag, { size: 'small', type: row.kind === 'INPUT' ? 'info' : 'default' },
+        render: (row: any) => h(NTag, { size: 'small', type: kindTagType(row.kind) },
             { default: () => row.kind }),
     },
     {
