@@ -39,6 +39,24 @@
                 <p class="hint">Must start with <code>https://hooks.slack.com/services/</code> — validated at save and dispatch.</p>
             </template>
 
+            <!-- EMAIL-specific fields -->
+            <template v-if="form.type === 'EMAIL'">
+                <n-divider title-placement="left">Email recipients</n-divider>
+                <n-form-item :label="isEdit ? 'Recipients (leave blank to keep existing)' : 'Recipients'"
+                             path="recipientsRaw"
+                             :required="!isEdit">
+                    <n-input v-model:value="form.recipientsRaw"
+                             type="textarea"
+                             :rows="3"
+                             placeholder="oncall@team.com, sre@team.com"
+                             :disabled="saving"/>
+                </n-form-item>
+                <p class="hint">
+                    One or more addresses, comma- or newline-separated. SMTP / SendGrid
+                    transport uses the system mail config — there's no per-channel SMTP setup.
+                </p>
+            </template>
+
             <!-- WEBHOOK-specific fields -->
             <template v-if="form.type === 'WEBHOOK'">
                 <n-divider title-placement="left">Generic webhook</n-divider>
@@ -127,6 +145,9 @@ const form = reactive({
     webhookUrl: '',
     webhookAuthScheme: 'NONE' as NotificationWebhookAuthScheme,
     webhookAuthToken: '',
+    // Comma- or newline-separated recipient list; parsed to an array
+    // at save time so the form keeps a friendly single-field shape.
+    recipientsRaw: '',
 })
 
 const typeOptions = NOTIFICATION_CHANNEL_TYPES
@@ -142,15 +163,30 @@ const authTokenPlaceholder = computed(() => isEdit.value ? '••• (existing 
 const canSave = computed(() => {
     if (!form.name.trim()) return false
     if (!isEdit.value) {
-        // Create path: per-type secret fields are required.
+        // Create path: per-type required fields.
         if (form.type === 'SLACK' && !form.slackWebhookUrl.trim()) return false
         if (form.type === 'WEBHOOK') {
             if (!form.webhookUrl.trim()) return false
             if (form.webhookAuthScheme !== 'NONE' && !form.webhookAuthToken.trim()) return false
         }
+        if (form.type === 'EMAIL' && parseRecipients(form.recipientsRaw).length === 0) {
+            return false
+        }
     }
     return true
 })
+
+/**
+ * Split the recipient textarea on commas + newlines, trim, drop blanks.
+ * Backend-side validation still runs (Apache Commons EmailValidator);
+ * UI side is just for the empty-list canSave gate.
+ */
+function parseRecipients (raw: string): string[] {
+    return raw
+        .split(/[,\n]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+}
 
 // Reset form state every time the dialog opens.
 watch(() => props.show, (opening) => {
@@ -171,6 +207,7 @@ watch(() => props.show, (opening) => {
     form.webhookUrl = ''
     form.webhookAuthScheme = 'NONE'
     form.webhookAuthToken = ''
+    form.recipientsRaw = ''
 })
 
 async function save () {
@@ -199,6 +236,14 @@ async function save () {
             // update should not touch the encrypted blob.
             if (wc.url || wc.authToken || (!isEdit.value && wc.authScheme === 'NONE')) {
                 input.webhookConfig = wc
+            }
+        } else if (form.type === 'EMAIL') {
+            // Blank textarea on update = "preserve existing recipients"
+            // (matches backend's null-emailConfig branch in
+            // NotificationChannelService.mergeConfigData).
+            const recipients = parseRecipients(form.recipientsRaw)
+            if (recipients.length > 0) {
+                input.emailConfig = { recipients }
             }
         }
 

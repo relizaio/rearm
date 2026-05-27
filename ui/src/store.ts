@@ -2543,10 +2543,11 @@ const storeObject : any = {
             // input shape mirrors NotificationChannelInput on the schema:
             //   { uuid?, org, resourceGroup?, name, type, status?,
             //     slackConfig?: { webhookUrl },
-            //     webhookConfig?: { url, authScheme, authToken } }
-            // Blank slackConfig/webhookConfig on update preserves the
-            // existing encrypted secret server-side ("rename without
-            // re-typing"); status defaults to ENABLED on create.
+            //     webhookConfig?: { url, authScheme, authToken },
+            //     emailConfig?: { recipients: string[] } }
+            // Blank per-type config on update preserves the existing
+            // server-side state ("rename without re-typing"); status
+            // defaults to ENABLED on create.
             const response = await graphqlClient.mutate({
                 mutation: gql`
                     mutation upsertNotificationChannel($input: NotificationChannelInput!) {
