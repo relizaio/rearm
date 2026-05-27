@@ -465,211 +465,6 @@
                                                 <n-data-table :data="policyGlobalOutputEvents" :columns="outputTriggerTableFieldsReadOnly" :row-key="dataTableUuidRowKey" />
                                             </template>
                                         </div>
-                                        <n-modal
-                                            v-model:show="showCreateOutputTriggerModal"
-                                            preset="dialog"
-                                            :show-icon="false"
-                                            style="width: 90%"
-                                        >
-                                            <n-form :model="outputTrigger">
-                                                <h2>Add or Update Action</h2>
-                                                <n-space vertical size="large">
-                                                    <n-form-item label="Name" path="name">
-                                                        <n-input v-model:value="outputTrigger.name" required placeholder="Enter name" />
-                                                    </n-form-item>
-                                                    <n-form-item label="Type" path="type">
-                                                        <n-select v-model:value="outputTrigger.type" required 
-                                                            v-on:update:value="value => {if (value === 'EMAIL_NOTIFICATION') loadUsers()}"
-                                                            :options="outputTriggerTypeOptions" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
-                                                        <n-select v-model:value="outputTrigger.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
-                                                        <n-select
-                                                            v-model:value="outputTrigger.integration"
-                                                            placeholder="Select Integration"
-                                                            :options="ciIntegrationsForSelect" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
-                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Name of GitHub Actions Event" path="eventType">
-                                                        <n-input v-model:value="outputTrigger.eventType" placeholder="Enter Name of GitHub Actions Event" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
-                                                        <n-input v-model:value="outputTrigger.clientPayload" required placeholder="Enter Additional Optional Client Payload JSON" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
-                                                        <n-input type="number" v-model:value="outputTrigger.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && (selectedCiIntegration.type === 'GITHUB' || selectedCiIntegration.type === 'GITLAB')" label="CI Repository (override)" path="vcs">
-                                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
-                                                            <n-select :options="vcsRepos" v-model:value="outputTrigger.vcs" placeholder="Leave empty to use the component's VCS" clearable />
-                                                            <span v-if="outputTrigger.vcs" style="font-size: 12px; color: #888;">
-                                                                Override active. Component VCS will not be used for this trigger.
-                                                            </span>
-                                                            <span v-else-if="updatedComponent.vcs" style="font-size: 12px; color: #888;">
-                                                                Will use component's VCS at fire time: {{ getVcsRepoObjById(updatedComponent.vcs)?.uri || updatedComponent.vcs }}
-                                                            </span>
-                                                            <span v-else style="font-size: 12px; color: #c95900;">
-                                                                ⚠ Component has no VCS configured — pick an override here, or set a VCS on the component, otherwise this trigger cannot be saved.
-                                                            </span>
-                                                        </div>
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
-                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="eventType">
-                                                        <n-input v-model:value="outputTrigger.eventType" required placeholder="Enter Azure DevOps project name" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Pipeline Definition ID" path="schedule">
-                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter Pipeline Definition ID" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
-                                                        <n-input v-model:value="outputTrigger.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Choose Validation Integration" path="integration">
-                                                        <n-select
-                                                            v-model:value="outputTrigger.integration"
-                                                            placeholder="Select GitHub Validate Integration"
-                                                            :options="validationIntegrationsForSelect" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
-                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="VCS Repository (override)" path="vcs">
-                                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
-                                                            <n-select :options="vcsRepos" v-model:value="outputTrigger.vcs" placeholder="Leave empty to use the component's VCS" clearable />
-                                                            <span v-if="outputTrigger.vcs" style="font-size: 12px; color: #888;">
-                                                                Override active. Component VCS will not be used for this trigger.
-                                                            </span>
-                                                            <span v-else-if="updatedComponent.vcs" style="font-size: 12px; color: #888;">
-                                                                Will use component's VCS at fire time: {{ getVcsRepoObjById(updatedComponent.vcs)?.uri || updatedComponent.vcs }}
-                                                            </span>
-                                                            <span v-else style="font-size: 12px; color: #c95900;">
-                                                                ⚠ Component has no VCS configured — pick an override here, or set a VCS on the component, otherwise this trigger cannot be saved.
-                                                            </span>
-                                                        </div>
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Conclusion" path="eventType">
-                                                        <n-select v-model:value="outputTrigger.eventType" required :options="externalValidationConclusionOptions" placeholder="Select check-run conclusion" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" path="clientPayload">
-                                                        <template #label>
-                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                                                Optional Output JSON (title / summary / text)
-                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
-                                                                    <template #trigger>
-                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
-                                                                    </template>
-                                                                    Static JSON. When set, ReARM sends this as the GitHub check-run "output" verbatim — title, summary and text fields all replace ReARM's defaults (including the auto metrics summary). Leave empty to keep defaults. Use the Dynamic CEL field below if you need per-release values.
-                                                                </n-tooltip>
-                                                                <n-button text type="primary" size="tiny" @click="populateOutputTriggerClientPayloadDefault">
-                                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
-                                                                    Use template
-                                                                </n-button>
-                                                            </span>
-                                                        </template>
-                                                        <n-input v-model:value="outputTrigger.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder='{"title":"...","summary":"...","text":"..."}' />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" path="celClientPayload">
-                                                        <template #label>
-                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                                                Dynamic output (CEL string expression)
-                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
-                                                                    <template #trigger>
-                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
-                                                                    </template>
-                                                                    CEL expression evaluated at fire time against the release. Result must be a JSON string with title / summary / text — it overwrites the Optional Output JSON above for this dispatch. Available bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.
-                                                                </n-tooltip>
-                                                                <n-button text type="primary" size="tiny" @click="populateOutputTriggerCelClientPayloadDefault">
-                                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
-                                                                    Use template
-                                                                </n-button>
-                                                            </span>
-                                                        </template>
-                                                        <n-input v-model:value="outputTrigger.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
-                                                        <n-input v-model:value="outputTrigger.checkName" :placeholder="'Defaults to rearm/' + (updatedComponent.name || '<component>')" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" label="Choose Validation Integration" path="integration">
-                                                        <n-select
-                                                            v-model:value="outputTrigger.integration"
-                                                            placeholder="Select GitHub Validate Integration"
-                                                            :options="validationIntegrationsForSelect" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" label="Installation ID" path="schedule">
-                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" path="clientPayload">
-                                                        <template #label>
-                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                                                Optional Comment Suffix (markdown)
-                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
-                                                                    <template #trigger>
-                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
-                                                                    </template>
-                                                                    Static markdown appended to ReARM's auto-generated PR comment body (header / metrics / PR conditions are kept). Use this for organisation-wide footers — links to runbooks, escalation contacts, etc. Leave empty to use the default body unchanged.
-                                                                </n-tooltip>
-                                                            </span>
-                                                        </template>
-                                                        <n-input v-model:value="outputTrigger.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder="### See also&#10;- [Runbook](https://...)" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" path="celClientPayload">
-                                                        <template #label>
-                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                                                Dynamic Comment Suffix (CEL string expression)
-                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
-                                                                    <template #trigger>
-                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
-                                                                    </template>
-                                                                    CEL expression evaluated at fire time. Result must be a markdown string. Appended to the auto-generated body — additive, not a replacement (contrast with External Validation, which substitutes). Available bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.
-                                                                </n-tooltip>
-                                                            </span>
-                                                        </template>
-                                                        <n-input v-model:value="outputTrigger.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"_Triggered for release " + release.version + "._"' />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
-                                                        <n-select v-model:value="outputTrigger.users" tag multiple required :options="users" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
-                                                        <n-input v-model:value="outputTrigger.notificationMessage" placeholder="Email Message Contents (i.e. 'Release ready to ship.')" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Dynamic message (CEL string expression)" path="celClientPayload">
-                                                        <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"Release " + release.version + " reached " + release.lifecycle' />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Dynamic client payload (CEL string expression)" path="celClientPayload">
-                                                        <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"refs/tags/" + release.version' />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Include Suppressed Vulnerabilities" path="includeSuppressed">
-                                                        <n-switch v-model:value="outputTrigger.includeSuppressed" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Snapshot tagging">
-                                                        <n-radio-group v-model:value="snapshotMode">
-                                                            <n-space>
-                                                                <n-radio value="NONE">None (date-stamped)</n-radio>
-                                                                <n-radio value="APPROVAL">Tag by approval entry</n-radio>
-                                                                <n-radio value="LIFECYCLE">Tag by lifecycle</n-radio>
-                                                            </n-space>
-                                                        </n-radio-group>
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT' && snapshotMode === 'APPROVAL'" label="Snapshot approval entry">
-                                                        <n-select v-model:value="outputTrigger.snapshotApprovalEntry" :options="approvalEntryOptionsForTriggers" placeholder="Select approval entry" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT' && snapshotMode === 'LIFECYCLE'" label="Snapshot lifecycle">
-                                                        <n-select v-model:value="outputTrigger.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
-                                                    </n-form-item>
-                                                    <n-form-item v-if="outputTrigger.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
-                                                        <n-select v-model:value="outputTrigger.approvedEnvironment" filterable :options="environmentTypeOptions" placeholder="Select an environment (e.g. UAT)" />
-                                                    </n-form-item>
-                                                    <n-button @click="addOutputTrigger" type="success">
-                                                        Save
-                                                    </n-button>
-                                                </n-space>
-                                            </n-form>
-                                        </n-modal>
                                     </n-tab-pane>
                                     <n-tab-pane name="Input Events" tab="Rules" v-if="myUser.installationType !== 'OSS'">
                                         <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Rules</h4>
@@ -922,6 +717,212 @@
                                         </div>
                                     </n-tab-pane>
                                 </n-tabs>
+
+                                        <n-modal
+                                            v-model:show="showCreateOutputTriggerModal"
+                                            preset="dialog"
+                                            :show-icon="false"
+                                            style="width: 90%"
+                                        >
+                                            <n-form :model="outputTrigger">
+                                                <h2>Add or Update Action</h2>
+                                                <n-space vertical size="large">
+                                                    <n-form-item label="Name" path="name">
+                                                        <n-input v-model:value="outputTrigger.name" required placeholder="Enter name" />
+                                                    </n-form-item>
+                                                    <n-form-item label="Type" path="type">
+                                                        <n-select v-model:value="outputTrigger.type" required 
+                                                            v-on:update:value="value => {if (value === 'EMAIL_NOTIFICATION') loadUsers()}"
+                                                            :options="outputTriggerTypeOptions" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
+                                                        <n-select v-model:value="outputTrigger.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Choose CI Integration" path="integration">
+                                                        <n-select
+                                                            v-model:value="outputTrigger.integration"
+                                                            placeholder="Select Integration"
+                                                            :options="ciIntegrationsForSelect" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Installation ID" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Name of GitHub Actions Event" path="eventType">
+                                                        <n-input v-model:value="outputTrigger.eventType" placeholder="Enter Name of GitHub Actions Event" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITHUB'" label="Optional Client Payload JSON" path="clientPayload">
+                                                        <n-input v-model:value="outputTrigger.clientPayload" required placeholder="Enter Additional Optional Client Payload JSON" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'GITLAB'" label="GitLab Schedule Id" path="schedule">
+                                                        <n-input type="number" v-model:value="outputTrigger.schedule" required placeholder="Enter numeric GitLab Schedule Id" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && (selectedCiIntegration.type === 'GITHUB' || selectedCiIntegration.type === 'GITLAB')" label="CI Repository (override)" path="vcs">
+                                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                                                            <n-select :options="vcsRepos" v-model:value="outputTrigger.vcs" placeholder="Leave empty to use the component's VCS" clearable />
+                                                            <span v-if="outputTrigger.vcs" style="font-size: 12px; color: #888;">
+                                                                Override active. Component VCS will not be used for this trigger.
+                                                            </span>
+                                                            <span v-else-if="updatedComponent.vcs" style="font-size: 12px; color: #888;">
+                                                                Will use component's VCS at fire time: {{ getVcsRepoObjById(updatedComponent.vcs)?.uri || updatedComponent.vcs }}
+                                                            </span>
+                                                            <span v-else style="font-size: 12px; color: #c95900;">
+                                                                ⚠ Component has no VCS configured — pick an override here, or set a VCS on the component, otherwise this trigger cannot be saved.
+                                                            </span>
+                                                        </div>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'JENKINS'" label="Jenkins Job Name" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Jenkins Job Name" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Azure DevOps Project Name" path="eventType">
+                                                        <n-input v-model:value="outputTrigger.eventType" required placeholder="Enter Azure DevOps project name" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Pipeline Definition ID" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter Pipeline Definition ID" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER' && selectedCiIntegration && selectedCiIntegration.type === 'ADO'" label="Optional Parameters" path="clientPayload">
+                                                        <n-input v-model:value="outputTrigger.clientPayload" placeholder="Enter Optional Parameters (JSON)" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Choose Validation Integration" path="integration">
+                                                        <n-select
+                                                            v-model:value="outputTrigger.integration"
+                                                            placeholder="Select GitHub Validate Integration"
+                                                            :options="validationIntegrationsForSelect" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Installation ID" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="VCS Repository (override)" path="vcs">
+                                                        <div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                                                            <n-select :options="vcsRepos" v-model:value="outputTrigger.vcs" placeholder="Leave empty to use the component's VCS" clearable />
+                                                            <span v-if="outputTrigger.vcs" style="font-size: 12px; color: #888;">
+                                                                Override active. Component VCS will not be used for this trigger.
+                                                            </span>
+                                                            <span v-else-if="updatedComponent.vcs" style="font-size: 12px; color: #888;">
+                                                                Will use component's VCS at fire time: {{ getVcsRepoObjById(updatedComponent.vcs)?.uri || updatedComponent.vcs }}
+                                                            </span>
+                                                            <span v-else style="font-size: 12px; color: #c95900;">
+                                                                ⚠ Component has no VCS configured — pick an override here, or set a VCS on the component, otherwise this trigger cannot be saved.
+                                                            </span>
+                                                        </div>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Conclusion" path="eventType">
+                                                        <n-select v-model:value="outputTrigger.eventType" required :options="externalValidationConclusionOptions" placeholder="Select check-run conclusion" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" path="clientPayload">
+                                                        <template #label>
+                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                                Optional Output JSON (title / summary / text)
+                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                                    <template #trigger>
+                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                                    </template>
+                                                                    Static JSON. When set, ReARM sends this as the GitHub check-run "output" verbatim — title, summary and text fields all replace ReARM's defaults (including the auto metrics summary). Leave empty to keep defaults. Use the Dynamic CEL field below if you need per-release values.
+                                                                </n-tooltip>
+                                                                <n-button text type="primary" size="tiny" @click="populateOutputTriggerClientPayloadDefault">
+                                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
+                                                                    Use template
+                                                                </n-button>
+                                                            </span>
+                                                        </template>
+                                                        <n-input v-model:value="outputTrigger.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder='{"title":"...","summary":"...","text":"..."}' />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" path="celClientPayload">
+                                                        <template #label>
+                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                                Dynamic output (CEL string expression)
+                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                                    <template #trigger>
+                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                                    </template>
+                                                                    CEL expression evaluated at fire time against the release. Result must be a JSON string with title / summary / text — it overwrites the Optional Output JSON above for this dispatch. Available bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.
+                                                                </n-tooltip>
+                                                                <n-button text type="primary" size="tiny" @click="populateOutputTriggerCelClientPayloadDefault">
+                                                                    <template #icon><n-icon><Clipboard /></n-icon></template>
+                                                                    Use template
+                                                                </n-button>
+                                                            </span>
+                                                        </template>
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"{\"title\":\"ReARM verdict: \" + ...}"' />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EXTERNAL_VALIDATION'" label="Override Check Name (optional)" path="checkName">
+                                                        <n-input v-model:value="outputTrigger.checkName" :placeholder="'Defaults to rearm/' + (updatedComponent.name || '<component>')" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" label="Choose Validation Integration" path="integration">
+                                                        <n-select
+                                                            v-model:value="outputTrigger.integration"
+                                                            placeholder="Select GitHub Validate Integration"
+                                                            :options="validationIntegrationsForSelect" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" label="Installation ID" path="schedule">
+                                                        <n-input v-model:value="outputTrigger.schedule" required placeholder="Enter GitHub Installation ID" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" path="clientPayload">
+                                                        <template #label>
+                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                                Optional Comment Suffix (markdown)
+                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                                    <template #trigger>
+                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                                    </template>
+                                                                    Static markdown appended to ReARM's auto-generated PR comment body (header / metrics / PR conditions are kept). Use this for organisation-wide footers — links to runbooks, escalation contacts, etc. Leave empty to use the default body unchanged.
+                                                                </n-tooltip>
+                                                            </span>
+                                                        </template>
+                                                        <n-input v-model:value="outputTrigger.clientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" placeholder="### See also&#10;- [Runbook](https://...)" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'PR_COMMENT'" path="celClientPayload">
+                                                        <template #label>
+                                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                                Dynamic Comment Suffix (CEL string expression)
+                                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                                    <template #trigger>
+                                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                                    </template>
+                                                                    CEL expression evaluated at fire time. Result must be a markdown string. Appended to the auto-generated body — additive, not a replacement (contrast with External Validation, which substitutes). Available bindings: release.version, release.lifecycle, release.criticalVulns, release.highVulns, release.mediumVulns, release.lowVulns, release.securityViolations, release.licenseViolations, release.operationalViolations.
+                                                                </n-tooltip>
+                                                            </span>
+                                                        </template>
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" style="font-family: monospace;" placeholder='"_Triggered for release " + release.version + "._"' />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Users to notify" path="users">
+                                                        <n-select v-model:value="outputTrigger.users" tag multiple required :options="users" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Email Message Contents" path="notificationMessage">
+                                                        <n-input v-model:value="outputTrigger.notificationMessage" placeholder="Email Message Contents (i.e. 'Release ready to ship.')" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'EMAIL_NOTIFICATION'" label="Dynamic message (CEL string expression)" path="celClientPayload">
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"Release " + release.version + " reached " + release.lifecycle' />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'INTEGRATION_TRIGGER'" label="Dynamic client payload (CEL string expression)" path="celClientPayload">
+                                                        <n-input v-model:value="outputTrigger.celClientPayload" style="font-family: monospace;" placeholder='"refs/tags/" + release.version' />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Include Suppressed Vulnerabilities" path="includeSuppressed">
+                                                        <n-switch v-model:value="outputTrigger.includeSuppressed" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT'" label="Snapshot tagging">
+                                                        <n-radio-group v-model:value="snapshotMode">
+                                                            <n-space>
+                                                                <n-radio value="NONE">None (date-stamped)</n-radio>
+                                                                <n-radio value="APPROVAL">Tag by approval entry</n-radio>
+                                                                <n-radio value="LIFECYCLE">Tag by lifecycle</n-radio>
+                                                            </n-space>
+                                                        </n-radio-group>
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT' && snapshotMode === 'APPROVAL'" label="Snapshot approval entry">
+                                                        <n-select v-model:value="outputTrigger.snapshotApprovalEntry" :options="approvalEntryOptionsForTriggers" placeholder="Select approval entry" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'VDR_SNAPSHOT_ARTIFACT' && snapshotMode === 'LIFECYCLE'" label="Snapshot lifecycle">
+                                                        <n-select v-model:value="outputTrigger.snapshotLifecycle" :options="outputTriggerLifecycleOptions" placeholder="Select lifecycle" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'ADD_APPROVED_ENVIRONMENT'" label="Approved Environment" path="approvedEnvironment">
+                                                        <n-select v-model:value="outputTrigger.approvedEnvironment" filterable :options="environmentTypeOptions" placeholder="Select an environment (e.g. UAT)" />
+                                                    </n-form-item>
+                                                    <n-button @click="addOutputTrigger" type="success">
+                                                        Save
+                                                    </n-button>
+                                                </n-space>
+                                            </n-form>
+                                        </n-modal>
                             </n-modal>
                             <n-modal
                                 v-model:show="showCloneBranchModal"
